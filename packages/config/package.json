@@ -1,0 +1,9 @@
+{
+  "name": "@zotlit/config",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "files": [
+    "tsconfig.base.json"
+  ]
+}

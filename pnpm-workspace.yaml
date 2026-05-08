@@ -1,5 +1,10 @@
 packages:
   - apps/*
   - packages/*
+
+catalog:
+  '@typescript/native-preview': 7.0.0-dev.20260421.2
+  tsdown: ^0.21.10
+
 # delay one day to reduce the risk of installing compromised packages
-minimumReleaseAge: 1440 
+minimumReleaseAge: 1440
