@@ -1,0 +1,13 @@
+min_version = "2024.9.5"
+
+[tools]
+node = "26"
+
+[hooks]
+postinstall = 'npx corepack enable'
+
+[settings]
+experimental = true
+
+[env]
+_.path = ['{{config_root}}/node_modules/.bin']
