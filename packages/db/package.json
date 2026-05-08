@@ -1,0 +1,23 @@
+{
+  "name": "@zotlit/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/hello.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsgo --noEmit"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "catalog:",
+    "@zotlit/config": "workspace:*",
+    "tsdown": "catalog:"
+  }
+}

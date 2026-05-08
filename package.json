@@ -1,9 +1,14 @@
 {
-  "name": "my-turborepo",
-  "description": "A barebones Turborepo example for working with Task Graphs.",
+  "name": "zotlit",
   "private": true,
   "packageManager": "pnpm@11.0.8",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint"
+  },
   "devDependencies": {
-    "turbo": "^2.9.10"
+    "turbo": "^2.9.9"
   }
 }
