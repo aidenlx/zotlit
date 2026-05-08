@@ -1,3 +1,5 @@
 packages:
   - apps/*
   - packages/*
+# delay one day to reduce the risk of installing compromised packages
+minimumReleaseAge: 1440 
