@@ -1,9 +1,15 @@
 {
   "name": "@zotlit/config",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
-  "files": [
-    "tsconfig.base.json"
-  ]
+  "exports": {
+    "./tsconfig": "./tsconfig.base.json",
+    "./oxlint": "./oxlint.base.ts",
+    "./oxfmt": "./oxfmt.base.ts"
+  },
+  "devDependencies": {
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:"
+  }
 }
