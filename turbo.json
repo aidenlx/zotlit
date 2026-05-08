@@ -15,6 +15,38 @@
     "typecheck": {
       "dependsOn": ["transit"]
     },
-    "lint": {}
+    "//#lint": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+        ".oxlintrc.json",
+        "**/.oxlintrc.json",
+        "packages/config/oxlint.base.json",
+        "tsconfig.json",
+        "**/tsconfig.json"
+      ]
+    },
+    "//#lint:fix": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "//#format": {
+      "inputs": [
+        "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,md,mdx,yml,yaml,html,css,scss}",
+        ".oxfmtrc.json",
+        "**/.oxfmtrc.json"
+      ]
+    },
+    "//#format:fix": {
+      "cache": false,
+      "dependsOn": ["//#lint:fix"]
+    },
+    "//#quality": {
+      "dependsOn": ["//#lint", "//#format"]
+    },
+    "//#quality:fix": {
+      "cache": false,
+      "dependsOn": ["//#format:fix"]
+    }
   }
 }
