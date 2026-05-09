@@ -5,6 +5,10 @@
   "type": "module",
   "exports": {
     "./tsconfig": "./tsconfig.base.json",
+    "./tsconfig.node22": "./tsconfig.node22.json",
+    "./tsconfig.node24": "./tsconfig.node24.json",
+    "./tsconfig.node26": "./tsconfig.node26.json",
+    "./tsconfig.chrome142": "./tsconfig.chrome142.json",
     "./oxlint": "./oxlint.base.ts",
     "./oxfmt": "./oxfmt.base.ts"
   },

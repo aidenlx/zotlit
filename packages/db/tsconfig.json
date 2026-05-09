@@ -1,18 +1,8 @@
 {
-  "extends": "@zotlit/config/tsconfig",
-  "compilerOptions": {
-    "declaration": true,
-    "declarationMap": true,
-    "lib": ["es2022", "ESNext.Disposable"],
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "target": "ES2022",
-    "outDir": "dist",
-    "rootDir": "src",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
-  "include": ["./src/**/*.ts"],
-  "exclude": ["./node_modules", "./dist/**/*"]
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.lib.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
 }
