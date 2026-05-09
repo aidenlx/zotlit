@@ -6,6 +6,7 @@ allowBuilds:
   lefthook: true
 
 catalog:
+  "@types/node": ^25.5.0
   "@typescript/native-preview": 7.0.0-dev.20260421.2
   oxfmt: ^0.48.0
   oxlint: ^1.63.0

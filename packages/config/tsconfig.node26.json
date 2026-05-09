@@ -1,0 +1,15 @@
+{
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "lib": [
+      "es2025",
+      "esnext.disposable",
+      "esnext.array",
+      "esnext.collection",
+      "esnext.temporal"
+    ],
+    "module": "nodenext",
+    "target": "es2025",
+    "moduleResolution": "node16"
+  }
+}

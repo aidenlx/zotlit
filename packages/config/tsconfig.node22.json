@@ -1,0 +1,9 @@
+{
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "lib": ["es2024", "es2025.collection", "es2025.iterator", "esnext.array"],
+    "module": "nodenext",
+    "target": "es2024",
+    "moduleResolution": "node16"
+  }
+}
