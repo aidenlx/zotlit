@@ -6,7 +6,9 @@
       "esnext.disposable",
       "esnext.array",
       "esnext.collection",
-      "esnext.temporal"
+      "esnext.temporal",
+      "esnext.intl",
+      "esnext.date"
     ],
     "module": "nodenext",
     "target": "es2025",
