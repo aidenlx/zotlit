@@ -1,0 +1,5 @@
+{
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "files": [],
+  "references": [{ "path": "./tsconfig.lib.json" }]
+}
