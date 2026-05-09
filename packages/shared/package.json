@@ -2,5 +2,23 @@
   "name": "@zotlit/shared",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsgo --noEmit"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "catalog:",
+    "@zotlit/config": "workspace:*",
+    "oxlint": "catalog:",
+    "tsdown": "catalog:"
+  }
 }
