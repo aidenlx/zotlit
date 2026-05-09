@@ -15,7 +15,8 @@
     "build": "tsdown",
     "db:pull": "drizzle-kit pull",
     "dev": "tsdown --watch",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsgo --noEmit -p tsconfig.lib.json",
+    "lint": "oxlint"
   },
   "dependencies": {
     "drizzle-orm": "catalog:"

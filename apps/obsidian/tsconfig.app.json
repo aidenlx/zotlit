@@ -1,0 +1,15 @@
+{
+  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.chrome142"],
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "isolatedDeclarations": false,
+    "types": ["node-22"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["./src/**/*.ts"],
+  "exclude": ["./node_modules", "./dist", "./dist-dev"]
+}
