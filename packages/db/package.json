@@ -7,20 +7,30 @@
   ],
   "type": "module",
   "exports": {
-    ".": "./dist/hello.mjs",
+    ".": "./dist/index.mjs",
+    "./schema": "./dist/schema.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsdown",
+    "db:pull": "drizzle-kit pull",
     "dev": "tsdown --watch",
     "typecheck": "tsgo --noEmit"
   },
+  "dependencies": {
+    "drizzle-orm": "catalog:"
+  },
   "devDependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
     "@types/node-22": "npm:@types/node@^22.9.0",
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
+    "drizzle-kit": "catalog:",
     "oxlint": "catalog:",
     "tsdown": "catalog:"
+  },
+  "peerDependencies": {
+    "@js-temporal/polyfill": "^0.5.1"
   }
 }

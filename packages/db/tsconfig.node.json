@@ -5,6 +5,6 @@
     "isolatedDeclarations": false,
     "types": ["node-25"]
   },
-  "include": ["./scripts/**/*.ts"],
+  "include": ["./scripts/**/*.ts", "drizzle.config.js"],
   "exclude": ["./node_modules", "./src/**/*"]
 }

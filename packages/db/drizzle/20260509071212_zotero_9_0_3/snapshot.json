@@ -1,0 +1,4411 @@
+{
+  "dialect": "sqlite",
+  "id": "00000000-0000-0000-0000-000000000000",
+  "prevIds": [],
+  "version": "7",
+  "ddl": [
+    {
+      "name": "fieldFormats",
+      "entityType": "tables"
+    },
+    {
+      "name": "charsets",
+      "entityType": "tables"
+    },
+    {
+      "name": "fileTypes",
+      "entityType": "tables"
+    },
+    {
+      "name": "fileTypeMimeTypes",
+      "entityType": "tables"
+    },
+    {
+      "name": "syncObjectTypes",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemTypes",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemTypesCombined",
+      "entityType": "tables"
+    },
+    {
+      "name": "fields",
+      "entityType": "tables"
+    },
+    {
+      "name": "fieldsCombined",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemTypeFields",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemTypeFieldsCombined",
+      "entityType": "tables"
+    },
+    {
+      "name": "baseFieldMappings",
+      "entityType": "tables"
+    },
+    {
+      "name": "baseFieldMappingsCombined",
+      "entityType": "tables"
+    },
+    {
+      "name": "creatorTypes",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemTypeCreatorTypes",
+      "entityType": "tables"
+    },
+    {
+      "name": "version",
+      "entityType": "tables"
+    },
+    {
+      "name": "settings",
+      "entityType": "tables"
+    },
+    {
+      "name": "syncedSettings",
+      "entityType": "tables"
+    },
+    {
+      "name": "items",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemDataValues",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemData",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemNotes",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemAttachments",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemAnnotations",
+      "entityType": "tables"
+    },
+    {
+      "name": "tags",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemRelations",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemTags",
+      "entityType": "tables"
+    },
+    {
+      "name": "creators",
+      "entityType": "tables"
+    },
+    {
+      "name": "itemCreators",
+      "entityType": "tables"
+    },
+    {
+      "name": "collections",
+      "entityType": "tables"
+    },
+    {
+      "name": "collectionItems",
+      "entityType": "tables"
+    },
+    {
+      "name": "collectionRelations",
+      "entityType": "tables"
+    },
+    {
+      "name": "feeds",
+      "entityType": "tables"
+    },
+    {
+      "name": "feedItems",
+      "entityType": "tables"
+    },
+    {
+      "name": "savedSearches",
+      "entityType": "tables"
+    },
+    {
+      "name": "savedSearchConditions",
+      "entityType": "tables"
+    },
+    {
+      "name": "deletedCollections",
+      "entityType": "tables"
+    },
+    {
+      "name": "deletedItems",
+      "entityType": "tables"
+    },
+    {
+      "name": "deletedSearches",
+      "entityType": "tables"
+    },
+    {
+      "name": "libraries",
+      "entityType": "tables"
+    },
+    {
+      "name": "users",
+      "entityType": "tables"
+    },
+    {
+      "name": "groups",
+      "entityType": "tables"
+    },
+    {
+      "name": "groupItems",
+      "entityType": "tables"
+    },
+    {
+      "name": "publicationsItems",
+      "entityType": "tables"
+    },
+    {
+      "name": "retractedItems",
+      "entityType": "tables"
+    },
+    {
+      "name": "fulltextItems",
+      "entityType": "tables"
+    },
+    {
+      "name": "fulltextWords",
+      "entityType": "tables"
+    },
+    {
+      "name": "fulltextItemWords",
+      "entityType": "tables"
+    },
+    {
+      "name": "syncCache",
+      "entityType": "tables"
+    },
+    {
+      "name": "syncDeleteLog",
+      "entityType": "tables"
+    },
+    {
+      "name": "syncQueue",
+      "entityType": "tables"
+    },
+    {
+      "name": "storageDeleteLog",
+      "entityType": "tables"
+    },
+    {
+      "name": "proxies",
+      "entityType": "tables"
+    },
+    {
+      "name": "proxyHosts",
+      "entityType": "tables"
+    },
+    {
+      "name": "relationPredicates",
+      "entityType": "tables"
+    },
+    {
+      "name": "customItemTypes",
+      "entityType": "tables"
+    },
+    {
+      "name": "customFields",
+      "entityType": "tables"
+    },
+    {
+      "name": "customItemTypeFields",
+      "entityType": "tables"
+    },
+    {
+      "name": "customBaseFieldMappings",
+      "entityType": "tables"
+    },
+    {
+      "name": "translatorCache",
+      "entityType": "tables"
+    },
+    {
+      "name": "dbDebug1",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldFormatID",
+      "entityType": "columns",
+      "table": "fieldFormats"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "charsetID",
+      "entityType": "columns",
+      "table": "charsets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fileTypeID",
+      "entityType": "columns",
+      "table": "fileTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fileTypeID",
+      "entityType": "columns",
+      "table": "fileTypeMimeTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "syncObjectTypeID",
+      "entityType": "columns",
+      "table": "syncObjectTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "itemTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "itemTypesCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "fields"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "fieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "itemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "itemTypeFieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "baseFieldMappings"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "baseFieldMappingsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "creatorTypeID",
+      "entityType": "columns",
+      "table": "creatorTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "itemTypeCreatorTypes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "schema",
+      "entityType": "columns",
+      "table": "version"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "setting",
+      "entityType": "columns",
+      "table": "settings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "setting",
+      "entityType": "columns",
+      "table": "syncedSettings"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "valueID",
+      "entityType": "columns",
+      "table": "itemDataValues"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "itemData"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "itemNotes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tagID",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "itemRelations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "itemTags"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "creatorID",
+      "entityType": "columns",
+      "table": "creators"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "itemCreators"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "collectionID",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "collectionID",
+      "entityType": "columns",
+      "table": "collectionItems"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "collectionID",
+      "entityType": "columns",
+      "table": "collectionRelations"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "feedItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "savedSearchID",
+      "entityType": "columns",
+      "table": "savedSearches"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "savedSearchID",
+      "entityType": "columns",
+      "table": "savedSearchConditions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "collectionID",
+      "entityType": "columns",
+      "table": "deletedCollections"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "deletedItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "savedSearchID",
+      "entityType": "columns",
+      "table": "deletedSearches"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "userID",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "groupID",
+      "entityType": "columns",
+      "table": "groups"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "groupItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "publicationsItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "retractedItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "fulltextItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wordID",
+      "entityType": "columns",
+      "table": "fulltextWords"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wordID",
+      "entityType": "columns",
+      "table": "fulltextItemWords"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "syncCache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "syncObjectTypeID",
+      "entityType": "columns",
+      "table": "syncDeleteLog"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "syncQueue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "storageDeleteLog"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "proxyID",
+      "entityType": "columns",
+      "table": "proxies"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hostID",
+      "entityType": "columns",
+      "table": "proxyHosts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "predicateID",
+      "entityType": "columns",
+      "table": "relationPredicates"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "customItemTypeID",
+      "entityType": "columns",
+      "table": "customItemTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "customFieldID",
+      "entityType": "columns",
+      "table": "customFields"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "customItemTypeID",
+      "entityType": "columns",
+      "table": "customItemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "customItemTypeID",
+      "entityType": "columns",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fileName",
+      "entityType": "columns",
+      "table": "translatorCache"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "a",
+      "entityType": "columns",
+      "table": "dbDebug1"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "regex",
+      "entityType": "columns",
+      "table": "fieldFormats"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "charset",
+      "entityType": "columns",
+      "table": "charsets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fileType",
+      "entityType": "columns",
+      "table": "fileTypes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "mimeType",
+      "entityType": "columns",
+      "table": "fileTypeMimeTypes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "syncObjectTypes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "typeName",
+      "entityType": "columns",
+      "table": "itemTypes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "typeName",
+      "entityType": "columns",
+      "table": "itemTypesCombined"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldName",
+      "entityType": "columns",
+      "table": "fields"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldName",
+      "entityType": "columns",
+      "table": "fieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "itemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "itemTypeFieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "baseFieldID",
+      "entityType": "columns",
+      "table": "baseFieldMappings"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "baseFieldID",
+      "entityType": "columns",
+      "table": "baseFieldMappingsCombined"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "creatorType",
+      "entityType": "columns",
+      "table": "creatorTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "creatorTypeID",
+      "entityType": "columns",
+      "table": "itemTypeCreatorTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "version"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "settings"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "syncedSettings"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemTypeID",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "itemDataValues"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "itemData"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parentItemID",
+      "entityType": "columns",
+      "table": "itemNotes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parentItemID",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parentItemID",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "predicateID",
+      "entityType": "columns",
+      "table": "itemRelations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tagID",
+      "entityType": "columns",
+      "table": "itemTags"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "firstName",
+      "entityType": "columns",
+      "table": "creators"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "creatorID",
+      "entityType": "columns",
+      "table": "itemCreators"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "collectionName",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "collectionItems"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "predicateID",
+      "entityType": "columns",
+      "table": "collectionRelations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "guid",
+      "entityType": "columns",
+      "table": "feedItems"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "savedSearchName",
+      "entityType": "columns",
+      "table": "savedSearches"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "searchConditionID",
+      "entityType": "columns",
+      "table": "savedSearchConditions"
+    },
+    {
+      "type": "",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "dateDeleted",
+      "entityType": "columns",
+      "table": "deletedCollections"
+    },
+    {
+      "type": "",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "dateDeleted",
+      "entityType": "columns",
+      "table": "deletedItems"
+    },
+    {
+      "type": "",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "dateDeleted",
+      "entityType": "columns",
+      "table": "deletedSearches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "groups"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "createdByUserID",
+      "entityType": "columns",
+      "table": "groupItems"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "data",
+      "entityType": "columns",
+      "table": "retractedItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "indexedPages",
+      "entityType": "columns",
+      "table": "fulltextItems"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "word",
+      "entityType": "columns",
+      "table": "fulltextWords"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "itemID",
+      "entityType": "columns",
+      "table": "fulltextItemWords"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "syncCache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "syncDeleteLog"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "syncQueue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "storageDeleteLog"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "multiHost",
+      "entityType": "columns",
+      "table": "proxies"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "proxyID",
+      "entityType": "columns",
+      "table": "proxyHosts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "predicate",
+      "entityType": "columns",
+      "table": "relationPredicates"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "typeName",
+      "entityType": "columns",
+      "table": "customItemTypes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldName",
+      "entityType": "columns",
+      "table": "customFields"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "customItemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "baseFieldID",
+      "entityType": "columns",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "metadataJSON",
+      "entityType": "columns",
+      "table": "translatorCache"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "isInteger",
+      "entityType": "columns",
+      "table": "fieldFormats"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "templateItemTypeID",
+      "entityType": "columns",
+      "table": "itemTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "display",
+      "entityType": "columns",
+      "table": "itemTypesCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldFormatID",
+      "entityType": "columns",
+      "table": "fields"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label",
+      "entityType": "columns",
+      "table": "fieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hide",
+      "entityType": "columns",
+      "table": "itemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hide",
+      "entityType": "columns",
+      "table": "itemTypeFieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "baseFieldMappings"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldID",
+      "entityType": "columns",
+      "table": "baseFieldMappingsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "primaryField",
+      "entityType": "columns",
+      "table": "itemTypeCreatorTypes"
+    },
+    {
+      "type": "",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "settings"
+    },
+    {
+      "type": "",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "syncedSettings"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "dateAdded",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "valueID",
+      "entityType": "columns",
+      "table": "itemData"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "note",
+      "entityType": "columns",
+      "table": "itemNotes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "linkMode",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "object",
+      "entityType": "columns",
+      "table": "itemRelations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "itemTags"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastName",
+      "entityType": "columns",
+      "table": "creators"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "creatorTypeID",
+      "entityType": "columns",
+      "table": "itemCreators"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "NULL",
+      "generated": null,
+      "name": "parentCollectionID",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "orderIndex",
+      "entityType": "columns",
+      "table": "collectionItems"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "object",
+      "entityType": "columns",
+      "table": "collectionRelations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "readTime",
+      "entityType": "columns",
+      "table": "feedItems"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "clientDateModified",
+      "entityType": "columns",
+      "table": "savedSearches"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "condition",
+      "entityType": "columns",
+      "table": "savedSearchConditions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "editable",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "groups"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastModifiedByUserID",
+      "entityType": "columns",
+      "table": "groupItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "flag",
+      "entityType": "columns",
+      "table": "retractedItems"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "totalPages",
+      "entityType": "columns",
+      "table": "fulltextItems"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "syncObjectTypeID",
+      "entityType": "columns",
+      "table": "syncCache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "syncDeleteLog"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "syncObjectTypeID",
+      "entityType": "columns",
+      "table": "syncQueue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "dateDeleted",
+      "entityType": "columns",
+      "table": "storageDeleteLog"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "autoAssociate",
+      "entityType": "columns",
+      "table": "proxies"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hostname",
+      "entityType": "columns",
+      "table": "proxyHosts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label",
+      "entityType": "columns",
+      "table": "customItemTypes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label",
+      "entityType": "columns",
+      "table": "customFields"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "customFieldID",
+      "entityType": "columns",
+      "table": "customItemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "customFieldID",
+      "entityType": "columns",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastModifiedTime",
+      "entityType": "columns",
+      "table": "translatorCache"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "display",
+      "entityType": "columns",
+      "table": "itemTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "custom",
+      "entityType": "columns",
+      "table": "itemTypesCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldFormatID",
+      "entityType": "columns",
+      "table": "fieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "orderIndex",
+      "entityType": "columns",
+      "table": "itemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "orderIndex",
+      "entityType": "columns",
+      "table": "itemTypeFieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "syncedSettings"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "dateModified",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "title",
+      "entityType": "columns",
+      "table": "itemNotes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "contentType",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "authorName",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fieldMode",
+      "entityType": "columns",
+      "table": "creators"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "orderIndex",
+      "entityType": "columns",
+      "table": "itemCreators"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "clientDateModified",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastUpdate",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "translatedTime",
+      "entityType": "columns",
+      "table": "feedItems"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "savedSearches"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "operator",
+      "entityType": "columns",
+      "table": "savedSearchConditions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "filesEditable",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "description",
+      "entityType": "columns",
+      "table": "groups"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "indexedChars",
+      "entityType": "columns",
+      "table": "fulltextItems"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "syncCache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "dateDeleted",
+      "entityType": "columns",
+      "table": "syncDeleteLog"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastCheck",
+      "entityType": "columns",
+      "table": "syncQueue"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "scheme",
+      "entityType": "columns",
+      "table": "proxies"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "display",
+      "entityType": "columns",
+      "table": "customItemTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hide",
+      "entityType": "columns",
+      "table": "customItemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "custom",
+      "entityType": "columns",
+      "table": "fieldsCombined"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "synced",
+      "entityType": "columns",
+      "table": "syncedSettings"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "clientDateModified",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "charsetID",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "text",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "TIMESTAMP",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastCheck",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "savedSearches"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "savedSearchConditions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "groups"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "totalChars",
+      "entityType": "columns",
+      "table": "fulltextItems"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "data",
+      "entityType": "columns",
+      "table": "syncCache"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tries",
+      "entityType": "columns",
+      "table": "syncQueue"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "icon",
+      "entityType": "columns",
+      "table": "customItemTypes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "orderIndex",
+      "entityType": "columns",
+      "table": "customItemTypeFields"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "libraryID",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "path",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "comment",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastCheckError",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "savedSearches"
+    },
+    {
+      "type": "NONE",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "required",
+      "entityType": "columns",
+      "table": "savedSearchConditions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "storageVersion",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "fulltextItems"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "syncState",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "color",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cleanupReadAfter",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "synced",
+      "entityType": "columns",
+      "table": "savedSearches"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "lastSync",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "synced",
+      "entityType": "columns",
+      "table": "fulltextItems"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storageModTime",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "pageLabel",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "synced",
+      "entityType": "columns",
+      "table": "collections"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cleanupUnreadAfter",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "archived",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "synced",
+      "entityType": "columns",
+      "table": "items"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storageHash",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sortIndex",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "refreshInterval",
+      "entityType": "columns",
+      "table": "feeds"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "isAdmin",
+      "entityType": "columns",
+      "table": "libraries"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastProcessedModificationTime",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lastRead",
+      "entityType": "columns",
+      "table": "itemAttachments"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "isExternal",
+      "entityType": "columns",
+      "table": "itemAnnotations"
+    },
+    {
+      "columns": ["fileTypeID"],
+      "tableTo": "fileTypes",
+      "columnsTo": ["fileTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_fileTypeMimeTypes_fileTypeID_fileTypes_fileTypeID_fk",
+      "entityType": "fks",
+      "table": "fileTypeMimeTypes"
+    },
+    {
+      "columns": ["fieldFormatID"],
+      "tableTo": "fieldFormats",
+      "columnsTo": ["fieldFormatID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_fields_fieldFormatID_fieldFormats_fieldFormatID_fk",
+      "entityType": "fks",
+      "table": "fields"
+    },
+    {
+      "columns": ["fieldID"],
+      "tableTo": "fields",
+      "columnsTo": ["fieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemTypeFields_fieldID_fields_fieldID_fk",
+      "entityType": "fks",
+      "table": "itemTypeFields"
+    },
+    {
+      "columns": ["itemTypeID"],
+      "tableTo": "itemTypes",
+      "columnsTo": ["itemTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemTypeFields_itemTypeID_itemTypes_itemTypeID_fk",
+      "entityType": "fks",
+      "table": "itemTypeFields"
+    },
+    {
+      "columns": ["fieldID"],
+      "tableTo": "fields",
+      "columnsTo": ["fieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_baseFieldMappings_fieldID_fields_fieldID_fk",
+      "entityType": "fks",
+      "table": "baseFieldMappings"
+    },
+    {
+      "columns": ["baseFieldID"],
+      "tableTo": "fields",
+      "columnsTo": ["fieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_baseFieldMappings_baseFieldID_fields_fieldID_fk",
+      "entityType": "fks",
+      "table": "baseFieldMappings"
+    },
+    {
+      "columns": ["itemTypeID"],
+      "tableTo": "itemTypes",
+      "columnsTo": ["itemTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_baseFieldMappings_itemTypeID_itemTypes_itemTypeID_fk",
+      "entityType": "fks",
+      "table": "baseFieldMappings"
+    },
+    {
+      "columns": ["creatorTypeID"],
+      "tableTo": "creatorTypes",
+      "columnsTo": ["creatorTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemTypeCreatorTypes_creatorTypeID_creatorTypes_creatorTypeID_fk",
+      "entityType": "fks",
+      "table": "itemTypeCreatorTypes"
+    },
+    {
+      "columns": ["itemTypeID"],
+      "tableTo": "itemTypes",
+      "columnsTo": ["itemTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemTypeCreatorTypes_itemTypeID_itemTypes_itemTypeID_fk",
+      "entityType": "fks",
+      "table": "itemTypeCreatorTypes"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_syncedSettings_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "syncedSettings"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_items_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "items"
+    },
+    {
+      "columns": ["valueID"],
+      "tableTo": "itemDataValues",
+      "columnsTo": ["valueID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemData_valueID_itemDataValues_valueID_fk",
+      "entityType": "fks",
+      "table": "itemData"
+    },
+    {
+      "columns": ["fieldID"],
+      "tableTo": "fieldsCombined",
+      "columnsTo": ["fieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemData_fieldID_fieldsCombined_fieldID_fk",
+      "entityType": "fks",
+      "table": "itemData"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemData_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemData"
+    },
+    {
+      "columns": ["parentItemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemNotes_parentItemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemNotes"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemNotes_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemNotes"
+    },
+    {
+      "columns": ["charsetID"],
+      "tableTo": "charsets",
+      "columnsTo": ["charsetID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": true,
+      "name": "fk_itemAttachments_charsetID_charsets_charsetID_fk",
+      "entityType": "fks",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": ["parentItemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemAttachments_parentItemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemAttachments_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": ["parentItemID"],
+      "tableTo": "itemAttachments",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemAnnotations_parentItemID_itemAttachments_itemID_fk",
+      "entityType": "fks",
+      "table": "itemAnnotations"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemAnnotations_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemAnnotations"
+    },
+    {
+      "columns": ["predicateID"],
+      "tableTo": "relationPredicates",
+      "columnsTo": ["predicateID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemRelations_predicateID_relationPredicates_predicateID_fk",
+      "entityType": "fks",
+      "table": "itemRelations"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemRelations_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemRelations"
+    },
+    {
+      "columns": ["tagID"],
+      "tableTo": "tags",
+      "columnsTo": ["tagID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemTags_tagID_tags_tagID_fk",
+      "entityType": "fks",
+      "table": "itemTags"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemTags_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemTags"
+    },
+    {
+      "columns": ["creatorTypeID"],
+      "tableTo": "creatorTypes",
+      "columnsTo": ["creatorTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_itemCreators_creatorTypeID_creatorTypes_creatorTypeID_fk",
+      "entityType": "fks",
+      "table": "itemCreators"
+    },
+    {
+      "columns": ["creatorID"],
+      "tableTo": "creators",
+      "columnsTo": ["creatorID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemCreators_creatorID_creators_creatorID_fk",
+      "entityType": "fks",
+      "table": "itemCreators"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_itemCreators_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "itemCreators"
+    },
+    {
+      "columns": ["parentCollectionID"],
+      "tableTo": "collections",
+      "columnsTo": ["collectionID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_collections_parentCollectionID_collections_collectionID_fk",
+      "entityType": "fks",
+      "table": "collections"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_collections_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "collections"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_collectionItems_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "collectionItems"
+    },
+    {
+      "columns": ["collectionID"],
+      "tableTo": "collections",
+      "columnsTo": ["collectionID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_collectionItems_collectionID_collections_collectionID_fk",
+      "entityType": "fks",
+      "table": "collectionItems"
+    },
+    {
+      "columns": ["predicateID"],
+      "tableTo": "relationPredicates",
+      "columnsTo": ["predicateID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_collectionRelations_predicateID_relationPredicates_predicateID_fk",
+      "entityType": "fks",
+      "table": "collectionRelations"
+    },
+    {
+      "columns": ["collectionID"],
+      "tableTo": "collections",
+      "columnsTo": ["collectionID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_collectionRelations_collectionID_collections_collectionID_fk",
+      "entityType": "fks",
+      "table": "collectionRelations"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_feeds_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "feeds"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_feedItems_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "feedItems"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_savedSearches_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "savedSearches"
+    },
+    {
+      "columns": ["savedSearchID"],
+      "tableTo": "savedSearches",
+      "columnsTo": ["savedSearchID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_savedSearchConditions_savedSearchID_savedSearches_savedSearchID_fk",
+      "entityType": "fks",
+      "table": "savedSearchConditions"
+    },
+    {
+      "columns": ["collectionID"],
+      "tableTo": "collections",
+      "columnsTo": ["collectionID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_deletedCollections_collectionID_collections_collectionID_fk",
+      "entityType": "fks",
+      "table": "deletedCollections"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_deletedItems_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "deletedItems"
+    },
+    {
+      "columns": ["savedSearchID"],
+      "tableTo": "savedSearches",
+      "columnsTo": ["savedSearchID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_deletedSearches_savedSearchID_savedSearches_savedSearchID_fk",
+      "entityType": "fks",
+      "table": "deletedSearches"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_groups_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "groups"
+    },
+    {
+      "columns": ["lastModifiedByUserID"],
+      "tableTo": "users",
+      "columnsTo": ["userID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": true,
+      "name": "fk_groupItems_lastModifiedByUserID_users_userID_fk",
+      "entityType": "fks",
+      "table": "groupItems"
+    },
+    {
+      "columns": ["createdByUserID"],
+      "tableTo": "users",
+      "columnsTo": ["userID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": true,
+      "name": "fk_groupItems_createdByUserID_users_userID_fk",
+      "entityType": "fks",
+      "table": "groupItems"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_groupItems_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "groupItems"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_retractedItems_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "retractedItems"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_fulltextItems_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "fulltextItems"
+    },
+    {
+      "columns": ["itemID"],
+      "tableTo": "items",
+      "columnsTo": ["itemID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_fulltextItemWords_itemID_items_itemID_fk",
+      "entityType": "fks",
+      "table": "fulltextItemWords"
+    },
+    {
+      "columns": ["wordID"],
+      "tableTo": "fulltextWords",
+      "columnsTo": ["wordID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_fulltextItemWords_wordID_fulltextWords_wordID_fk",
+      "entityType": "fks",
+      "table": "fulltextItemWords"
+    },
+    {
+      "columns": ["syncObjectTypeID"],
+      "tableTo": "syncObjectTypes",
+      "columnsTo": ["syncObjectTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_syncCache_syncObjectTypeID_syncObjectTypes_syncObjectTypeID_fk",
+      "entityType": "fks",
+      "table": "syncCache"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_syncCache_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "syncCache"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_syncDeleteLog_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "syncDeleteLog"
+    },
+    {
+      "columns": ["syncObjectTypeID"],
+      "tableTo": "syncObjectTypes",
+      "columnsTo": ["syncObjectTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_syncDeleteLog_syncObjectTypeID_syncObjectTypes_syncObjectTypeID_fk",
+      "entityType": "fks",
+      "table": "syncDeleteLog"
+    },
+    {
+      "columns": ["syncObjectTypeID"],
+      "tableTo": "syncObjectTypes",
+      "columnsTo": ["syncObjectTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_syncQueue_syncObjectTypeID_syncObjectTypes_syncObjectTypeID_fk",
+      "entityType": "fks",
+      "table": "syncQueue"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_syncQueue_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "syncQueue"
+    },
+    {
+      "columns": ["libraryID"],
+      "tableTo": "libraries",
+      "columnsTo": ["libraryID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "name": "fk_storageDeleteLog_libraryID_libraries_libraryID_fk",
+      "entityType": "fks",
+      "table": "storageDeleteLog"
+    },
+    {
+      "columns": ["proxyID"],
+      "tableTo": "proxies",
+      "columnsTo": ["proxyID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_proxyHosts_proxyID_proxies_proxyID_fk",
+      "entityType": "fks",
+      "table": "proxyHosts"
+    },
+    {
+      "columns": ["customFieldID"],
+      "tableTo": "customFields",
+      "columnsTo": ["customFieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_customItemTypeFields_customFieldID_customFields_customFieldID_fk",
+      "entityType": "fks",
+      "table": "customItemTypeFields"
+    },
+    {
+      "columns": ["fieldID"],
+      "tableTo": "fields",
+      "columnsTo": ["fieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_customItemTypeFields_fieldID_fields_fieldID_fk",
+      "entityType": "fks",
+      "table": "customItemTypeFields"
+    },
+    {
+      "columns": ["customItemTypeID"],
+      "tableTo": "customItemTypes",
+      "columnsTo": ["customItemTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_customItemTypeFields_customItemTypeID_customItemTypes_customItemTypeID_fk",
+      "entityType": "fks",
+      "table": "customItemTypeFields"
+    },
+    {
+      "columns": ["customFieldID"],
+      "tableTo": "customFields",
+      "columnsTo": ["customFieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_customBaseFieldMappings_customFieldID_customFields_customFieldID_fk",
+      "entityType": "fks",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "columns": ["baseFieldID"],
+      "tableTo": "fields",
+      "columnsTo": ["fieldID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_customBaseFieldMappings_baseFieldID_fields_fieldID_fk",
+      "entityType": "fks",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "columns": ["customItemTypeID"],
+      "tableTo": "customItemTypes",
+      "columnsTo": ["customItemTypeID"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "fk_customBaseFieldMappings_customItemTypeID_customItemTypes_customItemTypeID_fk",
+      "entityType": "fks",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "columns": ["fileTypeID", "mimeType"],
+      "nameExplicit": false,
+      "name": "fileTypeMimeTypes_pk",
+      "entityType": "pks",
+      "table": "fileTypeMimeTypes"
+    },
+    {
+      "columns": ["itemTypeID", "orderIndex"],
+      "nameExplicit": false,
+      "name": "itemTypeFields_pk",
+      "entityType": "pks",
+      "table": "itemTypeFields"
+    },
+    {
+      "columns": ["itemTypeID", "orderIndex"],
+      "nameExplicit": false,
+      "name": "itemTypeFieldsCombined_pk",
+      "entityType": "pks",
+      "table": "itemTypeFieldsCombined"
+    },
+    {
+      "columns": ["itemTypeID", "baseFieldID", "fieldID"],
+      "nameExplicit": false,
+      "name": "baseFieldMappings_pk",
+      "entityType": "pks",
+      "table": "baseFieldMappings"
+    },
+    {
+      "columns": ["itemTypeID", "baseFieldID", "fieldID"],
+      "nameExplicit": false,
+      "name": "baseFieldMappingsCombined_pk",
+      "entityType": "pks",
+      "table": "baseFieldMappingsCombined"
+    },
+    {
+      "columns": ["itemTypeID", "creatorTypeID"],
+      "nameExplicit": false,
+      "name": "itemTypeCreatorTypes_pk",
+      "entityType": "pks",
+      "table": "itemTypeCreatorTypes"
+    },
+    {
+      "columns": ["setting", "key"],
+      "nameExplicit": false,
+      "name": "settings_pk",
+      "entityType": "pks",
+      "table": "settings"
+    },
+    {
+      "columns": ["setting", "libraryID"],
+      "nameExplicit": false,
+      "name": "syncedSettings_pk",
+      "entityType": "pks",
+      "table": "syncedSettings"
+    },
+    {
+      "columns": ["itemID", "fieldID"],
+      "nameExplicit": false,
+      "name": "itemData_pk",
+      "entityType": "pks",
+      "table": "itemData"
+    },
+    {
+      "columns": ["itemID", "predicateID", "object"],
+      "nameExplicit": false,
+      "name": "itemRelations_pk",
+      "entityType": "pks",
+      "table": "itemRelations"
+    },
+    {
+      "columns": ["itemID", "tagID"],
+      "nameExplicit": false,
+      "name": "itemTags_pk",
+      "entityType": "pks",
+      "table": "itemTags"
+    },
+    {
+      "columns": ["itemID", "creatorID", "creatorTypeID", "orderIndex"],
+      "nameExplicit": false,
+      "name": "itemCreators_pk",
+      "entityType": "pks",
+      "table": "itemCreators"
+    },
+    {
+      "columns": ["collectionID", "itemID"],
+      "nameExplicit": false,
+      "name": "collectionItems_pk",
+      "entityType": "pks",
+      "table": "collectionItems"
+    },
+    {
+      "columns": ["collectionID", "predicateID", "object"],
+      "nameExplicit": false,
+      "name": "collectionRelations_pk",
+      "entityType": "pks",
+      "table": "collectionRelations"
+    },
+    {
+      "columns": ["savedSearchID", "searchConditionID"],
+      "nameExplicit": false,
+      "name": "savedSearchConditions_pk",
+      "entityType": "pks",
+      "table": "savedSearchConditions"
+    },
+    {
+      "columns": ["wordID", "itemID"],
+      "nameExplicit": false,
+      "name": "fulltextItemWords_pk",
+      "entityType": "pks",
+      "table": "fulltextItemWords"
+    },
+    {
+      "columns": ["libraryID", "key", "syncObjectTypeID", "version"],
+      "nameExplicit": false,
+      "name": "syncCache_pk",
+      "entityType": "pks",
+      "table": "syncCache"
+    },
+    {
+      "columns": ["libraryID", "key", "syncObjectTypeID"],
+      "nameExplicit": false,
+      "name": "syncQueue_pk",
+      "entityType": "pks",
+      "table": "syncQueue"
+    },
+    {
+      "columns": ["libraryID", "key"],
+      "nameExplicit": false,
+      "name": "storageDeleteLog_pk",
+      "entityType": "pks",
+      "table": "storageDeleteLog"
+    },
+    {
+      "columns": ["customItemTypeID", "orderIndex"],
+      "nameExplicit": false,
+      "name": "customItemTypeFields_pk",
+      "entityType": "pks",
+      "table": "customItemTypeFields"
+    },
+    {
+      "columns": ["customItemTypeID", "baseFieldID", "customFieldID"],
+      "nameExplicit": false,
+      "name": "customBaseFieldMappings_pk",
+      "entityType": "pks",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "columns": ["fieldFormatID"],
+      "nameExplicit": true,
+      "name": "fieldFormats_pk",
+      "table": "fieldFormats",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["charsetID"],
+      "nameExplicit": true,
+      "name": "charsets_pk",
+      "table": "charsets",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["fileTypeID"],
+      "nameExplicit": true,
+      "name": "fileTypes_pk",
+      "table": "fileTypes",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["syncObjectTypeID"],
+      "nameExplicit": true,
+      "name": "syncObjectTypes_pk",
+      "table": "syncObjectTypes",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemTypeID"],
+      "nameExplicit": true,
+      "name": "itemTypes_pk",
+      "table": "itemTypes",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemTypeID"],
+      "nameExplicit": true,
+      "name": "itemTypesCombined_pk",
+      "table": "itemTypesCombined",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["fieldID"],
+      "nameExplicit": true,
+      "name": "fields_pk",
+      "table": "fields",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["fieldID"],
+      "nameExplicit": true,
+      "name": "fieldsCombined_pk",
+      "table": "fieldsCombined",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["creatorTypeID"],
+      "nameExplicit": true,
+      "name": "creatorTypes_pk",
+      "table": "creatorTypes",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["schema"],
+      "nameExplicit": true,
+      "name": "version_pk",
+      "table": "version",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "items_pk",
+      "table": "items",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["valueID"],
+      "nameExplicit": true,
+      "name": "itemDataValues_pk",
+      "table": "itemDataValues",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "itemNotes_pk",
+      "table": "itemNotes",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "itemAttachments_pk",
+      "table": "itemAttachments",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "itemAnnotations_pk",
+      "table": "itemAnnotations",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["tagID"],
+      "nameExplicit": true,
+      "name": "tags_pk",
+      "table": "tags",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["creatorID"],
+      "nameExplicit": true,
+      "name": "creators_pk",
+      "table": "creators",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["collectionID"],
+      "nameExplicit": true,
+      "name": "collections_pk",
+      "table": "collections",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["libraryID"],
+      "nameExplicit": true,
+      "name": "feeds_pk",
+      "table": "feeds",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "feedItems_pk",
+      "table": "feedItems",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["savedSearchID"],
+      "nameExplicit": true,
+      "name": "savedSearches_pk",
+      "table": "savedSearches",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["collectionID"],
+      "nameExplicit": true,
+      "name": "deletedCollections_pk",
+      "table": "deletedCollections",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "deletedItems_pk",
+      "table": "deletedItems",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["savedSearchID"],
+      "nameExplicit": true,
+      "name": "deletedSearches_pk",
+      "table": "deletedSearches",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["libraryID"],
+      "nameExplicit": true,
+      "name": "libraries_pk",
+      "table": "libraries",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["userID"],
+      "nameExplicit": true,
+      "name": "users_pk",
+      "table": "users",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["groupID"],
+      "nameExplicit": true,
+      "name": "groups_pk",
+      "table": "groups",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "groupItems_pk",
+      "table": "groupItems",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "publicationsItems_pk",
+      "table": "publicationsItems",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "retractedItems_pk",
+      "table": "retractedItems",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["itemID"],
+      "nameExplicit": true,
+      "name": "fulltextItems_pk",
+      "table": "fulltextItems",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["wordID"],
+      "nameExplicit": true,
+      "name": "fulltextWords_pk",
+      "table": "fulltextWords",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["proxyID"],
+      "nameExplicit": true,
+      "name": "proxies_pk",
+      "table": "proxies",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["hostID"],
+      "nameExplicit": true,
+      "name": "proxyHosts_pk",
+      "table": "proxyHosts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["predicateID"],
+      "nameExplicit": true,
+      "name": "relationPredicates_pk",
+      "table": "relationPredicates",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["customItemTypeID"],
+      "nameExplicit": true,
+      "name": "customItemTypes_pk",
+      "table": "customItemTypes",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["customFieldID"],
+      "nameExplicit": true,
+      "name": "customFields_pk",
+      "table": "customFields",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["fileName"],
+      "nameExplicit": true,
+      "name": "translatorCache_pk",
+      "table": "translatorCache",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["a"],
+      "nameExplicit": true,
+      "name": "dbDebug1_pk",
+      "table": "dbDebug1",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "fieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "baseFieldMappings_fieldID",
+      "entityType": "indexes",
+      "table": "baseFieldMappings"
+    },
+    {
+      "columns": [
+        {
+          "value": "baseFieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "baseFieldMappings_baseFieldID",
+      "entityType": "indexes",
+      "table": "baseFieldMappings"
+    },
+    {
+      "columns": [
+        {
+          "value": "fieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "baseFieldMappingsCombined_fieldID",
+      "entityType": "indexes",
+      "table": "baseFieldMappingsCombined"
+    },
+    {
+      "columns": [
+        {
+          "value": "baseFieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "baseFieldMappingsCombined_baseFieldID",
+      "entityType": "indexes",
+      "table": "baseFieldMappingsCombined"
+    },
+    {
+      "columns": [
+        {
+          "value": "charset",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "charsets_charset",
+      "entityType": "indexes",
+      "table": "charsets"
+    },
+    {
+      "columns": [
+        {
+          "value": "itemID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "collectionItems_itemID",
+      "entityType": "indexes",
+      "table": "collectionItems"
+    },
+    {
+      "columns": [
+        {
+          "value": "object",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "collectionRelations_object",
+      "entityType": "indexes",
+      "table": "collectionRelations"
+    },
+    {
+      "columns": [
+        {
+          "value": "predicateID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "collectionRelations_predicateID",
+      "entityType": "indexes",
+      "table": "collectionRelations"
+    },
+    {
+      "columns": [
+        {
+          "value": "synced",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "collections_synced",
+      "entityType": "indexes",
+      "table": "collections"
+    },
+    {
+      "columns": [
+        {
+          "value": "customFieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "customBaseFieldMappings_customFieldID",
+      "entityType": "indexes",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "columns": [
+        {
+          "value": "baseFieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "customBaseFieldMappings_baseFieldID",
+      "entityType": "indexes",
+      "table": "customBaseFieldMappings"
+    },
+    {
+      "columns": [
+        {
+          "value": "customFieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "customItemTypeFields_customFieldID",
+      "entityType": "indexes",
+      "table": "customItemTypeFields"
+    },
+    {
+      "columns": [
+        {
+          "value": "fieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "customItemTypeFields_fieldID",
+      "entityType": "indexes",
+      "table": "customItemTypeFields"
+    },
+    {
+      "columns": [
+        {
+          "value": "dateDeleted",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "deletedCollections_dateDeleted",
+      "entityType": "indexes",
+      "table": "deletedCollections"
+    },
+    {
+      "columns": [
+        {
+          "value": "dateDeleted",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "deletedSearches_dateDeleted",
+      "entityType": "indexes",
+      "table": "deletedItems"
+    },
+    {
+      "columns": [
+        {
+          "value": "dateDeleted",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "deletedItems_dateDeleted",
+      "entityType": "indexes",
+      "table": "deletedItems"
+    },
+    {
+      "columns": [
+        {
+          "value": "mimeType",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "fileTypeMimeTypes_mimeType",
+      "entityType": "indexes",
+      "table": "fileTypeMimeTypes"
+    },
+    {
+      "columns": [
+        {
+          "value": "fileType",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "fileTypes_fileType",
+      "entityType": "indexes",
+      "table": "fileTypes"
+    },
+    {
+      "columns": [
+        {
+          "value": "version",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "fulltextItems_version",
+      "entityType": "indexes",
+      "table": "fulltextItems"
+    },
+    {
+      "columns": [
+        {
+          "value": "synced",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "fulltextItems_synced",
+      "entityType": "indexes",
+      "table": "fulltextItems"
+    },
+    {
+      "columns": [
+        {
+          "value": "itemID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "fulltextItemWords_itemID",
+      "entityType": "indexes",
+      "table": "fulltextItemWords"
+    },
+    {
+      "columns": [
+        {
+          "value": "parentItemID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemAnnotations_parentItemID",
+      "entityType": "indexes",
+      "table": "itemAnnotations"
+    },
+    {
+      "columns": [
+        {
+          "value": "lastRead",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemAttachments_lastRead",
+      "entityType": "indexes",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": [
+        {
+          "value": "lastProcessedModificationTime",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemAttachments_lastProcessedModificationTime",
+      "entityType": "indexes",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": [
+        {
+          "value": "syncState",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemAttachments_syncState",
+      "entityType": "indexes",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": [
+        {
+          "value": "contentType",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemAttachments_contentType",
+      "entityType": "indexes",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": [
+        {
+          "value": "charsetID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemAttachments_charsetID",
+      "entityType": "indexes",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": [
+        {
+          "value": "parentItemID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemAttachments_parentItemID",
+      "entityType": "indexes",
+      "table": "itemAttachments"
+    },
+    {
+      "columns": [
+        {
+          "value": "creatorTypeID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemCreators_creatorTypeID",
+      "entityType": "indexes",
+      "table": "itemCreators"
+    },
+    {
+      "columns": [
+        {
+          "value": "valueID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemData_valueID",
+      "entityType": "indexes",
+      "table": "itemData"
+    },
+    {
+      "columns": [
+        {
+          "value": "fieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemData_fieldID",
+      "entityType": "indexes",
+      "table": "itemData"
+    },
+    {
+      "columns": [
+        {
+          "value": "parentItemID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemNotes_parentItemID",
+      "entityType": "indexes",
+      "table": "itemNotes"
+    },
+    {
+      "columns": [
+        {
+          "value": "object",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemRelations_object",
+      "entityType": "indexes",
+      "table": "itemRelations"
+    },
+    {
+      "columns": [
+        {
+          "value": "predicateID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemRelations_predicateID",
+      "entityType": "indexes",
+      "table": "itemRelations"
+    },
+    {
+      "columns": [
+        {
+          "value": "synced",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "items_synced",
+      "entityType": "indexes",
+      "table": "items"
+    },
+    {
+      "columns": [
+        {
+          "value": "tagID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemTags_tagID",
+      "entityType": "indexes",
+      "table": "itemTags"
+    },
+    {
+      "columns": [
+        {
+          "value": "creatorTypeID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemTypeCreatorTypes_creatorTypeID",
+      "entityType": "indexes",
+      "table": "itemTypeCreatorTypes"
+    },
+    {
+      "columns": [
+        {
+          "value": "fieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemTypeFields_fieldID",
+      "entityType": "indexes",
+      "table": "itemTypeFields"
+    },
+    {
+      "columns": [
+        {
+          "value": "fieldID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "itemTypeFieldsCombined_fieldID",
+      "entityType": "indexes",
+      "table": "itemTypeFieldsCombined"
+    },
+    {
+      "columns": [
+        {
+          "value": "proxyID",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "proxyHosts_proxyID",
+      "entityType": "indexes",
+      "table": "proxyHosts"
+    },
+    {
+      "columns": [
+        {
+          "value": "synced",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "savedSearches_synced",
+      "entityType": "indexes",
+      "table": "savedSearches"
+    },
+    {
+      "columns": [
+        {
+          "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "syncObjectTypes_name",
+      "entityType": "indexes",
+      "table": "syncObjectTypes"
+    },
+    {
+      "columns": [
+        {
+          "value": "schema",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "schema",
+      "entityType": "indexes",
+      "table": "version"
+    },
+    {
+      "columns": ["charset"],
+      "nameExplicit": false,
+      "name": "charsets_charset_unique",
+      "entityType": "uniques",
+      "table": "charsets"
+    },
+    {
+      "columns": ["fileType"],
+      "nameExplicit": false,
+      "name": "fileTypes_fileType_unique",
+      "entityType": "uniques",
+      "table": "fileTypes"
+    },
+    {
+      "columns": ["value"],
+      "nameExplicit": false,
+      "name": "itemDataValues_value_unique",
+      "entityType": "uniques",
+      "table": "itemDataValues"
+    },
+    {
+      "columns": ["name"],
+      "nameExplicit": false,
+      "name": "tags_name_unique",
+      "entityType": "uniques",
+      "table": "tags"
+    },
+    {
+      "columns": ["guid"],
+      "nameExplicit": false,
+      "name": "feedItems_guid_unique",
+      "entityType": "uniques",
+      "table": "feedItems"
+    },
+    {
+      "columns": ["libraryID"],
+      "nameExplicit": false,
+      "name": "groups_libraryID_unique",
+      "entityType": "uniques",
+      "table": "groups"
+    },
+    {
+      "columns": ["word"],
+      "nameExplicit": false,
+      "name": "fulltextWords_word_unique",
+      "entityType": "uniques",
+      "table": "fulltextWords"
+    },
+    {
+      "columns": ["predicate"],
+      "nameExplicit": false,
+      "name": "relationPredicates_predicate_unique",
+      "entityType": "uniques",
+      "table": "relationPredicates"
+    },
+    {
+      "columns": ["url"],
+      "nameExplicit": false,
+      "name": "feeds_url_unique",
+      "entityType": "uniques",
+      "table": "feeds"
+    }
+  ],
+  "renames": []
+}
