@@ -1,0 +1,15 @@
+# Bootstrap a freshly created worktree the same way `mise run init` bootstraps
+# a clone: trust mise config, init submodules, install deps, copy .env* files
+# from the primary worktree, build workspace packages.
+#
+# Runs blocking (pre-start, not post-start) so the agent that triggered
+# `wt switch --create` — including the Claude Code worktrunk plugin's
+# WorktreeCreate hook — sees a fully-initialized worktree before its first
+# command. post-start is unconditionally background per worktrunk's hook
+# model (https://worktrunk.dev/hook/), so it cannot be used here.
+pre-start = "mise trust && mise run init {{ primary_worktree_path }}"
+
+# Deinit submodules before `git worktree remove` runs so its untracked-file
+# check passes — otherwise removal demands `--force`, which the Claude Code
+# WorktreeRemove plugin path doesn't pass.
+pre-remove = "git submodule deinit --force --all"

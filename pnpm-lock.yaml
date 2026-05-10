@@ -134,6 +134,21 @@ importers:
         specifier: 2.29.4
         version: 2.29.4
 
+  packages/scripts:
+    devDependencies:
+      '@types/node-25':
+        specifier: npm:@types/node@^25.6.2
+        version: '@types/node@25.6.2'
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260421.2
+      '@zotlit/config':
+        specifier: workspace:*
+        version: link:../config
+      zx:
+        specifier: ^8.8.5
+        version: 8.8.5
+
   packages/shared:
     devDependencies:
       '@typescript/native-preview':
@@ -1486,6 +1501,11 @@ packages:
   w3c-keyname@2.2.8:
     resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
 
+  zx@8.8.5:
+    resolution: {integrity: sha512-SNgDF5L0gfN7FwVOdEFguY3orU5AkfFZm9B5YSHog/UDHv+lvmd82ZAsOenOkQixigwH2+yyH198AwNdKhj+RA==}
+    engines: {node: '>= 12.17.0'}
+    hasBin: true
+
 snapshots:
 
   '@babel/generator@8.0.0-rc.4':
@@ -2356,3 +2376,5 @@ snapshots:
       jiti: 2.7.0
 
   w3c-keyname@2.2.8: {}
+
+  zx@8.8.5: {}

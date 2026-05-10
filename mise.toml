@@ -2,6 +2,7 @@ min_version = "2024.9.5"
 
 [tools]
 node = "26"
+"npm:zx" = "8"
 
 [hooks]
 postinstall = 'npx corepack enable'
@@ -11,3 +12,7 @@ experimental = true
 
 [env]
 _.path = ['{{config_root}}/node_modules/.bin']
+
+[tasks.init]
+description = "Bootstrap a fresh clone: trust mise, init submodules, install deps; pass a primary-worktree path to also copy .env* files"
+run = "zx packages/scripts/scripts/init.ts"

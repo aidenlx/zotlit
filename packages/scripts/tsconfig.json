@@ -1,12 +1,10 @@
 {
   "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.node26"],
   "compilerOptions": {
-    "noEmit": true,
-    "allowJs": true,
-    "checkJs": true,
     "isolatedDeclarations": false,
+    "noEmit": true,
     "types": ["node-25"]
   },
-  "include": ["./scripts/**/*.js", "vite.config.ts"],
-  "exclude": ["./node_modules", "./src/**/*"]
+  "include": ["./scripts/**/*.ts", "./src/**/*.ts"],
+  "exclude": ["./node_modules"]
 }
