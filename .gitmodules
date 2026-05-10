@@ -1,0 +1,4 @@
+[submodule "packages/obsidian-api"]
+	path = packages/obsidian-api
+	url = https://github.com/obsidianmd/obsidian-api
+	branch = master
