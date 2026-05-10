@@ -63,8 +63,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/config
       obsidian:
-        specifier: ^1.11.4
-        version: 1.12.3(@codemirror/state@6.5.0)(@codemirror/view@6.38.6)
+        specifier: workspace:*
+        version: link:../../packages/obsidian-api
       oxlint:
         specifier: 'catalog:'
         version: 1.63.0(oxlint-tsgolint@0.22.1)
@@ -118,6 +118,21 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
+
+  packages/obsidian-api:
+    dependencies:
+      '@codemirror/state':
+        specifier: 6.5.0
+        version: 6.5.0
+      '@codemirror/view':
+        specifier: 6.38.6
+        version: 6.38.6
+      '@types/codemirror':
+        specifier: 5.60.8
+        version: 5.60.8
+      moment:
+        specifier: 2.29.4
+        version: 2.29.4
 
   packages/shared:
     devDependencies:
@@ -1268,12 +1283,6 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
-  obsidian@1.12.3:
-    resolution: {integrity: sha512-HxWqe763dOqzXjnNiHmAJTRERN8KILBSqxDSEqbeSr7W8R8Jxezzbca+nz1LiiqXnMpM8lV2jzAezw3CZ4xNUw==}
-    peerDependencies:
-      '@codemirror/state': 6.5.0
-      '@codemirror/view': 6.38.6
-
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
 
@@ -2138,13 +2147,6 @@ snapshots:
   moment@2.29.4: {}
 
   nanoid@3.3.12: {}
-
-  obsidian@1.12.3(@codemirror/state@6.5.0)(@codemirror/view@6.38.6):
-    dependencies:
-      '@codemirror/state': 6.5.0
-      '@codemirror/view': 6.38.6
-      '@types/codemirror': 5.60.8
-      moment: 2.29.4
 
   obug@2.1.1: {}
 

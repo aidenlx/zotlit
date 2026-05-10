@@ -18,6 +18,8 @@ export default defineConfig({
     "pnpm-lock.yaml",
     ".agents/**",
     ".claude/**",
+    "tests/zt-vault/**",
+    "packages/obsidian-api/**",
   ],
   overrides: [
     {
