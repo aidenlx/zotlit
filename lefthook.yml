@@ -2,8 +2,7 @@ pre-commit:
   piped: true
   commands:
     format:
-      glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,md,mdx,yml,yaml,html,css,scss}"
-      run: mise exec -- oxfmt {staged_files}
+      run: mise exec -- oxfmt --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
     lint:
       glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
