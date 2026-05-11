@@ -50,6 +50,11 @@ Per-package tasks: use pnpm filters, e.g.:
 - Bias against over-engineering: avoid speculative layers, one-caller helper files, generic plumbing, and exported DTOs/types that do not clarify a real boundary.
 - When reviewing designs or code, call out unnecessary abstraction and suggest the smallest maintainable alternative.
 
+### Comments
+
+- Prefer code over comments: use clear logic and naming to express intent, so the implementation reads as documentation.
+- Use JSDoc on functions, methods, and key variables when additional detail (contracts, units, invariants, non-obvious rationale) actually helps a reader.
+
 ### Separate pure logic from stateful orchestration
 
 Default to one cohesive module. Extract pure helpers only when the split removes real complexity from stateful orchestration, makes meaningful edge cases easier to test, or matches an existing local pattern. Pure helpers take all inputs as args, return plain results, hold no state, perform no I/O, and never import the orchestrator. Dependencies flow one direction (leaves → root); no cycles, no peer imports between same-level helpers.
