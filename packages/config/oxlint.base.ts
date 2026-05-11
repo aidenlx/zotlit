@@ -9,6 +9,7 @@ export default defineConfig({
 
     "no-param-reassign": "error",
     "default-param-last": "error",
+    "max-params": ["error", { max: 3 }],
     "no-else-return": "error",
     "prefer-template": "warn",
     "no-useless-concat": "error",
