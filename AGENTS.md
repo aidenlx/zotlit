@@ -44,23 +44,31 @@ Per-package tasks: use pnpm filters, e.g.:
 
 ## Code patterns
 
+### Simplicity
+
+- Prefer KISS implementations: keep code local and direct unless abstraction has a concrete payoff.
+- Bias against over-engineering: avoid speculative layers, one-caller helper files, generic plumbing, and exported DTOs/types that do not clarify a real boundary.
+- When reviewing designs or code, call out unnecessary abstraction and suggest the smallest maintainable alternative.
+
 ### Separate pure logic from stateful orchestration
 
-When a module is non-trivial, push as much logic as possible into **pure functions** in sibling files, and let the stateful entry module stay a thin orchestrator over them. Pure helpers take all inputs as args, return plain results, hold no state, perform no I/O, and never import the orchestrator. Dependencies flow one direction (leaves → root); no cycles, no peer imports between same-level helpers.
+Default to one cohesive module. Extract pure helpers only when the split removes real complexity from stateful orchestration, makes meaningful edge cases easier to test, or matches an existing local pattern. Pure helpers take all inputs as args, return plain results, hold no state, perform no I/O, and never import the orchestrator. Dependencies flow one direction (leaves → root); no cycles, no peer imports between same-level helpers.
 
-Typical moves:
+Use the smallest useful split:
 
-- Helpers stay testable without instantiating the orchestrator or mocking I/O. Integration tests through the orchestrator cover wiring; unit tests at each helper cover edge cases.
-- If you split, the entry module re-exports the public surface so consumers still have a single import path.
+- Prefer private functions or private class methods before creating sibling files.
+- Do not create a new file just to make an entry module look like a thin orchestrator.
+- Do not introduce exported DTOs/types that are only plumbing for one caller unless they clarify a real boundary.
+- If you split, keep the public import path stable by re-exporting the public surface from the entry module (aka index.ts).
 
-**Skip this when KISS says so.** Most modules don't need it. Apply only when at least one of the following is true:
+Split only when at least one of the following is true and the extraction has a clear payoff:
 
-- The file is past ~200 lines and growing.
-- The same logic appears in multiple methods.
-- A reader has to hold both orchestration and detail in their head simultaneously to follow the code.
-- The pure logic has enough edge cases that unit-testing it through the orchestrator is awkward.
+- The file is past ~250 lines and still growing because unrelated concerns are accumulating.
+- The same pure logic appears in multiple methods or modules.
+- A reader has to hold both orchestration and detailed branching in their head simultaneously to follow the code.
+- The pure logic has enough edge cases that unit-testing it through the orchestrator requires awkward mocking or setup.
 
-If none of those apply, a single file with private methods is the simpler answer — don't pre-split for hypothetical future complexity.
+If none of those apply, a single file with private methods is the simpler answer. Do not pre-split for hypothetical future complexity.
 
 ## Conventions worth knowing
 
