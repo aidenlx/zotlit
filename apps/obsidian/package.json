@@ -10,7 +10,9 @@
     "build:dev": "vite build --mode development",
     "dev": "vite build --watch --mode development",
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
-    "lint": "oxlint"
+    "typecheck:test": "tsgo --noEmit -p tsconfig.test.json",
+    "lint": "oxlint",
+    "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
   },
   "devDependencies": {
     "@types/node-22": "npm:@types/node@^22.9.0",
@@ -20,7 +22,8 @@
     "obsidian": "workspace:*",
     "oxlint": "catalog:",
     "valibot": "^1.0.0",
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "vitest": "^4.0.13"
   },
   "authorUrl": "https://github.com/aidenlx",
   "obsidian": {
