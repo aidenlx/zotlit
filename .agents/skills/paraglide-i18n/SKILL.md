@@ -1,6 +1,7 @@
 ---
 name: paraglide-i18n
 description: "How to define i18n messages using the Inlang Message Format and consume them with Paraglide JS. Use this skill whenever the user needs to write or edit translation JSON files (messages/*.json), add pluralization/gendering/variants, use number/date formatting in messages, set up Paraglide locale management, or reference Paraglide runtime APIs (m.*, getLocale, setLocale, localizeHref, LocalizedString). Also trigger when the user mentions inlang message format, paraglide messages, i18n JSON keys, or translation files in a Paraglide project."
+paths: "messages/*.json"
 ---
 
 # Paraglide JS + Inlang Message Format
@@ -40,7 +41,7 @@ Message file path is set via `plugin.inlang.messageFormat.pathPattern`:
 
 ### Workflow: adding or changing a message
 
-1. Add the key to `messages/en.json` (use `snake_case`, no hyphens — keys must be valid JS identifiers)
+1. Add the key to `messages/en.json` using `snake_case` (e.g. `settings_log_heading`). Keys must be valid JS identifiers (no hyphens, no dots).
 2. Run `pnpm --filter @zotlit/obsidian build:dev` (or `dev`) so the bundler regenerates `m.*`. Editing `messages/*.json` alone does **not** update the compiled output.
 3. Import and call: `import * as m from "@/paraglide/messages"; m.my_new_key()`
 

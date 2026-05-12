@@ -1,4 +1,19 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "hello": "world"
+  "hello": "world",
+  "settings_log_heading": "Logging",
+  "settings_log_level_name": "Log level",
+  "settings_log_level_desc": "Minimum severity to log. Choose Off to disable.",
+  "settings_log_level_off": "Off",
+  "settings_log_to_file_name": "Write logs to file",
+  "settings_log_to_file_desc": "Also append log entries to `zotlit.log.jsonl` in the plugin folder.",
+  "settings_log_open_file_name": "Open log file",
+  "settings_log_open_file_desc": "Open the current log file in the system default application.",
+  "settings_log_open_file_button": "Open",
+  "settings_log_export_name": "Save log archive",
+  "settings_log_export_desc": "Save the log file as a zip file.",
+  "settings_log_export_button": "Save zip",
+  "settings_log_to_file_required": "Enable \"Write logs to file\" first.",
+  "notice_open_log_file_failed": "Failed to open log file",
+  "notice_export_log_file_failed": "Failed to export log archive"
 }

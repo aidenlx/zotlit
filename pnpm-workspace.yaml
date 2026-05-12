@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  electron: false
   esbuild: true
   lefthook: true
 
