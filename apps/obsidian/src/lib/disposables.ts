@@ -1,3 +1,5 @@
+// oxlint-disable max-params
+
 import type {
   EventRef,
   Events,
