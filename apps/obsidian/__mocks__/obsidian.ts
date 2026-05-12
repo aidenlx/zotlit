@@ -10,6 +10,32 @@
 
 import type { Debouncer } from "obsidian";
 
+let platformIsWin: boolean | undefined;
+
+export const Platform = {
+  get isWin(): boolean {
+    if (platformIsWin === undefined) {
+      throw new Error(
+        "Platform.isWin not configured — call setMockPlatform({ isWin }) in test setup",
+      );
+    }
+    return platformIsWin;
+  },
+};
+
+/**
+ * Configure the mocked `Platform` for the current test. Mirrors the real
+ * `obsidian` module, where `Platform` is effectively read-only — tests must
+ * never assign to `Platform.isWin` directly.
+ */
+export function setMockPlatform(overrides: { isWin?: boolean }): void {
+  if (overrides.isWin !== undefined) platformIsWin = overrides.isWin;
+}
+
+export function resetMockPlatform(): void {
+  platformIsWin = undefined;
+}
+
 /**
  * Deterministic test stand-in for Obsidian's `debounce`. Unlike the real
  * implementation it does **not** use timers: the callback fires only when
@@ -40,28 +66,4 @@ export function debounce<T extends unknown[], V>(
     return cb(...args);
   };
   return debouncer;
-}
-
-/**
- * Minimal `Plugin` stand-in covering the `loadData()` / `saveData()` surface
- * used by `SettingsService`. The variadic constructor swallows the real
- * `(app, manifest)` args so tests can `new Plugin()` without fabricating an
- * `App`. Seed disk state by assigning `__data`, or swap the methods with
- * `vi.spyOn(plugin, "loadData" | "saveData")` for failure-path tests.
- */
-export class Plugin {
-  /** In-memory stand-in for the plugin's `data.json`; `null` ≡ no file. */
-  __data: unknown = null;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  constructor(..._args: unknown[]) {}
-
-  loadData(): Promise<unknown> {
-    return Promise.resolve(this.__data);
-  }
-
-  saveData(data: unknown): Promise<void> {
-    this.__data = data;
-    return Promise.resolve();
-  }
 }

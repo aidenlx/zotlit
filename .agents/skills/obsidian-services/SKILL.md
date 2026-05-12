@@ -11,13 +11,14 @@ Use the source as the canonical reference. Do not copy service/container/plugin-
 
 ## Canonical Files
 
-- `apps/obsidian/src/services/build.ts`: `Service` (abstract base class), `ServiceInitError`, `ServiceContainer`, `buildServices`, and their JSDoc.
+- `apps/obsidian/src/services/service-base.ts`: `Service` (abstract base class), `ServiceContainer`, and other utils.
+- `apps/obsidian/src/services/build.ts`: `buildServices` wiring.
 - `apps/obsidian/src/zt-main.ts`: plugin lifecycle ownership, `await using`, `stack.move()`, cleanup, and debug service access.
 - `apps/obsidian/src/lib/disposables.ts`: `Disposable` helpers for `stack.use(...)`.
 
 ## Workflow
 
-1. Open `apps/obsidian/src/services/build.ts` first. Treat its types, runtime checks, and JSDoc as authoritative.
+1. Open `apps/obsidian/src/services/service-base.ts` first for `Service`/`ServiceContainer`/`ServiceInitError` definitions and JSDoc. Open `apps/obsidian/src/services/build.ts` to see how `buildServices` wires services through `container.use(...)`. Treat both as authoritative.
 2. Open `apps/obsidian/src/zt-main.ts` before changing plugin load/unload behavior. Keep it a thin lifecycle shell.
 3. For a new service, create `apps/obsidian/src/services/<service-name>/service.ts`.
 4. Co-locate the service deps interface with the service class. Use concrete class types via `import type` for upstream services.
@@ -28,7 +29,7 @@ Use the source as the canonical reference. Do not copy service/container/plugin-
 
 ## Service Rules
 
-- Services `extend Service` from `services/build.ts`. The base class owns `[Symbol.asyncDispose]` and the `await ready` → `disposeAsync` ordering; subclasses must not override `[Symbol.asyncDispose]`.
+- Services `extend Service` from `services/service-base.ts`. The base class owns `[Symbol.asyncDispose]` and the `await ready` → `disposeAsync` ordering; subclasses must not override `[Symbol.asyncDispose]`.
 - `Service` is generic in the `ready` resolve type. Use plain `extends Service` for startup-only services whose `ready` resolves to `void`; use `extends Service<State>` when `#load()` returns loaded resources/state.
 - Do not introduce an Obsidian `Component` subclass, a DI library, or any other runtime dependency for service wiring.
 - Constructors call `super()`, store deps, and start startup by assigning `ready` (typically `this.ready = this.#load()`). They must not synchronously acquire resources or throw after startup begins.
@@ -67,7 +68,7 @@ The shape below shows the required surface of a `Service` subclass. It is a stru
 Async service with deps and acquired resources:
 
 ```ts
-import { Service } from "../build";
+import { Service } from "../service-base";
 import type { SettingsService } from "../settings/service";
 
 interface DatabaseState {
