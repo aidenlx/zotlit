@@ -9,6 +9,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",
+    "./nanoevents": "./dist/nanoevents.mjs",
     "./temporal": "./dist/temporal.mjs",
     "./package.json": "./package.json"
   },
