@@ -8,6 +8,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
+    "./temporal": "./dist/temporal.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -15,7 +16,11 @@
     "dev": "tsdown --watch",
     "typecheck": "tsgo --noEmit"
   },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1"
+  },
   "devDependencies": {
+    "@types/node-25": "npm:@types/node@^25.6.2",
     "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",

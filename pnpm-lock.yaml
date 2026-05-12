@@ -93,13 +93,13 @@ importers:
 
   packages/db:
     dependencies:
+      '@zotlit/shared':
+        specifier: workspace:*
+        version: link:../shared
       drizzle-orm:
         specifier: 'catalog:'
         version: 1.0.0-rc.2(valibot@1.4.0)
     devDependencies:
-      '@js-temporal/polyfill':
-        specifier: ^0.5.1
-        version: 0.5.1
       '@types/node-22':
         specifier: npm:@types/node@^22.9.0
         version: '@types/node@22.19.17'
@@ -153,7 +153,14 @@ importers:
         version: 8.8.5
 
   packages/shared:
+    dependencies:
+      '@js-temporal/polyfill':
+        specifier: ^0.5.1
+        version: 0.5.1
     devDependencies:
+      '@types/node-25':
+        specifier: npm:@types/node@^25.6.2
+        version: '@types/node@25.6.2'
       '@typescript/native-preview':
         specifier: 'catalog:'
         version: 7.0.0-dev.20260421.2
