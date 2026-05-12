@@ -12,6 +12,7 @@ export default defineConfig({
       index: "./src/index.ts",
       temporal: "./src/temporal.ts",
       "log-formatter": "./src/log-formatter.ts",
+      nanoevents: "./src/nanoevents.ts",
     },
   ],
   tsconfig: "./tsconfig.lib.json",
