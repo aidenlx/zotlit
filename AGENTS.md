@@ -60,12 +60,9 @@ Per-package tasks: use pnpm filters, e.g.:
 
 ### Logging
 
-Use [LogTape](https://logtape.org) for all runtime logging — never `console.log` / `console.info` / `console.debug` / `console.warn` / `console.error` in feature code.
+Use LogTape for all runtime logging — never `console.log` / `console.info` / `console.debug` / `console.warn` / `console.error` in feature code.
 
-Categories form a hierarchy rooted at the workspace name:
-
-- App code in `apps/obsidian` → `["zotlit", "obsidian", ...]`. Import `getLogger` from `@/lib/log` (a thin wrapper around `["zotlit", "obsidian"]`).
-- Library packages (`@zotlit/shared`, `@zotlit/db`, etc.) → `["zotlit", "<package>", ...]`. Import `getLogger` directly from `@logtape/logtape`: `getLogger(["zotlit", "shared", "feature"])`. Do **not** depend on the obsidian app's wrapper.
+Categories form a hierarchy rooted at the workspace name: `["zotlit", "<workspace>", ...]`. See each package's `AGENTS.md` for the import pattern.
 
 Library packages must **never** call `configure()` — that is the application's job. Libraries only `getLogger()`. The obsidian app owns `configure()` via `LoggingService`.
 
@@ -78,6 +75,7 @@ logger.error("Failed to sync attachment", { itemKey, error });
 
 // Avoid — opaque blob
 logger.info(`Indexed ${count} items in ${durationMs}ms`);
+logger.info`Indexed ${count} items in ${durationMs}ms`;
 ```
 
 For expensive context, pass a lazy callback so the work is skipped when the level is filtered:
@@ -91,9 +89,7 @@ logger.debug("Stats computed", () => ({
 
 ### i18n
 
-User-facing strings go through Paraglide JS — compile-time, tree-shakable message functions sourced from `messages/{locale}.json` at the repo root.
-
-Use `snake_case` for message keys (e.g. `settings_log_heading`). Keys must be valid JS identifiers — no hyphens, no dots. Group by UI section with a stable prefix that matches the heading (`settings_log_*`, `settings_template_general_*`, etc.); notices use the `notice_*` prefix.
+User-facing strings go through Paraglide JS. sourced from `messages/{locale}.json`.
 
 Run `/paraglide-i18n` skill for related task
 
