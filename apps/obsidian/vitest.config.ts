@@ -9,8 +9,8 @@ export default defineConfig({
       // The published `obsidian` package is types-only; redirect runtime
       // imports to our local mock so tests can `import { ... } from "obsidian"`.
       obsidian: resolve(here, "__mocks__/obsidian.ts"),
-      "@": resolve(here, "src"),
     },
+    tsconfigPaths: true,
   },
   define: {
     __DEV__: JSON.stringify(true),

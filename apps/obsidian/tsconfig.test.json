@@ -8,7 +8,8 @@
     "isolatedDeclarations": false,
     "types": ["node-22"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@mock/*": ["./__mocks__/*"]
     }
   },
   "include": ["./src/**/*.ts", "./__mocks__/**/*.ts", "./vitest.config.ts"],

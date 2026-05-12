@@ -43,9 +43,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     resolve: {
-      alias: {
-        "@": resolve(import.meta.dirname, "src"),
-      },
+      tsconfigPaths: true,
     },
     define: {
       __DEV__: JSON.stringify(isDev),
