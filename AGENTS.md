@@ -52,6 +52,9 @@ Per-package tasks: use pnpm filters, e.g.:
 
 - Prefer code over comments: use clear logic and naming to express intent, so the implementation reads as documentation.
 - Use JSDoc on functions, methods, and key variables when additional detail (contracts, units, invariants, non-obvious rationale) actually helps a reader.
+- When documenting a function, prefer structured JSDoc tags (`@param`, `@returns`, `@throws`) over prose descriptions.
+- Drop comments that only restate what the name, type signature, or implementation already conveys (e.g. `/** Build a fresh shallow clone of X */` above a one-line spread, or `/** Throw if X */` above a method named `requireX`). Keep only the non-obvious parts: invariants, edge cases, design rationale, and "why" over "what".
+- Trim mixed JSDoc to the non-obvious parts rather than dropping the whole block. If the first sentence restates the name and the rest explains an invariant, delete the first sentence.
 
 ### Separate pure logic from stateful orchestration
 
