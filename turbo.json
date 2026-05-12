@@ -15,6 +15,9 @@
     "typecheck": {
       "dependsOn": ["transit"]
     },
+    "test": {
+      "dependsOn": ["transit"]
+    },
     "//#lint": {
       "dependsOn": ["^build"],
       "inputs": [
