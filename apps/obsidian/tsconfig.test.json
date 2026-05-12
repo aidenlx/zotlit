@@ -7,11 +7,17 @@
     "noEmit": true,
     "isolatedDeclarations": false,
     "types": ["node-22"],
+    "allowJs": true,
     "paths": {
       "@/*": ["./src/*"],
       "@mock/*": ["./__mocks__/*"]
     }
   },
-  "include": ["./src/**/*.ts", "./__mocks__/**/*.ts", "./vitest.config.ts"],
+  "include": [
+    "./src/**/*.ts",
+    "./src/paraglide/**/*.js",
+    "./__mocks__/**/*.ts",
+    "./vitest.config.ts"
+  ],
   "exclude": ["./node_modules", "./dist", "./dist-dev"]
 }
