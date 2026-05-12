@@ -8,6 +8,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
+    "./log-formatter": "./dist/log-formatter.mjs",
     "./temporal": "./dist/temporal.mjs",
     "./package.json": "./package.json"
   },
@@ -25,5 +26,8 @@
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
     "tsdown": "catalog:"
+  },
+  "peerDependencies": {
+    "@logtape/logtape": ">=2.0.0"
   }
 }

@@ -14,7 +14,11 @@
     "lint": "oxlint",
     "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
   },
+  "dependencies": {
+    "@zotlit/shared": "workspace:*"
+  },
   "devDependencies": {
+    "@logtape/logtape": "catalog:",
     "@types/node-22": "npm:@types/node@^22.9.0",
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@typescript/native-preview": "catalog:",
