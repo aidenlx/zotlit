@@ -4,12 +4,13 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    "allowJs": true,
     "isolatedDeclarations": false,
     "types": ["node-22"],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["./src/**/*.ts"],
+  "include": ["./src/**/*.ts", "./src/paraglide/**/*.js"],
   "exclude": ["./node_modules", "./dist", "./dist-dev", "./src/**/*.test.ts"]
 }

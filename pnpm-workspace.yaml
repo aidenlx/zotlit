@@ -7,6 +7,7 @@ allowBuilds:
   lefthook: true
 
 catalog:
+  "@inlang/paraglide-js": ^2.15.1
   "@logtape/logtape": ^2.0.7
   "@types/node": ^25.5.0
   "@typescript/native-preview": 7.0.0-dev.20260421.2

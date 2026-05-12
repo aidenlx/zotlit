@@ -27,6 +27,20 @@ The root category is `["zotlit", "obsidian"]`; whatever you pass becomes a child
 
 Anywhere else, use `getLogger`.
 
+## UI text (Paraglide JS)
+
+All user-facing strings come from Paraglide message functions; never hardcode UI text.
+
+```ts
+import * as m from "@/paraglide/messages";
+
+new Notice(m.notice_indexed_library({ count }));
+```
+
+- **Compilation**: `paraglideVitePlugin` in `vite.config.ts` re-emits `src/paraglide/` on every `dev`/`build`/`build:dev`. The output is gitignored, so the compiled `m.*` and `paraglide/runtime` exports do not exist yet on fresh checkout.
+
+When extending the test `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
+
 ## Testing
 
 Vitest runs in Node and resolves `"obsidian"` to a local mock via
