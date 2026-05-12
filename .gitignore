@@ -26,3 +26,10 @@ yarn-error.log*
 !.env.example
 
 .primary-worktree
+
+# Inlang regenerates a self-managed .gitignore inside project.inlang/,
+# but it only appears after the first build. Pre-ignore generated files
+# so a fresh checkout + build doesn't leave untracked files that pollute
+# git status and Turbo input hashes.
+project.inlang/*
+!project.inlang/settings.json
