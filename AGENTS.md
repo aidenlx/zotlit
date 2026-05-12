@@ -89,6 +89,12 @@ logger.debug("Stats computed", () => ({
 }));
 ```
 
+### i18n
+
+User-facing strings go through Paraglide JS — compile-time, tree-shakable message functions sourced from `messages/{locale}.json` at the repo root.
+
+Run `/paraglide-i18n` skill for related task
+
 ### Separate pure logic from stateful orchestration
 
 Default to one cohesive module. Extract pure helpers only when the split removes real complexity from stateful orchestration, makes meaningful edge cases easier to test, or matches an existing local pattern. Pure helpers take all inputs as args, return plain results, hold no state, perform no I/O, and never import the orchestrator. Dependencies flow one direction (leaves → root); no cycles, no peer imports between same-level helpers.

@@ -34,4 +34,4 @@ if (primary) {
   echo(`Wrote .primary-worktree → ${primary}`);
 }
 
-await $`turbo run build --filter=./packages/*`;
+await $`turbo run build --filter=./packages/* --filter=@zotlit/obsidian`;

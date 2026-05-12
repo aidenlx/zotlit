@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { join, resolve } from "node:path";
+import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import { defineConfig, type Plugin } from "vite";
 import { parseManifest } from "./scripts/manifest.js";
 
@@ -86,7 +87,14 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    plugins: [obsidianBuildPlugin()],
+    plugins: [
+      paraglideVitePlugin({
+        project: "../../project.inlang",
+        outdir: "./src/paraglide",
+        strategy: ["custom-obsidian", "baseLocale"],
+      }),
+      obsidianBuildPlugin(),
+    ],
   };
 });
 

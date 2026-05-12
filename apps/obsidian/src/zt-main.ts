@@ -1,6 +1,8 @@
 import { Notice, Plugin } from "obsidian";
+import { initI18n } from "./lib/i18n";
 import { buildServices } from "./services/build";
 import "./zt-main.css";
+import { m } from "./paraglide/messages";
 
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
 export default class ZotLitPlugin extends Plugin {
@@ -17,6 +19,11 @@ export default class ZotLitPlugin extends Plugin {
 
   override async onload(): Promise<void> {
     await super.onload();
+
+    // Register the Paraglide locale strategy before any service can call `m.*`.
+    initI18n();
+
+    console.log(m.hello);
 
     // Local stack gives automatic rollback if any synchronous startup wiring
     // fails before the plugin commits ownership with `stack.move()`.
