@@ -9,6 +9,7 @@
     "moduleResolution": "bundler",
     "outDir": "dist",
     "rootDir": "src",
+    "isolatedDeclarations": false,
     "types": [],
     "paths": {
       "@/*": ["./src/*"]

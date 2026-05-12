@@ -19,10 +19,10 @@
     "lint": "oxlint"
   },
   "dependencies": {
+    "@zotlit/shared": "workspace:*",
     "drizzle-orm": "catalog:"
   },
   "devDependencies": {
-    "@js-temporal/polyfill": "^0.5.1",
     "@types/node-22": "npm:@types/node@^22.9.0",
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@typescript/native-preview": "catalog:",
@@ -30,8 +30,5 @@
     "drizzle-kit": "catalog:",
     "oxlint": "catalog:",
     "tsdown": "catalog:"
-  },
-  "peerDependencies": {
-    "@js-temporal/polyfill": "^0.5.1"
   }
 }

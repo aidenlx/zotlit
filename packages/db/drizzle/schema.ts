@@ -9,7 +9,7 @@ import {
   customType,
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
-import { Temporal } from "@js-temporal/polyfill";
+import { Temporal } from "@zotlit/shared/temporal";
 
 type SqliteAnyOut =
   | null
