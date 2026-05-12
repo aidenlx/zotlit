@@ -93,6 +93,8 @@ logger.debug("Stats computed", () => ({
 
 User-facing strings go through Paraglide JS — compile-time, tree-shakable message functions sourced from `messages/{locale}.json` at the repo root.
 
+Use `snake_case` for message keys (e.g. `settings_log_heading`). Keys must be valid JS identifiers — no hyphens, no dots. Group by UI section with a stable prefix that matches the heading (`settings_log_*`, `settings_template_general_*`, etc.); notices use the `notice_*` prefix.
+
 Run `/paraglide-i18n` skill for related task
 
 ### Separate pure logic from stateful orchestration

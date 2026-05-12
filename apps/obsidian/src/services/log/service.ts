@@ -34,7 +34,7 @@ import { Service } from "../service-base";
 import type { Settings, SettingsService } from "../settings/service";
 import { createVaultFileSink } from "./vault-sink";
 
-const LOG_FILENAME = "zotlit.log.jsonl";
+export const LOG_FILENAME = "zotlit.log.jsonl";
 
 export interface LoggingServiceOptions {
   plugin: Pick<Plugin, "app" | "manifest">;
