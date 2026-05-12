@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ]
+    }
+  }
+}
