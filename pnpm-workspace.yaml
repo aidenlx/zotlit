@@ -7,6 +7,7 @@ allowBuilds:
   lefthook: true
 
 catalog:
+  "@logtape/logtape": ^2.0.7
   "@types/node": ^25.5.0
   "@typescript/native-preview": 7.0.0-dev.20260421.2
   drizzle-kit: 1.0.0-rc.2

@@ -58,6 +58,37 @@ Per-package tasks: use pnpm filters, e.g.:
 - Drop comments that only restate what the name, type signature, or implementation already conveys (e.g. `/** Build a fresh shallow clone of X */` above a one-line spread, or `/** Throw if X */` above a method named `requireX`). Keep only the non-obvious parts: invariants, edge cases, design rationale, and "why" over "what".
 - Trim mixed JSDoc to the non-obvious parts rather than dropping the whole block. If the first sentence restates the name and the rest explains an invariant, delete the first sentence.
 
+### Logging
+
+Use [LogTape](https://logtape.org) for all runtime logging — never `console.log` / `console.info` / `console.debug` / `console.warn` / `console.error` in feature code.
+
+Categories form a hierarchy rooted at the workspace name:
+
+- App code in `apps/obsidian` → `["zotlit", "obsidian", ...]`. Import `getLogger` from `@/lib/log` (a thin wrapper around `["zotlit", "obsidian"]`).
+- Library packages (`@zotlit/shared`, `@zotlit/db`, etc.) → `["zotlit", "<package>", ...]`. Import `getLogger` directly from `@logtape/logtape`: `getLogger(["zotlit", "shared", "feature"])`. Do **not** depend on the obsidian app's wrapper.
+
+Library packages must **never** call `configure()` — that is the application's job. Libraries only `getLogger()`. The obsidian app owns `configure()` via `LoggingService`.
+
+Prefer **structured** logging over interpolated strings:
+
+```ts
+// Good — fields are searchable
+logger.info("Indexed library", { count, durationMs });
+logger.error("Failed to sync attachment", { itemKey, error });
+
+// Avoid — opaque blob
+logger.info(`Indexed ${count} items in ${durationMs}ms`);
+```
+
+For expensive context, pass a lazy callback so the work is skipped when the level is filtered:
+
+```ts
+logger.debug("Stats computed", () => ({
+  result: expensive(),
+  elapsed: perf.now() - t0,
+}));
+```
+
 ### Separate pure logic from stateful orchestration
 
 Default to one cohesive module. Extract pure helpers only when the split removes real complexity from stateful orchestration, makes meaningful edge cases easier to test, or matches an existing local pattern. Pure helpers take all inputs as args, return plain results, hold no state, perform no I/O, and never import the orchestrator. Dependencies flow one direction (leaves → root); no cycles, no peer imports between same-level helpers.

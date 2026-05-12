@@ -11,6 +11,7 @@ export default defineConfig({
     {
       index: "./src/index.ts",
       temporal: "./src/temporal.ts",
+      "log-formatter": "./src/log-formatter.ts",
     },
   ],
   tsconfig: "./tsconfig.lib.json",

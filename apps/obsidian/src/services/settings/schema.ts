@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Platform } from "obsidian";
 import * as v from "valibot";
+import { getLogLevels } from "@logtape/logtape";
 
 /** JSON-safe primitives that settings values may take. */
 type SettingsPrimitive = string | number | boolean | null;
@@ -14,9 +15,7 @@ export const settingsNumber = v.pipe(v.number(), v.finite());
  * log4js `OFF`; legacy `MARK` is dropped during migration because there is no
  * LogTape equivalent.
  */
-const logLevel = v.nullable(
-  v.picklist(["trace", "debug", "info", "warning", "error", "fatal"] as const),
-);
+const logLevel = v.nullable(v.picklist(getLogLevels()));
 export type LogLevel = v.InferOutput<typeof logLevel>;
 
 /**
@@ -50,6 +49,7 @@ const serverPort = v.pipe(
 
 export const schema = v.object({
   "log.level": logLevel,
+  "log.to-file": v.boolean(),
 
   "citation.editor-suggester": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
@@ -85,6 +85,7 @@ export type Settings = v.InferOutput<typeof schema>;
  */
 export const defaults: Readonly<Settings> = Object.freeze({
   "log.level": __DEV__ ? "trace" : "info",
+  "log.to-file": false,
   "citation.editor-suggester": true,
   "citation.show-citekey-in-suggester": false,
   "note.literature-folder": "LiteratureNotes",
