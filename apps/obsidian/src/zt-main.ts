@@ -1,6 +1,7 @@
 import { Notice, Plugin } from "obsidian";
 import { initI18n } from "./lib/i18n";
 import { buildServices } from "./services/build";
+import { addDatabaseActions } from "./services/database/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import "./zt-main.css";
 
@@ -31,6 +32,8 @@ export default class ZotLitPlugin extends Plugin {
     this.addSettingTab(
       new ZotLitSettingTab({ plugin: this, settings: services.settings }),
     );
+
+    addDatabaseActions(this, { db: services.db });
 
     console.log("ZotLit loaded");
 

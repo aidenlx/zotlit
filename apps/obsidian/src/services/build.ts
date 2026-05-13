@@ -1,4 +1,5 @@
 import type ZotLitPlugin from "../zt-main";
+import { DatabaseService } from "./database/service";
 import { LoggingService } from "./log/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
@@ -29,5 +30,8 @@ export function buildServices(
     })
     .use({
       log: ({ settings }) => new LoggingService({ plugin, settings }),
+    })
+    .use({
+      db: ({ settings }) => new DatabaseService({ settings }),
     });
 }
