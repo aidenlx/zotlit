@@ -1,7 +1,7 @@
 export function normalizeVaultPath(path: string): string {
   const normalized = path
-    .replace(/\\/g, "/")
-    .replace(/\/+/g, "/")
+    .replaceAll("\\", "/")
+    .replaceAll(/\/+/g, "/")
     .replace(/^\/+/, "")
     .replace(/\/+$/, "");
   return normalized === "." ? "" : normalized;

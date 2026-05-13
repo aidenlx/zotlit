@@ -15,5 +15,6 @@ export default defineConfig({
     "no-useless-concat": "error",
 
     "unicorn/prefer-number-properties": "error",
+    "unicorn/prefer-string-replace-all": "error",
   },
 });
