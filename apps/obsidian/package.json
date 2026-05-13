@@ -18,9 +18,12 @@
   "dependencies": {
     "@zotlit/db": "workspace:*",
     "@zotlit/shared": "workspace:*",
+    "eta": "^4.6.0",
     "fflate": "^0.8.2"
   },
   "devDependencies": {
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
     "@electron/remote": "^2.1.3",
     "@inlang/paraglide-js": "catalog:",
     "@logtape/logtape": "catalog:",
