@@ -17,6 +17,20 @@
   "notice_open_log_file_failed": "Failed to open log file",
   "notice_export_log_file_failed": "Failed to export log archive",
   "command_refresh_db_name": "Refresh Zotero database",
+  "notice_db_refreshing": "Refreshing Zotero database…",
   "notice_db_refreshed": "Zotero database refreshed.",
-  "notice_db_refresh_failed": "Failed to refresh Zotero database."
+  "notice_db_refresh_failed": "Failed to refresh Zotero database.",
+  "settings_db_heading": "Database",
+  "settings_db_data_dir_name": "Zotero data folder",
+  "settings_db_data_dir_desc": "Folder containing `zotero.sqlite`.",
+  "settings_db_data_dir_browse": "Browse for folder",
+  "settings_db_data_dir_dialog_title": "Select Zotero data folder",
+  "settings_db_refresh": "Refresh now",
+  "settings_db_reset": "Reset to default",
+  "settings_db_status_loading": "Loading…",
+  "settings_db_status_refreshing": "Refreshing…",
+  "settings_db_status_degraded": "Failed to open",
+  "settings_db_status_refresh_failed": "Last refresh failed",
+  "settings_db_auto_refresh_name": "Watch for changes",
+  "settings_db_auto_refresh_desc": "Reload automatically when `zotero.sqlite` changes on disk."
 }
