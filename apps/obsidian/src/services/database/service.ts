@@ -54,6 +54,19 @@ export interface DbEvents {
   changed: () => void;
   /** Service is now degraded (no active client). */
   degraded: (error: DatabaseError) => void;
+  /**
+   * A refresh attempt failed without changing service state — the previous
+   * working client (or already-degraded condition) is retained. Distinct
+   * from `degraded`, which fires only on healthy → degraded transitions.
+   * UIs may surface the latest attempt error without invalidating cached data.
+   */
+  "refresh-failed": (error: DatabaseError) => void;
+  /**
+   * Edge transitions of refresh activity. Fires `true` when the service
+   * enters a busy state, `false` when the chain drains. Coalesced refreshes
+   * stay `true` between attempts (no flicker on trailing reruns).
+   */
+  refreshing: (active: boolean) => void;
 }
 
 export interface DatabaseServiceOptions {
@@ -89,6 +102,9 @@ export class DatabaseService extends Service<void> {
 
   #refreshInFlight: Promise<void> | null = null;
   #refreshPending = false;
+  /** Tracks `refreshing` event state separately from `#refreshInFlight` so
+   * coalesced trailing reruns don't bounce the event back to `false`. */
+  #refreshingActive = false;
   #disposed = false;
 
   readonly ready: Promise<void>;
@@ -256,11 +272,19 @@ export class DatabaseService extends Service<void> {
       this.#refreshPending = true;
       return this.#refreshInFlight;
     }
+    if (!this.#refreshingActive) {
+      this.#refreshingActive = true;
+      this.#emitter.emit("refreshing", true);
+    }
     this.#refreshInFlight = this.#runRefresh().finally(() => {
       this.#refreshInFlight = null;
-      if (this.#refreshPending) {
+      if (this.#refreshPending && !this.#disposed) {
         this.#refreshPending = false;
         void this.#scheduleRefresh();
+      } else {
+        this.#refreshPending = false;
+        this.#refreshingActive = false;
+        this.#emitter.emit("refreshing", false);
       }
     });
     return this.#refreshInFlight;
@@ -334,14 +358,20 @@ export class DatabaseService extends Service<void> {
     }
 
     if (prevClient) {
-      // Same-path failure: keep the previous client, no event.
+      // Same-path failure: keep the previous client; state unchanged.
       logger.warn("Refresh failed; keeping previous client", { error, dbPath });
+      this.#emitter.emit(
+        "refresh-failed",
+        new DatabaseError("degraded", { cause: error }),
+      );
       return;
     }
 
-    // Already degraded → stay degraded, no event re-emit.
+    // Already degraded → stay degraded; refresh attempt itself failed.
     logger.warn("Refresh failed while degraded", { error, dbPath });
-    this.#degradedError = new DatabaseError("degraded", { cause: error });
+    const dbError = new DatabaseError("degraded", { cause: error });
+    this.#degradedError = dbError;
+    this.#emitter.emit("refresh-failed", dbError);
   }
 
   #startWatcher(dbPath: string): void {

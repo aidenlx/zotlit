@@ -1,5 +1,6 @@
-import { Notice, Plugin } from "obsidian";
+import { Plugin } from "obsidian";
 import { initI18n } from "./lib/i18n";
+import { BaseNotice } from "./lib/notice";
 import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
 import { ZotLitSettingTab } from "./setting-tab";
@@ -30,7 +31,11 @@ export default class ZotLitPlugin extends Plugin {
     const { services } = buildServices(this, stack);
 
     this.addSettingTab(
-      new ZotLitSettingTab({ plugin: this, settings: services.settings }),
+      new ZotLitSettingTab({
+        plugin: this,
+        settings: services.settings,
+        db: services.db,
+      }),
     );
 
     addDatabaseActions(this, { db: services.db });
@@ -50,7 +55,7 @@ export default class ZotLitPlugin extends Plugin {
 
     void stack?.disposeAsync().catch((error: unknown) => {
       console.error("ZotLit cleanup error:", error);
-      new Notice("Failed to clean up ZotLit resources");
+      new BaseNotice("Failed to clean up ZotLit resources");
     });
   }
 }

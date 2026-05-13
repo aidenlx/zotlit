@@ -1,5 +1,6 @@
-import { Notice, type Plugin } from "obsidian";
+import type { Plugin } from "obsidian";
 
+import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { DatabaseError, type DatabaseService } from "./service";
 
@@ -19,13 +20,14 @@ export function addDatabaseActions(
     callback: async () => {
       await services.db.ready;
       try {
-        await services.db.refresh();
-        new Notice(m.notice_db_refreshed());
+        await toast.promise(services.db.refresh(), {
+          loading: m.notice_db_refreshing(),
+          success: m.notice_db_refreshed(),
+          error: m.notice_db_refresh_failed(),
+          swallowError: false,
+        });
       } catch (err) {
-        if (err instanceof DatabaseError) {
-          new Notice(m.notice_db_refresh_failed());
-          return;
-        }
+        if (err instanceof DatabaseError) return;
         throw err;
       }
     },

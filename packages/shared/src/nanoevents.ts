@@ -4,6 +4,31 @@
  * Original implementation © 2016 Andrey Sitnik <andrey@sitnik.ru>, MIT License.
  * Source: https://github.com/ai/nanoevents
  *
+ * ## Event naming
+ *
+ * Use `dash-case` for event names. Single words stay bare (`"changed"`,
+ * `"degraded"`); multi-word names use hyphens (`"refresh-failed"`, not
+ * `"refreshFailed"` or `"refresh_failed"`). Matches DOM event conventions
+ * and keeps event names visually distinct from method/property identifiers
+ * in calling code.
+ *
+ * ## Example
+ *
+ * ```ts
+ * interface MyEvents {
+ *   changed: () => void;
+ *   "refresh-failed": (error: Error) => void;
+ * }
+ *
+ * const emitter = createNanoEvents<MyEvents>();
+ *
+ * const off = emitter.on("refresh-failed", (err) => {
+ *   console.log("oops", err);
+ * });
+ *
+ * emitter.emit("refresh-failed", new Error("boom"));
+ * off();
+ * ```
  */
 
 interface EventsMap {
