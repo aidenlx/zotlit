@@ -67,6 +67,10 @@ v1 kept a denormalized item map per library inside the worker (`lib/db-worker/sr
 - `apps/zotero` companion plugin itself
 - Template preview view, item details view
 - Note import (HTML → md) — companion-independent; can slot in opportunistically
+- **Template service follow-ups** (Stage 1 enhancements, not alpha-blocking):
+  - Field-name completion in `EtaSuggest` (`it.title`, `it.citekey`, `it.creators`, `it.tags`, ...) — needs Stage 5 helper type definitions to drive the suggestion list.
+  - `template-edited` event on `TemplateService` (nanoevents) — add when a live-preview consumer (Stage 9 annot view) actually needs to re-render on template edits; today the render-time mtime+size check covers correctness for one-shot renders.
+  - Async render path (`renderAsync`) — only if a consumer ever needs `await`-able rendering; Stage 1 is sync end-to-end.
 
 ### 3.3 Dropped
 
