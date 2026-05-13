@@ -48,6 +48,7 @@ Per-package tasks: use pnpm filters, e.g.:
 
 - Prefer KISS implementations: keep code local and direct unless abstraction has a concrete payoff.
 - Bias against over-engineering: avoid speculative layers, one-caller helper files, generic plumbing, and exported DTOs/types that do not clarify a real boundary.
+- Avoid defensive fallback code for APIs or invariants we intentionally depend on. Type or validate the expected boundary once, then use it directly; don't add speculative probes, alternate readiness heuristics, broad structural casts, or "just in case" branches unless there is a known runtime compatibility case to support.
 - When reviewing designs or code, call out unnecessary abstraction and suggest the smallest maintainable alternative.
 
 ### Comments
@@ -57,6 +58,11 @@ Per-package tasks: use pnpm filters, e.g.:
 - When documenting a function, prefer structured JSDoc tags (`@param`, `@returns`, `@throws`) over prose descriptions.
 - Drop comments that only restate what the name, type signature, or implementation already conveys (e.g. `/** Build a fresh shallow clone of X */` above a one-line spread, or `/** Throw if X */` above a method named `requireX`). Keep only the non-obvious parts: invariants, edge cases, design rationale, and "why" over "what".
 - Trim mixed JSDoc to the non-obvious parts rather than dropping the whole block. If the first sentence restates the name and the rest explains an invariant, delete the first sentence.
+
+### Regex
+
+- Use `arkregex` for regexes whose match results are parsed in TypeScript, especially named or positional capture groups. Prefer typed named captures over manual `RegExpExecArray` indexing. See `node_modules/arkregex/README.md` (in any workspace that installs it, e.g. `apps/obsidian`) for the `regex()` / `regex.as` API.
+- When building regexes from dynamic literal text, use native `RegExp.escape` instead of hand-written escaping.
 
 ### Logging
 

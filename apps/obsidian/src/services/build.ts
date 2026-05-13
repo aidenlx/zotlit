@@ -1,6 +1,7 @@
 import type ZotLitPlugin from "../zt-main";
 import { DatabaseService } from "./database/service";
 import { LoggingService } from "./log/service";
+import { NoteIndex } from "./note-index/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
@@ -38,5 +39,8 @@ export function buildServices(
     })
     .use({
       db: ({ settings }) => new DatabaseService({ settings }),
+    })
+    .use({
+      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     });
 }

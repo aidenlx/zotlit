@@ -62,6 +62,9 @@ importers:
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      arkregex:
+        specifier: ^0.0.5
+        version: 0.0.5
       eta:
         specifier: ^4.6.0
         version: 4.6.0
@@ -218,6 +221,9 @@ importers:
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
 
 packages:
+
+  '@ark/util@0.56.0':
+    resolution: {integrity: sha512-BghfRC8b9pNs3vBoDJhcta0/c1J1rsoS1+HgVUreMFPdhz/CRAKReAu57YEllNaSy98rWAdY1gE+gFup7OXpgA==}
 
   '@babel/generator@8.0.0-rc.4':
     resolution: {integrity: sha512-YZ+FuIgkj7KrIb2a2X1XiY0QYgDxAbVbYP64SjwJzOK3euCsUerzenh2oqdsmKuPSlhzmFOOklnxzHAzXagvpw==}
@@ -1123,6 +1129,9 @@ packages:
   ansis@4.2.0:
     resolution: {integrity: sha512-HqZ5rWlFjGiV0tDm3UxxgNRqsOTniqoKZu0pIAfh7TZQMGuZK+hH0drySty0si0QXj1ieop4+SkSfPZBPPkHig==}
     engines: {node: '>=14'}
+
+  arkregex@0.0.5:
+    resolution: {integrity: sha512-ncYjBdLlh5/QnVsAA8De16Tc9EqmYM7y/WU9j+236KcyYNUXogpz3sC4ATIZYzzLxwI+0sEOaQLEmLmRleaEXw==}
 
   array-timsort@1.0.3:
     resolution: {integrity: sha512-/+3GRL7dDAGEfM6TseQk/U+mi18TU2Ms9I3UlLdUMhz2hbvGNTKdj9xniwXfUqgYhHxRx0+8UnKkvlNwVU+cWQ==}
@@ -2049,6 +2058,8 @@ packages:
 
 snapshots:
 
+  '@ark/util@0.56.0': {}
+
   '@babel/generator@8.0.0-rc.4':
     dependencies:
       '@babel/parser': 8.0.0-rc.4
@@ -2671,6 +2682,10 @@ snapshots:
   acorn@8.16.0: {}
 
   ansis@4.2.0: {}
+
+  arkregex@0.0.5:
+    dependencies:
+      '@ark/util': 0.56.0
 
   array-timsort@1.0.3: {}
 

@@ -15,6 +15,7 @@ Companion plan referenced: [`DB_MIGRATE.MD`](../zotlit-v2/feat-db-query/DB_MIGRA
 - `packages/db` with `createClient` + introspected drizzle schema; only `queries/libraries.ts` exists.
 - `DatabaseService` (open / fs.watch / debounced refresh + `zotlit:refresh-db` command).
 - `TemplateService` (Eta v4 renderer, embedded defaults, vault template watcher, editor helpers).
+- `NoteIndex` (metadata-cache indices for `zotero-key`, `citekey`, and annotation block IDs).
 - `packages/shared` with `nanoevents`, `Temporal`, `log-formatter`.
 - Settings schema already covers v1 keys: `log.*`, `zotero.*`, `citation.*`, `note.literature-folder`, `server.*`, `template.*`, `img-excerpt.*` (UI for most still missing).
 
@@ -94,7 +95,7 @@ Each stage produces a shippable plugin; queries are added in the stage that firs
 | --- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0   | (done) Settings, Logging, DatabaseService Stage 1, `queries/libraries` | —                                                                                                          | —                                                                                                                                                                           |
 | 1   | (done) **Template service**                                            | —                                                                                                          | `apps/obsidian/src/services/template/`: upstream `eta@^4`, embedded defaults, vault watcher, mtime+size compile invalidation, auto-pair, EtaSuggest                         |
-| 2   | **NoteIndex**                                                          | —                                                                                                          | Obsidian metadata index: `{itemKey → file[]}`, `{annotKey → block[]}`, `{citekey → file[]}`                                                                                 |
+| 2   | (done) **NoteIndex**                                                   | —                                                                                                          | Obsidian metadata index: `{itemKey → file[]}`, `{annotKey → block[]}`, `{citekey → file[]}`                                                                                 |
 | 3   | **Citation suggesters**                                                | `items` (by IDs, by keys, by library list), `citekey`                                                      | Native `prepareFuzzySearch`/`prepareSimpleSearch`; plain Obsidian DOM (no React); editor suggester + popup modal + quick-switch wiring                                      |
 | 4   | **NoteParser**                                                         | `attachments`, `notes`, `annotations` (+ `json-columns.ts` custom type for `position`/`sortIndex`), `tags` | Turndown + Zotero HTML rules                                                                                                                                                |
 | 5   | **NoteFeatures (create + update)**                                     | —                                                                                                          | Commands: insert citation, update note, overwrite-update, quick-switch; port v1 `update-note.ts` incremental annotation merge using CodeMirror `EditorState`                |
@@ -117,9 +118,13 @@ Each stage produces a shippable plugin; queries are added in the stage that firs
   - Analysis: `/Users/aidenlx/repo/zotlit-repo/eta-fork-analysis.md` — concludes the fork can be dropped. The only fork behavior carried forward is compile-cache freshness: v2 tracks `{mtime, size}` in a `Map` parallel to Eta's `templatesSync` cache and removes stale compiled functions before render.
   - v1 templates pass arrays through `include()`. Eta 4's default generated helper spreads include data into the parent object, so v2 patches the generated function string with a tiny plugin to pass include data through directly.
 
-**Stage 2 — NoteIndex**
+**Stage 2 — NoteIndex (done)**
 
-- `apps/obsidian/src/services/note-index/service.ts`: `getNotesFor(item)`, `getBlocksFor({file?, item?})`, `getBlocksIn(file)`, `reload()`. Listens to `metadataCache.on("changed"|"deleted"|"resolved")`.
+- `apps/obsidian/src/services/note-index/service.ts`: `NoteIndex`, `formatItemKey`, `isLiteratureNote`, `getNotesByItemKey(indexedKey)`, `getNotesByCitekey(citekey)`, `getBlocksFor({ file?, itemKey? })`, and nanoevents `changed` / `rebuilt` subscriptions. No reload command or public `reload()` method.
+- `apps/obsidian/src/services/note-index/parse.ts`: pure frontmatter and annotation block-ID parsing/diff helpers. Block-ID parsing mirrors v1 syntax and uses `arkregex` typed captures.
+- Service wiring: `noteIndex` is registered in `services/build.ts` after `template` and `db`. Startup subscribes to `metadataCache.on("changed"|"deleted"|"resolved")` and `vault.on("rename"|"delete")`; it runs a synchronous initial scan when `metadataCache.initialized` is already true.
+- Private Obsidian API typing: `MetadataCache.initialized` and `metadataCache.on("initialized")` are declared in `apps/obsidian/src/typings/obsidian-ex.d.ts`.
+- Tests: focused parser/service Vitest coverage for initial rebuilds, no-op deltas, frontmatter item/citekey updates, item-key renames, vault renames/deletes, and `getBlocksFor` query modes.
 
 **Stage 3 — Citation suggesters**
 
