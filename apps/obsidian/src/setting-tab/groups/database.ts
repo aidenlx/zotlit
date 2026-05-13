@@ -1,4 +1,9 @@
-import { type ExtraButtonComponent, SettingGroup } from "obsidian";
+import { getLibraries, type Library } from "@zotlit/db";
+import {
+  type DropdownComponent,
+  type ExtraButtonComponent,
+  SettingGroup,
+} from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
@@ -20,18 +25,39 @@ export interface DatabaseSectionContext extends SectionContext {
   db: DatabaseService;
 }
 
+interface RowContext {
+  group: SettingGroup;
+  settings: SettingsService;
+  db: DatabaseService;
+}
+
 export function databaseSection(ctx: DatabaseSectionContext): Disposable {
   using stack = new DisposableStack();
 
-  const snapshot = ctx.settings.current;
-  if (!snapshot) {
+  if (!ctx.settings.current) {
     throw new Error("databaseSection: settings have not loaded yet");
   }
 
   const group = new SettingGroup(ctx.containerEl).setHeading(
     m.settings_db_heading(),
   );
+  const rowCtx: RowContext = { group, settings: ctx.settings, db: ctx.db };
 
+  stack.use(renderDataDirRow(rowCtx));
+  stack.use(renderAutoRefreshRow(rowCtx));
+  stack.use(renderLibraryRow(rowCtx));
+
+  return stack.move();
+}
+
+/**
+ * Data dir row: path display + reset/browse/refresh buttons + an inline status
+ * line that surfaces loading / refreshing / degraded / refresh-failed states.
+ */
+function renderDataDirRow(ctx: RowContext): Disposable {
+  using stack = new DisposableStack();
+
+  const snapshot = ctx.settings.current!;
   const defaultDir = resolveZoteroDataDir(null);
 
   const desc = document.createDocumentFragment();
@@ -49,7 +75,7 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
   let refreshButton: ExtraButtonComponent | undefined;
   let resetButton: ExtraButtonComponent | undefined;
 
-  group.addSetting((setting) => {
+  ctx.group.addSetting((setting) => {
     setting
       .setName(m.settings_db_data_dir_name())
       .setDesc(desc)
@@ -82,17 +108,6 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
               error: m.notice_db_refresh_failed(),
             });
           });
-      });
-  });
-
-  group.addSetting((setting) => {
-    setting
-      .setName(m.settings_db_auto_refresh_name())
-      .setDesc(m.settings_db_auto_refresh_desc())
-      .addToggle((toggle) => {
-        toggle.setValue(snapshot["zotero.auto-refresh"]).onChange((checked) => {
-          ctx.settings.update({ "zotero.auto-refresh": checked });
-        });
       });
   });
 
@@ -157,7 +172,6 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
       applyPath(value["zotero.data-dir"]);
     }),
   );
-
   stack.defer(
     ctx.db.on("changed", () => {
       lastRefreshFailed = false;
@@ -188,6 +202,78 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
   return stack.move();
 }
 
+/** Auto-refresh toggle. No state, no subscriptions — just a write. */
+function renderAutoRefreshRow(ctx: RowContext): Disposable {
+  const snapshot = ctx.settings.current!;
+  ctx.group.addSetting((setting) => {
+    setting
+      .setName(m.settings_db_auto_refresh_name())
+      .setDesc(m.settings_db_auto_refresh_desc())
+      .addToggle((toggle) => {
+        toggle.setValue(snapshot["zotero.auto-refresh"]).onChange((checked) => {
+          ctx.settings.update({ "zotero.auto-refresh": checked });
+        });
+      });
+  });
+  return { [Symbol.dispose]() {} };
+}
+
+/**
+ * Default-library dropdown. Populated from {@link getLibraries} when the DB is
+ * ready, repopulated on `changed`/`degraded`, and seeded after the initial
+ * `loading→ready` settle (which `changed` skips per T14).
+ */
+function renderLibraryRow(ctx: RowContext): Disposable {
+  using stack = new DisposableStack();
+
+  let dropdown: DropdownComponent | undefined;
+  const repopulate = (): void => {
+    if (!dropdown) return;
+    const current = ctx.settings.current?.["zotero.citation-library"] ?? 1;
+    const libraries = loadLibrariesSafe(ctx.db);
+    fillLibraryDropdown(dropdown, libraries, current);
+  };
+
+  ctx.group.addSetting((setting) => {
+    setting
+      .setName(m.settings_db_library_name())
+      .setDesc(
+        ctx.db.state === "ready"
+          ? m.settings_db_library_desc()
+          : m.settings_db_library_unavailable(),
+      )
+      .addDropdown((d) => {
+        dropdown = d;
+        d.onChange((value) => {
+          const id = Number(value);
+          if (!Number.isFinite(id)) return;
+          ctx.settings.update({ "zotero.citation-library": id });
+        });
+        repopulate();
+      });
+  });
+
+  if (ctx.db.state === "loading") {
+    void ctx.db.ready.then(() => {
+      if (dropdown?.selectEl.isConnected) repopulate();
+    });
+  }
+
+  stack.defer(
+    ctx.settings.subscribe((value) => {
+      if (value === null || !dropdown) return;
+      const current = String(value["zotero.citation-library"]);
+      if (dropdown.getValue() === current) return;
+      ensureLibraryOption(dropdown, value["zotero.citation-library"]);
+      dropdown.setValue(current);
+    }),
+  );
+  stack.defer(ctx.db.on("changed", repopulate));
+  stack.defer(ctx.db.on("degraded", repopulate));
+
+  return stack.move();
+}
+
 function resolveSqlitePath(dataDir: string | null): string {
   return `${resolveZoteroDataDir(dataDir)}/${DB_FILENAME}`;
 }
@@ -196,6 +282,54 @@ function extractErrorMessage(err: Error): string {
   const cause = err.cause;
   if (cause instanceof Error) return cause.message;
   return err.message;
+}
+
+function loadLibrariesSafe(db: DatabaseService): Library[] {
+  if (db.state !== "ready") return [];
+  try {
+    return getLibraries(db.client);
+  } catch (error) {
+    logger.warn("Failed to load Zotero libraries", { error });
+    return [];
+  }
+}
+
+function libraryLabel(lib: Library): string {
+  if (lib.type === "user") return m.settings_db_library_user();
+  return (
+    lib.name ?? m.settings_db_library_unknown({ libraryID: lib.libraryID })
+  );
+}
+
+function fillLibraryDropdown(
+  dropdown: DropdownComponent,
+  libraries: readonly Library[],
+  current: number,
+): void {
+  dropdown.selectEl.replaceChildren();
+  for (const lib of libraries) {
+    dropdown.addOption(String(lib.libraryID), libraryLabel(lib));
+  }
+  ensureLibraryOption(dropdown, current);
+  dropdown.setValue(String(current));
+  dropdown.setDisabled(libraries.length === 0);
+}
+
+/**
+ * Append the configured library as a fallback option when it isn't in the
+ * fetched list — keeps the dropdown valid for stale or pre-load IDs.
+ */
+function ensureLibraryOption(
+  dropdown: DropdownComponent,
+  libraryID: number,
+): void {
+  const key = String(libraryID);
+  const exists = Array.from(dropdown.selectEl.options).some(
+    (opt) => opt.value === key,
+  );
+  if (!exists) {
+    dropdown.addOption(key, m.settings_db_library_unknown({ libraryID }));
+  }
 }
 
 async function browseForDataDir(
