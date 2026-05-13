@@ -1,0 +1,15 @@
+.zt-notice {
+  max-width: 300px;
+}
+
+.zt-notice .notice-message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-3);
+}
+
+.zt-notice-actions {
+  display: flex;
+  gap: var(--size-4-4);
+  justify-content: flex-end;
+}
