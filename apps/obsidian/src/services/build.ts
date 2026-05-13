@@ -4,6 +4,7 @@ import { LoggingService } from "./log/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
+import { TemplateService } from "./template/service";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -30,6 +31,10 @@ export function buildServices(
     })
     .use({
       log: ({ settings }) => new LoggingService({ plugin, settings }),
+    })
+    .use({
+      template: ({ settings }) =>
+        new TemplateService({ plugin, app: plugin.app, settings }),
     })
     .use({
       db: ({ settings }) => new DatabaseService({ settings }),

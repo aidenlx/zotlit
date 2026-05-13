@@ -14,6 +14,7 @@ Companion plan referenced: [`DB_MIGRATE.MD`](../zotlit-v2/feat-db-query/DB_MIGRA
 - Setting-tab `database` and `logging` groups (`setting-tab/groups/`).
 - `packages/db` with `createClient` + introspected drizzle schema; only `queries/libraries.ts` exists.
 - `DatabaseService` (open / fs.watch / debounced refresh + `zotlit:refresh-db` command).
+- `TemplateService` (Eta v4 renderer, embedded defaults, vault template watcher, editor helpers).
 - `packages/shared` with `nanoevents`, `Temporal`, `log-formatter`.
 - Settings schema already covers v1 keys: `log.*`, `zotero.*`, `citation.*`, `note.literature-folder`, `server.*`, `template.*`, `img-excerpt.*` (UI for most still missing).
 
@@ -67,9 +68,9 @@ v1 kept a denormalized item map per library inside the worker (`lib/db-worker/sr
 - `apps/zotero` companion plugin itself
 - Template preview view, item details view
 - Note import (HTML → md) — companion-independent; can slot in opportunistically
-- **Template service follow-ups** (Stage 1 enhancements, not alpha-blocking):
+- **Template service follow-ups** (post-Stage 1 enhancements, not alpha-blocking):
   - Field-name completion in `EtaSuggest` (`it.title`, `it.citekey`, `it.creators`, `it.tags`, ...) — needs Stage 5 helper type definitions to drive the suggestion list.
-  - `template-edited` event on `TemplateService` (nanoevents) — add when a live-preview consumer (Stage 9 annot view) actually needs to re-render on template edits; today the render-time mtime+size check covers correctness for one-shot renders.
+  - `template-edited` event on `TemplateService` (nanoevents) — add when a live-preview consumer (Stage 9 annot view) actually needs to re-render on template edits; today one-shot renders rely on the vault watcher refreshing template content and the render-time mtime+size check invalidating compiled functions.
   - Async render path (`renderAsync`) — only if a consumer ever needs `await`-able rendering; Stage 1 is sync end-to-end.
 
 ### 3.3 Dropped
@@ -92,7 +93,7 @@ Each stage produces a shippable plugin; queries are added in the stage that firs
 | #   | Stage                                                                  | New queries                                                                                                | Notes                                                                                                                                                                       |
 | --- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0   | (done) Settings, Logging, DatabaseService Stage 1, `queries/libraries` | —                                                                                                          | —                                                                                                                                                                           |
-| 1   | **Template package**                                                   | —                                                                                                          | `packages/templates` (pure, upstream `eta@^4`) + `apps/obsidian/src/services/template/` editor helper + reactive folder watcher                                             |
+| 1   | (done) **Template service**                                            | —                                                                                                          | `apps/obsidian/src/services/template/`: upstream `eta@^4`, embedded defaults, vault watcher, mtime+size compile invalidation, auto-pair, EtaSuggest                         |
 | 2   | **NoteIndex**                                                          | —                                                                                                          | Obsidian metadata index: `{itemKey → file[]}`, `{annotKey → block[]}`, `{citekey → file[]}`                                                                                 |
 | 3   | **Citation suggesters**                                                | `items` (by IDs, by keys, by library list), `citekey`                                                      | Native `prepareFuzzySearch`/`prepareSimpleSearch`; plain Obsidian DOM (no React); editor suggester + popup modal + quick-switch wiring                                      |
 | 4   | **NoteParser**                                                         | `attachments`, `notes`, `annotations` (+ `json-columns.ts` custom type for `position`/`sortIndex`), `tags` | Turndown + Zotero HTML rules                                                                                                                                                |
@@ -105,14 +106,16 @@ Each stage produces a shippable plugin; queries are added in the stage that firs
 
 ### 4.1 Per-stage deliverables
 
-**Stage 1 — Template package**
+**Stage 1 — Template service (done)**
 
-- `packages/templates/` (new): pure renderer, `eta@^4` dep, no Obsidian imports. Exports `renderNote`, `renderAnnot`, `renderCitation`, `renderFilename`, frontmatter helpers, `HelperExtra` type.
-- `apps/obsidian/src/services/template/`: editor helper (auto-pair, auto-trim) and reactive folder watcher subscribed to `settings.events`.
-- `pnpm-workspace.yaml`: add `eta` to catalog.
+- `apps/obsidian/src/services/template/`: `TemplateService`, `ObsidianEta`, path/default helpers, embedded `.eta.md` defaults, CodeMirror auto-pair extension, and `EtaSuggest`.
+- Public API is intentionally low-level and sync for now: `render(name, data)` and `renderString(source, data)`. Feature-specific helpers (`renderNote`, `renderAnnot`, `renderCitation`, `renderFilename`) move to the stages that first know the DB/data shape.
+- Service wiring: `TemplateService` is registered in `services/build.ts` after settings/logging; raw default imports are declared in `env.d.ts`; the Obsidian Vitest mock now covers `TFile`, `TFolder`, `Vault`, `EditorSuggest`, and `editorInfoField`.
+- Dependencies live in `apps/obsidian/package.json`: `eta` plus CodeMirror state/view packages needed by the editor helpers.
 - **Eta v4 references** (the v1 `eta-prf` fork is no longer needed):
-  - Upstream source: `/Users/aidenlx/repo/zotlit-repo/eta-v4/` — `EtaCore` is exported via `eta/internal` (no Node `fs` dep), and `resolvePath` / `readFile` are nullable overridable properties on the class.
-  - Analysis: `/Users/aidenlx/repo/zotlit-repo/eta-fork-analysis.md` — concludes the fork can be dropped. The only gap is the fork's `mtime` field on `TemplateFunction` (used for cache invalidation). v1 already owned that logic in `app/obsidian/src/services/template/eta/render.ts`; carry it over by overriding `render` / `renderAsync` on the subclass with a custom mtime-aware `handleCache` (preferred), or by tracking mtime in a `WeakMap<TemplateFunction, number>` parallel to Eta.
+  - Upstream source: `/Users/aidenlx/repo/zotlit-repo/eta-v4/` — the implementation imports from `eta/core` (no Node `fs` dep) and overrides `resolvePath` / `readFile`.
+  - Analysis: `/Users/aidenlx/repo/zotlit-repo/eta-fork-analysis.md` — concludes the fork can be dropped. The only fork behavior carried forward is compile-cache freshness: v2 tracks `{mtime, size}` in a `Map` parallel to Eta's `templatesSync` cache and removes stale compiled functions before render.
+  - v1 templates pass arrays through `include()`. Eta 4's default generated helper spreads include data into the parent object, so v2 patches the generated function string with a tiny plugin to pass include data through directly.
 
 **Stage 2 — NoteIndex**
 
@@ -177,7 +180,7 @@ For traceability during the migration; all paths under `/Users/aidenlx/repo/zotl
 ## 6. Cross-cutting reminders
 
 - `__DEV__` is build-time replaced; use it instead of runtime `NODE_ENV` checks.
-- Library packages (`packages/db`, `packages/templates`) must **never** call LogTape `configure()`; they only `getLogger()`. The Obsidian app owns `configure()` via `LoggingService`.
+- Library packages (`packages/db`, and any future `packages/templates` extraction) must **never** call LogTape `configure()`; they only `getLogger()`. The Obsidian app owns `configure()` via `LoggingService`.
 - All user-facing strings go through Paraglide `m.*` (`messages/{en,zh}.json`). Use `/i18n-ui-text` skill for Obsidian house-style copy and `/paraglide-i18n` skill for JSON/runtime mechanics.
 - All toasts go through `BaseNotice` / `toast.promise`, never `new Notice()`.
 - Use ECMAScript private fields (`#field`, `#method`) for service internals; avoid TypeScript `private`.

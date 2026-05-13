@@ -8,7 +8,7 @@
  * here — extend as needed alongside the services that consume it.
  */
 
-import type { Command, Debouncer } from "obsidian";
+import type { App, Command, Debouncer, EditorSuggestContext } from "obsidian";
 
 /**
  * Captured `Notice` invocations. Tests can read this to assert the
@@ -31,6 +31,58 @@ export class Notice {
 
 export function resetMockNotices(): void {
   noticesLog.length = 0;
+}
+
+export const editorInfoField = {};
+
+export class TAbstractFile {
+  vault: Vault = undefined as unknown as Vault;
+  path = "";
+  name = "";
+  parent: TFolder | null = null;
+}
+
+export class TFile extends TAbstractFile {
+  stat = { type: "file", ctime: 0, mtime: 0, size: 0 } as const;
+  basename = "";
+  extension = "";
+}
+
+export class TFolder extends TAbstractFile {
+  children: TAbstractFile[] = [];
+
+  isRoot(): boolean {
+    return this.parent === null;
+  }
+}
+
+export class Vault {
+  static recurseChildren(
+    root: TFolder,
+    cb: (file: TAbstractFile) => any,
+  ): void {
+    for (const child of root.children) {
+      cb(child);
+      if (child instanceof TFolder) Vault.recurseChildren(child, cb);
+    }
+  }
+}
+
+export abstract class EditorSuggest<T> {
+  context: EditorSuggestContext | null = null;
+  limit = 0;
+  readonly app: App;
+
+  constructor(app: App) {
+    this.app = app;
+  }
+
+  setInstructions(_instructions: unknown[]): void {}
+
+  close(): void {}
+
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
 
 /**

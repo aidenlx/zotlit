@@ -1,7 +1,7 @@
-# Stage 1 — Template service (spec)
+# Stage 1 — Template service (implemented)
 
 Companion to [`MIGRATION.md`](./MIGRATION.md) §4 Stage 1. This document is the
-implementation contract for `apps/obsidian/src/services/template/` — the Eta
+implementation record for `apps/obsidian/src/services/template/` — the Eta
 engine wiring, vault-folder integration, and editor helpers.
 
 v1 source: `/Users/aidenlx/repo/zotlit-repo/zotlit-v1/app/obsidian/src/services/template/`.
@@ -17,6 +17,9 @@ v1 source: `/Users/aidenlx/repo/zotlit-repo/zotlit-v1/app/obsidian/src/services/
 - Embedded default fallback for the 7 canonical templates.
 - Editor helpers: auto-pair (CodeMirror) + EtaSuggest (`EditorSuggest`).
 - Public API: `render(name, data)` and `renderString(source, data)`.
+- Stage 1 keeps the renderer inside `apps/obsidian`; a separate
+  `packages/templates` extraction was deferred until there is a real
+  cross-package consumer.
 
 ### 1.2 Out of scope (deferred to consuming stages)
 
@@ -36,7 +39,7 @@ v1 source: `/Users/aidenlx/repo/zotlit-repo/zotlit-v1/app/obsidian/src/services/
 - `vault.trigger("zotero:template-updated", type)` global event — no consumers
   exist in Stage 1, and render-time mtime+size check makes a "template
   changed" event load-bearing for nothing.
-- `eta-prf` fork — Eta v4 `Eta` class (from `eta/internal`) covers it.
+- `eta-prf` fork — Eta v4 `Eta` class (from `eta/core`) covers it.
 - `tplFileCache: WeakMap<TFile, string>` — replaced by `Map<path, string>`
   keyed by path. Rename events update the key directly; no GC hazard.
 - The fork's `mtime` field on `TemplateFunction` — we track `(mtime, size)`
@@ -75,11 +78,15 @@ render(name, data)
        │    ├─ pre-step (our wrapper):
        │    │    look up TFile by path; compare (mtime,size) against
        │    │    snapshot Map. If mismatch (or absent),
-       │    │    templatesSync.remove(path).
+       │    │    templatesSync.remove(path) and stamp the snapshot.
        │    ├─ if templatesSync.get(path) → return cached fn
-       │    └─ else readFile(path) → compile → store fn + stamp snapshot
+       │    └─ else readFile(path) → compile → store fn
        └─ call compiled fn with data → string
 ```
+
+`renderString(source, data)` calls Eta's literal-string path directly. It
+does not resolve a file, read from the vault, or participate in the
+file-backed compile cache.
 
 Sync end-to-end. No `renderAsync` — Stage 1 has no async consumers, and
 async would force every consumer to await.
@@ -102,16 +109,16 @@ Defaults already exist in `services/settings/schema.ts`; no schema changes.
 
 ```ts
 // services/template/eta.ts
-import { Eta } from "eta/internal";
+import { Eta } from "eta/core";
 
 class ObsidianEta extends Eta {
-  // assigned in constructor; closure captures the host service
+  // assigned in constructor; closure captures the host service.
   resolvePath = resolveTemplatePath;
   readFile = readTemplateContent;
 }
 ```
 
-`Eta` from `eta/internal` has no Node `fs` dep; safe for renderer bundle.
+`Eta` from `eta/core` has no Node `fs` dep; safe for renderer bundle.
 
 Config:
 
@@ -121,6 +128,7 @@ Config:
   autoEscape: false,                   // markdown output, not HTML
   autoFilter: true,
   filterFunction: filterUndefinedNull, // null/undefined → ""; Date → ISO
+  plugins: [directIncludeDataPlugin],  // preserve v1 include(data) behavior
   get autoTrim() { ... },              // reads current settings tuple
   get views() { ... },                 // reads current template.folder
 }
@@ -129,6 +137,11 @@ Config:
 Getters on `autoTrim` and `views` keep Eta seeing the latest values without
 re-instantiating. (They affect `compileToString`, so cache reset on change
 is what actually re-applies them.)
+
+`directIncludeDataPlugin` patches Eta's generated helper so
+`include("template", array)` passes the array through directly. Eta 4's
+default helper spreads include data into the parent object, which turns arrays
+into objects and breaks v1's `zt-annots.eta.md` default.
 
 ### 4.2 `resolvePath`
 
@@ -164,12 +177,12 @@ Mirrors `DatabaseService`'s freshness pattern (see
 
 - `templatesSync: Cacher<TemplateFunction>` — Eta's own per-path compile cache.
 - `compileSnapshots: Map<path, { mtime: number; size: number }>` — our parallel
-  stamp captured at compile time.
+  stamp captured before a file-backed render attempt.
 
 ### 5.2 Pre-step on every render
 
-Before Eta's `handleCache` runs, the service wraps `render` / `renderString`
-to do:
+Before Eta's `handleCache` runs, `ObsidianEta.render` resolves the path and
+asks the service to prepare file-backed templates:
 
 ```ts
 const file = vault.getFileByPath(resolvedPath);
@@ -177,7 +190,10 @@ if (file) {
   const snap = compileSnapshots.get(resolvedPath);
   if (!snap || snap.mtime !== file.stat.mtime || snap.size !== file.stat.size) {
     eta.templatesSync.remove(resolvedPath);
-    // snapshot is restamped after the compile below
+    compileSnapshots.set(resolvedPath, {
+      mtime: file.stat.mtime,
+      size: file.stat.size,
+    });
   }
 }
 ```
@@ -186,23 +202,21 @@ If the file is missing (embedded fallback path), no snapshot tracking — the
 embedded default never changes within a session, so the first compile is
 cached forever.
 
-### 5.3 Stamping on compile
+`renderString(source, data)` bypasses this path because it has no filepath and
+does not use the template-file cache.
 
-We don't get a compile callback from Eta. Two ways to know we compiled:
+### 5.3 Stamping behavior
 
-- (A) Monkey-patch `compile` on the subclass to capture `(filepath, mtime,
-size)` after the upstream call. Simple, contained.
-- (B) Hold the cache entry ourselves: pre-check, and on miss read the file
-  stat, then call `eta.render` (Eta will compile + store), then stamp the
-  snapshot.
+The implementation deliberately avoids monkey-patching Eta's `compile`. When a
+file-backed render sees a missing or changed stamp, it removes the compiled
+function and stores the current `{mtime, size}` before delegating to Eta. Eta
+then recompiles on cache miss using `readFile(path)`.
 
-We pick **(B)**: the pre-step already knows it's about to (re)compile when it
-calls `remove()`, so it stamps `{ mtime, size }` from the same `TFile.stat`
-into `compileSnapshots` _before_ delegating to Eta. No monkey-patch needed.
-If the compile then throws, the snapshot is overwritten but the cache is
-empty — next render restamps on the next compile attempt.
+If compile throws, the snapshot may already hold the latest stat while the Eta
+cache remains empty. The next render still retries compilation because there is
+no cached function to return.
 
-### 5.4 Why both mtime AND size
+### 5.4 Why both mtime and size
 
 - mtime resolution on some filesystems is 1s; rapid edits within the same
   second can collide.
@@ -220,9 +234,10 @@ empty — next render restamps on the next compile attempt.
 - `vault.on("rename", onRename)` — needs old-path arg
 - `vault.on("delete", onDelete)`
 
-Each handler filters: only files where `path.startsWith(folder + "/")` and
-`path.endsWith(".eta.md")`. Folder is read from settings at event time
-(not closed over), so it tracks setting changes.
+Each handler filters with `isEtaTemplatePath(path)` and
+`isPathInFolder(path, folder)`. Folder is read from settings at event time
+(not closed over), so it tracks setting changes; an empty folder watches all
+vault `.eta.md` files.
 
 ### 6.2 Debounced flush
 
@@ -253,11 +268,10 @@ flush():
 `templatesSync` after the read ensures the next render finds either the
 fresh content or (if the file is gone) falls back to the embedded default.
 
-Note: the render-time mtime+size check is the _correctness_ mechanism.
-The debounced flush is _only_ to keep the sync-readable content map fresh.
-If a vault event is missed, the next render still detects the stat drift —
-but it would read stale content from the map. So the flush is best-effort
-freshness, mtime+size is the safety net.
+The debounced flush keeps the sync-readable `contentMap` fresh. The render-time
+mtime+size check protects Eta's compiled-function cache after that content map
+has been refreshed; it is not a replacement for the vault read because Eta's
+sync `readFile` hook must return from memory.
 
 ### 6.3 Folder setting change
 
@@ -342,9 +356,9 @@ function fromFilename(filepath: string, folder: string): TemplateName | null {
 
 ### 8.1 Auto-pair
 
-Port `editor/bracket.ts` from v1 verbatim. CodeMirror extension that adds
+Port `editor/bracket.ts` from v1's behavior. CodeMirror extension that adds
 `<`, `%` to `closeBrackets` config when the editor's active file passes
-`isEtaFile(file)` (i.e. `name.endsWith(".eta.md")`). Respects
+`isEtaTemplatePath(file.path)`. Respects
 `autoPairBrackets` / `autoPairMarkdown` from Obsidian's own settings.
 
 Registration follows v1's pattern: a mutable `Extension[]` is registered
@@ -355,8 +369,10 @@ only be called from onload" footgun.
 
 ### 8.2 EtaSuggest
 
-Port `editor/suggester.ts` from v1 verbatim. Two hints, fires on `<%`, inserts
-`<%= it. %>` or `<%  %>`. Always on; not gated by setting.
+Port `editor/suggester.ts` from v1's behavior. Two hints, fires on `<%`,
+inserts the interpolation or evaluation prefix inside the Eta tag, and leaves
+the cursor before the closing `%>` when auto-pairing supplied it. Always on;
+not gated by setting.
 
 Registered with `plugin.registerEditorSuggest(new EtaSuggest(app))`.
 
@@ -404,7 +420,8 @@ Added in `services/build.ts`:
 
 ```ts
 .use({
-  template: ({ settings }) => new TemplateService({ plugin, app, settings }),
+  template: ({ settings }) =>
+    new TemplateService({ plugin, app: plugin.app, settings }),
 })
 ```
 
@@ -415,30 +432,32 @@ on db; the order is arbitrary but service tear-down is LIFO).
 
 ```ts
 async #load(): Promise<void> {
-  await using stack = new AsyncDisposableStack();
-
-  // Wait for settings to land; subsequent re-bootstraps are settings-driven.
   const snapshot = await this.#settings.loaded;
-  await this.#bootstrapFolder(snapshot["template.folder"]);
+  this.#lastTemplateFolder = normalizeVaultPath(snapshot["template.folder"]);
+  this.#lastAutoTrim = [
+    snapshot["template.auto-trim-leading"],
+    snapshot["template.auto-trim-trailing"],
+  ];
+  this.#lastAutoPairEta = snapshot["template.auto-pair-eta"];
 
-  // Vault events
+  await using stack = new AsyncDisposableStack();
+  await this.#rebuildFolder(this.#lastTemplateFolder);
+
   stack.defer(this.#registerVaultEvents());
-  // Editor extensions
   stack.defer(this.#registerAutoPair());
   stack.defer(this.#registerEtaSuggest());
-  // Settings reactivity
   stack.defer(this.#settings.subscribe((s) => {
     if (s === null) return;
     this.#onSettingsChanged(s);
   }));
-  // Pending-flush timer cleanup
   stack.defer(() => this.#cancelFlush());
 
+  this.#loaded = true;
   this.commit(stack.move());
 }
 ```
 
-`#bootstrapFolder(folder)`: recurse, `vault.cachedRead` each `.eta.md`, fill
+`#rebuildFolder(folder)`: recurse, `vault.cachedRead` each `.eta.md`, fill
 `contentMap`. Empty folder is fine (embedded defaults still serve renders).
 
 ### 10.3 `#onSettingsChanged(s)`
@@ -489,20 +508,22 @@ Vitest with the local `__mocks__/obsidian.ts`. Extensions to the mock:
 - `TFile.stat` with `mtime` and `size`.
 - Event firing helpers for `create`/`modify`/`rename`/`delete`.
 
-Test plan:
+Implemented coverage in `services/template/service.test.ts`:
 
 - `render("note", data)` returns the embedded default when no file exists.
+- Embedded `zt-annots.eta.md` includes resolve the canonical
+  `"annotation"` template name to `zt-annot.eta.md`.
 - `render("note", data)` reads the vault file when it exists.
 - Editing a file (mtime+size changes after a vault `modify` event) causes
-  the next render to recompile.
-- Two renders without any change reuse the compiled function (assert via
-  spy on `eta.compile`).
-- `include("annotation", ...)` inside `zt-annots.eta.md` resolves to
-  `zt-annot.eta.md` (v1 backward-compat regression test).
+  the next render after the debounced flush to recompile.
 - `renderString("<%= it.x %>", { x: 1 })` returns `"1"`.
 - Folder change rebuilds the content map and resets the compile cache.
-- autoTrim setting change resets the compile cache.
-- Bursts of vault events collapse into a single flush (assert with fake
-  timers + spy on `vault.cachedRead`).
 - Auto-pair extension list toggles when the setting toggles.
-- Disposal cancels the pending-flush timer and unsubscribes events.
+- Disposal unsubscribes vault events.
+
+Worth adding if this service changes again:
+
+- Two renders without any change reuse the compiled function.
+- autoTrim setting changes reset the compile cache.
+- Bursts of vault events collapse into a single flush.
+- Rename/delete events update `contentMap` and fall back to embedded defaults.
