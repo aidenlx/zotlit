@@ -32,5 +32,10 @@
   "settings_db_status_degraded": "Failed to open",
   "settings_db_status_refresh_failed": "Last refresh failed",
   "settings_db_auto_refresh_name": "Watch for changes",
-  "settings_db_auto_refresh_desc": "Reload automatically when `zotero.sqlite` changes on disk."
+  "settings_db_auto_refresh_desc": "Reload automatically when `zotero.sqlite` changes on disk.",
+  "settings_db_library_name": "Default library",
+  "settings_db_library_desc": "Library used when inserting citations or listing items.",
+  "settings_db_library_user": "My Library",
+  "settings_db_library_unknown": "Library {libraryID}",
+  "settings_db_library_unavailable": "Open the Zotero database to choose a library."
 }
