@@ -1,14 +1,6 @@
 ---
 name: obsidian-css
-description: |
-  How to style plugin components so they look native and stay compatible with every Obsidian
-  theme. Use when writing or reviewing CSS / Less / scoped component styles in apps/obsidian/
-  (e.g. `zt-main.css`, plugin views, settings UI, modals, embedded React components). Also use
-  when adding a custom UI element (button, input, modal, callout, sidebar item, etc.) and you
-  need to know which `--var(...)` to reach for, or when a color/spacing/radius hardcode is
-  about to be added. If a question mentions "Obsidian theme support", "dark mode", "css
-  variable", "obsidian colors", "looks broken in <theme name>", or hardcoded `#hex` / `px`
-  values in plugin UI, this skill applies.
+description: Write theme-compatible CSS for Obsidian plugin UI. Use when authoring or reviewing styles in apps/obsidian/, picking an Obsidian CSS variable, or replacing hardcoded colors/spacing/radii.
 ---
 
 # Obsidian Plugin CSS Style Guide
