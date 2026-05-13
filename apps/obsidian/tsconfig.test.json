@@ -16,8 +16,7 @@
   "include": [
     "./src/**/*.ts",
     "./src/paraglide/**/*.js",
-    "./__mocks__/**/*.ts",
-    "./vitest.config.ts"
+    "./__mocks__/**/*.ts"
   ],
   "exclude": ["./node_modules", "./dist", "./dist-dev"]
 }
