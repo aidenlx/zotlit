@@ -15,5 +15,8 @@
   "settings_log_export_button": "Save zip",
   "settings_log_to_file_required": "Enable \"Write logs to file\" first.",
   "notice_open_log_file_failed": "Failed to open log file",
-  "notice_export_log_file_failed": "Failed to export log archive"
+  "notice_export_log_file_failed": "Failed to export log archive",
+  "command_refresh_db_name": "Refresh Zotero database",
+  "notice_db_refreshed": "Zotero database refreshed.",
+  "notice_db_refresh_failed": "Failed to refresh Zotero database."
 }

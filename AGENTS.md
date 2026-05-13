@@ -72,10 +72,12 @@ Prefer **structured** logging over interpolated strings:
 // Good — fields are searchable
 logger.info("Indexed library", { count, durationMs });
 logger.error("Failed to sync attachment", { itemKey, error });
+logger.warn("Database {source} watcher error", { source, error });
 
 // Avoid — opaque blob
 logger.info(`Indexed ${count} items in ${durationMs}ms`);
 logger.info`Indexed ${count} items in ${durationMs}ms`;
+logger.warn(`Database ${source} watcher error`, { error });
 ```
 
 For expensive context, pass a lazy callback so the work is skipped when the level is filtered:

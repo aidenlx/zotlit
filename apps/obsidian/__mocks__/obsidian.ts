@@ -8,7 +8,49 @@
  * here — extend as needed alongside the services that consume it.
  */
 
-import type { Debouncer } from "obsidian";
+import type { Command, Debouncer } from "obsidian";
+
+/**
+ * Captured `Notice` invocations. Tests can read this to assert the
+ * user-facing message and clear it between cases.
+ */
+export const noticesLog: { message: string | DocumentFragment }[] = [];
+
+export class Notice {
+  noticeEl: HTMLElement = {} as HTMLElement;
+  containerEl: HTMLElement = {} as HTMLElement;
+  messageEl: HTMLElement = {} as HTMLElement;
+  constructor(message: string | DocumentFragment, _duration?: number) {
+    noticesLog.push({ message });
+  }
+  setMessage(_message: string | DocumentFragment): this {
+    return this;
+  }
+  hide(): void {}
+}
+
+export function resetMockNotices(): void {
+  noticesLog.length = 0;
+}
+
+/**
+ * Lightweight stand-in for the subset of `Plugin.addCommand` tests touch.
+ * Holds the most-recently registered command per id so a test can invoke its
+ * callback directly.
+ */
+export function createMockPlugin(): {
+  addCommand(command: Command): Command;
+  commands: Map<string, Command>;
+} {
+  const commands = new Map<string, Command>();
+  return {
+    commands,
+    addCommand(command: Command): Command {
+      commands.set(command.id, command);
+      return command;
+    },
+  };
+}
 
 let platformIsWin: boolean | undefined;
 

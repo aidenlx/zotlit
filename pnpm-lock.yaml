@@ -56,6 +56,9 @@ importers:
 
   apps/obsidian:
     dependencies:
+      '@zotlit/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../../packages/shared
