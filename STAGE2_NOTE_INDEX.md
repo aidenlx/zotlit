@@ -1,4 +1,4 @@
-# Stage 2 — NoteIndex spec
+# Stage 2 — NoteIndex implementation
 
 Companion to [`MIGRATION.md`](MIGRATION.md) §4 (stage 2). The KISS rewrite of v1 `services/note-index/`. Scope: alpha-blocker; needed by Stage 5 (NoteFeatures), Stage 7 (citekey-click), Stage 9 (annot view).
 
@@ -120,9 +120,11 @@ Constructor: `new NoteIndex({ plugin, app })`. No settings dependency (we droppe
 
 1. Subscribe to `vault.on('rename')`, `vault.on('delete')`. `create` is intentionally not handled — `metadataCache.changed` covers it (matches v1).
 2. Subscribe to `metadataCache.on('changed')`, `metadataCache.on('deleted')`, `metadataCache.on('resolved')`.
-3. If `app.metadataCache.resolvedCount === app.metadataCache.fileCache?.size` (or whatever readiness check is available — see open items §7), run an initial bulk scan synchronously before `commit()`.
+3. If `app.metadataCache.initialized` is true, run an initial bulk scan synchronously before `commit()`.
 4. Otherwise the first `resolved` event handler runs the bulk scan.
 5. `commit(stack)` — `ready` resolves.
+
+`MetadataCache.initialized` is a private Obsidian API declared in `apps/obsidian/src/typings/obsidian-ex.d.ts`.
 
 Disposal: `AsyncDisposableStack` unsubscribes vault/metadata listeners. Indices and emitter are GC'd with the instance.
 
@@ -154,7 +156,7 @@ vault.on("delete", (file))                        → if was md → #applyFile(f
 
 ### 4.4 `parse.ts` (pure)
 
-Pure, no I/O, no Obsidian state. Imports `CachedMetadata`, `Pos`, `SectionCache` types only.
+Pure, no I/O, no Obsidian state. Imports `CachedMetadata`, `Pos`, `SectionCache` types only from Obsidian.
 
 ```ts
 export function fileContributions(cache: CachedMetadata): FileContributions;
@@ -180,7 +182,7 @@ Implementation notes:
 
 - `fileContributions` reads `frontmatter['zotero-key']` (validate regex `^[23456789A-NP-Z]{8}(g\d+)?$`), `frontmatter.citekey` (non-empty string).
 - For blocks: iterate `cache.sections ?? []`; for each section with `section.id` matching `multipleAnnotKeyPagePattern`, split on `n`, parse each fragment with `annotKeyPagePattern`, derive the indexed key `KEY` or `KEY+gGROUP` (dropping `aPARENT` and `pPAGE`). Push `section.position` into `blocks.get(key)`. Multiple matches in one section can share a key; positions accumulate (matches v1).
-- Block-ID regex constants live here (copied from v1 `lib/common/src/block-id.ts`; no shared package extraction). One-time cost.
+- Block-ID regex constants live here (copied from v1 `lib/common/src/block-id.ts`; no shared package extraction). Fragment parsing uses `arkregex` typed named captures instead of manual `RegExpExecArray` indexing.
 - `diffContributions` is shallow value comparison. `blocks` diffing: a key changed if its `Pos[]` differs (length OR any element differs by `start`/`end`). On equal sets, no diff entry.
 
 ### 4.5 Diff application (in service)
@@ -221,7 +223,7 @@ No data migration. v2 reads v1-written notes in place.
 })
 ```
 
-Logger: `getLogger("note-index")`. Categories: bulk-rebuild count at `debug`; warnings on regex misses at `debug` too (don't spam `warn` — invalid frontmatter is user data, not a bug).
+Logger: `getLogger("note-index")`. The bulk-rebuild count is logged at `debug`. Invalid frontmatter and non-matching block IDs are user data and are skipped silently.
 
 ## 7. Tests (Vitest)
 
@@ -230,19 +232,18 @@ Logger: `getLogger("note-index")`. Categories: bulk-rebuild count at `debug`; wa
 - `fileContributions` extracts itemKey, citekey, blocks across representative `CachedMetadata` fixtures (no zotero-key, valid zotero-key with/without group, multi-annot section, mixed sections).
 - `diffContributions` reports empty diff for identical inputs; reports correct add/remove for itemKey/citekey changes; reports correct block key add/remove on position-only changes.
 
-`apps/obsidian/src/services/note-index/service.test.ts` (with the `obsidian` mock):
+`apps/obsidian/src/services/note-index/service.test.ts` (local Obsidian-shaped mocks):
 
+- Synchronous initial scan when `metadataCache.initialized` is true.
+- Deferred initial scan when metadata is explicitly uninitialized, then scan on `resolved`.
 - Initial scan on `resolved`: populates indices, emits `rebuilt` exactly once.
 - `changed` event flow: edit frontmatter → `getNotesByItemKey` reflects new state and `changed(file)` fires.
+- No-op metadata changes do not emit `changed`.
 - itemKey rename (A → B): file is no longer under A; appears under B. (Fixes the v1 stale-entry bug.)
 - `rename` event: lookup by new path works; old path returns empty.
 - `delete` event: all three indices drop the file; subsequent queries return empty.
 - `getBlocksFor`: file-only, item-only, intersection (both), and the throw-on-neither path.
 
-Test mock additions (`apps/obsidian/__mocks__/obsidian.ts`): `MetadataCache.on/off/offref`, `CachedMetadata`, `SectionCache`, `Pos`, vault `rename`/`delete` events. Some may already exist for the Template service mock — extend, don't duplicate.
-
 ## 8. Open items
 
-- `app.metadataCache.initialized` (v1) vs the modern Obsidian API. Verify the actual readiness symbol available in current `obsidian.d.ts` (likely still `initialized: boolean`) before relying on it for the synchronous initial scan path. Fallback: skip synchronous scan and always wait for `resolved`.
-- `metadataCache.on("resolved")` may not exist in all Obsidian versions. If absent, the bulk rescan trigger has to fall back to `metadataCache.on("finished")` or similar. Check `obsidian-api` submodule before implementation.
-- Section IDs in `CachedMetadata.sections[]` — confirm `section.id` is the block-ID portion (without leading `^`) on the _line above_ a block reference. v1 reads `s.id` directly; v2 mirrors. Re-verify in the live `obsidian-api`.
+- None for Stage 2. Follow-up consumers land in Stage 5, Stage 7, and Stage 9.
