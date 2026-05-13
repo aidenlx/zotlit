@@ -3,13 +3,13 @@ import { strToU8, zipSync } from "fflate";
 import {
   type ButtonComponent,
   FileSystemAdapter,
-  Notice,
   SettingGroup,
 } from "obsidian";
 
 import { Temporal } from "@zotlit/shared/temporal";
 import { saveFile } from "@/lib/file-save";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { m } from "@/paraglide/messages";
 import { LOG_FILENAME } from "@/services/log/service";
 import type { LogLevel } from "@/services/settings/schema";
@@ -133,7 +133,7 @@ async function openLogFile(plugin: ZotLitPlugin): Promise<void> {
   const { adapter } = plugin.app.vault;
   const logPath = `${plugin.manifest.dir}/${LOG_FILENAME}`;
   if (!(adapter instanceof FileSystemAdapter)) {
-    new Notice(m.notice_open_log_file_failed());
+    new BaseNotice(m.notice_open_log_file_failed());
     logger.error("Vault adapter is not a FileSystemAdapter", { logPath });
     return;
   }
@@ -144,7 +144,7 @@ async function openLogFile(plugin: ZotLitPlugin): Promise<void> {
     if (errMsg) throw new Error(errMsg);
   } catch (error) {
     logger.error("Failed to open log file", { fullPath, error });
-    new Notice(m.notice_open_log_file_failed());
+    new BaseNotice(m.notice_open_log_file_failed());
   }
 }
 
@@ -158,7 +158,7 @@ async function exportLogArchive(plugin: ZotLitPlugin): Promise<void> {
     saveFile(blob, `zotlit-logs-${exportTimestamp()}.zip`);
   } catch (error) {
     logger.error("Failed to export log archive", { logPath, error });
-    new Notice(m.notice_export_log_file_failed());
+    new BaseNotice(m.notice_export_log_file_failed());
   }
 }
 
