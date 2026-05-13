@@ -61,8 +61,9 @@ Per-package tasks: use pnpm filters, e.g.:
 
 ### Regex
 
-- Use `arkregex` for regexes whose match results are parsed in TypeScript, especially named or positional capture groups. Prefer typed named captures over manual `RegExpExecArray` indexing. See `node_modules/arkregex/README.md` (in any workspace that installs it, e.g. `apps/obsidian`) for the `regex()` / `regex.as` API.
-- When building regexes from dynamic literal text, use native `RegExp.escape` instead of hand-written escaping.
+Default to `arkregex`'s `regex(...)` for new regexes. For dynamic literal text, use native `RegExp.escape`.
+
+Run the `/arkregex` skill when authoring or migrating regex code — it covers the bare `regex("…")` form, the `String.raw` pitfall that defeats type inference, and points at the library README for the full API.
 
 ### Logging
 

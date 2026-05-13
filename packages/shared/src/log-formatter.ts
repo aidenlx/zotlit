@@ -27,7 +27,7 @@ function formatTimestamp(epochMs: number): string {
 }
 
 function escapeFormat(s: string): string {
-  return s.replace(/%/g, "%%");
+  return s.replaceAll("%", "%%");
 }
 
 /**

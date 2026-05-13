@@ -4,10 +4,7 @@ import type { CachedMetadata, Pos, SectionCache } from "obsidian";
 const ITEM_KEY_SOURCE = String.raw`[23456789A-NP-Z]{8}`;
 const ITEM_KEY_GROUP_ID_PATTERN = new RegExp(`^${ITEM_KEY_SOURCE}(?:g\\d+)?$`);
 const ANNOT_KEY_PAGE_SOURCE = `${ITEM_KEY_SOURCE}a${ITEM_KEY_SOURCE}(?:g\\d+)?(?:p\\d+)?`;
-const ANNOT_KEY_PAGE_PATTERN = regex.as<
-  string,
-  { names: { itemKey: string; groupID: string | undefined } }
->(
+const ANNOT_KEY_PAGE_PATTERN = regex(
   `^(?<itemKey>${ITEM_KEY_SOURCE})a${ITEM_KEY_SOURCE}(?:g(?<groupID>\\d+))?(?:p\\d+)?$`,
 );
 const MULTIPLE_ANNOT_KEY_PAGE_PATTERN = new RegExp(

@@ -1,3 +1,4 @@
+import { regex } from "arkregex";
 import {
   EditorSuggest,
   type App,
@@ -9,6 +10,9 @@ import {
 } from "obsidian";
 
 import { isEtaTemplatePath } from "../path";
+
+const ETA_OPEN_TAG = regex("<%([ =]?)$");
+const ETA_CLOSE_TAG = regex("^([\\w ]*)%>");
 
 interface EtaHint {
   prefix: "=" | " ";
@@ -44,11 +48,11 @@ export class EtaSuggest extends EditorSuggest<EtaHint> {
 
     const line = editor.getLine(cursor.line);
     const beforeCursor = line.substring(0, cursor.ch);
-    const match = beforeCursor.match(/<%([ =]?)$/);
+    const match = ETA_OPEN_TAG.exec(beforeCursor);
     if (!match) return null;
 
     const [full, prefix = ""] = match;
-    const trailingSpace = line.substring(cursor.ch).match(/^([\w ]*)%>/);
+    const trailingSpace = ETA_CLOSE_TAG.exec(line.substring(cursor.ch));
     let end: EditorPosition;
     if (!trailingSpace) {
       end = { ...cursor };
