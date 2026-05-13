@@ -3,6 +3,7 @@ import { builtinModules } from "node:module";
 import { join, resolve } from "node:path";
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import { defineConfig, type Plugin } from "vite";
+import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
 import { parseManifest } from "./scripts/manifest.js";
 
 const builtins = [
@@ -94,6 +95,14 @@ export default defineConfig(({ mode }) => {
         strategy: ["custom-obsidian", "baseLocale"],
       }),
       obsidianBuildPlugin(),
+      process.env.ANALYZE === "true" &&
+        unstableRolldownAdapter(
+          analyzer({
+            analyzerMode: "static",
+            fileName: resolve(import.meta.dirname, "bundle-stats"),
+            defaultSizes: "stat",
+          }),
+        ),
     ],
   };
 });

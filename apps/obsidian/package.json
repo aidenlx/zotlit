@@ -9,6 +9,7 @@
     "build": "vite build && npm run typecheck",
     "build:dev": "vite build --mode development",
     "dev": "vite build --watch --mode development",
+    "analyze": "ANALYZE=true vite build",
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
     "typecheck:test": "tsgo --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
@@ -32,6 +33,7 @@
     "oxlint": "catalog:",
     "valibot": "^1.0.0",
     "vite": "^8.0.0",
+    "vite-bundle-analyzer": "^1.3.8",
     "vitest": "^4.0.13"
   },
   "authorUrl": "https://github.com/aidenlx",
