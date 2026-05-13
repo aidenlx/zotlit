@@ -109,3 +109,12 @@ Run from this package:
 
 Extend the mock when a service starts touching new `obsidian` exports; add the
 new symbol and keep the surface minimal.
+
+## Extended Obsidian APIs
+
+When the plugin uses Obsidian runtime APIs that are missing from
+`packages/obsidian-api/obsidian.d.ts`, add a narrow module augmentation in
+`src/typings/obsidian-ex.d.ts` using `declare module "obsidian" { ... }`.
+Prefer the augmentation over local structural casts so feature code can use the
+API directly. Keep the file limited to runtime surface the plugin actually
+touches, and update the Vitest mock separately when tests need that value.
