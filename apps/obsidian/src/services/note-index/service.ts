@@ -1,4 +1,4 @@
-import { createNanoEvents, type Emitter } from "@zotlit/shared/nanoevents";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import {
   TFile,
   type App,
@@ -52,9 +52,8 @@ export function isLiteratureNote(file: string | TFile, app: App): boolean {
 }
 
 export class NoteIndex extends Service<void> {
-  readonly #app: App;
-  readonly #emitter: Emitter<NoteIndexEvents> =
-    createNanoEvents<NoteIndexEvents>();
+  readonly #app;
+  readonly #emitter = createNanoEvents<NoteIndexEvents>();
 
   readonly #notesByItemKey = new Map<string, Set<string>>();
   readonly #notesByCitekey = new Map<string, Set<string>>();

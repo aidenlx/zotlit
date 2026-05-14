@@ -27,7 +27,7 @@ import {
   type DatabaseClient,
   type DatabaseOptions,
 } from "@zotlit/db";
-import { createNanoEvents, type Emitter } from "@zotlit/shared/nanoevents";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
 import { Service } from "../service-base";
@@ -81,8 +81,8 @@ export interface DatabaseServiceOptions {
 }
 
 export class DatabaseService extends Service<void> {
-  readonly #settings: SettingsService;
-  readonly #emitter: Emitter<DbEvents> = createNanoEvents<DbEvents>();
+  readonly #settings;
+  readonly #emitter = createNanoEvents<DbEvents>();
 
   #firstSettled = false;
 
