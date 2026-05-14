@@ -5,7 +5,7 @@ import * as m from "@/paraglide/messages";
 import { DatabaseError, type DatabaseService } from "./service";
 
 /**
- * Register the manual `zotlit:refresh-db` command — the escape hatch for
+ * Register the manual `zotlit:refresh-zotero-data` command — the escape hatch for
  * silent watcher staleness (system sleep, network-mounted data dirs, etc).
  *
  * `db.ready` never rejects, so the await around it doesn't need a try/catch.
@@ -15,7 +15,7 @@ export function addDatabaseActions(
   services: { db: DatabaseService },
 ): void {
   plugin.addCommand({
-    id: "zotlit:refresh-db",
+    id: "refresh-zotero-data",
     name: m.command_refresh_db_name(),
     callback: async () => {
       await services.db.ready;
