@@ -22,7 +22,11 @@ import { stat as fsStat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { createClient, type DatabaseClient } from "@zotlit/db";
+import {
+  createClient,
+  type DatabaseClient,
+  type DatabaseOptions,
+} from "@zotlit/db";
 import { createNanoEvents, type Emitter } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
@@ -34,6 +38,9 @@ const logger = getLogger("database");
 
 const DEBOUNCE_MS = 500;
 const DB_FILENAME = "zotero.sqlite";
+const DB_OPTIONS: DatabaseOptions = {
+  jit: true,
+};
 
 export type DatabaseErrorCode = "not-ready" | "degraded";
 
@@ -199,7 +206,7 @@ export class DatabaseService extends Service<void> {
     // instead of leaking it into degraded state.
     let pendingClient: DatabaseClient | null = null;
     try {
-      pendingClient = createClient(buildSqliteUri(dbPath));
+      pendingClient = createClient(buildSqliteUri(dbPath), DB_OPTIONS);
       const stat = await fsStat(dbPath);
       this.#activeClient = pendingClient;
       pendingClient = null;
@@ -297,7 +304,7 @@ export class DatabaseService extends Service<void> {
     let nextClient: DatabaseClient | null = null;
     let stat: Stats;
     try {
-      nextClient = createClient(buildSqliteUri(dbPath));
+      nextClient = createClient(buildSqliteUri(dbPath), DB_OPTIONS);
       stat = await fsStat(dbPath);
     } catch (error) {
       // Close the freshly-opened client if stat (not createClient) failed,

@@ -16,7 +16,9 @@
     "db:pull": "drizzle-kit pull",
     "dev": "tsdown --watch",
     "typecheck": "tsgo --noEmit -p tsconfig.lib.json",
-    "lint": "oxlint"
+    "typecheck:test": "tsgo --noEmit -p tsconfig.test.json",
+    "lint": "oxlint",
+    "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
   },
   "dependencies": {
     "@zotlit/shared": "workspace:*",
@@ -29,6 +31,7 @@
     "@zotlit/config": "workspace:*",
     "drizzle-kit": "catalog:",
     "oxlint": "catalog:",
-    "tsdown": "catalog:"
+    "tsdown": "catalog:",
+    "vitest": "^4.0.13"
   }
 }

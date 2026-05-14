@@ -1,0 +1,78 @@
+.zt-citations {
+  /* Authoritative title-width budget. Consumed both by the .suggestion-title
+   * max-width below and by render-hit.ts (read via getComputedStyle), so the
+   * JS truncation window stays aligned with the visible CSS clip. Override
+   * via a theme snippet if the suggester needs a wider/narrower row. */
+  --zt-citation-title-max-chars: 60;
+}
+
+.zt-citations .suggestion-content {
+  min-width: 0;
+}
+
+.zt-citations .suggestion-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  line-height: var(--line-height-tight);
+  max-width: calc(var(--zt-citation-title-max-chars) * 1ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zt-citations .suggestion-title .suggestion-highlight {
+  color: var(--text-accent);
+  font-weight: var(--font-semibold);
+}
+
+.zt-citations .citekey {
+  background-color: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 14px;
+  color: var(--text-muted);
+  display: inline-block;
+  font-size: var(--font-ui-smaller);
+  margin: 1px 0;
+  padding: 1px 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.zt-citations .meta {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+}
+
+.zt-citations .meta > :not(:last-child)::after {
+  content: ", ";
+}
+
+.zt-citations .meta::after {
+  content: ".";
+}
+
+.zt-citations .author-year > :not(:last-child)::after {
+  content: " ";
+}
+
+.zt-citations .date::before {
+  content: "(";
+}
+
+.zt-citations .date::after {
+  content: ")";
+}
+
+.zt-citations .publication {
+  font-style: italic;
+}
+
+.zt-citations .issue::before {
+  content: "(";
+}
+
+.zt-citations .issue::after {
+  content: ")";
+}

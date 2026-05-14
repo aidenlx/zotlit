@@ -71,6 +71,9 @@ importers:
       fflate:
         specifier: ^0.8.2
         version: 0.8.2
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
     devDependencies:
       '@codemirror/state':
         specifier: 6.5.0
@@ -164,6 +167,9 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
+      vitest:
+        specifier: ^4.0.13
+        version: 4.1.5(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(jiti@2.7.0))
 
   packages/obsidian-api:
     dependencies:
@@ -1681,6 +1687,9 @@ packages:
     resolution: {integrity: sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ==}
     engines: {node: '>=10'}
 
+  minisearch@7.2.0:
+    resolution: {integrity: sha512-dqT2XBYUOZOiC5t2HRnwADjhNS2cecp9u+TJRiJ1Qp/f5qjkeT5APcGPjHw+bz89Ms8Jp+cG4AlE+QZ/QnDglg==}
+
   moment@2.29.4:
     resolution: {integrity: sha512-5LC9SOxjSc2HF6vO2CyuTDNivEdoz2IvyJJGj6X8DJ0eFyfszE0QiEd+iXmBvUP3WHxSjFH/vIsA0EN00cgr8w==}
 
@@ -3078,6 +3087,8 @@ snapshots:
   mimic-response@1.0.1: {}
 
   mimic-response@3.1.0: {}
+
+  minisearch@7.2.0: {}
 
   moment@2.29.4: {}
 

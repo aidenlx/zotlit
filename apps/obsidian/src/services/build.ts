@@ -1,5 +1,7 @@
 import type ZotLitPlugin from "../zt-main";
 import { DatabaseService } from "./database/service";
+import { getChsSegmenter } from "./item-lookup/engine";
+import { ItemLookup } from "./item-lookup/service";
 import { LoggingService } from "./log/service";
 import { NoteIndex } from "./note-index/service";
 import { ServiceContainer } from "./service-base";
@@ -42,5 +44,13 @@ export function buildServices(
     })
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+    })
+    .use({
+      itemLookup: ({ db, settings }) =>
+        new ItemLookup({
+          db,
+          settings,
+          getChsSegmenter: () => getChsSegmenter(plugin.app),
+        }),
     });
 }

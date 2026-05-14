@@ -124,7 +124,9 @@ If none of those apply, a single file with private methods is the simpler answer
 
 ## Conventions worth knowing
 
-- Shared dependency versions go in the **catalog** in `pnpm-workspace.yaml`. Packages reference them as `"oxlint": "catalog:"`.
+- Dependency versions shared by multiple packages go in the **catalog** in
+  `pnpm-workspace.yaml`; package-local dependencies stay in that package's
+  `package.json`. Catalog users reference shared entries as `"oxlint": "catalog:"`.
 - pnpm settings (`allowBuilds`, `minimumReleaseAge`, `catalog`) belong in `pnpm-workspace.yaml`, not under a `"pnpm"` key in `package.json`.
 - `minimumReleaseAge: 1440` (24h delay) is intentional, a supply-chain hardening measure.
 - `__DEV__` is replaced at build time (`true` in dev mode, `false` in production).
