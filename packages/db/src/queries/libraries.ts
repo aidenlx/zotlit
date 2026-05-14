@@ -1,6 +1,6 @@
+import type { LibraryType } from "@drizzle/schema";
 import type { DatabaseClient } from "../client";
-
-export type LibraryType = "user" | "group";
+import { cachedPrepared } from "./prepared";
 
 export interface Library {
   libraryID: number;
@@ -17,20 +17,22 @@ export interface Library {
  * can localize labels itself.
  */
 export function getLibraries(db: DatabaseClient): Library[] {
-  const rows = db.query.libraries
-    .findMany({
-      columns: { libraryID: true, type: true },
-      with: {
-        groups: {
-          columns: { groupID: true, name: true },
+  const rows = cachedPrepared(db, "libraries.list", (db) =>
+    db.query.libraries
+      .findMany({
+        columns: { libraryID: true, type: true },
+        with: {
+          groups: {
+            columns: { groupID: true, name: true },
+          },
         },
-      },
-      orderBy: { libraryID: "asc" },
-    })
-    .sync();
+        orderBy: { libraryID: "asc" },
+      })
+      .prepare(),
+  ).all();
   return rows.map((row) => ({
     libraryID: row.libraryID,
-    type: row.type as LibraryType,
+    type: row.type,
     groupID: row.groups?.groupID ?? null,
     name: row.groups?.name ?? null,
   }));
