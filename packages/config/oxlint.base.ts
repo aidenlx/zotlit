@@ -6,6 +6,7 @@ export default defineConfig({
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",
+    "typescript/prefer-readonly": "error",
 
     "no-param-reassign": "error",
     "default-param-last": "error",
