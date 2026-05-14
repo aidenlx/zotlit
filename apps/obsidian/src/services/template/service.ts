@@ -34,10 +34,10 @@ export interface TemplateServiceOptions {
 }
 
 export class TemplateService extends Service<void> {
-  readonly #plugin: Plugin;
-  readonly #app: App;
-  readonly #settings: SettingsService;
-  readonly #eta: ObsidianEta;
+  readonly #plugin;
+  readonly #app;
+  readonly #settings;
+  readonly #eta;
   readonly #contentMap = new Map<string, string>();
   readonly #compileSnapshots = new Map<string, CompileSnapshot>();
   readonly #pendingFlush = new Set<string>();

@@ -49,8 +49,8 @@ interface AppliedConfig {
 const INITIAL_APPLIED: AppliedConfig = { level: "info", toFile: false };
 
 export class LoggingService extends Service<void> {
-  readonly #plugin: Pick<Plugin, "app" | "manifest">;
-  readonly #settings: SettingsService;
+  readonly #plugin;
+  readonly #settings;
 
   #desired: AppliedConfig = INITIAL_APPLIED;
   #applied: AppliedConfig | null = null;

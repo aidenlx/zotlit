@@ -56,7 +56,7 @@
  *   `saveData()`.
  */
 
-import { debounce, type Debouncer, type Plugin } from "obsidian";
+import { debounce, type Plugin } from "obsidian";
 import * as v from "valibot";
 
 import { Service } from "../service-base";
@@ -97,9 +97,9 @@ export interface SettingsServiceOptions {
 }
 
 export class SettingsService extends Service<void> {
-  readonly #plugin: Pick<Plugin, "loadData" | "saveData">;
-  readonly #migrateLegacy: (raw: unknown) => unknown;
-  readonly #scheduleSave: Debouncer<[], Promise<void>>;
+  readonly #plugin;
+  readonly #migrateLegacy;
+  readonly #scheduleSave;
   readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
 
   #overrides: Partial<Settings> = {};
