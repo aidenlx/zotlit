@@ -81,14 +81,14 @@ interface DatabaseServiceDeps {
 }
 
 export class DatabaseService extends Service<DatabaseState> {
-  #plugin;
-  #settings;
+  readonly #plugin;
+  readonly #settings;
   ready: Promise<DatabaseState>;
 
-  constructor(ctx: DatabaseServiceDeps) {
+  constructor(deps: DatabaseServiceDeps) {
     super();
-    this.#plugin = ctx.plugin;
-    this.#settings = ctx.settings;
+    this.#plugin = deps.plugin;
+    this.#settings = deps.settings;
     this.ready = this.#load();
   }
 
@@ -133,12 +133,12 @@ interface ClockServiceDeps {
 }
 
 export class ClockService extends Service {
-  #plugin;
+  readonly #plugin;
   ready = Promise.resolve();
 
-  constructor(ctx: ClockServiceDeps) {
+  constructor(deps: ClockServiceDeps) {
     super();
-    this.#plugin = ctx.plugin;
+    this.#plugin = deps.plugin;
   }
 }
 ```
@@ -147,7 +147,7 @@ Notes the shape encodes:
 
 - `extends Service`, never `implements Service` (no interface) and never a custom base.
 - `super()` first in any explicit constructor.
-- Deps stored in private (`#`) fields; no public dep fields, no reach-through.
+- Deps stored in `readonly` private (`#`) fields; no public dep fields, no reach-through. Omit the type annotation on the field — let TypeScript infer it from the constructor assignment (`readonly #app;` not `readonly #app: App;`).
 - `ready` is a mutable instance field. Declare it as `ready: Promise<State>` and assign in the constructor when load is async and returns state; use `ready: Promise<void>` for async startup with no state; initialize as `ready = Promise.resolve()` when load is sync. Do not mark it `readonly` — the container reassigns it to attach `ServiceInitError` wrapping.
 - All resource acquisition lives inside `#load()` under a local `await using stack`, handed off with `this.commit(stack.move())` only on the success path. Treat `commit()` as the last meaningful side effect before returning the ready state.
 - Resources acquired during load are returned from `#load()` as the `ready` resolve value; accessors do `const { ... } = await this.ready;` instead of storing nullable resource fields.
