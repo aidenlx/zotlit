@@ -26,7 +26,7 @@ class MockVault {
   });
 
   #mtime = 1;
-  #listeners: Record<VaultEvent, Set<VaultCallback>> = {
+  readonly #listeners: Record<VaultEvent, Set<VaultCallback>> = {
     create: new Set(),
     modify: new Set(),
     rename: new Set(),

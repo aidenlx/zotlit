@@ -4,6 +4,8 @@ import { BaseNotice } from "./lib/notice";
 import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
 import { ZotLitSettingTab } from "./setting-tab";
+import { registerCitationSuggest } from "./views/citation-suggest/register";
+import { registerQuickSwitch } from "./views/quick-switch/register";
 import "./zt-main.css";
 
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
@@ -39,6 +41,18 @@ export default class ZotLitPlugin extends Plugin {
     );
 
     addDatabaseActions(this, { db: services.db });
+    registerCitationSuggest(this, {
+      app: this.app,
+      lookup: services.itemLookup,
+      template: services.template,
+      settings: services.settings,
+    });
+    registerQuickSwitch(this, {
+      app: this.app,
+      lookup: services.itemLookup,
+      noteIndex: services.noteIndex,
+      settings: services.settings,
+    });
 
     console.log("ZotLit loaded");
 

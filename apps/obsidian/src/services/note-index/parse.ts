@@ -106,7 +106,15 @@ function addSectionBlocks(
 
 function parseAnnotBlockKey(fragment: string): string {
   const { itemKey, groupID } = ANNOT_KEY_PAGE_PATTERN.exec(fragment)!.groups;
-  return groupID ? `${itemKey}g${groupID}` : itemKey;
+  return formatItemKey(itemKey, groupID ? Number(groupID) : null);
+}
+
+/** Canonical indexed key. groupID null/undefined -> just `key`. */
+export function formatItemKey(
+  key: string,
+  groupID: number | null | undefined,
+): string {
+  return groupID == null ? key : `${key}g${groupID}`;
 }
 
 function diffBlocks(

@@ -27,6 +27,16 @@ The root category is `["zotlit", "obsidian"]`; whatever you pass becomes a child
 
 Anywhere else, use `getLogger`.
 
+### What to log
+
+Every service must emit basic lifecycle and operation logs. At minimum:
+
+- **`info`** — service ready/disposed, and outcome of each public operation (with counts / `durationMs`).
+- **`debug`** — per-item decisions, cache hits, watcher events, query params.
+- **`warn`** / **`error`** — handled-but-unexpected vs. failed operations (always include the `error` field).
+
+Aggregate hot loops into one summary log; don't log per-iteration at `info`.
+
 ## UI text (Paraglide JS)
 
 All user-facing strings come from Paraglide message functions; never hardcode UI text.
@@ -94,6 +104,10 @@ void toast.promise(db.refresh(), {
 ```
 
 Pass `swallowError: false` if the caller needs the resolved value or wants to react to the rejection itself; otherwise the toast is the only side effect.
+
+## CSS
+
+View-specific styles live next to the view (e.g. `views/<view>/style.css`) and are imported from that view's entry module. Only put truly global styles in `src/zt-main.css`.
 
 ## Testing
 

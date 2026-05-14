@@ -7,6 +7,7 @@ import {
   type EventRef,
   type Plugin,
   type Pos,
+  type SectionCache,
 } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -355,7 +356,7 @@ async function makeHarness(
 function cache(options: {
   itemKey?: unknown;
   citekey?: unknown;
-  sections?: SectionCacheLike[];
+  sections?: SectionCache[];
 }): CachedMetadata {
   const frontmatter: Record<string, unknown> = {};
   if (options.itemKey !== undefined)
@@ -368,9 +369,7 @@ function cache(options: {
   } as CachedMetadata;
 }
 
-type SectionCacheLike = NonNullable<CachedMetadata["sections"]>[number];
-
-function section(id: string, line: number): SectionCacheLike {
+function section(id: string, line: number): SectionCache {
   return { id, position: pos(line), type: "paragraph" };
 }
 

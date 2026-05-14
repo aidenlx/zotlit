@@ -15,10 +15,13 @@ import {
   diffContributions,
   EMPTY_CONTRIBUTIONS,
   fileContributions,
+  formatItemKey,
   itemKeyFromFrontmatter,
   type ContribDiff,
   type FileContributions,
 } from "./parse";
+
+export { formatItemKey };
 
 const logger = getLogger("note-index");
 
@@ -37,14 +40,6 @@ interface NoteIndexEvents {
 export interface NoteIndexOptions {
   plugin: Plugin;
   app: App;
-}
-
-/** Canonical indexed key. groupID null/undefined -> just `key`. */
-export function formatItemKey(
-  key: string,
-  groupID: number | null | undefined,
-): string {
-  return groupID == null ? key : `${key}g${groupID}`;
 }
 
 /** Frontmatter-only check; does not consult the index. */

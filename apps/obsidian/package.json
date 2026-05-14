@@ -20,7 +20,8 @@
     "@zotlit/shared": "workspace:*",
     "arkregex": "^0.0.5",
     "eta": "^4.6.0",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "minisearch": "^7.2.0"
   },
   "devDependencies": {
     "@codemirror/state": "6.5.0",
