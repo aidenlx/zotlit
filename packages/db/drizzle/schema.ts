@@ -649,9 +649,11 @@ export const deletedSearches = sqliteTable("deletedSearches", {
   dateDeleted: noTypeDate().default(currentTimestamp).notNull(),
 });
 
+export type LibraryType = "user" | "group";
+
 export const libraries = sqliteTable("libraries", {
   libraryID: integer().primaryKey(),
-  type: text().notNull(),
+  type: text().notNull().$type<LibraryType>(),
   editable: integer().notNull(),
   filesEditable: integer().notNull(),
   version: integer().default(0).notNull(),
