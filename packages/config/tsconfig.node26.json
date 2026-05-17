@@ -8,7 +8,8 @@
       "esnext.collection",
       "esnext.temporal",
       "esnext.intl",
-      "esnext.date"
+      "esnext.date",
+      "esnext.error"
     ],
     "module": "nodenext",
     "target": "es2025",

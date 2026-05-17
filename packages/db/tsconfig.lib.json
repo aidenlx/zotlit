@@ -1,5 +1,5 @@
 {
-  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.chrome142"],
+  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.obsidian"],
   "compilerOptions": {
     "declaration": true,
     "declarationMap": true,
