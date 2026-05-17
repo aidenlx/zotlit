@@ -1,6 +1,6 @@
 {
   "$schema": "https://www.schemastore.org/tsconfig",
-  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.chrome142"],
+  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.obsidian"],
   "compilerOptions": {
     "module": "esnext",
     "moduleResolution": "bundler",

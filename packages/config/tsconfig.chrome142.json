@@ -1,7 +1,0 @@
-{
-  "$schema": "https://www.schemastore.org/tsconfig",
-  "compilerOptions": {
-    "target": "ES2025",
-    "lib": ["ES2025", "ESNext.Disposable", "DOM"]
-  }
-}
