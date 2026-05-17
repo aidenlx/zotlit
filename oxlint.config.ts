@@ -9,6 +9,7 @@ export default defineConfig({
   },
   ignorePatterns: [
     "**/dist/**",
+    "**/dist-dev/**",
     "**/build/**",
     "**/.turbo/**",
     "**/.next/**",
