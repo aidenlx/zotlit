@@ -1,6 +1,41 @@
 {
   "name": "@zotlit/zotero",
-  "version": "0.0.0",
+  "version": "2.0.0-alpha.0",
   "private": true,
-  "type": "module"
+  "description": "Zotero companion plugin for ZotLit — exports literature notes and annotations to Obsidian.",
+  "author": "AidenLx",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && pnpm typecheck",
+    "build:dev": "vite build --mode development",
+    "dev": "vite build --watch --mode development",
+    "typecheck": "tsgo --noEmit -p tsconfig.app.json",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "@logtape/logtape": "catalog:",
+    "@std/async": "jsr:^1.3.0",
+    "@zotlit/protocol": "workspace:*",
+    "@zotlit/shared": "workspace:*",
+    "core-js": "^3.39.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node-25": "npm:@types/node@^25.6.2",
+    "@types/semver": "^7.7.1",
+    "@typescript/native-preview": "catalog:",
+    "@zotlit/config": "workspace:*",
+    "adm-zip": "^0.5.16",
+    "oxlint": "catalog:",
+    "semver": "^7.8.0",
+    "valibot": "^1.0.0",
+    "vite": "^8.0.0",
+    "zotero-types": "4.1.2"
+  },
+  "zotero": {
+    "id": "zotlit@aidenlx.top",
+    "update_url": "https://raw.githubusercontent.com/aidenlx/zotlit/main/apps/zotero/update.json",
+    "strict_min_version": "9.0",
+    "strict_max_version": "9.*"
+  }
 }

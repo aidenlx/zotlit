@@ -1,0 +1,16 @@
+{
+  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.zotero"],
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "allowJs": true,
+    "isolatedDeclarations": false,
+    "types": ["zotero-types/entries/sandbox"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["./src/**/*.ts", "./src/types/**/*.d.ts"],
+  "exclude": ["./node_modules", "./dist", "./dist-dev"]
+}

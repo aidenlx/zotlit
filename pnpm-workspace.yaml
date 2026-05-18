@@ -3,7 +3,9 @@ packages:
   - packages/*
 
 allowBuilds:
+  core-js: false
   electron: false
+  es5-ext: false
   esbuild: true
   lefthook: true
 
@@ -17,6 +19,13 @@ catalog:
   oxfmt: ^0.48.0
   oxlint: ^1.63.0
   tsdown: ^0.22.0
+
+# zotero-types declares two transitive deps as GitHub specs, which
+# blockExoticSubdeps refuses. Scope overrides to zotero-types only so we
+# don't shadow these names anywhere else in the graph.
+overrides:
+  "zotero-types>epubjs": 0.3.93
+  "zotero-types>pdfjs-dist": workspace:*
 
 # delay one day to reduce the risk of installing compromised packages
 minimumReleaseAge: 1440

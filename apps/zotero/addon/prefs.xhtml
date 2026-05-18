@@ -1,0 +1,30 @@
+<vbox
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+>
+  <html:link rel="localization" href="zotlit.ftl" />
+
+  <groupbox>
+    <html:h2 data-l10n-id="zotlit-prefs-notify-section" />
+
+    <hbox align="center">
+      <checkbox
+        preference="extensions.zotlit.notify"
+        data-l10n-id="zotlit-prefs-notify-enable"
+      />
+    </hbox>
+
+    <hbox align="center">
+      <label
+        data-l10n-id="zotlit-prefs-notify-url"
+        control="zotlit-notify-url"
+      />
+      <html:input
+        id="zotlit-notify-url"
+        type="text"
+        preference="extensions.zotlit.notify-url"
+        style="flex: 1; min-width: 24em"
+      />
+    </hbox>
+  </groupbox>
+</vbox>

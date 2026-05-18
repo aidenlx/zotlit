@@ -21,6 +21,7 @@ export default defineConfig({
     ".claude/**",
     "tests/zt-vault/**",
     "packages/obsidian-api/**",
+    "packages/pdfjs-dist/**",
   ],
   overrides: [
     {
