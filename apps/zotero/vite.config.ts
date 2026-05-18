@@ -1,4 +1,4 @@
-import { build, defineConfig } from "vite";
+import { defineConfig } from "vite";
 
 import {
   resolveEnv,
@@ -25,27 +25,21 @@ const BOOTSTRAP_IIFE_NAME = "__zotlitBootstrap";
 const MAIN_EXPORTS = ["ZotLitZotero"] as const;
 const MAIN_IIFE_NAME = "__zotlitMain";
 
-export default defineConfig(async ({ mode }) => {
-  const env = resolveEnv(mode);
+// bootstrap.js and main.js can't share one Vite/Rolldown build: IIFE format
+// is single-entry by design (each top-level `var X = (function(){…})()`
+// wrapper produces exactly one file). The plugin runs the inner bootstrap
+// build inside `buildStart`, adds its module ids to the watch graph, and
+// owns staging-dir cleanup — so a single outer watcher picks up changes to
+// either source tree.
+const bootstrapBundle = {
+  entry: "src/bootstrap.ts",
+  iifeName: BOOTSTRAP_IIFE_NAME,
+  fileName: "bootstrap.js",
+  exports: BOOTSTRAP_HOOKS,
+} as const;
 
-  // Build bootstrap.js first as a separate IIFE bundle. We can't do this in
-  // the same Vite/Rolldown build as main.js because IIFE format is
-  // single-entry by design: each top-level `var X = (function(){…})()`
-  // wrapper produces exactly one file. Running the inner `build()` from
-  // here (during the async config phase) is the cleanest way to keep both
-  // bundles produced by a single `vite build` invocation — the outer build
-  // continues with main.js after this resolves.
-  await build(
-    zoteroSandboxConfig(here, env, {
-      entry: "src/bootstrap.ts",
-      iifeName: BOOTSTRAP_IIFE_NAME,
-      fileName: "bootstrap.js",
-      exports: BOOTSTRAP_HOOKS,
-      // First of the pair — clean staging so stale assets from a prior run
-      // don't leak into this XPI.
-      emptyOutDir: true,
-    }),
-  );
+export default defineConfig(({ mode }) => {
+  const env = resolveEnv(mode);
 
   return {
     ...zoteroSandboxConfig(here, env, {
@@ -60,9 +54,8 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       zoteroBuildPlugin({
         root: here,
-        addonStaging: env.addonStaging,
-        xpiOutDir: env.xpiOutDir,
-        isProd: env.isProd,
+        env,
+        bootstrapBundle,
       }),
     ],
   };

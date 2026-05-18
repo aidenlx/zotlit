@@ -1,9 +1,32 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import AdmZip from "adm-zip";
+import { build } from "vite";
 import type { InlineConfig, LibraryFormats, Plugin } from "vite";
 
 import { parseManifest } from "./manifest.js";
+
+type BuildResult = Awaited<ReturnType<typeof build>>;
+// build() can return a watcher when build.watch is set; we don't set that
+// on the inner config, so narrow off the watcher branch structurally.
+type BuildOutput = Exclude<BuildResult, { close: unknown }>;
+
+async function addWatchTree(
+  addWatchFile: (id: string) => void,
+  dir: string,
+): Promise<void> {
+  addWatchFile(dir);
+  const entries = await readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await addWatchTree(addWatchFile, path);
+    } else if (entry.isFile()) {
+      addWatchFile(path);
+    }
+  }
+}
 
 export interface ZoteroBuildEnv {
   mode: string;
@@ -77,27 +100,47 @@ export function zoteroSandboxConfig(
 
 export interface ZoteroBuildPluginOpts {
   root: string;
-  addonStaging: string;
-  xpiOutDir: string;
-  isProd: boolean;
+  env: ZoteroBuildEnv;
+  bootstrapBundle: ZoteroIifeBundleOpts;
 }
 
 export function zoteroBuildPlugin({
   root,
-  addonStaging,
-  xpiOutDir,
-  isProd,
+  env,
+  bootstrapBundle,
 }: ZoteroBuildPluginOpts): Plugin {
+  const { addonStaging, xpiOutDir, isProd } = env;
   const pkgPath = join(root, "package.json");
   const addonSrcDir = join(root, "addon");
   const addonDistDir = join(root, addonStaging);
+  const bootstrapEntryPath = resolve(root, bootstrapBundle.entry);
   const xpiAbsoluteOutDir = join(root, xpiOutDir);
 
   return {
     name: "zotero-build",
-    buildStart() {
+    async buildStart() {
+      // Wipe staging every rebuild so deletions or renames under addon/ —
+      // and stale bundle chunks from prior runs — don't leak into the XPI.
+      // Safe to do here because both bundle writes happen after buildStart.
+      await rm(addonDistDir, { recursive: true, force: true });
+
+      // Register stable watch paths before the inner build so a failing
+      // bootstrap build still leaves the entry file under watch; otherwise
+      // the dev's next save can't trigger a retry.
       this.addWatchFile(pkgPath);
-      this.addWatchFile(addonSrcDir);
+      this.addWatchFile(bootstrapEntryPath);
+      await addWatchTree(this.addWatchFile.bind(this), addonSrcDir);
+
+      const result = (await build(
+        zoteroSandboxConfig(root, env, bootstrapBundle),
+      )) as BuildOutput;
+      const outputs = Array.isArray(result) ? result : [result];
+      for (const { output } of outputs) {
+        for (const chunk of output) {
+          if (chunk.type !== "chunk") continue;
+          for (const id of chunk.moduleIds) this.addWatchFile(id);
+        }
+      }
     },
     async writeBundle() {
       const pkgRaw = await readFile(pkgPath, "utf-8");
