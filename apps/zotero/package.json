@@ -8,8 +8,7 @@
   "scripts": {
     "build": "vite build && pnpm typecheck",
     "build:dev": "vite build --mode development",
-    "dev": "vite build --watch --mode development",
-    "serve": "vite build --watch --mode development --config vite.serve.config.ts",
+    "dev": "vite build --watch --mode development --config vite.serve.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
     "test": "tsgo --noEmit -p tsconfig.node.json && vitest run",
     "lint": "oxlint"
