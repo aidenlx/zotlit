@@ -1,5 +1,6 @@
 import "core-js/proposals/explicit-resource-management";
 import type { ZotLitZotero as ZotLitZoteroCtor } from "./main";
+import { BOOTSTRAP_BUNDLE_NAME, MAIN_BUNDLE_NAME } from "./constant";
 import type { BootstrapReason } from "./lib/bootstrap-reasons";
 import { logToBrowserConsole } from "./lib/zotero-log";
 
@@ -62,17 +63,17 @@ function logBootstrapError(message: string, error: unknown): void {
       ? `[${error.name}] ${error.message}\n${error.stack ?? ""}`
       : String(error);
   const printMessage = `${message}: ${detail}`;
-  logToBrowserConsole(printMessage, "error", "bootstrap.js");
+  logToBrowserConsole(printMessage, "error", BOOTSTRAP_BUNDLE_NAME);
   Zotero.debug(printMessage, 1);
 }
 
 function loadMain(rootURI: string): typeof ZotLitZoteroCtor {
   const scope: MainScope = Object.create(null) as MainScope;
-  Services.scriptloader.loadSubScript(`${rootURI}main.js`, scope);
+  Services.scriptloader.loadSubScript(`${rootURI}${MAIN_BUNDLE_NAME}`, scope);
   const ctor = scope.ZotLitZotero;
   if (!ctor) {
     throw new Error(
-      "main.js did not expose ZotLitZotero on the load scope — check vite output.footer",
+      `${MAIN_BUNDLE_NAME} did not expose ZotLitZotero on the load scope — check vite output.footer`,
     );
   }
   return ctor;

@@ -9,9 +9,10 @@
   },
   "include": [
     "./scripts/**/*.ts",
+    "./src/constant.ts",
     "vite.config.ts",
     "vite.serve.config.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["./node_modules", "./src/**/*"]
+  "exclude": ["./node_modules"]
 }

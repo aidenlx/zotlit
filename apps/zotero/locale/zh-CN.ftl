@@ -18,3 +18,15 @@ zotlit-prefs-log-level-error =
     .label = Error
 zotlit-prefs-log-level-fatal =
     .label = Fatal
+
+zotlit-menu-item-submenu =
+    .label = Obsidian 操作
+zotlit-menu-item-open =
+    .label = 打开文献笔记
+zotlit-menu-item-update =
+    .label = 更新文献笔记
+zotlit-menu-item-export =
+    .label = 创建文献笔记
+zotlit-menu-reader-annot-merge = 合并标注
+zotlit-menu-reader-annot-export = 导出到 Obsidian 笔记
+zotlit-menu-reader-page-open = 在 Obsidian 中打开笔记

@@ -7,11 +7,15 @@ import {
   zoteroBuildPlugin,
   zoteroSandboxConfig,
 } from "./scripts/vite-zotero-plugin.js";
+import {
+  BOOTSTRAP_BUNDLE_NAME,
+  FLUENT_FILE_NAME,
+  MAIN_BUNDLE_NAME,
+} from "./src/constant.js";
 
 const here = import.meta.dirname;
 
 const FLUENT_PREFIX = "zotlit";
-const FLUENT_FILE = "zotlit.ftl";
 const PREF_PREFIX = "extensions.zotlit.";
 
 // Names that Zotero's plugin loader expects as top-level bindings on the
@@ -40,7 +44,7 @@ const MAIN_IIFE_NAME = "__zotlitMain";
 const bootstrapBundle = {
   entry: "src/bootstrap.ts",
   iifeName: BOOTSTRAP_IIFE_NAME,
-  fileName: "bootstrap.js",
+  fileName: BOOTSTRAP_BUNDLE_NAME,
   exports: BOOTSTRAP_HOOKS,
 } as const;
 
@@ -51,7 +55,7 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
     ...zoteroSandboxConfig(here, env, {
       entry: "src/main.ts",
       iifeName: MAIN_IIFE_NAME,
-      fileName: "main.js",
+      fileName: MAIN_BUNDLE_NAME,
       exports: MAIN_EXPORTS,
       // `using` keyword supported in firefox 141, but firefox 140 target
       // incorrectly flips `using` as supported; target es2023 explicitly here
@@ -65,7 +69,7 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
         env,
         prefix: FLUENT_PREFIX,
         localeDir: "locale",
-        ftlFileName: FLUENT_FILE,
+        ftlFileName: FLUENT_FILE_NAME,
         addonDir: "addon",
         typesOutput: "src/types/fluent.d.ts",
         primaryLocale: "en-US",
