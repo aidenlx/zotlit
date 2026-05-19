@@ -2,6 +2,7 @@ import {
   configure,
   getLogger,
   getTextFormatter,
+  isLogLevel,
   reset,
   type LogLevel,
   type Sink,
@@ -52,7 +53,8 @@ const formatRecord: TextFormatter = getTextFormatter({
 });
 
 function consoleLevelFromPref(pref: string): number {
-  const rank = LOG_LEVELS[pref as LogLevel] ?? LOG_LEVELS.warning;
+  const level: LogLevel = isLogLevel(pref) ? pref : "warning";
+  const rank = LOG_LEVELS[level];
   if (__DEV__) return Math.max(rank, LOG_LEVELS.debug);
   return rank;
 }

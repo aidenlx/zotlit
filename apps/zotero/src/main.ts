@@ -3,6 +3,7 @@ import {
   type BootstrapReason,
 } from "./lib/bootstrap-reasons";
 import { logger, setupLogging } from "./lib/logger";
+import { registerPrefPane } from "./prefs";
 
 export interface PluginData {
   id: string;
@@ -29,6 +30,7 @@ export class ZotLitZotero {
     const stack = new AsyncDisposableStack();
     this.#stack = stack;
     void stack.use(await setupLogging());
+    await registerPrefPane(this.#data.id);
     logger.info("startup", {
       version: this.#data.version,
       id: this.#data.id,
