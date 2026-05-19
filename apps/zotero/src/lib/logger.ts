@@ -8,8 +8,11 @@ import {
   type Sink,
   type TextFormatter,
 } from "@logtape/logtape";
+import { MAIN_BUNDLE_NAME } from "../constant";
 import { prefs } from "../prefs";
 import { logToBrowserConsole } from "./zotero-log";
+
+const LOG_SOURCE_NAME = `zotlit-${MAIN_BUNDLE_NAME}`;
 
 const LOG_LEVELS: Record<LogLevel, number> = {
   trace: 6,
@@ -64,11 +67,11 @@ let consoleLevel = LOG_LEVELS.warning;
 
 function toConsole(text: string, level: LogLevel): void {
   if (level === "error" || level === "fatal") {
-    logToBrowserConsole(text, "error", "zotlit-main.js");
+    logToBrowserConsole(text, "error", LOG_SOURCE_NAME);
   } else if (level === "warning") {
-    logToBrowserConsole(text, "warning", "zotlit-main.js");
+    logToBrowserConsole(text, "warning", LOG_SOURCE_NAME);
   } else {
-    logToBrowserConsole(text, "info", "zotlit-main.js");
+    logToBrowserConsole(text, "info", LOG_SOURCE_NAME);
   }
 }
 

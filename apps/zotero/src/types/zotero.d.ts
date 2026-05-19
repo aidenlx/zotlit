@@ -4,6 +4,20 @@ declare global {
   // Vite-injected build-time constant.
   const __DEV__: boolean;
 
+  interface Window {
+    /**
+     * Gecko chrome-window global. We only use `insertFTLIfNeeded`, which
+     * idempotently appends `<link rel="localization" href="…"/>` to the
+     * window's document so its `document.l10n` includes the FTL file in
+     * subsequent translations.
+     *
+     * @see https://searchfox.org/mozilla-esr140/source/toolkit/content/widgets/MozElements.js
+     */
+    readonly MozXULElement: {
+      insertFTLIfNeeded(path: string): void;
+    };
+  }
+
   // Mozilla Services global, injected into the plugin sandbox by Zotero.
   // Sandbox creation site:
   // https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/plugins.js#L137

@@ -2,6 +2,13 @@
 // Source of truth: locale/*.ftl
 
 export type FluentMessageId =
+  | "zotlit-menu-item-export"
+  | "zotlit-menu-item-open"
+  | "zotlit-menu-item-submenu"
+  | "zotlit-menu-item-update"
+  | "zotlit-menu-reader-annot-export"
+  | "zotlit-menu-reader-annot-merge"
+  | "zotlit-menu-reader-page-open"
   | "zotlit-prefs-log-level-debug"
   | "zotlit-prefs-log-level-error"
   | "zotlit-prefs-log-level-fatal"

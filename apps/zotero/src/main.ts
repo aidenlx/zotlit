@@ -2,7 +2,9 @@ import {
   BOOTSTRAP_REASONS,
   type BootstrapReason,
 } from "./lib/bootstrap-reasons";
+import { attachFluentToWindow } from "./lib/l10n";
 import { logger, setupLogging } from "./lib/logger";
+import { registerMenus } from "./menus";
 import { registerPrefPane } from "./prefs";
 
 export interface PluginData {
@@ -30,7 +32,16 @@ export class ZotLitZotero {
     const stack = new AsyncDisposableStack();
     this.#stack = stack;
     void stack.use(await setupLogging());
+    // Plugin-FTL → window binding doesn't happen automatically. At
+    // first-startup the main window typically isn't open yet so this loop
+    // is empty and `onMainWindowLoad` handles it; on runtime
+    // install/enable the window is already open and would otherwise miss
+    // its FTL link until the next restart.
+    for (const win of Zotero.getMainWindows()) {
+      attachFluentToWindow(win);
+    }
     await registerPrefPane(this.#data.id);
+    stack.use(await registerMenus(this.#data.id));
     logger.info("startup", {
       version: this.#data.version,
       id: this.#data.id,
@@ -44,7 +55,9 @@ export class ZotLitZotero {
     this.#stack = null;
   }
 
-  onMainWindowLoad(_window: Window): void {}
+  onMainWindowLoad(window: Window): void {
+    attachFluentToWindow(window);
+  }
 
   onMainWindowUnload(_window: Window): void {}
 }
