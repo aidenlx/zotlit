@@ -11,6 +11,7 @@
     "dev": "vite build --watch --mode development",
     "serve": "vite build --watch --mode development --config vite.serve.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
+    "test": "tsgo --noEmit -p tsconfig.node.json && vitest run",
     "lint": "oxlint"
   },
   "dependencies": {
@@ -28,11 +29,13 @@
     "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
     "adm-zip": "^0.5.16",
+    "oxc-parser": "^0.129.0",
     "oxlint": "catalog:",
     "semver": "^7.8.0",
     "tinyglobby": "^0.2.16",
     "valibot": "^1.0.0",
     "vite": "^8.0.0",
+    "vitest": "^4.0.13",
     "zotero-types": "4.1.2"
   },
   "zotero": {

@@ -91,13 +91,3 @@ This unlocks Zotero's in-app auto-update prompt. Until then, users install from 
 - Whether to keep a single `update.json` or split per Zotero major once a Zotero 10 ever appears.
 
 **Trigger**: cutting the first user-installable release. Tracking issue should be filed before the alpha graduates to a tag users are expected to install.
-
----
-
-## Prefs: graduate to prefix + `.d.ts` codegen
-
-**Current**: `addon/prefs.js` has full `extensions.zotlit.*` keys; `src/prefs/index.ts` exposes a typed wrapper with a hand-maintained `PrefsMap`.
-
-**Planned**: a build step that parses `addon/prefs.js`, prefixes unprefixed `pref("key", ...)` entries with `extensions.zotlit.`, prefixes `preference="..."` attributes in XHTML, and generates a `PluginPrefsMap` type for narrowing `Zotero.Prefs.get/set` project-wide.
-
-**Trigger**: pref count crosses ~15.
