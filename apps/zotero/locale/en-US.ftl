@@ -1,4 +1,5 @@
-# All Fluent IDs hand-prefixed `zotlit-` — see AGENTS.md.
+# All message IDs must be prefixed `zotlit-`; the build fails otherwise.
+# `src/types/fluent.d.ts` is regenerated from this file at build time.
 
 zotlit-prefs-pane-label = ZotLit
 zotlit-prefs-notify-section = Obsidian Notifications

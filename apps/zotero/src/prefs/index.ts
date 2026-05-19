@@ -1,5 +1,7 @@
 // Keep `PrefsMap` in sync with `addon/prefs.js` and `addon/prefs.xhtml` by hand.
 
+import { formatValue } from "@/lib/l10n.js";
+
 const PREFIX = "extensions.zotlit." as const;
 
 interface PrefsMap {
@@ -31,8 +33,7 @@ export const prefs = {
 };
 
 export async function registerPrefPane(pluginID: string): Promise<void> {
-  const l10n = new Localization(["zotlit.ftl"]);
-  const label = await l10n.formatValue("zotlit-prefs-pane-label");
+  const label = await formatValue("zotlit-prefs-pane-label");
   await Zotero.PreferencePanes.register({
     pluginID,
     src: "prefs.xhtml",

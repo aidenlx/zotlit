@@ -1,6 +1,7 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import AdmZip from "adm-zip";
+import { glob } from "tinyglobby";
 import { build } from "vite";
 import type { InlineConfig, LibraryFormats, Plugin } from "vite";
 
@@ -16,16 +17,13 @@ async function addWatchTree(
   dir: string,
 ): Promise<void> {
   addWatchFile(dir);
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await addWatchTree(addWatchFile, path);
-    } else if (entry.isFile()) {
-      addWatchFile(path);
-    }
-  }
+  const paths = await glob("**/*", {
+    cwd: dir,
+    absolute: true,
+    dot: true,
+    onlyFiles: false,
+  });
+  for (const path of paths) addWatchFile(path);
 }
 
 export interface ZoteroBuildEnv {
