@@ -1,6 +1,7 @@
 import { defineConfig, type ConfigEnv } from "vite";
 
 import { fluentPlugin } from "./scripts/vite-fluent-plugin.js";
+import { prefsPlugin } from "./scripts/vite-prefs-plugin.js";
 import {
   resolveEnv,
   zoteroBuildPlugin,
@@ -11,6 +12,7 @@ const here = import.meta.dirname;
 
 const FLUENT_PREFIX = "zotlit";
 const FLUENT_FILE = "zotlit.ftl";
+const PREF_PREFIX = "extensions.zotlit.";
 
 // Names that Zotero's plugin loader expects as top-level bindings on the
 // bootstrap scope. Each is rebound in the bootstrap bundle's footer.
@@ -67,6 +69,13 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
         addonDir: "addon",
         typesOutput: "src/types/fluent.d.ts",
         primaryLocale: "en-US",
+      }),
+      prefsPlugin({
+        root: here,
+        prefix: PREF_PREFIX,
+        prefsFile: "addon/prefs.js",
+        addonDir: "addon",
+        typesOutput: "src/types/prefs.d.ts",
       }),
       zoteroBuildPlugin({
         root: here,

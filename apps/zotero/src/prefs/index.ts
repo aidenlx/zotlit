@@ -1,33 +1,21 @@
-// Keep `PrefsMap` in sync with `addon/prefs.js` and `addon/prefs.xhtml` by hand.
-
 import { formatValue } from "@/lib/l10n.js";
+import type { PluginPrefKey } from "@/types/prefs.js";
 
-const PREFIX = "extensions.zotlit." as const;
-
-interface PrefsMap {
-  notify: boolean;
-  "notify-url": string;
-  "log.console-level": string;
-}
-
-type PrefKey = keyof PrefsMap;
-
-function fullKey<K extends PrefKey>(k: K): string {
-  return `${PREFIX}${k}`;
-}
+type PrefValue = boolean | string | number;
 
 export const prefs = {
-  get<K extends PrefKey>(k: K): PrefsMap[K] {
-    return Zotero.Prefs.get(fullKey(k)) as PrefsMap[K];
+  get<T extends PrefValue = PrefValue>(k: PluginPrefKey): T | undefined {
+    return Zotero.Prefs.get(k) as T | undefined;
   },
-  set<K extends PrefKey>(k: K, v: PrefsMap[K]): void {
-    Zotero.Prefs.set(fullKey(k), v as string | number | boolean);
+  set(k: PluginPrefKey, v: PrefValue): void {
+    Zotero.Prefs.set(k, v);
   },
   /** @returns Teardown that unregisters the underlying Zotero observer. */
-  onChange<K extends PrefKey>(k: K, cb: (v: PrefsMap[K]) => void): () => void {
-    const id = Zotero.Prefs.registerObserver(fullKey(k), () =>
-      cb(prefs.get(k)),
-    );
+  onChange<T extends PrefValue = PrefValue>(
+    k: PluginPrefKey,
+    cb: (v: T | undefined) => void,
+  ): () => void {
+    const id = Zotero.Prefs.registerObserver(k, () => cb(prefs.get<T>(k)));
     return () => Zotero.Prefs.unregisterObserver(id);
   },
 };

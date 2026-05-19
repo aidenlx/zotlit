@@ -52,8 +52,9 @@ const formatRecord: TextFormatter = getTextFormatter({
   },
 });
 
-function consoleLevelFromPref(pref: string): number {
-  const level: LogLevel = isLogLevel(pref) ? pref : "warning";
+function consoleLevelFromPref(pref: unknown): number {
+  const level: LogLevel =
+    typeof pref === "string" && isLogLevel(pref) ? pref : "warning";
   const rank = LOG_LEVELS[level];
   if (__DEV__) return Math.max(rank, LOG_LEVELS.debug);
   return rank;
@@ -82,9 +83,11 @@ const zoteroSink: Sink = (record) => {
 /** Call once during plugin startup. Dispose the return value to tear down. */
 export async function setupLogging(): Promise<AsyncDisposable> {
   await using stack = new AsyncDisposableStack();
-  consoleLevel = consoleLevelFromPref(prefs.get("log.console-level"));
+  consoleLevel = consoleLevelFromPref(
+    prefs.get("extensions.zotlit.log.console-level"),
+  );
   stack.defer(
-    prefs.onChange("log.console-level", (v) => {
+    prefs.onChange("extensions.zotlit.log.console-level", (v) => {
       consoleLevel = consoleLevelFromPref(v);
     }),
   );
