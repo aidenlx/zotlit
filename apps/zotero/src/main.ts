@@ -1,3 +1,7 @@
+import {
+  BOOTSTRAP_REASONS,
+  type BootstrapReason,
+} from "./lib/bootstrap-reasons";
 import { logger, setupLogging } from "./lib/logger";
 
 export interface PluginData {
@@ -21,14 +25,19 @@ export class ZotLitZotero {
     this.#data = data;
   }
 
-  async startup(_reason: number): Promise<void> {
+  async startup(reason: BootstrapReason): Promise<void> {
     const stack = new AsyncDisposableStack();
     this.#stack = stack;
     void stack.use(await setupLogging());
-    logger.info("startup", { version: this.#data.version, id: this.#data.id });
+    logger.info("startup", {
+      version: this.#data.version,
+      id: this.#data.id,
+      reason: BOOTSTRAP_REASONS[reason],
+    });
   }
 
-  async shutdown(_reason: number): Promise<void> {
+  async shutdown(reason: BootstrapReason): Promise<void> {
+    logger.info("shutdown", { reason: BOOTSTRAP_REASONS[reason] });
     await this.#stack?.[Symbol.asyncDispose]();
     this.#stack = null;
   }

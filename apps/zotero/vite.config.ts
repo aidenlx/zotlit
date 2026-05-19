@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type ConfigEnv } from "vite";
 
 import {
   resolveEnv,
@@ -38,7 +38,7 @@ const bootstrapBundle = {
   exports: BOOTSTRAP_HOOKS,
 } as const;
 
-export default defineConfig(({ mode }) => {
+export function createZoteroViteConfig({ mode }: ConfigEnv) {
   const env = resolveEnv(mode);
 
   return {
@@ -59,4 +59,6 @@ export default defineConfig(({ mode }) => {
       }),
     ],
   };
-});
+}
+
+export default defineConfig(createZoteroViteConfig);

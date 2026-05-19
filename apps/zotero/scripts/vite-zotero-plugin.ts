@@ -156,15 +156,17 @@ export function zoteroBuildPlugin({
         `${JSON.stringify(manifest, null, 2)}\n`,
       );
 
-      const xpiName = isProd
-        ? `zotlit-zotero-${pkg.version}.xpi`
-        : `zotlit-zotero-${pkg.version}-dev.xpi`;
-      await mkdir(xpiAbsoluteOutDir, { recursive: true });
-      const xpiPath = join(xpiAbsoluteOutDir, xpiName);
-      const zip = new AdmZip();
-      zip.addLocalFolder(addonDistDir);
-      zip.writeZip(xpiPath);
-      console.log(`Wrote ${xpiName}`);
+      if (isProd || !this.meta.watchMode) {
+        const xpiName = isProd
+          ? `zotlit-zotero-${pkg.version}.xpi`
+          : `zotlit-zotero-${pkg.version}-dev.xpi`;
+        await mkdir(xpiAbsoluteOutDir, { recursive: true });
+        const xpiPath = join(xpiAbsoluteOutDir, xpiName);
+        const zip = new AdmZip();
+        zip.addLocalFolder(addonDistDir);
+        zip.writeZip(xpiPath);
+        console.log(`Wrote ${xpiName}`);
+      }
     },
   };
 }
