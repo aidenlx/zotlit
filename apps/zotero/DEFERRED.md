@@ -94,22 +94,6 @@ This unlocks Zotero's in-app auto-update prompt. Until then, users install from 
 
 ---
 
-## i18n: graduate to prefix + `.d.ts` codegen
-
-**Current**: hand-prefixed `zotlit-` IDs across `addon/locale/**/*.ftl` and `addon/**/*.xhtml`. Convention-only.
-
-**Planned**: vendor / adapt `zotero-plugin-scaffold/src/core/builder/fluent.ts` (~240 lines + `@fluent/syntax` dep) into a Vite plugin step that:
-
-- Author writes unprefixed IDs (`notify-enable`, etc.)
-- Build prefixes every ID in FTL + every `data-l10n-id` in XHTML
-- Generates `src/types/fluent.d.ts` exporting `FluentMessageId` union
-- Narrows `Localization.formatValue(id: FluentMessageId, ...)` and `MenuManager` `l10nID` in `src/types/zotero.d.ts`
-- Warns on `data-l10n-id` without matching FTL entry and on IDs missing from some locales
-
-**Trigger**: FTL string count crosses ~30, **or** the first non-`en-US` locale lands.
-
----
-
 ## Prefs: graduate to prefix + `.d.ts` codegen
 
 **Current**: `addon/prefs.js` has full `extensions.zotlit.*` keys; `src/prefs/index.ts` exposes a typed wrapper with a hand-maintained `PrefsMap`.

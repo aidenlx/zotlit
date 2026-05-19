@@ -1,5 +1,6 @@
 import { defineConfig, type ConfigEnv } from "vite";
 
+import { fluentPlugin } from "./scripts/vite-fluent-plugin.js";
 import {
   resolveEnv,
   zoteroBuildPlugin,
@@ -7,6 +8,9 @@ import {
 } from "./scripts/vite-zotero-plugin.js";
 
 const here = import.meta.dirname;
+
+const FLUENT_PREFIX = "zotlit";
+const FLUENT_FILE = "zotlit.ftl";
 
 // Names that Zotero's plugin loader expects as top-level bindings on the
 // bootstrap scope. Each is rebound in the bootstrap bundle's footer.
@@ -52,6 +56,18 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
       target: "es2023",
     }),
     plugins: [
+      // Runs before zoteroBuildPlugin: validates + writes locale FTLs and
+      // codegens `src/types/fluent.d.ts` before the zip step picks them up.
+      fluentPlugin({
+        root: here,
+        env,
+        prefix: FLUENT_PREFIX,
+        localeDir: "locale",
+        ftlFileName: FLUENT_FILE,
+        addonDir: "addon",
+        typesOutput: "src/types/fluent.d.ts",
+        primaryLocale: "en-US",
+      }),
       zoteroBuildPlugin({
         root: here,
         env,

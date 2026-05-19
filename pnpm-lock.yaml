@@ -148,6 +148,9 @@ importers:
         specifier: ^3.39.0
         version: 3.49.0
     devDependencies:
+      '@fluent/syntax':
+        specifier: ^0.19.0
+        version: 0.19.0
       '@types/adm-zip':
         specifier: ^0.5.7
         version: 0.5.8
@@ -172,6 +175,9 @@ importers:
       semver:
         specifier: ^7.8.0
         version: 7.8.0
+      tinyglobby:
+        specifier: ^0.2.16
+        version: 0.2.16
       valibot:
         specifier: ^1.0.0
         version: 1.4.0
@@ -511,6 +517,10 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fluent/syntax@0.19.0':
+    resolution: {integrity: sha512-5D2qVpZrgpjtqU4eNOcWGp1gnUCgjfM+vKGE2y03kKN6z5EBhtx0qdRFbg8QuNNj8wXNoX93KJoYb+NqoxswmQ==}
+    engines: {node: '>=14.0.0', npm: '>=7.0.0'}
 
   '@inlang/paraglide-js@2.18.0':
     resolution: {integrity: sha512-Acp6htA5W7rS2kL3iMjhSr08eECz696MYsud+FBKrmahzM7PdywPVq9UOr9MaC/aV7AZPElrYcqYZOOlUri5fg==}
@@ -2434,6 +2444,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.12':
     optional: true
+
+  '@fluent/syntax@0.19.0': {}
 
   '@inlang/paraglide-js@2.18.0':
     dependencies:
