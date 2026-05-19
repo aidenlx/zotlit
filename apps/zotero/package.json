@@ -9,6 +9,7 @@
     "build": "vite build && pnpm typecheck",
     "build:dev": "vite build --mode development",
     "dev": "vite build --watch --mode development",
+    "serve": "vite build --watch --mode development --config vite.serve.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
     "lint": "oxlint"
   },

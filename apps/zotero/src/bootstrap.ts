@@ -1,5 +1,6 @@
 import "core-js/proposals/explicit-resource-management";
 import type { ZotLitZotero as ZotLitZoteroCtor } from "./main";
+import type { BootstrapReason } from "./lib/bootstrap-reasons";
 import { logToBrowserConsole } from "./lib/zotero-log";
 
 /**
@@ -12,10 +13,9 @@ import { logToBrowserConsole } from "./lib/zotero-log";
  * https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/plugins.js#L106
  * — represented by {@link WindowBootstrapData}.
  *
- * `reason` is one of Zotero's `REASONS` integers (1=APP_STARTUP,
- * 2=APP_SHUTDOWN, 3=ADDON_ENABLE, ..., 9=MAIN_WINDOW_LOAD,
- * 10=MAIN_WINDOW_UNLOAD) — see
- * https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/plugins.js#L53-L64.
+ * `reason` is one of Zotero's `REASONS` integers — see
+ * {@link BootstrapReason} for the full int → symbolic-name map and the
+ * dispatch site of each value inside `plugins.js`.
  */
 interface BootstrapData {
   id: string;
@@ -78,13 +78,16 @@ function loadMain(rootURI: string): typeof ZotLitZoteroCtor {
   return ctor;
 }
 
-export function install(_data: BootstrapData, _reason: number): void {}
+export function install(_data: BootstrapData, _reason: BootstrapReason): void {}
 
-export function uninstall(_data: BootstrapData, _reason: number): void {}
+export function uninstall(
+  _data: BootstrapData,
+  _reason: BootstrapReason,
+): void {}
 
 export function startup(
   { id, version, rootURI }: BootstrapData,
-  reason: number,
+  reason: BootstrapReason,
 ): void {
   try {
     const ZotLitZotero = loadMain(rootURI);
@@ -97,7 +100,7 @@ export function startup(
   }
 }
 
-export function shutdown(_data: BootstrapData, reason: number): void {
+export function shutdown(_data: BootstrapData, reason: BootstrapReason): void {
   const current = plugin;
   plugin = undefined;
   current?.shutdown(reason).catch((error: unknown) => {
