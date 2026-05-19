@@ -29,3 +29,13 @@ export const prefs = {
     return () => Zotero.Prefs.unregisterObserver(id);
   },
 };
+
+export async function registerPrefPane(pluginID: string): Promise<void> {
+  const l10n = new Localization(["zotlit.ftl"]);
+  const label = await l10n.formatValue("zotlit-prefs-pane-label");
+  await Zotero.PreferencePanes.register({
+    pluginID,
+    src: "prefs.xhtml",
+    label: label ?? undefined,
+  });
+}

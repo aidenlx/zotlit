@@ -7,12 +7,11 @@
   <groupbox>
     <html:h2 data-l10n-id="zotlit-prefs-notify-section" />
 
-    <hbox align="center">
-      <checkbox
-        preference="extensions.zotlit.notify"
-        data-l10n-id="zotlit-prefs-notify-enable"
-      />
-    </hbox>
+    <checkbox
+      data-l10n-id="zotlit-prefs-notify-enable"
+      preference="extensions.zotlit.notify"
+      native="true"
+    />
 
     <hbox align="center">
       <label
@@ -25,6 +24,34 @@
         preference="extensions.zotlit.notify-url"
         style="flex: 1; min-width: 24em"
       />
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <html:h2 data-l10n-id="zotlit-prefs-logging-section" />
+
+    <hbox align="center">
+      <label
+        data-l10n-id="zotlit-prefs-logging-level"
+        control="zotlit-log-console-level"
+      />
+      <menulist
+        id="zotlit-log-console-level"
+        preference="extensions.zotlit.log.console-level"
+        native="true"
+      >
+        <menupopup>
+          <menuitem value="trace" data-l10n-id="zotlit-prefs-log-level-trace" />
+          <menuitem value="debug" data-l10n-id="zotlit-prefs-log-level-debug" />
+          <menuitem value="info" data-l10n-id="zotlit-prefs-log-level-info" />
+          <menuitem
+            value="warning"
+            data-l10n-id="zotlit-prefs-log-level-warning"
+          />
+          <menuitem value="error" data-l10n-id="zotlit-prefs-log-level-error" />
+          <menuitem value="fatal" data-l10n-id="zotlit-prefs-log-level-fatal" />
+        </menupopup>
+      </menulist>
     </hbox>
   </groupbox>
 </vbox>
