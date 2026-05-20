@@ -15,7 +15,7 @@ import {
   RESET_SETTING,
   type SettingsService,
 } from "@/services/settings/service";
-import type { SectionContext } from "../section";
+import type { SectionContext } from "@/setting-tab/section";
 
 const logger = getLogger(["setting-tab", "database"]);
 

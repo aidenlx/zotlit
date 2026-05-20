@@ -10,7 +10,7 @@ import {
 } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SettingsService } from "../settings/service";
+import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "./service";
 
 type VaultEvent = "create" | "modify" | "rename" | "delete";

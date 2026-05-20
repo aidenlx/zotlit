@@ -1,6 +1,6 @@
 import type { SQLitePreparedQuery } from "drizzle-orm/sqlite-core";
 
-import type { DatabaseClient } from "../client";
+import type { DatabaseClient } from "@/client";
 
 const cache = new WeakMap<
   DatabaseClient,

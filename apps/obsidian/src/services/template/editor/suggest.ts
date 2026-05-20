@@ -9,7 +9,7 @@ import {
   type TFile,
 } from "obsidian";
 
-import { isEtaTemplatePath } from "../path";
+import { isEtaTemplatePath } from "@/services/template/path";
 
 const ETA_OPEN_TAG = regex("<%([ =]?)$");
 const ETA_CLOSE_TAG = regex("^([\\w ]*)%>");

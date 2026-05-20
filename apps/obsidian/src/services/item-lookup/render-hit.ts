@@ -5,7 +5,7 @@ import {
   type Creator,
   type JournalArticleItem,
 } from "@zotlit/db";
-import type { SettingsService } from "../settings/service";
+import type { SettingsService } from "@/services/settings/service";
 import type { SearchHit } from "./engine";
 
 const YEAR = regex("\\d{4}");

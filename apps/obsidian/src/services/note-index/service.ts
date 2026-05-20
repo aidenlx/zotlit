@@ -10,7 +10,7 @@ import {
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
-import { Service } from "../service-base";
+import { Service } from "@/services/service-base";
 import {
   diffContributions,
   EMPTY_CONTRIBUTIONS,

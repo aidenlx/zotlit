@@ -10,9 +10,9 @@ import {
 } from "obsidian";
 
 import { getLogger } from "@/lib/log";
-import { Service } from "../service-base";
-import type { AutoTrim, Settings } from "../settings/schema";
-import type { SettingsService } from "../settings/service";
+import { Service } from "@/services/service-base";
+import type { AutoTrim, Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 import { EMBEDDED_DEFAULTS, fromFilename } from "./defaults";
 import { bracketExtension } from "./editor/bracket";
 import { EtaSuggest } from "./editor/suggest";

@@ -26,7 +26,7 @@ vi.mock("node:fs", async (importOriginal) => {
 import { createClient } from "@zotlit/db";
 import { watch } from "node:fs";
 
-import { SettingsService } from "../settings/service";
+import { SettingsService } from "@/services/settings/service";
 import { DatabaseError, type DbEvents, DatabaseService } from "./service";
 
 const createClientMock = vi.mocked(createClient);

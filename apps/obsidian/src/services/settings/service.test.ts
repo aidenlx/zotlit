@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ServiceContainer, ServiceInitError } from "../service-base";
+import { ServiceContainer, ServiceInitError } from "@/services/service-base";
 import { defaults } from "./schema";
 import { RESET_SETTING, SettingsService } from "./service";
 

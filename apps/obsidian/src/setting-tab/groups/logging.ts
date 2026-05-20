@@ -15,7 +15,7 @@ import { LOG_FILENAME } from "@/services/log/service";
 import type { LogLevel } from "@/services/settings/schema";
 import type ZotLitPlugin from "@/zt-main";
 import { requireElectron } from "@/lib/require";
-import type { SectionContext } from "../section";
+import type { SectionContext } from "@/setting-tab/section";
 
 const logger = getLogger(["setting-tab", "logging"]);
 

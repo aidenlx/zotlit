@@ -1,5 +1,5 @@
 import type { LibraryType } from "@drizzle/schema";
-import type { DatabaseClient } from "../client";
+import type { DatabaseClient } from "@/client";
 import { cachedPrepared } from "./prepared";
 
 export interface Library {

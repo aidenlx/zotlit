@@ -1,7 +1,7 @@
 import { EditorState, type Extension, Prec } from "@codemirror/state";
 import { editorInfoField, type TFile, type Vault } from "obsidian";
 
-import { isEtaTemplatePath } from "../path";
+import { isEtaTemplatePath } from "@/services/template/path";
 
 interface CloseBracketsLanguageData {
   closeBrackets: {
