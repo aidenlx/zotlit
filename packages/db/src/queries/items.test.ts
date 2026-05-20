@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createClient, type DatabaseClient } from "../client";
+import { createClient, type DatabaseClient } from "@/client";
 import {
   formatIndexedKey,
   getItemsByLibrary,

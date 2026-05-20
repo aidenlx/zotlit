@@ -1,9 +1,12 @@
 import { getItemsByLibrary, type Item, type DatabaseClient } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-import { DatabaseError, type DatabaseService } from "../database/service";
-import { Service } from "../service-base";
-import type { Settings, SettingsService } from "../settings/service";
+import {
+  DatabaseError,
+  type DatabaseService,
+} from "@/services/database/service";
+import { Service } from "@/services/service-base";
+import type { Settings, SettingsService } from "@/services/settings/service";
 import {
   buildIndex,
   searchIndex,

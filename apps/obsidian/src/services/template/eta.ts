@@ -8,7 +8,7 @@ import {
   type TemplateFunction,
 } from "eta/core";
 
-import type { AutoTrim } from "../settings/schema";
+import type { AutoTrim } from "@/services/settings/schema";
 import { normalizeVaultPath } from "./path";
 import { toFilename } from "./defaults";
 

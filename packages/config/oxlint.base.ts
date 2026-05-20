@@ -1,7 +1,16 @@
 import { defineConfig } from "oxlint";
 
 export default defineConfig({
-  plugins: ["eslint", "typescript", "unicorn", "oxc", "import", "promise"],
+  plugins: [
+    "react",
+    "react-perf",
+    "eslint",
+    "typescript",
+    "unicorn",
+    "oxc",
+    "import",
+    "promise",
+  ],
   rules: {
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
@@ -17,5 +26,17 @@ export default defineConfig({
 
     "unicorn/prefer-number-properties": "error",
     "unicorn/prefer-string-replace-all": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        patterns: [
+          {
+            group: ["../**"],
+            message:
+              "Use @/ alias instead of parent-directory relative imports.",
+          },
+        ],
+      },
+    ],
   },
 });

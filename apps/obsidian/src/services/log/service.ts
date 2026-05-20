@@ -30,8 +30,8 @@ import {
 import type { Plugin } from "obsidian";
 
 import { devToolsFormatter } from "@zotlit/shared/log-formatter";
-import { Service } from "../service-base";
-import type { Settings, SettingsService } from "../settings/service";
+import { Service } from "@/services/service-base";
+import type { Settings, SettingsService } from "@/services/settings/service";
 import { createVaultFileSink } from "./vault-sink";
 
 export const LOG_FILENAME = "zotlit.log.jsonl";

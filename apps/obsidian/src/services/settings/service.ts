@@ -59,7 +59,7 @@
 import { debounce, type Plugin } from "obsidian";
 import * as v from "valibot";
 
-import { Service } from "../service-base";
+import { Service } from "@/services/service-base";
 import { classifyDiskData, isPlainObject, VERSION_KEY } from "./classify";
 import { defaults, schema, type Settings } from "./schema";
 
