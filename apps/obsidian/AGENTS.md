@@ -55,11 +55,11 @@ Run `/i18n-ui-text` skill when authoring or editing the wording of UI strings (c
 
 ## Notices and toasts
 
-Do **not** call `new Notice(...)` from `obsidian` directly. Use the wrappers in `@/lib/notice` and `@/lib/toast` so every toast picks up the `.zt-notice` styling and shared behavior.
+Do **not** call `new Notice(...)` from `obsidian` directly. Use the wrappers in `@/lib/notice` and `@/lib/toast` so every toast picks up the shared layout and behavior.
 
 ### Plain notice — `BaseNotice`
 
-For a one-shot string with no actions, use `new BaseNotice(message, duration?)`. It's a drop-in for Obsidian's `Notice` that adds the `.zt-notice` class.
+For a one-shot string with no actions, use `new BaseNotice(message, duration?)`. It's a drop-in for Obsidian's `Notice` that applies the shared notice layout.
 
 ```ts
 import { BaseNotice } from "@/lib/notice";

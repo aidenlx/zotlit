@@ -1,5 +1,3 @@
-import "./notice.css";
-
 import { ButtonComponent, Notice } from "obsidian";
 
 /**
@@ -41,7 +39,10 @@ class NoticeRenderer {
   }
 
   addAction(cb: (component: ButtonComponent) => void): this {
-    this.actionsEl ??= this.containerEl.createDiv("zt-notice-actions");
+    if (!this.actionsEl) {
+      this.actionsEl = this.containerEl.createDiv("zt-notice-actions");
+      this.actionsEl.addClasses(["flex", "gap-4", "justify-end"]);
+    }
     cb(new ButtonComponent(this.actionsEl));
     return this;
   }
@@ -56,6 +57,8 @@ export class BaseNotice extends Notice {
 
   constructor(message: string | DocumentFragment, duration?: number) {
     super(message, duration);
-    this.containerEl.addClass("zt-notice");
+    this.containerEl.addClasses(["zt-notice", "max-w-[300px]"]);
+    const messageEl = this.containerEl.querySelector(".notice-message");
+    messageEl?.addClasses(["flex", "flex-col", "gap-[var(--size-2-3)]"]);
   }
 }

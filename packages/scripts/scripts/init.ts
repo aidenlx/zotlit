@@ -30,6 +30,15 @@ if (primary) {
     echo(`Copied ${rel}`);
   }
 
+  const appCss = ".agents/skills/obsidian-css/references/app.css";
+  try {
+    await mkdir(dirname(appCss), { recursive: true });
+    await copyFile(join(primary, appCss), appCss);
+    echo(`Copied ${appCss}`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+
   await writeFile(".primary-worktree", primary);
   echo(`Wrote .primary-worktree → ${primary}`);
 }
