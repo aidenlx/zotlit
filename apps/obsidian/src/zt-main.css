@@ -1,0 +1,111 @@
+/* Tailwind 4.3 — theme + utilities only. Preflight is intentionally skipped
+   to avoid clobbering Obsidian's base styles; first-party CSS resets nothing. */
+@import "tailwindcss/theme.css" layer(theme);
+
+/* `reference` keeps same-name Obsidian tokens like --color-red compile-time only. */
+@theme inline reference {
+  /* ===== Colors ===== */
+
+  /* Wipe Tailwind defaults that we don't redefine.
+     Tailwind 4 idiom: `--color-*: initial` removes ALL --color-* tokens
+     before our overrides take effect. */
+  --color-*: initial;
+
+  /* Keep CSS keyword aliases. */
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-inherit: inherit;
+  --color-white: #fff;
+  --color-black: #000;
+
+  /* Surface + foreground pairs. */
+  --color-background: var(--background-primary);
+  --color-foreground: var(--text-normal);
+  --color-card: var(--background-primary-alt);
+  --color-card-foreground: var(--text-normal);
+  --color-popover: var(--background-secondary);
+  --color-popover-foreground: var(--text-normal);
+
+  /* Primary / secondary actions. */
+  --color-primary: var(--interactive-accent);
+  --color-primary-hover: var(--interactive-accent-hover);
+  --color-primary-foreground: var(--text-on-accent);
+  --color-secondary: var(--interactive-normal);
+  --color-secondary-foreground: var(--text-normal);
+
+  /* Muted / accent hover surfaces. */
+  --color-muted: var(--background-modifier-hover);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--background-modifier-active-hover);
+  --color-accent-foreground: var(--text-accent);
+
+  /* Obsidian-specific third-tier text. */
+  --color-faint: var(--text-faint);
+
+  /* Borders & inputs. */
+  --color-border: var(--background-modifier-border);
+  --color-border-hover: var(--background-modifier-border-hover);
+  --color-border-focus: var(--background-modifier-border-focus);
+  --color-input: var(--background-modifier-form-field);
+  --color-ring: var(--interactive-accent);
+
+  /* Links. */
+  --color-link: var(--text-accent);
+  --color-link-hover: var(--text-accent-hover);
+
+  /* Status. */
+  --color-destructive: var(--color-red);
+  --color-destructive-foreground: var(--text-on-accent);
+  --color-warning: var(--color-orange);
+  --color-warning-foreground: var(--text-on-accent);
+  --color-success: var(--color-green);
+  --color-success-foreground: var(--text-on-accent);
+
+  /* Obsidian accent palette for tags, callouts, and syntax. */
+  --color-red: var(--color-red);
+  --color-orange: var(--color-orange);
+  --color-yellow: var(--color-yellow);
+  --color-green: var(--color-green);
+  --color-cyan: var(--color-cyan);
+  --color-blue: var(--color-blue);
+  --color-purple: var(--color-purple);
+  --color-pink: var(--color-pink);
+
+  /* ===== Radius ===== */
+  --radius-*: initial;
+  --radius-sm: var(--radius-s);
+  --radius-md: var(--radius-m);
+  --radius-lg: var(--radius-l);
+  --radius-xl: var(--radius-xl);
+
+  /* ===== Font sizes ===== */
+  --text-*: initial;
+  --text-xs: var(--font-ui-smaller);
+  --text-sm: var(--font-ui-small);
+  --text-base: var(--font-ui-medium);
+  --text-lg: var(--font-ui-large);
+  --text-xl: calc(var(--font-ui-large) * 1.25);
+  --text-2xl: calc(var(--font-ui-large) * 1.5);
+  --text-3xl: calc(var(--font-ui-large) * 1.875);
+
+  /* ===== Fonts ===== */
+  --font-*: initial;
+  --font-sans: var(--font-interface);
+  --font-mono: var(--font-monospace);
+  --font-content: var(--font-text);
+
+  /* ===== Shadows ===== */
+  --shadow-*: initial;
+  --shadow-sm: var(--shadow-xs);
+  --shadow-md: var(--shadow-s);
+  --shadow-lg: var(--shadow-l);
+
+  /* ===== Animation ===== */
+  --default-transition-duration: var(--anim-duration-moderate);
+  --default-transition-timing-function: var(--anim-motion-smooth);
+  --ease-out: var(--anim-motion-smooth);
+  --ease-in: var(--anim-motion-delay);
+  --ease-in-out: var(--anim-motion-smooth);
+}
+
+@import "tailwindcss/utilities.css" layer(utilities);

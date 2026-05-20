@@ -105,26 +105,26 @@ These are what you almost always want for backgrounds and borders.
 
 ## Spacing — the 4-pixel grid
 
-Padding, margin, gap, width, and height should use these. They're multiples of 4px (and 2px for the finer ones). The two numbers are the base and the multiplier: `--size-4-3` = 4 × 3 = 12px.
+Obsidian defines `--size-4-N` (multiples of 4px) and `--size-2-N` (multiples of 2px) variables, but these are fixed constants — no theme overrides them. They map 1:1 to Tailwind's default spacing scale:
 
-| Variable | Value |
-| --- | --- |
-| `--size-2-1` | 2px |
-| `--size-2-2` | 4px |
-| `--size-2-3` | 6px |
-| `--size-4-1` | 4px |
-| `--size-4-2` | 8px |
-| `--size-4-3` | 12px |
-| `--size-4-4` | 16px |
-| `--size-4-5` | 20px |
-| `--size-4-6` | 24px |
-| `--size-4-8` | 32px |
-| `--size-4-9` | 36px |
-| `--size-4-12` | 48px |
-| `--size-4-16` | 64px |
-| `--size-4-18` | 72px |
+| Obsidian variable | Value | Tailwind equivalent |
+| --- | --- | --- |
+| `--size-2-1` | 2px | `0.5` |
+| `--size-2-2` | 4px | `1` |
+| `--size-2-3` | 6px | `1.5` |
+| `--size-4-1` | 4px | `1` |
+| `--size-4-2` | 8px | `2` |
+| `--size-4-3` | 12px | `3` |
+| `--size-4-4` | 16px | `4` |
+| `--size-4-5` | 20px | `5` |
+| `--size-4-6` | 24px | `6` |
+| `--size-4-8` | 32px | `8` |
+| `--size-4-9` | 36px | `9` |
+| `--size-4-12` | 48px | `12` |
+| `--size-4-16` | 64px | `16` |
+| `--size-4-18` | 72px | `18` |
 
-Use `--size-4-*` by default. Drop to `--size-2-*` only when the 4px step is too coarse (e.g. tight icon-row spacing).
+**Use Tailwind's spacing scale** (`gap-2`, `p-3`, `mt-4`) for all spacing. Only reference `--size-4-N` directly in raw CSS when you need to match an Obsidian component variable that's defined in terms of them (e.g. `--input-padding`, `--nav-item-padding`).
 
 ## Radius
 

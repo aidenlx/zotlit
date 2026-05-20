@@ -5,12 +5,19 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "allowJs": true,
+    "jsx": "react-jsx",
     "isolatedDeclarations": false,
     "types": ["node-22"],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["./src/**/*.ts", "./src/paraglide/**/*.js"],
-  "exclude": ["./node_modules", "./dist", "./dist-dev", "./src/**/*.test.ts"]
+  "include": ["./src/**/*.ts", "./src/**/*.tsx", "./src/paraglide/**/*.js"],
+  "exclude": [
+    "./node_modules",
+    "./dist",
+    "./dist-dev",
+    "./src/**/*.test.ts",
+    "./src/**/*.test.tsx"
+  ]
 }

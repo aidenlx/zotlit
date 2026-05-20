@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { join, resolve } from "node:path";
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
 import { parseManifest } from "./scripts/manifest.js";
@@ -94,6 +95,7 @@ export default defineConfig(({ mode }) => {
         outdir: "./src/paraglide",
         strategy: ["custom-obsidian", "baseLocale"],
       }),
+      tailwindcss(),
       obsidianBuildPlugin(),
       process.env.ANALYZE === "true" &&
         unstableRolldownAdapter(

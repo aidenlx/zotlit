@@ -21,22 +21,22 @@ Companion plan referenced: [`DB_MIGRATE.MD`](../zotlit-v2/feat-db-query/DB_MIGRA
 
 ## 2. Architectural deltas
 
-| Concern         | v1                                                                                    | v2 target                                                                                  |
-| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Monorepo        | Rush.js, `app/*` + `lib/*`                                                            | Turborepo + pnpm, `apps/*` + `packages/*`                                                  |
-| DI              | `@ophidian/core` `this.use(Class)` + `@calc`/`@effect` decorators                     | `ServiceContainer.use({ key: factory })` + settings event subscribers                      |
-| UI              | Preact + `@preact/compat`                                                             | **Preact** via `@preact/preset-vite` (added when stage 7 lands)                            |
-| State mgmt      | jotai atoms + zustand stores                                                          | **zustand only** (no jotai); plain hooks unless state must persist outside the render tree |
-| Search          | FlexSearch in worker                                                                  | MiniSearch in-process index per active library, tokenized with `Intl.Segmenter`            |
-| SQLite          | `better-sqlite3` (gated by `install-guide`)                                           | `node:sqlite` (no install-guide)                                                           |
-| Workers         | Node worker + iframe + web worker                                                     | Single-threaded                                                                            |
-| Better BibTeX   | ATTACH v0/v1 db                                                                       | Native `citationKey` field only (pre-v1 BBT users lose lookup)                             |
-| Events          | `vault.trigger("zotero:*")` globals                                                   | Per-service nanoevents emitters                                                            |
-| Logging         | log4js                                                                                | LogTape (already migrated)                                                                 |
-| i18n            | Hardcoded                                                                             | Paraglide `m.*`                                                                            |
-| Notices         | `new Notice()`                                                                        | `BaseNotice` / `toast.promise`                                                             |
-| Template engine | `eta-prf` (fork)                                                                      | Upstream `eta@^4` (no fork needed)                                                         |
-| Item cache      | Per-library in-memory `Map<id, RegularItemInfo>` populated alongside FlexSearch index | Dropped — see §3                                                                           |
+| Concern         | v1                                                                                    | v2 target                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Monorepo        | Rush.js, `app/*` + `lib/*`                                                            | Turborepo + pnpm, `apps/*` + `packages/*`                                                                                                         |
+| DI              | `@ophidian/core` `this.use(Class)` + `@calc`/`@effect` decorators                     | `ServiceContainer.use({ key: factory })` + settings event subscribers                                                                             |
+| UI              | Preact + `@preact/compat`                                                             | **React 19.2** via Vite's built-in JSX transform (no plugin needed for lib-CJS)                                                                   |
+| State mgmt      | jotai atoms + zustand stores                                                          | **jotai only** (no zustand, no signals); per-instance via `Provider`+`createStore`; plain hooks unless state must persist outside the render tree |
+| Search          | FlexSearch in worker                                                                  | MiniSearch in-process index per active library, tokenized with `Intl.Segmenter`                                                                   |
+| SQLite          | `better-sqlite3` (gated by `install-guide`)                                           | `node:sqlite` (no install-guide)                                                                                                                  |
+| Workers         | Node worker + iframe + web worker                                                     | Single-threaded                                                                                                                                   |
+| Better BibTeX   | ATTACH v0/v1 db                                                                       | Native `citationKey` field only (pre-v1 BBT users lose lookup)                                                                                    |
+| Events          | `vault.trigger("zotero:*")` globals                                                   | Per-service nanoevents emitters                                                                                                                   |
+| Logging         | log4js                                                                                | LogTape (already migrated)                                                                                                                        |
+| i18n            | Hardcoded                                                                             | Paraglide `m.*`                                                                                                                                   |
+| Notices         | `new Notice()`                                                                        | `BaseNotice` / `toast.promise`                                                                                                                    |
+| Template engine | `eta-prf` (fork)                                                                      | Upstream `eta@^4` (no fork needed)                                                                                                                |
+| Item cache      | Per-library in-memory `Map<id, RegularItemInfo>` populated alongside FlexSearch index | Dropped — see §3                                                                                                                                  |
 
 ### 2.1 Why the item cache is dropped
 
@@ -84,7 +84,7 @@ v1 kept a denormalized item map per library inside the worker (`lib/db-worker/sr
 - log4js + `LogService` — replaced by LogTape
 - `@ophidian/core`, `@calc`/`@effect` decorators
 - `eta-prf` fork — upstream `eta@^4` covers it
-- jotai — zustand only
+- zustand, Preact, `@preact/compat`, `@preact/signals` — React 19.2 + jotai only
 - `bg:notify`-driven DB refresh — fs.watch covers it
 
 ## 4. Stage order to alpha
@@ -102,7 +102,7 @@ Each stage produces a shippable plugin; queries are added in the stage that firs
 | 6   | **Setting-tab groups**                                                 | —                                                                                                          | `note`, `citation`, `template`, `img-excerpt` (skip `server`)                                                                                                                                                                                                                                                                           |
 | 7   | **Citekey-click**                                                      | —                                                                                                          | Editor monkey-patch using NoteIndex + existing `citekey` query                                                                                                                                                                                                                                                                          |
 | 8   | **PDF outline parser**                                                 | —                                                                                                          | Port `services/pdf-parser/`: `pdfjs-dist` + `idb` cache keyed by path + mtime                                                                                                                                                                                                                                                           |
-| 9   | **Annot view + img-cache importer** _(alpha blocker)_                  | refine `annotations`/`attachments` shape if needed                                                         | First Preact + zustand surface; integrates PDF outline from stage 8; drag-insert annotations to editor; image-cache copy/symlink with mtime-skip + symlink-fallback-to-copy                                                                                                                                                             |
+| 9   | **Annot view + img-cache importer** _(alpha blocker)_                  | refine `annotations`/`attachments` shape if needed                                                         | First React 19.2 + jotai surface; integrates PDF outline from stage 8; drag-insert annotations to editor; image-cache copy/symlink with mtime-skip + symlink-fallback-to-copy                                                                                                                                                           |
 | →   | **v2 alpha ships**                                                     |                                                                                                            |                                                                                                                                                                                                                                                                                                                                         |
 
 ### 4.1 Per-stage deliverables
@@ -163,9 +163,9 @@ Full spec: [`STAGE3_CITATION_SUGGEST.md`](./STAGE3_CITATION_SUGGEST.md). Highlig
 
 **Stage 9 — Annot view + img-cache importer**
 
-- `apps/obsidian/src/services/annot-view/`: Preact view (registered via `@preact/preset-vite`); zustand store (`AnnotViewStore`); drag-insert handler; reactive sync to active file + Zotero reader focus.
+- `apps/obsidian/src/services/annot-view/`: React 19.2 view mounted via `createRoot`; jotai atoms declared at module scope with a per-leaf `createStore()` on the `ItemView` subclass and `<Provider store={this.#store}>` wrapping the tree; drag-insert handler; reactive sync to active file + Zotero reader focus.
 - `apps/obsidian/src/services/img-cache/service.ts`: deferred queue with `import()` / `flush()` / `cancel()`; platform-aware default (symlink on Unix, copy on Windows); mtime skip; symlink → copy fallback on permission error.
-- Vite config: add `@preact/preset-vite`; add `preact` and `zustand` to workspace catalog.
+- Vite config: no plugin needed (esbuild handles JSX from tsconfig). Add `react`, `react-dom`, `jotai` to `apps/obsidian/package.json` `dependencies`; `@types/react`, `@types/react-dom` to `devDependencies`. No catalog entries yet (single consumer).
 
 ## 5. Feature → v1 source map
 

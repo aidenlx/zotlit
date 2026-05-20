@@ -6,6 +6,7 @@ import { addDatabaseActions } from "./services/database/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
+import { registerReactSmoke } from "./views/react-smoke";
 import "./zt-main.css";
 
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
@@ -53,6 +54,8 @@ export default class ZotLitPlugin extends Plugin {
       noteIndex: services.noteIndex,
       settings: services.settings,
     });
+
+    if (__DEV__) registerReactSmoke(this, { app: this.app });
 
     console.log("ZotLit loaded");
 
