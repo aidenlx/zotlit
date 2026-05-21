@@ -1,5 +1,6 @@
-import baseConfig from "@zotlit/config/oxfmt";
 import { defineConfig } from "oxfmt";
+
+import baseConfig from "@zotlit/config/oxfmt";
 
 export default defineConfig({
   ...baseConfig,
@@ -17,5 +18,6 @@ export default defineConfig({
     "tests/zt-vault/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
+    "**/*.md",
   ],
 });

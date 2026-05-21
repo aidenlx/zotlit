@@ -13,4 +13,31 @@ export default defineConfig({
   arrowParens: "always",
   bracketSpacing: true,
   bracketSameLine: false,
+  sortImports: {
+    newlinesBetween: true,
+    customGroups: [
+      {
+        groupName: "zotlit-packages",
+        elementNamePattern: ["@zotlit/**"],
+      },
+      {
+        groupName: "path-aliases",
+        elementNamePattern: ["@/**"],
+      },
+    ],
+    groups: [
+      ["type-import", "value-builtin", "value-external"],
+      "zotlit-packages",
+      "path-aliases",
+      [
+        "type-parent",
+        "type-sibling",
+        "type-index",
+        "value-parent",
+        "value-sibling",
+        "value-index",
+      ],
+      "unknown",
+    ],
+  },
 });
