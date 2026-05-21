@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DatabaseClient, Item } from "@zotlit/db";
+
+import { type DatabaseClient, type Item } from "@zotlit/db";
 
 import {
   DatabaseError,
   type DatabaseService,
 } from "@/services/database/service";
-import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
+import { type Settings } from "@/services/settings/schema";
+import { type SettingsService } from "@/services/settings/service";
+
 import { makeCreator as creator, makeItem as item } from "./fixtures";
 import { ItemLookup } from "./service";
 

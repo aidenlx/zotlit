@@ -1,4 +1,5 @@
 import { logger as appLogger } from "@/lib/logger.js";
+
 import { registerItemMenu } from "./item.js";
 import { registerReaderAnnotationMenu } from "./reader-annotation.js";
 import { registerReaderPageMenu } from "./reader-page.js";

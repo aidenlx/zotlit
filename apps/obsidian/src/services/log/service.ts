@@ -27,11 +27,16 @@ import {
   getConsoleSink,
   reset as resetLogtape,
 } from "@logtape/logtape";
-import type { Plugin } from "obsidian";
+import { type Plugin } from "obsidian";
 
 import { devToolsFormatter } from "@zotlit/shared/log-formatter";
+
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import {
+  type Settings,
+  type SettingsService,
+} from "@/services/settings/service";
+
 import { createVaultFileSink } from "./vault-sink";
 
 export const LOG_FILENAME = "zotlit.log.jsonl";

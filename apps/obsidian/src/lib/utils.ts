@@ -1,5 +1,5 @@
 import { type ClassValue, clsx } from "clsx";
-import type { TooltipOptions } from "obsidian";
+import { type TooltipOptions } from "obsidian";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {

@@ -1,8 +1,9 @@
 import { deletedItems, itemTypes } from "@drizzle/schema";
-import { Temporal } from "@zotlit/shared/temporal";
-
-import type { DatabaseClient } from "@/client";
 import { eq, sql } from "drizzle-orm";
+
+import { type Temporal } from "@zotlit/shared/temporal";
+
+import { type DatabaseClient } from "@/client";
 
 import { cachedPrepared } from "./prepared";
 

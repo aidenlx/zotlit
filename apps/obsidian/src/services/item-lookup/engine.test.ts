@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { Item } from "@zotlit/db";
+
+import { type Item } from "@zotlit/db";
 
 import { buildIndex, searchIndex } from "./engine";
 import { makeCreator as creator, makeItem as item } from "./fixtures";
-import type { TokenizerOptions } from "./tokenizer";
+import { type TokenizerOptions } from "./tokenizer";
 
 describe("item lookup engine", () => {
   it("matches query terms across fields", () => {

@@ -1,4 +1,4 @@
-import type { Pos, SectionCache } from "obsidian";
+import { type Pos, type SectionCache } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { diffContributions, fileContributions } from "./parse";

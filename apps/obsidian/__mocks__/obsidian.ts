@@ -8,7 +8,12 @@
  * here — extend as needed alongside the services that consume it.
  */
 
-import type { App, Command, Debouncer, EditorSuggestContext } from "obsidian";
+import {
+  type App,
+  type Command,
+  type Debouncer,
+  type EditorSuggestContext,
+} from "obsidian";
 
 /**
  * Captured `Notice` invocations. Tests can read this to assert the

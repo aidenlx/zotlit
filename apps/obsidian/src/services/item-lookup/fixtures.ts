@@ -1,4 +1,4 @@
-import type { Creator, Item, JournalArticleItem } from "@zotlit/db";
+import { type Creator, type Item, type JournalArticleItem } from "@zotlit/db";
 
 export interface ItemFixtureOptions {
   key: string;

@@ -1,8 +1,8 @@
+import { getLogLevels } from "@logtape/logtape";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Platform } from "obsidian";
 import * as v from "valibot";
-import { getLogLevels } from "@logtape/logtape";
 
 /** JSON-safe primitives that settings values may take. */
 type SettingsPrimitive = string | number | boolean | null;

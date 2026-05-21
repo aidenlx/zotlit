@@ -1,5 +1,5 @@
 import { regex } from "arkregex";
-import type { CachedMetadata, Pos, SectionCache } from "obsidian";
+import { type CachedMetadata, type Pos, type SectionCache } from "obsidian";
 
 const ITEM_KEY_SOURCE = String.raw`[23456789A-NP-Z]{8}`;
 const ITEM_KEY_GROUP_ID_PATTERN = new RegExp(`^${ITEM_KEY_SOURCE}(?:g\\d+)?$`);

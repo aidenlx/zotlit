@@ -1,9 +1,9 @@
 #!/usr/bin/env zx
 
-// only for the type checker
-import type {} from "zx/globals";
 import { mkdir, copyFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+// only for the type checker
+import type {} from "zx/globals";
 
 $.verbose = true;
 

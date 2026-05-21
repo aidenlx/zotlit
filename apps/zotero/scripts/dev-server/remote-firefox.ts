@@ -2,7 +2,7 @@
 // Derived from Mozilla web-ext src/firefox/remote.js.
 // https://github.com/mozilla/web-ext/blob/master/src/firefox/remote.js
 
-import type { RdpClient } from "./rdp-client.js";
+import { type RdpClient } from "./rdp-client.js";
 
 type RemoteFirefoxClient = Pick<RdpClient, "request">;
 

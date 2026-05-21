@@ -1,4 +1,5 @@
 import { Plugin } from "obsidian";
+
 import { initI18n } from "./lib/i18n";
 import { BaseNotice } from "./lib/notice";
 import { buildServices } from "./services/build";

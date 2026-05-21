@@ -1,7 +1,8 @@
-import type { Plugin } from "obsidian";
+import { type Plugin } from "obsidian";
 
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
+
 import { DatabaseError, type DatabaseService } from "./service";
 
 /**

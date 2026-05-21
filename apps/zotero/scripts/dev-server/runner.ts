@@ -1,7 +1,7 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
 
 import {
   connectWithRetry,

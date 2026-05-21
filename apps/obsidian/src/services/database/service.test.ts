@@ -23,10 +23,12 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...real, watch: vi.fn() };
 });
 
-import { createClient } from "@zotlit/db";
 import { watch } from "node:fs";
 
+import { createClient } from "@zotlit/db";
+
 import { SettingsService } from "@/services/settings/service";
+
 import { DatabaseError, type DbEvents, DatabaseService } from "./service";
 
 const createClientMock = vi.mocked(createClient);

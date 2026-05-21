@@ -1,6 +1,7 @@
+import { type IconName } from "obsidian";
 import { type HTMLAttributes, type Ref } from "react";
-import type { IconName } from "obsidian";
 import { tv, type VariantProps } from "tailwind-variants";
+
 import { Icon } from "./icon";
 
 const iconButton = tv({

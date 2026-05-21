@@ -1,7 +1,9 @@
-import { type ReactNode, useState } from "react";
 import { atom, createStore, Provider, useAtom } from "jotai";
 import { type App, Modal, type Plugin } from "obsidian";
+import { type ReactNode, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import AutosizeTextarea from "react-textarea-autosize";
+
 import { Button } from "@/components/obsidian/button";
 import { Color } from "@/components/obsidian/color";
 import {
@@ -12,7 +14,6 @@ import {
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { Slider } from "@/components/obsidian/slider";
-import AutosizeTextarea from "react-textarea-autosize";
 import { Toggle } from "@/components/obsidian/toggle";
 import { tooltipAttrs } from "@/lib/utils";
 

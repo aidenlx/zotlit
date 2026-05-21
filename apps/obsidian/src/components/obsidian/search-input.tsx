@@ -1,4 +1,5 @@
 import { type InputHTMLAttributes, type Ref } from "react";
+
 import { cn } from "@/lib/utils";
 
 export interface SearchInputProps extends Omit<

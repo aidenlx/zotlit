@@ -1,8 +1,8 @@
-import type {
-  ItemQuery,
-  NotifyEvent,
-  ProtocolAction,
-  ProtocolPayload,
+import {
+  type ItemQuery,
+  type NotifyEvent,
+  type ProtocolAction,
+  type ProtocolPayload,
 } from "./types";
 
 export type { ItemQuery, NotifyEvent, ProtocolAction, ProtocolPayload };

@@ -3,7 +3,7 @@ import {
   type Sink,
   getJsonLinesFormatter,
 } from "@logtape/logtape";
-import type { DataAdapter } from "obsidian";
+import { type DataAdapter } from "obsidian";
 
 const FLUSH_INTERVAL_MS = 1000;
 

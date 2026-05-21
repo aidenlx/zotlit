@@ -1,4 +1,5 @@
 import { type LogLevel, type LogRecord } from "@logtape/logtape";
+
 import { Temporal } from "./temporal";
 
 const LEVEL_STYLES: Record<LogLevel, string> = {

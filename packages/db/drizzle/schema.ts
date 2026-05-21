@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   sqliteTable,
   type AnySQLiteColumn,
@@ -8,7 +9,7 @@ import {
   text,
   customType,
 } from "drizzle-orm/sqlite-core";
-import { sql } from "drizzle-orm";
+
 import { Temporal } from "@zotlit/shared/temporal";
 
 type SqliteAnyOut =

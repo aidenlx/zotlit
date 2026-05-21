@@ -1,7 +1,8 @@
 import MiniSearch from "minisearch";
-import type { App, SearchMatches } from "obsidian";
+import { type App, type SearchMatches } from "obsidian";
+
+import { type Creator, type Item } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
-import type { Creator, Item } from "@zotlit/db";
 
 import {
   normalize,

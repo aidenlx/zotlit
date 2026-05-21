@@ -6,14 +6,18 @@ import {
   type DatabaseService,
 } from "@/services/database/service";
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import {
+  type Settings,
+  type SettingsService,
+} from "@/services/settings/service";
+
 import {
   buildIndex,
   searchIndex,
   type SearchHit,
   type SearchIndex,
 } from "./engine";
-import type { ChsSegmenter, TokenizerOptions } from "./tokenizer";
+import { type ChsSegmenter, type TokenizerOptions } from "./tokenizer";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;

@@ -8,8 +8,10 @@ import {
   type Sink,
   type TextFormatter,
 } from "@logtape/logtape";
+
 import { MAIN_BUNDLE_NAME } from "@/constant";
 import { prefs } from "@/prefs";
+
 import { logToBrowserConsole } from "./zotero-log";
 
 const LOG_SOURCE_NAME = `zotlit-${MAIN_BUNDLE_NAME}`;

@@ -1,6 +1,6 @@
+import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { migrateLegacyV0 } from "./migrate";
 import { resolveImgExcerptImport, resolveZoteroDataDir } from "./schema";
 

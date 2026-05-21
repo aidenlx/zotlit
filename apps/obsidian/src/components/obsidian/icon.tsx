@@ -1,10 +1,11 @@
+import { getIcon, type IconName } from "obsidian";
 import {
   type CSSProperties,
   type SVGAttributes,
   useLayoutEffect,
   useRef,
 } from "react";
-import { getIcon, type IconName } from "obsidian";
+
 import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
 
