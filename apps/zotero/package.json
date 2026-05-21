@@ -33,8 +33,8 @@
     "semver": "^7.8.0",
     "tinyglobby": "^0.2.16",
     "valibot": "^1.0.0",
-    "vite": "^8.0.0",
-    "vitest": "^4.0.13",
+    "vite": "catalog:",
+    "vitest": "catalog:",
     "zotero-types": "4.1.2"
   },
   "zotero": {
