@@ -17,6 +17,7 @@ export default defineConfig({
     "typescript/ban-ts-comment": "off",
     "typescript/prefer-readonly": "error",
 
+    "no-unused-vars": "error",
     "no-param-reassign": "error",
     "default-param-last": "error",
     "max-params": ["error", { max: 3 }],
@@ -38,5 +39,10 @@ export default defineConfig({
         ],
       },
     ],
+    "typescript/consistent-type-imports": [
+      "error",
+      { fixStyle: "inline-type-imports", disallowTypeAnnotations: false },
+    ],
+    "import/consistent-type-specifier-style": ["error", "prefer-inline"],
   },
 });
