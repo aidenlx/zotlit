@@ -27,5 +27,7 @@ overrides:
   "zotero-types>epubjs": 0.3.93
   "zotero-types>pdfjs-dist": workspace:*
 
-# delay one day to reduce the risk of installing compromised packages
-minimumReleaseAge: 1440
+# delay 3 day to reduce the risk of installing compromised packages
+minimumReleaseAge: 4320
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: true
