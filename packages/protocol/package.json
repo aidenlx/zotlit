@@ -25,6 +25,6 @@
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
-    "vitest": "^4.0.13"
+    "vitest": "catalog:"
   }
 }
