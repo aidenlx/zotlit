@@ -1,0 +1,26 @@
+{
+  "extends": ["@zotlit/config/tsconfig"],
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024", "esnext.array", "esnext.disposable", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "isolatedDeclarations": false,
+    "allowImportingTsExtensions": true,
+    "noUncheckedSideEffectImports": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["./src/**/*.ts", "./src/**/*.tsx"],
+  "exclude": [
+    "./node_modules",
+    "./dist",
+    "./.output",
+    "./.tanstack",
+    "./.nitro"
+  ]
+}
