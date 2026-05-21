@@ -1,5 +1,4 @@
 import { basename } from "node:path/posix";
-
 import {
   TFile,
   type App,

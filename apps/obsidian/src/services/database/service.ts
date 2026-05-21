@@ -32,7 +32,10 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 import { resolveZoteroDataDir } from "@/services/settings/schema";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import {
+  type Settings,
+  type SettingsService,
+} from "@/services/settings/service";
 
 const logger = getLogger("database");
 

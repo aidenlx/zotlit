@@ -1,5 +1,3 @@
-import { dirname, isAbsolute, join, relative } from "node:path/posix";
-
 import {
   Eta,
   EtaError,
@@ -7,10 +5,12 @@ import {
   type Options,
   type TemplateFunction,
 } from "eta/core";
+import { dirname, isAbsolute, join, relative } from "node:path/posix";
 
-import type { AutoTrim } from "@/services/settings/schema";
-import { normalizeVaultPath } from "./path";
+import { type AutoTrim } from "@/services/settings/schema";
+
 import { toFilename } from "./defaults";
+import { normalizeVaultPath } from "./path";
 
 export interface ObsidianEtaHost {
   getAutoTrim(): [AutoTrim, AutoTrim];

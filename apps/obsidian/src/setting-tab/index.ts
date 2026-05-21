@@ -1,8 +1,9 @@
 import { PluginSettingTab } from "obsidian";
 
-import type { DatabaseService } from "@/services/database/service";
-import type { SettingsService } from "@/services/settings/service";
+import { type DatabaseService } from "@/services/database/service";
+import { type SettingsService } from "@/services/settings/service";
 import type ZotLitPlugin from "@/zt-main";
+
 import { databaseSection } from "./groups/database";
 import { loggingSection } from "./groups/logging";
 

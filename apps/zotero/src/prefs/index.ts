@@ -1,5 +1,5 @@
 import { formatValue } from "@/lib/l10n.js";
-import type { PluginPrefKey } from "@/types/prefs.js";
+import { type PluginPrefKey } from "@/types/prefs.js";
 
 type PrefValue = boolean | string | number;
 

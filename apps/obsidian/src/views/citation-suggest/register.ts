@@ -1,9 +1,10 @@
 import "./style.css";
-import type { App, Plugin } from "obsidian";
+import { type App, type Plugin } from "obsidian";
 
-import type { ItemLookup } from "@/services/item-lookup/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import { type ItemLookup } from "@/services/item-lookup/service";
+import { type SettingsService } from "@/services/settings/service";
+import { type TemplateService } from "@/services/template/service";
+
 import { CitationEditorSuggest } from "./editor-suggest";
 
 export interface CitationSuggestDeps {

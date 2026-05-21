@@ -7,15 +7,16 @@ import {
 } from "obsidian";
 
 import { Temporal } from "@zotlit/shared/temporal";
+
 import { saveFile } from "@/lib/file-save";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { requireElectron } from "@/lib/require";
 import { m } from "@/paraglide/messages";
 import { LOG_FILENAME } from "@/services/log/service";
-import type { LogLevel } from "@/services/settings/schema";
+import { type LogLevel } from "@/services/settings/schema";
+import { type SectionContext } from "@/setting-tab/section";
 import type ZotLitPlugin from "@/zt-main";
-import { requireElectron } from "@/lib/require";
-import type { SectionContext } from "@/setting-tab/section";
 
 const logger = getLogger(["setting-tab", "logging"]);
 

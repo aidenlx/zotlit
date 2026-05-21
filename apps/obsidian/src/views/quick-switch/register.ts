@@ -1,9 +1,10 @@
-import type { App, Plugin } from "obsidian";
+import { type App, type Plugin } from "obsidian";
 
-import type { ItemLookup } from "@/services/item-lookup/service";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
 import * as m from "@/paraglide/messages";
+import { type ItemLookup } from "@/services/item-lookup/service";
+import { type NoteIndex } from "@/services/note-index/service";
+import { type SettingsService } from "@/services/settings/service";
+
 import { QuickSwitchModal } from "./modal";
 
 export interface QuickSwitchDeps {

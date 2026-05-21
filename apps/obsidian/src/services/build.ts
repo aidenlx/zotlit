@@ -1,4 +1,5 @@
 import type ZotLitPlugin from "@/zt-main";
+
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/engine";
 import { ItemLookup } from "./item-lookup/service";

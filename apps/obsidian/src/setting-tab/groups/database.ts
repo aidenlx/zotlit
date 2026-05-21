@@ -1,21 +1,22 @@
-import { getLibraries, type Library } from "@zotlit/db";
 import {
   type DropdownComponent,
   type ExtraButtonComponent,
   SettingGroup,
 } from "obsidian";
 
+import { getLibraries, type Library } from "@zotlit/db";
+
 import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
-import type { DatabaseService } from "@/services/database/service";
+import { type DatabaseService } from "@/services/database/service";
 import { resolveZoteroDataDir } from "@/services/settings/schema";
 import {
   RESET_SETTING,
   type SettingsService,
 } from "@/services/settings/service";
-import type { SectionContext } from "@/setting-tab/section";
+import { type SectionContext } from "@/setting-tab/section";
 
 const logger = getLogger(["setting-tab", "database"]);
 

@@ -1,4 +1,4 @@
-import type { SettingsService } from "@/services/settings/service";
+import { type SettingsService } from "@/services/settings/service";
 
 /**
  * Shared shape every section receives. Groups that need extra services

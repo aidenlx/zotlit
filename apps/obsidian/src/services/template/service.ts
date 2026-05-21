@@ -1,4 +1,4 @@
-import type { Extension } from "@codemirror/state";
+import { type Extension } from "@codemirror/state";
 import { EtaError } from "eta/core";
 import {
   TFile,
@@ -11,8 +11,9 @@ import {
 
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
-import type { AutoTrim, Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
+import { type AutoTrim, type Settings } from "@/services/settings/schema";
+import { type SettingsService } from "@/services/settings/service";
+
 import { EMBEDDED_DEFAULTS, fromFilename } from "./defaults";
 import { bracketExtension } from "./editor/bracket";
 import { EtaSuggest } from "./editor/suggest";

@@ -1,11 +1,12 @@
 import { Keymap, SuggestModal } from "obsidian";
 
 import { BaseNotice } from "@/lib/notice";
-import type { SearchHit } from "@/services/item-lookup/engine";
+import * as m from "@/paraglide/messages";
+import { type SearchHit } from "@/services/item-lookup/engine";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
-import * as m from "@/paraglide/messages";
-import type { QuickSwitchDeps } from "./register";
+
+import { type QuickSwitchDeps } from "./register";
 
 export class QuickSwitchModal extends SuggestModal<SearchHit> {
   readonly #deps: QuickSwitchDeps;

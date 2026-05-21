@@ -1,12 +1,15 @@
-import { renderMatches, type SearchMatches } from "obsidian";
 import { regex } from "arkregex";
+import { renderMatches, type SearchMatches } from "obsidian";
+
 import {
   isJournalArticleItem,
   type Creator,
   type JournalArticleItem,
 } from "@zotlit/db";
-import type { SettingsService } from "@/services/settings/service";
-import type { SearchHit } from "./engine";
+
+import { type SettingsService } from "@/services/settings/service";
+
+import { type SearchHit } from "./engine";
 
 const YEAR = regex("\\d{4}");
 

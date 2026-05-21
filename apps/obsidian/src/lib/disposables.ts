@@ -1,11 +1,11 @@
 // oxlint-disable max-params
 
-import type {
-  EventRef,
-  Events,
-  KeymapEventListener,
-  Modifier,
-  Scope,
+import {
+  type EventRef,
+  type Events,
+  type KeymapEventListener,
+  type Modifier,
+  type Scope,
 } from "obsidian";
 
 export function disposable(dispose: () => void): Disposable {
