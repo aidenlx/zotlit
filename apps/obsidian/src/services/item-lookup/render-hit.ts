@@ -3,12 +3,12 @@ import { renderMatches, type SearchMatches } from "obsidian";
 import {
   isJournalArticleItem,
   itemDateYear,
-  type Creator,
   type JournalArticleItem,
 } from "@zotlit/db";
 
 import { type SettingsService } from "@/services/settings/service";
 
+import { creatorSummary } from "./creator-summary";
 import { type SearchHit } from "./engine";
 
 /** CSS owns this value; JS reads it so the truncation window matches the
@@ -48,7 +48,7 @@ function appendJournalMeta(
   contentEl: HTMLElement,
   item: JournalArticleItem,
 ): void {
-  const creators = creatorSummary(item.creators);
+  const creators = creatorSummary(item);
   const year = itemDateYear(item.date)?.toString() ?? "";
   const { publicationTitle, volume, issue, pages } = item;
 
@@ -126,14 +126,4 @@ function readTitleMaxChars(el: HTMLElement): number {
     return parsed;
   }
   return TITLE_MAX_CHARS_FALLBACK;
-}
-
-function creatorSummary(creators: Creator[]): string {
-  if (creators.length === 0) return "";
-  const names = creators
-    .map((creator) => creator.lastName ?? creator.firstName)
-    .filter((name): name is string => !!name);
-  if (names.length === 0) return "";
-  if (names.length === 1) return names[0]!;
-  return `${names[0]} et al.`;
 }

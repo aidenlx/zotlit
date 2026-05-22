@@ -45,5 +45,16 @@
   "settings_db_library_desc": "Library used when inserting citations or listing items.",
   "settings_db_library_user": "My Library",
   "settings_db_library_unknown": "Library {libraryID}",
-  "settings_db_library_unavailable": "Open the Zotero database to choose a library."
+  "settings_db_library_unavailable": "Open the Zotero database to choose a library.",
+  "creator_summary": [
+    {
+      "declarations": ["input count", "input first", "input second"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "{first}",
+        "count=2": "⁨{first}⁩ and ⁨{second}⁩",
+        "count=*": "{first} et al."
+      }
+    }
+  ]
 }

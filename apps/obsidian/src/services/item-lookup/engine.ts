@@ -1,9 +1,10 @@
 import MiniSearch from "minisearch";
 import { type App, type SearchMatches } from "obsidian";
 
-import { itemDateYear, type Creator, type Item } from "@zotlit/db";
+import { itemDateYear, type Item } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { formatCreator } from "./format-creator";
 import {
   normalize,
   normalizeWithIndexMap,
@@ -144,18 +145,12 @@ function toIndexed(item: Item): IndexedItem {
   return {
     id: item.itemID,
     title: item.title ?? "",
-    creators: creatorsToSearchText(item.creators),
+    creators: item.creators
+      .map((creator) => formatCreator(creator, item.language))
+      .filter((name) => name.length > 0)
+      .join("; "),
     date: itemDateYear(item.date)?.toString() ?? "",
   };
-}
-
-function creatorsToSearchText(creators: readonly Creator[]): string {
-  return creators
-    .map((creator) =>
-      [creator.lastName, creator.firstName].filter(Boolean).join(" "),
-    )
-    .filter((name) => name.length > 0)
-    .join("; ");
 }
 
 function processTerm(term: string): string | null {
