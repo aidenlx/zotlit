@@ -64,12 +64,9 @@ export function parseItemDate(raw: string | null | undefined): ItemDate | null {
 }
 
 /**
- * Best-effort 4-digit year for filtering, grouping, or "Author 2015" display.
- *
  * - Structured kinds (`date` / `yearMonth` / `year`) return their stored year.
  * - `text` falls back to a `\d{4}` regex over the user text; returns `null`
  *   when no 4-digit run is present (e.g. `submitted`, `January 19XX`).
- * - A hypothetical `monthDay` kind (not currently emitted) returns `null`.
  */
 export function itemDateYear(date: ItemDate | null | undefined): number | null {
   if (!date) return null;

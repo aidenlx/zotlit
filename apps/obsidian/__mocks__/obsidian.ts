@@ -135,6 +135,10 @@ export function resetMockPlatform(): void {
   platformIsWin = undefined;
 }
 
+export function getLanguage(): string {
+  return "en";
+}
+
 /**
  * Deterministic test stand-in for Obsidian's `debounce`. Unlike the real
  * implementation it does **not** use timers: the callback fires only when

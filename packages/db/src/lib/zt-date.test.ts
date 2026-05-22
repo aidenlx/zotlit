@@ -76,7 +76,7 @@ describe("parseItemDate", () => {
 
   it("treats a non-multipart raw value as text verbatim", () => {
     // Zotero's storage layer always writes multipart, but a hand-edited DB
-    // (or pre-Zotero-4 leftover) could carry a raw string. Don't blow up.
+    // (or pre-Zotero-4 leftover) could carry a raw string.
     const parsed = parseItemDate("in press");
     expect(parsed).toEqual<ItemDate>({
       kind: "text",

@@ -1,4 +1,11 @@
-import { getItemsByLibrary, type Item } from "@zotlit/db";
+import { getLanguage } from "obsidian";
+
+import {
+  createLanguageLookup,
+  getItemsByLibrary,
+  type Item,
+  type ItemQueryOptions,
+} from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
@@ -30,6 +37,7 @@ export interface ItemLookupDeps {
   loadItems?: (
     db: NodeDatabaseClient,
     libraryID: number,
+    options: ItemQueryOptions,
   ) => Item[] | Promise<Item[]>;
 }
 
@@ -41,6 +49,7 @@ interface ItemCache {
 export class ItemLookup extends Service<void> {
   readonly #db;
   readonly #settings;
+  readonly #languageLookup;
   readonly #getChsSegmenter;
   readonly #loadItems;
 
@@ -56,6 +65,7 @@ export class ItemLookup extends Service<void> {
     super();
     this.#db = deps.db;
     this.#settings = deps.settings;
+    this.#languageLookup = createLanguageLookup(getLanguage());
     this.#getChsSegmenter = deps.getChsSegmenter ?? (() => null);
     this.#loadItems = deps.loadItems ?? getItemsByLibrary;
     this.#tokenizerOpts = this.#createTokenizerOpts();
@@ -174,7 +184,9 @@ export class ItemLookup extends Service<void> {
     const t0 = performance.now();
     try {
       this.#tokenizerOpts = this.#createTokenizerOpts();
-      const items = await this.#loadItems(this.#db.client, libraryID);
+      const items = await this.#loadItems(this.#db.client, libraryID, {
+        lookup: this.#languageLookup,
+      });
       this.#cache = {
         libraryID,
         index: buildIndex(items, this.#tokenizerOpts, libraryID),

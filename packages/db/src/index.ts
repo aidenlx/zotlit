@@ -11,6 +11,7 @@ export {
   type BaseItem,
   type Creator,
   type Item,
+  type ItemQueryOptions,
   type JournalArticleItem,
 } from "./queries/items";
 export {
@@ -19,3 +20,10 @@ export {
   parseItemDate,
   type ItemDate,
 } from "./lib/zt-date";
+export {
+  createLanguageLookup,
+  formatItemLanguage,
+  parseItemLanguage,
+  type ItemLanguage,
+  type LanguageNameLookup,
+} from "./lib/zt-lang";

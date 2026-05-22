@@ -1,11 +1,21 @@
-import { deletedItems, itemTypes } from "@drizzle/schema";
-import { eq, sql } from "drizzle-orm";
+import {
+  creatorTypes,
+  deletedItems,
+  itemTypeCreatorTypes,
+  itemTypes,
+} from "@drizzle/schema";
+import { sql } from "drizzle-orm";
 
 import { type Temporal } from "@zotlit/shared/temporal";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { parseItemDate, type ItemDate } from "@/lib/zt-date";
+import {
+  parseItemLanguage,
+  type ItemLanguage,
+  type LanguageNameLookup,
+} from "@/lib/zt-lang";
 
 import { cachedPrepared } from "./_prepared";
 import { defineQuery, type QueryRow } from "./_shared";
@@ -31,6 +41,14 @@ export interface BaseItem {
   /** UTC instant from Zotero's `dateModified` text column. */
   dateModified: Temporal.Instant;
   creators: Creator[];
+  /**
+   * Creator-type name that Zotero treats as primary for this item type
+   * (e.g. `author` for journalArticle/book, `interviewer` for interview,
+   * `podcaster` for podcast).
+   */
+  primaryCreatorType: string | null;
+  /** Parsed `language` field. @see {@link ItemLanguage} */
+  language: ItemLanguage | null;
 }
 
 export interface JournalArticleItem extends BaseItem {
@@ -54,7 +72,10 @@ export function formatIndexedKey(
   return groupID == null ? key : `${key}g${groupID}`;
 }
 
-const queryBuilder = defineQuery((db) =>
+type ItemQueryParam = {
+  libraryID: number;
+};
+const itemQueryBuilder = defineQuery((db) =>
   db.query.items.findMany({
     where: {
       AND: [
@@ -94,20 +115,21 @@ const queryBuilder = defineQuery((db) =>
       itemTypeID: true,
     },
     extras: {
-      itemType: (t) =>
-        db
-          .select({ itemType: itemTypes.typeName })
-          .from(itemTypes)
-          .where(eq(itemTypes.itemTypeID, t.itemTypeID))
-          .limit(1),
+      itemType: (t) => sql<string>`
+SELECT ${itemTypes.typeName}
+FROM ${itemTypes}
+WHERE ${itemTypes.itemTypeID} = ${t.itemTypeID}
+LIMIT 1`,
+      primaryCreatorType: (t) => sql<string | null>`
+SELECT ${creatorTypes.creatorType}
+FROM ${itemTypeCreatorTypes}
+INNER JOIN ${creatorTypes}
+  ON ${creatorTypes.creatorTypeID} = ${itemTypeCreatorTypes.creatorTypeID}
+WHERE ${itemTypeCreatorTypes.itemTypeID} = ${t.itemTypeID}
+  AND ${itemTypeCreatorTypes.primaryField} = 1
+LIMIT 1`,
     },
     with: {
-      library: {
-        columns: {},
-        with: {
-          groups: { columns: { groupID: true } },
-        },
-      },
       itemData: {
         columns: {},
         with: {
@@ -134,9 +156,29 @@ const queryBuilder = defineQuery((db) =>
   }),
 );
 
-type ItemRow = QueryRow<typeof queryBuilder>;
+type GroupQueryParam = {
+  libraryID: number;
+};
+const groupQueryBuilder = defineQuery((db) =>
+  db.query.groups.findFirst({
+    where: {
+      libraryID: sql.placeholder("libraryID"),
+    },
+    columns: { groupID: true },
+  }),
+);
 
-function toItem(row: ItemRow): Item {
+type ItemRow = QueryRow<typeof itemQueryBuilder>;
+
+export interface ItemQueryOptions {
+  lookup: LanguageNameLookup | null;
+}
+
+function toItem(
+  row: ItemRow,
+  groupID: number | null,
+  lookup: LanguageNameLookup | null,
+): Item {
   const fields = new Map<string, string | null>();
   for (const d of row.itemData) {
     if (!d.fieldsCombined) continue;
@@ -148,8 +190,7 @@ function toItem(row: ItemRow): Item {
     creatorType: ic.creatorType?.creatorType ?? "",
     fieldMode: ic.creator?.fieldMode ?? 0,
   }));
-  const groupID = row.library?.groups?.groupID ?? null;
-  const itemType = (row.itemType as string) ?? "";
+  const itemType = row.itemType;
   const base: BaseItem = {
     itemID: row.itemID,
     libraryID: row.libraryID,
@@ -161,6 +202,8 @@ function toItem(row: ItemRow): Item {
     date: parseItemDate(fields.get("date")),
     dateModified: row.dateModified,
     creators,
+    primaryCreatorType: row.primaryCreatorType,
+    language: parseItemLanguage(fields.get("language"), lookup),
   };
   if (itemType === "journalArticle") {
     return {
@@ -178,15 +221,34 @@ function toItem(row: ItemRow): Item {
 export function getItemsByLibrary(
   db: NodeDatabaseClient,
   libraryID: number,
+  { lookup }: ItemQueryOptions,
 ): Item[] {
-  const stmt = cachedPrepared(db, "items", (d) => queryBuilder(d).prepare());
-  return stmt.all({ libraryID }).map(toItem);
+  const stmt = cachedPrepared(db, "items", (d) =>
+    itemQueryBuilder(d).prepare(),
+  );
+  const groupStmt = cachedPrepared(db, "groups", (d) =>
+    groupQueryBuilder(d).prepare(),
+  );
+  const groupId =
+    groupStmt.get({ libraryID } satisfies GroupQueryParam)?.groupID ?? null;
+  return stmt
+    .all({ libraryID } satisfies ItemQueryParam)
+    .map((r) => toItem(r, groupId, lookup));
 }
 
 export async function getItemsByLibraryAsync(
   db: SQLocalDatabaseClient,
   libraryID: number,
+  { lookup }: ItemQueryOptions,
 ): Promise<Item[]> {
-  const rows = await queryBuilder(db).prepare().all({ libraryID });
-  return rows.map(toItem);
+  const rows = await itemQueryBuilder(db)
+    .prepare()
+    .all({ libraryID } satisfies ItemQueryParam);
+  const groupId =
+    (
+      await groupQueryBuilder(db)
+        .prepare()
+        .get({ libraryID } satisfies GroupQueryParam)
+    )?.groupID ?? null;
+  return rows.map((r) => toItem(r, groupId, lookup));
 }
