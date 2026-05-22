@@ -1,4 +1,5 @@
-import { getItemsByLibrary, type Item, type DatabaseClient } from "@zotlit/db";
+import { getItemsByLibrary, type Item } from "@zotlit/db";
+import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
 import {
@@ -27,7 +28,7 @@ export interface ItemLookupDeps {
   settings: SettingsService;
   getChsSegmenter?: () => ChsSegmenter | null;
   loadItems?: (
-    db: DatabaseClient,
+    db: NodeDatabaseClient,
     libraryID: number,
   ) => Item[] | Promise<Item[]>;
 }

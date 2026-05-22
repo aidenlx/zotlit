@@ -1,8 +1,10 @@
 import { type LibraryType } from "@drizzle/schema";
 
-import { type DatabaseClient } from "@/client";
+import { type NodeDatabaseClient } from "@/client/node";
+import { type SQLocalDatabaseClient } from "@/client/web";
 
-import { cachedPrepared } from "./prepared";
+import { cachedPrepared } from "./_prepared";
+import { defineQuery, type QueryRow } from "./_shared";
 
 export interface Library {
   libraryID: number;
@@ -13,29 +15,43 @@ export interface Library {
   name: string | null;
 }
 
+const queryBuilder = defineQuery((db) =>
+  db.query.libraries.findMany({
+    columns: { libraryID: true, type: true },
+    with: {
+      groups: {
+        columns: { groupID: true, name: true },
+      },
+    },
+    orderBy: { libraryID: "asc" },
+  }),
+);
+
+type LibraryRow = QueryRow<typeof queryBuilder>;
+
+function toLibrary(row: LibraryRow): Library {
+  return {
+    libraryID: row.libraryID,
+    type: row.type,
+    groupID: row.groups?.groupID ?? null,
+    name: row.groups?.name ?? null,
+  };
+}
+
 /**
  * Enumerate Zotero libraries with their group join. Mirrors v1's
  * `LibrariesFull` SQL but returns the raw `type` and group fields so the UI
  * can localize labels itself.
  */
-export function getLibraries(db: DatabaseClient): Library[] {
-  const rows = cachedPrepared(db, "libraries.list", (db) =>
-    db.query.libraries
-      .findMany({
-        columns: { libraryID: true, type: true },
-        with: {
-          groups: {
-            columns: { groupID: true, name: true },
-          },
-        },
-        orderBy: { libraryID: "asc" },
-      })
-      .prepare(),
-  ).all();
-  return rows.map((row) => ({
-    libraryID: row.libraryID,
-    type: row.type,
-    groupID: row.groups?.groupID ?? null,
-    name: row.groups?.name ?? null,
-  }));
+export function getLibraries(db: NodeDatabaseClient): Library[] {
+  return cachedPrepared(db, "libraries.list", (d) => queryBuilder(d).prepare())
+    .all()
+    .map(toLibrary);
+}
+
+export async function getLibrariesAsync(
+  db: SQLocalDatabaseClient,
+): Promise<Library[]> {
+  const rows = await queryBuilder(db);
+  return rows.map(toLibrary);
 }

@@ -1,6 +1,6 @@
 import { loadEnvFile } from "node:process";
 
-import { createClient } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
 
 loadEnvFile();
 

@@ -6,8 +6,11 @@
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./dist/index.mjs",
+    "./client/node": "./dist/client/node.mjs",
+    "./client/web": "./dist/client/web.mjs",
     "./schema": "./dist/schema.mjs",
     "./package.json": "./package.json"
   },
@@ -33,5 +36,13 @@
     "oxlint": "catalog:",
     "tsdown": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "sqlocal": "^0.18.0"
+  },
+  "peerDependenciesMeta": {
+    "sqlocal": {
+      "optional": true
+    }
   }
 }
