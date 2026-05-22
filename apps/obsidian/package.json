@@ -18,7 +18,7 @@
   "dependencies": {
     "@zotlit/db": "workspace:*",
     "@zotlit/shared": "workspace:*",
-    "arkregex": "^0.0.5",
+    "arkregex": "catalog:",
     "clsx": "^2.1.1",
     "eta": "^4.6.0",
     "fflate": "^0.8.2",

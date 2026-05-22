@@ -52,7 +52,10 @@ describe("getItemsByLibrary", () => {
         itemType: "journalArticle",
         title: "Alpha kernels",
         citekey: "doe2024alpha",
-        date: "2024-02-03",
+        date: {
+          kind: "date",
+          raw: "2024-02-03 February 3, 2024",
+        },
       },
     ]);
   });
@@ -297,14 +300,14 @@ function seedFixture(path: string): void {
       values
         (100, 'Alpha kernels'),
         (101, 'doe2024alpha'),
-        (102, '2024-02-03'),
+        (102, '2024-02-03 February 3, 2024'),
         (103, 'Deleted item'),
         (104, 'Attachment item'),
         (105, 'Note item'),
         (106, 'Annotation item'),
         (107, 'Group paper'),
         (108, 'group2025paper'),
-        (109, '2025'),
+        (109, '2025-00-00 2025'),
         (110, 'Journal of Kernels'),
         (111, '12'),
         (112, '3'),

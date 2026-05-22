@@ -1,7 +1,7 @@
 import MiniSearch from "minisearch";
 import { type App, type SearchMatches } from "obsidian";
 
-import { type Creator, type Item } from "@zotlit/db";
+import { itemDateYear, type Creator, type Item } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import {
@@ -145,7 +145,7 @@ function toIndexed(item: Item): IndexedItem {
     id: item.itemID,
     title: item.title ?? "",
     creators: creatorsToSearchText(item.creators),
-    date: item.date ?? "",
+    date: itemDateYear(item.date)?.toString() ?? "",
   };
 }
 
