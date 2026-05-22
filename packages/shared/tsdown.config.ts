@@ -9,7 +9,6 @@ const REFERENCE_LINE = `/// <reference path="./${AUGMENT_FILE}" />\n`;
 export default defineConfig({
   entry: [
     {
-      index: "./src/index.ts",
       temporal: "./src/temporal.ts",
       "log-formatter": "./src/log-formatter.ts",
       nanoevents: "./src/nanoevents.ts",

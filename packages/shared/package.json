@@ -8,7 +8,6 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./dist/index.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",
     "./nanoevents": "./dist/nanoevents.mjs",
     "./temporal": "./dist/temporal.mjs",
