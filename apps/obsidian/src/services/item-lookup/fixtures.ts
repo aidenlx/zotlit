@@ -1,4 +1,10 @@
-import { type Creator, type Item, type JournalArticleItem } from "@zotlit/db";
+import {
+  parseItemDate,
+  type Creator,
+  type Item,
+  type JournalArticleItem,
+} from "@zotlit/db";
+import { Temporal } from "@zotlit/shared/temporal";
 
 export interface ItemFixtureOptions {
   key: string;
@@ -25,7 +31,7 @@ export function makeItem(options: ItemFixtureOptions): Item {
     indexedKey: options.key,
     title: options.title ?? null,
     citekey: options.citekey ?? null,
-    date: options.date ?? null,
+    date: parseItemDate(options.date),
     dateModified: Temporal.Instant.from(
       options.dateModified ?? "1970-01-01T00:00:00Z",
     ),

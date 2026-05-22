@@ -5,6 +5,7 @@ import { type Temporal } from "@zotlit/shared/temporal";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
+import { parseItemDate, type ItemDate } from "@/lib/zt-date";
 
 import { cachedPrepared } from "./_prepared";
 import { defineQuery, type QueryRow } from "./_shared";
@@ -26,7 +27,7 @@ export interface BaseItem {
   itemType: string;
   title: string | null;
   citekey: string | null;
-  date: string | null;
+  date: ItemDate | null;
   /** UTC instant from Zotero's `dateModified` text column. */
   dateModified: Temporal.Instant;
   creators: Creator[];
@@ -157,7 +158,7 @@ function toItem(row: ItemRow): Item {
     itemType,
     title: fields.get("title") ?? null,
     citekey: fields.get("citationKey") ?? null,
-    date: fields.get("date") ?? null,
+    date: parseItemDate(fields.get("date")),
     dateModified: row.dateModified,
     creators,
   };

@@ -1,8 +1,8 @@
-import { regex } from "arkregex";
 import { renderMatches, type SearchMatches } from "obsidian";
 
 import {
   isJournalArticleItem,
+  itemDateYear,
   type Creator,
   type JournalArticleItem,
 } from "@zotlit/db";
@@ -10,8 +10,6 @@ import {
 import { type SettingsService } from "@/services/settings/service";
 
 import { type SearchHit } from "./engine";
-
-const YEAR = regex("\\d{4}");
 
 /** CSS owns this value; JS reads it so the truncation window matches the
  *  visible column width. Themes override by setting the same variable. */
@@ -51,7 +49,7 @@ function appendJournalMeta(
   item: JournalArticleItem,
 ): void {
   const creators = creatorSummary(item.creators);
-  const year = yearFromDate(item.date);
+  const year = itemDateYear(item.date)?.toString() ?? "";
   const { publicationTitle, volume, issue, pages } = item;
 
   const hasAuthorYear = !!creators || !!year;
@@ -138,8 +136,4 @@ function creatorSummary(creators: Creator[]): string {
   if (names.length === 0) return "";
   if (names.length === 1) return names[0]!;
   return `${names[0]} et al.`;
-}
-
-function yearFromDate(date: string | null): string {
-  return date?.match(YEAR)?.[0] ?? "";
 }

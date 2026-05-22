@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@zotlit/shared": "workspace:*",
+    "arkregex": "catalog:",
     "drizzle-orm": "catalog:"
   },
   "devDependencies": {
