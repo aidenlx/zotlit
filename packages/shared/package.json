@@ -6,6 +6,7 @@
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./dist/index.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",

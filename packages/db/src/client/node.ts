@@ -10,7 +10,7 @@ export interface DatabaseOptions {
   logger?: boolean | Logger;
 }
 
-export type DatabaseClient = ReturnType<typeof createClient>;
+export type NodeDatabaseClient = ReturnType<typeof createClient>;
 
 export function createClient(url: string, options?: DatabaseOptions) {
   const sqlite = new DatabaseSync(url, options?.connection ?? {});

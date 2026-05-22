@@ -1,16 +1,16 @@
 import { type SQLitePreparedQuery } from "drizzle-orm/sqlite-core";
 
-import { type DatabaseClient } from "@/client";
+import { type NodeDatabaseClient } from "@/client/node";
 
 const cache = new WeakMap<
-  DatabaseClient,
+  NodeDatabaseClient,
   Record<string, SQLitePreparedQuery<any>>
 >();
 
 export function cachedPrepared<T extends SQLitePreparedQuery<any>>(
-  db: DatabaseClient,
+  db: NodeDatabaseClient,
   key: string,
-  build: (db: DatabaseClient) => T,
+  build: (db: NodeDatabaseClient) => T,
 ): T {
   let dbCache = cache.get(db);
   if (!dbCache) {

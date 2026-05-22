@@ -24,9 +24,9 @@ import { pathToFileURL } from "node:url";
 
 import {
   createClient,
-  type DatabaseClient,
+  type NodeDatabaseClient,
   type DatabaseOptions,
-} from "@zotlit/db";
+} from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
@@ -89,7 +89,7 @@ export class DatabaseService extends Service<void> {
 
   #firstSettled = false;
 
-  #activeClient: DatabaseClient | null = null;
+  #activeClient: NodeDatabaseClient | null = null;
   /** The resolved DB path the *active client* was opened against. */
   #activePath: string | null = null;
   /** `(mtimeMs, size)` captured immediately after the active open. */
@@ -134,7 +134,7 @@ export class DatabaseService extends Service<void> {
    * @throws {@link DatabaseError} with code `"not-ready"` when still loading,
    *   `"degraded"` when no active client is available.
    */
-  get client(): DatabaseClient {
+  get client(): NodeDatabaseClient {
     if (!this.#firstSettled) throw new DatabaseError("not-ready");
     if (!this.#activeClient) {
       throw this.#degradedError ?? new DatabaseError("degraded");
@@ -207,7 +207,7 @@ export class DatabaseService extends Service<void> {
 
     // Tracked separately so a post-open stat failure releases the new client
     // instead of leaking it into degraded state.
-    let pendingClient: DatabaseClient | null = null;
+    let pendingClient: NodeDatabaseClient | null = null;
     try {
       pendingClient = createClient(buildSqliteUri(dbPath), DB_OPTIONS);
       const stat = await fsStat(dbPath);
@@ -304,7 +304,7 @@ export class DatabaseService extends Service<void> {
     const dbPath = this.#lastDbPath;
     const prevClient = this.#activeClient;
 
-    let nextClient: DatabaseClient | null = null;
+    let nextClient: NodeDatabaseClient | null = null;
     let stat: Stats;
     try {
       nextClient = createClient(buildSqliteUri(dbPath), DB_OPTIONS);
@@ -496,7 +496,7 @@ function resolveDbPath(s: Readonly<Settings>): string {
   return join(resolveZoteroDataDir(s["zotero.data-dir"]), DB_FILENAME);
 }
 
-function closeClient(client: DatabaseClient): void {
+function closeClient(client: NodeDatabaseClient): void {
   try {
     client.$client.close();
   } catch (error) {

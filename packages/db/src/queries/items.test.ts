@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createClient, type DatabaseClient } from "@/client";
+import { createClient, type NodeDatabaseClient } from "@/client/node";
 
 import {
   formatIndexedKey,
@@ -15,7 +15,7 @@ import {
 
 let tempDir: string;
 let dbPath: string;
-let db: DatabaseClient;
+let db: NodeDatabaseClient;
 
 beforeEach(async () => {
   tempDir = join(tmpdir(), `zotlit-db-items-${randomUUID()}`);

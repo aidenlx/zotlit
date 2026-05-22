@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@zotlit/db", () => ({
+vi.mock("@zotlit/db/client/node", () => ({
   createClient: vi.fn(),
 }));
 
@@ -25,7 +25,7 @@ vi.mock("node:fs", async (importOriginal) => {
 
 import { watch } from "node:fs";
 
-import { createClient } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
 
 import { SettingsService } from "@/services/settings/service";
 
@@ -205,6 +205,7 @@ describe("DatabaseService — startup", () => {
     expect(createClientMock).toHaveBeenCalledTimes(1);
     expect(createClientMock).toHaveBeenCalledWith(
       expect.stringContaining("mode=ro&immutable=1"),
+      expect.anything(),
     );
     expect(service.client).toBeDefined();
     expect(changed.count).toBe(0);

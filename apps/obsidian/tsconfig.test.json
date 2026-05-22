@@ -8,6 +8,7 @@
     "isolatedDeclarations": false,
     "types": ["node-22"],
     "allowJs": true,
+    "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"],
       "@mock/*": ["./__mocks__/*"]

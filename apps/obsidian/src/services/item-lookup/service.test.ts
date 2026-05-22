@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type DatabaseClient, type Item } from "@zotlit/db";
+import { type Item } from "@zotlit/db";
+import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import {
   DatabaseError,
@@ -160,7 +161,7 @@ function createDeps(
     db?: FakeDb;
     settings?: FakeSettings;
     loadItems?: (
-      db: DatabaseClient,
+      db: NodeDatabaseClient,
       libraryID: number,
     ) => Item[] | Promise<Item[]>;
   } = {},
@@ -175,14 +176,14 @@ function createDeps(
 
 class FakeDb {
   error: DatabaseError | null = null;
-  readonly #client = {} as DatabaseClient;
+  readonly #client = {} as NodeDatabaseClient;
   readonly #changed = new Set<() => void>();
 
   get state(): "ready" | "degraded" {
     return this.error ? "degraded" : "ready";
   }
 
-  get client(): DatabaseClient {
+  get client(): NodeDatabaseClient {
     if (this.error) throw this.error;
     return this.#client;
   }
