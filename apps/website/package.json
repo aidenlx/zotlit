@@ -16,8 +16,12 @@
     "@tanstack/react-router-devtools": "^1.167.0",
     "@tanstack/react-start": "^1.168.6",
     "@tanstack/router-plugin": "^1.168.6",
+    "@zotlit/db": "workspace:*",
+    "@zotlit/shared": "workspace:*",
+    "drizzle-orm": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "sqlocal": "^0.18.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
