@@ -1,10 +1,11 @@
 import {
   creatorTypes,
   deletedItems,
+  groups,
   itemTypeCreatorTypes,
   itemTypes,
 } from "@drizzle/schema";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { type Temporal } from "@zotlit/shared/temporal";
 
@@ -160,12 +161,11 @@ type GroupQueryParam = {
   libraryID: number;
 };
 const groupQueryBuilder = defineQuery((db) =>
-  db.query.groups.findFirst({
-    where: {
-      libraryID: sql.placeholder("libraryID"),
-    },
-    columns: { groupID: true },
-  }),
+  db
+    .select({ groupID: groups.groupID })
+    .from(groups)
+    .where(eq(groups.libraryID, sql.placeholder("libraryID")))
+    .limit(1),
 );
 
 type ItemRow = QueryRow<typeof itemQueryBuilder>;
@@ -230,7 +230,7 @@ export function getItemsByLibrary(
     groupQueryBuilder(d).prepare(),
   );
   const groupId =
-    groupStmt.get({ libraryID } satisfies GroupQueryParam)?.groupID ?? null;
+    groupStmt.all({ libraryID } satisfies GroupQueryParam)[0]?.groupID ?? null;
   return stmt
     .all({ libraryID } satisfies ItemQueryParam)
     .map((r) => toItem(r, groupId, lookup));
@@ -244,11 +244,9 @@ export async function getItemsByLibraryAsync(
   const rows = await itemQueryBuilder(db)
     .prepare()
     .all({ libraryID } satisfies ItemQueryParam);
-  const groupId =
-    (
-      await groupQueryBuilder(db)
-        .prepare()
-        .get({ libraryID } satisfies GroupQueryParam)
-    )?.groupID ?? null;
+  const [group] = await groupQueryBuilder(db)
+    .prepare()
+    .all({ libraryID } satisfies GroupQueryParam);
+  const groupId = group?.groupID ?? null;
   return rows.map((r) => toItem(r, groupId, lookup));
 }
