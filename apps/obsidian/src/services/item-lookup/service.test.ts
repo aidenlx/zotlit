@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type Item } from "@zotlit/db";
+import { type Item, type ItemQueryOptions } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import {
@@ -70,7 +70,7 @@ describe("ItemLookup", () => {
     const settings = new FakeSettings();
     const deps = createDeps({
       settings,
-      loadItems: vi.fn((_client, libraryID) => [
+      loadItems: vi.fn((_client, libraryID, _options) => [
         item({ key: `L${libraryID}`, libraryID }),
       ]),
     });
@@ -163,6 +163,7 @@ function createDeps(
     loadItems?: (
       db: NodeDatabaseClient,
       libraryID: number,
+      options: ItemQueryOptions,
     ) => Item[] | Promise<Item[]>;
   } = {},
 ) {

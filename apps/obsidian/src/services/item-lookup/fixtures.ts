@@ -2,6 +2,7 @@ import {
   parseItemDate,
   type Creator,
   type Item,
+  type ItemLanguage,
   type JournalArticleItem,
 } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
@@ -16,6 +17,8 @@ export interface ItemFixtureOptions {
   /** ISO 8601 instant (e.g. `2024-01-01T00:00:00Z`); defaults to epoch. */
   dateModified?: string;
   creators?: Creator[];
+  primaryCreatorType?: string | null;
+  language?: ItemLanguage | null;
   publicationTitle?: string | null;
   volume?: string | null;
   issue?: string | null;
@@ -36,6 +39,8 @@ export function makeItem(options: ItemFixtureOptions): Item {
       options.dateModified ?? "1970-01-01T00:00:00Z",
     ),
     creators: options.creators ?? [],
+    primaryCreatorType: options.primaryCreatorType ?? null,
+    language: options.language ?? null,
   };
   if (itemType === "journalArticle") {
     return {
