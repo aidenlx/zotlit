@@ -20,6 +20,13 @@ export type SqliteDb = BaseSQLiteDatabase<
 >;
 
 /**
+ * Zotero item types that are excluded from regular-item queries because
+ * they represent child rows (file attachments, notes, PDF annotations)
+ * rather than first-class library entries.
+ */
+export const CHILD_ITEM_TYPES = ["attachment", "note", "annotation"] as const;
+
+/**
  * Swap the result-kind generic of a Drizzle builder so a query authored
  * against the sync (Node) client can be re-exposed as the async (Web)
  * client's builder type.

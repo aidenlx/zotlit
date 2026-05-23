@@ -1,11 +1,10 @@
 import {
   creatorTypes,
   deletedItems,
-  groups,
   itemTypeCreatorTypes,
   itemTypes,
 } from "@drizzle/schema";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import { type Temporal } from "@zotlit/shared/temporal";
 import { type ItemFields } from "@zotlit/zotero-types";
@@ -13,8 +12,9 @@ import { type ItemFields } from "@zotlit/zotero-types";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 
+import { groupQueryBuilder, type GroupQueryParam } from "./_groups";
 import { cachedPrepared } from "./_prepared";
-import { defineQuery, type QueryRow } from "./_shared";
+import { CHILD_ITEM_TYPES, defineQuery, type QueryRow } from "./_shared";
 
 export interface Creator {
   firstName: string | null;
@@ -64,7 +64,13 @@ export function formatIndexedKey(
 type ItemQueryParam = {
   libraryID: number;
 };
-const itemQueryBuilder = defineQuery((db) =>
+
+type ItemFilter = {
+  /** Inline `WHERE itemID IN (...)` clause; omit for the full library scan. */
+  itemIDs?: readonly number[];
+};
+
+const itemQueryBuilder = defineQuery((db, { itemIDs }: ItemFilter = {}) =>
   db.query.items.findMany({
     where: {
       AND: [
@@ -76,13 +82,7 @@ const itemQueryBuilder = defineQuery((db) =>
               db
                 .select({ itemTypeID: itemTypes.itemTypeID })
                 .from(itemTypes)
-                .where(
-                  inArray(itemTypes.typeName, [
-                    "attachment",
-                    "note",
-                    "annotation",
-                  ]),
-                ),
+                .where(inArray(itemTypes.typeName, [...CHILD_ITEM_TYPES])),
             ),
         },
         {
@@ -94,6 +94,7 @@ const itemQueryBuilder = defineQuery((db) =>
                 .where(eq(deletedItems.itemID, t.itemID)),
             ),
         },
+        ...(itemIDs ? [{ itemID: { in: [...itemIDs] } }] : []),
       ],
     },
     columns: {
@@ -145,17 +146,6 @@ LIMIT 1`,
   }),
 );
 
-type GroupQueryParam = {
-  libraryID: number;
-};
-const groupQueryBuilder = defineQuery((db) =>
-  db
-    .select({ groupID: groups.groupID })
-    .from(groups)
-    .where(eq(groups.libraryID, sql.placeholder("libraryID")))
-    .limit(1),
-);
-
 type ItemRow = QueryRow<typeof itemQueryBuilder>;
 
 function toItem(row: ItemRow, groupID: number | null): Item {
@@ -195,16 +185,13 @@ export function getItemsByLibrary(
   db: NodeDatabaseClient,
   libraryID: number,
 ): Item[] {
-  const stmt = cachedPrepared(db, "items", (d) =>
-    itemQueryBuilder(d).prepare(),
-  );
-  const groupStmt = cachedPrepared(db, "groups", (d) =>
-    groupQueryBuilder(d).prepare(),
-  );
+  const queryParam = { libraryID } satisfies ItemQueryParam;
   const groupId =
-    groupStmt.all({ libraryID } satisfies GroupQueryParam)[0]?.groupID ?? null;
-  return stmt
-    .all({ libraryID } satisfies ItemQueryParam)
+    cachedPrepared(db, "groups", (d) => groupQueryBuilder(d).prepare()).all(
+      queryParam,
+    )[0]?.groupID ?? null;
+  return cachedPrepared(db, "items", (d) => itemQueryBuilder(d).prepare())
+    .all(queryParam)
     .map((r) => toItem(r, groupId));
 }
 
@@ -220,4 +207,43 @@ export async function getItemsByLibraryAsync(
     .all({ libraryID } satisfies GroupQueryParam);
   const groupId = group?.groupID ?? null;
   return rows.map((r) => toItem(r, groupId));
+}
+
+export function getItemsByID(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  itemIDs: readonly number[],
+): Map<number, Item> {
+  if (itemIDs.length === 0) return new Map();
+
+  const queryParam = { libraryID } satisfies ItemQueryParam;
+  const groupId =
+    cachedPrepared(db, "groups", (d) => groupQueryBuilder(d).prepare()).get(
+      queryParam,
+    )?.groupID ?? null;
+  // IDs inline into SQL, so the statement isn't cacheable per-call.
+  const rows = itemQueryBuilder(db, { itemIDs }).prepare().all(queryParam);
+  return toItemMap(rows, groupId);
+}
+
+export async function getItemsByIDAsync(
+  db: SQLocalDatabaseClient,
+  libraryID: number,
+  itemIDs: readonly number[],
+): Promise<Map<number, Item>> {
+  if (itemIDs.length === 0) return new Map();
+
+  const queryParam = { libraryID } satisfies ItemQueryParam;
+  const [rows, [group]] = await Promise.all([
+    itemQueryBuilder(db, { itemIDs }).prepare().all(queryParam),
+    groupQueryBuilder(db).prepare().all(queryParam),
+  ]);
+  return toItemMap(rows, group?.groupID ?? null);
+}
+
+function toItemMap(
+  rows: readonly ItemRow[],
+  groupID: number | null,
+): Map<number, Item> {
+  return new Map(rows.map((row) => [row.itemID, toItem(row, groupID)]));
 }

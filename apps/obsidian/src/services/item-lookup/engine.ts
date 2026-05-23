@@ -1,3 +1,4 @@
+import { regex } from "arkregex";
 import MiniSearch from "minisearch";
 import { type App, type SearchMatches } from "obsidian";
 
@@ -5,7 +6,7 @@ import {
   itemDateYear,
   parseItemDate,
   parseItemLanguage,
-  type Item,
+  type IndexedItem,
   type LanguageNameLookup,
 } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
@@ -19,17 +20,19 @@ import {
   type TokenizerOptions,
 } from "./tokenizer";
 
-export interface SearchHit {
-  item: Item;
+export interface SearchHit<T> {
+  item: T;
   score: number;
   matches: SearchMatches;
 }
 
 export interface SearchIndex {
   libraryID: number;
-  items: readonly Item[];
-  byId: ReadonlyMap<number, Item>;
-  mini: MiniSearch<IndexedItem>;
+  items: readonly IndexedItem[];
+  byId: ReadonlyMap<number, IndexedItem>;
+  yearById: ReadonlyMap<number, string>;
+  citationKeyById: ReadonlyMap<number, string>;
+  mini: MiniSearch<IndexedSearchDocument>;
 }
 
 export interface SearchIndexOptions {
@@ -42,44 +45,57 @@ export interface BuildIndexOptions {
   languageLookup?: LanguageNameLookup | null;
 }
 
-interface IndexedItem {
+interface IndexedSearchDocument {
   id: number;
   title: string;
   creators: string;
-  date: string;
+  publicationTitle: string;
+  shortTitle: string;
+  court: string;
 }
 
 const SEARCH_FIELDS = [
   "title",
   "creators",
-  "date",
-] as const satisfies readonly (keyof IndexedItem)[];
+  "publicationTitle",
+  "shortTitle",
+  "court",
+] as const satisfies readonly (keyof IndexedSearchDocument)[];
 
 const SEARCH_BOOST = {
   title: 2.5,
+  shortTitle: 2.5,
   creators: 2,
-  date: 1,
+  publicationTitle: 1.5,
+  court: 1,
 } satisfies Partial<Record<(typeof SEARCH_FIELDS)[number], number>>;
 
 export function buildIndex(
-  items: readonly Item[],
+  items: readonly IndexedItem[],
   tokenizerOpts: TokenizerOptions,
   { libraryID, languageLookup = null }: BuildIndexOptions,
 ): SearchIndex {
-  const mini = new MiniSearch<IndexedItem>({
+  const mini = new MiniSearch<IndexedSearchDocument>({
     idField: "id",
     fields: [...SEARCH_FIELDS],
     storeFields: [],
     tokenize: (text) => tokenize(text, tokenizerOpts),
     processTerm,
   });
-  const byId = new Map<number, Item>();
+  const byId = new Map<number, IndexedItem>();
+  const yearById = new Map<number, string>();
+  const citationKeyById = new Map<number, string>();
   const indexed = items.map((item) => {
     byId.set(item.itemID, item);
-    return toIndexed(item, languageLookup);
+    const year = itemDateYear(parseItemDate(item.date))?.toString() ?? "";
+    yearById.set(item.itemID, year);
+    if (item.citationKey) {
+      citationKeyById.set(item.itemID, normalize(item.citationKey));
+    }
+    return toSearchDocument(item, languageLookup);
   });
   mini.addAll(indexed);
-  return { libraryID, items, byId, mini };
+  return { libraryID, items, byId, yearById, citationKeyById, mini };
 }
 
 // Recency boost: items modified in the last few weeks score slightly higher
@@ -88,53 +104,74 @@ export function buildIndex(
 // scored queries.
 const RECENCY_MAX_BOOST = 0.1;
 const RECENCY_HALF_LIFE_DAYS = 30;
+const EXACT_YEAR_BONUS = 0.25;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const DOI_RE = regex("\\b10\\.\\d{4,9}/[^\\s\\]\\)]+", "iu");
+const ISBN_RE = regex(
+  "\\b(?:ISBN[-: ]*)?(?=(?:\\D*\\d){10}(?:(?:\\D*\\d){3})?\\D*\\b)\\d[\\d -]{8,16}[\\dXx]\\b",
+  "iu",
+);
+const BRACKETS_RE = regex("[()\\[\\]{}]", "gu");
+const STRIPPED_PUNCT_RE = regex("[,;.]", "gu");
+const ET_AL_RE = regex("\\bet\\s+al\\b\\.?|&\\s*\\bal\\b\\.?", "giu");
+const AND_RE = regex("\\band\\b", "giu");
+const LEADING_AT_RE = regex("^\\s*@", "u");
+const WHITESPACE_RE = regex("\\s+", "gu");
+const ZOTERO_KEY_RE = regex("^[A-Z0-9]{8}$", "u");
+const YEAR_PREFIX_RE = regex("^\\d{1,4}$", "u");
+
+export function cleanQuery(input: string): string {
+  if (DOI_RE.test(input) || ISBN_RE.test(input)) return input;
+
+  return input
+    .replace(BRACKETS_RE, " ")
+    .replace(LEADING_AT_RE, " ")
+    .replace(ET_AL_RE, " ")
+    .replace(AND_RE, " ")
+    .replace(STRIPPED_PUNCT_RE, " ")
+    .replace(WHITESPACE_RE, " ")
+    .trim();
+}
 
 export function searchIndex(
   index: SearchIndex,
   query: string,
   opts: SearchIndexOptions,
-): SearchHit[] {
-  const tokens = tokenize(query, opts.tokenizer);
+): SearchHit<IndexedItem>[] {
+  const cleaned = cleanQuery(query);
+  const keyQuery = cleaned.toUpperCase();
+  if (ZOTERO_KEY_RE.test(keyQuery)) {
+    const item = index.items.find((candidate) => candidate.key === keyQuery);
+    return item ? [{ item, score: Infinity, matches: [] }] : [];
+  }
+
+  const tokens = queryTokens(cleaned, opts.tokenizer);
   if (tokens.length === 0) return [];
 
+  const candidates = intersectTokenCandidates(index, tokens);
+  if (candidates.size === 0) return [];
+
   const nowMs = Temporal.Now.instant().epochMilliseconds;
-  // Two passes: score+sort+slice over the full match set first, then run
-  // the expensive `highlightRanges`/`normalizeWithIndexMap` only on the
-  // surviving top-N. Broad prefix queries can match thousands of items;
-  // without this split, every match pays the title normalize cost.
-  const scored = index.mini
-    .search(tokens.join(" "), {
-      combineWith: "AND",
-      prefix: true,
-      fuzzy: (term) => (term.length <= 3 ? 0 : term.length <= 5 ? 0.1 : 0.2),
-      boost: SEARCH_BOOST,
-      tokenize: (text) => text.split(" ").filter((part) => part.length > 0),
-      processTerm: normalize,
-    })
-    .flatMap((hit) => {
-      const item = index.byId.get(hit.id);
-      if (!item) return [];
-      return [{ hit, item, score: hit.score * recencyMultiplier(item, nowMs) }];
-    })
-    .sort((a, b) => b.score - a.score)
+  const scored = [...candidates.values()]
+    .map((candidate) => rankCandidate(candidate, tokens, nowMs))
+    .sort(compareRankedCandidates)
     .slice(0, opts.limit);
 
   const termsUnion = new Set<string>();
-  for (const { hit } of scored)
-    for (const term of hit.terms) termsUnion.add(term);
+  for (const { terms } of scored)
+    for (const term of terms) termsUnion.add(term);
   const highlightRe = buildHighlightRegex(termsUnion);
 
   return scored.map(({ item, score }) => ({
     item,
     score,
-    matches: highlightRe
-      ? highlightRanges(highlightRe, "title" in item ? (item.title ?? "") : "")
-      : [],
+    matches:
+      highlightRe && item.title ? highlightRanges(highlightRe, item.title) : [],
   }));
 }
 
-function recencyMultiplier(item: Item, nowMs: number): number {
+function recencyMultiplier(item: IndexedItem, nowMs: number): number {
   const daysElapsed = Math.max(
     0,
     (nowMs - item.dateModified.epochMilliseconds) / MS_PER_DAY,
@@ -142,6 +179,180 @@ function recencyMultiplier(item: Item, nowMs: number): number {
   return (
     1 + RECENCY_MAX_BOOST * Math.exp(-daysElapsed / RECENCY_HALF_LIFE_DAYS)
   );
+}
+
+interface TokenEvidence {
+  miniScore: number;
+  terms: Set<string>;
+  exactYear: boolean;
+}
+
+interface CandidateEvidence {
+  item: IndexedItem;
+  miniScore: number;
+  terms: Set<string>;
+  exactYear: boolean;
+  citationKey: string | null;
+}
+
+type RankedCandidate =
+  | {
+      tier: 1;
+      item: IndexedItem;
+      score: number;
+      citationKeyLength: number;
+      terms: ReadonlySet<string>;
+    }
+  | {
+      tier: 2;
+      item: IndexedItem;
+      score: number;
+      terms: ReadonlySet<string>;
+    };
+
+function queryTokens(query: string, opts: TokenizerOptions): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const token of tokenize(query, opts)) {
+    const normalized = normalize(token);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function intersectTokenCandidates(
+  index: SearchIndex,
+  tokens: readonly string[],
+): Map<number, CandidateEvidence> {
+  let candidates: Map<number, CandidateEvidence> | null = null;
+
+  for (const token of tokens) {
+    const tokenCandidates = candidatesForToken(index, token);
+    if (tokenCandidates.size === 0) return new Map();
+
+    if (!candidates) {
+      candidates = new Map(
+        [...tokenCandidates].flatMap(([itemID, evidence]) => {
+          const item = index.byId.get(itemID);
+          return item
+            ? [
+                [
+                  itemID,
+                  {
+                    item,
+                    miniScore: evidence.miniScore,
+                    terms: evidence.terms,
+                    exactYear: evidence.exactYear,
+                    citationKey: index.citationKeyById.get(itemID) ?? null,
+                  },
+                ] satisfies [number, CandidateEvidence],
+              ]
+            : [];
+        }),
+      );
+      continue;
+    }
+
+    for (const [itemID, candidate] of candidates) {
+      const evidence = tokenCandidates.get(itemID);
+      if (!evidence) {
+        candidates.delete(itemID);
+        continue;
+      }
+      candidate.miniScore += evidence.miniScore;
+      candidate.exactYear ||= evidence.exactYear;
+      for (const term of evidence.terms) candidate.terms.add(term);
+    }
+  }
+
+  return candidates ?? new Map();
+}
+
+function candidatesForToken(
+  index: SearchIndex,
+  token: string,
+): Map<number, TokenEvidence> {
+  const candidates = new Map<number, TokenEvidence>();
+
+  for (const hit of index.mini.search(token, {
+    combineWith: "AND",
+    prefix: true,
+    fuzzy: (term) => (term.length <= 3 ? 0 : term.length <= 5 ? 0.1 : 0.2),
+    boost: SEARCH_BOOST,
+    tokenize: (text) => [text],
+    processTerm: (term) => term,
+  })) {
+    candidates.set(hit.id as number, {
+      miniScore: hit.score,
+      terms: new Set(hit.terms),
+      exactYear: false,
+    });
+  }
+
+  const isYearPrefix = YEAR_PREFIX_RE.test(token);
+  for (const item of index.items) {
+    const citationKey = index.citationKeyById.get(item.itemID);
+    const year = index.yearById.get(item.itemID);
+    const citationKeyMatch = citationKey?.startsWith(token) ?? false;
+    const yearMatch = isYearPrefix && !!year && year.startsWith(token);
+    if (!citationKeyMatch && !yearMatch) continue;
+
+    const evidence = candidates.get(item.itemID) ?? {
+      miniScore: 0,
+      terms: new Set<string>(),
+      exactYear: false,
+    };
+    evidence.exactYear ||= yearMatch && year === token;
+    candidates.set(item.itemID, evidence);
+  }
+
+  return candidates;
+}
+
+function rankCandidate(
+  candidate: CandidateEvidence,
+  tokens: readonly string[],
+  nowMs: number,
+): RankedCandidate {
+  const { citationKey } = candidate;
+  if (citationKey && tokens.every((token) => citationKey.startsWith(token))) {
+    return {
+      tier: 1,
+      item: candidate.item,
+      score: Infinity,
+      citationKeyLength: citationKey.length,
+      terms: candidate.terms,
+    };
+  }
+
+  return {
+    tier: 2,
+    item: candidate.item,
+    score:
+      candidate.miniScore * recencyMultiplier(candidate.item, nowMs) +
+      (candidate.exactYear ? EXACT_YEAR_BONUS : 0),
+    terms: candidate.terms,
+  };
+}
+
+function compareRankedCandidates(
+  a: RankedCandidate,
+  b: RankedCandidate,
+): number {
+  if (a.tier !== b.tier) return a.tier - b.tier;
+  if (a.tier === 1 && b.tier === 1) {
+    return (
+      a.citationKeyLength - b.citationKeyLength ||
+      compareModifiedDesc(a.item, b.item)
+    );
+  }
+  return b.score - a.score || compareModifiedDesc(a.item, b.item);
+}
+
+function compareModifiedDesc(a: IndexedItem, b: IndexedItem): number {
+  return b.dateModified.epochMilliseconds - a.dateModified.epochMilliseconds;
 }
 
 export function getChsSegmenter(
@@ -154,22 +365,21 @@ export function getChsSegmenter(
   return typeof cut === "function" ? (plugin as ChsSegmenter) : null;
 }
 
-function toIndexed(
-  item: Item,
+function toSearchDocument(
+  item: IndexedItem,
   languageLookup: LanguageNameLookup | null,
-): IndexedItem {
-  const rawLanguage = "language" in item ? item.language : null;
-  const rawDate = "date" in item ? item.date : null;
-  const language = parseItemLanguage(rawLanguage, languageLookup);
-  const date = parseItemDate(rawDate);
+): IndexedSearchDocument {
+  const language = parseItemLanguage(item.language, languageLookup);
   return {
     id: item.itemID,
-    title: "title" in item ? (item.title ?? "") : "",
+    title: item.title ?? "",
     creators: item.creators
       .map((creator) => formatCreator(creator, language))
       .filter((name) => name.length > 0)
       .join("; "),
-    date: itemDateYear(date)?.toString() ?? "",
+    publicationTitle: item.publicationTitle ?? "",
+    shortTitle: item.shortTitle ?? "",
+    court: item.court ?? "",
   };
 }
 

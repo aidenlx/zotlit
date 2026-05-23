@@ -1,6 +1,12 @@
 import { getLanguage } from "obsidian";
 
-import { createLanguageLookup, getItemsByLibrary, type Item } from "@zotlit/db";
+import {
+  createLanguageLookup,
+  getIndexedItemsByLibrary,
+  getItemsByID,
+  type IndexedItem,
+  type Item,
+} from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
@@ -17,13 +23,14 @@ import {
 import {
   buildIndex,
   searchIndex,
-  type SearchHit,
+  type SearchHit as EngineSearchHit,
   type SearchIndex,
 } from "./engine";
 import { type ChsSegmenter, type TokenizerOptions } from "./tokenizer";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
+export type SearchHit = EngineSearchHit<Item>;
 
 export interface ItemLookupDeps {
   db: DatabaseService;
@@ -32,7 +39,12 @@ export interface ItemLookupDeps {
   loadItems?: (
     db: NodeDatabaseClient,
     libraryID: number,
-  ) => Item[] | Promise<Item[]>;
+  ) => IndexedItem[] | Promise<IndexedItem[]>;
+  hydrateItems?: (
+    db: NodeDatabaseClient,
+    libraryID: number,
+    itemIDs: readonly number[],
+  ) => Map<number, Item> | Promise<Map<number, Item>>;
 }
 
 interface ItemCache {
@@ -46,10 +58,12 @@ export class ItemLookup extends Service<void> {
   readonly #languageLookup;
   readonly #getChsSegmenter;
   readonly #loadItems;
+  readonly #hydrateItems;
 
   #cache: ItemCache | null = null;
   #loadInFlight: Promise<void> | null = null;
   #lastLibraryID: number | null = null;
+  #generation = 0;
   readonly #intl = new Intl.Segmenter(undefined, { granularity: "word" });
   #tokenizerOpts: TokenizerOptions;
 
@@ -61,7 +75,8 @@ export class ItemLookup extends Service<void> {
     this.#settings = deps.settings;
     this.#languageLookup = createLanguageLookup(getLanguage());
     this.#getChsSegmenter = deps.getChsSegmenter ?? (() => null);
-    this.#loadItems = deps.loadItems ?? getItemsByLibrary;
+    this.#loadItems = deps.loadItems ?? getIndexedItemsByLibrary;
+    this.#hydrateItems = deps.hydrateItems ?? getItemsByID;
     this.#tokenizerOpts = this.#createTokenizerOpts();
     this.ready = this.#load();
   }
@@ -73,6 +88,7 @@ export class ItemLookup extends Service<void> {
     if (limit <= 0) return [];
 
     const t0 = performance.now();
+    const generation = this.#generation;
     const index = await this.#loadIfNeeded();
     if (!index) {
       logger.debug("Search skipped; no index available", {
@@ -82,7 +98,7 @@ export class ItemLookup extends Service<void> {
     }
 
     const trimmed = query.trim();
-    const hits =
+    const leanHits =
       trimmed.length === 0
         ? index.items.slice(0, limit).map((item) => ({
             item,
@@ -93,6 +109,7 @@ export class ItemLookup extends Service<void> {
             tokenizer: this.#tokenizerOpts,
             limit,
           });
+    const hits = await this.#hydrateHits(index.libraryID, leanHits, generation);
 
     logger.debug("Search completed", {
       libraryID: index.libraryID,
@@ -118,6 +135,9 @@ export class ItemLookup extends Service<void> {
 
     this.commit(stack.move());
     logger.info("Item lookup ready", { libraryID: this.#lastLibraryID });
+
+    await this.#db.ready;
+
     void this.#loadIfNeeded().catch((error) => {
       logger.error("Initial item index load failed", {
         error,
@@ -139,6 +159,7 @@ export class ItemLookup extends Service<void> {
 
   #invalidate(): void {
     logger.debug("Item index invalidated", { libraryID: this.#lastLibraryID });
+    this.#generation += 1;
     this.#cache = null;
     void this.#loadIfNeeded().catch((error) => {
       logger.error("Item index reload failed", {
@@ -175,10 +196,18 @@ export class ItemLookup extends Service<void> {
   }
 
   async #loadLibrary(libraryID: number): Promise<void> {
+    const generation = this.#generation;
     const t0 = performance.now();
     try {
       this.#tokenizerOpts = this.#createTokenizerOpts();
       const items = await this.#loadItems(this.#db.client, libraryID);
+      if (generation !== this.#generation) {
+        logger.debug("Discarding stale item index build", {
+          libraryID,
+          generation,
+        });
+        return;
+      }
       this.#cache = {
         libraryID,
         index: buildIndex(items, this.#tokenizerOpts, {
@@ -192,7 +221,7 @@ export class ItemLookup extends Service<void> {
         durationMs: performance.now() - t0,
       });
     } catch (error) {
-      this.#cache = null;
+      if (generation === this.#generation) this.#cache = null;
       if (error instanceof DatabaseError) {
         logger.debug(
           "Item lookup skipped because the database is unavailable",
@@ -212,5 +241,41 @@ export class ItemLookup extends Service<void> {
       intl: this.#intl,
       chsSegmenter: this.#getChsSegmenter(),
     };
+  }
+
+  async #hydrateHits(
+    libraryID: number,
+    leanHits: readonly EngineSearchHit<IndexedItem>[],
+    generation: number,
+  ): Promise<SearchHit[]> {
+    if (leanHits.length === 0) return [];
+
+    let hydrated: Map<number, Item>;
+    try {
+      hydrated = await this.#hydrateItems(
+        this.#db.client,
+        libraryID,
+        leanHits.map((hit) => hit.item.itemID),
+      );
+    } catch (error) {
+      if (error instanceof DatabaseError) {
+        logger.debug(
+          "Search hydration skipped because the database is unavailable",
+          {
+            error,
+            libraryID,
+          },
+        );
+        return [];
+      }
+      throw error;
+    }
+
+    if (generation !== this.#generation) return [];
+
+    return leanHits.flatMap((hit) => {
+      const item = hydrated.get(hit.item.itemID);
+      return item ? [{ item, score: hit.score, matches: hit.matches }] : [];
+    });
   }
 }

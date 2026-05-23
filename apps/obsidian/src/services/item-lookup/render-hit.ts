@@ -5,7 +5,7 @@ import { itemDateYear, parseItemDate, type ItemOfType } from "@zotlit/db";
 import { type SettingsService } from "@/services/settings/service";
 
 import { creatorSummary } from "./creator-summary";
-import { type SearchHit } from "./engine";
+import { type SearchHit } from "./service";
 
 /** CSS owns this value; JS reads it so the truncation window matches the
  *  visible column width. Themes override by setting the same variable. */
