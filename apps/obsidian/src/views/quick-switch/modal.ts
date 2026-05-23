@@ -40,9 +40,11 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       .sort();
     const first = files[0];
     if (!first) {
+      const citationKey =
+        "citationKey" in hit.item ? hit.item.citationKey : null;
       new BaseNotice(
         m.notice_no_literature_note({
-          citekey: hit.item.citekey ?? hit.item.key,
+          citekey: citationKey ?? hit.item.key,
         }),
       );
       return;

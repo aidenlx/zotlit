@@ -1,11 +1,6 @@
 import { getLanguage } from "obsidian";
 
-import {
-  createLanguageLookup,
-  getItemsByLibrary,
-  type Item,
-  type ItemQueryOptions,
-} from "@zotlit/db";
+import { createLanguageLookup, getItemsByLibrary, type Item } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
@@ -37,7 +32,6 @@ export interface ItemLookupDeps {
   loadItems?: (
     db: NodeDatabaseClient,
     libraryID: number,
-    options: ItemQueryOptions,
   ) => Item[] | Promise<Item[]>;
 }
 
@@ -184,12 +178,13 @@ export class ItemLookup extends Service<void> {
     const t0 = performance.now();
     try {
       this.#tokenizerOpts = this.#createTokenizerOpts();
-      const items = await this.#loadItems(this.#db.client, libraryID, {
-        lookup: this.#languageLookup,
-      });
+      const items = await this.#loadItems(this.#db.client, libraryID);
       this.#cache = {
         libraryID,
-        index: buildIndex(items, this.#tokenizerOpts, libraryID),
+        index: buildIndex(items, this.#tokenizerOpts, {
+          libraryID,
+          languageLookup: this.#languageLookup,
+        }),
       };
       logger.info("Item index built", {
         libraryID,

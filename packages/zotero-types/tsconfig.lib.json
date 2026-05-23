@@ -1,0 +1,16 @@
+{
+  "extends": ["@zotlit/config/tsconfig"],
+  "compilerOptions": {
+    "target": "ES2025",
+    "lib": ["ES2025"],
+    "declaration": true,
+    "declarationMap": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "rootDir": "src",
+    "isolatedDeclarations": false,
+    "types": []
+  },
+  "include": ["./src/**/*.ts"],
+  "exclude": ["./node_modules"]
+}

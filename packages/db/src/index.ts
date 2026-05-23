@@ -7,12 +7,10 @@ export {
   formatIndexedKey,
   getItemsByLibrary,
   getItemsByLibraryAsync,
-  isJournalArticleItem,
   type BaseItem,
   type Creator,
   type Item,
-  type ItemQueryOptions,
-  type JournalArticleItem,
+  type ItemOfType,
 } from "./queries/items";
 export {
   formatItemDate,

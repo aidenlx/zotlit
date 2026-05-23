@@ -75,13 +75,14 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const context = this.context;
     if (!context) return;
 
-    if (!hit.item.citekey) {
+    const citationKey = "citationKey" in hit.item ? hit.item.citationKey : null;
+    if (!citationKey) {
       new BaseNotice(m.notice_no_citekey({ key: hit.item.key }));
       return;
     }
 
     const rendered = this.#deps.template.render("cite", [
-      { citekey: hit.item.citekey },
+      { citekey: citationKey },
     ]);
     context.editor.replaceRange(rendered, context.start, context.end);
     context.editor.setCursor(

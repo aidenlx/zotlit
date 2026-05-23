@@ -1,7 +1,13 @@
 import MiniSearch from "minisearch";
 import { type App, type SearchMatches } from "obsidian";
 
-import { itemDateYear, type Item } from "@zotlit/db";
+import {
+  itemDateYear,
+  parseItemDate,
+  parseItemLanguage,
+  type Item,
+  type LanguageNameLookup,
+} from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { formatCreator } from "./format-creator";
@@ -31,6 +37,11 @@ export interface SearchIndexOptions {
   limit: number;
 }
 
+export interface BuildIndexOptions {
+  libraryID: number;
+  languageLookup?: LanguageNameLookup | null;
+}
+
 interface IndexedItem {
   id: number;
   title: string;
@@ -53,7 +64,7 @@ const SEARCH_BOOST = {
 export function buildIndex(
   items: readonly Item[],
   tokenizerOpts: TokenizerOptions,
-  libraryID: number,
+  { libraryID, languageLookup = null }: BuildIndexOptions,
 ): SearchIndex {
   const mini = new MiniSearch<IndexedItem>({
     idField: "id",
@@ -65,7 +76,7 @@ export function buildIndex(
   const byId = new Map<number, Item>();
   const indexed = items.map((item) => {
     byId.set(item.itemID, item);
-    return toIndexed(item);
+    return toIndexed(item, languageLookup);
   });
   mini.addAll(indexed);
   return { libraryID, items, byId, mini };
@@ -117,7 +128,9 @@ export function searchIndex(
   return scored.map(({ item, score }) => ({
     item,
     score,
-    matches: highlightRe ? highlightRanges(highlightRe, item.title ?? "") : [],
+    matches: highlightRe
+      ? highlightRanges(highlightRe, "title" in item ? (item.title ?? "") : "")
+      : [],
   }));
 }
 
@@ -141,15 +154,22 @@ export function getChsSegmenter(
   return typeof cut === "function" ? (plugin as ChsSegmenter) : null;
 }
 
-function toIndexed(item: Item): IndexedItem {
+function toIndexed(
+  item: Item,
+  languageLookup: LanguageNameLookup | null,
+): IndexedItem {
+  const rawLanguage = "language" in item ? item.language : null;
+  const rawDate = "date" in item ? item.date : null;
+  const language = parseItemLanguage(rawLanguage, languageLookup);
+  const date = parseItemDate(rawDate);
   return {
     id: item.itemID,
-    title: item.title ?? "",
+    title: "title" in item ? (item.title ?? "") : "",
     creators: item.creators
-      .map((creator) => formatCreator(creator, item.language))
+      .map((creator) => formatCreator(creator, language))
       .filter((name) => name.length > 0)
       .join("; "),
-    date: itemDateYear(item.date)?.toString() ?? "",
+    date: itemDateYear(date)?.toString() ?? "",
   };
 }
 
