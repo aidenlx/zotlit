@@ -19,8 +19,6 @@ export function fetchLibraries(): Promise<Library[]> {
 }
 
 export async function fetchItems(libraryID: number): Promise<Item[]> {
-  const items = await getItemsByLibraryAsync(sqlocal, libraryID, {
-    lookup: null,
-  });
+  const items = await getItemsByLibraryAsync(sqlocal, libraryID);
   return items.slice(0, 50);
 }

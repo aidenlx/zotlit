@@ -8,15 +8,10 @@ import {
 import { eq, sql } from "drizzle-orm";
 
 import { type Temporal } from "@zotlit/shared/temporal";
+import { type ItemFields } from "@zotlit/zotero-types";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
-import { parseItemDate, type ItemDate } from "@/lib/zt-date";
-import {
-  parseItemLanguage,
-  type ItemLanguage,
-  type LanguageNameLookup,
-} from "@/lib/zt-lang";
 
 import { cachedPrepared } from "./_prepared";
 import { defineQuery, type QueryRow } from "./_shared";
@@ -35,10 +30,6 @@ export interface BaseItem {
   key: string;
   /** `key` or `key + 'g' + groupID`, precomputed for NoteIndex lookup. */
   indexedKey: string;
-  itemType: string;
-  title: string | null;
-  citekey: string | null;
-  date: ItemDate | null;
   /** UTC instant from Zotero's `dateModified` text column. */
   dateModified: Temporal.Instant;
   creators: Creator[];
@@ -48,23 +39,20 @@ export interface BaseItem {
    * `podcaster` for podcast).
    */
   primaryCreatorType: string | null;
-  /** Parsed `language` field. @see {@link ItemLanguage} */
-  language: ItemLanguage | null;
+  /**
+   * User-defined custom fields (`fieldsCombined.custom = 1`). Built-in fields
+   * are assigned as direct item properties, including built-ins newer than the
+   * generated schema snapshot.
+   */
+  fields: ReadonlyMap<string, string | null>;
 }
 
-export interface JournalArticleItem extends BaseItem {
-  itemType: "journalArticle";
-  publicationTitle: string | null;
-  volume: string | null;
-  issue: string | null;
-  pages: string | null;
-}
+export type Item = BaseItem & ItemFields;
 
-export type Item = BaseItem | JournalArticleItem;
-
-export function isJournalArticleItem(item: Item): item is JournalArticleItem {
-  return item.itemType === "journalArticle";
-}
+export type ItemOfType<T extends ItemFields["itemType"]> = Extract<
+  Item,
+  { itemType: T }
+>;
 
 export function formatIndexedKey(
   key: string,
@@ -134,7 +122,7 @@ LIMIT 1`,
       itemData: {
         columns: {},
         with: {
-          fieldsCombined: { columns: { fieldName: true } },
+          fieldsCombined: { columns: { fieldName: true, custom: true } },
           itemDataValue: { columns: { value: true } },
         },
       },
@@ -170,19 +158,18 @@ const groupQueryBuilder = defineQuery((db) =>
 
 type ItemRow = QueryRow<typeof itemQueryBuilder>;
 
-export interface ItemQueryOptions {
-  lookup: LanguageNameLookup | null;
-}
-
-function toItem(
-  row: ItemRow,
-  groupID: number | null,
-  lookup: LanguageNameLookup | null,
-): Item {
-  const fields = new Map<string, string | null>();
+function toItem(row: ItemRow, groupID: number | null): Item {
+  const namedProps: Record<string, string | null> = {};
+  const customFields = new Map<string, string | null>();
   for (const d of row.itemData) {
     if (!d.fieldsCombined) continue;
-    fields.set(d.fieldsCombined.fieldName, d.itemDataValue?.value ?? null);
+    const name = d.fieldsCombined.fieldName;
+    const value = d.itemDataValue?.value ?? null;
+    if (d.fieldsCombined.custom === 1) {
+      customFields.set(name, value);
+    } else {
+      namedProps[name] = value;
+    }
   }
   const creators: Creator[] = row.itemCreators.map((ic) => ({
     firstName: ic.creator?.firstName ?? null,
@@ -190,38 +177,23 @@ function toItem(
     creatorType: ic.creatorType?.creatorType ?? "",
     fieldMode: ic.creator?.fieldMode ?? 0,
   }));
-  const itemType = row.itemType;
-  const base: BaseItem = {
+  return {
     itemID: row.itemID,
     libraryID: row.libraryID,
     key: row.key,
     indexedKey: formatIndexedKey(row.key, groupID),
-    itemType,
-    title: fields.get("title") ?? null,
-    citekey: fields.get("citationKey") ?? null,
-    date: parseItemDate(fields.get("date")),
     dateModified: row.dateModified,
     creators,
     primaryCreatorType: row.primaryCreatorType,
-    language: parseItemLanguage(fields.get("language"), lookup),
-  };
-  if (itemType === "journalArticle") {
-    return {
-      ...base,
-      itemType: "journalArticle",
-      publicationTitle: fields.get("publicationTitle") ?? null,
-      volume: fields.get("volume") ?? null,
-      issue: fields.get("issue") ?? null,
-      pages: fields.get("pages") ?? null,
-    };
-  }
-  return base;
+    fields: customFields,
+    itemType: row.itemType,
+    ...namedProps,
+  } as Item;
 }
 
 export function getItemsByLibrary(
   db: NodeDatabaseClient,
   libraryID: number,
-  { lookup }: ItemQueryOptions,
 ): Item[] {
   const stmt = cachedPrepared(db, "items", (d) =>
     itemQueryBuilder(d).prepare(),
@@ -233,13 +205,12 @@ export function getItemsByLibrary(
     groupStmt.all({ libraryID } satisfies GroupQueryParam)[0]?.groupID ?? null;
   return stmt
     .all({ libraryID } satisfies ItemQueryParam)
-    .map((r) => toItem(r, groupId, lookup));
+    .map((r) => toItem(r, groupId));
 }
 
 export async function getItemsByLibraryAsync(
   db: SQLocalDatabaseClient,
   libraryID: number,
-  { lookup }: ItemQueryOptions,
 ): Promise<Item[]> {
   const rows = await itemQueryBuilder(db)
     .prepare()
@@ -248,5 +219,5 @@ export async function getItemsByLibraryAsync(
     .prepare()
     .all({ libraryID } satisfies GroupQueryParam);
   const groupId = group?.groupID ?? null;
-  return rows.map((r) => toItem(r, groupId, lookup));
+  return rows.map((r) => toItem(r, groupId));
 }

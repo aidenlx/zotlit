@@ -18,6 +18,7 @@ export default defineConfig({
     "tests/zt-vault/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
+    "packages/zotero-types/zotero-schema/**",
     "**/*.md",
   ],
 });

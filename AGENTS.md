@@ -11,11 +11,13 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `packages/db` — Drizzle ORM client for Zotero database query.
 - `packages/shared` — shared utilities.
 - `packages/scripts` — helpful scripts
+- `packages/zotero-types` — generated standalone TypeScript item-field shapes from Zotero's upstream schema.
 - `packages/obsidian-api` — **git submodule** (`obsidianmd/obsidian-api`) providing `obsidian.d.ts`. Must be initialized via `mise run init` (or `git submodule update --init --recursive`) before typecheck succeeds.
 
 ## Bootstrap & toolchain
 
 - `mise` pins to Node 26 version (see `mise.toml`). It also runs `corepack enable` post-install to activate pnpm at the version declared in root `package.json`.
+- `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
 
 ## Commands
 

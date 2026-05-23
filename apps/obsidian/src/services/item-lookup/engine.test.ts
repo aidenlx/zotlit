@@ -13,7 +13,7 @@ describe("item lookup engine", () => {
       title: "Senior citizen transit ID cards",
       creators: [creator("Transit", "SEPTA")],
       date: "2015-01-01",
-      citekey: "septa2015",
+      citationKey: "septa2015",
     });
     const hits = searchItems([target], "senior septa 2015");
 
@@ -31,21 +31,24 @@ describe("item lookup engine", () => {
     expect(searchItems([target], "senior nonexistent 2015")).toEqual([]);
   });
 
-  it("ignores citekey when scoring matches", () => {
+  it("ignores citationKey when scoring matches", () => {
     const contentMatch = item({
       key: "A",
       title: "Senior citizen transit ID cards",
       creators: [creator("Transit", "SEPTA")],
       date: "2015-01-01",
-      citekey: "unrelated",
+      citationKey: "unrelated",
     });
-    const citekeyOnly = item({
+    const citationKeyOnly = item({
       key: "B",
       title: "Other",
-      citekey: "senior-septa-2015",
+      citationKey: "senior-septa-2015",
     });
 
-    const hits = searchItems([citekeyOnly, contentMatch], "senior septa 2015");
+    const hits = searchItems(
+      [citationKeyOnly, contentMatch],
+      "senior septa 2015",
+    );
 
     expect(hits.map((hit) => hit.item.key)).toEqual(["A"]);
   });
@@ -55,7 +58,7 @@ describe("item lookup engine", () => {
       key: "A",
       title: "Senior citizen transit ID cards",
     });
-    const index = buildIndex([target], opts(), 1);
+    const index = buildIndex([target], opts(), { libraryID: 1 });
 
     expect(searchIndex(index, "   ", { tokenizer: opts(), limit: 50 })).toEqual(
       [],
@@ -92,12 +95,13 @@ describe("item lookup engine", () => {
   });
 
   it("highlights matches across diacritic folding", () => {
+    const title =
+      "Estudio de la infraestructura para la bicicleta en Málaga . " +
+      "Diseño , movilidad y mejoras para transformarlo en una " +
+      "infraestructura útil para el usuario .";
     const target = item({
       key: "Jose2014",
-      title:
-        "Estudio de la infraestructura para la bicicleta en Málaga . " +
-        "Diseño , movilidad y mejoras para transformarlo en una " +
-        "infraestructura útil para el usuario .",
+      title,
     });
     const hits = searchItems([target], "util");
 
@@ -105,19 +109,20 @@ describe("item lookup engine", () => {
     const [match] = hits[0]!.matches;
     expect(match).toBeDefined();
     const [start, end] = match!;
-    expect(target.title!.slice(start, end)).toBe("útil");
+    expect(title.slice(start, end)).toBe("útil");
   });
 
   it("highlights fuzzy-matched indexed terms despite query typos", () => {
     // Regression: query `utilz` fuzzy-matches indexed `util` (from `útil`).
     // The user-typed token never appears in the title — highlight must
     // come from the matched indexed term, not from the raw query string.
+    const title =
+      "Estudio de la infraestructura para la bicicleta en Málaga . " +
+      "Diseño , movilidad y mejoras para transformarlo en una " +
+      "infraestructura útil para el usuario .";
     const target = item({
       key: "Jose2014",
-      title:
-        "Estudio de la infraestructura para la bicicleta en Málaga . " +
-        "Diseño , movilidad y mejoras para transformarlo en una " +
-        "infraestructura útil para el usuario .",
+      title,
     });
     const hits = searchItems([target], "utilz");
 
@@ -125,13 +130,13 @@ describe("item lookup engine", () => {
     const [match] = hits[0]!.matches;
     expect(match).toBeDefined();
     const [start, end] = match!;
-    expect(target.title!.slice(start, end)).toBe("útil");
+    expect(title.slice(start, end)).toBe("útil");
   });
 });
 
 function searchItems(items: readonly Item[], query: string) {
   const tokenizerOpts = opts();
-  const index = buildIndex(items, tokenizerOpts, 1);
+  const index = buildIndex(items, tokenizerOpts, { libraryID: 1 });
   return searchIndex(index, query, { tokenizer: tokenizerOpts, limit: 50 });
 }
 

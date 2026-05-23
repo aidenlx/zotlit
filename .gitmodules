@@ -5,3 +5,6 @@
 [submodule "packages/pdfjs-dist"]
 	path = packages/pdfjs-dist
 	url = https://github.com/zotero-plugin-dev/zotero-pdfjs-types
+[submodule "packages/zotero-types/zotero-schema"]
+	path = packages/zotero-types/zotero-schema
+	url = https://github.com/zotero/zotero-schema.git

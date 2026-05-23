@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, type ChangeEvent } from "react";
 
-import { formatItemDate } from "@zotlit/db";
+import { formatItemDate, parseItemDate } from "@zotlit/db";
 
 import {
   loadDatabaseFile,
@@ -163,14 +163,18 @@ function ItemTable({ rows }: { rows: Item[] }) {
           {rows.map((row) => (
             <tr key={row.itemID} className="border-t border-neutral-100">
               <td className="px-3 py-2 text-neutral-700">
-                {row.citekey ?? "—"}
+                {"citationKey" in row ? (row.citationKey ?? "—") : "—"}
               </td>
-              <td className="px-3 py-2">{row.title ?? "—"}</td>
+              <td className="px-3 py-2">
+                {"title" in row ? (row.title ?? "—") : "—"}
+              </td>
               <td className="px-3 py-2 text-neutral-700">
                 {row.creators[0]?.lastName ?? "—"}
               </td>
               <td className="px-3 py-2 text-neutral-700">
-                {formatItemDate(row.date) || "—"}
+                {formatItemDate(
+                  parseItemDate("date" in row ? row.date : null),
+                ) || "—"}
               </td>
             </tr>
           ))}

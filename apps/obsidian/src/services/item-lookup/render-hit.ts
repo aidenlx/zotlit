@@ -1,10 +1,6 @@
 import { renderMatches, type SearchMatches } from "obsidian";
 
-import {
-  isJournalArticleItem,
-  itemDateYear,
-  type JournalArticleItem,
-} from "@zotlit/db";
+import { itemDateYear, parseItemDate, type ItemOfType } from "@zotlit/db";
 
 import { type SettingsService } from "@/services/settings/service";
 
@@ -29,27 +25,26 @@ export function renderSuggestion(
 
   const contentEl = el.createDiv("suggestion-content");
   const titleEl = contentEl.createDiv("suggestion-title");
-  const title = hit.item.title ?? hit.item.citekey ?? hit.item.key;
-  renderTruncatedHighlight(titleEl.createSpan(), title, hit.matches);
+  const title = "title" in hit.item ? hit.item.title : null;
+  const citationKey = "citationKey" in hit.item ? hit.item.citationKey : null;
+  const displayTitle = title ?? citationKey ?? hit.item.key;
+  renderTruncatedHighlight(titleEl.createSpan(), displayTitle, hit.matches);
 
-  if (
-    settings.current?.["citation.show-citekey-in-suggester"] &&
-    hit.item.citekey
-  ) {
-    contentEl.createDiv({ cls: "citekey", text: hit.item.citekey });
+  if (settings.current?.["citation.show-citekey-in-suggester"] && citationKey) {
+    contentEl.createDiv({ cls: "citekey", text: citationKey });
   }
 
-  if (isJournalArticleItem(hit.item)) {
+  if (hit.item.itemType === "journalArticle") {
     appendJournalMeta(contentEl, hit.item);
   }
 }
 
 function appendJournalMeta(
   contentEl: HTMLElement,
-  item: JournalArticleItem,
+  item: ItemOfType<"journalArticle">,
 ): void {
   const creators = creatorSummary(item);
-  const year = itemDateYear(item.date)?.toString() ?? "";
+  const year = itemDateYear(parseItemDate(item.date))?.toString() ?? "";
   const { publicationTitle, volume, issue, pages } = item;
 
   const hasAuthorYear = !!creators || !!year;

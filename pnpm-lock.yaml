@@ -342,6 +342,9 @@ importers:
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../shared
+      '@zotlit/zotero-types':
+        specifier: workspace:*
+        version: link:../zotero-types
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
@@ -438,6 +441,24 @@ importers:
       '@logtape/logtape':
         specifier: '>=2.0.0'
         version: 2.1.0
+    devDependencies:
+      '@types/node-25':
+        specifier: npm:@types/node@^25.6.2
+        version: '@types/node@25.8.0'
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260421.2
+      '@zotlit/config':
+        specifier: workspace:*
+        version: link:../config
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.65.0(oxlint-tsgolint@0.22.1)
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
+
+  packages/zotero-types:
     devDependencies:
       '@types/node-25':
         specifier: npm:@types/node@^25.6.2

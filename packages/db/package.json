@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@zotlit/shared": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
     "drizzle-orm": "catalog:"
   },
