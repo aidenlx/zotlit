@@ -1,14 +1,15 @@
-import { type Creator, type ItemLanguage } from "@zotlit/db";
+import { type IndexedCreator, type ItemLanguage } from "@zotlit/db";
 
 /**
  * @see https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/citeproc.js#L705
  */
-// oxlint-disable-next-line no-misleading-character-class
+// oxlint-disable no-misleading-character-class
 const ROMANESQUE_REGEXP =
   /[-0-9a-zA-Z\u0e01-\u0e5b\u00c0-\u017f\u0370-\u03ff\u0400-\u052f\u0590-\u05d4\u05d6-\u05ff\u1f00-\u1fff\u0600-\u06ff\u200c\u200d\u200e\u0218\u0219\u021a\u021b\u202a-\u202e]/;
+// oxlint-enable no-misleading-character-class
 
 export function formatCreator(
-  creator: Creator | null | undefined,
+  creator: IndexedCreator | null | undefined,
   language?: ItemLanguage | null,
 ): string {
   if (!creator) return "";

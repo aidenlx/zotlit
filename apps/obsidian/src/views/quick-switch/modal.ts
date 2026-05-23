@@ -2,9 +2,8 @@ import { Keymap, SuggestModal } from "obsidian";
 
 import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
-import { type SearchHit } from "@/services/item-lookup/engine";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
 
 import { type QuickSwitchDeps } from "./register";
 

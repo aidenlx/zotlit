@@ -5,6 +5,8 @@ export {
 } from "./queries/libraries";
 export {
   formatIndexedKey,
+  getItemsByID,
+  getItemsByIDAsync,
   getItemsByLibrary,
   getItemsByLibraryAsync,
   type BaseItem,
@@ -12,6 +14,12 @@ export {
   type Item,
   type ItemOfType,
 } from "./queries/items";
+export {
+  getIndexedItemsByLibrary,
+  getIndexedItemsByLibraryAsync,
+  type IndexedCreator,
+  type IndexedItem,
+} from "./queries/index-items";
 export {
   formatItemDate,
   itemDateYear,
