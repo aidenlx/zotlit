@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { type IndexedItem, type Item } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import {
+  makeCreator as creator,
+  makeIndexedItem as indexedItem,
+  makeItem as item,
+  type ItemFixtureOptions,
+} from "@zotlit/item-lookup/fixtures";
 
 import {
   DatabaseError,
@@ -10,12 +16,6 @@ import {
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
 
-import {
-  makeCreator as creator,
-  makeIndexedItem as indexedItem,
-  makeItem as item,
-  type ItemFixtureOptions,
-} from "./fixtures";
 import { ItemLookup } from "./service";
 
 describe("ItemLookup", () => {

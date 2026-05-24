@@ -8,6 +8,14 @@ import {
   type Item,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import {
+  buildIndex,
+  searchIndex,
+  type ChsSegmenter,
+  type SearchHit as EngineSearchHit,
+  type SearchIndex,
+  type TokenizerOptions,
+} from "@zotlit/item-lookup";
 
 import { getLogger } from "@/lib/log";
 import {
@@ -19,14 +27,6 @@ import {
   type Settings,
   type SettingsService,
 } from "@/services/settings/service";
-
-import {
-  buildIndex,
-  searchIndex,
-  type SearchHit as EngineSearchHit,
-  type SearchIndex,
-} from "./engine";
-import { type ChsSegmenter, type TokenizerOptions } from "./tokenizer";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
