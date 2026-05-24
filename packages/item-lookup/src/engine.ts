@@ -1,6 +1,5 @@
 import { regex } from "arkregex";
 import MiniSearch from "minisearch";
-import { type App, type SearchMatches } from "obsidian";
 
 import {
   itemDateYear,
@@ -16,9 +15,11 @@ import {
   normalize,
   normalizeWithIndexMap,
   tokenize,
-  type ChsSegmenter,
   type TokenizerOptions,
 } from "./tokenizer";
+
+/** Structurally compatible with Obsidian's `SearchMatches`. */
+export type SearchMatches = [number, number][];
 
 export interface SearchHit<T> {
   item: T;
@@ -35,9 +36,48 @@ export interface SearchIndex {
   mini: MiniSearch<IndexedSearchDocument>;
 }
 
+export type SearchField =
+  | "title"
+  | "creators"
+  | "publicationTitle"
+  | "shortTitle"
+  | "court";
+
+export interface ScoringConfig {
+  boosts: Record<SearchField, number>;
+  /** Recency multiplier `1 + maxBoost * exp(-days / halfLifeDays)`. */
+  recencyMaxBoost: number;
+  recencyHalfLifeDays: number;
+  /** Additive bonus when a query token equals an item's year exactly. */
+  exactYearBonus: number;
+  /** MiniSearch fuzzy threshold per query term length. */
+  fuzzy: (term: string) => number;
+  prefix: boolean;
+}
+
+export const DEFAULT_SCORING: ScoringConfig = {
+  boosts: {
+    title: 2.5,
+    shortTitle: 2.5,
+    creators: 2,
+    publicationTitle: 1.5,
+    court: 1,
+  },
+  // Recency boost: items modified in the last few weeks score slightly higher
+  // than equally relevant stale ones. Cap ≤1.1× keeps BM25 dominant. The
+  // empty-query path uses `dateModified DESC` directly; this only applies to
+  // scored queries.
+  recencyMaxBoost: 0.1,
+  recencyHalfLifeDays: 30,
+  exactYearBonus: 0.25,
+  fuzzy: (term) => (term.length <= 3 ? 0 : term.length <= 5 ? 0.1 : 0.2),
+  prefix: true,
+};
+
 export interface SearchIndexOptions {
   tokenizer: TokenizerOptions;
   limit: number;
+  scoring?: ScoringConfig;
 }
 
 export interface BuildIndexOptions {
@@ -60,15 +100,7 @@ const SEARCH_FIELDS = [
   "publicationTitle",
   "shortTitle",
   "court",
-] as const satisfies readonly (keyof IndexedSearchDocument)[];
-
-const SEARCH_BOOST = {
-  title: 2.5,
-  shortTitle: 2.5,
-  creators: 2,
-  publicationTitle: 1.5,
-  court: 1,
-} satisfies Partial<Record<(typeof SEARCH_FIELDS)[number], number>>;
+] as const satisfies readonly SearchField[];
 
 export function buildIndex(
   items: readonly IndexedItem[],
@@ -98,13 +130,6 @@ export function buildIndex(
   return { libraryID, items, byId, yearById, citationKeyById, mini };
 }
 
-// Recency boost: items modified in the last few weeks score slightly higher
-// than equally relevant stale ones. Cap ≤1.1× keeps BM25 dominant. The
-// empty-query path uses `dateModified DESC` directly; this only applies to
-// scored queries.
-const RECENCY_MAX_BOOST = 0.1;
-const RECENCY_HALF_LIFE_DAYS = 30;
-const EXACT_YEAR_BONUS = 0.25;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const DOI_RE = regex("\\b10\\.\\d{4,9}/[^\\s\\]\\)]+", "iu");
@@ -139,6 +164,7 @@ export function searchIndex(
   query: string,
   opts: SearchIndexOptions,
 ): SearchHit<IndexedItem>[] {
+  const scoring = opts.scoring ?? DEFAULT_SCORING;
   const cleaned = cleanQuery(query);
   const keyQuery = cleaned.toUpperCase();
   if (ZOTERO_KEY_RE.test(keyQuery)) {
@@ -149,12 +175,15 @@ export function searchIndex(
   const tokens = queryTokens(cleaned, opts.tokenizer);
   if (tokens.length === 0) return [];
 
-  const candidates = intersectTokenCandidates(index, tokens);
+  const candidates = intersectTokenCandidates(index, tokens, scoring);
   if (candidates.size === 0) return [];
 
-  const nowMs = Temporal.Now.instant().epochMilliseconds;
+  const ctx: SearchContext = {
+    nowMs: Temporal.Now.instant().epochMilliseconds,
+    scoring,
+  };
   const scored = [...candidates.values()]
-    .map((candidate) => rankCandidate(candidate, tokens, nowMs))
+    .map((candidate) => rankCandidate(candidate, tokens, ctx))
     .sort(compareRankedCandidates)
     .slice(0, opts.limit);
 
@@ -171,13 +200,20 @@ export function searchIndex(
   }));
 }
 
-function recencyMultiplier(item: IndexedItem, nowMs: number): number {
+interface SearchContext {
+  nowMs: number;
+  scoring: ScoringConfig;
+}
+
+function recencyMultiplier(item: IndexedItem, ctx: SearchContext): number {
   const daysElapsed = Math.max(
     0,
-    (nowMs - item.dateModified.epochMilliseconds) / MS_PER_DAY,
+    (ctx.nowMs - item.dateModified.epochMilliseconds) / MS_PER_DAY,
   );
   return (
-    1 + RECENCY_MAX_BOOST * Math.exp(-daysElapsed / RECENCY_HALF_LIFE_DAYS)
+    1 +
+    ctx.scoring.recencyMaxBoost *
+      Math.exp(-daysElapsed / ctx.scoring.recencyHalfLifeDays)
   );
 }
 
@@ -225,11 +261,12 @@ function queryTokens(query: string, opts: TokenizerOptions): string[] {
 function intersectTokenCandidates(
   index: SearchIndex,
   tokens: readonly string[],
+  scoring: ScoringConfig,
 ): Map<number, CandidateEvidence> {
   let candidates: Map<number, CandidateEvidence> | null = null;
 
   for (const token of tokens) {
-    const tokenCandidates = candidatesForToken(index, token);
+    const tokenCandidates = candidatesForToken(index, token, scoring);
     if (tokenCandidates.size === 0) return new Map();
 
     if (!candidates) {
@@ -273,14 +310,15 @@ function intersectTokenCandidates(
 function candidatesForToken(
   index: SearchIndex,
   token: string,
+  scoring: ScoringConfig,
 ): Map<number, TokenEvidence> {
   const candidates = new Map<number, TokenEvidence>();
 
   for (const hit of index.mini.search(token, {
     combineWith: "AND",
-    prefix: true,
-    fuzzy: (term) => (term.length <= 3 ? 0 : term.length <= 5 ? 0.1 : 0.2),
-    boost: SEARCH_BOOST,
+    prefix: scoring.prefix,
+    fuzzy: scoring.fuzzy,
+    boost: scoring.boosts,
     tokenize: (text) => [text],
     processTerm: (term) => term,
   })) {
@@ -314,7 +352,7 @@ function candidatesForToken(
 function rankCandidate(
   candidate: CandidateEvidence,
   tokens: readonly string[],
-  nowMs: number,
+  ctx: SearchContext,
 ): RankedCandidate {
   const { citationKey } = candidate;
   if (citationKey && tokens.every((token) => citationKey.startsWith(token))) {
@@ -331,8 +369,8 @@ function rankCandidate(
     tier: 2,
     item: candidate.item,
     score:
-      candidate.miniScore * recencyMultiplier(candidate.item, nowMs) +
-      (candidate.exactYear ? EXACT_YEAR_BONUS : 0),
+      candidate.miniScore * recencyMultiplier(candidate.item, ctx) +
+      (candidate.exactYear ? ctx.scoring.exactYearBonus : 0),
     terms: candidate.terms,
   };
 }
@@ -353,16 +391,6 @@ function compareRankedCandidates(
 
 function compareModifiedDesc(a: IndexedItem, b: IndexedItem): number {
   return b.dateModified.epochMilliseconds - a.dateModified.epochMilliseconds;
-}
-
-export function getChsSegmenter(
-  app: App | null | undefined,
-): ChsSegmenter | null {
-  const plugin = app?.plugins?.plugins?.["cm-chs-patch"];
-  if (!plugin || typeof plugin !== "object") return null;
-
-  const cut = (plugin as { cut?: unknown }).cut;
-  return typeof cut === "function" ? (plugin as ChsSegmenter) : null;
 }
 
 function toSearchDocument(

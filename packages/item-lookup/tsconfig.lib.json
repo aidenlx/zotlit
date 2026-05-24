@@ -1,0 +1,18 @@
+{
+  "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.obsidian"],
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "outDir": "dist",
+    "rootDir": "src",
+    "isolatedDeclarations": false,
+    "types": ["node-25"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["./src/**/*.ts"],
+  "exclude": ["./node_modules", "./dist/**/*", "./src/**/*.test.ts"]
+}

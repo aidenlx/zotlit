@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { type Creator } from "@zotlit/db";
+import { makeItem } from "@zotlit/item-lookup/fixtures";
 
 import { creatorSummary } from "./creator-summary";
-import { makeItem } from "./fixtures";
 
 function creator(
   firstName: string | null,
