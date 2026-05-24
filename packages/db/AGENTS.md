@@ -8,7 +8,7 @@ Prefer, in order:
 2. **Regular query builder** — `db.select().from(...)` etc. — when RQB doesn't fit (custom projections, set ops, complex joins).
 3. **Raw SQL** (`sql\`...\``) — last resort, only when the builders cannot express the query.
 
-Prefer **prepared statements with placeholders** (`sql.placeholder("name")`) and cache them via `cachedPrepared()` from `src/queries/prepared.ts`. The util keys statements per `DatabaseClient` via `WeakMap`, so callers get a single reusable `SQLitePreparedQuery` instead of recompiling on every call.
+Wrap queries with `defineQuery(...)` from `src/queries/_shared.ts` and prefer prepared statements with placeholders (`sql.placeholder("name")`). See the `defineQuery` / `DefinedQuery` JSDoc for cached (`.prepared`) vs one-shot (`.prepare`) variants and when to fall back to the bare call.
 
 ## Item fields
 

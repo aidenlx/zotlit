@@ -20,6 +20,7 @@ import {
   notInArray,
   or,
   sql,
+  type Placeholder,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
@@ -28,8 +29,7 @@ import { type Temporal } from "@zotlit/shared/temporal";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 
-import { groupQueryBuilder } from "./_groups";
-import { cachedPrepared } from "./_prepared";
+import { groupsQuery } from "./_groups";
 import { CHILD_ITEM_TYPES, defineQuery, type QueryRow } from "./_shared";
 import { formatIndexedKey } from "./items";
 
@@ -69,20 +69,21 @@ const INDEXED_FIELD_NAMES = [
 
 type IndexedFieldName = (typeof INDEXED_FIELD_NAMES)[number];
 
-type LibraryQueryParam = {
-  libraryID: number;
-};
+type ExcludedTypes = { excludedTypeIDs: readonly number[] };
 
-function visibleItemsPredicate(excludedItemTypeIDs: readonly number[]) {
+function visibleItemsPredicate(
+  libraryIDPlaceholder: Placeholder<"libraryID", number>,
+  { excludedTypeIDs }: ExcludedTypes,
+) {
   return and(
-    eq(items.libraryID, sql.placeholder("libraryID")),
-    notInArray(items.itemTypeID, [...excludedItemTypeIDs]),
+    eq(items.libraryID, libraryIDPlaceholder),
+    notInArray(items.itemTypeID, [...excludedTypeIDs]),
     isNull(deletedItems.itemID),
   );
 }
 
-const indexedItemRowsQueryBuilder = defineQuery(
-  (db, excludedItemTypeIDs: readonly number[]) =>
+const indexedItemsQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }, args: ExcludedTypes) =>
     db
       .select({
         itemID: items.itemID,
@@ -102,15 +103,15 @@ const indexedItemRowsQueryBuilder = defineQuery(
         ),
       )
       .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
-      .where(visibleItemsPredicate(excludedItemTypeIDs))
+      .where(visibleItemsPredicate(placeholder("libraryID"), args))
       .orderBy(desc(items.dateModified)),
 );
 
 const actualFields = alias(fieldsCombined, "actualFields");
 const canonicalFields = alias(fieldsCombined, "canonicalFields");
 
-const indexedItemDataRowsQueryBuilder = defineQuery(
-  (db, excludedItemTypeIDs: readonly number[]) =>
+const indexedItemDataQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }, args: ExcludedTypes) =>
     db
       .select({
         itemID: itemData.itemID,
@@ -136,7 +137,7 @@ const indexedItemDataRowsQueryBuilder = defineQuery(
       .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
       .where(
         and(
-          visibleItemsPredicate(excludedItemTypeIDs),
+          visibleItemsPredicate(placeholder("libraryID"), args),
           or(
             inArray(actualFields.fieldName, [...INDEXED_FIELD_NAMES]),
             inArray(canonicalFields.fieldName, [...INDEXED_FIELD_NAMES]),
@@ -145,8 +146,8 @@ const indexedItemDataRowsQueryBuilder = defineQuery(
       ),
 );
 
-const indexedCreatorRowsQueryBuilder = defineQuery(
-  (db, excludedItemTypeIDs: readonly number[]) =>
+const indexedCreatorsQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }, args: ExcludedTypes) =>
     db
       .select({
         itemID: itemCreators.itemID,
@@ -163,20 +164,20 @@ const indexedCreatorRowsQueryBuilder = defineQuery(
         eq(creatorTypes.creatorTypeID, itemCreators.creatorTypeID),
       )
       .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
-      .where(visibleItemsPredicate(excludedItemTypeIDs))
+      .where(visibleItemsPredicate(placeholder("libraryID"), args))
       .orderBy(itemCreators.itemID, itemCreators.orderIndex),
 );
 
-const excludedItemTypeIDsQueryBuilder = defineQuery((db) =>
+const excludedItemTypeIDsQuery = defineQuery<void>()((db) =>
   db
     .select({ itemTypeID: itemTypes.itemTypeID })
     .from(itemTypes)
     .where(inArray(itemTypes.typeName, [...CHILD_ITEM_TYPES])),
 );
 
-type IndexedItemRow = QueryRow<typeof indexedItemRowsQueryBuilder>;
-type IndexedItemDataRow = QueryRow<typeof indexedItemDataRowsQueryBuilder>;
-type IndexedCreatorRow = QueryRow<typeof indexedCreatorRowsQueryBuilder>;
+type IndexedItemRow = QueryRow<typeof indexedItemsQuery>;
+type IndexedItemDataRow = QueryRow<typeof indexedItemDataQuery>;
+type IndexedCreatorRow = QueryRow<typeof indexedCreatorsQuery>;
 
 type IndexedCreatorWithType = IndexedCreator & {
   creatorTypeID: number;
@@ -192,20 +193,16 @@ export function getIndexedItemsByLibrary(
   libraryID: number,
 ): IndexedItem[] {
   const excludedTypeIDs = getExcludedItemTypeIDs(db);
-  const queryParam = { libraryID } satisfies LibraryQueryParam;
-  const itemRows = cachedPrepared(db, "indexed-items", (d) =>
-    indexedItemRowsQueryBuilder(d, excludedTypeIDs).prepare(),
-  ).all(queryParam);
-  const fieldRows = cachedPrepared(db, "indexed-item-data", (d) =>
-    indexedItemDataRowsQueryBuilder(d, excludedTypeIDs).prepare(),
-  ).all(queryParam);
-  const creatorRows = cachedPrepared(db, "indexed-item-creators", (d) =>
-    indexedCreatorRowsQueryBuilder(d, excludedTypeIDs).prepare(),
-  ).all(queryParam);
-  const groupID =
-    cachedPrepared(db, "groups", (d) => groupQueryBuilder(d).prepare()).get(
-      queryParam,
-    )?.groupID ?? null;
+  const itemRows = indexedItemsQuery
+    .prepared(db, { excludedTypeIDs })
+    .all({ libraryID });
+  const fieldRows = indexedItemDataQuery
+    .prepared(db, { excludedTypeIDs })
+    .all({ libraryID });
+  const creatorRows = indexedCreatorsQuery
+    .prepared(db, { excludedTypeIDs })
+    .all({ libraryID });
+  const groupID = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
 
   return toIndexedItems({ itemRows, fieldRows, creatorRows, groupID });
 }
@@ -215,16 +212,11 @@ export async function getIndexedItemsByLibraryAsync(
   libraryID: number,
 ): Promise<IndexedItem[]> {
   const excludedTypeIDs = await getExcludedItemTypeIDsAsync(db);
-  const queryParam = { libraryID } satisfies LibraryQueryParam;
   const [itemRows, fieldRows, creatorRows, [group]] = await Promise.all([
-    indexedItemRowsQueryBuilder(db, excludedTypeIDs).prepare().all(queryParam),
-    indexedItemDataRowsQueryBuilder(db, excludedTypeIDs)
-      .prepare()
-      .all(queryParam),
-    indexedCreatorRowsQueryBuilder(db, excludedTypeIDs)
-      .prepare()
-      .all(queryParam),
-    groupQueryBuilder(db).prepare().all(queryParam),
+    indexedItemsQuery.prepared(db, { excludedTypeIDs }).all({ libraryID }),
+    indexedItemDataQuery.prepared(db, { excludedTypeIDs }).all({ libraryID }),
+    indexedCreatorsQuery.prepared(db, { excludedTypeIDs }).all({ libraryID }),
+    groupsQuery.prepared(db).all({ libraryID }),
   ]);
   return toIndexedItems({
     itemRows,
@@ -238,8 +230,8 @@ function getExcludedItemTypeIDs(db: NodeDatabaseClient): readonly number[] {
   const cached = excludedTypeIDsByClient.get(db);
   if (cached) return cached;
 
-  const ids = excludedItemTypeIDsQueryBuilder(db)
-    .prepare()
+  const ids = excludedItemTypeIDsQuery
+    .prepared(db)
     .all()
     .map((row) => row.itemTypeID);
   excludedTypeIDsByClient.set(db, ids);
@@ -252,7 +244,7 @@ async function getExcludedItemTypeIDsAsync(
   const cached = excludedTypeIDsByClient.get(db);
   if (cached) return cached;
 
-  const rows = await excludedItemTypeIDsQueryBuilder(db).prepare().all();
+  const rows = await excludedItemTypeIDsQuery.prepared(db).all();
   const ids = rows.map((row) => row.itemTypeID);
   excludedTypeIDsByClient.set(db, ids);
   return ids;

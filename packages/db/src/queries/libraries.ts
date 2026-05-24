@@ -3,7 +3,6 @@ import { type LibraryType } from "@drizzle/schema";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 
-import { cachedPrepared } from "./_prepared";
 import { defineQuery, type QueryRow } from "./_shared";
 
 export interface Library {
@@ -15,7 +14,7 @@ export interface Library {
   name: string | null;
 }
 
-const queryBuilder = defineQuery((db) =>
+const librariesQuery = defineQuery<void>()((db) =>
   db.query.libraries.findMany({
     columns: { libraryID: true, type: true },
     with: {
@@ -27,7 +26,7 @@ const queryBuilder = defineQuery((db) =>
   }),
 );
 
-type LibraryRow = QueryRow<typeof queryBuilder>;
+type LibraryRow = QueryRow<typeof librariesQuery>;
 
 function toLibrary(row: LibraryRow): Library {
   return {
@@ -44,14 +43,12 @@ function toLibrary(row: LibraryRow): Library {
  * can localize labels itself.
  */
 export function getLibraries(db: NodeDatabaseClient): Library[] {
-  return cachedPrepared(db, "libraries.list", (d) => queryBuilder(d).prepare())
-    .all()
-    .map(toLibrary);
+  return librariesQuery.prepared(db).all().map(toLibrary);
 }
 
 export async function getLibrariesAsync(
   db: SQLocalDatabaseClient,
 ): Promise<Library[]> {
-  const rows = await queryBuilder(db);
+  const rows = await librariesQuery.prepared(db).all();
   return rows.map(toLibrary);
 }
