@@ -1,7 +1,7 @@
 import { type IndexedCreator, type ItemLanguage } from "@zotlit/db";
 
 /**
- * @see https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/citeproc.js#L705
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/citeproc.js#L705
  */
 // oxlint-disable no-misleading-character-class
 const ROMANESQUE_REGEXP =

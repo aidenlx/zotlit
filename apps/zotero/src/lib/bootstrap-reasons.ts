@@ -3,7 +3,7 @@
  * every bootstrap lifecycle hook (`install`, `uninstall`, `startup`,
  * `shutdown`, `onMainWindowLoad`, `onMainWindowUnload`). Mirrors the
  * `REASONS` constant in upstream `plugins.js`
- * @see https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/plugins.js#L53-L64.
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/plugins.js#L53-L64.
  */
 export const BOOTSTRAP_REASONS = {
   /** `init()` → `startup` for every active addon at Zotero start. */

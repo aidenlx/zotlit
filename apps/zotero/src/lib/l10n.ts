@@ -28,7 +28,7 @@ const fluentLogger = appLogger.getChild("l10n");
  * Idempotent — `insertFTLIfNeeded` is a no-op when the link already
  * exists.
  *
- * @see https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/plugins.js#L425-L507
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/plugins.js#L425-L507
  */
 export function attachFluentToWindow(win: Window): void {
   for (const path of FTL_FILES) {
