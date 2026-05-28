@@ -15,6 +15,12 @@ export {
   type ItemOfType,
 } from "./queries/items";
 export {
+  getAnnotationsByKey,
+  getAnnotationsByKeyAsync,
+  getAnnotationsByParent,
+  getAnnotationsByParentAsync,
+} from "./queries/annotations";
+export {
   getIndexedItemsByLibrary,
   getIndexedItemsByLibraryAsync,
   type IndexedCreator,
@@ -26,6 +32,11 @@ export {
   parseItemDate,
   type ItemDate,
 } from "./lib/zt-date";
+export {
+  parseAnnotationPosition,
+  type Annotation,
+  type AnnotationPosition,
+} from "./lib/zt-annot";
 export {
   createLanguageLookup,
   formatItemLanguage,

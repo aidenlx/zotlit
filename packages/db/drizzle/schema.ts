@@ -380,6 +380,18 @@ export const itemAttachments = sqliteTable(
   ],
 );
 
+/**
+ * Stored shape varies by parent attachment content type (PDF / EPUB / HTML
+ * snapshot). Narrow at the query layer.
+ *
+ * @see {@link ../src/lib/zt-annot.ts} — `AnnotationPosition` discriminated
+ *   union and `parseAnnotationPosition` narrowing util.
+ */
+export interface AnnotationPositionRaw {
+  type?: string;
+  [k: string]: unknown;
+}
+
 export const itemAnnotations = sqliteTable(
   "itemAnnotations",
   {
@@ -396,8 +408,8 @@ export const itemAnnotations = sqliteTable(
     color: text(),
     pageLabel: text(),
     sortIndex: text().notNull(),
-    position: text().notNull(),
-    isExternal: integer().notNull(),
+    position: text({ mode: "json" }).$type<AnnotationPositionRaw>().notNull(),
+    isExternal: integer({ mode: "boolean" }).notNull(),
   },
   (table) => [index("itemAnnotations_parentItemID").on(table.parentItemID)],
 );
