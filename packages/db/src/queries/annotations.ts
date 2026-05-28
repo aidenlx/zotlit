@@ -2,7 +2,7 @@ import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { annotationTypeFromID, type Annotation } from "@/lib/zt-annot";
 
-import { defineQuery, type QueryRow } from "./_shared";
+import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
 const annotationFindOptions = {
   with: {
@@ -20,7 +20,7 @@ const annotationFindOptions = {
     },
   },
   orderBy: { sortIndex: "asc" },
-} as const;
+} satisfies FindManyOptions<"itemAnnotations">;
 
 const annotationsByParentQuery = defineQuery<{
   parentItemID: number;

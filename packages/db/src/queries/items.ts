@@ -5,7 +5,12 @@ import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 
 import { groupsQuery } from "./_groups";
-import { CHILD_ITEM_TYPES, defineQuery, type QueryRow } from "./_shared";
+import {
+  CHILD_ITEM_TYPES,
+  defineQuery,
+  type FindManyOptions,
+  type QueryRow,
+} from "./_shared";
 
 export interface Creator {
   firstName: string | null;
@@ -52,67 +57,78 @@ export function formatIndexedKey(
   return groupID == null ? key : `${key}g${groupID}`;
 }
 
-type ItemFilter = {
-  /** Inline `WHERE itemID IN (...)` clause; omit for the full library scan. */
-  itemIDs?: readonly number[];
-};
+const itemFindOptions = {
+  columns: {
+    itemID: true,
+    libraryID: true,
+    key: true,
+    dateModified: true,
+  },
+  with: {
+    itemType: {
+      columns: { typeName: true },
+      with: {
+        itemTypeCreatorTypes: {
+          columns: {},
+          where: { primaryField: { eq: 1 } },
+          limit: 1,
+          with: {
+            creatorType: { columns: { creatorType: true } },
+          },
+        },
+      },
+    },
+    itemData: {
+      columns: {},
+      with: {
+        fieldsCombined: { columns: { fieldName: true, custom: true } },
+        itemDataValue: { columns: { value: true } },
+      },
+    },
+    itemCreators: {
+      columns: {},
+      orderBy: { orderIndex: "asc" },
+      with: {
+        creator: {
+          columns: {
+            firstName: true,
+            lastName: true,
+            fieldMode: true,
+          },
+        },
+        creatorType: { columns: { creatorType: true } },
+      },
+    },
+  },
+} satisfies FindManyOptions<"items">;
 
-const itemsQuery = defineQuery<{ libraryID: number }>()(
-  (db, { placeholder }, args: ItemFilter) =>
+const itemsByLibraryQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }) =>
     db.query.items.findMany({
       where: {
         libraryID: placeholder("libraryID"),
         itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
         deletedItem: false,
-        ...(args.itemIDs ? { itemID: { in: [...args.itemIDs] } } : {}),
       },
-      columns: {
-        itemID: true,
-        libraryID: true,
-        key: true,
-        dateModified: true,
-      },
-      with: {
-        itemType: {
-          columns: { typeName: true },
-          with: {
-            itemTypeCreatorTypes: {
-              columns: {},
-              where: { primaryField: { eq: 1 } },
-              limit: 1,
-              with: {
-                creatorType: { columns: { creatorType: true } },
-              },
-            },
-          },
-        },
-        itemData: {
-          columns: {},
-          with: {
-            fieldsCombined: { columns: { fieldName: true, custom: true } },
-            itemDataValue: { columns: { value: true } },
-          },
-        },
-        itemCreators: {
-          columns: {},
-          orderBy: { orderIndex: "asc" },
-          with: {
-            creator: {
-              columns: {
-                firstName: true,
-                lastName: true,
-                fieldMode: true,
-              },
-            },
-            creatorType: { columns: { creatorType: true } },
-          },
-        },
-      },
+      ...itemFindOptions,
       orderBy: { dateModified: "desc" },
     }),
 );
 
-type ItemRow = QueryRow<typeof itemsQuery>;
+const itemByIdQuery = defineQuery<{ libraryID: number; itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.items.findMany({
+      where: {
+        libraryID: placeholder("libraryID"),
+        itemID: placeholder("itemID"),
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+      },
+      ...itemFindOptions,
+    }),
+);
+
+type ItemRow = QueryRow<typeof itemsByLibraryQuery>;
 
 function toItem(row: ItemRow, groupID: number | null): Item {
   const namedProps: Record<string, string | null> = {};
@@ -155,7 +171,7 @@ export function getItemsByLibrary(
 ): Item[] {
   const groupId =
     groupsQuery.prepared(db).all({ libraryID })[0]?.groupID ?? null;
-  return itemsQuery
+  return itemsByLibraryQuery
     .prepared(db)
     .all({ libraryID })
     .map((r) => toItem(r, groupId));
@@ -166,7 +182,7 @@ export async function getItemsByLibraryAsync(
   libraryID: number,
 ): Promise<Item[]> {
   const [rows, [group]] = await Promise.all([
-    itemsQuery.prepared(db).all({ libraryID }),
+    itemsByLibraryQuery.prepared(db).all({ libraryID }),
     groupsQuery.prepared(db).all({ libraryID }),
   ]);
   return rows.map((r) => toItem(r, group?.groupID ?? null));
@@ -180,11 +196,10 @@ export function getItemsByID(
   if (itemIDs.length === 0) return [];
 
   const groupId = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
-  // IDs inline into SQL, so use .prepare (uncached) instead of .prepared.
-  return itemsQuery
-    .prepare(db, { itemIDs })
-    .all({ libraryID })
-    .map((r) => toItem(r, groupId));
+  const stmt = itemByIdQuery.prepared(db);
+  return itemIDs.flatMap((itemID) =>
+    stmt.all({ libraryID, itemID }).map((r) => toItem(r, groupId)),
+  );
 }
 
 export async function getItemsByIDAsync(
@@ -194,9 +209,11 @@ export async function getItemsByIDAsync(
 ): Promise<Item[]> {
   if (itemIDs.length === 0) return [];
 
-  const [rows, [group]] = await Promise.all([
-    itemsQuery.prepare(db, { itemIDs }).all({ libraryID }),
+  const stmt = itemByIdQuery.prepared(db);
+  const [batches, [group]] = await Promise.all([
+    Promise.all(itemIDs.map((itemID) => stmt.all({ libraryID, itemID }))),
     groupsQuery.prepared(db).all({ libraryID }),
   ]);
-  return rows.map((r) => toItem(r, group?.groupID ?? null));
+  const groupId = group?.groupID ?? null;
+  return batches.flat().map((r) => toItem(r, groupId));
 }

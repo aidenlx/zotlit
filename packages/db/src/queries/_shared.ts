@@ -1,6 +1,6 @@
 import { type relations } from "@drizzle/relations";
 import type * as schema from "@drizzle/schema";
-import { sql, type Placeholder } from "drizzle-orm";
+import { sql, type DBQueryConfig, type Placeholder } from "drizzle-orm";
 import {
   type BaseSQLiteDatabase,
   type SQLiteSelectBase,
@@ -19,6 +19,17 @@ export type SqliteDb = BaseSQLiteDatabase<
   typeof schema,
   typeof relations
 >;
+
+/**
+ * Schema-aware shape of an RQB v2 `findMany` config bound to a specific
+ * table in our {@link relations} graph. Pair with `satisfies` so per-key
+ * narrow literals (e.g. `orderBy: { x: "asc" }`) survive when the object
+ * is later spread into a `findMany` call site.
+ *
+ * @see DBQueryConfig in drizzle-orm/src/relations.ts
+ */
+export type FindManyOptions<TName extends keyof typeof relations> =
+  DBQueryConfig<"many", typeof relations, (typeof relations)[TName]>;
 
 /**
  * Zotero item types that are excluded from regular-item queries because
