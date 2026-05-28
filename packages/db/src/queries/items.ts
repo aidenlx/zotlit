@@ -128,6 +128,19 @@ const itemByIdQuery = defineQuery<{ libraryID: number; itemID: number }>()(
     }),
 );
 
+const itemByKeyQuery = defineQuery<{ libraryID: number; key: string }>()(
+  (db, { placeholder }) =>
+    db.query.items.findMany({
+      where: {
+        libraryID: placeholder("libraryID"),
+        key: placeholder("key"),
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+      },
+      ...itemFindOptions,
+    }),
+);
+
 type ItemRow = QueryRow<typeof itemsByLibraryQuery>;
 
 function toItem(row: ItemRow, groupID: number | null): Item {
@@ -212,6 +225,36 @@ export async function getItemsByIDAsync(
   const stmt = itemByIdQuery.prepared(db);
   const [batches, [group]] = await Promise.all([
     Promise.all(itemIDs.map((itemID) => stmt.all({ libraryID, itemID }))),
+    groupsQuery.prepared(db).all({ libraryID }),
+  ]);
+  const groupId = group?.groupID ?? null;
+  return batches.flat().map((r) => toItem(r, groupId));
+}
+
+export function getItemsByKey(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  keys: readonly string[],
+): Item[] {
+  if (keys.length === 0) return [];
+
+  const groupId = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
+  const stmt = itemByKeyQuery.prepared(db);
+  return keys.flatMap((key) =>
+    stmt.all({ libraryID, key }).map((r) => toItem(r, groupId)),
+  );
+}
+
+export async function getItemsByKeyAsync(
+  db: SQLocalDatabaseClient,
+  libraryID: number,
+  keys: readonly string[],
+): Promise<Item[]> {
+  if (keys.length === 0) return [];
+
+  const stmt = itemByKeyQuery.prepared(db);
+  const [batches, [group]] = await Promise.all([
+    Promise.all(keys.map((key) => stmt.all({ libraryID, key }))),
     groupsQuery.prepared(db).all({ libraryID }),
   ]);
   const groupId = group?.groupID ?? null;

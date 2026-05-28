@@ -320,10 +320,12 @@ export const relations = defineRelations(schema, (r) => ({
     item: r.one.items({
       from: r.itemTags.itemID,
       to: r.items.itemID,
+      optional: false,
     }),
     tag: r.one.tags({
       from: r.itemTags.tagID,
       to: r.tags.tagID,
+      optional: false,
     }),
   },
   itemCreators: {
