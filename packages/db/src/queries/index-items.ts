@@ -1,29 +1,3 @@
-import {
-  baseFieldMappingsCombined,
-  creators,
-  creatorTypes,
-  deletedItems,
-  fieldsCombined,
-  itemCreators,
-  itemData,
-  itemDataValues,
-  itemTypeCreatorTypes,
-  itemTypes,
-  items,
-} from "@drizzle/schema";
-import {
-  and,
-  desc,
-  eq,
-  inArray,
-  isNull,
-  notInArray,
-  or,
-  sql,
-  type Placeholder,
-} from "drizzle-orm";
-import { alias } from "drizzle-orm/sqlite-core";
-
 import { type Temporal } from "@zotlit/shared/temporal";
 
 import { type NodeDatabaseClient } from "@/client/node";
@@ -69,269 +43,234 @@ const INDEXED_FIELD_NAMES = [
 
 type IndexedFieldName = (typeof INDEXED_FIELD_NAMES)[number];
 
-type ExcludedTypes = { excludedTypeIDs: readonly number[] };
+const canonicalFieldsQuery = defineQuery<void>()((db) =>
+  db.query.fieldsCombined.findMany({
+    where: { fieldName: { in: [...INDEXED_FIELD_NAMES] } },
+    columns: { fieldID: true, fieldName: true },
+  }),
+);
 
-function visibleItemsPredicate(
-  libraryIDPlaceholder: Placeholder<"libraryID", number>,
-  { excludedTypeIDs }: ExcludedTypes,
-) {
-  return and(
-    eq(items.libraryID, libraryIDPlaceholder),
-    notInArray(items.itemTypeID, [...excludedTypeIDs]),
-    isNull(deletedItems.itemID),
-  );
+const aliasFieldsQuery = defineQuery<void>()((db) =>
+  db.query.baseFieldMappingsCombined.findMany({
+    where: { baseField: { fieldName: { in: [...INDEXED_FIELD_NAMES] } } },
+    columns: { itemTypeID: true, fieldID: true },
+    with: { baseField: { columns: { fieldName: true } } },
+  }),
+);
+
+/**
+ * Resolution table for the canonical/actual fieldName split. RQB v2 can't
+ * express the join inline because `baseFieldMappingsCombined` must match on
+ * the parent `items.itemTypeID` plus the child `itemData.fieldID`, and v2
+ * `where` clauses can't reference the parent. Precomputed once per client.
+ */
+interface FieldMapping {
+  /** fieldIDs to fetch — union of canonical IDs and per-itemType alias IDs. */
+  indexedFieldIDs: readonly number[];
+  /** Direct match: a field whose own name is one of `INDEXED_FIELD_NAMES`. */
+  canonicalByFieldID: ReadonlyMap<number, IndexedFieldName>;
+  /** Per-itemType alias: `${itemTypeID}:${fieldID}` → canonical name. */
+  aliasByTypeAndField: ReadonlyMap<string, IndexedFieldName>;
 }
 
+const mappingByClient = new WeakMap<
+  NodeDatabaseClient | SQLocalDatabaseClient,
+  FieldMapping
+>();
+
 const indexedItemsQuery = defineQuery<{ libraryID: number }>()(
-  (db, { placeholder }, args: ExcludedTypes) =>
-    db
-      .select({
-        itemID: items.itemID,
-        libraryID: items.libraryID,
-        key: items.key,
-        dateModified: items.dateModified,
-        itemType: sql<string>`${itemTypes.typeName}`,
-        primaryCreatorTypeID: itemTypeCreatorTypes.creatorTypeID,
-      })
-      .from(items)
-      .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
-      .leftJoin(
-        itemTypeCreatorTypes,
-        and(
-          eq(itemTypeCreatorTypes.itemTypeID, items.itemTypeID),
-          eq(itemTypeCreatorTypes.primaryField, 1),
-        ),
-      )
-      .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
-      .where(visibleItemsPredicate(placeholder("libraryID"), args))
-      .orderBy(desc(items.dateModified)),
-);
-
-const actualFields = alias(fieldsCombined, "actualFields");
-const canonicalFields = alias(fieldsCombined, "canonicalFields");
-
-const indexedItemDataQuery = defineQuery<{ libraryID: number }>()(
-  (db, { placeholder }, args: ExcludedTypes) =>
-    db
-      .select({
-        itemID: itemData.itemID,
-        actualFieldName: actualFields.fieldName,
-        canonicalFieldName: canonicalFields.fieldName,
-        value: itemDataValues.value,
-      })
-      .from(itemData)
-      .innerJoin(items, eq(items.itemID, itemData.itemID))
-      .innerJoin(actualFields, eq(actualFields.fieldID, itemData.fieldID))
-      .leftJoin(
-        baseFieldMappingsCombined,
-        and(
-          eq(baseFieldMappingsCombined.itemTypeID, items.itemTypeID),
-          eq(baseFieldMappingsCombined.fieldID, itemData.fieldID),
-        ),
-      )
-      .leftJoin(
-        canonicalFields,
-        eq(canonicalFields.fieldID, baseFieldMappingsCombined.baseFieldID),
-      )
-      .leftJoin(itemDataValues, eq(itemDataValues.valueID, itemData.valueID))
-      .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
-      .where(
-        and(
-          visibleItemsPredicate(placeholder("libraryID"), args),
-          or(
-            inArray(actualFields.fieldName, [...INDEXED_FIELD_NAMES]),
-            inArray(canonicalFields.fieldName, [...INDEXED_FIELD_NAMES]),
-          ),
-        ),
-      ),
-);
-
-const indexedCreatorsQuery = defineQuery<{ libraryID: number }>()(
-  (db, { placeholder }, args: ExcludedTypes) =>
-    db
-      .select({
-        itemID: itemCreators.itemID,
-        creatorTypeID: itemCreators.creatorTypeID,
-        firstName: creators.firstName,
-        lastName: creators.lastName,
-        fieldMode: creators.fieldMode,
-      })
-      .from(itemCreators)
-      .innerJoin(items, eq(items.itemID, itemCreators.itemID))
-      .innerJoin(creators, eq(creators.creatorID, itemCreators.creatorID))
-      .innerJoin(
-        creatorTypes,
-        eq(creatorTypes.creatorTypeID, itemCreators.creatorTypeID),
-      )
-      .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
-      .where(visibleItemsPredicate(placeholder("libraryID"), args))
-      .orderBy(itemCreators.itemID, itemCreators.orderIndex),
-);
-
-const excludedItemTypeIDsQuery = defineQuery<void>()((db) =>
-  db
-    .select({ itemTypeID: itemTypes.itemTypeID })
-    .from(itemTypes)
-    .where(inArray(itemTypes.typeName, [...CHILD_ITEM_TYPES])),
+  (db, { placeholder }, args: { indexedFieldIDs: readonly number[] }) =>
+    db.query.items.findMany({
+      where: {
+        libraryID: placeholder("libraryID"),
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+      },
+      columns: {
+        itemID: true,
+        libraryID: true,
+        key: true,
+        dateModified: true,
+        itemTypeID: true,
+      },
+      with: {
+        itemType: {
+          columns: { typeName: true },
+          with: {
+            itemTypeCreatorTypes: {
+              columns: { creatorTypeID: true },
+              where: { primaryField: { eq: 1 } },
+              limit: 1,
+            },
+          },
+        },
+        itemData: {
+          columns: { fieldID: true },
+          where: { fieldID: { in: [...args.indexedFieldIDs] } },
+          with: {
+            itemDataValue: { columns: { value: true } },
+          },
+        },
+        itemCreators: {
+          columns: { creatorTypeID: true },
+          orderBy: { orderIndex: "asc" },
+          with: {
+            creator: {
+              columns: { firstName: true, lastName: true, fieldMode: true },
+            },
+          },
+        },
+      },
+      orderBy: { dateModified: "desc" },
+    }),
 );
 
 type IndexedItemRow = QueryRow<typeof indexedItemsQuery>;
-type IndexedItemDataRow = QueryRow<typeof indexedItemDataQuery>;
-type IndexedCreatorRow = QueryRow<typeof indexedCreatorsQuery>;
-
-type IndexedCreatorWithType = IndexedCreator & {
-  creatorTypeID: number;
-};
-
-const excludedTypeIDsByClient = new WeakMap<
-  NodeDatabaseClient | SQLocalDatabaseClient,
-  readonly number[]
->();
 
 export function getIndexedItemsByLibrary(
   db: NodeDatabaseClient,
   libraryID: number,
 ): IndexedItem[] {
-  const excludedTypeIDs = getExcludedItemTypeIDs(db);
-  const itemRows = indexedItemsQuery
-    .prepared(db, { excludedTypeIDs })
-    .all({ libraryID });
-  const fieldRows = indexedItemDataQuery
-    .prepared(db, { excludedTypeIDs })
-    .all({ libraryID });
-  const creatorRows = indexedCreatorsQuery
-    .prepared(db, { excludedTypeIDs })
+  const mapping = getMappingSync(db);
+  const rows = indexedItemsQuery
+    .prepared(db, { indexedFieldIDs: mapping.indexedFieldIDs })
     .all({ libraryID });
   const groupID = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
-
-  return toIndexedItems({ itemRows, fieldRows, creatorRows, groupID });
+  return rows.map((row) => toIndexedItem(row, groupID, mapping));
 }
 
 export async function getIndexedItemsByLibraryAsync(
   db: SQLocalDatabaseClient,
   libraryID: number,
 ): Promise<IndexedItem[]> {
-  const excludedTypeIDs = await getExcludedItemTypeIDsAsync(db);
-  const [itemRows, fieldRows, creatorRows, [group]] = await Promise.all([
-    indexedItemsQuery.prepared(db, { excludedTypeIDs }).all({ libraryID }),
-    indexedItemDataQuery.prepared(db, { excludedTypeIDs }).all({ libraryID }),
-    indexedCreatorsQuery.prepared(db, { excludedTypeIDs }).all({ libraryID }),
+  const mapping = await getMappingAsync(db);
+  const [rows, [group]] = await Promise.all([
+    indexedItemsQuery
+      .prepared(db, { indexedFieldIDs: mapping.indexedFieldIDs })
+      .all({ libraryID }),
     groupsQuery.prepared(db).all({ libraryID }),
   ]);
-  return toIndexedItems({
-    itemRows,
-    fieldRows,
-    creatorRows,
-    groupID: group?.groupID ?? null,
-  });
+  return rows.map((row) => toIndexedItem(row, group?.groupID ?? null, mapping));
 }
 
-function getExcludedItemTypeIDs(db: NodeDatabaseClient): readonly number[] {
-  const cached = excludedTypeIDsByClient.get(db);
+function getMappingSync(db: NodeDatabaseClient): FieldMapping {
+  const cached = mappingByClient.get(db);
   if (cached) return cached;
-
-  const ids = excludedItemTypeIDsQuery
-    .prepared(db)
-    .all()
-    .map((row) => row.itemTypeID);
-  excludedTypeIDsByClient.set(db, ids);
-  return ids;
+  const canonicalRows = canonicalFieldsQuery.prepared(db).all();
+  const aliasRows = aliasFieldsQuery.prepared(db).all();
+  const mapping = buildMapping(canonicalRows, aliasRows);
+  mappingByClient.set(db, mapping);
+  return mapping;
 }
 
-async function getExcludedItemTypeIDsAsync(
+async function getMappingAsync(
   db: SQLocalDatabaseClient,
-): Promise<readonly number[]> {
-  const cached = excludedTypeIDsByClient.get(db);
+): Promise<FieldMapping> {
+  const cached = mappingByClient.get(db);
   if (cached) return cached;
-
-  const rows = await excludedItemTypeIDsQuery.prepared(db).all();
-  const ids = rows.map((row) => row.itemTypeID);
-  excludedTypeIDsByClient.set(db, ids);
-  return ids;
+  const [canonicalRows, aliasRows] = await Promise.all([
+    canonicalFieldsQuery.prepared(db).all(),
+    aliasFieldsQuery.prepared(db).all(),
+  ]);
+  const mapping = buildMapping(canonicalRows, aliasRows);
+  mappingByClient.set(db, mapping);
+  return mapping;
 }
 
-function toIndexedItems({
-  itemRows,
-  fieldRows,
-  creatorRows,
-  groupID,
-}: {
-  itemRows: readonly IndexedItemRow[];
-  fieldRows: readonly IndexedItemDataRow[];
-  creatorRows: readonly IndexedCreatorRow[];
-  groupID: number | null;
-}): IndexedItem[] {
-  const itemsByID = new Map<number, IndexedItem>();
-  const primaryCreatorTypeByItemID = new Map<number, number | null>();
-  const creatorsByItemID = new Map<number, IndexedCreatorWithType[]>();
+type CanonicalFieldRow = QueryRow<typeof canonicalFieldsQuery>;
+type AliasFieldRow = QueryRow<typeof aliasFieldsQuery>;
 
-  for (const row of itemRows) {
-    primaryCreatorTypeByItemID.set(row.itemID, row.primaryCreatorTypeID);
-    itemsByID.set(row.itemID, {
-      itemID: row.itemID,
-      libraryID: row.libraryID,
-      key: row.key,
-      indexedKey: formatIndexedKey(row.key, groupID),
-      dateModified: row.dateModified,
-      itemType: row.itemType,
-      primaryCreator: null,
-      creators: [],
-      language: null,
-      title: null,
-      publicationTitle: null,
-      shortTitle: null,
-      court: null,
-      citationKey: null,
-      date: null,
-    });
+function buildMapping(
+  canonicalRows: readonly CanonicalFieldRow[],
+  aliasRows: readonly AliasFieldRow[],
+): FieldMapping {
+  const canonicalByFieldID = new Map<number, IndexedFieldName>();
+  for (const row of canonicalRows) {
+    if (isIndexedFieldName(row.fieldName)) {
+      canonicalByFieldID.set(row.fieldID, row.fieldName);
+    }
   }
-
-  for (const row of fieldRows) {
-    const item = row.itemID === null ? null : itemsByID.get(row.itemID);
-    if (!item) continue;
-
-    const fieldName = toIndexedFieldName(
-      row.canonicalFieldName ?? row.actualFieldName,
-    );
-    if (!fieldName) continue;
-    item[fieldName] = row.value;
+  const aliasByTypeAndField = new Map<string, IndexedFieldName>();
+  const indexedFieldIDs = new Set<number>(canonicalByFieldID.keys());
+  for (const row of aliasRows) {
+    if (row.fieldID == null) continue;
+    indexedFieldIDs.add(row.fieldID);
+    if (row.itemTypeID == null) continue;
+    const canonical = row.baseField?.fieldName;
+    if (!canonical || !isIndexedFieldName(canonical)) continue;
+    aliasByTypeAndField.set(`${row.itemTypeID}:${row.fieldID}`, canonical);
   }
-
-  for (const row of creatorRows) {
-    const list = creatorsByItemID.get(row.itemID) ?? [];
-    list.push({
-      creatorTypeID: row.creatorTypeID,
-      firstName: row.firstName,
-      lastName: row.lastName,
-      fieldMode: row.fieldMode ?? 0,
-    });
-    creatorsByItemID.set(row.itemID, list);
-  }
-
-  for (const [itemID, item] of itemsByID) {
-    const typedCreators = creatorsByItemID.get(itemID) ?? [];
-    const primaryCreatorTypeID = primaryCreatorTypeByItemID.get(itemID);
-    const primaryTyped =
-      primaryCreatorTypeID == null
-        ? null
-        : (typedCreators.find(
-            (creator) => creator.creatorTypeID === primaryCreatorTypeID,
-          ) ?? null);
-
-    item.creators = typedCreators.map(stripCreatorType);
-    item.primaryCreator = primaryTyped ? stripCreatorType(primaryTyped) : null;
-  }
-
-  return itemRows.flatMap((row) => itemsByID.get(row.itemID) ?? []);
+  return {
+    indexedFieldIDs: [...indexedFieldIDs],
+    canonicalByFieldID,
+    aliasByTypeAndField,
+  };
 }
 
-function toIndexedFieldName(value: string | null): IndexedFieldName | null {
-  return INDEXED_FIELD_NAMES.includes(value as IndexedFieldName)
-    ? (value as IndexedFieldName)
-    : null;
+function isIndexedFieldName(value: string): value is IndexedFieldName {
+  return INDEXED_FIELD_NAMES.includes(value as IndexedFieldName);
 }
 
-function stripCreatorType(creator: IndexedCreatorWithType): IndexedCreator {
-  const { creatorTypeID: _typeID, ...rest } = creator;
-  return rest;
+function toIndexedItem(
+  row: IndexedItemRow,
+  groupID: number | null,
+  mapping: FieldMapping,
+): IndexedItem {
+  const item: IndexedItem = {
+    itemID: row.itemID,
+    libraryID: row.libraryID,
+    key: row.key,
+    indexedKey: formatIndexedKey(row.key, groupID),
+    dateModified: row.dateModified,
+    itemType: row.itemType.typeName ?? "",
+    primaryCreator: null,
+    creators: [],
+    language: null,
+    title: null,
+    publicationTitle: null,
+    shortTitle: null,
+    court: null,
+    citationKey: null,
+    date: null,
+  };
+
+  for (const data of row.itemData) {
+    const name = resolveIndexedFieldName(row.itemTypeID, data.fieldID, mapping);
+    if (!name) continue;
+    item[name] = data.itemDataValue?.value ?? null;
+  }
+
+  const primaryTypeID =
+    row.itemType.itemTypeCreatorTypes[0]?.creatorTypeID ?? null;
+  const creators: IndexedCreator[] = [];
+  let primaryCreator: IndexedCreator | null = null;
+  for (const ic of row.itemCreators) {
+    const creator: IndexedCreator = {
+      firstName: ic.creator?.firstName ?? null,
+      lastName: ic.creator?.lastName ?? null,
+      fieldMode: ic.creator?.fieldMode ?? 0,
+    };
+    creators.push(creator);
+    if (
+      !primaryCreator &&
+      primaryTypeID != null &&
+      ic.creatorTypeID === primaryTypeID
+    ) {
+      primaryCreator = creator;
+    }
+  }
+  item.creators = creators;
+  item.primaryCreator = primaryCreator;
+  return item;
+}
+
+function resolveIndexedFieldName(
+  itemTypeID: number,
+  fieldID: number | null,
+  mapping: FieldMapping,
+): IndexedFieldName | null {
+  if (fieldID == null) return null;
+  const alias = mapping.aliasByTypeAndField.get(`${itemTypeID}:${fieldID}`);
+  if (alias) return alias;
+  return mapping.canonicalByFieldID.get(fieldID) ?? null;
 }
