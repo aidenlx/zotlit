@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
-import { parseAnnotationPosition } from "@/lib/zt-annot";
+import { parseAnnotationPosition } from "@/lib/zt-annot-pos";
 
 import { getAnnotationsByKey, getAnnotationsByParent } from "./annotations";
 
