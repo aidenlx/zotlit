@@ -8,10 +8,10 @@ import { type ZotLitZotero as ZotLitZoteroCtor } from "./main";
  * Shape of the `params` object Zotero's plugin loader passes to every
  * bootstrap lifecycle hook. Built in `_callMethod` and forwarded as the
  * first argument of `func.call(scope, params, reason)` — see
- * https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/plugins.js#L248-L258.
+ * https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/plugins.js#L248-L258.
  * For `onMainWindowLoad` / `onMainWindowUnload`, Zotero additionally merges
  * `{ window }` into the same object via the `extraParams` argument — see
- * https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/plugins.js#L106
+ * https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/plugins.js#L106
  * — represented by {@link WindowBootstrapData}.
  *
  * `reason` is one of Zotero's `REASONS` integers — see

@@ -15,7 +15,7 @@
  * `createLanguageLookup()` indexes English names, endonyms, and an optional
  * caller UI locale.
  *
- * @see https://github.com/zotero/zotero/blob/3d2f51eeb4e26f0c7b40716d611a6a781e5c2c68/chrome/content/zotero/xpcom/utilities/utilities_item.js#L780 upstream `languageToISO6391`
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/utilities/utilities_item.js#L780 upstream `languageToISO6391`
  */
 
 import { regex } from "arkregex";
