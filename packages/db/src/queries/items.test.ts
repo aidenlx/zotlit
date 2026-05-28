@@ -27,6 +27,20 @@ afterEach(async () => {
 });
 
 describe("getItemsByLibrary", () => {
+  it("excludes deleted items via the deletedItem: false predicate", () => {
+    const keys = new Set(getItemsByLibrary(db, 1).map((item) => item.key));
+
+    expect(keys.has("DELETED")).toBe(false);
+  });
+
+  it("excludes child item types via itemType.typeName notIn predicate", () => {
+    const keys = new Set(getItemsByLibrary(db, 1).map((item) => item.key));
+
+    expect(keys.has("ATTACH")).toBe(false);
+    expect(keys.has("NOTE")).toBe(false);
+    expect(keys.has("ANNOT")).toBe(false);
+  });
+
   it("returns lean non-deleted regular items for the requested library", () => {
     const result = getItemsByLibrary(db, 1);
 

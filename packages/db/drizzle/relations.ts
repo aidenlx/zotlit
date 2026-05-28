@@ -21,6 +21,7 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.fields.fieldID.through(r.itemTypeFields.fieldID),
       to: r.itemTypes.itemTypeID.through(r.itemTypeFields.itemTypeID),
     }),
+    itemTypeFields: r.many.itemTypeFields(),
     baseFieldMappings_fieldID: r.many.baseFieldMappings({
       alias: "baseFieldMappings_fieldID_fields_fieldID",
     }),
@@ -37,6 +38,59 @@ export const relations = defineRelations(schema, (r) => ({
     fields: r.many.fields(),
     baseFieldMappings: r.many.baseFieldMappings(),
     creatorTypes: r.many.creatorTypes(),
+    itemTypeCreatorTypes: r.many.itemTypeCreatorTypes(),
+    itemTypeFields: r.many.itemTypeFields(),
+    items: r.many.items(),
+  },
+  itemTypeCreatorTypes: {
+    itemType: r.one.itemTypes({
+      from: r.itemTypeCreatorTypes.itemTypeID,
+      to: r.itemTypes.itemTypeID,
+    }),
+    creatorType: r.one.creatorTypes({
+      from: r.itemTypeCreatorTypes.creatorTypeID,
+      to: r.creatorTypes.creatorTypeID,
+    }),
+  },
+  itemTypeFields: {
+    itemType: r.one.itemTypes({
+      from: r.itemTypeFields.itemTypeID,
+      to: r.itemTypes.itemTypeID,
+    }),
+    field: r.one.fields({
+      from: r.itemTypeFields.fieldID,
+      to: r.fields.fieldID,
+    }),
+  },
+  itemTypesCombined: {
+    itemTypeFieldsCombined: r.many.itemTypeFieldsCombined(),
+    baseFieldMappingsCombined: r.many.baseFieldMappingsCombined(),
+  },
+  itemTypeFieldsCombined: {
+    itemType: r.one.itemTypesCombined({
+      from: r.itemTypeFieldsCombined.itemTypeID,
+      to: r.itemTypesCombined.itemTypeID,
+    }),
+    field: r.one.fieldsCombined({
+      from: r.itemTypeFieldsCombined.fieldID,
+      to: r.fieldsCombined.fieldID,
+    }),
+  },
+  baseFieldMappingsCombined: {
+    itemType: r.one.itemTypesCombined({
+      from: r.baseFieldMappingsCombined.itemTypeID,
+      to: r.itemTypesCombined.itemTypeID,
+    }),
+    baseField: r.one.fieldsCombined({
+      from: r.baseFieldMappingsCombined.baseFieldID,
+      to: r.fieldsCombined.fieldID,
+      alias: "baseFieldMappingsCombined_baseFieldID_fieldsCombined_fieldID",
+    }),
+    field: r.one.fieldsCombined({
+      from: r.baseFieldMappingsCombined.fieldID,
+      to: r.fieldsCombined.fieldID,
+      alias: "baseFieldMappingsCombined_fieldID_fieldsCombined_fieldID",
+    }),
   },
   baseFieldMappings: {
     field_fieldID: r.one.fields({
@@ -61,6 +115,7 @@ export const relations = defineRelations(schema, (r) => ({
       ),
       to: r.itemTypes.itemTypeID.through(r.itemTypeCreatorTypes.itemTypeID),
     }),
+    itemTypeCreatorTypes: r.many.itemTypeCreatorTypes(),
     itemCreators: r.many.itemCreators(),
   },
   syncedSettings: {
@@ -73,7 +128,7 @@ export const relations = defineRelations(schema, (r) => ({
     syncedSettings: r.many.syncedSettings(),
     items: r.many.items(),
     collections: r.many.collections(),
-    feeds: r.many.feeds(),
+    feed: r.one.feeds(),
     savedSearches: r.many.savedSearches(),
     groups: r.one.groups(),
     syncObjectTypes_via_syncCache: r.many.syncObjectTypes({
@@ -99,16 +154,31 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.items.libraryID,
       to: r.libraries.libraryID,
     }),
+    itemType: r.one.itemTypes({
+      from: r.items.itemTypeID,
+      to: r.itemTypes.itemTypeID,
+      optional: false,
+    }),
     itemData: r.many.itemData(),
     itemAttachments_parentItemID: r.many.itemAttachments({
       alias: "itemAttachments_parentItemID_items_itemID",
     }),
-    itemAttachments_itemID: r.many.itemAttachments({
+    itemAttachment_itemID: r.one.itemAttachments({
       alias: "itemAttachments_itemID_items_itemID",
     }),
-    itemAttachments_via_itemAnnotations: r.many.itemAttachments({
-      alias: "itemAttachments_itemID_items_itemID_via_itemAnnotations",
+    annotation: r.one.itemAnnotations({
+      from: r.items.itemID,
+      to: r.itemAnnotations.itemID,
     }),
+    note: r.one.itemNotes({
+      alias: "itemNotes_itemID_items_itemID",
+    }),
+    childNotes: r.many.itemNotes({
+      alias: "itemNotes_parentItemID_items_itemID",
+    }),
+    itemTags: r.many.itemTags(),
+    itemRelations: r.many.itemRelations(),
+    collectionItems: r.many.collectionItems(),
     relationPredicates: r.many.relationPredicates(),
     tags: r.many.tags(),
     itemCreators: r.many.itemCreators(),
@@ -116,11 +186,11 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.items.itemID.through(r.collectionItems.itemID),
       to: r.collections.collectionID.through(r.collectionItems.collectionID),
     }),
-    feedItems: r.many.feedItems(),
-    deletedItems: r.many.deletedItems(),
-    groupItems: r.many.groupItems(),
-    retractedItems: r.many.retractedItems(),
-    fulltextItems: r.many.fulltextItems(),
+    feedItem: r.one.feedItems(),
+    deletedItem: r.one.deletedItems(),
+    groupItem: r.one.groupItems(),
+    retractedItem: r.one.retractedItems(),
+    fulltextItem: r.one.fulltextItems(),
     fulltextWords: r.many.fulltextWords({
       from: r.items.itemID.through(r.fulltextItemWords.itemID),
       to: r.fulltextWords.wordID.through(r.fulltextItemWords.wordID),
@@ -145,6 +215,13 @@ export const relations = defineRelations(schema, (r) => ({
   },
   fieldsCombined: {
     itemData: r.many.itemData(),
+    itemTypeFieldsCombined: r.many.itemTypeFieldsCombined(),
+    baseFieldMappingsCombined_baseFieldID: r.many.baseFieldMappingsCombined({
+      alias: "baseFieldMappingsCombined_baseFieldID_fieldsCombined_fieldID",
+    }),
+    baseFieldMappingsCombined_fieldID: r.many.baseFieldMappingsCombined({
+      alias: "baseFieldMappingsCombined_fieldID_fieldsCombined_fieldID",
+    }),
   },
   itemAttachments: {
     charset: r.one.charsets({
@@ -160,11 +237,35 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.itemAttachments.itemID,
       to: r.items.itemID,
       alias: "itemAttachments_itemID_items_itemID",
+      optional: false,
     }),
-    items: r.many.items({
-      from: r.itemAttachments.itemID.through(r.itemAnnotations.parentItemID),
-      to: r.items.itemID.through(r.itemAnnotations.itemID),
-      alias: "itemAttachments_itemID_items_itemID_via_itemAnnotations",
+    annotations: r.many.itemAnnotations({
+      from: r.itemAttachments.itemID,
+      to: r.itemAnnotations.parentItemID,
+    }),
+  },
+  itemAnnotations: {
+    item: r.one.items({
+      from: r.itemAnnotations.itemID,
+      to: r.items.itemID,
+      optional: false,
+    }),
+    parentAttachment: r.one.itemAttachments({
+      from: r.itemAnnotations.parentItemID,
+      to: r.itemAttachments.itemID,
+      optional: false,
+    }),
+  },
+  itemNotes: {
+    item: r.one.items({
+      from: r.itemNotes.itemID,
+      to: r.items.itemID,
+      alias: "itemNotes_itemID_items_itemID",
+    }),
+    parentItem: r.one.items({
+      from: r.itemNotes.parentItemID,
+      to: r.items.itemID,
+      alias: "itemNotes_parentItemID_items_itemID",
     }),
   },
   charsets: {
@@ -185,11 +286,44 @@ export const relations = defineRelations(schema, (r) => ({
         r.collectionRelations.collectionID,
       ),
     }),
+    itemRelations: r.many.itemRelations(),
+    collectionRelations: r.many.collectionRelations(),
+  },
+  itemRelations: {
+    item: r.one.items({
+      from: r.itemRelations.itemID,
+      to: r.items.itemID,
+    }),
+    predicate: r.one.relationPredicates({
+      from: r.itemRelations.predicateID,
+      to: r.relationPredicates.predicateID,
+    }),
+  },
+  collectionRelations: {
+    collection: r.one.collections({
+      from: r.collectionRelations.collectionID,
+      to: r.collections.collectionID,
+    }),
+    predicate: r.one.relationPredicates({
+      from: r.collectionRelations.predicateID,
+      to: r.relationPredicates.predicateID,
+    }),
   },
   tags: {
     items: r.many.items({
       from: r.tags.tagID.through(r.itemTags.tagID),
       to: r.items.itemID.through(r.itemTags.itemID),
+    }),
+    itemTags: r.many.itemTags(),
+  },
+  itemTags: {
+    item: r.one.items({
+      from: r.itemTags.itemID,
+      to: r.items.itemID,
+    }),
+    tag: r.one.tags({
+      from: r.itemTags.tagID,
+      to: r.tags.tagID,
     }),
   },
   itemCreators: {
@@ -218,7 +352,19 @@ export const relations = defineRelations(schema, (r) => ({
     }),
     items: r.many.items(),
     relationPredicates: r.many.relationPredicates(),
-    deletedCollections: r.many.deletedCollections(),
+    collectionItems: r.many.collectionItems(),
+    collectionRelations: r.many.collectionRelations(),
+    deletedCollection: r.one.deletedCollections(),
+  },
+  collectionItems: {
+    collection: r.one.collections({
+      from: r.collectionItems.collectionID,
+      to: r.collections.collectionID,
+    }),
+    item: r.one.items({
+      from: r.collectionItems.itemID,
+      to: r.items.itemID,
+    }),
   },
   feeds: {
     library: r.one.libraries({
@@ -238,7 +384,7 @@ export const relations = defineRelations(schema, (r) => ({
       to: r.libraries.libraryID,
     }),
     savedSearchConditions: r.many.savedSearchConditions(),
-    deletedSearches: r.many.deletedSearches(),
+    deletedSearch: r.one.deletedSearches(),
   },
   savedSearchConditions: {
     savedSearch: r.one.savedSearches({

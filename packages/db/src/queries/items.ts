@@ -1,11 +1,3 @@
-import {
-  creatorTypes,
-  deletedItems,
-  itemTypeCreatorTypes,
-  itemTypes,
-} from "@drizzle/schema";
-import { sql } from "drizzle-orm";
-
 import { type Temporal } from "@zotlit/shared/temporal";
 import { type ItemFields } from "@zotlit/zotero-types";
 
@@ -69,53 +61,31 @@ const itemsQuery = defineQuery<{ libraryID: number }>()(
   (db, { placeholder }, args: ItemFilter) =>
     db.query.items.findMany({
       where: {
-        AND: [
-          { libraryID: placeholder("libraryID") },
-          {
-            RAW: (t, { notInArray, inArray }) =>
-              notInArray(
-                t.itemTypeID,
-                db
-                  .select({ itemTypeID: itemTypes.itemTypeID })
-                  .from(itemTypes)
-                  .where(inArray(itemTypes.typeName, [...CHILD_ITEM_TYPES])),
-              ),
-          },
-          {
-            RAW: (t, { notExists, eq }) =>
-              notExists(
-                db
-                  .select()
-                  .from(deletedItems)
-                  .where(eq(deletedItems.itemID, t.itemID)),
-              ),
-          },
-          ...(args.itemIDs ? [{ itemID: { in: [...args.itemIDs] } }] : []),
-        ],
+        libraryID: placeholder("libraryID"),
+        itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+        deletedItem: false,
+        ...(args.itemIDs ? { itemID: { in: [...args.itemIDs] } } : {}),
       },
       columns: {
         itemID: true,
         libraryID: true,
         key: true,
         dateModified: true,
-        itemTypeID: true,
-      },
-      extras: {
-        itemType: (t) => sql<string>`
-SELECT ${itemTypes.typeName}
-FROM ${itemTypes}
-WHERE ${itemTypes.itemTypeID} = ${t.itemTypeID}
-LIMIT 1`,
-        primaryCreatorType: (t) => sql<string | null>`
-SELECT ${creatorTypes.creatorType}
-FROM ${itemTypeCreatorTypes}
-INNER JOIN ${creatorTypes}
-  ON ${creatorTypes.creatorTypeID} = ${itemTypeCreatorTypes.creatorTypeID}
-WHERE ${itemTypeCreatorTypes.itemTypeID} = ${t.itemTypeID}
-  AND ${itemTypeCreatorTypes.primaryField} = 1
-LIMIT 1`,
       },
       with: {
+        itemType: {
+          columns: { typeName: true },
+          with: {
+            itemTypeCreatorTypes: {
+              columns: {},
+              where: { primaryField: { eq: 1 } },
+              limit: 1,
+              with: {
+                creatorType: { columns: { creatorType: true } },
+              },
+            },
+          },
+        },
         itemData: {
           columns: {},
           with: {
@@ -163,6 +133,8 @@ function toItem(row: ItemRow, groupID: number | null): Item {
     creatorType: ic.creatorType?.creatorType ?? "",
     fieldMode: ic.creator?.fieldMode ?? 0,
   }));
+  const primaryCreatorType =
+    row.itemType.itemTypeCreatorTypes[0]?.creatorType?.creatorType ?? null;
   return {
     itemID: row.itemID,
     libraryID: row.libraryID,
@@ -170,9 +142,9 @@ function toItem(row: ItemRow, groupID: number | null): Item {
     indexedKey: formatIndexedKey(row.key, groupID),
     dateModified: row.dateModified,
     creators,
-    primaryCreatorType: row.primaryCreatorType,
+    primaryCreatorType,
     fields: customFields,
-    itemType: row.itemType,
+    itemType: row.itemType.typeName,
     ...namedProps,
   } as Item;
 }
