@@ -44,7 +44,7 @@ export interface ItemLookupDeps {
     db: NodeDatabaseClient,
     libraryID: number,
     itemIDs: readonly number[],
-  ) => Map<number, Item> | Promise<Map<number, Item>>;
+  ) => Item[] | Promise<Item[]>;
 }
 
 interface ItemCache {
@@ -252,11 +252,12 @@ export class ItemLookup extends Service<void> {
 
     let hydrated: Map<number, Item>;
     try {
-      hydrated = await this.#hydrateItems(
+      const items = await this.#hydrateItems(
         this.#db.client,
         libraryID,
         leanHits.map((hit) => hit.item.itemID),
       );
+      hydrated = new Map(items.map((item) => [item.itemID, item]));
     } catch (error) {
       if (error instanceof DatabaseError) {
         logger.debug(

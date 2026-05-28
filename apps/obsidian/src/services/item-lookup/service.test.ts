@@ -104,8 +104,7 @@ describe("ItemLookup", () => {
       hydrateItems: vi.fn((_client, _libraryID, itemIDs) => {
         const id = itemIDs[0]!;
         const libraryID = id === "B".charCodeAt(0) ? 2 : 1;
-        const full = item({ key: libraryID === 1 ? "A" : "B", libraryID });
-        return new Map([[full.itemID, full]]);
+        return [item({ key: libraryID === 1 ? "A" : "B", libraryID })];
       }),
     });
     const lookup = new ItemLookup(deps);
@@ -217,14 +216,14 @@ describe("ItemLookup", () => {
   it("drops search results when hydration races with invalidation", async () => {
     const db = new FakeDb();
     const alpha = itemPair({ key: "A", title: "Alpha" });
-    let resolveHydration: (items: Map<number, Item>) => void = () => undefined;
+    let resolveHydration: (items: Item[]) => void = () => undefined;
     const deps = createDeps({
       db,
       indexItems: [alpha.indexed],
       hydratedItems: [alpha.full],
       hydrateItems: vi.fn(
         () =>
-          new Promise<Map<number, Item>>((resolve) => {
+          new Promise<Item[]>((resolve) => {
             resolveHydration = resolve;
           }),
       ),
@@ -236,7 +235,7 @@ describe("ItemLookup", () => {
     const search = lookup.search("Alpha");
     await waitForCallCount(deps.hydrateItems, 1);
     db.emitChanged();
-    resolveHydration(new Map([[alpha.full.itemID, alpha.full]]));
+    resolveHydration([alpha.full]);
 
     await expect(search).resolves.toEqual([]);
   });
@@ -246,7 +245,7 @@ describe("ItemLookup", () => {
     const lookup = new ItemLookup(
       createDeps({
         indexItems: [alpha.indexed],
-        hydrateItems: vi.fn(() => new Map()),
+        hydrateItems: vi.fn(() => []),
       }),
     );
 
@@ -278,7 +277,7 @@ function createDeps(
       db: NodeDatabaseClient,
       libraryID: number,
       itemIDs: readonly number[],
-    ) => Map<number, Item> | Promise<Map<number, Item>>;
+    ) => Item[] | Promise<Item[]>;
   } = {},
 ) {
   const hydratedItems = options.hydratedItems ?? [];
@@ -290,10 +289,8 @@ function createDeps(
     hydrateItems: vi.fn(
       options.hydrateItems ??
         ((_db, _libraryID, itemIDs) =>
-          new Map(
-            hydratedItems
-              .filter((candidate) => itemIDs.includes(candidate.itemID))
-              .map((candidate) => [candidate.itemID, candidate]),
+          hydratedItems.filter((candidate) =>
+            itemIDs.includes(candidate.itemID),
           )),
     ),
   };
