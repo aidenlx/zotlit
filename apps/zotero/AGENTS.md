@@ -25,11 +25,11 @@ Hand-prefix every Zotero pref key with `extensions.zotlit.` in `addon/prefs.js`,
 - Author messages in `locale/{locale}.ftl` (flat, primary `en-US`).
 - Reference XUL strings via `data-l10n-id="…"` in `addon/**/*.xhtml`.
 - In TS, format via `formatValue(id, args)`; register menus via `registerMenu(...)`. utils in src/lib/l10n.ts.
-- `src/types/fluent.d.ts` (`FluentMessageId`) is codegen — commit it, don't edit it.
+- `src/types/fluent.ts` (`FluentMessageId`) is codegen — commit it, don't edit it.
 
 ## Preferences
 
 - Declare defaults in `addon/prefs.js` as `pref("extensions.zotlit.<key>", literal)` (`boolean | number | string` only).
 - Bind XUL controls via `preference="…"` in `addon/prefs.xhtml`.
 - In TS, use the `prefs` wrapper (`get` / `set` / `onChange` — returns teardown); register the pane via `registerPrefPane(pluginID)`. utils in src/prefs/index.ts
-- `src/types/prefs.d.ts` (`PluginPrefKey`) is codegen — commit it, don't edit it.
+- `src/types/prefs.ts` (`PluginPrefKey`) is codegen — commit it, don't edit it.

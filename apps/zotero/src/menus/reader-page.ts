@@ -1,5 +1,5 @@
-import { formatValue } from "@/lib/l10n.js";
-import { logger as appLogger } from "@/lib/logger.js";
+import { formatValue } from "@/lib/l10n";
+import { logger as appLogger } from "@/lib/logger";
 
 const logger = appLogger.getChild(["menus", "reader-page"]);
 
