@@ -176,32 +176,27 @@ export function getItemsByID(
   db: NodeDatabaseClient,
   libraryID: number,
   itemIDs: readonly number[],
-): Map<number, Item> {
-  if (itemIDs.length === 0) return new Map();
+): Item[] {
+  if (itemIDs.length === 0) return [];
 
   const groupId = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
   // IDs inline into SQL, so use .prepare (uncached) instead of .prepared.
-  const rows = itemsQuery.prepare(db, { itemIDs }).all({ libraryID });
-  return toItemMap(rows, groupId);
+  return itemsQuery
+    .prepare(db, { itemIDs })
+    .all({ libraryID })
+    .map((r) => toItem(r, groupId));
 }
 
 export async function getItemsByIDAsync(
   db: SQLocalDatabaseClient,
   libraryID: number,
   itemIDs: readonly number[],
-): Promise<Map<number, Item>> {
-  if (itemIDs.length === 0) return new Map();
+): Promise<Item[]> {
+  if (itemIDs.length === 0) return [];
 
   const [rows, [group]] = await Promise.all([
     itemsQuery.prepare(db, { itemIDs }).all({ libraryID }),
     groupsQuery.prepared(db).all({ libraryID }),
   ]);
-  return toItemMap(rows, group?.groupID ?? null);
-}
-
-function toItemMap(
-  rows: readonly ItemRow[],
-  groupID: number | null,
-): Map<number, Item> {
-  return new Map(rows.map((row) => [row.itemID, toItem(row, groupID)]));
+  return rows.map((r) => toItem(r, group?.groupID ?? null));
 }

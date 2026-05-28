@@ -230,26 +230,27 @@ describe("getItemsByLibrary", () => {
 describe("getItemsByID", () => {
   it("hydrates only requested regular items from the requested library", () => {
     const result = getItemsByID(db, 1, [1, 6, 2, 3, 7]);
+    const byID = new Map(result.map((item) => [item.itemID, item]));
 
-    expect([...result.keys()].sort((a, b) => a - b)).toEqual([1, 6]);
-    expect(result.get(1)).toMatchObject({
+    expect([...byID.keys()].sort((a, b) => a - b)).toEqual([1, 6]);
+    expect(byID.get(1)).toMatchObject({
       key: "USER1",
       libraryID: 1,
       title: "Alpha kernels",
       citationKey: "doe2024alpha",
     });
-    expect(result.get(6)).toMatchObject({
+    expect(byID.get(6)).toMatchObject({
       key: "USER2",
       libraryID: 1,
       itemType: "book",
     });
-    expect(result.has(2)).toBe(false);
-    expect(result.has(3)).toBe(false);
-    expect(result.has(7)).toBe(false);
+    expect(byID.has(2)).toBe(false);
+    expect(byID.has(3)).toBe(false);
+    expect(byID.has(7)).toBe(false);
   });
 
-  it("returns an empty map for empty input", () => {
-    expect(getItemsByID(db, 1, [])).toEqual(new Map());
+  it("returns an empty array for empty input", () => {
+    expect(getItemsByID(db, 1, [])).toEqual([]);
   });
 });
 
