@@ -71,7 +71,7 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
         localeDir: "locale",
         ftlFileName: FLUENT_FILE_NAME,
         addonDir: "addon",
-        typesOutput: "src/types/fluent.d.ts",
+        typesOutput: "src/types/fluent.ts",
         primaryLocale: "en-US",
       }),
       prefsPlugin({
@@ -79,7 +79,7 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
         prefix: PREF_PREFIX,
         prefsFile: "addon/prefs.js",
         addonDir: "addon",
-        typesOutput: "src/types/prefs.d.ts",
+        typesOutput: "src/types/prefs.ts",
       }),
       zoteroBuildPlugin({
         root: here,

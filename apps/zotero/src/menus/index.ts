@@ -1,4 +1,4 @@
-import { logger as appLogger } from "@/lib/logger.js";
+import { logger as appLogger } from "@/lib/logger";
 
 import { registerItemMenu } from "./item.js";
 import { registerReaderAnnotationMenu } from "./reader-annotation.js";
