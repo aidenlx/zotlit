@@ -78,30 +78,23 @@ There is no down migration. Zotero is upgrade-only.
 
 Snapshot directories are named `<timestamp>_userdata_<N>/` (e.g. `20260509071212_userdata_125`). `userdata` is the only counter that reliably reflects DDL changes — Zotero release versions don't, since patch releases often ship with no schema bump.
 
-### Re-introspect when…
+### Do not re-run `drizzle-kit pull` / `introspect`
 
-- `userdata` advanced — guaranteed table/column change. Re-run `drizzle-kit introspect` and review the diff against the previous snapshot's `migration.sql`.
-- `compatibility` advanced — read the corresponding `_updateCompatibility(N)` block in `_migrateUserDataSchema` to understand the breaking change.
-- `system` advanced — usually only reseeded data, but skim `system.sql`'s git diff for new columns.
+Both `schema.ts` and `relations.ts` are hand-curated and intentionally diverge from what `drizzle-kit pull` would emit. **Re-running pull would overwrite the corrections.** Specifically:
 
-### Diffing upstream
+- **`schema.ts`** carries column-type overrides the kit cannot infer from SQLite type affinity alone
+- **`relations.ts`** is materially incorrect when emitted by `drizzle-kit pull`. The kit (1) treats every two-FK table as a pure many-many junction and drops its entity-level traversal; (2) defaults every back-ref to `r.many` even when the child column is a PK (true 1-to-zero-or-one); (3) cannot see "implicit" FKs that Zotero's DDL omits (e.g. `items.itemTypeID → itemTypes.itemTypeID`). The hand-curated file fixes all three classes. Overwriting it breaks the relations API surface immediately.
 
-To list what changed between two userdata versions, scan the case bodies in `_migrateUserDataSchema`:
+### When `userdata` advances — manual update procedure
 
-```bash
-# In the zotero submodule:
-git log --oneline -- chrome/content/zotero/xpcom/schema.js \
-  | grep -i "userdata\|migration"
-```
+1. **Read the diff in upstream `_migrateUserDataSchema`.** Open `chrome/content/zotero/xpcom/schema.js:2739` and scan the `if (i == N)` blocks between the previous and new `userdata` version. Each block is a textual DDL diff (`ALTER TABLE`, `CREATE TABLE`, etc.).
+2. **Hand-patch `schema.ts`** with the same DDL changes — add/rename columns, add/remove tables, adjust nullability and defaults. Match the existing per-table style. Keep the manual column-type overrides listed above intact.
+3. **Hand-patch `relations.ts`** if the migration adds or removes FKs:
+   - New entity table → add a top-level entry (e.g. `newTable: { parent: r.one.parents({ from, to }), … }`) plus the back-ref on each parent.
+   - New FK on an existing table → add the corresponding `r.one` / `r.many` pair.
+   - For PK-FK columns (child's FK column is also its PK), the parent-side back-ref is `r.one`, not `r.many`. Required FKs use `optional: false`.
+   - For "implicit" FKs (no SQL FK clause, but the runtime invariant holds) — declare the relation anyway; `defineRelations()` does not require a SQL FK to exist.
+4. **Update `relations.test.ts`** to cover any new entity or filter predicate touching the change.
+5. **Bump the snapshot marker** — record the new `userdata` value in a comment at the top of `schema.ts` so the next maintainer sees what version the file matches.
 
-Or just read `chrome/content/zotero/xpcom/schema.js:2739` and look at the `if (i == N)` blocks between your previous and current `userdata` value.
-
-### Pre-introspect check
-
-Before `drizzle-kit introspect`, query the source DB and compare against the last snapshot's recorded value. Skip the introspect if unchanged.
-
-```ts
-const row = client.get<{ version: number }>(
-  "SELECT version FROM version WHERE schema = 'userdata'",
-);
-```
+`compatibility` and `system` bumps follow the same procedure scoped to their respective files; usually they're no-ops for our snapshot (`system.sql` reseeds rows; `triggers.sql` isn't introspected).
