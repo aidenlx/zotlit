@@ -1,11 +1,11 @@
 import { type AnnotationPositionRaw } from "@drizzle/schema";
 import { describe, expect, it } from "vitest";
 
+import { annotationTypeFromID } from "./zt-annot";
 import {
-  annotationTypeFromID,
   parseAnnotationPosition,
   type AnnotationPosition,
-} from "./zt-annot";
+} from "./zt-annot-pos";
 
 describe("parseAnnotationPosition", () => {
   it("parses PDF rect positions", () => {

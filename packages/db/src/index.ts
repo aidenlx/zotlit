@@ -32,11 +32,11 @@ export {
   parseItemDate,
   type ItemDate,
 } from "./lib/zt-date";
+export { type Annotation } from "./lib/zt-annot";
 export {
   parseAnnotationPosition,
-  type Annotation,
   type AnnotationPosition,
-} from "./lib/zt-annot";
+} from "./lib/zt-annot-pos";
 export {
   createLanguageLookup,
   formatItemLanguage,
