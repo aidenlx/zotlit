@@ -7,6 +7,8 @@ export {
   formatIndexedKey,
   getItemsByID,
   getItemsByIDAsync,
+  getItemsByKey,
+  getItemsByKeyAsync,
   getItemsByLibrary,
   getItemsByLibraryAsync,
   type BaseItem,
@@ -20,6 +22,27 @@ export {
   getAnnotationsByParent,
   getAnnotationsByParentAsync,
 } from "./queries/annotations";
+export {
+  getAttachmentsByParents,
+  getAttachmentsByParentsAsync,
+} from "./queries/attachments";
+export {
+  getTagsByItemIDs,
+  getTagsByItemIDsAsync,
+  type Tag,
+} from "./queries/tags";
+export {
+  LINK_MODE,
+  parseAttachmentPath,
+  type Attachment,
+  type AttachmentPath,
+  type LinkedAbsolutePath,
+  type LinkedBasePath,
+  type LinkedUrlPath,
+  type LinkMode,
+  type StoragePath,
+  type UnknownPath,
+} from "./lib/zt-attach";
 export {
   getIndexedItemsByLibrary,
   getIndexedItemsByLibraryAsync,

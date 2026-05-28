@@ -8,7 +8,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createClient, type NodeDatabaseClient } from "@/client/node";
 import { parseItemLanguage } from "@/lib/zt-lang";
 
-import { formatIndexedKey, getItemsByID, getItemsByLibrary } from "./items";
+import {
+  formatIndexedKey,
+  getItemsByID,
+  getItemsByKey,
+  getItemsByLibrary,
+} from "./items";
 
 let tempDir: string;
 let dbPath: string;
@@ -251,6 +256,43 @@ describe("getItemsByID", () => {
 
   it("returns an empty array for empty input", () => {
     expect(getItemsByID(db, 1, [])).toEqual([]);
+  });
+});
+
+describe("getItemsByKey", () => {
+  it("hydrates only requested regular items from the requested library", () => {
+    const result = getItemsByKey(db, 1, [
+      "USER1",
+      "USER2",
+      "DELETED",
+      "ATTACH",
+      "GRP1",
+    ]);
+    const byKey = new Map(result.map((item) => [item.key, item]));
+
+    expect([...byKey.keys()].sort()).toEqual(["USER1", "USER2"]);
+    expect(byKey.get("USER1")).toMatchObject({
+      itemID: 1,
+      libraryID: 1,
+      title: "Alpha kernels",
+      citationKey: "doe2024alpha",
+    });
+    expect(byKey.get("USER2")).toMatchObject({
+      itemID: 6,
+      libraryID: 1,
+      itemType: "book",
+    });
+    expect(byKey.has("DELETED")).toBe(false);
+    expect(byKey.has("ATTACH")).toBe(false);
+    expect(byKey.has("GRP1")).toBe(false);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(getItemsByKey(db, 1, [])).toEqual([]);
+  });
+
+  it("returns an empty array when no key matches", () => {
+    expect(getItemsByKey(db, 1, ["NOPE"])).toEqual([]);
   });
 });
 
