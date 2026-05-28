@@ -48,10 +48,30 @@ Per-package tasks: use pnpm filters, e.g.:
 
 ### Simplicity
 
+Minimum code that solves the problem. Nothing speculative.
+
 - Prefer KISS implementations: keep code local and direct unless abstraction has a concrete payoff.
+- No features beyond what was asked. No abstractions for single-use code. No "flexibility" or "configurability" that wasn't requested.
 - Bias against over-engineering: avoid speculative layers, one-caller helper files, generic plumbing, and exported DTOs/types that do not clarify a real boundary.
 - Avoid defensive fallback code for APIs or invariants we intentionally depend on. Type or validate the expected boundary once, then use it directly; don't add speculative probes, alternate readiness heuristics, broad structural casts, or "just in case" branches unless there is a known runtime compatibility case to support.
-- When reviewing designs or code, call out unnecessary abstraction and suggest the smallest maintainable alternative.
+- If you write 200 lines and it could be 50, rewrite it.
+- When reviewing designs or code, call out unnecessary abstraction and suggest the smallest maintainable alternative. Ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### Surgical Changes
+
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: every changed line should trace directly to the user's request.
 
 ### Comments
 
