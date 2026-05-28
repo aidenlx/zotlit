@@ -282,8 +282,11 @@ export function defineQuery<TParams = Record<string, unknown>>(): <
   ): DefinedQuery<TParams, TBuildArgs, TSyncResult> => {
     const cache = new WeakMap<AnyClient, Map<string, unknown>>();
 
+    const normalizeArgs = (args: TBuildArgs | undefined): TBuildArgs =>
+      (args ?? {}) as TBuildArgs;
+
     const build = (db: AnyClient, args: TBuildArgs | undefined): TSyncResult =>
-      refImpl(db as NodeDatabaseClient, operators, args as TBuildArgs);
+      refImpl(db as NodeDatabaseClient, operators, normalizeArgs(args));
 
     const call = (db: AnyClient, args?: TBuildArgs) => build(db, args);
 
