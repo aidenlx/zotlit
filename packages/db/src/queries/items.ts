@@ -66,7 +66,7 @@ type ItemFilter = {
 };
 
 const itemsQuery = defineQuery<{ libraryID: number }>()(
-  (db, { placeholder }, args: ItemFilter = {}) =>
+  (db, { placeholder }, args: ItemFilter) =>
     db.query.items.findMany({
       where: {
         AND: [
