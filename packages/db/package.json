@@ -24,10 +24,12 @@
     "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
   },
   "dependencies": {
+    "@logtape/logtape": "catalog:",
     "@zotlit/shared": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
-    "drizzle-orm": "catalog:"
+    "drizzle-orm": "catalog:",
+    "valibot": "^1.0.0"
   },
   "devDependencies": {
     "@types/node-22": "npm:@types/node@^22.9.0",

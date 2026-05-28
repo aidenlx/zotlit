@@ -10,6 +10,34 @@ Prefer, in order:
 
 Wrap queries with `defineQuery(...)` from `src/queries/_shared.ts` and prefer prepared statements with placeholders (`sql.placeholder("name")`). See the `defineQuery` / `DefinedQuery` JSDoc for cached (`.prepared`) vs one-shot (`.prepare`) variants and when to fall back to the bare call.
 
+### Many-row lookups
+
+Default to a single-row `col = placeholder("col")` query and loop in the consumer (`.prepared`, cached). Use dynamic `col IN (...)` via `.prepare` (uncached) only when the per-row query is heavy enough that N round trips dominate.
+
+```ts
+// Do — prepared once, reused per key
+const q = defineQuery<{ libraryID: number; key: string }>()(
+  (db, { placeholder }) =>
+    db.query.items.findMany({
+      where: { libraryID: placeholder("libraryID"), key: placeholder("key") },
+    }),
+);
+const stmt = q.prepared(db);
+return keys.flatMap((key) => stmt.all({ libraryID, key }));
+
+// Don't — fresh statement per distinct key set
+const q = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }, args: { keys: readonly string[] }) =>
+    db.query.items.findMany({
+      where: {
+        libraryID: placeholder("libraryID"),
+        key: { in: [...args.keys] },
+      },
+    }),
+);
+return q.prepare(db, { keys }).all({ libraryID });
+```
+
 ## Item fields
 
 `Item = BaseItem & ItemFields` — see `src/queries/items.ts` for the type and `toItem` construction; `ItemFields` is the generated discriminated union from `@zotlit/zotero-types` (`packages/zotero-types/src/generated.ts`).

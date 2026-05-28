@@ -339,6 +339,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@logtape/logtape':
+        specifier: 'catalog:'
+        version: 2.1.0
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../shared
@@ -354,6 +357,9 @@ importers:
       sqlocal:
         specifier: ^0.18.0
         version: 0.18.0(drizzle-orm@1.0.0-rc.3(valibot@1.4.0)(zod@3.25.76))(kysely@0.28.17)(react@19.2.6)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
+      valibot:
+        specifier: ^1.0.0
+        version: 1.4.0
     devDependencies:
       '@types/node-22':
         specifier: npm:@types/node@^22.9.0
