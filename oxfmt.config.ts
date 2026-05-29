@@ -1,3 +1,5 @@
+// Root config — governs everything not covered by a closer oxfmt.config.ts.
+// App-level configs (apps/*, packages/*) shadow this file for their subtrees.
 import { defineConfig } from "oxfmt";
 
 import baseConfig from "@zotlit/config/oxfmt";
@@ -5,20 +7,10 @@ import baseConfig from "@zotlit/config/oxfmt";
 export default defineConfig({
   ...baseConfig,
   ignorePatterns: [
-    "**/dist/**",
-    "**/build/**",
-    "**/.turbo/**",
-    "**/.next/**",
-    "**/node_modules/**",
-    "**/coverage/**",
-    "**/*.min.js",
-    "pnpm-lock.yaml",
-    ".agents/**",
-    ".claude/**",
+    ...baseConfig.ignorePatterns,
     "tests/zt-vault/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
     "packages/zotero-types/zotero-schema/**",
-    "**/*.md",
   ],
 });

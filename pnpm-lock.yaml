@@ -160,6 +160,9 @@ importers:
       '@types/react-dom':
         specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.14)
+      '@types/turndown':
+        specifier: ^5.0.6
+        version: 5.0.6
       '@typescript/native-preview':
         specifier: 'catalog:'
         version: 7.0.0-dev.20260421.2
@@ -169,6 +172,9 @@ importers:
       electron:
         specifier: ^39.8.10
         version: 39.8.10
+      happy-dom:
+        specifier: ^20.9.0
+        version: 20.9.0
       obsidian:
         specifier: workspace:*
         version: link:../../packages/obsidian-api
@@ -178,6 +184,9 @@ importers:
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.0
+      turndown:
+        specifier: 7.2.0
+        version: 7.2.0
       valibot:
         specifier: ^1.0.0
         version: 1.4.0
@@ -189,7 +198,7 @@ importers:
         version: 1.3.8
       vitest:
         specifier: 'catalog:'
-        version: 4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
+        version: 4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
 
   apps/website:
     dependencies:
@@ -323,7 +332,7 @@ importers:
         version: 8.0.13(@types/node@25.8.0)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
+        version: 4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
       zotero-types:
         specifier: 4.1.2
         version: 4.1.2
@@ -384,7 +393,7 @@ importers:
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
+        version: 4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
 
   packages/item-lookup:
     dependencies:
@@ -421,7 +430,7 @@ importers:
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
+        version: 4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
 
   packages/obsidian-api:
     dependencies:
@@ -459,7 +468,7 @@ importers:
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
+        version: 4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
 
   packages/scripts:
     devDependencies:
@@ -888,6 +897,9 @@ packages:
 
   '@marijn/find-cluster-break@1.0.2':
     resolution: {integrity: sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g==}
+
+  '@mixmark-io/domino@2.2.0':
+    resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
 
   '@napi-rs/wasm-runtime@1.1.4':
     resolution: {integrity: sha512-3NQNNgA1YSlJb/kMH1ildASP9HW7/7kYnRI2szWJaofaS1hWmbGI4H+d3+22aGzXXN9IJ+n+GiFVcGipJP18ow==}
@@ -1991,6 +2003,15 @@ packages:
   '@types/tern@0.23.9':
     resolution: {integrity: sha512-ypzHFE/wBzh+BlH6rrBgS5I/Z7RD21pGhZ2rltb/+ZrVM1awdZwjx7hE5XfuYgHWk9uvV5HLZN3SloevCAp3Bw==}
 
+  '@types/turndown@5.0.6':
+    resolution: {integrity: sha512-ru00MoyeeouE5BX4gRL+6m/BsDfbRayOskWqUvh7CLGW+UXxHQItqALa38kKnOiZPqJrtzJUgAC2+F0rL1S4Pg==}
+
+  '@types/whatwg-mimetype@3.0.2':
+    resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@types/yauzl@2.10.3':
     resolution: {integrity: sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q==}
 
@@ -2687,6 +2708,10 @@ packages:
     peerDependenciesMeta:
       crossws:
         optional: true
+
+  happy-dom@20.9.0:
+    resolution: {integrity: sha512-GZZ9mKe8r646NUAf/zemnGbjYh4Bt8/MqASJY+pSm5ZDtc3YQox+4gsLI7yi1hba6o+eCsGxpHn5+iEVn31/FQ==}
+    engines: {node: '>=20.0.0'}
 
   has-property-descriptors@1.0.2:
     resolution: {integrity: sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg==}
@@ -3417,6 +3442,9 @@ packages:
     resolution: {integrity: sha512-BQqXRr4UoWI3UPFrtznCLykYHxwxWh53iCB57x092jPMjIlW1wnm3N895g5irpiXmnxUhREBB0n6+y8BHhs4nw==}
     hasBin: true
 
+  turndown@7.2.0:
+    resolution: {integrity: sha512-eCZGBN4nNNqM9Owkv9HAtWRYfLA4h909E/WGAWWBpmB275ehNhZyk87/Tpvjbp0jjNl9XwCsbe6bm6CqFsgD+A==}
+
   type-fest@0.13.1:
     resolution: {integrity: sha512-34R7HTnG0XIJcBSn5XhDd7nNFPRcXYRZrBB2O2jdKqYODldSzBAqzsWoZYYvduky73toYS/ESqxPvkDf/F0XMg==}
     engines: {node: '>=10'}
@@ -3691,6 +3719,10 @@ packages:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
     engines: {node: '>=18'}
     deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   whatwg-mimetype@4.0.0:
     resolution: {integrity: sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg==}
@@ -4094,6 +4126,8 @@ snapshots:
   '@logtape/logtape@2.1.0': {}
 
   '@marijn/find-cluster-break@1.0.2': {}
+
+  '@mixmark-io/domino@2.2.0': {}
 
   '@napi-rs/wasm-runtime@1.1.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
@@ -4940,6 +4974,14 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
 
+  '@types/turndown@5.0.6': {}
+
+  '@types/whatwg-mimetype@3.0.2': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 25.8.0
+
   '@types/yauzl@2.10.3':
     dependencies:
       '@types/node': 25.8.0
@@ -5529,6 +5571,18 @@ snapshots:
       srvx: 0.11.15
     optionalDependencies:
       crossws: 0.4.5(srvx@0.11.15)
+
+  happy-dom@20.9.0:
+    dependencies:
+      '@types/node': 25.8.0
+      '@types/whatwg-mimetype': 3.0.2
+      '@types/ws': 8.18.1
+      entities: 7.0.1
+      whatwg-mimetype: 3.0.0
+      ws: 8.20.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   has-property-descriptors@1.0.2:
     dependencies:
@@ -6242,6 +6296,10 @@ snapshots:
       '@turbo/windows-64': 2.9.14
       '@turbo/windows-arm64': 2.9.14
 
+  turndown@7.2.0:
+    dependencies:
+      '@mixmark-io/domino': 2.2.0
+
   type-fest@0.13.1:
     optional: true
 
@@ -6339,7 +6397,7 @@ snapshots:
     optionalDependencies:
       vite: 8.0.13(@types/node@25.8.0)(jiti@2.7.0)
 
-  vitest@4.1.6(@types/node@25.8.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0)):
+  vitest@4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0)):
     dependencies:
       '@vitest/expect': 4.1.6
       '@vitest/mocker': 4.1.6(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
@@ -6363,6 +6421,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 25.8.0
+      happy-dom: 20.9.0
     transitivePeerDependencies:
       - msw
 
@@ -6373,6 +6432,8 @@ snapshots:
   whatwg-encoding@3.1.1:
     dependencies:
       iconv-lite: 0.6.3
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-mimetype@4.0.0: {}
 

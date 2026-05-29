@@ -1,3 +1,6 @@
+// oxfmt picks the *nearest* config per subtree — no merge with parent configs.
+// Nested configs that declare their own ignorePatterns MUST spread this list
+// first; omitting the spread silently drops all entries defined here.
 import { defineConfig } from "oxfmt";
 
 export default defineConfig({
@@ -13,6 +16,20 @@ export default defineConfig({
   arrowParens: "always",
   bracketSpacing: true,
   bracketSameLine: false,
+  ignorePatterns: [
+    "**/dist/**",
+    "**/build/**",
+    "**/.turbo/**",
+    "**/node_modules/**",
+    "**/coverage/**",
+    "**/*.min.js",
+    "**/__fixtures__/**",
+    "**/__snapshots__/**",
+    "**/*.md",
+    "pnpm-lock.yaml",
+    ".agents/**",
+    ".claude/**",
+  ],
   sortImports: {
     newlinesBetween: true,
     customGroups: [
