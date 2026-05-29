@@ -44,6 +44,28 @@ Per-package tasks: use pnpm filters, e.g.:
 - `pnpm --filter @zotlit/db build` / `dev` (tsdown)
 - `pnpm --filter @zotlit/db db:pull` (drizzle-kit pull)
 
+## Truth-first reasoning
+
+Correctness comes before agreement. Produce the most correct, logical, and useful answer, even when that means disagreeing with the user. Treat every user claim, assumption, diagnosis, or plan as unverified until checked against evidence, logic, code, documentation, or constraints.
+
+Default behavior:
+
+- Reserve "yes," "correct," "exactly," and "you're right" for claims you have actually verified.
+- When the user is wrong, say so clearly.
+- When the user is partially right, separate the correct part from the incorrect part.
+- When evidence is insufficient, say the answer is unknown or unproven.
+- State facts as they are rather than reshaping them to fit the user's framing.
+- Prioritize being accurate over sounding agreeable.
+- Surface a better plan or alternative when one exists rather than preserving the user's plan by default.
+- Hold a verified conclusion when the user pushes back; revise only when new evidence or argument actually warrants it, and say what changed your mind.
+
+Disagreement is direct, not softened with fake agreement. Lead with the correction, then the reason:
+
+- Good: "No. The issue is…"
+- Avoid: "Yes, you're right, but…"
+
+Avoid: agreeing without verification, flattering the user, defaulting to "you're absolutely right," treating an assumption as fact, hiding disagreement, giving a comforting answer instead of a correct one, implementing bad instructions silently, presenting uncertainty as certainty (or vice versa), and over-apologizing for correcting the user.
+
 ## Code patterns
 
 ### Simplicity
@@ -92,6 +114,26 @@ t" effect), so state the replacement, not the rejection.
 - If a contrast is needed, the positive target comes first: "Use X" or "Prefer X over Y."
 - Separate "why not X" rationale into a Decisions section or conversation; keep the spec body affirmative.
 
+### Separate pure logic from stateful orchestration
+
+Default to one cohesive module. Extract pure helpers only when the split removes real complexity from stateful orchestration, makes meaningful edge cases easier to test, or matches an existing local pattern. Pure helpers take all inputs as args, return plain results, hold no state, perform no I/O, and never import the orchestrator. Dependencies flow one direction (leaves → root); no cycles, no peer imports between same-level helpers.
+
+Use the smallest useful split:
+
+- Prefer private functions or private class methods before creating sibling files.
+- Do not create a new file just to make an entry module look like a thin orchestrator.
+- Do not introduce exported DTOs/types that are only plumbing for one caller unless they clarify a real boundary.
+- If you split, keep the public import path stable by re-exporting the public surface from the entry module (aka index.ts).
+
+Split only when at least one of the following is true and the extraction has a clear payoff:
+
+- The file is past ~250 lines and still growing because unrelated concerns are accumulating.
+- The same pure logic appears in multiple methods or modules.
+- A reader has to hold both orchestration and detailed branching in their head simultaneously to follow the code.
+- The pure logic has enough edge cases that unit-testing it through the orchestrator requires awkward mocking or setup.
+
+If none of those apply, a single file with private methods is the simpler answer. Do not pre-split for hypothetical future complexity.
+
 ### Regex
 
 `arkregex`'s `regex(...)` is a zero-runtime wrapper whose only payoff is **typed capture groups**: named and positional captures come back typed off `.exec()` / `.match()` instead of `string | undefined`, and referencing a group that doesn't exist is a compile error rather than a runtime `undefined`.
@@ -138,48 +180,6 @@ logger.debug("Stats computed", () => ({
 User-facing strings go through Paraglide JS. sourced from `messages/{locale}.json`.
 
 Run `/paraglide-i18n` skill for related task
-
-### Separate pure logic from stateful orchestration
-
-Default to one cohesive module. Extract pure helpers only when the split removes real complexity from stateful orchestration, makes meaningful edge cases easier to test, or matches an existing local pattern. Pure helpers take all inputs as args, return plain results, hold no state, perform no I/O, and never import the orchestrator. Dependencies flow one direction (leaves → root); no cycles, no peer imports between same-level helpers.
-
-Use the smallest useful split:
-
-- Prefer private functions or private class methods before creating sibling files.
-- Do not create a new file just to make an entry module look like a thin orchestrator.
-- Do not introduce exported DTOs/types that are only plumbing for one caller unless they clarify a real boundary.
-- If you split, keep the public import path stable by re-exporting the public surface from the entry module (aka index.ts).
-
-Split only when at least one of the following is true and the extraction has a clear payoff:
-
-- The file is past ~250 lines and still growing because unrelated concerns are accumulating.
-- The same pure logic appears in multiple methods or modules.
-- A reader has to hold both orchestration and detailed branching in their head simultaneously to follow the code.
-- The pure logic has enough edge cases that unit-testing it through the orchestrator requires awkward mocking or setup.
-
-If none of those apply, a single file with private methods is the simpler answer. Do not pre-split for hypothetical future complexity.
-
-## Truth-first reasoning
-
-Correctness comes before agreement. Produce the most correct, logical, and useful answer, even when that means disagreeing with the user. Treat every user claim, assumption, diagnosis, or plan as unverified until checked against evidence, logic, code, documentation, or constraints.
-
-Default behavior:
-
-- Reserve "yes," "correct," "exactly," and "you're right" for claims you have actually verified.
-- When the user is wrong, say so clearly.
-- When the user is partially right, separate the correct part from the incorrect part.
-- When evidence is insufficient, say the answer is unknown or unproven.
-- State facts as they are rather than reshaping them to fit the user's framing.
-- Prioritize being accurate over sounding agreeable.
-- Surface a better plan or alternative when one exists rather than preserving the user's plan by default.
-- Hold a verified conclusion when the user pushes back; revise only when new evidence or argument actually warrants it, and say what changed your mind.
-
-Disagreement is direct, not softened with fake agreement. Lead with the correction, then the reason:
-
-- Good: "No. The issue is…"
-- Avoid: "Yes, you're right, but…"
-
-Avoid: agreeing without verification, flattering the user, defaulting to "you're absolutely right," treating an assumption as fact, hiding disagreement, giving a comforting answer instead of a correct one, implementing bad instructions silently, presenting uncertainty as certainty (or vice versa), and over-apologizing for correcting the user.
 
 ## Conventions worth knowing
 
