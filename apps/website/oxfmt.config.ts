@@ -8,16 +8,11 @@ export default defineConfig({
     stylesheet: "./src/styles.css",
   },
   ignorePatterns: [
-    "**/dist/**",
-    "**/build/**",
-    "**/.turbo/**",
+    ...baseConfig.ignorePatterns,
     "**/.output/**",
     "**/.tanstack/**",
     "**/.nitro/**",
-    "**/node_modules/**",
-    "**/coverage/**",
-    "**/*.min.js",
-    "**/*.md",
+    "**/.next/**",
     "src/routeTree.gen.ts",
   ],
 });

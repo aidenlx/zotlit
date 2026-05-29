@@ -1,0 +1,113 @@
+import type TurndownService from "turndown";
+
+import { addObsidianRules, obsidianTurndownOptions } from "./obsidian-base";
+
+/**
+ * Add the rules for Zotero note HTML quirks that Obsidian's base config does
+ * not cover, would silently corrupt, or would drop:
+ *
+ * - `span.math` / `pre.math` — Zotero's math nodes. Emit the already-delimited
+ *   `$…$` / `$$…$$` text verbatim (escaping is off, so it survives).
+ * - bare `<pre>` — Zotero serializes code blocks as a `<pre>` with no `<code>`
+ *   child, which the default fenced-code rule ignores. Fence it from
+ *   `textContent` so inner inline HTML (e.g. `<em>`) stays literal.
+ * - `text-decoration: line-through` spans — Zotero's strikethrough is a styled
+ *   span, not `<s>`/`<del>`, so the base strikethrough rule never sees it.
+ * - `<sub>` / `<sup>` / `<u>` — kept as HTML; Obsidian renders these inline and
+ *   Markdown has no equivalent.
+ * - colored / highlighted spans — Zotero's text-color and highlight marks carry
+ *   the color inline; preserve it as `<span style>` / `<mark style>`.
+ * - `img[data-attachment-key]` — an embedded attachment with no `src`. Keep the
+ *   tag (and its key) so a later import stage can resolve it to a real embed.
+ */
+function addZoteroRules(td: TurndownService): void {
+  td.addRule("mathInline", {
+    filter: (node) =>
+      node.nodeName === "SPAN" && node.classList.contains("math"),
+    replacement: (_content, node) => node.textContent ?? "",
+  });
+
+  td.addRule("mathBlock", {
+    filter: (node) =>
+      node.nodeName === "PRE" && node.classList.contains("math"),
+    replacement: (_content, node) => `\n\n${node.textContent ?? ""}\n\n`,
+  });
+
+  td.addRule("codeBlock", {
+    filter: (node) =>
+      node.nodeName === "PRE" &&
+      !node.classList.contains("math") &&
+      node.firstChild?.nodeName !== "CODE",
+    replacement: (_content, node, options) => {
+      const fence = options.fence ?? "```";
+      return `\n\n${fence}\n${node.textContent ?? ""}\n${fence}\n\n`;
+    },
+  });
+
+  td.addRule("strikethroughSpan", {
+    filter: (node) => {
+      if (node.nodeName !== "SPAN") return false;
+      const { textDecoration, textDecorationLine } = node.style;
+      return (
+        textDecoration.includes("line-through") ||
+        textDecorationLine.includes("line-through")
+      );
+    },
+    replacement: (content) => `~~${content}~~`,
+  });
+
+  td.addRule("subscript", {
+    filter: "sub",
+    replacement: (content) => `<sub>${content}</sub>`,
+  });
+
+  td.addRule("superscript", {
+    filter: "sup",
+    replacement: (content) => `<sup>${content}</sup>`,
+  });
+
+  td.addRule("underline", {
+    filter: "u",
+    replacement: (content) => `<u>${content}</u>`,
+  });
+
+  td.addRule("coloredSpan", {
+    filter: (node) =>
+      node.nodeName === "SPAN" &&
+      !!(node.style.color || node.style.backgroundColor),
+    replacement: (content, node) => {
+      const { color, backgroundColor } = (node as HTMLElement).style;
+      return backgroundColor
+        ? `<mark style="background-color: ${backgroundColor};">${content}</mark>`
+        : `<span style="color: ${color};">${content}</span>`;
+    },
+  });
+
+  td.addRule("embeddedImage", {
+    filter: (node) =>
+      node.nodeName === "IMG" &&
+      node.hasAttribute("data-attachment-key") &&
+      !node.hasAttribute("data-annotation"),
+    // TBD: implement this alongside annotation excerpt image import
+    replacement: (_content, node) => (node as Element).outerHTML,
+  });
+}
+
+/**
+ * Build a TurndownService that converts Zotero note HTML to Obsidian-flavored
+ * Markdown. The base mirrors Obsidian's own `htmlToMarkdown`; the Zotero rules
+ * layer on top. Built fresh per call (sub-millisecond) so callers can add
+ * further rules (e.g. citation/annotation resolution) without shared state.
+ *
+ * `Turndown` is passed in rather than imported: at runtime Obsidian exposes
+ * `TurndownService` as a global, and tests supply the npm package directly, so
+ * the plugin bundle never pulls in turndown.
+ */
+export function createNoteTurndown(
+  Turndown: typeof TurndownService,
+): TurndownService {
+  const td = new Turndown(obsidianTurndownOptions);
+  addObsidianRules(td);
+  addZoteroRules(td);
+  return td;
+}
