@@ -17,8 +17,14 @@ import { addObsidianRules, obsidianTurndownOptions } from "./obsidian-base";
  *   Markdown has no equivalent.
  * - colored / highlighted spans — Zotero's text-color and highlight marks carry
  *   the color inline; preserve it as `<span style>` / `<mark style>`.
- * - `img[data-attachment-key]` — an embedded attachment with no `src`. Keep the
- *   tag (and its key) so a later import stage can resolve it to a real embed.
+ * - `img[data-attachment-key]` without `data-annotation` — a plain embedded
+ *   attachment with no `src`. Keep the tag (and its key) so a later import
+ *   stage can resolve it to a real embed.
+ * - `span.citation[data-citation]` and the `[data-annotation]` marks
+ *   (`span.highlight`, `span.underline`, and the image-excerpt `img`) — Zotero's
+ *   citation and annotation-excerpt marks. Keep them as raw HTML (like the
+ *   embedded image) so a later resolution stage can read the URL-encoded
+ *   payload; flattening to text would drop that data.
  */
 function addZoteroRules(td: TurndownService): void {
   td.addRule("mathInline", {
@@ -89,6 +95,23 @@ function addZoteroRules(td: TurndownService): void {
       node.hasAttribute("data-attachment-key") &&
       !node.hasAttribute("data-annotation"),
     // TBD: implement this alongside annotation excerpt image import
+    replacement: (_content, node) => (node as Element).outerHTML,
+  });
+
+  td.addRule("citation", {
+    filter: (node) =>
+      node.nodeName === "SPAN" &&
+      node.classList.contains("citation") &&
+      node.hasAttribute("data-citation"),
+    // TBD: resolve to the user's citation syntax; pass the span through for now
+    replacement: (_content, node) => (node as Element).outerHTML,
+  });
+
+  td.addRule("annotationExcerpt", {
+    filter: (node) =>
+      (node.nodeName === "SPAN" || node.nodeName === "IMG") &&
+      node.hasAttribute("data-annotation"),
+    // TBD: resolve to highlight/underline/image markdown; pass through for now
     replacement: (_content, node) => (node as Element).outerHTML,
   });
 }

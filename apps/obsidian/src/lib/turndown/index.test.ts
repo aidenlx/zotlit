@@ -202,6 +202,107 @@ describe("Zotero note formats", () => {
     expect(md).toContain('data-attachment-key="U5WTYIJK"');
     expect(md.startsWith("<img")).toBe(true);
   });
+
+  it("citation span passes through as HTML for later resolution", () => {
+    const md = convert(
+      '<span class="citation" data-citation="%7B%22citationItems%22%3A%5B%5D%7D">' +
+        '(<span class="citation-item">Doe, 2020, p. 1</span>)</span>',
+    );
+    expect(md.startsWith('<span class="citation"')).toBe(true);
+    expect(md).toContain('data-citation="%7B%22citationItems%22%3A%5B%5D%7D"');
+    expect(md).toContain('<span class="citation-item">Doe, 2020, p. 1</span>');
+  });
+
+  it("highlight annotation span passes through as HTML for later resolution", () => {
+    const md = convert(
+      '<span class="highlight" data-annotation="%7B%22annotationKey%22%3A%22C2DF35H3%22%7D">' +
+        "“might aid in our understanding”</span>",
+    );
+    expect(md.startsWith('<span class="highlight"')).toBe(true);
+    expect(md).toContain(
+      'data-annotation="%7B%22annotationKey%22%3A%22C2DF35H3%22%7D"',
+    );
+    expect(md).toContain("“might aid in our understanding”");
+  });
+
+  it("underline annotation span passes through as HTML for later resolution", () => {
+    const md = convert(
+      '<span class="underline" data-annotation="%7B%22annotationKey%22%3A%227SUQ86WL%22%7D">' +
+        "reference alternative as valu</span>",
+    );
+    expect(md.startsWith('<span class="underline"')).toBe(true);
+    expect(md).toContain(
+      'data-annotation="%7B%22annotationKey%22%3A%227SUQ86WL%22%7D"',
+    );
+  });
+
+  it("image annotation passes through as HTML for later resolution", () => {
+    const md = convert(
+      '<img data-attachment-key="DUPB2GWX" ' +
+        'data-annotation="%7B%22annotationKey%22%3A%22DBKE89L9%22%7D">',
+    );
+    expect(md.startsWith("<img")).toBe(true);
+    expect(md).toContain('data-attachment-key="DUPB2GWX"');
+    expect(md).toContain(
+      'data-annotation="%7B%22annotationKey%22%3A%22DBKE89L9%22%7D"',
+    );
+  });
+});
+
+/**
+ * Image embeds and the three annotation-excerpt marks all pass through as raw
+ * HTML, so their *output* is indistinguishable. These check the routing
+ * instead — that each element kind is claimed by the rule meant for it (by
+ * rule-object identity) and never falls through to the base image rule, which
+ * drops a `src`-less `<img>`.
+ */
+describe("Zotero embed/annotation rule routing", () => {
+  const td = createNoteTurndown(TurndownService);
+
+  /** The rule turndown would pick for the first element parsed from `html`. */
+  function ruleFor(html: string): object {
+    const root = document.createElement("div");
+    root.innerHTML = html;
+    return td.rules.forNode(root.firstElementChild as HTMLElement);
+  }
+
+  const annotationRule = ruleFor(
+    '<span class="highlight" data-annotation="%7B%7D">x</span>',
+  );
+  const citationRule = ruleFor(
+    '<span class="citation" data-citation="%7B%7D">x</span>',
+  );
+  const embeddedImageRule = ruleFor('<img data-attachment-key="K">');
+  const baseImageRule = ruleFor('<img src="x.png">');
+
+  it("routes highlight, underline, and image annotations to one rule", () => {
+    expect(
+      ruleFor('<span class="underline" data-annotation="%7B%7D">x</span>'),
+    ).toBe(annotationRule);
+    expect(
+      ruleFor('<img data-attachment-key="K" data-annotation="%7B%7D">'),
+    ).toBe(annotationRule);
+  });
+
+  it("routes citation spans to a rule of their own", () => {
+    expect(citationRule).not.toBe(annotationRule);
+    expect(citationRule).not.toBe(embeddedImageRule);
+  });
+
+  it("separates plain image embeds from image annotations", () => {
+    expect(embeddedImageRule).not.toBe(annotationRule);
+  });
+
+  it("keeps Zotero images off the base image rule that would drop them", () => {
+    expect(baseImageRule).not.toBe(embeddedImageRule);
+    expect(baseImageRule).not.toBe(annotationRule);
+    // The base rule emits `![]()` for a src'd img and "" for a src-less one;
+    // the embed must stay raw HTML instead of being dropped.
+    expect(convert('<img src="x.png">')).toBe("![](x.png)");
+    expect(convert('<img data-attachment-key="K">').startsWith("<img")).toBe(
+      true,
+    );
+  });
 });
 
 describe("ZT_NOTE_EXAMPLE.html", () => {
@@ -212,6 +313,25 @@ describe("ZT_NOTE_EXAMPLE.html", () => {
     );
     await expect(convert(html)).toMatchFileSnapshot(
       "./__snapshots__/zt-note-example.md",
+    );
+  });
+});
+
+/**
+ * Zotero's "annotation excerpt" note: each `<p>` pairs a `data-annotation`
+ * highlight/underline span (the `highlight` / `underline` class names match the
+ * annotation types in `@zotlit/db`'s `zt-annot`) with a `data-citation` span.
+ * Both pass through as raw HTML (like the embedded image) so a later stage can
+ * resolve their URL-encoded payloads — the snapshot documents that boundary.
+ */
+describe("ZT_EXCERPT_NOTE.html", () => {
+  it("converts an annotation excerpt note", async () => {
+    const html = readFileSync(
+      join(import.meta.dirname, "__fixtures__/zt-excerpt-note.html"),
+      "utf8",
+    );
+    await expect(convert(html)).toMatchFileSnapshot(
+      "./__snapshots__/zt-excerpt-note.md",
     );
   });
 });
