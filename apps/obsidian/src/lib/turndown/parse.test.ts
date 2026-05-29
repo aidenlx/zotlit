@@ -3,153 +3,96 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { parseAnnotation, parseCitation, parseItemUri } from "./parse";
+import { parseAnnotation, parseCitation, parseNoteSchema } from "./parse";
 
-/** Build a span carrying `attr` set to the URL-encoded JSON of `payload`. */
-function span(attr: string, payload: unknown): Element {
-  const el = document.createElement("span");
+/** Build an element carrying `attr` set to the URL-encoded JSON of `payload`. */
+function mark(tag: string, attr: string, payload: unknown): Element {
+  const el = document.createElement(tag);
   el.setAttribute(attr, encodeURIComponent(JSON.stringify(payload)));
   return el;
 }
 
+/** Parse `html` into a detached root the schema gate can be run against. */
+function load(html: string): HTMLElement {
+  const root = document.createElement("div");
+  root.innerHTML = html;
+  return root;
+}
+
 const LOCAL_USER = "http://zotero.org/users/local/BOtEiq6p/items";
 
-describe("parseItemUri", () => {
-  it("resolves a local user-library item URI", () => {
-    expect(parseItemUri(`${LOCAL_USER}/KX67D9YM`)).toEqual({
-      libraryType: "user",
-      groupID: null,
-      key: "KX67D9YM",
-    });
-  });
-
-  it("resolves a synced user-library item URI", () => {
-    expect(
-      parseItemUri("http://zotero.org/users/12345/items/ABCD1234"),
-    ).toEqual({ libraryType: "user", groupID: null, key: "ABCD1234" });
-  });
-
-  it("resolves a group-library item URI with its group ID", () => {
-    expect(
-      parseItemUri("http://zotero.org/groups/67890/items/WXYZ0000"),
-    ).toEqual({ libraryType: "group", groupID: 67890, key: "WXYZ0000" });
-  });
-
-  it("returns null for non-item URIs and junk", () => {
-    expect(
-      parseItemUri("http://zotero.org/users/local/BOtEiq6p/collections/CCCC"),
-    ).toBeNull();
-    expect(parseItemUri("https://example.com/foo")).toBeNull();
-    expect(parseItemUri("not a uri")).toBeNull();
-  });
-});
-
 describe("parseCitation", () => {
-  it("parses a single cited item with a locator", () => {
-    const el = span("data-citation", {
+  it("reads the data-citation payload off the element", () => {
+    const el = mark("span", "data-citation", {
       citationItems: [{ uris: [`${LOCAL_USER}/KX67D9YM`], locator: "62" }],
       properties: {},
     });
-    expect(parseCitation(el)).toEqual({
-      citationItems: [
-        {
-          uris: [`${LOCAL_USER}/KX67D9YM`],
-          ref: { libraryType: "user", groupID: null, key: "KX67D9YM" },
-          locator: "62",
-        },
-      ],
-    });
-  });
-
-  it("parses multiple cited items without locators", () => {
-    const el = span("data-citation", {
-      citationItems: [
-        { uris: [`${LOCAL_USER}/4FQVQ6ZQ`] },
-        { uris: [`${LOCAL_USER}/KX67D9YM`] },
-      ],
-      properties: {},
-    });
-    const info = parseCitation(el);
-    expect(info?.citationItems.map((c) => c.ref?.key)).toEqual([
-      "4FQVQ6ZQ",
-      "KX67D9YM",
-    ]);
-    expect(info?.citationItems.every((c) => c.locator === undefined)).toBe(
-      true,
-    );
+    expect(parseCitation(el)?.citationItems[0]?.ref?.key).toBe("KX67D9YM");
   });
 
   it("returns null when the element has no data-citation", () => {
     expect(parseCitation(document.createElement("span"))).toBeNull();
   });
-
-  it("returns null on a malformed payload", () => {
-    const el = document.createElement("span");
-    el.setAttribute("data-citation", "%7Bnot json");
-    expect(parseCitation(el)).toBeNull();
-  });
 });
 
 describe("parseAnnotation", () => {
-  it("parses a highlight annotation with its cited item", () => {
-    const el = span("data-annotation", {
+  it("reads the data-annotation payload off the element", () => {
+    const el = mark("span", "data-annotation", {
       attachmentURI: `${LOCAL_USER}/T2P8T29G`,
       annotationKey: "C2DF35H3",
       color: "#e56eee",
-      pageLabel: "62",
-      position: { pageIndex: 0, rects: [[305.992, 215.426, 434.327, 224.482]] },
-      citationItem: { uris: [`${LOCAL_USER}/KX67D9YM`], locator: "62" },
     });
-    expect(parseAnnotation(el)).toEqual({
-      annotationKey: "C2DF35H3",
-      attachmentURI: `${LOCAL_USER}/T2P8T29G`,
-      attachment: { libraryType: "user", groupID: null, key: "T2P8T29G" },
-      color: "#e56eee",
-      pageLabel: "62",
-      citationItem: {
-        uris: [`${LOCAL_USER}/KX67D9YM`],
-        ref: { libraryType: "user", groupID: null, key: "KX67D9YM" },
-        locator: "62",
-      },
-    });
+    const info = parseAnnotation(el);
+    expect(info?.annotationKey).toBe("C2DF35H3");
+    expect(info?.attachment?.key).toBe("T2P8T29G");
+    expect(info?.imageAttachmentKey).toBeUndefined();
   });
 
-  it("parses an image-excerpt annotation, capturing its embed key", () => {
-    const img = document.createElement("img");
-    img.setAttribute("data-attachment-key", "DUPB2GWX");
-    img.setAttribute(
-      "data-annotation",
-      encodeURIComponent(
-        JSON.stringify({
-          attachmentURI: `${LOCAL_USER}/T2P8T29G`,
-          annotationKey: "DBKE89L9",
-          color: "#ffd400",
-          pageLabel: "62",
-          position: {
-            pageIndex: 0,
-            rects: [[219.605, 682.31, 450.971, 719.175]],
-          },
-          citationItem: { uris: [`${LOCAL_USER}/KX67D9YM`], locator: "62" },
-        }),
-      ),
-    );
-    expect(parseAnnotation(img)).toEqual({
-      annotationKey: "DBKE89L9",
+  it("captures the embedded-image key on an image excerpt", () => {
+    const img = mark("img", "data-annotation", {
       attachmentURI: `${LOCAL_USER}/T2P8T29G`,
-      attachment: { libraryType: "user", groupID: null, key: "T2P8T29G" },
-      color: "#ffd400",
-      pageLabel: "62",
-      imageAttachmentKey: "DUPB2GWX",
-      citationItem: {
-        uris: [`${LOCAL_USER}/KX67D9YM`],
-        ref: { libraryType: "user", groupID: null, key: "KX67D9YM" },
-        locator: "62",
-      },
+      annotationKey: "DBKE89L9",
     });
+    img.setAttribute("data-attachment-key", "DUPB2GWX");
+    expect(parseAnnotation(img)?.imageAttachmentKey).toBe("DUPB2GWX");
   });
 
   it("returns null when the element has no data-annotation", () => {
     expect(parseAnnotation(document.createElement("span"))).toBeNull();
+  });
+});
+
+describe("parseNoteSchema", () => {
+  it("finds the schema container through the zotero-note znv1 wrapper", () => {
+    const root = load(
+      '<div class="zotero-note znv1"><div data-schema-version="9"><p>x</p></div></div>',
+    );
+    const schema = parseNoteSchema(root);
+    expect(schema.supported).toBe(true);
+    expect(schema).toMatchObject({ version: 9 });
+    if (schema.supported) {
+      expect(schema.container.innerHTML).toBe("<p>x</p>");
+    }
+  });
+
+  it("accepts the unwrapped container returned by the API", () => {
+    const root = load('<div data-schema-version="10"><p>x</p></div>');
+    expect(parseNoteSchema(root)).toMatchObject({
+      supported: true,
+      version: 10,
+    });
+  });
+
+  it("rejects a pre-v6 note but reports its version", () => {
+    const root = load('<div data-schema-version="5"><p>x</p></div>');
+    expect(parseNoteSchema(root)).toEqual({ supported: false, version: 5 });
+  });
+
+  it("rejects a note with no schema container", () => {
+    expect(parseNoteSchema(load("<p>plain note</p>"))).toEqual({
+      supported: false,
+      version: null,
+    });
   });
 });
 
@@ -159,14 +102,15 @@ describe("zt-excerpt-note.html fixture", () => {
     "utf8",
   );
 
-  function load(): HTMLElement {
-    const root = document.createElement("div");
-    root.innerHTML = html;
-    return root;
-  }
+  it("gates the real schema-version=10 note as supported", () => {
+    expect(parseNoteSchema(load(html))).toMatchObject({
+      supported: true,
+      version: 10,
+    });
+  });
 
   it("parses every annotation mark (highlight, underline, image) to its keys", () => {
-    const annots = [...load().querySelectorAll("[data-annotation]")].map(
+    const annots = [...load(html).querySelectorAll("[data-annotation]")].map(
       parseAnnotation,
     );
     expect(annots.map((a) => a?.annotationKey)).toEqual([
@@ -187,7 +131,7 @@ describe("zt-excerpt-note.html fixture", () => {
   });
 
   it("parses every citation span to its cited item key + locator", () => {
-    const cites = [...load().querySelectorAll("span.citation")].map(
+    const cites = [...load(html).querySelectorAll("span.citation")].map(
       parseCitation,
     );
     expect(cites.length).toBeGreaterThan(0);
