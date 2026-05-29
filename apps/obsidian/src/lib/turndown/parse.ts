@@ -1,153 +1,80 @@
+import {
+  parseAnnotationData,
+  parseCitationData,
+  type AnnotationInfo,
+  type CitationInfo,
+} from "@zotlit/db";
+
 /**
- * Decode the URL-encoded JSON that Zotero's note editor stores in
- * `data-citation` / `data-annotation` attributes, and resolve the Zotero
- * object URIs inside them to the identifiers `@zotlit/db` looks items and
- * annotations up by (library + key).
- *
- * Shapes mirror Zotero's annotation→note serializer: a citation holds
- * `{ citationItems: [{ uris, locator }], properties }`; an annotation holds
- * `{ attachmentURI, annotationKey, color, pageLabel, position, citationItem }`.
- *
- * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/editorInstance.js#L1614-L1652
- * @see https://github.com/zotero/note-editor/blob/107ab75c3247c6584bda2303ecbddf4b317fdd2d/src/core/schema/nodes.js#L369-L455
+ * DOM glue over `@zotlit/db`'s note-mark parsers: read the URL-encoded payloads
+ * off Zotero note elements, and locate the schema container that gates whether
+ * a note is in a format this parser understands. The JSON/URI parsing itself is
+ * DOM-free and lives in `@zotlit/db` (`zt-note-mark`).
  */
 
-/** A Zotero object URI resolved to the identifiers a DB query needs. */
-export interface ZoteroRef {
-  /** `"user"` for personal libraries (synced or local), `"group"` for groups. */
-  libraryType: "user" | "group";
-  /** Group ID when {@link libraryType} is `"group"`, else `null`. */
-  groupID: number | null;
-  /** The Zotero object key (last URI path segment). */
-  key: string;
+/**
+ * Lowest `data-schema-version` this parser supports. v6 is the first
+ * Zotero-6-era schema (March 2022); the modern annotation shape
+ * (`attachmentURI` + `annotationKey`) arrived in v4 and the `data-citation-items`
+ * hoist in v2, so gating at v6 lets every mark parser assume the modern shapes
+ * with no legacy-version branching.
+ *
+ * @see note-html-format-schema-report.md §5
+ */
+export const MIN_SCHEMA_VERSION = 6;
+
+/**
+ * Outcome of locating a note's schema container. `supported` carries the
+ * conversion root — the `<div data-schema-version>` element whose `innerHTML`
+ * should be converted, so neither the `zotero-note znv1` storage wrapper nor the
+ * container div leaks into output. Otherwise `version` is the parsed version (or
+ * `null` when no schema container exists) for the caller to log before rejecting
+ * the note as legacy.
+ */
+export type NoteSchema =
+  | { supported: true; container: Element; version: number }
+  | { supported: false; version: number | null };
+
+/**
+ * Locate the note's schema container and read its `data-schema-version`.
+ *
+ * Depth-tolerant `querySelector` rather than `body > div`: a note read straight
+ * from Zotero's SQLite keeps the `<div class="zotero-note znv1">` storage
+ * wrapper, so the schema container is a grandchild of `<body>`. The same
+ * selector also matches the unwrapped form returned by `item.getNote()` / the
+ * API.
+ *
+ * @see note-html-format-schema-report.md §2
+ */
+export function parseNoteSchema(root: ParentNode): NoteSchema {
+  const container = root.querySelector("div[data-schema-version]");
+  if (!container) return { supported: false, version: null };
+  const version = Number.parseInt(
+    container.getAttribute("data-schema-version") ?? "",
+    10,
+  );
+  if (!Number.isInteger(version)) return { supported: false, version: null };
+  if (version < MIN_SCHEMA_VERSION) return { supported: false, version };
+  return { supported: true, container, version };
 }
 
-/** A single cited item parsed from a `data-citation` payload. */
-export interface CitationItem {
-  /** Raw Zotero object URIs identifying the cited regular item. */
-  uris: string[];
-  /** First {@link uris} entry resolved to a {@link ZoteroRef}, else `null`. */
-  ref: ZoteroRef | null;
-  /** Locator (page/section) the citation pins, when present. */
-  locator?: string;
+export function parseCitation(el: Element): CitationInfo | null {
+  return parseCitationData(el.getAttribute("data-citation"));
 }
 
-/** Parsed `data-citation` payload (one Zotero citation mark). */
-export interface CitationInfo {
-  citationItems: CitationItem[];
-}
-
-/** Parsed `data-annotation` payload (highlight / underline / image excerpt). */
-export interface AnnotationInfo {
-  /** The annotation item's own Zotero key. */
-  annotationKey: string;
-  /** URI of the attachment the annotation belongs to. */
-  attachmentURI: string;
-  /**
-   * Attachment URI resolved to a {@link ZoteroRef}. The annotation shares the
-   * attachment's library, so this also carries the library for its own lookup.
-   */
-  attachment: ZoteroRef | null;
-  color?: string;
-  pageLabel?: string;
+/** A parsed annotation mark plus the embedded-image key carried on its element. */
+export interface NoteAnnotation extends AnnotationInfo {
   /**
    * Key of the embedded image Zotero rendered for an image-excerpt annotation
    * (the `data-attachment-key` attribute), distinct from {@link attachmentURI}
    * which points at the source PDF. Absent for highlight/underline marks.
    */
   imageAttachmentKey?: string;
-  /** The cited regular item (attachment's parent) the excerpt points at. */
-  citationItem?: CitationItem;
 }
 
-/**
- * Matches a Zotero item URI — the internal `http://zotero.org/` identifier
- * stored in note payloads (not the `https://www.zotero.org` web URL).
- *
- * @example http://zotero.org/users/local/aB3/items/KEY
- * @example http://zotero.org/users/12345/items/KEY (synced user library)
- * @example http://zotero.org/groups/9/items/KEY
- * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/uri.js#L39-L43
- */
-const ITEM_URI = new URLPattern({
-  protocol: "http",
-  hostname: "zotero.org",
-  pathname: "/:type(users|groups){/local}?/:libraryID/items/:key",
-});
-
-export function parseItemUri(uri: string): ZoteroRef | null {
-  const groups = ITEM_URI.exec(uri)?.pathname.groups;
-  const key = groups?.key;
-  if (!key) return null;
-  if (groups.type === "groups") {
-    const groupID = Number(groups.libraryID);
-    if (!Number.isInteger(groupID)) return null;
-    return { libraryType: "group", groupID, key };
-  }
-  return { libraryType: "user", groupID: null, key };
-}
-
-/**
- * Read an element's data attribute and decode the URL-encoded JSON Zotero
- * stores there. Returns `null` when the attribute is absent or its payload
- * is not valid encoded JSON, so one malformed mark can't abort a note import.
- */
-function decode(value: string | null): unknown {
-  if (value === null) return null;
-  try {
-    return JSON.parse(decodeURIComponent(value));
-  } catch {
-    return null;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function toCitationItem(raw: Record<string, unknown>): CitationItem {
-  const uris = Array.isArray(raw.uris)
-    ? raw.uris.filter((u): u is string => typeof u === "string")
-    : [];
-  let ref: ZoteroRef | null = null;
-  for (const uri of uris) {
-    ref = parseItemUri(uri);
-    if (ref) break;
-  }
-  return {
-    uris,
-    ref,
-    ...(typeof raw.locator === "string" ? { locator: raw.locator } : {}),
-  };
-}
-
-export function parseCitation(el: Element): CitationInfo | null {
-  const data = decode(el.getAttribute("data-citation"));
-  if (!isRecord(data) || !Array.isArray(data.citationItems)) return null;
-  return {
-    citationItems: data.citationItems.filter(isRecord).map(toCitationItem),
-  };
-}
-
-export function parseAnnotation(el: Element): AnnotationInfo | null {
-  const data = decode(el.getAttribute("data-annotation"));
-  if (!isRecord(data)) return null;
-  const { annotationKey, attachmentURI } = data;
-  if (typeof annotationKey !== "string" || typeof attachmentURI !== "string") {
-    return null;
-  }
+export function parseAnnotation(el: Element): NoteAnnotation | null {
+  const info = parseAnnotationData(el.getAttribute("data-annotation"));
+  if (!info) return null;
   const imageAttachmentKey = el.getAttribute("data-attachment-key");
-  return {
-    annotationKey,
-    attachmentURI,
-    attachment: parseItemUri(attachmentURI),
-    ...(typeof data.color === "string" ? { color: data.color } : {}),
-    ...(typeof data.pageLabel === "string"
-      ? { pageLabel: data.pageLabel }
-      : {}),
-    ...(imageAttachmentKey ? { imageAttachmentKey } : {}),
-    ...(isRecord(data.citationItem)
-      ? { citationItem: toCitationItem(data.citationItem) }
-      : {}),
-  };
+  return imageAttachmentKey ? { ...info, imageAttachmentKey } : info;
 }

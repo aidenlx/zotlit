@@ -75,3 +75,12 @@ export {
   type ItemLanguage,
   type LanguageNameLookup,
 } from "./lib/zt-lang";
+export {
+  parseAnnotationData,
+  parseCitationData,
+  parseItemUri,
+  type AnnotationInfo,
+  type CitationInfo,
+  type CitationItem,
+  type ZoteroRef,
+} from "./lib/zt-note-mark";
