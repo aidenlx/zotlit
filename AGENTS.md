@@ -83,11 +83,24 @@ The test: every changed line should trace directly to the user's request.
 - Drop comments that only restate what the name, type signature, or implementation already conveys (e.g. `/** Build a fresh shallow clone of X */` above a one-line spread, or `/** Throw if X */` above a method named `requireX`). Keep only the non-obvious parts: invariants, edge cases, design rationale, and "why" over "what".
 - Trim mixed JSDoc to the non-obvious parts rather than dropping the whole block. If the first sentence restates the name and the rest explains an invariant, delete the first sentence.
 
+### Affirmative specifications
+
+Describe the target state — what exists and what to do. Negation activates the concept it tries to suppress (the "pink elephan
+t" effect), so state the replacement, not the rejection.
+
+- Lead with what the code/spec looks like now, not what was removed or changed.
+- If a contrast is needed, the positive target comes first: "Use X" or "Prefer X over Y."
+- Separate "why not X" rationale into a Decisions section or conversation; keep the spec body affirmative.
+
 ### Regex
 
-Default to `arkregex`'s `regex(...)` for new regexes. For dynamic literal text, use native `RegExp.escape`.
+`arkregex`'s `regex(...)` is a zero-runtime wrapper whose only payoff is **typed capture groups**: named and positional captures come back typed off `.exec()` / `.match()` instead of `string | undefined`, and referencing a group that doesn't exist is a compile error rather than a runtime `undefined`.
 
-Run the `/arkregex` skill when authoring or migrating regex code — it covers the bare `regex("…")` form, the `String.raw` pitfall that defeats type inference, and points at the library README for the full API.
+Use `regex(...)` when a pattern has capture groups whose match results are read in code — especially named groups, where it removes the manual `RegExpExecArray` indexing and casts. For a pattern with no captures, or one whose results you don't consume (`.test()`, `.split()`, `.replace()` with a literal replacement), a plain regex literal or `new RegExp(...)` is the simpler choice and gains nothing from the wrapper.
+
+For dynamic literal text, use native `RegExp.escape`.
+
+Run the `/arkregex` skill when authoring or migrating capture-group regexes — it covers the bare `regex("…")` form, the `String.raw` pitfall that defeats type inference, and points at the library README for the full API.
 
 ### Logging
 
