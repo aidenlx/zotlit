@@ -61,6 +61,14 @@ export {
   type AnnotationPosition,
 } from "./lib/zt-annot-pos";
 export {
+  annotationColorToName,
+  highlightColorToName,
+  textColorToName,
+  type AnnotationColorName,
+  type NoteHighlightColorName,
+  type NoteTextColorName,
+} from "./lib/zt-color";
+export {
   createLanguageLookup,
   formatItemLanguage,
   parseItemLanguage,
