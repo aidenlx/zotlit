@@ -14,6 +14,7 @@
   "settings_log_export_desc": "Save the log file as a zip file.",
   "settings_log_export_button": "Save zip",
   "settings_log_to_file_required": "Enable \"Write logs to file\" first.",
+  "note_parser_legacy_format_callout": "> [!warning] Unsupported note format\n> This Zotero note uses schema version {version}, which ZotLit can't convert. Open it in Zotero to view its contents.",
   "notice_open_log_file_failed": "Failed to open log file",
   "notice_export_log_file_failed": "Failed to export log archive",
   "command_refresh_db_name": "Refresh Zotero database",

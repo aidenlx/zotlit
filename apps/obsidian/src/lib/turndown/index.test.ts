@@ -250,11 +250,12 @@ describe("Zotero note formats", () => {
 });
 
 /**
- * Image embeds and the three annotation-excerpt marks all pass through as raw
- * HTML, so their *output* is indistinguishable. These check the routing
- * instead — that each element kind is claimed by the rule meant for it (by
- * rule-object identity) and never falls through to the base image rule, which
- * drops a `src`-less `<img>`.
+ * Image embeds and annotation-excerpt spans all pass through as raw HTML, so
+ * their *output* is indistinguishable. These check the routing instead — that
+ * each element kind is claimed by the rule meant for it (by rule-object
+ * identity): excerpt spans → `annotationExcerpt`, every `data-attachment-key`
+ * image (plain or annotation) → the one `embeddedImage` rule, and never the base
+ * image rule that drops a `src`-less `<img>`.
  */
 describe("Zotero embed/annotation rule routing", () => {
   const td = createNoteTurndown(TurndownService);
@@ -275,12 +276,9 @@ describe("Zotero embed/annotation rule routing", () => {
   const embeddedImageRule = ruleFor('<img data-attachment-key="K">');
   const baseImageRule = ruleFor('<img src="x.png">');
 
-  it("routes highlight, underline, and image annotations to one rule", () => {
+  it("routes highlight and underline excerpt spans to one rule", () => {
     expect(
       ruleFor('<span class="underline" data-annotation="%7B%7D">x</span>'),
-    ).toBe(annotationRule);
-    expect(
-      ruleFor('<img data-attachment-key="K" data-annotation="%7B%7D">'),
     ).toBe(annotationRule);
   });
 
@@ -289,7 +287,10 @@ describe("Zotero embed/annotation rule routing", () => {
     expect(citationRule).not.toBe(embeddedImageRule);
   });
 
-  it("separates plain image embeds from image annotations", () => {
+  it("routes plain embeds and image annotations to the one image rule", () => {
+    expect(
+      ruleFor('<img data-attachment-key="K" data-annotation="%7B%7D">'),
+    ).toBe(embeddedImageRule);
     expect(embeddedImageRule).not.toBe(annotationRule);
   });
 
