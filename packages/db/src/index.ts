@@ -57,6 +57,11 @@ export {
 } from "./lib/zt-date";
 export { type Annotation } from "./lib/zt-annot";
 export {
+  itemToTemplateData,
+  type TemplateCreator,
+  type TemplateItemData,
+} from "./lib/zt-template-item";
+export {
   parseAnnotationPosition,
   type AnnotationPosition,
 } from "./lib/zt-annot-pos";
