@@ -17,16 +17,20 @@ import { addObsidianRules, obsidianTurndownOptions } from "./obsidian-base";
  *   Markdown has no equivalent.
  * - colored / highlighted spans — Zotero's text-color and highlight marks carry
  *   the color inline; preserve it as `<span style>` / `<mark style>`.
- * - `img[data-attachment-key]` without `data-annotation` — a plain embedded
- *   attachment with no `src`. Keep the tag (and its key) so a later import
- *   stage can resolve it to a real embed.
- * - `span.citation[data-citation]` and the `[data-annotation]` marks
- *   (`span.highlight`, `span.underline`, and the image-excerpt `img`) — Zotero's
- *   citation and annotation-excerpt marks. Keep them as raw HTML (like the
- *   embedded image) so a later resolution stage can read the URL-encoded
- *   payload; flattening to text would drop that data.
+ * - `img[data-attachment-key]` — a Zotero embed with no `src`, both the plain
+ *   attachment image and the image-excerpt annotation (`data-annotation` set).
+ *   Keep the tag (and its key) so the shared Stage 9 import resolves it to a
+ *   real embed.
+ * - `span.citation[data-citation]` — Zotero's citation mark. Kept as raw HTML so
+ *   a later resolution stage can read the URL-encoded payload.
+ * - `span[data-annotation]` (highlight / underline excerpt) — passes through as
+ *   raw HTML by default; `createNoteTurndown`'s `annotationExcerpt` option lets
+ *   the orchestrator inject the resolved highlight/underline rendering.
  */
-function addZoteroRules(td: TurndownService): void {
+function addZoteroRules(
+  td: TurndownService,
+  options: NoteTurndownOptions,
+): void {
   td.addRule("mathInline", {
     filter: (node) =>
       node.nodeName === "SPAN" && node.classList.contains("math"),
@@ -91,11 +95,16 @@ function addZoteroRules(td: TurndownService): void {
 
   td.addRule("embeddedImage", {
     filter: (node) =>
-      node.nodeName === "IMG" &&
-      node.hasAttribute("data-attachment-key") &&
-      !node.hasAttribute("data-annotation"),
-    // TBD: implement this alongside annotation excerpt image import
-    replacement: (_content, node) => (node as Element).outerHTML,
+      node.nodeName === "IMG" && node.hasAttribute("data-attachment-key"),
+    replacement: (_content, node) => {
+      const el = node as Element;
+      if (el.hasAttribute("data-annotation")) {
+        // TBD Stage 9: image-excerpt annotation → real Obsidian embed
+        return el.outerHTML;
+      }
+      // TBD Stage 9: plain attachment embed → real Obsidian embed
+      return el.outerHTML;
+    },
   });
 
   td.addRule("citation", {
@@ -109,18 +118,27 @@ function addZoteroRules(td: TurndownService): void {
 
   td.addRule("annotationExcerpt", {
     filter: (node) =>
-      (node.nodeName === "SPAN" || node.nodeName === "IMG") &&
-      node.hasAttribute("data-annotation"),
-    // TBD: resolve to highlight/underline/image markdown; pass through for now
-    replacement: (_content, node) => (node as Element).outerHTML,
+      node.nodeName === "SPAN" && node.hasAttribute("data-annotation"),
+    replacement:
+      options.annotationExcerpt ??
+      ((_content, node) => (node as Element).outerHTML),
   });
+}
+
+export interface NoteTurndownOptions {
+  /**
+   * Replacement for the highlight/underline excerpt span (`span[data-annotation]`).
+   * Defaults to raw-HTML passthrough — the standalone converter keeps the payload
+   * for a later stage. `parseNote` injects the resolver that renders linked marks.
+   */
+  annotationExcerpt?: TurndownService.ReplacementFunction;
 }
 
 /**
  * Build a TurndownService that converts Zotero note HTML to Obsidian-flavored
  * Markdown. The base mirrors Obsidian's own `htmlToMarkdown`; the Zotero rules
- * layer on top. Built fresh per call (sub-millisecond) so callers can add
- * further rules (e.g. citation/annotation resolution) without shared state.
+ * layer on top. Built fresh per call (sub-millisecond), so `options` can inject
+ * per-call rule replacements (e.g. annotation resolution) without shared state.
  *
  * `Turndown` is passed in rather than imported: at runtime Obsidian exposes
  * `TurndownService` as a global, and tests supply the npm package directly, so
@@ -128,9 +146,10 @@ function addZoteroRules(td: TurndownService): void {
  */
 export function createNoteTurndown(
   Turndown: typeof TurndownService,
+  options: NoteTurndownOptions = {},
 ): TurndownService {
   const td = new Turndown(obsidianTurndownOptions);
   addObsidianRules(td);
-  addZoteroRules(td);
+  addZoteroRules(td, options);
   return td;
 }
