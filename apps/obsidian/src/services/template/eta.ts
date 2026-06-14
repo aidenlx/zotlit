@@ -7,6 +7,7 @@ import {
 } from "eta/core";
 import { dirname, isAbsolute, join, relative } from "node:path/posix";
 
+import { MARKER_END, MARKER_START } from "@/lib/constants";
 import { type AutoTrim } from "@/services/settings/schema";
 
 import { toFilename } from "./defaults";
@@ -26,6 +27,7 @@ export class ObsidianEta extends Eta {
    * it.
    */
   readonly bqHelper = formatBlockquote;
+  readonly managedRegion = formatManagedRegion;
 
   constructor(host: ObsidianEtaHost) {
     super({
@@ -74,11 +76,11 @@ const directIncludeDataPlugin: EtaConfig["plugins"][number] = {
     return fnString
       .replace(
         `let include = (__eta_t, __eta_d) => this.render(__eta_t, {...${varName}, ...(__eta_d ?? {})}, options);`,
-        `let include = (__eta_t, __eta_d) => this.render(__eta_t, __eta_d ?? ${varName}, options);`,
+        `let include = (__eta_t, __eta_d) => { const __eta_r = this.render(__eta_t, __eta_d ?? ${varName}, options); return __eta_t === "content" ? this.managedRegion(__eta_r) : __eta_r; };`,
       )
       .replace(
         `let includeAsync = (__eta_t, __eta_d) => this.renderAsync(__eta_t, {...${varName}, ...(__eta_d ?? {})}, options);`,
-        `let includeAsync = (__eta_t, __eta_d) => this.renderAsync(__eta_t, __eta_d ?? ${varName}, options);`,
+        `let includeAsync = async (__eta_t, __eta_d) => { const __eta_r = await this.renderAsync(__eta_t, __eta_d ?? ${varName}, options); return __eta_t === "content" ? this.managedRegion(__eta_r) : __eta_r; };`,
       );
   },
 };
@@ -93,10 +95,14 @@ export function formatBlockquote(content: string): string {
   const lines = content
     .trim()
     .split("\n")
-    .map((line) => (line.trim() === "" ? ">" : `> ${  line}`));
+    .map((line) => (line.trim() === "" ? ">" : `> ${line}`));
   return lines
     .filter((line, i) => !(line === ">" && lines[i - 1] === ">"))
     .join("\n");
+}
+
+export function formatManagedRegion(content: string): string {
+  return `${MARKER_START}\n${content.trim()}\n${MARKER_END}`;
 }
 
 function filterUndefinedNull(value: unknown): string {

@@ -3,7 +3,6 @@ import {
   type App,
   type CachedMetadata,
   type Plugin,
-  type Pos,
   type TAbstractFile,
 } from "obsidian";
 
@@ -17,22 +16,14 @@ import {
   diffContributions,
   EMPTY_CONTRIBUTIONS,
   fileContributions,
-  formatItemKey,
   itemKeyFromFrontmatter,
   type ContribDiff,
   type FileContributions,
 } from "./parse";
 
-export { formatItemKey };
+export { itemKeyFromFrontmatter };
 
 const logger = getLogger("note-index");
-
-export interface BlockInfo {
-  file: string;
-  /** Indexed item key, format `KEY[gGROUPID]`. */
-  key: string;
-  position: Pos;
-}
 
 interface NoteIndexEvents {
   changed: (file: string) => void;
@@ -59,8 +50,6 @@ export class NoteIndex extends Service<void> {
 
   readonly #notesByItemKey = new Map<string, Set<string>>();
   readonly #notesByCitekey = new Map<string, Set<string>>();
-  readonly #blocksByItemKey = new Map<string, Set<BlockInfo>>();
-  readonly #blocksByFile = new Map<string, BlockInfo[]>();
   readonly #contribByFile = new Map<string, FileContributions>();
 
   ready: Promise<void>;
@@ -77,23 +66,6 @@ export class NoteIndex extends Service<void> {
 
   getNotesByCitekey(citekey: string): string[] {
     return [...(this.#notesByCitekey.get(citekey) ?? [])];
-  }
-
-  getBlocksFor(arg: { file?: string; itemKey?: string }): BlockInfo[] {
-    const { file, itemKey } = arg;
-    if (!file && !itemKey) {
-      throw new TypeError("getBlocksFor: provide file or itemKey");
-    }
-
-    if (file && itemKey) {
-      const inFile = this.#blocksByFile.get(file);
-      const forItem = this.#blocksByItemKey.get(itemKey);
-      if (!inFile || !forItem) return [];
-      return inFile.filter((info) => forItem.has(info));
-    }
-
-    if (file) return [...(this.#blocksByFile.get(file) ?? [])];
-    return [...(this.#blocksByItemKey.get(itemKey!) ?? [])];
   }
 
   on<K extends keyof NoteIndexEvents>(
@@ -164,7 +136,7 @@ export class NoteIndex extends Service<void> {
     const diff = diffContributions(prev, next);
     if (diff.empty) return;
 
-    this.#applyDiff(path, diff, next);
+    this.#applyDiff(path, diff);
     if (hasContributions(next)) {
       this.#contribByFile.set(path, next);
     } else {
@@ -187,7 +159,7 @@ export class NoteIndex extends Service<void> {
     this.#emitter.emit("rebuilt");
   }
 
-  #applyDiff(file: string, diff: ContribDiff, next: FileContributions): void {
+  #applyDiff(file: string, diff: ContribDiff): void {
     if (diff.itemKey.remove) {
       removeIndexedFile(this.#notesByItemKey, diff.itemKey.remove, file);
     }
@@ -201,11 +173,6 @@ export class NoteIndex extends Service<void> {
     if (diff.citekey.add) {
       addIndexedFile(this.#notesByCitekey, diff.citekey.add, file);
     }
-
-    for (const key of diff.blocks.remove) this.#removeBlockKey(file, key);
-    for (const key of diff.blocks.add) {
-      this.#addBlockKey(file, key, next.blocks.get(key)!);
-    }
   }
 
   #insertContributions(file: string, contributions: FileContributions): void {
@@ -217,49 +184,12 @@ export class NoteIndex extends Service<void> {
     if (contributions.citekey) {
       addIndexedFile(this.#notesByCitekey, contributions.citekey, file);
     }
-    for (const [key, positions] of contributions.blocks) {
-      this.#addBlockKey(file, key, positions);
-    }
     this.#contribByFile.set(file, contributions);
-  }
-
-  #removeBlockKey(file: string, key: string): void {
-    const inFile = this.#blocksByFile.get(file);
-    if (!inFile) return;
-
-    const removed: BlockInfo[] = [];
-    for (let i = inFile.length - 1; i >= 0; i--) {
-      const info = inFile[i]!;
-      if (info.key !== key) continue;
-      removed.push(info);
-      inFile.splice(i, 1);
-    }
-
-    if (inFile.length === 0) this.#blocksByFile.delete(file);
-
-    const forItem = this.#blocksByItemKey.get(key);
-    if (!forItem) return;
-    for (const info of removed) forItem.delete(info);
-    if (forItem.size === 0) this.#blocksByItemKey.delete(key);
-  }
-
-  #addBlockKey(file: string, key: string, positions: Pos[]): void {
-    const inFile = this.#blocksByFile.get(file) ?? [];
-    if (inFile.length === 0) this.#blocksByFile.set(file, inFile);
-
-    const forItem = ensureSet(this.#blocksByItemKey, key);
-    for (const position of positions) {
-      const info = { file, key, position };
-      inFile.push(info);
-      forItem.add(info);
-    }
   }
 
   #clear(): void {
     this.#notesByItemKey.clear();
     this.#notesByCitekey.clear();
-    this.#blocksByItemKey.clear();
-    this.#blocksByFile.clear();
     this.#contribByFile.clear();
   }
 }
@@ -293,11 +223,7 @@ function ensureSet<T>(index: Map<string, Set<T>>, key: string): Set<T> {
 }
 
 function hasContributions(contributions: FileContributions): boolean {
-  return (
-    contributions.itemKey !== null ||
-    contributions.citekey !== null ||
-    contributions.blocks.size > 0
-  );
+  return contributions.itemKey !== null || contributions.citekey !== null;
 }
 
 function isMarkdownFile(file: TAbstractFile): file is TFile {

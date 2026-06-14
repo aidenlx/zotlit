@@ -9,6 +9,7 @@ import {
 } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MARKER_END, MARKER_START } from "@/lib/constants";
 import { SettingsService } from "@/services/settings/service";
 
 import { formatBlockquote } from "./eta";
@@ -217,7 +218,7 @@ describe("TemplateService", () => {
   it("resolves embedded includes through canonical template names", async () => {
     const { service } = await makeHarness();
 
-    const rendered = service.render("annots", {
+    const rendered = service.render("content", {
       annotations: [
         { pageLabel: "4", imgEmbed: "", text: "Highlighted text", comment: "" },
       ],
@@ -225,6 +226,19 @@ describe("TemplateService", () => {
 
     expect(rendered).toContain("Page 4");
     expect(rendered).toContain("Highlighted text");
+  });
+
+  it("wraps content includes in managed-region markers", async () => {
+    const { service } = await makeHarness();
+
+    const rendered = service.render("note", {
+      title: "Paper",
+      backlink: "zotero://select/items/1",
+      attachments: [],
+      annotations: [],
+    });
+
+    expect(rendered).toContain(`${MARKER_START}\n\n${MARKER_END}`);
   });
 
   it("keeps multi-line annotation text and comment inside the callout", async () => {

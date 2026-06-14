@@ -1,14 +1,22 @@
+import { distinct } from "@std/collections";
+
+import {
+  FIELD_ATTACHMENTS,
+  FIELD_CITEKEY,
+  FIELD_ZOTERO_KEY,
+} from "@/lib/constants";
+
 import { type FrontmatterField, type NoteTemplateContext } from "./types";
 
 /**
  * Frontmatter keys owned by the system; user expressions cannot target them.
- * `zotero-key` / `citekey` are written from item data; `zt-attachments` scopes
- * attachments and is managed by the update flow.
+ * Item identity fields are written from item data; attachment scope is managed
+ * by the update flow.
  */
 const RESERVED_KEYS: ReadonlySet<string> = new Set([
-  "zotero-key",
-  "citekey",
-  "zt-attachments",
+  FIELD_ZOTERO_KEY,
+  FIELD_CITEKEY,
+  FIELD_ATTACHMENTS,
 ]);
 
 /**
@@ -33,7 +41,7 @@ export function evalFrontmatterField(
 export interface BuildFrontmatterOptions {
   fields: readonly FrontmatterField[];
   /**
-   * Attachment keys to persist as `zt-attachments`; omit or pass empty to leave
+   * Attachment keys to persist; omit or pass empty to leave
    * the note unscoped ("all attachments").
    */
   attachmentScope?: readonly string[];
@@ -41,18 +49,20 @@ export interface BuildFrontmatterOptions {
 }
 
 /**
- * Assemble the frontmatter record: system fields (`zotero-key`, `citekey`,
- * optional `zt-attachments`) plus the evaluated user fields. A failing user
- * expression is skipped (reported via `onError`) rather than aborting the rest.
+ * Assemble the frontmatter record: system fields plus evaluated user fields. A
+ * failing user expression is skipped (reported via `onError`) rather than
+ * aborting the rest.
  */
 export function buildFrontmatter(
   zt: NoteTemplateContext,
   options: BuildFrontmatterOptions,
 ): Record<string, unknown> {
-  const fm: Record<string, unknown> = { "zotero-key": zt.indexedKey };
-  if (zt.citationKey) fm["citekey"] = zt.citationKey;
+  const fm: Record<string, unknown> = {
+    [FIELD_ZOTERO_KEY]: zt.indexedKey,
+  };
+  if (zt.citationKey) fm[FIELD_CITEKEY] = zt.citationKey;
   if (options.attachmentScope && options.attachmentScope.length > 0) {
-    fm["zt-attachments"] = [...options.attachmentScope];
+    fm[FIELD_ATTACHMENTS] = [...options.attachmentScope];
   }
 
   for (const field of options.fields) {
@@ -64,4 +74,17 @@ export function buildFrontmatter(
     }
   }
   return fm;
+}
+
+export function mergeManagedFrontmatter(
+  target: Record<string, unknown>,
+  managed: Record<string, unknown>,
+): void {
+  for (const [key, value] of Object.entries(managed)) {
+    const existing = target[key];
+    target[key] =
+      Array.isArray(existing) && Array.isArray(value)
+        ? distinct([...existing, ...value])
+        : value;
+  }
 }

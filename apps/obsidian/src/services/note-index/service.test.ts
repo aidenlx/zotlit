@@ -5,17 +5,15 @@ import {
   type CachedMetadata,
   type EventRef,
   type Plugin,
-  type Pos,
-  type SectionCache,
 } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { formatItemKey, isLiteratureNote, NoteIndex } from "./service";
+import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+
+import { isLiteratureNote, NoteIndex } from "./service";
 
 const ITEM_A = "ABCD2345";
-const ITEM_A_GROUP = `${ITEM_A}g42`;
 const ITEM_B = "ZZZ99999";
-const PARENT = "PQRST678";
 
 type Callback = (...args: unknown[]) => void;
 type MetadataEvent = "changed" | "deleted" | "resolved";
@@ -188,7 +186,6 @@ describe("NoteIndex", () => {
       "Notes/a.md": cache({
         itemKey: ITEM_A,
         citekey: "doe2024",
-        sections: [section(`${ITEM_A}a${PARENT}g42p7`, 1)],
       }),
       "Notes/b.md": cache({ itemKey: `${ITEM_B}g7`, citekey: "roe2025" }),
     });
@@ -202,7 +199,6 @@ describe("NoteIndex", () => {
     expect(rebuilt).toBe(1);
     expect(service.getNotesByItemKey(ITEM_A)).toEqual(["Notes/a.md"]);
     expect(service.getNotesByCitekey("roe2025")).toEqual(["Notes/b.md"]);
-    expect(service.getBlocksFor({ itemKey: ITEM_A_GROUP })).toHaveLength(1);
   });
 
   it("updates indices and emits changed for metadata edits", async () => {
@@ -258,7 +254,6 @@ describe("NoteIndex", () => {
       "paper.md": cache({
         itemKey: ITEM_A,
         citekey: "doe2024",
-        sections: [section(`${ITEM_A}a${PARENT}g42p7`, 1)],
       }),
     });
     metadataCache.resolve();
@@ -267,16 +262,13 @@ describe("NoteIndex", () => {
 
     expect(service.getNotesByItemKey(ITEM_A)).toEqual(["Notes/paper.md"]);
     expect(service.getNotesByCitekey("doe2024")).toEqual(["Notes/paper.md"]);
-    expect(service.getBlocksFor({ file: "paper.md" })).toEqual([]);
-    expect(service.getBlocksFor({ file: "Notes/paper.md" })).toHaveLength(1);
   });
 
-  it("drops note, citekey, and block indices on delete", async () => {
+  it("drops note and citekey indices on delete", async () => {
     const { service, vault, metadataCache } = await makeHarness({
       "paper.md": cache({
         itemKey: ITEM_A,
         citekey: "doe2024",
-        sections: [section(`${ITEM_A}a${PARENT}g42p7`, 1)],
       }),
     });
     metadataCache.resolve();
@@ -285,36 +277,6 @@ describe("NoteIndex", () => {
 
     expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
     expect(service.getNotesByCitekey("doe2024")).toEqual([]);
-    expect(service.getBlocksFor({ itemKey: ITEM_A_GROUP })).toEqual([]);
-  });
-
-  it("queries blocks by file, item key, and their intersection", async () => {
-    const { service, metadataCache } = await makeHarness({
-      "a.md": cache({
-        sections: [
-          section(`${ITEM_A}a${PARENT}g42p7n${ITEM_B}a${PARENT}p2`, 1),
-        ],
-      }),
-      "b.md": cache({
-        sections: [section(`${ITEM_A}a${PARENT}g42p8`, 3)],
-      }),
-    });
-    metadataCache.resolve();
-
-    expect(
-      service.getBlocksFor({ file: "a.md" }).map((block) => block.key),
-    ).toEqual([ITEM_A_GROUP, ITEM_B]);
-    expect(
-      service
-        .getBlocksFor({ itemKey: ITEM_A_GROUP })
-        .map((block) => block.file),
-    ).toEqual(["a.md", "b.md"]);
-    expect(
-      service.getBlocksFor({ file: "a.md", itemKey: ITEM_A_GROUP }),
-    ).toEqual([expect.objectContaining({ file: "a.md", key: ITEM_A_GROUP })]);
-    expect(() => service.getBlocksFor({})).toThrow(
-      new TypeError("getBlocksFor: provide file or itemKey"),
-    );
   });
 
   it("checks literature notes from frontmatter only", async () => {
@@ -326,8 +288,6 @@ describe("NoteIndex", () => {
     expect(isLiteratureNote(vault.files.get("paper.md")!, app)).toBe(true);
     expect(isLiteratureNote("paper.md", app)).toBe(true);
     expect(isLiteratureNote("invalid.md", app)).toBe(false);
-    expect(formatItemKey(ITEM_A, 42)).toBe(ITEM_A_GROUP);
-    expect(formatItemKey(ITEM_A, null)).toBe(ITEM_A);
   });
 });
 
@@ -355,28 +315,16 @@ async function makeHarness(
 function cache(options: {
   itemKey?: unknown;
   citekey?: unknown;
-  sections?: SectionCache[];
 }): CachedMetadata {
   const frontmatter: Record<string, unknown> = {};
   if (options.itemKey !== undefined)
-    frontmatter["zotero-key"] = options.itemKey;
-  if (options.citekey !== undefined) frontmatter.citekey = options.citekey;
+    frontmatter[FIELD_ZOTERO_KEY] = options.itemKey;
+  if (options.citekey !== undefined)
+    frontmatter[FIELD_CITEKEY] = options.citekey;
 
   return {
     frontmatter: Object.keys(frontmatter).length > 0 ? frontmatter : undefined,
-    sections: options.sections,
   } as CachedMetadata;
-}
-
-function section(id: string, line: number): SectionCache {
-  return { id, position: pos(line), type: "paragraph" };
-}
-
-function pos(line: number): Pos {
-  return {
-    start: { line, col: 0, offset: line * 10 },
-    end: { line, col: 5, offset: line * 10 + 5 },
-  };
 }
 
 function makeFile(path: string): TFile {

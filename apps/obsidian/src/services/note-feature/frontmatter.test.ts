@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFrontmatter, evalFrontmatterField } from "./frontmatter";
+import {
+  FIELD_ATTACHMENTS,
+  FIELD_CITEKEY,
+  FIELD_ZOTERO_KEY,
+} from "@/lib/constants";
+
+import {
+  buildFrontmatter,
+  evalFrontmatterField,
+  mergeManagedFrontmatter,
+} from "./frontmatter";
 import { type NoteTemplateContext } from "./types";
 
 function makeContext(
@@ -26,8 +36,8 @@ describe("buildFrontmatter", () => {
       fields: [{ key: "title", expr: "zt.title" }],
     });
     expect(fm).toEqual({
-      "zotero-key": "ABC12345",
-      citekey: "smith2024",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_CITEKEY]: "smith2024",
       title: "A Study",
     });
   });
@@ -36,20 +46,20 @@ describe("buildFrontmatter", () => {
     const fm = buildFrontmatter(makeContext({ citationKey: null }), {
       fields: [],
     });
-    expect(fm).toEqual({ "zotero-key": "ABC12345" });
+    expect(fm).toEqual({ [FIELD_ZOTERO_KEY]: "ABC12345" });
   });
 
   it("skips reserved and empty keys", () => {
     const fm = buildFrontmatter(makeContext(), {
       fields: [
-        { key: "zotero-key", expr: "'x'" },
+        { key: FIELD_ZOTERO_KEY, expr: "'x'" },
         { key: "", expr: "'y'" },
         { key: "year", expr: "2024" },
       ],
     });
     expect(fm).toEqual({
-      "zotero-key": "ABC12345",
-      citekey: "smith2024",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_CITEKEY]: "smith2024",
       year: 2024,
     });
   });
@@ -59,10 +69,10 @@ describe("buildFrontmatter", () => {
       buildFrontmatter(makeContext(), {
         fields: [],
         attachmentScope: ["ATCH1", "ATCH2"],
-      })["zt-attachments"],
+      })[FIELD_ATTACHMENTS],
     ).toEqual(["ATCH1", "ATCH2"]);
     expect(
-      "zt-attachments" in
+      FIELD_ATTACHMENTS in
         buildFrontmatter(makeContext(), { fields: [], attachmentScope: [] }),
     ).toBe(false);
   });
@@ -75,5 +85,30 @@ describe("buildFrontmatter", () => {
     });
     expect("boom" in fm).toBe(false);
     expect(errors).toEqual(["boom"]);
+  });
+});
+
+describe("mergeManagedFrontmatter", () => {
+  it("refreshes managed scalars and preserves unrelated keys", () => {
+    const fm = { aliases: ["old"], title: "Old" };
+
+    mergeManagedFrontmatter(fm, {
+      title: "New",
+      [FIELD_CITEKEY]: "smith2024",
+    });
+
+    expect(fm).toEqual({
+      aliases: ["old"],
+      title: "New",
+      [FIELD_CITEKEY]: "smith2024",
+    });
+  });
+
+  it("merges array-valued managed fields without duplicates", () => {
+    const fm: Record<string, unknown> = { tags: ["zotero", "read"] };
+
+    mergeManagedFrontmatter(fm, { tags: ["read", "paper"] });
+
+    expect(fm.tags).toEqual(["zotero", "read", "paper"]);
   });
 });

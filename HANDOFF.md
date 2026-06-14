@@ -58,7 +58,7 @@ v1 rendered YAML frontmatter via an Eta template (`zt-field.eta.md`), which forc
 | Template | `zt` shape | Notes |
 |----------|-----------|-------|
 | `note` | `NoteTemplateContext` (see below) | `fileLink` NOT top-level — per-attachment only |
-| `annots` | `{ annotations: TemplateAnnotation[] }` | Wrapped for consistency |
+| `content` (was `annots`) | full `NoteTemplateContext` (same `zt` as `note`) | Renders the `%%zt-managed%%` region; default body = annotation loop, but full context lets users move `zt.backlink`/etc. into the refreshable region. Markers code-injected, not in the file. |
 | `annotation` | `TemplateAnnotation` | Single annotation, carries `parentItem` and `parentAttachment` |
 | `cite` / `cite2` | `{ items: TemplateItemData[] }` | Each item is full `TemplateItemData` with `citekey` alias |
 
@@ -151,10 +151,12 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 # <%= zt.title %>
 
 [Zotero](<%= zt.backlink %>) <%= zt.attachments.map(a => a.fileLink).filter(Boolean).join(" ") %>
-<%~ include("annots", { annotations: zt.annotations }) %>
-```
 
-`zt-annots.eta.md`:
+<%~ include("content", zt) %>
+```
+The H1 + backlink/attachments line stay **outside** the managed region (static; refreshed only by `overwrite-note`). `include("content", zt)` passes the **full** `NoteTemplateContext` (not `{ annotations }`) and its output is auto-wrapped with `%%zt-managed%%` markers by the `eta.ts` include rewrite — the marker text is **not** in this file.
+
+`zt-content.eta.md` (renamed from `zt-annots.eta.md`; default body = annotation loop only, full context so a user can drop `zt.backlink`/`zt.attachments`/etc. into the refreshable region; **no marker text in the file**):
 ```
 <% for (const annotation of zt.annotations) { %>
 <%~ include("annotation", annotation) %>
@@ -209,7 +211,7 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 Scope decision: implemented the core + db-layer mappers. The frontmatter expression system (step 10) and the full `NoteTemplateContext` builder (step 11) are **deferred to Phase C**, where their only caller (note-create) exists.
 
 5. **Eta `varName` → `"zt"`** — set in the `ObsidianEta` constructor config (`eta.ts`); `directIncludeDataPlugin` picks it up via `config.varName`. Also updated the `EtaSuggest` autocomplete insert text to `"= zt. "` (`editor/suggest.ts`).
-6. **Template files updated to v2 `zt.*` syntax** — `zt-note`, `zt-annots`, `zt-annot`, `zt-cite`, `zt-cite2` now match the design above. Deleted `zt-field.eta.md` and `zt-colored.eta.md`; pruned `field`/`colored` from `CANONICAL_NAMES` and `EMBEDDED_DEFAULTS` in `defaults.ts` (`toFilename`/`fromFilename` need no change — they key off the set).
+6. **Template files updated to v2 `zt.*` syntax** — `zt-note`, `zt-content` (renamed from `zt-annots`), `zt-annot`, `zt-cite`, `zt-cite2` now match the design above. Deleted `zt-field.eta.md` and `zt-colored.eta.md`; pruned `field`/`colored` from `CANONICAL_NAMES` and `EMBEDDED_DEFAULTS` in `defaults.ts` (`toFilename`/`fromFilename` need no change — they key off the set).
 7. **`citekey` alias** — added to `TemplateItemData` (`zt-template-item.ts`) as an explicit typed property reading `allFields.citationKey`; mirrors the `containerTitle`/`abstract` pattern. Both `citationKey` and `citekey` resolve. The three CSL aliases (`abstract`, `containerTitle`, `citekey`) are each a typed property reading its canonical source field directly — the canonical names stay accessible through the `...allFields` spread, so both names work without an intermediate rename map.
 8–9. **`TemplateAnnotation` + `TemplateAttachment` types and db-layer mappers** — new files `packages/db/src/lib/zt-template-annot.ts` and `zt-template-attach.ts`, exported from `packages/db/src/index.ts`. Mappers (`annotationToTemplateData`, `attachmentToTemplateData`) return the pass-through subset; runtime fields (`imgEmbed`, `backlink`, `fileLink`, `parentItem`, `parentAttachment`) are `Omit`ted and filled at the app layer in Phase C. `attachmentToTemplateData` derives `filename` from `parseAttachmentPath` and resolves `linkMode` via `LINK_MODE` (`"unknown"` fallback).
 12. **`template.filename` default** — now `<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>` (no `.md`) in `schema.ts`. Migration (`migrate.ts`): the exact v1 default string (`V1_DEFAULT_FILENAME`) is dropped so the v2 default applies; customized values carry over untouched.
@@ -228,7 +230,7 @@ Scope decision: implemented the core + db-layer mappers. The frontmatter express
 
 ### What exists in v2 already
 
-- `NoteIndex` (Stage 2) — `{itemKey → file[]}`, `{annotKey → block[]}`, `{citekey → file[]}`.
+- `NoteIndex` (Stage 2) — `{itemKey → file[]}`, `{citekey → file[]}` only. The dead `{annotKey → block[]}` map + per-annotation block-ID parsing were removed in Phase D; `getBlocksFor`, `BlockInfo`, annot-block regexes, `formatItemKey`, and block test cases are gone. `itemKey`/`citekey` contributions and `ITEM_KEY_GROUP_ID_PATTERN` remain.
 - `ItemLookup` (Stage 3) — MiniSearch-based item search, used by editor-suggest and quick-switch.
 - `NoteParser` (Stage 4) — Turndown converter for Zotero HTML → Obsidian MD. Citation rule is a passthrough awaiting Stage 5.
 - `TemplateService` (Stage 1) — `render(name, data)` and `renderString(source, data)`. Feature-specific helpers deferred to Stage 5.
@@ -267,6 +269,10 @@ Discovery: Zotero stores its data directory in the **profile's `prefs.js`** (`ex
 - **Don't use `zt-colored.eta.md`.** NoteParser's `renderAnnotationMark()` handles colors with CSS variables and semantic `data-color` attributes — superior to v1's inline `<mark style>` approach.
 - **Don't store numeric item IDs in frontmatter.** Use stable Zotero item keys. Read numeric IDs for backward compat, migrate to keys on first update.
 - **Don't always write `zt-attachments` to frontmatter.** Missing/empty means "all attachments" — only write when explicitly scoping.
+- **Don't port v1's per-annotation block-ID diffing / `EditorState` incremental merge for update.** The overwrite model re-renders the whole `%%zt-managed%%` region wholesale via `vault.process`. Block IDs only ever served v1's diffing (gone) plus a not-in-alpha jump-to-annotation feature; emitting them now is speculative infra and clutters every callout with opaque `^…` strings.
+- **Don't put `%%zt-managed%%` marker text in any `.eta.md`.** Markers are code-injected (shared constants) around the `content` render so a template author can't delete/duplicate/misplace them. The eta files stay marker-free.
+- **Don't read `zt-attachments` in alpha.** Nothing writes it (no selection UI), so a reader would be parsing a key with no writer — same anti-pattern as the block IDs. Always use all attachments until the selection UI lands.
+- **Don't block-replace frontmatter on update/overwrite.** Key-level merge only (managed keys overwrite, unmanaged keys like `aliases`/`tags` preserved) — even Overwrite must not nuke hand-added metadata.
 
 ## Next steps
 
@@ -295,10 +301,48 @@ Steps 5–9, 12–14 are complete. Steps 10 and 11 were deferred to Phase C beca
 
 **Known alpha limitations (noted in code):** `imgEmbed` is `""` (image-excerpt import is Stage 9); `fileLink` is a plain `file://` link (in-vault embed optimization deferred).
 
-### Phase D: Note update
+### Phase D: Note update — DONE
 
-16. **Decide update mechanism** — v1 block-ID approach may still work for callout-based annotations. Consider simpler section-marker approach (`%% annotations %%` delimiters). The zotero-better-notes finding (full re-render is viable) supports simplification.
-17. **Implement update** — read `zt-attachments` from frontmatter to scope attachments. Missing/empty → all attachments. Either incremental merge or section overwrite. Include overwrite mode. Migrate v1 numeric IDs to keys.
+**Mechanism chosen: managed-region overwrite, not v1 block-ID diffing.** A marker-delimited region in the note body is re-rendered and overwritten wholesale on update; everything outside it is preserved. This replaces v1's per-annotation `EditorState` diff entirely (no incremental merge, no preserving hand-edits *inside* the region). Updates use `app.vault.process` (body) + `app.fileManager.processFrontMatter` (frontmatter) — **no CodeMirror editor**.
+
+**The managed region**
+- Rendered by the renamed `content` template (was `annots`); see "Template changes from v1" above for the new shapes.
+- Wrapped by markers **`%%zt-managed%%` … `%%/zt-managed%%`** (Obsidian comments: invisible in reading view, not indexed in `metadataCache.sections`, so located by scanning raw file text).
+- Markers are **injected by code, never written in any `.eta.md`** — shared `MARKER_START`/`MARKER_END` constants in `apps/obsidian/src/lib/constants.ts`. `note.eta.md` positions the region with `<%~ include("content", zt) %>`; the `eta.ts` include rewrite (extend `directIncludeDataPlugin.processFnString`, keyed on the canonical name `"content"`) auto-wraps that include's output. The update splice renders `content` directly and wraps with the **same** constants → create and update produce byte-identical boundaries (no diff churn).
+- Markers are **unconditional** — emitted even with zero annotations — so a note created before any highlights exist stays updatable. No default placeholder text inside an empty region.
+
+**Implemented in this session**
+- `apps/obsidian/src/services/template/defaults.ts` now registers canonical `content`; `zt-annots.eta.md` was renamed to `zt-content.eta.md`. `zt-note.eta.md` includes `content` with the full `NoteTemplateContext`.
+- `apps/obsidian/src/lib/constants.ts` exports `MARKER_START` and `MARKER_END`; `apps/obsidian/src/services/template/eta.ts` imports them and exports `formatManagedRegion()`. The direct-include Eta rewrite still passes include data directly and now wraps only `include("content", ...)` in the managed markers.
+- `NoteFeatures.update(file, indexedKey)` resolves the DB item from `zotero-key` (`KEY` → library 1, `KEYgGROUPID` → lookup via `getLibraries()`), rebuilds the full note context, refreshes frontmatter, and replaces the first managed region with `vault.process`. Missing region leaves the body unchanged and returns `bodyUpdated: false`; duplicate regions replace the first and warn-log the count.
+- `NoteFeatures.overwrite(file, indexedKey)` resolves the same context, refreshes frontmatter, and replaces the Markdown body with a fresh `note` render while preserving the existing YAML frontmatter block. No filename rename.
+- `apps/obsidian/src/services/note-feature/actions.ts` registers palette commands `update-note` and `overwrite-note` with `editorCheckCallback`, gated on the active editor file having valid `zotero-key` frontmatter. `overwrite-note` uses Obsidian `ConfirmationModal` + `setWarning`; `apps/obsidian/package.json` already has `minAppVersion: 1.13.1`, so the 1.13.0 API is covered.
+- `zt-main.ts` wires `addNoteFeatureActions(this, { noteFeatures })`.
+- `NoteIndex` block-ID infrastructure removed: no `getBlocksFor`, no block maps, no `BlockInfo`, no annot-block regexes, no `formatItemKey` re-export, and block-only tests removed.
+- Messages added in `messages/en.json` for update/overwrite command names, toasts, confirmation modal, and cancel button. Paraglide was recompiled.
+- `apps/obsidian/src/services/database/service.test.ts` fake `ZoteroPrefService` now exposes `databasePath`, matching the real service getter so the full test suite works after the profile-based DB path change.
+
+**Frontmatter merge** (`processFrontMatter`, same for both commands):
+1. Build the managed record: system `zotero-key`/`citekey` + evaluated `note.frontmatter-fields`.
+2. For each managed key, scalars replace the old value.
+3. If both existing and fresh values are arrays, concatenate and `Set`-dedupe.
+4. Unmanaged keys (`aliases`, `tags`, `cssclasses`, etc.) are preserved because only managed keys are assigned.
+
+Implementation note: `mergeManagedFrontmatter()` is local because the needed behavior is only scalar replace + array union; it uses `@std/collections` `distinct()` for the array de-dupe.
+
+Consequence accepted: array-valued managed fields are **union/append-only** (concat+`distinct` never removes) — a value dropped in Zotero lingers until an Overwrite. Desired for `tags`/`aliases`; documented for Zotero-sourced array fields. `zt-attachments` is **excluded** from the managed set (it is scope *input*, not output).
+
+**Shared constants follow-up:** `FRONTMATTER_ZOTERO_KEY`, `FRONTMATTER_CITEKEY`, `FRONTMATTER_ATTACHMENTS`, `MARKER_START`, and `MARKER_END` now live in `apps/obsidian/src/lib/constants.ts`. `note-index/parse.ts`, `note-feature/frontmatter.ts`, `template/eta.ts`, and related tests import those constants and use computed values instead of hard-coded YAML field-name or marker literals. `INDEXED_KEY` now lives in `apps/obsidian/src/services/note-index/key.ts`, so parser code and note update resolution share the indexed-key regex without importing from `parse.ts`. `apps/obsidian/AGENTS.md` now documents the constants convention.
+
+**Verified after constants follow-up:** `pnpm --filter @zotlit/obsidian typecheck`; `pnpm --filter @zotlit/obsidian exec vitest run src/services/note-index/parse.test.ts src/services/note-index/service.test.ts src/services/note-feature/frontmatter.test.ts`; `pnpm --filter @zotlit/obsidian exec vitest run src/services/template/service.test.ts`; targeted `oxfmt --check` over the touched files.
+
+**Block IDs dropped** — complete.
+
+**Update feedback**: plain success toasts via `toast.promise` ("Literature note updated." / "Literature note overwritten."); no add/update counts (meaningless under wholesale overwrite). Missing marker success copy is "Frontmatter updated. No managed region found."
+
+**Deferred to post-alpha** (land together with the attachment-selection UI that *writes* the key — planned as whitelist + blacklist): `zt-attachments` scoping read, v1 numeric-ID→key migration, and v1 backward-compat. **Alpha = always all attachments** for create, update, and overwrite; the key is never read. A v1 note's stale numeric `zt-attachments` is an unmanaged key → preserved as harmless dead metadata.
+
+**Verified after Phase D:** `pnpm --filter @zotlit/obsidian typecheck`; `pnpm --filter @zotlit/obsidian lint`; `pnpm --filter @zotlit/obsidian exec oxfmt --check .` from `apps/obsidian`; `pnpm --filter @zotlit/obsidian test` (20 files, 268 tests).
 
 ### Phase E: Citation finishers — steps 19–20 DONE; 18 deferred
 
@@ -308,8 +352,8 @@ Steps 5–9, 12–14 are complete. Steps 10 and 11 were deferred to Phase C beca
 
 ### Phase F: Commands & wiring
 
-21. **Commands**: `update-note`, `overwrite-update-note`, `insert-citation`.
-22. **Quick-switch create-arm**: on miss → `NoteFeatures.create(item)` → open result.
+21. **Commands**: DONE. `update-note` + `overwrite-note` are palette-only, `editorCheckCallback`-gated on the active Markdown editor file having `zotero-key`; see Phase D for behavior. `insert-citation` already DONE (Phase E, step 20). Editor/file context-menu entries deferred post-alpha (palette only).
+22. **Quick-switch create-arm**: DONE in Phase C (miss → `toast.promise(create)` → open).
 
 ## Key references
 
