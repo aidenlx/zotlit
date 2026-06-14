@@ -19,11 +19,7 @@ import { getLogger } from "@/lib/log";
 import { type DatabaseService } from "@/services/database/service";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { Service } from "@/services/service-base";
-import { resolveZoteroDataDir } from "@/services/settings/schema";
-import {
-  type Settings,
-  type SettingsService,
-} from "@/services/settings/service";
+import { type SettingsService } from "@/services/settings/service";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -77,7 +73,7 @@ export class NoteFeatures extends Service<void> {
    */
   async create(item: Item): Promise<TFile> {
     const settings = await this.#settings.loaded;
-    const context = this.#buildContext(item, settings);
+    const context = this.#buildContext(item);
 
     const filename = this.#renderFilename(
       context,
@@ -116,7 +112,7 @@ export class NoteFeatures extends Service<void> {
    * Build the full note context for `item`. Synchronous DB reads via the active
    * client; throws {@link DatabaseError} if the database is not ready.
    */
-  #buildContext(item: Item, settings: Readonly<Settings>): NoteTemplateContext {
+  #buildContext(item: Item): NoteTemplateContext {
     const client: NodeDatabaseClient = this.#db.client;
     const libraryID = item.libraryID;
 
@@ -136,7 +132,7 @@ export class NoteFeatures extends Service<void> {
       (t) => t.name,
     );
 
-    const dataDir = resolveZoteroDataDir(settings["zotero.data-dir"]);
+    const dataDir = this.#zoteroPref.dataDir;
     const baseAttachmentPath = this.#zoteroPref.baseAttachmentPath;
 
     return buildNoteContext({

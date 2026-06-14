@@ -26,8 +26,10 @@ vi.mock("node:fs", async (importOriginal) => {
 import { watch } from "node:fs";
 
 import { createClient } from "@zotlit/db/client/node";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { SettingsService } from "@/services/settings/service";
+import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { DatabaseError, type DbEvents, DatabaseService } from "./service";
 
@@ -96,6 +98,33 @@ class PluginStub {
   }
 }
 
+/**
+ * Stands in for `ZoteroPrefService`: the DB path now derives from the resolved
+ * Zotero data dir. `setDataDir` mirrors a profile change (new dir + `changed`).
+ */
+class FakeZoteroPref {
+  #dataDir: string;
+  readonly #emitter = createNanoEvents<{ changed: () => void }>();
+  readonly ready = Promise.resolve();
+  constructor(dataDir: string) {
+    this.#dataDir = dataDir;
+  }
+  get dataDir(): string {
+    return this.#dataDir;
+  }
+  on(event: "changed", cb: () => void): () => void {
+    return this.#emitter.on(event, cb);
+  }
+  setDataDir(dir: string): void {
+    this.#dataDir = dir;
+    this.#emitter.emit("changed");
+  }
+}
+
+function asPref(fake: FakeZoteroPref): ZoteroPrefService {
+  return fake as unknown as ZoteroPrefService;
+}
+
 interface FakeClient {
   $client: { close: ReturnType<typeof vi.fn> };
 }
@@ -135,11 +164,11 @@ async function makeService(options?: {
 }): Promise<{
   plugin: PluginStub;
   settings: SettingsService;
+  pref: FakeZoteroPref;
   service: DatabaseService;
 }> {
   const persisted = {
     __VERSION__: 1,
-    "zotero.data-dir": dataDir,
     ...options?.initialData,
   };
   const plugin = new PluginStub(persisted);
@@ -148,9 +177,10 @@ async function makeService(options?: {
     migrateLegacy: (raw) => raw,
   });
   await settings.ready;
-  const service = new DatabaseService({ settings });
+  const pref = new FakeZoteroPref(dataDir);
+  const service = new DatabaseService({ settings, zoteroPref: asPref(pref) });
   await service.ready;
-  return { plugin, settings, service };
+  return { plugin, settings, pref, service };
 }
 
 function listen<K extends keyof DbEvents>(
@@ -245,7 +275,7 @@ describe("DatabaseService — startup", () => {
     createClientMock.mockImplementationOnce(() => {
       throw openError;
     });
-    const { settings, service } = await makeService();
+    const { pref, service } = await makeService();
     expect(service.state).toBe("degraded");
 
     const changed = listen(service, "changed");
@@ -255,7 +285,7 @@ describe("DatabaseService — startup", () => {
     const altDir = join(tmpRoot, "alt");
     await mkdir(altDir);
     await writeFile(join(altDir, "zotero.sqlite"), "alt");
-    settings.update({ "zotero.data-dir": altDir });
+    pref.setDataDir(altDir);
     await waitFor(() => service.state === "ready", "recover to ready");
 
     expect(service.state).toBe("ready");
@@ -285,7 +315,7 @@ describe("DatabaseService — refresh", () => {
   });
 
   it("T4: data-dir hot switch failure degrades immediately", async () => {
-    const { settings, service } = await makeService();
+    const { pref, service } = await makeService();
     const original = service.client as unknown as FakeClient;
     const degraded = listen(service, "degraded");
 
@@ -297,7 +327,7 @@ describe("DatabaseService — refresh", () => {
       throw openError;
     });
 
-    settings.update({ "zotero.data-dir": altDir });
+    pref.setDataDir(altDir);
     await waitFor(() => service.state === "degraded", "settle to degraded");
 
     expect(service.state).toBe("degraded");
@@ -330,7 +360,7 @@ describe("DatabaseService — refresh", () => {
   });
 
   it("T6: settings hot switch happy path", async () => {
-    const { settings, service } = await makeService();
+    const { pref, service } = await makeService();
     const firstClient = service.client as unknown as FakeClient;
     const changed = listen(service, "changed");
 
@@ -339,7 +369,7 @@ describe("DatabaseService — refresh", () => {
     const altDbPath = join(altDir, "zotero.sqlite");
     await writeFile(altDbPath, "alt");
 
-    settings.update({ "zotero.data-dir": altDir });
+    pref.setDataDir(altDir);
     await waitFor(
       () => (service.client as unknown as FakeClient) !== firstClient,
       "swap to new client",
@@ -406,14 +436,16 @@ describe("DatabaseService — isUpToDate", () => {
   it("T11: throws not-ready while loading", async () => {
     const persisted = {
       __VERSION__: 1,
-      "zotero.data-dir": dataDir,
     };
     const plugin = new PluginStub(persisted);
     const settings = new SettingsService({
       plugin,
       migrateLegacy: (raw) => raw,
     });
-    const service = new DatabaseService({ settings });
+    const service = new DatabaseService({
+      settings,
+      zoteroPref: asPref(new FakeZoteroPref(dataDir)),
+    });
     await expect(service.isUpToDate()).rejects.toMatchObject({
       code: "not-ready",
     });
@@ -469,7 +501,7 @@ describe("DatabaseService — isUpToDate", () => {
   });
 
   it("T11: false during in-flight hot switch (#activePath !== #lastDbPath)", async () => {
-    const { settings, service } = await makeService();
+    const { pref, service } = await makeService();
     const altDir = join(tmpRoot, "alt");
     await mkdir(altDir);
     await writeFile(join(altDir, "zotero.sqlite"), "alt");
@@ -477,7 +509,7 @@ describe("DatabaseService — isUpToDate", () => {
     // Mutating settings updates #lastDbPath synchronously inside
     // #onSettingsChanged, but #activePath only swaps when #runRefresh
     // succeeds. Check before draining.
-    settings.update({ "zotero.data-dir": altDir });
+    pref.setDataDir(altDir);
     await expect(service.isUpToDate()).resolves.toBe(false);
     await service.refresh();
 
@@ -616,7 +648,7 @@ describe("DatabaseService — watcher lifecycle", () => {
 
 describe("DatabaseService — disposal", () => {
   it("T7: dispose closes client, stops watcher, unsubscribes from settings", async () => {
-    const { settings, service } = await makeService();
+    const { pref, service } = await makeService();
     const client = service.client as unknown as FakeClient;
     const firstWatcher = liveWatchers()[0]!;
 
@@ -626,7 +658,7 @@ describe("DatabaseService — disposal", () => {
 
     // Settings change after dispose: no new createClient calls (no refresh).
     const before = createClientMock.mock.calls.length;
-    settings.update({ "zotero.data-dir": join(tmpRoot, "alt") });
+    pref.setDataDir(join(tmpRoot, "alt"));
     await flush();
     expect(createClientMock).toHaveBeenCalledTimes(before);
   });
@@ -668,7 +700,6 @@ describe("DatabaseService — leak on post-open fs.stat failure", () => {
     const missingDir = join(tmpRoot, "ghost");
     const persisted = {
       __VERSION__: 1,
-      "zotero.data-dir": missingDir,
     };
     const plugin = new PluginStub(persisted);
     const settings = new SettingsService({
@@ -684,7 +715,10 @@ describe("DatabaseService — leak on post-open fs.stat failure", () => {
       return c as never;
     });
 
-    const service = new DatabaseService({ settings });
+    const service = new DatabaseService({
+      settings,
+      zoteroPref: asPref(new FakeZoteroPref(missingDir)),
+    });
     await service.ready;
     expect(service.state).toBe("degraded");
     expect(fakeClients).toHaveLength(1);
@@ -694,7 +728,7 @@ describe("DatabaseService — leak on post-open fs.stat failure", () => {
   });
 
   it("closes the freshly-opened client when fs.stat throws in #runRefresh", async () => {
-    const { settings, service } = await makeService();
+    const { pref, service } = await makeService();
     const firstClient = service.client as unknown as FakeClient;
 
     const fakeClients: FakeClient[] = [];
@@ -706,7 +740,7 @@ describe("DatabaseService — leak on post-open fs.stat failure", () => {
 
     // Switch to a non-existent path — createClient succeeds (mocked), stat fails.
     const ghostDir = join(tmpRoot, "ghost");
-    settings.update({ "zotero.data-dir": ghostDir });
+    pref.setDataDir(ghostDir);
     await waitFor(() => service.state === "degraded", "settle to degraded");
 
     // The freshly-opened client got closed; the previous one too (hot-switch).
@@ -724,7 +758,6 @@ describe("DatabaseService — event contract", () => {
     // the very first moment.
     const persisted = {
       __VERSION__: 1,
-      "zotero.data-dir": dataDir,
     };
     const plugin = new PluginStub(persisted);
     const settings = new SettingsService({
@@ -732,7 +765,10 @@ describe("DatabaseService — event contract", () => {
       migrateLegacy: (raw) => raw,
     });
     await settings.ready;
-    const service = new DatabaseService({ settings });
+    const service = new DatabaseService({
+      settings,
+      zoteroPref: asPref(new FakeZoteroPref(dataDir)),
+    });
     const changed = listen(service, "changed");
     await service.ready;
     expect(changed.count).toBe(0);
@@ -740,7 +776,7 @@ describe("DatabaseService — event contract", () => {
   });
 
   it("T14: degraded fires exactly once on healthy → degraded; not on subsequent failures", async () => {
-    const { settings, service } = await makeService();
+    const { pref, service } = await makeService();
     const degraded = listen(service, "degraded");
 
     const altDir = join(tmpRoot, "alt");
@@ -749,7 +785,7 @@ describe("DatabaseService — event contract", () => {
     createClientMock.mockImplementation(() => {
       throw new Error("hot switch fail");
     });
-    settings.update({ "zotero.data-dir": altDir });
+    pref.setDataDir(altDir);
     await waitFor(() => service.state === "degraded", "first degraded");
     expect(degraded.count).toBe(1);
 

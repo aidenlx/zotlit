@@ -12,7 +12,6 @@ import { requireDialog } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
-import { resolveZoteroDataDir } from "@/services/settings/schema";
 import {
   RESET_SETTING,
   type SettingsService,
@@ -21,12 +20,18 @@ import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
 } from "@/services/zotero-pref/prefs-file";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import {
+  type ZoteroPrefService,
+  type ZoteroProfileInfo,
+} from "@/services/zotero-pref/service";
 import { type SectionContext } from "@/setting-tab/section";
 
 const logger = getLogger(["setting-tab", "database"]);
 
-const DB_FILENAME = "zotero.sqlite";
+/** Profile-dropdown sentinel for auto-detect — a real profile dir is never empty. */
+const PROFILE_AUTO = "";
+/** Profile-dropdown sentinel that opens the folder picker; NUL can't be in a path. */
+const PROFILE_BROWSE = "\0browse";
 
 export interface DatabaseSectionContext extends SectionContext {
   db: DatabaseService;
@@ -57,7 +62,7 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
     zoteroPref: ctx.zoteroPref,
   };
 
-  stack.use(renderDataDirRow(rowCtx));
+  stack.use(renderDatabaseFileRow(rowCtx));
   stack.use(renderProfileDirRow(rowCtx));
   stack.use(renderAutoRefreshRow(rowCtx));
   stack.use(renderLibraryRow(rowCtx));
@@ -66,20 +71,19 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
 }
 
 /**
- * Data dir row: path display + reset/browse/refresh buttons + an inline status
- * line that surfaces loading / refreshing / degraded / refresh-failed states.
+ * Database file row: resolved `zotero.sqlite` path + a refresh button + an
+ * inline status line that surfaces loading / refreshing / degraded /
+ * refresh-failed states. The path derives from the Zotero profile's data dir
+ * ({@link ZoteroPrefService.dataDir}), so it updates when the profile changes.
  */
-function renderDataDirRow(ctx: RowContext): Disposable {
+function renderDatabaseFileRow(ctx: RowContext): Disposable {
   using stack = new DisposableStack();
 
-  const snapshot = ctx.settings.current!;
-  const defaultDir = resolveZoteroDataDir(null);
-
   const desc = document.createDocumentFragment();
-  desc.append(m.settings_db_data_dir_desc());
+  desc.append(m.settings_db_file_desc());
   desc.append(document.createElement("br"));
   const pathCode = document.createElement("code");
-  pathCode.textContent = resolveSqlitePath(snapshot["zotero.data-dir"]);
+  pathCode.textContent = ctx.zoteroPref.databasePath;
   desc.append(pathCode);
   const statusBr = document.createElement("br");
   const statusSpan = document.createElement("span");
@@ -88,29 +92,11 @@ function renderDataDirRow(ctx: RowContext): Disposable {
   desc.append(statusBr, statusSpan);
 
   let refreshButton: ExtraButtonComponent | undefined;
-  let resetButton: ExtraButtonComponent | undefined;
 
   ctx.group.addSetting((setting) => {
     setting
-      .setName(m.settings_db_data_dir_name())
+      .setName(m.settings_db_file_name())
       .setDesc(desc)
-      .addExtraButton((button) => {
-        resetButton = button;
-        button
-          .setIcon("rotate-ccw")
-          .setTooltip(m.settings_db_reset())
-          .onClick(() => {
-            ctx.settings.update({ "zotero.data-dir": RESET_SETTING });
-          });
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon("folder-open")
-          .setTooltip(m.settings_db_data_dir_browse())
-          .onClick(() => {
-            void browseForDataDir(ctx.settings, defaultDir);
-          });
-      })
       .addExtraButton((button) => {
         refreshButton = button;
         button
@@ -172,21 +158,13 @@ function renderDataDirRow(ctx: RowContext): Disposable {
     refreshButton?.setDisabled(state === "loading" || refreshing);
   };
 
-  const applyPath = (value: string | null): void => {
-    pathCode.textContent = resolveSqlitePath(value);
-    if (resetButton) {
-      resetButton.extraSettingsEl.style.display = value === null ? "none" : "";
-    }
+  const applyPath = (): void => {
+    pathCode.textContent = ctx.zoteroPref.databasePath;
   };
 
   applyStatus();
 
-  stack.defer(
-    ctx.settings.subscribe((value) => {
-      if (value === null) return;
-      applyPath(value["zotero.data-dir"]);
-    }),
-  );
+  stack.defer(ctx.zoteroPref.on("changed", applyPath));
   stack.defer(
     ctx.db.on("changed", () => {
       lastRefreshFailed = false;
@@ -218,10 +196,10 @@ function renderDataDirRow(ctx: RowContext): Disposable {
 }
 
 /**
- * Profile dir row: path display + reset/browse buttons + an inline status line
- * for loading / failed-to-read states. Mirrors the data dir row, but reads the
- * resolved profile dir from {@link ZoteroPrefService} (auto-detected when the
- * setting is unset, so the path is only known after its init).
+ * Profile picker row: a dropdown listing the `profiles.ini` profiles, plus an
+ * "auto-detect default" entry (first) and a "choose folder" entry (last) that
+ * opens a folder dialog. The description shows the resolved `prefs.js` path and
+ * an inline loading / failed-to-read status from {@link ZoteroPrefService}.
  */
 function renderProfileDirRow(ctx: RowContext): Disposable {
   using stack = new DisposableStack();
@@ -239,40 +217,49 @@ function renderProfileDirRow(ctx: RowContext): Disposable {
   statusSpan.style.display = "none";
   desc.append(statusBr, statusSpan);
 
-  let resetButton: ExtraButtonComponent | undefined;
+  let dropdown: DropdownComponent | undefined;
+  let profiles: readonly ZoteroProfileInfo[] = [];
+
+  const selectedValue = (): string =>
+    ctx.settings.current?.["zotero.profile-dir"] ?? PROFILE_AUTO;
+
+  const repopulate = (): void => {
+    if (!dropdown) return;
+    const current = selectedValue();
+    dropdown.selectEl.replaceChildren();
+    dropdown.addOption(PROFILE_AUTO, m.settings_db_profile_auto());
+    for (const p of profiles) dropdown.addOption(p.dir, profileLabel(p));
+    // A manually-chosen folder that isn't one of the listed profiles.
+    if (current !== PROFILE_AUTO && !profiles.some((p) => p.dir === current)) {
+      dropdown.addOption(current, current);
+    }
+    dropdown.addOption(PROFILE_BROWSE, m.settings_db_profile_browse());
+    dropdown.setValue(current);
+  };
 
   ctx.group.addSetting((setting) => {
     setting
       .setName(m.settings_db_profile_dir_name())
       .setDesc(desc)
-      .addExtraButton((button) => {
-        resetButton = button;
-        button
-          .setIcon("rotate-ccw")
-          .setTooltip(m.settings_db_reset())
-          .onClick(() => {
-            ctx.settings.update({ "zotero.profile-dir": RESET_SETTING });
-          });
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon("folder-open")
-          .setTooltip(m.settings_db_profile_dir_browse())
-          .onClick(() => {
+      .addDropdown((d) => {
+        dropdown = d;
+        d.onChange((value) => {
+          if (value === PROFILE_BROWSE) {
+            d.setValue(selectedValue()); // browse isn't itself a saved choice
             void browseForProfileDir(ctx.settings);
-          });
+          } else if (value === PROFILE_AUTO) {
+            ctx.settings.update({ "zotero.profile-dir": RESET_SETTING });
+          } else {
+            ctx.settings.update({ "zotero.profile-dir": value });
+          }
+        });
+        repopulate();
       });
   });
 
-  const apply = (): void => {
-    const value = ctx.settings.current?.["zotero.profile-dir"] ?? null;
-    const dir = pref.resolvedProfileDir ?? value;
-    pathCode.textContent = dir
-      ? join(dir, PREFS_FILENAME)
-      : m.settings_db_profile_dir_auto();
-    if (resetButton) {
-      resetButton.extraSettingsEl.style.display = value === null ? "none" : "";
-    }
+  const applyStatus = (): void => {
+    const dir = pref.resolvedProfileDir;
+    pathCode.textContent = dir ? join(dir, PREFS_FILENAME) : "";
 
     const state = pref.state;
     const text =
@@ -294,22 +281,33 @@ function renderProfileDirRow(ctx: RowContext): Disposable {
     }
   };
 
-  apply();
+  applyStatus();
   if (pref.state === "loading") {
     void pref.ready.then(() => {
-      if (pathCode.isConnected) apply();
+      if (pathCode.isConnected) applyStatus();
     });
   }
+  void pref.listProfiles().then((list) => {
+    if (!dropdown?.selectEl.isConnected) return;
+    profiles = list;
+    repopulate();
+  });
 
   stack.defer(
     ctx.settings.subscribe((value) => {
-      if (value === null) return;
-      apply();
+      if (value === null || !dropdown) return;
+      const current = value["zotero.profile-dir"] ?? PROFILE_AUTO;
+      if (dropdown.getValue() !== current) repopulate();
     }),
   );
-  stack.defer(pref.on("changed", apply));
+  stack.defer(pref.on("changed", applyStatus));
 
   return stack.move();
+}
+
+function profileLabel(p: ZoteroProfileInfo): string {
+  const name = p.name ?? m.settings_db_profile_unnamed();
+  return p.isDefault ? m.settings_db_profile_default({ name }) : name;
 }
 
 /** Auto-refresh toggle. No state, no subscriptions — just a write. */
@@ -384,10 +382,6 @@ function renderLibraryRow(ctx: RowContext): Disposable {
   return stack.move();
 }
 
-function resolveSqlitePath(dataDir: string | null): string {
-  return `${resolveZoteroDataDir(dataDir)}/${DB_FILENAME}`;
-}
-
 function extractErrorMessage(err: Error): string {
   const cause = err.cause;
   if (cause instanceof Error) return cause.message;
@@ -439,26 +433,6 @@ function ensureLibraryOption(
   );
   if (!exists) {
     dropdown.addOption(key, m.settings_db_library_unknown({ libraryID }));
-  }
-}
-
-async function browseForDataDir(
-  settings: SettingsService,
-  defaultDir: string,
-): Promise<void> {
-  const current = settings.current;
-  const startPath = current?.["zotero.data-dir"] ?? defaultDir;
-  try {
-    const result = await requireDialog().showOpenDialog({
-      title: m.settings_db_data_dir_dialog_title(),
-      defaultPath: startPath,
-      properties: ["openDirectory"],
-    });
-    if (result.canceled || result.filePaths.length === 0) return;
-    const picked = result.filePaths[0]!;
-    settings.update({ "zotero.data-dir": picked });
-  } catch (error) {
-    logger.error("Failed to open data folder dialog", { error });
   }
 }
 
