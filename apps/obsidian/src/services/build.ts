@@ -43,10 +43,11 @@ export function buildServices(
         new TemplateService({ plugin, app: plugin.app, settings }),
     })
     .use({
-      db: ({ settings }) => new DatabaseService({ settings }),
+      zoteroPref: ({ settings }) => new ZoteroPrefService({ settings }),
     })
     .use({
-      zoteroPref: ({ settings }) => new ZoteroPrefService({ settings }),
+      db: ({ settings, zoteroPref }) =>
+        new DatabaseService({ settings, zoteroPref }),
     })
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),

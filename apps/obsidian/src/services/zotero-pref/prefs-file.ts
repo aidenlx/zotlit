@@ -1,3 +1,4 @@
+import { parse as parseIni } from "@std/ini/parse";
 import { regex } from "arkregex";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -36,60 +37,73 @@ export function getZoteroProfilesRoot(): string {
   }
 }
 
-export interface ProfileEntry {
+/** A `[ProfileN]` entry from `profiles.ini`. */
+export interface ZoteroProfile {
+  /** `Name` field — the human-readable label for a picker, or `null` when absent. */
+  name: string | null;
   /**
-   * `Path` from the chosen section; relative to the profiles root when
+   * `Path` from the section; relative to the profiles root when
    * {@link isRelative}, otherwise absolute.
    */
   path: string;
   isRelative: boolean;
+  /** Whether the section carried `Default=1`. */
+  isDefault: boolean;
 }
 
 /**
- * Pick the default profile from a `profiles.ini`. Based on Zotero's own "cheap
- * and dirty" parser, but the no-`Default=1` fallback selects the last section
- * that declares a `Path` (a real `[ProfileN]` entry) rather than the last
- * section seen — Zotero writes `[General]` last, which has no `Path`, so the
- * literal "last section" fallback would always fail for a single-profile
- * `profiles.ini` that omits `Default=1`.
+ * Parse every profile declared in a `profiles.ini`, in file order. A section
+ * is a profile when it declares a `Path`; non-profile sections (`[General]`)
+ * are skipped. Values stay strings, matching Gecko's INI format.
  *
- * @returns the default profile entry, or `null` when no section has a `Path`.
- * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/profile.js#L32-L70
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/profile.js#L45-L70
  */
-export function parseProfilesIni(content: string): ProfileEntry | null {
-  let curSection: Record<string, string> | null = null;
-  let defaultSection: Record<string, string> | null = null;
-  let lastProfileSection: Record<string, string> | null = null;
-
-  for (const line of content.split(/\r?\n|\r/)) {
-    const tline = line.trim();
-    if (tline.startsWith("[") && tline.endsWith("]")) {
-      curSection = {};
-    } else if (curSection && tline !== "") {
-      const eq = tline.indexOf("=");
-      if (eq === -1) continue;
-      const key = tline.slice(0, eq);
-      const value = tline.slice(eq + 1);
-      curSection[key] = value;
-      if (key === "Default" && value === "1") defaultSection = curSection;
-      if (key === "Path") lastProfileSection = curSection;
-    }
+export function parseZoteroProfiles(content: string): ZoteroProfile[] {
+  const ini = parseIni(content);
+  const profiles: ZoteroProfile[] = [];
+  for (const section of Object.values(ini)) {
+    if (typeof section !== "object" || section === null) continue;
+    const { Path, Name, IsRelative, Default } = section as Record<
+      string,
+      unknown
+    >;
+    if (typeof Path !== "string") continue;
+    profiles.push({
+      name: typeof Name === "string" ? Name : null,
+      path: Path,
+      isRelative: IsRelative === "1",
+      isDefault: Default === "1",
+    });
   }
-  const chosen = defaultSection ?? lastProfileSection;
-
-  if (!chosen?.Path) return null;
-  return {
-    path: chosen.Path,
-    isRelative: chosen.IsRelative === "1",
-  };
+  return profiles;
 }
 
 /**
- * Resolve a {@link ProfileEntry} to an absolute profile directory against the
+ * Pick the default profile. The `Default=1` flag wins; otherwise the last
+ * profile declared — Zotero writes `[General]` (no `Path`) last, so the last
+ * *profile* is the right fallback for a single-profile ini without an explicit
+ * default.
+ *
+ * @returns the default profile, or `undefined` when no profile has a `Path`.
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/profile.js#L59-L70
+ */
+export function selectDefaultProfile(
+  profiles: readonly ZoteroProfile[],
+): ZoteroProfile | undefined {
+  return profiles.find((p) => p.isDefault) ?? profiles.at(-1);
+}
+
+/**
+ * Resolve a profile's `Path`/`IsRelative` to an absolute directory against the
  * given profiles root.
  */
-export function resolveProfileDir(root: string, entry: ProfileEntry): string {
-  return entry.isRelative ? join(root, ...entry.path.split("/")) : entry.path;
+export function resolveProfileDir(
+  root: string,
+  profile: Pick<ZoteroProfile, "path" | "isRelative">,
+): string {
+  return profile.isRelative
+    ? join(root, ...profile.path.split("/"))
+    : profile.path;
 }
 
 const USER_PREF = regex(

@@ -73,17 +73,18 @@ describe("SettingsService loading", () => {
   it("loaded yields the latest snapshot (post-mutation)", async () => {
     const { service } = makeService();
     await service.ready;
-    service.update({ "zotero.data-dir": "/after" });
+    service.update({ "note.literature-folder": "/after" });
     const snap = await service.loaded;
-    expect(snap["zotero.data-dir"]).toBe("/after");
+    expect(snap["note.literature-folder"]).toBe("/after");
   });
 
   it("loaded resolves to a fresh clone disconnected from state", async () => {
     const { service } = makeService();
     const snap = await service.loaded;
-    (snap as { "zotero.data-dir": string })["zotero.data-dir"] = "/tampered";
-    expect(service.current?.["zotero.data-dir"]).toBe(
-      defaults["zotero.data-dir"],
+    (snap as { "note.literature-folder": string })["note.literature-folder"] =
+      "/tampered";
+    expect(service.current?.["note.literature-folder"]).toBe(
+      defaults["note.literature-folder"],
     );
   });
 
@@ -119,12 +120,13 @@ describe("SettingsService loading", () => {
   it("update() return value is a fresh clone disconnected from state", async () => {
     const { service } = makeService();
     await service.ready;
-    const returned = service.update({ "zotero.data-dir": "/x" });
-    expect(returned).toEqual({ ...defaults, "zotero.data-dir": "/x" });
+    const returned = service.update({ "note.literature-folder": "/x" });
+    expect(returned).toEqual({ ...defaults, "note.literature-folder": "/x" });
     // Mutating the returned snapshot must not affect the service.
-    (returned as { "zotero.data-dir": string })["zotero.data-dir"] =
-      "/tampered";
-    expect(service.current?.["zotero.data-dir"]).toBe("/x");
+    (returned as { "note.literature-folder": string })[
+      "note.literature-folder"
+    ] = "/tampered";
+    expect(service.current?.["note.literature-folder"]).toBe("/x");
   });
 
   it("a throwing subscriber does not break load or other subscribers", async () => {
@@ -145,11 +147,13 @@ describe("SettingsService loading", () => {
     service.subscribe(() => {
       throw new Error("boom");
     });
-    expect(() => service.update({ "zotero.data-dir": "/x" })).not.toThrow();
+    expect(() =>
+      service.update({ "note.literature-folder": "/x" }),
+    ).not.toThrow();
     await service.flush();
     expect(plugin.__data).toEqual({
       __VERSION__: 1,
-      "zotero.data-dir": "/x",
+      "note.literature-folder": "/x",
     });
   });
 
@@ -164,14 +168,14 @@ describe("SettingsService loading", () => {
   it("valid v1 sparse object loads schema-known overrides and does not save", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
-      "zotero.data-dir": "/from-disk",
+      "note.literature-folder": "/from-disk",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({ plugin });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "zotero.data-dir": "/from-disk",
+      "note.literature-folder": "/from-disk",
     });
     expect(saveSpy).not.toHaveBeenCalled();
   });
@@ -179,7 +183,7 @@ describe("SettingsService loading", () => {
   it("v1 non-schema keys are ignored and the v1 file is not rewritten", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
-      "zotero.data-dir": "/ok",
+      "note.literature-folder": "/ok",
       unknownKey: "noise",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
@@ -187,7 +191,7 @@ describe("SettingsService loading", () => {
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "zotero.data-dir": "/ok",
+      "note.literature-folder": "/ok",
     });
     expect(saveSpy).not.toHaveBeenCalled();
   });
@@ -195,7 +199,7 @@ describe("SettingsService loading", () => {
   it("v1 invalid per-key values are dropped and the v1 file is not rewritten", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
-      "zotero.data-dir": "/kept",
+      "note.literature-folder": "/kept",
       "server.enabled": "not-a-boolean",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
@@ -203,7 +207,7 @@ describe("SettingsService loading", () => {
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "zotero.data-dir": "/kept",
+      "note.literature-folder": "/kept",
     });
     expect(saveSpy).not.toHaveBeenCalled();
   });
@@ -211,7 +215,7 @@ describe("SettingsService loading", () => {
   it("future __VERSION__ falls back to defaults and never saves", async () => {
     const plugin = new PluginStub({
       __VERSION__: 5,
-      "zotero.data-dir": "/ignored",
+      "note.literature-folder": "/ignored",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({ plugin });
@@ -263,7 +267,7 @@ describe("SettingsService loading", () => {
 describe("SettingsService legacy migration", () => {
   it("migrates schema-known keys, drops non-schema keys, writes v1 best-effort", async () => {
     const plugin = new PluginStub({
-      "zotero.data-dir": "/from-legacy",
+      "note.literature-folder": "/from-legacy",
       junk: 1,
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
@@ -274,17 +278,17 @@ describe("SettingsService legacy migration", () => {
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "zotero.data-dir": "/from-legacy",
+      "note.literature-folder": "/from-legacy",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
       __VERSION__: 1,
-      "zotero.data-dir": "/from-legacy",
+      "note.literature-folder": "/from-legacy",
     });
   });
 
   it("drops invalid schema-known values during legacy migration", async () => {
     const plugin = new PluginStub({
-      "zotero.data-dir": "/kept",
+      "note.literature-folder": "/kept",
       "server.enabled": "not-a-boolean",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
@@ -295,11 +299,11 @@ describe("SettingsService legacy migration", () => {
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "zotero.data-dir": "/kept",
+      "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
       __VERSION__: 1,
-      "zotero.data-dir": "/kept",
+      "note.literature-folder": "/kept",
     });
   });
 
@@ -331,13 +335,14 @@ describe("SettingsService legacy migration", () => {
   });
 
   it("treats a Promise return from migrateLegacy as non-plain (no async hooks)", async () => {
-    const plugin = new PluginStub({ "zotero.data-dir": "/legacy" });
+    const plugin = new PluginStub({ "note.literature-folder": "/legacy" });
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({
       plugin,
       // Promise prototype is not Object.prototype, so this hits the "non-plain
       // return" branch — proves the hook is treated synchronously, never awaited.
-      migrateLegacy: () => Promise.resolve({ "zotero.data-dir": "/legacy" }),
+      migrateLegacy: () =>
+        Promise.resolve({ "note.literature-folder": "/legacy" }),
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
@@ -345,7 +350,7 @@ describe("SettingsService legacy migration", () => {
   });
 
   it("logs but stays loaded when legacy migration write fails", async () => {
-    const plugin = new PluginStub({ "zotero.data-dir": "/legacy-path" });
+    const plugin = new PluginStub({ "note.literature-folder": "/legacy-path" });
     vi.spyOn(plugin, "saveData").mockRejectedValueOnce(new Error("disk full"));
     const { service } = makeService({
       plugin,
@@ -354,7 +359,7 @@ describe("SettingsService legacy migration", () => {
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "zotero.data-dir": "/legacy-path",
+      "note.literature-folder": "/legacy-path",
     });
     expect(errorSpy).toHaveBeenCalled();
     // Failed migration writes must not leak into pendingWrite: a subsequent
@@ -366,7 +371,7 @@ describe("SettingsService legacy migration", () => {
 describe("SettingsService mutations", () => {
   it("update() before ready throws and points callers at ready/loaded", () => {
     const { service } = makeService();
-    expect(() => service.update({ "zotero.data-dir": "/x" })).toThrow(
+    expect(() => service.update({ "note.literature-folder": "/x" })).toThrow(
       /await service\.ready.*service\.loaded/,
     );
   });
@@ -425,14 +430,14 @@ describe("SettingsService mutations", () => {
   it("RESET_SETTING deletes an override but other overrides remain", async () => {
     const { service, plugin } = makeService();
     await service.ready;
-    service.update({ "zotero.data-dir": "/x", "server.enabled": true });
+    service.update({ "note.literature-folder": "/x", "server.enabled": true });
     await service.flush();
     expect(plugin.__data).toEqual({
       __VERSION__: 1,
-      "zotero.data-dir": "/x",
+      "note.literature-folder": "/x",
       "server.enabled": true,
     });
-    service.update({ "zotero.data-dir": RESET_SETTING });
+    service.update({ "note.literature-folder": RESET_SETTING });
     await service.flush();
     expect(plugin.__data).toEqual({
       __VERSION__: 1,
@@ -443,32 +448,34 @@ describe("SettingsService mutations", () => {
   it("default-equal values persist as explicit overrides", async () => {
     const { service, plugin } = makeService();
     await service.ready;
-    service.update({ "zotero.data-dir": defaults["zotero.data-dir"] });
+    service.update({
+      "note.literature-folder": defaults["note.literature-folder"],
+    });
     await service.flush();
     expect(plugin.__data).toEqual({
       __VERSION__: 1,
-      "zotero.data-dir": defaults["zotero.data-dir"],
+      "note.literature-folder": defaults["note.literature-folder"],
     });
   });
 
   it("reset() deletes selected overrides and throws on unknown keys", async () => {
     const { service } = makeService();
     await service.ready;
-    service.update({ "zotero.data-dir": "/x", "server.enabled": true });
+    service.update({ "note.literature-folder": "/x", "server.enabled": true });
     expect(() =>
       service.reset([
         // @ts-expect-error — invalid key for runtime check
         "unknown",
       ]),
     ).toThrow(/unknown settings key/);
-    service.reset(["zotero.data-dir"]);
+    service.reset(["note.literature-folder"]);
     expect(service.current).toEqual({ ...defaults, "server.enabled": true });
   });
 
   it("reset() with no arguments clears all overrides", async () => {
     const { service } = makeService();
     await service.ready;
-    service.update({ "zotero.data-dir": "/x", "server.enabled": true });
+    service.update({ "note.literature-folder": "/x", "server.enabled": true });
     service.reset();
     expect(service.current).toEqual(defaults);
   });
@@ -490,7 +497,7 @@ describe("SettingsService mutations", () => {
     await service.ready;
     const seen: (object | null)[] = [];
     service.subscribe((v) => seen.push(v));
-    service.reset(["zotero.data-dir"]);
+    service.reset(["note.literature-folder"]);
     expect(seen).toHaveLength(2);
     await service.flush();
     expect(plugin.__data).toEqual({ __VERSION__: 1 });
@@ -513,14 +520,14 @@ describe("SettingsService persistence", () => {
     const { service, plugin } = makeService();
     const saveSpy = vi.spyOn(plugin, "saveData");
     await service.ready;
-    service.update({ "zotero.data-dir": "/a" });
-    service.update({ "zotero.data-dir": "/b" });
-    service.update({ "zotero.data-dir": "/c" });
+    service.update({ "note.literature-folder": "/a" });
+    service.update({ "note.literature-folder": "/b" });
+    service.update({ "note.literature-folder": "/c" });
     expect(saveSpy).not.toHaveBeenCalled();
     await service.flush();
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
       __VERSION__: 1,
-      "zotero.data-dir": "/c",
+      "note.literature-folder": "/c",
     });
   });
 
@@ -554,7 +561,7 @@ describe("SettingsService persistence", () => {
       await slowSave;
     });
     await service.ready;
-    service.update({ "zotero.data-dir": "/slow" });
+    service.update({ "note.literature-folder": "/slow" });
 
     const flushPromise = service.flush();
     let flushed = false;
@@ -574,7 +581,7 @@ describe("SettingsService persistence", () => {
     const { service, plugin } = makeService();
     vi.spyOn(plugin, "saveData").mockRejectedValueOnce(new Error("io fail"));
     await service.ready;
-    service.update({ "zotero.data-dir": "/x" });
+    service.update({ "note.literature-folder": "/x" });
     await expect(service.flush()).rejects.toThrow("io fail");
     expect(errorSpy).toHaveBeenCalled();
   });
@@ -589,12 +596,12 @@ describe("SettingsService persistence", () => {
       }),
     );
     await service.ready;
-    service.update({ "zotero.data-dir": "/on-dispose" });
+    service.update({ "note.literature-folder": "/on-dispose" });
     expect(plugin.__data).toBeNull();
     await stack.disposeAsync();
     expect(plugin.__data).toEqual({
       __VERSION__: 1,
-      "zotero.data-dir": "/on-dispose",
+      "note.literature-folder": "/on-dispose",
     });
   });
 });

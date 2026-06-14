@@ -19,7 +19,7 @@
 
 import { type FSWatcher, type Stats, watch } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -31,16 +31,19 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
-import { resolveZoteroDataDir } from "@/services/settings/schema";
 import {
   type Settings,
   type SettingsService,
 } from "@/services/settings/service";
+import {
+  DB_FILENAME,
+  type ZoteroPrefService,
+} from "@/services/zotero-pref/service";
 
 const logger = getLogger("database");
 
 const DEBOUNCE_MS = 500;
-const DB_FILENAME = "zotero.sqlite";
+
 const DB_OPTIONS: DatabaseOptions = {
   jit: true,
 };
@@ -81,10 +84,12 @@ export interface DbEvents {
 
 export interface DatabaseServiceOptions {
   settings: SettingsService;
+  zoteroPref: ZoteroPrefService;
 }
 
 export class DatabaseService extends Service<void> {
   readonly #settings;
+  readonly #zoteroPref;
   readonly #emitter = createNanoEvents<DbEvents>();
 
   #firstSettled = false;
@@ -122,6 +127,7 @@ export class DatabaseService extends Service<void> {
   constructor(options: DatabaseServiceOptions) {
     super();
     this.#settings = options.settings;
+    this.#zoteroPref = options.zoteroPref;
     this.ready = this.#load();
   }
 
@@ -198,7 +204,11 @@ export class DatabaseService extends Service<void> {
     });
 
     const snapshot = await this.#settings.loaded;
-    const dbPath = resolveDbPath(snapshot);
+    // The DB path derives from the Zotero profile's prefs (data dir), which
+    // ZoteroPrefService resolves; await it so the initial open uses the real
+    // path rather than the loading-time default. `ready` always settles.
+    await this.#zoteroPref.ready;
+    const dbPath = this.#zoteroPref.databasePath;
     const autoRefresh = snapshot["zotero.auto-refresh"];
     // Cache configured snapshot regardless of open outcome — required for the
     // synchronous initial subscriber fire to no-op (§5).
@@ -234,34 +244,37 @@ export class DatabaseService extends Service<void> {
         this.#onSettingsChanged(value);
       }),
     );
+    stack.defer(
+      this.#zoteroPref.on("changed", () => {
+        this.#onDataDirChanged();
+      }),
+    );
 
     this.#firstSettled = true;
     this.commit(stack.move());
   }
 
   #onSettingsChanged(s: Readonly<Settings>): void {
-    const dbPath = resolveDbPath(s);
     const autoRefresh = s["zotero.auto-refresh"];
-
-    const dbPathChanged = dbPath !== this.#lastDbPath;
-    const autoRefreshChanged = autoRefresh !== this.#lastAutoRefresh;
-    if (!dbPathChanged && !autoRefreshChanged) return;
-
-    this.#lastDbPath = dbPath;
+    if (autoRefresh === this.#lastAutoRefresh) return;
     this.#lastAutoRefresh = autoRefresh;
+    logger.debug("Auto-refresh toggled", { autoRefresh });
+    this.#applyAutoRefresh(autoRefresh);
+  }
 
-    if (dbPathChanged) {
-      // #runRefresh re-reads the path and (on success) rebinds the watcher
-      // atomically with the new client — consulting #lastAutoRefresh at that
-      // point. Do NOT touch the watcher here even if auto-refresh also
-      // changed; we'd briefly bind it to the new dir while the active client
-      // is still on the old dir.
-      logger.debug("DB path changed; scheduling refresh", { dbPath });
-      void this.#scheduleRefresh();
-    } else if (autoRefreshChanged) {
-      logger.debug("Auto-refresh toggled", { autoRefresh });
-      this.#applyAutoRefresh(autoRefresh);
-    }
+  /**
+   * The Zotero data dir (and thus the DB path) changed because the profile's
+   * prefs were re-read. #runRefresh re-reads the path and (on success) rebinds
+   * the watcher atomically with the new client; it does not touch the watcher
+   * here, which would briefly bind it to the new dir while the active client
+   * is still on the old dir.
+   */
+  #onDataDirChanged(): void {
+    const dbPath = this.#zoteroPref.databasePath;
+    if (dbPath === this.#lastDbPath) return;
+    this.#lastDbPath = dbPath;
+    logger.debug("DB path changed; scheduling refresh", { dbPath });
+    void this.#scheduleRefresh();
   }
 
   #applyAutoRefresh(enabled: boolean): void {
@@ -490,10 +503,6 @@ function buildSqliteUri(dbPath: string): string {
   url.searchParams.set("mode", "ro");
   url.searchParams.set("immutable", "1");
   return url.toString();
-}
-
-function resolveDbPath(s: Readonly<Settings>): string {
-  return join(resolveZoteroDataDir(s["zotero.data-dir"]), DB_FILENAME);
 }
 
 function closeClient(client: NodeDatabaseClient): void {

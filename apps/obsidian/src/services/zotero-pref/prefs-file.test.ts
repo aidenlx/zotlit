@@ -1,66 +1,117 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { parsePrefsJs, parseProfilesIni } from "./prefs-file";
+import {
+  parsePrefsJs,
+  parseZoteroProfiles,
+  resolveProfileDir,
+  selectDefaultProfile,
+} from "./prefs-file";
 
-describe("parseProfilesIni", () => {
-  it("picks the section flagged Default=1", () => {
+describe("parseZoteroProfiles", () => {
+  it("enumerates every profile section in file order, skipping [General]", () => {
     const ini = [
-      "[General]",
-      "StartWithLastProfile=1",
-      "",
-      "[Profile0]",
-      "Name=default",
-      "IsRelative=1",
-      "Path=Profiles/abcd1234.default",
-      "",
       "[Profile1]",
-      "Name=other",
+      "Name=test",
       "IsRelative=1",
-      "Path=Profiles/zzzz9999.other",
-      "Default=1",
+      "Path=Profiles/z50scojp.test",
       "",
-    ].join("\n");
-    expect(parseProfilesIni(ini)).toEqual({
-      path: "Profiles/zzzz9999.other",
-      isRelative: true,
-    });
-  });
-
-  it("falls back to the lone profile when none is Default=1, even with [General] last", () => {
-    // Real Zotero ordering: the profile section precedes a trailing [General]
-    // (which has no Path). The fallback must pick the profile, not [General].
-    const ini = [
       "[Profile0]",
       "Name=default",
       "IsRelative=1",
-      "Path=Profiles/only.default",
+      "Path=Profiles/ovao64yx.default",
+      "Default=1",
       "",
       "[General]",
       "StartWithLastProfile=1",
       "Version=2",
-    ].join("\r\n");
-    expect(parseProfilesIni(ini)).toEqual({
-      path: "Profiles/only.default",
-      isRelative: true,
-    });
-  });
-
-  it("reports absolute paths", () => {
-    const ini = [
-      "[Profile0]",
-      "IsRelative=0",
-      "Path=/home/me/zotero-profile",
-      "Default=1",
     ].join("\n");
-    expect(parseProfilesIni(ini)).toEqual({
-      path: "/home/me/zotero-profile",
-      isRelative: false,
-    });
+    expect(parseZoteroProfiles(ini)).toEqual([
+      {
+        name: "test",
+        path: "Profiles/z50scojp.test",
+        isRelative: true,
+        isDefault: false,
+      },
+      {
+        name: "default",
+        path: "Profiles/ovao64yx.default",
+        isRelative: true,
+        isDefault: true,
+      },
+    ]);
   });
 
-  it("returns null when no section carries a Path", () => {
-    expect(parseProfilesIni("[General]\nStartWithLastProfile=1\n")).toBeNull();
-    expect(parseProfilesIni("")).toBeNull();
+  it("reports absolute paths and missing names", () => {
+    const ini = ["[Profile0]", "IsRelative=0", "Path=/home/me/zp"].join("\n");
+    expect(parseZoteroProfiles(ini)).toEqual([
+      { name: null, path: "/home/me/zp", isRelative: false, isDefault: false },
+    ]);
+  });
+
+  it("returns an empty list when no section carries a Path", () => {
+    expect(parseZoteroProfiles("[General]\nStartWithLastProfile=1\n")).toEqual(
+      [],
+    );
+    expect(parseZoteroProfiles("")).toEqual([]);
+  });
+});
+
+describe("selectDefaultProfile", () => {
+  it("picks the section flagged Default=1", () => {
+    const profiles = parseZoteroProfiles(
+      [
+        "[Profile0]",
+        "Path=Profiles/abcd1234.default",
+        "IsRelative=1",
+        "",
+        "[Profile1]",
+        "Path=Profiles/zzzz9999.other",
+        "IsRelative=1",
+        "Default=1",
+      ].join("\n"),
+    );
+    expect(selectDefaultProfile(profiles)?.path).toBe(
+      "Profiles/zzzz9999.other",
+    );
+  });
+
+  it("falls back to the last profile when none is Default=1, even with [General] last", () => {
+    // Real Zotero ordering: the profile section precedes a trailing [General]
+    // (which has no Path). The fallback must pick the profile, not [General].
+    const profiles = parseZoteroProfiles(
+      [
+        "[Profile0]",
+        "IsRelative=1",
+        "Path=Profiles/only.default",
+        "",
+        "[General]",
+        "StartWithLastProfile=1",
+        "Version=2",
+      ].join("\r\n"),
+    );
+    expect(selectDefaultProfile(profiles)?.path).toBe("Profiles/only.default");
+  });
+
+  it("returns undefined when there are no profiles", () => {
+    expect(selectDefaultProfile([])).toBeUndefined();
+  });
+});
+
+describe("resolveProfileDir", () => {
+  it("joins relative paths against the profiles root", () => {
+    expect(
+      resolveProfileDir("/root", {
+        path: "Profiles/ab.default",
+        isRelative: true,
+      }),
+    ).toBe(join("/root", "Profiles", "ab.default"));
+  });
+
+  it("returns absolute paths unchanged", () => {
+    expect(
+      resolveProfileDir("/root", { path: "/abs/profile", isRelative: false }),
+    ).toBe("/abs/profile");
   });
 });
 

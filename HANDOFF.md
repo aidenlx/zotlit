@@ -234,7 +234,28 @@ Scope decision: implemented the core + db-layer mappers. The frontmatter express
 - `TemplateService` (Stage 1) — `render(name, data)` and `renderString(source, data)`. Feature-specific helpers deferred to Stage 5.
 - Stage 3 editor-suggest `selectSuggestion` renders `template.render("cite", [{ citekey }])` — Stage 5 replaces with full `insertCitation` pipeline.
 - Stage 3 quick-switch opens existing note on hit; miss → `BaseNotice`. Stage 5 wires the create-arm.
-- **`ZoteroPrefService`** (added after Stage 5, `apps/obsidian/src/services/zotero-pref/`) — reads Zotero's `prefs.js` once on init (and re-reads on setting change) into a `fullName → value` map; exposes `get(name)` and a typed `baseAttachmentPath` getter **synchronously**, plus `state`/`resolvedProfileDir`/`on("changed")`. New setting `zotero.profile-dir` (nullable string; `null` ⇒ auto-detect the default profile via `profiles.ini`). Like `DatabaseService`, `ready` always resolves — read failures leave it `degraded` with an empty map. Registered in `services/build.ts` as `zoteroPref`. **This is exactly the runtime value `parseAttachmentPath` (`zt-attach.ts`) deliberately omits:** it returns a `LinkedBasePath { relative }` for base-dir attachments, and `zoteroPref.baseAttachmentPath` is the prefix needed to resolve it to an absolute on-disk path (mirrors `Zotero.Attachments.resolveRelativePath`). Wired into the Database setting group but **not yet consumed by any feature.**
+- **`ZoteroPrefService`** (added after Stage 5, `apps/obsidian/src/services/zotero-pref/`) — reads Zotero's `prefs.js` once on init (and re-reads on setting change) into a `fullName → value` map; exposes `get(name)` and typed `baseAttachmentPath` / `dataDir` getters **synchronously**, plus `state`/`resolvedProfileDir`/`on("changed")`. Setting `zotero.profile-dir` (nullable string; `null` ⇒ auto-detect the default profile via `profiles.ini`). Like `DatabaseService`, `ready` always resolves — read failures leave it `degraded` with an empty map. Registered in `services/build.ts` as `zoteroPref` (now **before** `db`). `zoteroPref.baseAttachmentPath` is the prefix `parseAttachmentPath` (`zt-attach.ts`) omits for `LinkedBasePath { relative }` attachments (mirrors `Zotero.Attachments.resolveRelativePath`); `zoteroPref.dataDir` is the resolved Zotero data directory (see follow-on below).
+
+## Follow-on (post-Stage-5): profile-based DB path resolution — DONE
+
+Discovery: Zotero stores its data directory in the **profile's `prefs.js`** (`extensions.zotero.useDataDir` + `extensions.zotero.dataDir`), defaulting to `~/Zotero`; `zotero.sqlite` is always `<dataDir>/zotero.sqlite`. So the manual data-dir setting was redundant — Zotero already knows the path.
+
+**Decisions (user-confirmed):** (a) **remove** `zotero.data-dir` entirely (not keep as override); (b) **simple** auto-detect — `useDataDir && dataDir ? dataDir : ~/Zotero` (no legacy in-profile / mtime tie-break). Faithful to Zotero `dataDirectory.js:40-46,83-84`.
+
+**Implemented (this session):**
+- `ZoteroPrefService.dataDir` getter — resolves the data dir from prefs (`useDataDir`/`dataDir`), default `~/Zotero`; empty map (loading/degraded) ⇒ default. `@see`-pinned to zotero@9.0.3.
+- `DatabaseService` now **depends on `ZoteroPrefService`** (`{ settings, zoteroPref }`): computes `join(zoteroPref.dataDir, "zotero.sqlite")`, awaits `zoteroPref.ready` on load, refreshes on the pref `"changed"` event. Auto-refresh still from settings. `build.ts` registers `zoteroPref` before `db`.
+- **`zotero.data-dir` removed** from `settings/schema.ts` (key, default, `resolveZoteroDataDir`), the v0 migration map (`migrate.ts`), and `note-feature/service.ts` (now reads `zoteroPref.dataDir`).
+- Settings-tab `database.ts`: the data-dir row (browse/reset) is gone; its DB status line + refresh button moved into a read-only **"Zotero database"** row showing the resolved sqlite path (updates on pref `"changed"`). Profile-dir row is the user knob. Messages renamed `settings_db_data_dir_*` → `settings_db_file_*`; profile-dir desc notes it determines the DB location.
+- **profiles.ini parsing rewritten onto `@std/ini`** (`jsr:@std/ini@0.225.2`, app-local dep in `apps/obsidian/package.json`). `prefs-file.ts` now exports: `parseZoteroProfiles(content)` — enumerates **all** `[ProfileN]` sections (`{name, path, isRelative, isDefault}`) in file order, skipping `[General]`; `selectDefaultProfile(profiles)` — `Default=1` wins, else last profile; `resolveProfileDir(root, profile)` — absolute dir. Replaced the hand-rolled `parseProfilesIni`/`ProfileEntry`. Verified against the real two-profile `~/Library/Application Support/Zotero/profiles.ini`.
+
+**Verified:** `pnpm lint` (0 errors, tsgo typechecks whole tree), `pnpm format:fix` clean, 260 obsidian tests pass (rewrote `database/service.test.ts` with a `FakeZoteroPref` double; new `parseZoteroProfiles`/`selectDefaultProfile`/`resolveProfileDir` tests; settings/migrate tests swapped off the removed key).
+
+**Profile-picker UI — DONE (follow-up session):**
+- `ZoteroPrefService.listProfiles()` (async) wraps `parseZoteroProfiles` + `resolveProfileDir` into `ZoteroProfileInfo[]` (`{name, dir, isDefault}`), returning `[]` on a missing/unreadable `profiles.ini`.
+- Settings-tab profile-dir row (`database.ts`) is now a **dropdown** instead of path-display + reset/browse buttons: "Auto-detect default profile" first (→ `RESET_SETTING`, stores `null`), one option per profile (value = resolved dir, "(default)" suffix on the default), then "Choose folder…" last (sentinel `"\0browse"`, opens the folder dialog via `browseForProfileDir`). A manually-browsed dir not in the list gets its own option (empty-string sentinel `PROFILE_AUTO` = auto). Description still shows the resolved `prefs.js` path + loading/degraded status.
+- Messages: removed `settings_db_profile_dir_auto`/`settings_db_profile_dir_browse`/`settings_db_reset`; added `settings_db_profile_auto`/`settings_db_profile_default` (`{name}` param)/`settings_db_profile_unnamed`/`settings_db_profile_browse`.
+- Verified: typecheck clean, `pnpm lint` 0 errors, `pnpm format:fix` clean, 260 obsidian tests pass.
 
 ## What didn't work / what to avoid
 
@@ -318,7 +339,8 @@ Steps 5–9, 12–14 are complete. Steps 10 and 11 were deferred to Phase C beca
 | DB Annotation type | `packages/db/src/lib/zt-annot.ts` |
 | DB Attachment type + path parser | `packages/db/src/lib/zt-attach.ts` |
 | Zotero pref service (prefs.js reader, sync `baseAttachmentPath`) | `apps/obsidian/src/services/zotero-pref/service.ts` |
-| prefs.js / profiles.ini parsers | `apps/obsidian/src/services/zotero-pref/prefs-file.ts` (tests: `prefs-file.test.ts`) |
+| prefs.js / profiles.ini parsers (`@std/ini`; `parseZoteroProfiles`/`selectDefaultProfile`/`resolveProfileDir`) | `apps/obsidian/src/services/zotero-pref/prefs-file.ts` (tests: `prefs-file.test.ts`) |
+| Zotero profile enumeration (source) | `/Users/aidenlx/repo/zotlit-repo/zotero/chrome/content/zotero/xpcom/profile.js:45-70`; data dir resolution `.../dataDirectory.js:40-46,83-84` |
 | DB annotation queries | `packages/db/src/queries/annotations.ts` |
 | DB attachment queries | `packages/db/src/queries/attachments.ts` |
 | Settings schema | `apps/obsidian/src/services/settings/schema.ts` |

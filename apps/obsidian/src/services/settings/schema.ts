@@ -1,6 +1,4 @@
 import { getLogLevels } from "@logtape/logtape";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { Platform } from "obsidian";
 import * as v from "valibot";
 
@@ -99,7 +97,6 @@ export const schema = v.object({
   "template.auto-trim-trailing": autoTrim,
 
   "zotero.auto-refresh": v.boolean(),
-  "zotero.data-dir": v.nullable(v.string()),
   "zotero.profile-dir": v.nullable(v.string()),
   "zotero.citation-library": settingsNumber,
 
@@ -132,20 +129,11 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "template.auto-trim-leading": false,
   "template.auto-trim-trailing": false,
   "zotero.auto-refresh": true,
-  "zotero.data-dir": null,
   "zotero.profile-dir": null,
   "zotero.citation-library": 1,
   "img-excerpt.import": null,
   "img-excerpt.path": "ZtImgExcerpt",
 } satisfies Settings);
-
-/**
- * Resolve `zotero.data-dir`: returns the user-set string when non-null,
- * otherwise `$HOME/Zotero` computed at call time so tests can mock `homedir`.
- */
-export function resolveZoteroDataDir(value: string | null): string {
-  return value ?? join(homedir(), "Zotero");
-}
 
 /**
  * Resolve `img-excerpt.import`: returns the user-set value when non-null

@@ -90,6 +90,9 @@ importers:
 
   apps/obsidian:
     dependencies:
+      '@std/ini':
+        specifier: jsr:0.225.2
+        version: '@jsr/std__ini@0.225.2'
       '@zotlit/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -881,6 +884,9 @@ packages:
 
   '@jsr/std__data-structures@1.0.11':
     resolution: {integrity: sha512-SeQ3rBVo+sj8e8XVfW3eTMJY3ygY69HW2H29j73tFJ5kHjnTMOURWX4PMiN1AOBcnNPm+l2UcQMmh6FDegUrnQ==, tarball: https://npm.jsr.io/~/11/@jsr/std__data-structures/1.0.11.tgz}
+
+  '@jsr/std__ini@0.225.2':
+    resolution: {integrity: sha512-WDCkw7yaNQL8AifpYIK8+bPSs0q3tL7Xu5jvDezU4UltwPpMXstdbrgWklZXDgs9I5DobT2IflSCNDDkeHT4xA==, tarball: https://npm.jsr.io/~/11/@jsr/std__ini/0.225.2.tgz}
 
   '@jsr/std__internal@1.0.13':
     resolution: {integrity: sha512-FIyYlSZkAwdupuTybRiU53MnrQUsyulhf6bPZ4bBILl1KqHCkKUlJ5TnLIATNezA5Yg7fAn64EE4vuHep2Urog==, tarball: https://npm.jsr.io/~/11/@jsr/std__internal/1.0.13.tgz}
@@ -4106,6 +4112,8 @@ snapshots:
   '@jsr/std__data-structures@1.0.11':
     dependencies:
       '@jsr/std__assert': 1.0.19
+
+  '@jsr/std__ini@0.225.2': {}
 
   '@jsr/std__internal@1.0.13': {}
 

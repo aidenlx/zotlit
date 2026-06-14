@@ -2,7 +2,7 @@ import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { migrateLegacyV0 } from "./migrate";
-import { resolveImgExcerptImport, resolveZoteroDataDir } from "./schema";
+import { resolveImgExcerptImport } from "./schema";
 
 afterEach(() => {
   resetMockPlatform();
@@ -42,7 +42,6 @@ describe("migrateLegacyV0", () => {
         autoPairEta: true,
         autoTrim: ["nl", "slurp"],
         autoRefresh: false,
-        zoteroDataDir: "/data",
         citationLibrary: 2,
         imgExcerptImport: false,
         imgExcerptPath: "ZtImg",
@@ -63,7 +62,6 @@ describe("migrateLegacyV0", () => {
       "template.auto-trim-leading": "nl",
       "template.auto-trim-trailing": "slurp",
       "zotero.auto-refresh": false,
-      "zotero.data-dir": "/data",
       "zotero.citation-library": 2,
       "img-excerpt.import": false,
       "img-excerpt.path": "ZtImg",
@@ -177,7 +175,6 @@ describe("migrateLegacyV0", () => {
         autoPairEta: false,
         autoTrim: [false, false],
         autoRefresh: true,
-        zoteroDataDir: resolveZoteroDataDir(null),
         citationLibrary: 1,
         imgExcerptImport: resolveImgExcerptImport(null),
         imgExcerptPath: "ZtImgExcerpt",
@@ -219,11 +216,11 @@ describe("migrateLegacyV0", () => {
     expect(
       migrateLegacyV0({
         serverPort: "not-a-number",
-        zoteroDataDir: 42,
+        literatureNoteFolder: 42,
       }),
     ).toEqual({
       "server.port": "not-a-number",
-      "zotero.data-dir": 42,
+      "note.literature-folder": 42,
     });
   });
 });

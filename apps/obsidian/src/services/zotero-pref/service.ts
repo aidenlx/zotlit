@@ -11,6 +11,7 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -25,19 +26,33 @@ import {
 import {
   getZoteroProfilesRoot,
   parsePrefsJs,
-  parseProfilesIni,
+  parseZoteroProfiles,
   PREF_BRANCH,
   PREFS_FILENAME,
   PROFILES_INI_FILENAME,
   resolveProfileDir,
+  selectDefaultProfile,
   type PrefValue,
+  type ZoteroProfile,
 } from "./prefs-file";
 
 const logger = getLogger("zotero-pref");
 
+export const DB_FILENAME = "zotero.sqlite";
+
 export interface ZoteroPrefEvents {
   /** Prefs were re-read after the profile dir changed. Re-read if you cache. */
   changed: () => void;
+}
+
+/** A Zotero profile resolved to its absolute directory, for the settings picker. */
+export interface ZoteroProfileInfo {
+  /** `Name` from `profiles.ini`, or `null` when the section omits it. */
+  name: string | null;
+  /** Absolute profile directory (the folder holding `prefs.js`). */
+  dir: string;
+  /** Whether this is the profile auto-detect resolves to. */
+  isDefault: boolean;
 }
 
 export interface ZoteroPrefServiceOptions {
@@ -94,11 +109,61 @@ export class ZoteroPrefService extends Service<void> {
     return typeof value === "string" ? value : null;
   }
 
+  /**
+   * The Zotero data directory holding `zotero.sqlite`, resolved from prefs.
+   * Mirrors Zotero's `DataDirectory.init`: the `dataDir` pref wins when
+   * `useDataDir` is set, otherwise the default `$HOME/Zotero`. Falls back to
+   * the default while prefs are loading / degraded (empty map), matching a
+   * fresh Zotero install.
+   *
+   * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/dataDirectory.js#L40-L46
+   * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/dataDirectory.js#L83-L84
+   */
+  get dataDir(): string {
+    const dataDir = this.get("dataDir");
+    if (
+      this.get("useDataDir") === true &&
+      typeof dataDir === "string" &&
+      dataDir
+    ) {
+      return dataDir;
+    }
+    return join(homedir(), "Zotero");
+  }
+
+  /**
+   * Full path to the Zotero SQLite database file for the current active profile.
+   */
+  get databasePath(): string {
+    return join(this.dataDir, DB_FILENAME);
+  }
+
   on<K extends keyof ZoteroPrefEvents>(
     event: K,
     cb: ZoteroPrefEvents[K],
   ): () => void {
     return this.#emitter.on(event, cb);
+  }
+
+  /**
+   * Enumerate the profiles declared in `profiles.ini`, each resolved to its
+   * absolute directory, for the settings profile picker.
+   *
+   * @returns the profiles in file order, or an empty array when `profiles.ini`
+   * is missing or unreadable.
+   */
+  async listProfiles(): Promise<ZoteroProfileInfo[]> {
+    try {
+      const { root, profiles } = await readZoteroProfiles();
+      return profiles.map((p) => ({
+        name: p.name,
+        dir: resolveProfileDir(root, p),
+        isDefault: p.isDefault,
+      }));
+    } catch (error) {
+      logger.warn("Failed to list Zotero profiles", { error });
+      return [];
+    }
   }
 
   async #load(): Promise<void> {
@@ -152,12 +217,24 @@ export class ZoteroPrefService extends Service<void> {
   }
 }
 
-async function detectDefaultProfileDir(): Promise<string> {
+/** Read and parse `profiles.ini`, returning the profiles root alongside them. */
+async function readZoteroProfiles(): Promise<{
+  root: string;
+  profiles: ZoteroProfile[];
+}> {
   const root = getZoteroProfilesRoot();
-  const iniPath = join(root, PROFILES_INI_FILENAME);
-  const entry = parseProfilesIni(await readFile(iniPath, "utf8"));
-  if (!entry) {
+  const profiles = parseZoteroProfiles(
+    await readFile(join(root, PROFILES_INI_FILENAME), "utf8"),
+  );
+  return { root, profiles };
+}
+
+async function detectDefaultProfileDir(): Promise<string> {
+  const { root, profiles } = await readZoteroProfiles();
+  const profile = selectDefaultProfile(profiles);
+  if (!profile) {
+    const iniPath = join(root, PROFILES_INI_FILENAME);
     throw new Error(`No default Zotero profile found in ${iniPath}`);
   }
-  return resolveProfileDir(root, entry);
+  return resolveProfileDir(root, profile);
 }

@@ -2,7 +2,6 @@ import { isPlainObject } from "./classify";
 import {
   defaults,
   resolveImgExcerptImport,
-  resolveZoteroDataDir,
   type LogLevel,
   type Settings,
 } from "./schema";
@@ -82,8 +81,6 @@ export interface ZotLitSettingsV0 {
   autoRefresh: boolean;
 
   // --- Zotero database connection (v1: services/zotero-db/connector/settings.ts) ---
-  /** Filesystem path to the Zotero data directory (contains zotero.sqlite, better-bibtex*.sqlite, cache/). Default: `~/Zotero`. */
-  zoteroDataDir: string;
   /** Zotero library id used as the citation source (1 = personal "My Library"; >1 = group libraries). Default: 1. */
   citationLibrary: number;
 
@@ -162,7 +159,6 @@ const V0_KEY_MAP: ReadonlyArray<
   ["updateOverwrite", "template.update-overwrite"],
   ["autoPairEta", "template.auto-pair-eta"],
   ["autoRefresh", "zotero.auto-refresh"],
-  ["zoteroDataDir", "zotero.data-dir"],
   ["citationLibrary", "zotero.citation-library"],
   ["imgExcerptImport", "img-excerpt.import"],
   ["imgExcerptPath", "img-excerpt.path"],
@@ -207,7 +203,6 @@ function dropLegacyDefaultValues(out: Record<string, unknown>): void {
 }
 
 function getLegacyDefaultValue(key: string): unknown {
-  if (key === "zotero.data-dir") return resolveZoteroDataDir(null);
   if (key === "img-excerpt.import") return resolveImgExcerptImport(null);
   if (key === "log.level") return "info";
   if (!Object.hasOwn(defaults, key)) return undefined;
