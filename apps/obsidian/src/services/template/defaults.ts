@@ -33,6 +33,22 @@ export function toFilename(name: string): string | null {
   return null;
 }
 
+/**
+ * Default Eta expression used as the literature-note filename stem.
+ * @see {@link https://eta.js.org} for template syntax.
+ */
+export const DEFAULT_NOTE_FILENAME =
+  "<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>";
+
+/**
+ * Default frontmatter fields injected into every literature note.
+ * Each entry maps a YAML key to a JS expression evaluated over `zt`.
+ */
+export const DEFAULT_FRONTMATTER_FIELDS: ReadonlyArray<{
+  readonly key: string;
+  readonly expr: string;
+}> = Object.freeze([Object.freeze({ key: "title", expr: "zt.title" })]);
+
 export function fromFilename(
   filepath: string,
   folder: string,

@@ -47,13 +47,14 @@ export default class ZotLitPlugin extends Plugin {
     registerCitationSuggest(this, {
       app: this.app,
       lookup: services.itemLookup,
-      template: services.template,
+      noteFeatures: services.noteFeatures,
       settings: services.settings,
     });
     registerQuickSwitch(this, {
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
+      noteFeatures: services.noteFeatures,
       settings: services.settings,
     });
 

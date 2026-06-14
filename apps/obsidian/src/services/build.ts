@@ -4,6 +4,7 @@ import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LoggingService } from "./log/service";
+import { NoteFeatures } from "./note-feature/service";
 import { NoteIndex } from "./note-index/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
@@ -56,6 +57,16 @@ export function buildServices(
           db,
           settings,
           getChsSegmenter: () => getChsSegmenter(plugin.app),
+        }),
+    })
+    .use({
+      noteFeatures: ({ template, db, zoteroPref, settings }) =>
+        new NoteFeatures({
+          app: plugin.app,
+          template,
+          db,
+          zoteroPref,
+          settings,
         }),
     });
 }

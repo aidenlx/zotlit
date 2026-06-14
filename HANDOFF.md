@@ -257,20 +257,33 @@ Steps 5–9, 12–14 are complete. Steps 10 and 11 were deferred to Phase C beca
 
 11. **Define full note template context** — `TemplateItemData` + `tags`, `annotations`, `attachments`, `backlink`, `authors`, `authorsShort`. Built at app layer in note-create flow. Fetch all attachments and their annotations (no selection modal). The base shapes (`TemplateAnnotation`/`TemplateAttachment` + db mappers) already exist from steps 8–9; this step adds the runtime fields and the `NoteTemplateContext` assembly. *(Deferred → Phase C.)*
 
-### Phase C: Note create
+### Phase C: Note create — DONE
 
 15. **`NoteFeatures.create(item)`** — fetch item → `itemToTemplateData()` → fetch tags/attachments/annotations → map via `annotationToTemplateData`/`attachmentToTemplateData` and add runtime fields (`imgEmbed`, `backlink`, `fileLink`, `parentItem`, `parentAttachment`) → build full `NoteTemplateContext` (step 11) → render filename → evaluate frontmatter expressions (step 10) → render note template → `vault.create()`. Wire into quick-switch create-arm. **Steps 10 and 11 land here.** When computing `TemplateAttachment.fileLink`, resolve `linked_file` paths via `zoteroPref.baseAttachmentPath` (`LinkedBasePath`) — inject `zoteroPref` into `NoteFeatures`.
+
+**Implemented (this session)** in `apps/obsidian/src/services/note-feature/`:
+- `service.ts` — `NoteFeatures` service (DI-registered in `build.ts` as `noteFeatures`; deps: template, db, noteIndex, zoteroPref, settings, plugin, app). `create(item)` and `renderCitation(items)`.
+- `context.ts` — pure `buildNoteContext()` (step 11): assembles `NoteTemplateContext` from DB rows + resolver callbacks. `parentItem`/`parentAttachment` shared by reference; `authors` filtered to `primaryCreatorType`; `authorsShort` via existing `creatorSummary` (item-lookup).
+- `frontmatter.ts` — step 10: `parseFrontmatterFields` (JSON-string setting), `buildFrontmatter` (system fields `zotero-key`/`citekey` + optional `zt-attachments` + evaluated user fields via `new Function`), `findReservedKey`. Reserved keys dropped defensively.
+- `backlink.ts` — `itemBacklink` (`zotero://select/...`), `annotationBacklink` (`zotero://open/...`), `groupIDFromIndexedKey`.
+- `file-link.ts` — `attachmentAbsPath` + `attachmentFileLink` (`[name](file://…)`); resolves storage / linked-absolute / linked-base (via `zoteroPref.baseAttachmentPath`).
+- `types.ts` — `NoteTemplateContext`, `FrontmatterField`.
+- Setting `note.frontmatter-fields` added to `settings/schema.ts` as a **typed, deeply-`readonly` array** of `{key, expr}` (valibot `v.readonly()`; default `[{ key: "title", expr: "zt.title" }]`). This is the first non-primitive setting: the schema's value guard was widened from `SettingsPrimitive` to a recursive JSON `SettingsValue` (`readonly` array / index branches so `v.readonly()` values stay assignable). `data.json` already round-trips arbitrary JSON, so storage was never the limit — only the self-imposed type guard. `buildFrontmatter` drops reserved/empty keys at build time; settings-tab UI is **deferred** (edit via data.json for now).
+- Wired into `quick-switch/modal.ts` create-arm (miss → `toast.promise(create)` → open).
+- Tests: `backlink.test.ts`, `frontmatter.test.ts`, `file-link.test.ts`, `context.test.ts` (24 cases). Full suite 259 pass; lint + format clean.
+
+**Known alpha limitations (noted in code):** `imgEmbed` is `""` (image-excerpt import is Stage 9); `fileLink` is a plain `file://` link (in-vault embed optimization deferred).
 
 ### Phase D: Note update
 
 16. **Decide update mechanism** — v1 block-ID approach may still work for callout-based annotations. Consider simpler section-marker approach (`%% annotations %%` delimiters). The zotero-better-notes finding (full re-render is viable) supports simplification.
 17. **Implement update** — read `zt-attachments` from frontmatter to scope attachments. Missing/empty → all attachments. Either incremental merge or section overwrite. Include overwrite mode. Migrate v1 numeric IDs to keys.
 
-### Phase E: Citation finishers
+### Phase E: Citation finishers — steps 19–20 DONE; 18 deferred
 
-18. **Wire citation resolution in `parseNote`** — the DB→embedded→sentinel citekey chain. Parsers (`parseCitation`, `parseCitationData`, `parseItemUri`) already exist from Stage 4.
-19. **Replace Stage 3 `selectSuggestion`** with `insertCitation` pipeline (slim: `{items: TemplateItemData[]}` → render cite template → editor replace).
-20. **Add `zotlit:insert-citation` command** — popup `SuggestModal` reusing `ItemLookup` + `insertCitation`.
+18. **Wire citation resolution in `parseNote`** — the DB→embedded→sentinel citekey chain. Parsers (`parseCitation`, `parseCitationData`, `parseItemUri`) already exist from Stage 4. **DEFERRED:** `parseNote` has no consumer yet (the Zotero note-import flow is not wired in v2). Adding the `citationResolver` now would be speculative dead code. Land it with the import flow; the turndown `citation` rule (`lib/turndown/index.ts`) still passes the span through and is the injection point.
+19. **Replace Stage 3 `selectSuggestion`** — DONE. Both citation paths now render through `NoteFeatures.renderCitation([{ citationKey }])` (single slim render path). `CitationSuggestDeps` swapped `template` → `noteFeatures`.
+20. **Add `zotlit:insert-citation` command** — DONE. `views/citation-suggest/insert-modal.ts` (`InsertCitationModal` popup, reuses `ItemLookup`, inserts at cursor via `editor.replaceSelection`); registered in `citation-suggest/register.ts` with `editorCallback`. New message `command_insert_citation_name`.
 
 ### Phase F: Commands & wiring
 
