@@ -61,7 +61,7 @@
   "obsidian": {
     "id": "zotlit",
     "name": "ZotLit",
-    "minAppVersion": "1.12.7",
+    "minAppVersion": "1.13.1",
     "isDesktopOnly": true,
     "fundingUrl": {
       "GitHub Sponsor": "https://github.com/sponsors/aidenlx"
