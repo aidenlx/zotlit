@@ -8,7 +8,7 @@
   "scripts": {
     "build": "vite build && npm run typecheck",
     "build:dev": "vite build --mode development",
-    "paraglide:complie": "paraglide-js compile --project ../../project.inlang --outdir ./src/paraglide",
+    "paraglide:compile": "paraglide-js compile --project ../../project.inlang --outdir ./src/paraglide",
     "dev": "vite build --watch --mode development",
     "analyze": "ANALYZE=true vite build",
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
