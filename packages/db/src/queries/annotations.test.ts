@@ -36,7 +36,7 @@ describe("getAnnotationsByParent", () => {
       "DBKE89L9",
     ]);
     expect(new Set(result.map((annotation) => annotation.type))).toEqual(
-      new Set(["highlight", "note", "underline", "ink", "text", "image"]),
+      new Set([1, 2, 3, 4, 5, 6]),
     );
     expect(result.some((annotation) => annotation.key === "TRASHED1")).toBe(
       false,

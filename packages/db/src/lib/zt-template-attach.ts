@@ -1,5 +1,5 @@
 import {
-  LINK_MODE,
+  linkModeToName,
   parseAttachmentPath,
   type Attachment,
   type AttachmentPath,
@@ -15,8 +15,8 @@ export interface TemplateAttachment {
   filename: string | null;
   contentType: string | null;
   /**
-   * Resolved {@link LINK_MODE} name; `"unknown"` when the raw mode is null or
-   * unrecognized.
+   * Resolved {@link linkModeToName} name; `"unknown"` when the raw mode is null
+   * or unrecognized.
    */
   linkMode: string;
   /** Vault-relative link, computed at the app layer. */
@@ -39,8 +39,7 @@ export function attachmentToTemplateData(
     linkMode:
       attachment.linkMode == null
         ? "unknown"
-        : (LINK_MODE[attachment.linkMode as keyof typeof LINK_MODE] ??
-          "unknown"),
+        : linkModeToName(attachment.linkMode),
   };
 }
 

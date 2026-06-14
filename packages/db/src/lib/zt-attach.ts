@@ -1,4 +1,8 @@
+import { getLogger } from "@logtape/logtape";
+
 import { type Temporal } from "@zotlit/shared/temporal";
+
+const logger = getLogger(["zotlit", "db", "attachments"]);
 
 /**
  * Maps Zotero's numeric attachment link-mode IDs to string names. `4`
@@ -7,7 +11,7 @@ import { type Temporal } from "@zotlit/shared/temporal";
  *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/attachments.js#L30-L34
  */
-export const LINK_MODE = {
+const LINK_MODE = {
   0: "imported_file",
   1: "imported_url",
   2: "linked_file",
@@ -15,7 +19,16 @@ export const LINK_MODE = {
   4: "embedded_image",
 } as const;
 
-export type LinkMode = (typeof LINK_MODE)[keyof typeof LINK_MODE];
+export type LinkMode = keyof typeof LINK_MODE;
+export type LinkModeName = (typeof LINK_MODE)[LinkMode];
+
+export function linkModeToName(linkMode: LinkMode): LinkModeName | "unknown" {
+  const name = LINK_MODE[linkMode];
+  if (name) return name;
+
+  logger.warn("Unknown attachment link mode {linkMode}", { linkMode });
+  return "unknown";
+}
 
 export interface Attachment {
   itemID: number;
@@ -30,9 +43,9 @@ export interface Attachment {
   contentType: string | null;
   /**
    * Raw `itemAttachments.linkMode` int (nullable in schema); resolve names
-   * via {@link LINK_MODE}.
+   * via {@link linkModeToName}.
    */
-  linkMode: number | null;
+  linkMode: LinkMode | null;
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
 }
@@ -110,25 +123,25 @@ export type AttachmentPath =
  */
 export function parseAttachmentPath(
   path: string | null,
-  linkMode: number | null,
+  linkMode: LinkMode | null,
 ): AttachmentPath {
-  if (!path) return { kind: "unknown", raw: path };
+  if (!path || linkMode === null) return { kind: "unknown", raw: path };
 
-  switch (linkMode) {
-    case 0: // imported_file
-    case 1: // imported_url
-    case 4: // embedded_image
+  switch (linkModeToName(linkMode)) {
+    case "imported_file":
+    case "imported_url":
+    case "embedded_image":
       return path.startsWith(STORAGE_PREFIX)
         ? { kind: "storage", filename: path.slice(STORAGE_PREFIX.length) }
         : { kind: "unknown", raw: path };
-    case 2: // linked_file
+    case "linked_file":
       return path.startsWith(BASE_PATH_PLACEHOLDER)
         ? {
             kind: "linked-base",
             relative: path.slice(BASE_PATH_PLACEHOLDER.length),
           }
         : { kind: "linked-absolute", path };
-    case 3: // linked_url
+    case "linked_url":
       return { kind: "linked-url", url: path };
     default:
       return { kind: "unknown", raw: path };

@@ -12,6 +12,11 @@ import {
 
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { type AnnotationType } from "@/lib/zt-annot";
+import { type LinkMode } from "@/lib/zt-attach";
+import { type CreatorFieldMode } from "@/lib/zt-item";
+import { type TagType } from "@/lib/zt-tag";
+
 type SqliteAnyOut =
   | null
   | number
@@ -356,7 +361,7 @@ export const itemAttachments = sqliteTable(
     parentItemID: integer().references(() => items.itemID, {
       onDelete: "cascade",
     }),
-    linkMode: integer(),
+    linkMode: integer().$type<LinkMode>(),
     contentType: text(),
     charsetID: integer().references(() => charsets.charsetID, {
       onDelete: "set null",
@@ -401,7 +406,7 @@ export const itemAnnotations = sqliteTable(
     parentItemID: integer()
       .notNull()
       .references(() => itemAttachments.itemID),
-    type: integer().notNull(),
+    type: integer().$type<AnnotationType>().notNull(),
     authorName: text(),
     text: text(),
     comment: text(),
@@ -455,7 +460,7 @@ export const itemTags = sqliteTable(
     tagID: integer()
       .notNull()
       .references(() => tags.tagID, { onDelete: "cascade" }),
-    type: integer().notNull(),
+    type: integer().$type<TagType>().notNull(),
   },
   (table) => [
     index("itemTags_tagID").on(table.tagID),
@@ -467,7 +472,7 @@ export const creators = sqliteTable("creators", {
   creatorID: integer().primaryKey(),
   firstName: text(),
   lastName: text(),
-  fieldMode: integer(),
+  fieldMode: integer().$type<CreatorFieldMode>(),
 });
 
 export const itemCreators = sqliteTable(

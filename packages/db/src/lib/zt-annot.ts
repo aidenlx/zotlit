@@ -10,7 +10,7 @@ const logger = getLogger(["zotlit", "db", "annotations"]);
  *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L31-L36
  */
-const ANNOT_TYPE_BY_ID = {
+const ANNOT_TYPE = {
   1: "highlight",
   2: "note",
   3: "image",
@@ -19,9 +19,8 @@ const ANNOT_TYPE_BY_ID = {
   6: "text",
 } as const;
 
-type AnnotationType =
-  | (typeof ANNOT_TYPE_BY_ID)[keyof typeof ANNOT_TYPE_BY_ID]
-  | "unknown";
+export type AnnotationType = keyof typeof ANNOT_TYPE;
+export type AnnotationTypeName = (typeof ANNOT_TYPE)[AnnotationType];
 
 export interface Annotation {
   itemID: number;
@@ -29,6 +28,7 @@ export interface Annotation {
   libraryID: number;
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
+  /** Raw `itemAnnotations.type` int; resolve names via {@link annotationTypeToName}. */
   type: AnnotationType;
   text: string | null;
   comment: string | null;
@@ -47,16 +47,12 @@ export interface Annotation {
   parentKey: string;
 }
 
-export function annotationTypeFromID(
-  numericType: number,
-  key: string,
-): AnnotationType {
-  const type = ANNOT_TYPE_BY_ID[numericType as keyof typeof ANNOT_TYPE_BY_ID];
-  if (type) return type;
+export function annotationTypeToName(
+  type: AnnotationType,
+): AnnotationTypeName | "unknown" {
+  const name = ANNOT_TYPE[type];
+  if (name) return name;
 
-  logger.warn("Unknown annotation type {numericType} on item {key}", {
-    numericType,
-    key,
-  });
+  logger.warn("Unknown annotation type {type}", { type });
   return "unknown";
 }

@@ -3,6 +3,7 @@ import { type ItemFields } from "@zotlit/zotero-types";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
+import { type CreatorFieldMode } from "@/lib/zt-item";
 
 import { groupsQuery } from "./_groups";
 import {
@@ -16,8 +17,7 @@ export interface Creator {
   firstName: string | null;
   lastName: string | null;
   creatorType: string;
-  /** 0 = fullName (firstName + lastName), 1 = nameOnly (lastName only). */
-  fieldMode: number;
+  fieldMode: CreatorFieldMode;
 }
 
 export interface BaseItem {

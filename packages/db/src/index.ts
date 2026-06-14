@@ -26,13 +26,21 @@ export {
   getAttachmentsByParents,
   getAttachmentsByParentsAsync,
 } from "./queries/attachments";
+export { getTagsByItemIDs, getTagsByItemIDsAsync } from "./queries/tags";
 export {
-  getTagsByItemIDs,
-  getTagsByItemIDsAsync,
+  creatorFieldModeToName,
+  type CreatorFieldMode,
+  type CreatorFieldModeName,
+} from "./lib/zt-item";
+export {
+  tagTypeToName,
+  type ItemTag,
   type Tag,
-} from "./queries/tags";
+  type TagType,
+  type TagTypeName,
+} from "./lib/zt-tag";
 export {
-  LINK_MODE,
+  linkModeToName,
   parseAttachmentPath,
   type Attachment,
   type AttachmentPath,
@@ -40,6 +48,7 @@ export {
   type LinkedBasePath,
   type LinkedUrlPath,
   type LinkMode,
+  type LinkModeName,
   type StoragePath,
   type UnknownPath,
 } from "./lib/zt-attach";
@@ -55,7 +64,12 @@ export {
   parseItemDate,
   type ItemDate,
 } from "./lib/zt-date";
-export { type Annotation } from "./lib/zt-annot";
+export {
+  annotationTypeToName,
+  type Annotation,
+  type AnnotationType,
+  type AnnotationTypeName,
+} from "./lib/zt-annot";
 export {
   itemToTemplateData,
   type TemplateCreator,

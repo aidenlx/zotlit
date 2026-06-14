@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { tagTypeToName } from "@/lib/zt-tag";
 
 import { getTagsByItemIDs } from "./tags";
 
@@ -25,20 +26,22 @@ describe("getTagsByItemIDs", () => {
   it("returns tags tagged with their itemID, alphabetic within each item group", () => {
     const result = getTagsByItemIDs(db, [1, 2], 1);
 
-    expect(result.map((t) => [t.itemID, t.name])).toEqual([
+    expect(result.map((t) => [t.itemID, t.tag.name])).toEqual([
       [1, "alpha"],
       [1, "beta"],
+      [2, "alpha"],
       [2, "gamma"],
     ]);
   });
 
   it("preserves itemTags.type per application (0=manual, 1=automatic)", () => {
     const byName = new Map(
-      getTagsByItemIDs(db, [1], 1).map((t) => [t.name, t.type]),
+      getTagsByItemIDs(db, [1], 1).map((t) => [t.tag.name, t.type]),
     );
 
     expect(byName.get("alpha")).toBe(0);
     expect(byName.get("beta")).toBe(1);
+    expect(tagTypeToName(byName.get("beta")!)).toBe("auto");
   });
 
   it("excludes tags whose item is deleted", () => {
@@ -57,10 +60,26 @@ describe("getTagsByItemIDs", () => {
     expect(getTagsByItemIDs(db, [], 1)).toEqual([]);
   });
 
-  it("returns Tag rows with itemID/tagID/name/type", () => {
+  it("returns item-tag applications with nested tag records", () => {
     const [first] = getTagsByItemIDs(db, [1], 1);
 
-    expect(first).toEqual({ itemID: 1, tagID: 10, name: "alpha", type: 0 });
+    expect(first).toEqual({
+      itemID: 1,
+      tag: { tagID: 10, name: "alpha" },
+      type: 0,
+    });
+  });
+
+  it("reuses the same tag record object for shared tags", () => {
+    const result = getTagsByItemIDs(db, [1, 2], 1);
+    const item1Alpha = result.find(
+      (itemTag) => itemTag.itemID === 1 && itemTag.tag.name === "alpha",
+    );
+    const item2Alpha = result.find(
+      (itemTag) => itemTag.itemID === 2 && itemTag.tag.name === "alpha",
+    );
+
+    expect(item2Alpha?.tag).toBe(item1Alpha?.tag);
   });
 });
 
@@ -107,6 +126,7 @@ function seed(sqlite: DatabaseSync): void {
       values
         (1, 11, 1),
         (1, 10, 0),
+        (2, 10, 0),
         (2, 12, 0),
         (3, 13, 0),
         (4, 10, 0);

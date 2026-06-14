@@ -1,6 +1,7 @@
 import { type Temporal } from "@zotlit/shared/temporal";
 
-import { type Annotation } from "./zt-annot";
+import { annotationTypeToName, type Annotation } from "./zt-annot";
+import { type ItemTag } from "./zt-tag";
 import { type TemplateAttachment } from "./zt-template-attach";
 import { type TemplateItemData } from "./zt-template-item";
 
@@ -25,6 +26,7 @@ export interface TemplateAnnotation {
   isExternal: boolean;
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
+  tags: readonly ItemTag[];
 
   /**
    * Image-excerpt embed (e.g. `![[image.png]]`); empty for non-image
@@ -47,6 +49,7 @@ export interface TemplateAnnotation {
  */
 export function annotationToTemplateData(
   annotation: Annotation,
+  tags: readonly ItemTag[],
 ): Omit<
   TemplateAnnotation,
   "imgEmbed" | "backlink" | "parentItem" | "parentAttachment"
@@ -54,7 +57,7 @@ export function annotationToTemplateData(
   return {
     key: annotation.key,
     libraryID: annotation.libraryID,
-    type: annotation.type,
+    type: annotationTypeToName(annotation.type),
     text: annotation.text,
     comment: annotation.comment,
     color: annotation.color,
@@ -63,5 +66,6 @@ export function annotationToTemplateData(
     isExternal: annotation.isExternal,
     dateAdded: annotation.dateAdded,
     dateModified: annotation.dateModified,
+    tags,
   };
 }

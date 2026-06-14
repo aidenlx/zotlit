@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { type Annotation, type Attachment, type Item } from "@zotlit/db";
+import {
+  type Annotation,
+  type Attachment,
+  type Item,
+  type ItemTag,
+  type Tag,
+} from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { buildNoteContext } from "./context";
@@ -41,7 +47,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     libraryID: 1,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
-    type: "highlight",
+    type: 1,
     text: "excerpt",
     comment: null,
     color: "#ffd400",
@@ -54,6 +60,10 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     parentKey: "ATCH0001",
     ...overrides,
   };
+}
+
+function itemTag(itemID: number, tag: Tag, type: 0 | 1 = 0): ItemTag {
+  return { itemID, tag, type };
 }
 
 describe("buildNoteContext", () => {
@@ -79,18 +89,26 @@ describe("buildNoteContext", () => {
     });
     const attachment = makeAttachment({});
     const annotation = makeAnnotation({});
+    const itemTagRecord = { tagID: 1, name: "zt" };
+    const annotTagRecord = { tagID: 2, name: "claim" };
 
     const ctx = buildNoteContext({
       item,
       attachments: [attachment],
       annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
-      tags: ["zt", "method"],
+      tagsByItemID: new Map([
+        [item.itemID, [itemTag(item.itemID, itemTagRecord)]],
+        [annotation.itemID, [itemTag(annotation.itemID, annotTagRecord, 1)]],
+      ]),
       authorsShort: "Smith et al.",
       fileLink: () => "[paper.pdf](file:///x/paper.pdf)",
     });
 
     expect(ctx.backlink).toBe("zotero://select/library/items/ITEM0001");
-    expect(ctx.tags).toEqual(["zt", "method"]);
+    expect(ctx.tags).toEqual([
+      { itemID: item.itemID, tag: itemTagRecord, type: 0 },
+    ]);
+    expect(ctx.tags[0]?.tag).toBe(itemTagRecord);
     expect(ctx.authorsShort).toBe("Smith et al.");
 
     expect(ctx.attachments).toHaveLength(1);
@@ -104,6 +122,7 @@ describe("buildNoteContext", () => {
       "zotero://open/library/items/ATCH0001?page=5&annotation=ANNO0001",
     );
     expect(annot.imgEmbed).toBe("");
+    expect(annot.tags[0]?.tag).toBe(annotTagRecord);
     expect(annot.parentAttachment).toBe(ctx.attachments[0]);
     expect(annot.parentItem.citationKey).toBe("smith2024");
 
@@ -120,7 +139,7 @@ describe("buildNoteContext", () => {
       }),
       attachments: [],
       annotationsByAttachment: new Map(),
-      tags: [],
+      tagsByItemID: new Map(),
       authorsShort: "",
       fileLink: () => "",
     });

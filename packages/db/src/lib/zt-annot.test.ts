@@ -1,7 +1,7 @@
 import { type AnnotationPositionRaw } from "@drizzle/schema";
 import { describe, expect, it } from "vitest";
 
-import { annotationTypeFromID } from "./zt-annot";
+import { annotationTypeToName } from "./zt-annot";
 import {
   parseAnnotationPosition,
   type AnnotationPosition,
@@ -126,13 +126,13 @@ describe("parseAnnotationPosition", () => {
   });
 });
 
-describe("annotationTypeFromID", () => {
+describe("annotationTypeToName", () => {
   it("maps known numeric types", () => {
-    expect(annotationTypeFromID(1, "KNOWN")).toBe("highlight");
-    expect(annotationTypeFromID(6, "KNOWN")).toBe("text");
+    expect(annotationTypeToName(1)).toBe("highlight");
+    expect(annotationTypeToName(6)).toBe("text");
   });
 
   it("keeps rows with unknown numeric types as unknown", () => {
-    expect(annotationTypeFromID(99, "FUTURE")).toBe("unknown");
+    expect(annotationTypeToName(99 as 1)).toBe("unknown");
   });
 });
