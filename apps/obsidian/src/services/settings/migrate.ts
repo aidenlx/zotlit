@@ -94,6 +94,10 @@ export interface ZotLitSettingsV0 {
   imgExcerptPath: string;
 }
 
+/** v1's embedded default note-filename template, in the legacy `it.*` vocabulary. */
+const V1_DEFAULT_FILENAME =
+  "<%= it.citekey ?? it.DOI ?? it.title ?? it.key %>.md";
+
 /**
  * Convert a v0 (pre-`__VERSION__`) ZotLit `data.json` into v1's flat
  * dotted-key shape. Returns sparse overrides — only non-default keys present
@@ -120,7 +124,14 @@ export function migrateLegacyV0(raw: unknown): Partial<Settings> {
       out["template.folder"] = v0.template.folder;
     }
     const templates = v0.template.templates;
-    if (isPlainObject(templates) && typeof templates.filename === "string") {
+    if (
+      isPlainObject(templates) &&
+      typeof templates.filename === "string" &&
+      templates.filename !== V1_DEFAULT_FILENAME
+    ) {
+      // The v1 default used the `it.*` vocabulary, which the v2 default replaces
+      // with `zt.*`. Drop the exact v1 default so the v2 default applies; carry
+      // over any customized value untouched (a v1→v2 compat layer is deferred).
       out["template.filename"] = templates.filename;
     }
   }

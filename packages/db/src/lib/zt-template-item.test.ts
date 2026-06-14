@@ -162,4 +162,16 @@ describe("itemToTemplateData", () => {
     expect(result.containerTitle).toBe("Science");
     expect(result.publicationTitle).toBe("Science");
   });
+
+  it("exposes citationKey under the citekey alias", () => {
+    const item = makeItem({
+      itemType: "journalArticle",
+      citationKey: "smith2024",
+    } as Partial<Item> & { itemType: string });
+
+    const result = itemToTemplateData(item);
+
+    expect(result.citationKey).toBe("smith2024");
+    expect(result.citekey).toBe("smith2024");
+  });
 });

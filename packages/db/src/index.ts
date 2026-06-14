@@ -62,6 +62,14 @@ export {
   type TemplateItemData,
 } from "./lib/zt-template-item";
 export {
+  attachmentToTemplateData,
+  type TemplateAttachment,
+} from "./lib/zt-template-attach";
+export {
+  annotationToTemplateData,
+  type TemplateAnnotation,
+} from "./lib/zt-template-annot";
+export {
   parseAnnotationPosition,
   type AnnotationPosition,
 } from "./lib/zt-annot-pos";

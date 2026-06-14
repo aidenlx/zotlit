@@ -9,6 +9,7 @@ import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
+import { ZoteroPrefService } from "./zotero-pref/service";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -42,6 +43,9 @@ export function buildServices(
     })
     .use({
       db: ({ settings }) => new DatabaseService({ settings }),
+    })
+    .use({
+      zoteroPref: ({ settings }) => new ZoteroPrefService({ settings }),
     })
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),

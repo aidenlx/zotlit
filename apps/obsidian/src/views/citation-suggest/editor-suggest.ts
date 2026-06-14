@@ -80,9 +80,9 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       return;
     }
 
-    const rendered = this.#deps.template.render("cite", [
-      { citekey: citationKey },
-    ]);
+    const rendered = this.#deps.template.render("cite", {
+      items: [{ citationKey }],
+    });
     context.editor.replaceRange(rendered, context.start, context.end);
     context.editor.setCursor(
       context.editor.offsetToPos(

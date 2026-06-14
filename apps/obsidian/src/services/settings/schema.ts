@@ -70,6 +70,7 @@ export const schema = v.object({
 
   "zotero.auto-refresh": v.boolean(),
   "zotero.data-dir": v.nullable(v.string()),
+  "zotero.profile-dir": v.nullable(v.string()),
   "zotero.citation-library": settingsNumber,
 
   "img-excerpt.import": v.nullable(imgExcerptImport),
@@ -93,7 +94,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "server.port": 9091,
   "server.hostname": "127.0.0.1",
   "template.folder": "ZtTemplates",
-  "template.filename": "<%= it.citekey ?? it.DOI ?? it.title ?? it.key %>.md",
+  "template.filename": "<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>",
   "template.update-annot-block": false,
   "template.update-overwrite": false,
   "template.auto-pair-eta": false,
@@ -101,6 +102,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "template.auto-trim-trailing": false,
   "zotero.auto-refresh": true,
   "zotero.data-dir": null,
+  "zotero.profile-dir": null,
   "zotero.citation-library": 1,
   "img-excerpt.import": null,
   "img-excerpt.path": "ZtImgExcerpt",

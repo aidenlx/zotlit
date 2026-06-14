@@ -37,6 +37,8 @@ export interface TemplateItemData {
   abstract: string | null;
   containerTitle: string | null;
   citationKey: string | null;
+  /** Alias for {@link citationKey}; both stay accessible on `zt.*`. */
+  citekey: string | null;
   date: ItemDate | null;
   shortTitle: string | null;
   DOI: string | null;
@@ -68,15 +70,6 @@ const BASE_ITEM_KEYS = new Set([
   "itemType",
 ]);
 
-/**
- * Canonical field names that get a CSL-inspired rename on the template item.
- * Value is the template property name.
- */
-const FIELD_RENAMES: Record<string, string> = {
-  abstractNote: "abstract",
-  publicationTitle: "containerTitle",
-};
-
 export function itemToTemplateData(item: Item): TemplateItemData {
   const allFields: Record<string, string> = {};
 
@@ -87,11 +80,6 @@ export function itemToTemplateData(item: Item): TemplateItemData {
   }
   for (const [key, val] of item.fields) {
     if (val != null) allFields[key] = val;
-  }
-
-  // Apply CSL-inspired renames (both names stay accessible)
-  for (const [from, to] of Object.entries(FIELD_RENAMES)) {
-    if (from in allFields) allFields[to] = allFields[from]!;
   }
 
   const creators = item.creators.map(toTemplateCreator);
@@ -107,9 +95,12 @@ export function itemToTemplateData(item: Item): TemplateItemData {
     primaryCreatorType: item.primaryCreatorType,
 
     title: allFields.title ?? null,
-    abstract: allFields.abstractNote ?? null,
-    containerTitle: allFields.publicationTitle ?? null,
+    // CSL-inspired aliases: the canonical source field stays accessible via the
+    // `...allFields` spread, and these expose the CSL name alongside it.
+    abstract: allFields.abstractNote ?? null, // ← abstractNote
+    containerTitle: allFields.publicationTitle ?? null, // ← publicationTitle
     citationKey: allFields.citationKey ?? null,
+    citekey: allFields.citationKey ?? null, // ← citationKey
     date: parseItemDate(allFields.date),
     shortTitle: allFields.shortTitle ?? null,
     DOI: allFields.DOI ?? null,

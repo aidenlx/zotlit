@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   type DropdownComponent,
   type ExtraButtonComponent,
@@ -16,6 +17,11 @@ import {
   RESET_SETTING,
   type SettingsService,
 } from "@/services/settings/service";
+import {
+  getZoteroProfilesRoot,
+  PREFS_FILENAME,
+} from "@/services/zotero-pref/prefs-file";
+import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import { type SectionContext } from "@/setting-tab/section";
 
 const logger = getLogger(["setting-tab", "database"]);
@@ -24,12 +30,14 @@ const DB_FILENAME = "zotero.sqlite";
 
 export interface DatabaseSectionContext extends SectionContext {
   db: DatabaseService;
+  zoteroPref: ZoteroPrefService;
 }
 
 interface RowContext {
   group: SettingGroup;
   settings: SettingsService;
   db: DatabaseService;
+  zoteroPref: ZoteroPrefService;
 }
 
 export function databaseSection(ctx: DatabaseSectionContext): Disposable {
@@ -42,9 +50,15 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
   const group = new SettingGroup(ctx.containerEl).setHeading(
     m.settings_db_heading(),
   );
-  const rowCtx: RowContext = { group, settings: ctx.settings, db: ctx.db };
+  const rowCtx: RowContext = {
+    group,
+    settings: ctx.settings,
+    db: ctx.db,
+    zoteroPref: ctx.zoteroPref,
+  };
 
   stack.use(renderDataDirRow(rowCtx));
+  stack.use(renderProfileDirRow(rowCtx));
   stack.use(renderAutoRefreshRow(rowCtx));
   stack.use(renderLibraryRow(rowCtx));
 
@@ -203,6 +217,101 @@ function renderDataDirRow(ctx: RowContext): Disposable {
   return stack.move();
 }
 
+/**
+ * Profile dir row: path display + reset/browse buttons + an inline status line
+ * for loading / failed-to-read states. Mirrors the data dir row, but reads the
+ * resolved profile dir from {@link ZoteroPrefService} (auto-detected when the
+ * setting is unset, so the path is only known after its init).
+ */
+function renderProfileDirRow(ctx: RowContext): Disposable {
+  using stack = new DisposableStack();
+
+  const pref = ctx.zoteroPref;
+
+  const desc = document.createDocumentFragment();
+  desc.append(m.settings_db_profile_dir_desc());
+  desc.append(document.createElement("br"));
+  const pathCode = document.createElement("code");
+  desc.append(pathCode);
+  const statusBr = document.createElement("br");
+  const statusSpan = document.createElement("span");
+  statusBr.style.display = "none";
+  statusSpan.style.display = "none";
+  desc.append(statusBr, statusSpan);
+
+  let resetButton: ExtraButtonComponent | undefined;
+
+  ctx.group.addSetting((setting) => {
+    setting
+      .setName(m.settings_db_profile_dir_name())
+      .setDesc(desc)
+      .addExtraButton((button) => {
+        resetButton = button;
+        button
+          .setIcon("rotate-ccw")
+          .setTooltip(m.settings_db_reset())
+          .onClick(() => {
+            ctx.settings.update({ "zotero.profile-dir": RESET_SETTING });
+          });
+      })
+      .addExtraButton((button) => {
+        button
+          .setIcon("folder-open")
+          .setTooltip(m.settings_db_profile_dir_browse())
+          .onClick(() => {
+            void browseForProfileDir(ctx.settings);
+          });
+      });
+  });
+
+  const apply = (): void => {
+    const value = ctx.settings.current?.["zotero.profile-dir"] ?? null;
+    const dir = pref.resolvedProfileDir ?? value;
+    pathCode.textContent = dir
+      ? join(dir, PREFS_FILENAME)
+      : m.settings_db_profile_dir_auto();
+    if (resetButton) {
+      resetButton.extraSettingsEl.style.display = value === null ? "none" : "";
+    }
+
+    const state = pref.state;
+    const text =
+      state === "loading"
+        ? m.settings_db_status_loading()
+        : state === "degraded"
+          ? m.settings_db_profile_status_degraded()
+          : "";
+    if (text) {
+      statusBr.style.display = "";
+      statusSpan.style.display = "";
+      statusSpan.textContent = text;
+      statusSpan.classList.toggle("mod-warning", state === "degraded");
+    } else {
+      statusBr.style.display = "none";
+      statusSpan.style.display = "none";
+      statusSpan.textContent = "";
+      statusSpan.classList.remove("mod-warning");
+    }
+  };
+
+  apply();
+  if (pref.state === "loading") {
+    void pref.ready.then(() => {
+      if (pathCode.isConnected) apply();
+    });
+  }
+
+  stack.defer(
+    ctx.settings.subscribe((value) => {
+      if (value === null) return;
+      apply();
+    }),
+  );
+  stack.defer(pref.on("changed", apply));
+
+  return stack.move();
+}
+
 /** Auto-refresh toggle. No state, no subscriptions — just a write. */
 function renderAutoRefreshRow(ctx: RowContext): Disposable {
   const snapshot = ctx.settings.current!;
@@ -350,5 +459,21 @@ async function browseForDataDir(
     settings.update({ "zotero.data-dir": picked });
   } catch (error) {
     logger.error("Failed to open data folder dialog", { error });
+  }
+}
+
+async function browseForProfileDir(settings: SettingsService): Promise<void> {
+  const current = settings.current?.["zotero.profile-dir"];
+  const startPath = current ?? getZoteroProfilesRoot();
+  try {
+    const result = await requireDialog().showOpenDialog({
+      title: m.settings_db_profile_dir_dialog_title(),
+      defaultPath: startPath,
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return;
+    settings.update({ "zotero.profile-dir": result.filePaths[0]! });
+  } catch (error) {
+    logger.error("Failed to open profile folder dialog", { error });
   }
 }

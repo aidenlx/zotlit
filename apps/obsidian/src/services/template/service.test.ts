@@ -207,7 +207,7 @@ describe("TemplateService", () => {
       service.render("note", {
         title: "Paper",
         backlink: "zotero://select/items/1",
-        fileLink: "",
+        attachments: [],
         annotations: [],
       }),
     ).toContain("# Paper");
@@ -216,9 +216,11 @@ describe("TemplateService", () => {
   it("resolves embedded includes through canonical template names", async () => {
     const { service } = await makeHarness();
 
-    const rendered = service.render("annots", [
-      { pageLabel: "4", imgEmbed: "", text: "Highlighted text", comment: "" },
-    ]);
+    const rendered = service.render("annots", {
+      annotations: [
+        { pageLabel: "4", imgEmbed: "", text: "Highlighted text", comment: "" },
+      ],
+    });
 
     expect(rendered).toContain("Page 4");
     expect(rendered).toContain("Highlighted text");
@@ -226,7 +228,7 @@ describe("TemplateService", () => {
 
   it("renders a vault template when present", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zt-note.eta.md", "custom <%= it.title %>");
+    vault.addFile("ZtTemplates/zt-note.eta.md", "custom <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
@@ -234,11 +236,11 @@ describe("TemplateService", () => {
 
   it("refreshes compiled templates after debounced vault modify events", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zt-note.eta.md", "first <%= it.title %>");
+    vault.addFile("ZtTemplates/zt-note.eta.md", "first <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     expect(service.render("note", { title: "A" })).toBe("first A");
-    vault.modifyFile("ZtTemplates/zt-note.eta.md", "second <%= it.title %>");
+    vault.modifyFile("ZtTemplates/zt-note.eta.md", "second <%= zt.title %>");
 
     await vi.advanceTimersByTimeAsync(500);
 
@@ -248,12 +250,12 @@ describe("TemplateService", () => {
   it("renders literal template strings without file lookup", async () => {
     const { service } = await makeHarness();
 
-    expect(service.renderString("<%= it.x %>", { x: 1 })).toBe("1");
+    expect(service.renderString("<%= zt.x %>", { x: 1 })).toBe("1");
   });
 
   it("rebuilds the content map when the template folder setting changes", async () => {
     const vault = new MockVault();
-    vault.addFile("OtherTemplates/zt-note.eta.md", "other <%= it.title %>");
+    vault.addFile("OtherTemplates/zt-note.eta.md", "other <%= zt.title %>");
     const { service, settings } = await makeHarness({ vault });
 
     settings.update({ "template.folder": "OtherTemplates" });
@@ -276,11 +278,11 @@ describe("TemplateService", () => {
 
   it("unsubscribes vault events on dispose", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zt-note.eta.md", "first <%= it.title %>");
+    vault.addFile("ZtTemplates/zt-note.eta.md", "first <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     await service[Symbol.asyncDispose]();
-    vault.modifyFile("ZtTemplates/zt-note.eta.md", "second <%= it.title %>");
+    vault.modifyFile("ZtTemplates/zt-note.eta.md", "second <%= zt.title %>");
     await vi.advanceTimersByTimeAsync(500);
 
     expect(vault.cachedRead).toHaveBeenCalledTimes(1);

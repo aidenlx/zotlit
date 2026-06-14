@@ -198,11 +198,23 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 
 2. **`FIELD_ALIASES` generated** — Extended `packages/zotero-types/scripts/generate-fields.ts` to read the `baseField` property from the Zotero schema JSON and emit a `FIELD_ALIASES: Record<string, string>` map (58 entries: `blogTitle→publicationTitle`, `studio→publisher`, etc.). Regenerated `packages/zotero-types/src/fields.ts`.
 
-3. **`TemplateItemData` type + `itemToTemplateData` mapper** — `packages/db/src/lib/zt-template-item.ts`. Converts `Item` → flat template object: normalizes aliases, applies the 2 CSL renames, converts creators to `{family, given, literal, role}`, parses dates via `parseItemDate`. 8 tests passing in `zt-template-item.test.ts`.
+3. **`TemplateItemData` type + `itemToTemplateData` mapper** — `packages/db/src/lib/zt-template-item.ts`. Converts `Item` → flat template object: normalizes aliases via `FIELD_ALIASES`, exposes the CSL aliases (`abstract`, `containerTitle`, `citekey`) as explicit typed properties reading their canonical source field, converts creators to `{family, given, literal, role}`, parses dates via `parseItemDate`. 9 tests passing in `zt-template-item.test.ts`.
 
 ### Phase B design — DONE
 
 4. **Full template design completed.** All decisions documented above: `varName` change, template data shapes, frontmatter system, multi-attachment behavior, template file updates, removed templates.
+
+### Phase B implementation — DONE (steps 5–9, 12–14)
+
+Scope decision: implemented the core + db-layer mappers. The frontmatter expression system (step 10) and the full `NoteTemplateContext` builder (step 11) are **deferred to Phase C**, where their only caller (note-create) exists.
+
+5. **Eta `varName` → `"zt"`** — set in the `ObsidianEta` constructor config (`eta.ts`); `directIncludeDataPlugin` picks it up via `config.varName`. Also updated the `EtaSuggest` autocomplete insert text to `"= zt. "` (`editor/suggest.ts`).
+6. **Template files updated to v2 `zt.*` syntax** — `zt-note`, `zt-annots`, `zt-annot`, `zt-cite`, `zt-cite2` now match the design above. Deleted `zt-field.eta.md` and `zt-colored.eta.md`; pruned `field`/`colored` from `CANONICAL_NAMES` and `EMBEDDED_DEFAULTS` in `defaults.ts` (`toFilename`/`fromFilename` need no change — they key off the set).
+7. **`citekey` alias** — added to `TemplateItemData` (`zt-template-item.ts`) as an explicit typed property reading `allFields.citationKey`; mirrors the `containerTitle`/`abstract` pattern. Both `citationKey` and `citekey` resolve. The three CSL aliases (`abstract`, `containerTitle`, `citekey`) are each a typed property reading its canonical source field directly — the canonical names stay accessible through the `...allFields` spread, so both names work without an intermediate rename map.
+8–9. **`TemplateAnnotation` + `TemplateAttachment` types and db-layer mappers** — new files `packages/db/src/lib/zt-template-annot.ts` and `zt-template-attach.ts`, exported from `packages/db/src/index.ts`. Mappers (`annotationToTemplateData`, `attachmentToTemplateData`) return the pass-through subset; runtime fields (`imgEmbed`, `backlink`, `fileLink`, `parentItem`, `parentAttachment`) are `Omit`ted and filled at the app layer in Phase C. `attachmentToTemplateData` derives `filename` from `parseAttachmentPath` and resolves `linkMode` via `LINK_MODE` (`"unknown"` fallback).
+12. **`template.filename` default** — now `<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>` (no `.md`) in `schema.ts`. Migration (`migrate.ts`): the exact v1 default string (`V1_DEFAULT_FILENAME`) is dropped so the v2 default applies; customized values carry over untouched.
+13. **`editor-suggest.ts` cite call** — changed `render("cite", [{ citekey }])` to `render("cite", { items: [{ citationKey }] })` to match the v2 `{ items }` context and the template's `c.citationKey` filter. **Note:** this is the minimal shape fix; building a full `TemplateItemData` (with a DB fetch) is the Phase E `insertCitation` pipeline (step 19), not done here.
+14. **Tests** — `service.test.ts` migrated to `zt.*` and the new `{ annotations }` / `{ attachments }` shapes; added a `citekey`-alias test (`zt-template-item.test.ts`) and a new `zt-template-attach.test.ts` (filename/linkMode derivation). Existing `migrate.test.ts` "drops values equal to legacy defaults" now also exercises the v1→v2 filename fallthrough. All pass; typecheck + oxlint + oxfmt clean.
 
 ### Prior research (from earlier sessions)
 
@@ -222,6 +234,7 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 - `TemplateService` (Stage 1) — `render(name, data)` and `renderString(source, data)`. Feature-specific helpers deferred to Stage 5.
 - Stage 3 editor-suggest `selectSuggestion` renders `template.render("cite", [{ citekey }])` — Stage 5 replaces with full `insertCitation` pipeline.
 - Stage 3 quick-switch opens existing note on hit; miss → `BaseNotice`. Stage 5 wires the create-arm.
+- **`ZoteroPrefService`** (added after Stage 5, `apps/obsidian/src/services/zotero-pref/`) — reads Zotero's `prefs.js` once on init (and re-reads on setting change) into a `fullName → value` map; exposes `get(name)` and a typed `baseAttachmentPath` getter **synchronously**, plus `state`/`resolvedProfileDir`/`on("changed")`. New setting `zotero.profile-dir` (nullable string; `null` ⇒ auto-detect the default profile via `profiles.ini`). Like `DatabaseService`, `ready` always resolves — read failures leave it `degraded` with an empty map. Registered in `services/build.ts` as `zoteroPref`. **This is exactly the runtime value `parseAttachmentPath` (`zt-attach.ts`) deliberately omits:** it returns a `LinkedBasePath { relative }` for base-dir attachments, and `zoteroPref.baseAttachmentPath` is the prefix needed to resolve it to an absolute on-disk path (mirrors `Zotero.Attachments.resolveRelativePath`). Wired into the Database setting group but **not yet consumed by any feature.**
 
 ## What didn't work / what to avoid
 
@@ -236,31 +249,17 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 
 ## Next steps
 
-### Phase B: Implementation
+### Phase B: Implementation — DONE except 10–11 (see "Phase B implementation" above)
 
-5. **Change Eta `varName` to `"zt"`** — in `ObsidianEta` constructor (`apps/obsidian/src/services/template/eta.ts`). Update the `directIncludeDataPlugin` which references `config?.varName ?? "it"`.
+Steps 5–9, 12–14 are complete. Steps 10 and 11 were deferred to Phase C because their only consumer is the note-create flow:
 
-6. **Update default template files** — apply the v2 template content listed above. Remove `zt-field.eta.md` and `zt-colored.eta.md`. Update `defaults.ts`: remove `field` and `colored` from `CANONICAL_NAMES`, `EMBEDDED_DEFAULTS`, imports, and `toFilename`/`fromFilename`.
+10. **Implement frontmatter expression system** — new setting for user field list, expression evaluator using `new Function`, reserved key validation, `stringifyYaml` serialization. Add `zt-attachments` backward compat (read numeric IDs, migrate to keys). *(Deferred → Phase C.)*
 
-7. **Add `citekey` alias to `TemplateItemData`** — ensure `citekey` is accessible alongside `citationKey` on the template item. Mirror the existing alias pattern (`publicationTitle`/`containerTitle`).
-
-8. **Create `TemplateAnnotation` type + mapper** — thin mapping from `Annotation`, in `packages/db` or app layer depending on whether runtime fields (`imgEmbed`, `backlink`) are needed. Runtime fields added at app layer.
-
-9. **Create `TemplateAttachment` type + mapper** — map `Attachment` to `{key, filename, contentType, linkMode}`. `fileLink` computed at app layer.
-
-10. **Implement frontmatter expression system** — new setting for user field list, expression evaluator using `new Function`, reserved key validation, `stringifyYaml` serialization. Add `zt-attachments` backward compat (read numeric IDs, migrate to keys).
-
-11. **Define full note template context** — `TemplateItemData` + `tags`, `annotations`, `attachments`, `backlink`, `authors`, `authorsShort`. Built at app layer in note-create flow. Fetch all attachments and their annotations (no selection modal).
-
-12. **Update `template.filename` default** — new default without `.md`, migration rule for v1 default string.
-
-13. **Update `editor-suggest.ts` call site** — change `render("cite", [{ citekey }])` to `render("cite", { items: [itemData] })` with full `TemplateItemData` and `citekey` alias.
-
-14. **Update tests** — `service.test.ts` uses v1 data shapes. Update to match v2 templates and `zt.*` variable names.
+11. **Define full note template context** — `TemplateItemData` + `tags`, `annotations`, `attachments`, `backlink`, `authors`, `authorsShort`. Built at app layer in note-create flow. Fetch all attachments and their annotations (no selection modal). The base shapes (`TemplateAnnotation`/`TemplateAttachment` + db mappers) already exist from steps 8–9; this step adds the runtime fields and the `NoteTemplateContext` assembly. *(Deferred → Phase C.)*
 
 ### Phase C: Note create
 
-15. **`NoteFeatures.create(item)`** — fetch item → `itemToTemplateData()` → fetch tags/attachments/annotations → build full context → render filename → evaluate frontmatter expressions → render note template → `vault.create()`. Wire into quick-switch create-arm.
+15. **`NoteFeatures.create(item)`** — fetch item → `itemToTemplateData()` → fetch tags/attachments/annotations → map via `annotationToTemplateData`/`attachmentToTemplateData` and add runtime fields (`imgEmbed`, `backlink`, `fileLink`, `parentItem`, `parentAttachment`) → build full `NoteTemplateContext` (step 11) → render filename → evaluate frontmatter expressions (step 10) → render note template → `vault.create()`. Wire into quick-switch create-arm. **Steps 10 and 11 land here.** When computing `TemplateAttachment.fileLink`, resolve `linked_file` paths via `zoteroPref.baseAttachmentPath` (`LinkedBasePath`) — inject `zoteroPref` into `NoteFeatures`.
 
 ### Phase D: Note update
 
@@ -295,6 +294,8 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 | Stage 4 mark parsers | `packages/db/src/lib/zt-note-mark.ts`, `zt-color.ts` |
 | Stage 4 colored mark rendering | `apps/obsidian/src/services/note-parser/index.ts` → `renderAnnotationMark()` |
 | Template item type + mapper | `packages/db/src/lib/zt-template-item.ts` (tests: `zt-template-item.test.ts`) |
+| Template annotation type + mapper | `packages/db/src/lib/zt-template-annot.ts` |
+| Template attachment type + mapper | `packages/db/src/lib/zt-template-attach.ts` (tests: `zt-template-attach.test.ts`) |
 | Generated field aliases | `packages/zotero-types/src/fields.ts` → `FIELD_ALIASES` |
 | Field alias generator | `packages/zotero-types/scripts/generate-fields.ts` |
 | TemplateService | `apps/obsidian/src/services/template/service.ts` |
@@ -303,6 +304,8 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 | v2 default templates | `apps/obsidian/src/services/template/defaults/zt-*.eta.md` |
 | DB Annotation type | `packages/db/src/lib/zt-annot.ts` |
 | DB Attachment type + path parser | `packages/db/src/lib/zt-attach.ts` |
+| Zotero pref service (prefs.js reader, sync `baseAttachmentPath`) | `apps/obsidian/src/services/zotero-pref/service.ts` |
+| prefs.js / profiles.ini parsers | `apps/obsidian/src/services/zotero-pref/prefs-file.ts` (tests: `prefs-file.test.ts`) |
 | DB annotation queries | `packages/db/src/queries/annotations.ts` |
 | DB attachment queries | `packages/db/src/queries/attachments.ts` |
 | Settings schema | `apps/obsidian/src/services/settings/schema.ts` |
