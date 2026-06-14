@@ -20,6 +20,13 @@ export interface ObsidianEtaHost {
 }
 
 export class ObsidianEta extends Eta {
+  /**
+   * Wraps a captured block in a blockquote. Referenced from `functionHeader`
+   * as `this.bqHelper`; must stay public so generated template code can reach
+   * it.
+   */
+  readonly bqHelper = formatBlockquote;
+
   constructor(host: ObsidianEtaHost) {
     super({
       cache: true,
@@ -27,6 +34,10 @@ export class ObsidianEta extends Eta {
       autoEscape: false,
       autoFilter: true,
       filterFunction: filterUndefinedNull,
+      // `bq(() => { ... })` blockquotes a captured block. Opened in an evaluate
+      // tag (not `<%~ %>`): autoFilter wraps raw interpolations in a call whose
+      // closing paren collides with the callback's `{`.
+      functionHeader: "const bq = (fn) => output(this.bqHelper(capture(fn)));",
       plugins: [directIncludeDataPlugin],
     });
 
@@ -71,6 +82,22 @@ const directIncludeDataPlugin: EtaConfig["plugins"][number] = {
       );
   },
 };
+
+/**
+ * Prefix every line of a block with `"> "` so multi-line content stays inside
+ * an Obsidian blockquote/callout. Blank lines become a bare `">"`; consecutive
+ * blanks collapse to one. Surrounding whitespace is trimmed so the leading and
+ * trailing newlines `capture()` inherits from template layout don't leak in.
+ */
+export function formatBlockquote(content: string): string {
+  const lines = content
+    .trim()
+    .split("\n")
+    .map((line) => (line.trim() === "" ? ">" : `> ${  line}`));
+  return lines
+    .filter((line, i) => !(line === ">" && lines[i - 1] === ">"))
+    .join("\n");
+}
 
 function filterUndefinedNull(value: unknown): string {
   if (value === null || value === undefined) return "";
