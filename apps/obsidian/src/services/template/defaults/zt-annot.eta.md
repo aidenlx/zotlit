@@ -1,9 +1,9 @@
-[!note] Page <%= it.pageLabel %>
-
-<%= it.imgEmbed %><%= it.text %>
-<% if (it.comment) { %>
+> [!note] Page <%= zt.pageLabel %>
+> 
+> <%= zt.imgEmbed %><%= zt.text %>
+<% if (zt.comment) { %>
 
 ---
 
-<%= it.comment %>
+<%= zt.comment %>
 <% } %>

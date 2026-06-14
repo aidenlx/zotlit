@@ -1,4 +1,4 @@
-# <%= it.title %>
+# <%= zt.title %>
 
-[Zotero](<%= it.backlink %>) <%= it.fileLink %>
-<%~ include("annots", it.annotations) %>
+[Zotero](<%= zt.backlink %>) <%= zt.attachments.map(a => a.fileLink).filter(Boolean).join(" ") %>
+<%~ include("annots", { annotations: zt.annotations }) %>

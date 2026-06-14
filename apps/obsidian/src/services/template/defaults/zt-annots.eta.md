@@ -1,3 +1,3 @@
-<% for (const annotation of it) { %>
+<% for (const annotation of zt.annotations) { %>
 <%~ include("annotation", annotation) %>
 <% } %>

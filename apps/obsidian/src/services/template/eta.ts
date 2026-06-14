@@ -23,6 +23,7 @@ export class ObsidianEta extends Eta {
   constructor(host: ObsidianEtaHost) {
     super({
       cache: true,
+      varName: "zt",
       autoEscape: false,
       autoFilter: true,
       filterFunction: filterUndefinedNull,

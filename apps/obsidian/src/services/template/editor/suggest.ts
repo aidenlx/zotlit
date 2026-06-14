@@ -88,7 +88,7 @@ export class EtaSuggest extends EditorSuggest<EtaHint> {
     if (!this.context) return;
 
     const { editor, end, start } = this.context;
-    const text = prefix === " " ? "  " : "= it. ";
+    const text = prefix === " " ? "  " : "= zt. ";
     editor.transaction({
       changes: [{ from: start, to: end, text }],
       selection: { from: { ...start, ch: start.ch + text.length - 1 } },
