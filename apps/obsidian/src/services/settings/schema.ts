@@ -4,8 +4,37 @@ import { join } from "node:path";
 import { Platform } from "obsidian";
 import * as v from "valibot";
 
-/** JSON-safe primitives that settings values may take. */
-type SettingsPrimitive = string | number | boolean | null;
+import {
+  DEFAULT_FRONTMATTER_FIELDS,
+  DEFAULT_NOTE_FILENAME,
+} from "@/services/template/defaults";
+
+/**
+ * JSON-safe values a setting may take. Recursive so structured settings (e.g.
+ * `note.frontmatter-fields`) round-trip through `data.json`. The array / index
+ * branches are `readonly` so `v.readonly()`-typed settings stay assignable to
+ * this guard.
+ */
+type SettingsValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly SettingsValue[]
+  | { readonly [key: string]: SettingsValue };
+
+/**
+ * A user frontmatter field: `key` mapped to a JS `expr` over `zt`. Deeply
+ * `readonly` so snapshots (which share this array by reference with `defaults`)
+ * cannot be mutated through the typed surface. Shape only — reserved/empty keys
+ * are dropped at frontmatter-build time, see note-feature `buildFrontmatter`.
+ */
+const frontmatterFieldsSchema = v.pipe(
+  v.array(
+    v.pipe(v.object({ key: v.string(), expr: v.string() }), v.readonly()),
+  ),
+  v.readonly(),
+);
 
 /** JSON-safe finite number that settings values may take. */
 export const settingsNumber = v.pipe(v.number(), v.finite());
@@ -55,6 +84,7 @@ export const schema = v.object({
   "citation.show-citekey-in-suggester": v.boolean(),
 
   "note.literature-folder": v.string(),
+  "note.frontmatter-fields": frontmatterFieldsSchema,
 
   "server.enabled": v.boolean(),
   "server.port": serverPort,
@@ -75,7 +105,7 @@ export const schema = v.object({
 
   "img-excerpt.import": v.nullable(imgExcerptImport),
   "img-excerpt.path": v.string(),
-}) satisfies v.GenericSchema<unknown, Record<string, SettingsPrimitive>>;
+}) satisfies v.GenericSchema<unknown, Record<string, SettingsValue>>;
 
 export type Settings = v.InferOutput<typeof schema>;
 
@@ -90,11 +120,12 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.editor-suggester": true,
   "citation.show-citekey-in-suggester": false,
   "note.literature-folder": "LiteratureNotes",
+  "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "server.enabled": false,
   "server.port": 9091,
   "server.hostname": "127.0.0.1",
   "template.folder": "ZtTemplates",
-  "template.filename": "<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>",
+  "template.filename": DEFAULT_NOTE_FILENAME,
   "template.update-annot-block": false,
   "template.update-overwrite": false,
   "template.auto-pair-eta": false,

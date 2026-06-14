@@ -2,6 +2,7 @@ import { type App, type Plugin } from "obsidian";
 
 import * as m from "@/paraglide/messages";
 import { type ItemLookup } from "@/services/item-lookup/service";
+import { type NoteFeatures } from "@/services/note-feature/service";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
 
@@ -11,6 +12,7 @@ export interface QuickSwitchDeps {
   app: App;
   lookup: ItemLookup;
   noteIndex: NoteIndex;
+  noteFeatures: NoteFeatures;
   settings: SettingsService;
 }
 
