@@ -66,6 +66,15 @@ Disagreement is direct, not softened with fake agreement. Lead with the correcti
 
 Avoid: agreeing without verification, flattering the user, defaulting to "you're absolutely right," treating an assumption as fact, hiding disagreement, giving a comforting answer instead of a correct one, implementing bad instructions silently, presenting uncertainty as certainty (or vice versa), and over-apologizing for correcting the user.
 
+## Affirmative specifications
+
+Describe the target state — what exists and what to do. Negation activates the concept it tries to suppress (the "pink elephan
+t" effect), so state the replacement, not the rejection.
+
+- Lead with what the code/spec looks like now, not what was removed or changed.
+- If a contrast is needed, the positive target comes first: "Use X" or "Prefer X over Y."
+- Separate "why not X" rationale into a Decisions section or conversation; keep the spec body affirmative.
+
 ## Code patterns
 
 ### Simplicity
@@ -104,15 +113,6 @@ The test: every changed line should trace directly to the user's request.
 - In JSDoc comments, prefer using `@default` (e.g. `/** @default "text" */`) instead of prose like "Defaults to …".
 - Drop comments that only restate what the name, type signature, or implementation already conveys (e.g. `/** Build a fresh shallow clone of X */` above a one-line spread, or `/** Throw if X */` above a method named `requireX`). Keep only the non-obvious parts: invariants, edge cases, design rationale, and "why" over "what".
 - Trim mixed JSDoc to the non-obvious parts rather than dropping the whole block. If the first sentence restates the name and the rest explains an invariant, delete the first sentence.
-
-### Affirmative specifications
-
-Describe the target state — what exists and what to do. Negation activates the concept it tries to suppress (the "pink elephan
-t" effect), so state the replacement, not the rejection.
-
-- Lead with what the code/spec looks like now, not what was removed or changed.
-- If a contrast is needed, the positive target comes first: "Use X" or "Prefer X over Y."
-- Separate "why not X" rationale into a Decisions section or conversation; keep the spec body affirmative.
 
 ### Separate pure logic from stateful orchestration
 
