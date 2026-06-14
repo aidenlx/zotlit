@@ -4,6 +4,7 @@ import { initI18n } from "./lib/i18n";
 import { BaseNotice } from "./lib/notice";
 import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
+import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
@@ -44,6 +45,7 @@ export default class ZotLitPlugin extends Plugin {
     );
 
     addDatabaseActions(this, { db: services.db });
+    addNoteFeatureActions(this, { noteFeatures: services.noteFeatures });
     registerCitationSuggest(this, {
       app: this.app,
       lookup: services.itemLookup,

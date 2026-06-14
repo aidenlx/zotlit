@@ -1,5 +1,7 @@
 # @zotlit/obsidian
 
+Shared constants live in `src/lib/constants.ts`.
+
 ## Logging
 
 Import `getLogger` from `@/lib/log` and create a logger at module level:

@@ -16,6 +16,7 @@ import { join } from "node:path";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { ZOTERO_DB_FILENAME } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 import {
@@ -37,8 +38,6 @@ import {
 } from "./prefs-file";
 
 const logger = getLogger("zotero-pref");
-
-export const DB_FILENAME = "zotero.sqlite";
 
 export interface ZoteroPrefEvents {
   /** Prefs were re-read after the profile dir changed. Re-read if you cache. */
@@ -135,7 +134,7 @@ export class ZoteroPrefService extends Service<void> {
    * Full path to the Zotero SQLite database file for the current active profile.
    */
   get databasePath(): string {
-    return join(this.dataDir, DB_FILENAME);
+    return join(this.dataDir, ZOTERO_DB_FILENAME);
   }
 
   on<K extends keyof ZoteroPrefEvents>(

@@ -9,29 +9,38 @@ import {
 import {
   getAnnotationsByParent,
   getAttachmentsByParents,
+  getLibraries,
+  getItemsByKey,
   getTagsByItemIDs,
   type Annotation,
   type Item,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { PATTERN_ZOTERO_KEY, MARKER_END, MARKER_START } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { type DatabaseService } from "@/services/database/service";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { Service } from "@/services/service-base";
 import { type SettingsService } from "@/services/settings/service";
+import { formatManagedRegion } from "@/services/template/eta";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { buildNoteContext } from "./context";
 import { attachmentFileLink } from "./file-link";
-import { buildFrontmatter } from "./frontmatter";
+import { buildFrontmatter, mergeManagedFrontmatter } from "./frontmatter";
 import { type NoteTemplateContext } from "./types";
 
 const logger = getLogger("note-feature");
 
 /** Characters Obsidian / common filesystems reject in a file name. */
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]/g;
+const FRONTMATTER_BLOCK = /^---\n[\s\S]*?\n---(?:\n+|$)/;
+const MANAGED_REGION = new RegExp(
+  `${RegExp.escape(MARKER_START)}[\\s\\S]*?${RegExp.escape(MARKER_END)}`,
+);
+const MANAGED_REGION_GLOBAL = new RegExp(MANAGED_REGION, "g");
 
 export interface NoteFeaturesDeps {
   app: App;
@@ -103,6 +112,49 @@ export class NoteFeatures extends Service<void> {
     return file;
   }
 
+  async update(file: TFile, indexedKey: string): Promise<UpdateResult> {
+    const context = await this.#contextForIndexedKey(indexedKey);
+    await this.#refreshFrontmatter(file, context);
+
+    const region = this.#renderManagedRegion(context);
+    let replaced = false;
+    let duplicateCount = 0;
+    await this.#app.vault.process(file, (content) => {
+      const matches = content.match(MANAGED_REGION_GLOBAL) ?? [];
+      duplicateCount = Math.max(0, matches.length - 1);
+      if (matches.length === 0) return content;
+      replaced = true;
+      return content.replace(MANAGED_REGION, region);
+    });
+
+    if (duplicateCount > 0) {
+      logger.warn("Literature note has duplicate managed regions", {
+        path: file.path,
+        count: duplicateCount + 1,
+      });
+    }
+    logger.info("Updated literature note", {
+      path: file.path,
+      itemKey: indexedKey,
+      bodyUpdated: replaced,
+    });
+    return { bodyUpdated: replaced, duplicateRegionCount: duplicateCount };
+  }
+
+  async overwrite(file: TFile, indexedKey: string): Promise<void> {
+    const context = await this.#contextForIndexedKey(indexedKey);
+    await this.#refreshFrontmatter(file, context);
+    const body = this.#template.render("note", context);
+    await this.#app.vault.process(file, (content) => {
+      const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
+      return `${prefix}${body}`;
+    });
+    logger.info("Overwrote literature note", {
+      path: file.path,
+      itemKey: indexedKey,
+    });
+  }
+
   /** Render the configured cite template for the given items. */
   renderCitation(items: readonly { citationKey: string | null }[]): string {
     return this.#template.render("cite", { items });
@@ -145,6 +197,38 @@ export class NoteFeatures extends Service<void> {
     });
   }
 
+  async #contextForIndexedKey(
+    indexedKey: string,
+  ): Promise<NoteTemplateContext> {
+    await this.#db.ready;
+    const client = this.#db.client;
+    const parsed = parseIndexedKey(client, indexedKey);
+    if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
+
+    const [item] = getItemsByKey(client, parsed.libraryID, [parsed.key]);
+    if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
+    return this.#buildContext(item);
+  }
+
+  async #refreshFrontmatter(
+    file: TFile,
+    context: NoteTemplateContext,
+  ): Promise<void> {
+    const settings = await this.#settings.loaded;
+    const managed = buildFrontmatter(context, {
+      fields: settings["note.frontmatter-fields"],
+      onError: (key, error) =>
+        logger.warn("Frontmatter expression failed", { key, error }),
+    });
+    await this.#app.fileManager.processFrontMatter(file, (fm) => {
+      mergeManagedFrontmatter(fm, managed);
+    });
+  }
+
+  #renderManagedRegion(context: NoteTemplateContext): string {
+    return formatManagedRegion(this.#template.render("content", context));
+  }
+
   #renderFilename(context: NoteTemplateContext, source: string): string {
     const raw = this.#template.renderString(source, context).trim();
     const sanitized = raw.replace(ILLEGAL_FILENAME_CHARS, "_").trim();
@@ -162,4 +246,27 @@ export class NoteFeatures extends Service<void> {
     }
     await this.#app.vault.createFolder(folder);
   }
+}
+
+export interface UpdateResult {
+  bodyUpdated: boolean;
+  duplicateRegionCount: number;
+}
+
+function parseIndexedKey(
+  client: NodeDatabaseClient,
+  indexedKey: string,
+): { key: string; libraryID: number } | null {
+  const match = PATTERN_ZOTERO_KEY.exec(indexedKey);
+  if (!match) return null;
+  const { key, groupID } = match.groups;
+  if (!groupID) return { key, libraryID: 1 };
+  const library = getLibraries(client).find(
+    (entry) => entry.groupID === Number(groupID),
+  );
+  if (!library) return null;
+  return {
+    key,
+    libraryID: library.libraryID,
+  };
 }

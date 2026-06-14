@@ -28,6 +28,7 @@ import { watch } from "node:fs";
 import { createClient } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { ZOTERO_DB_FILENAME } from "@/lib/constants";
 import { SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -48,7 +49,7 @@ class FakeWatcher extends EventEmitter {
   close(): void {
     this.closed = true;
   }
-  fire(filename: string | null = "zotero.sqlite", event = "change"): void {
+  fire(filename: string | null = ZOTERO_DB_FILENAME, event = "change"): void {
     if (this.closed) return;
     this.listener(event, filename);
   }
@@ -111,6 +112,9 @@ class FakeZoteroPref {
   }
   get dataDir(): string {
     return this.#dataDir;
+  }
+  get databasePath(): string {
+    return join(this.#dataDir, ZOTERO_DB_FILENAME);
   }
   on(event: "changed", cb: () => void): () => void {
     return this.#emitter.on(event, cb);
@@ -213,7 +217,7 @@ beforeEach(async () => {
   dataDir = join(tmpRoot, "data");
   // Create data dir + initial sqlite file so fs.stat succeeds.
   await mkdir(dataDir, { recursive: true });
-  dbPath = join(dataDir, "zotero.sqlite");
+  dbPath = join(dataDir, ZOTERO_DB_FILENAME);
   await writeFile(dbPath, "init");
   // Default: createClient returns a fresh fake client per call.
   createClientMock.mockImplementation(() => makeFakeClient() as never);
@@ -284,7 +288,7 @@ describe("DatabaseService — startup", () => {
     // Switch data-dir to a fresh path to trigger #scheduleRefresh.
     const altDir = join(tmpRoot, "alt");
     await mkdir(altDir);
-    await writeFile(join(altDir, "zotero.sqlite"), "alt");
+    await writeFile(join(altDir, ZOTERO_DB_FILENAME), "alt");
     pref.setDataDir(altDir);
     await waitFor(() => service.state === "ready", "recover to ready");
 
@@ -321,7 +325,7 @@ describe("DatabaseService — refresh", () => {
 
     const altDir = join(tmpRoot, "alt");
     await mkdir(altDir);
-    await writeFile(join(altDir, "zotero.sqlite"), "alt");
+    await writeFile(join(altDir, ZOTERO_DB_FILENAME), "alt");
     const openError = new Error("alt open failed");
     createClientMock.mockImplementation(() => {
       throw openError;
@@ -366,7 +370,7 @@ describe("DatabaseService — refresh", () => {
 
     const altDir = join(tmpRoot, "alt");
     await mkdir(altDir);
-    const altDbPath = join(altDir, "zotero.sqlite");
+    const altDbPath = join(altDir, ZOTERO_DB_FILENAME);
     await writeFile(altDbPath, "alt");
 
     pref.setDataDir(altDir);
@@ -504,7 +508,7 @@ describe("DatabaseService — isUpToDate", () => {
     const { pref, service } = await makeService();
     const altDir = join(tmpRoot, "alt");
     await mkdir(altDir);
-    await writeFile(join(altDir, "zotero.sqlite"), "alt");
+    await writeFile(join(altDir, ZOTERO_DB_FILENAME), "alt");
 
     // Mutating settings updates #lastDbPath synchronously inside
     // #onSettingsChanged, but #activePath only swaps when #runRefresh
@@ -781,7 +785,7 @@ describe("DatabaseService — event contract", () => {
 
     const altDir = join(tmpRoot, "alt");
     await mkdir(altDir);
-    await writeFile(join(altDir, "zotero.sqlite"), "alt");
+    await writeFile(join(altDir, ZOTERO_DB_FILENAME), "alt");
     createClientMock.mockImplementation(() => {
       throw new Error("hot switch fail");
     });

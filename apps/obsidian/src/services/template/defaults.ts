@@ -1,16 +1,16 @@
 import { join } from "node:path/posix";
 
 import zAnnot from "./defaults/zt-annot.eta.md?raw";
-import zAnnots from "./defaults/zt-annots.eta.md?raw";
 import zCite from "./defaults/zt-cite.eta.md?raw";
 import zCite2 from "./defaults/zt-cite2.eta.md?raw";
+import zContent from "./defaults/zt-content.eta.md?raw";
 import zNote from "./defaults/zt-note.eta.md?raw";
 import { normalizeVaultPath } from "./path";
 
 export const CANONICAL_NAMES = [
   "note",
   "annotation",
-  "annots",
+  "content",
   "cite",
   "cite2",
 ] as const;
@@ -22,7 +22,7 @@ const canonicalNameSet: ReadonlySet<string> = new Set(CANONICAL_NAMES);
 export const EMBEDDED_DEFAULTS: Record<TemplateName, string> = {
   note: zNote,
   annotation: zAnnot,
-  annots: zAnnots,
+  content: zContent,
   cite: zCite,
   cite2: zCite2,
 };

@@ -29,16 +29,14 @@ import {
 } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { ZOTERO_DB_FILENAME } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 import {
   type Settings,
   type SettingsService,
 } from "@/services/settings/service";
-import {
-  DB_FILENAME,
-  type ZoteroPrefService,
-} from "@/services/zotero-pref/service";
+import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 const logger = getLogger("database");
 
@@ -408,7 +406,7 @@ export class DatabaseService extends Service<void> {
         dir,
         { persistent: false, recursive: false },
         (event, filename) => {
-          if (filename != null && filename !== DB_FILENAME) return;
+          if (filename != null && filename !== ZOTERO_DB_FILENAME) return;
           logger.debug("Dir watcher event for DB file", { event, filename });
           this.#debouncedRefresh();
         },
