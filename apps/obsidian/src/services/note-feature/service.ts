@@ -14,6 +14,7 @@ import {
   getTagsByItemIDs,
   type Annotation,
   type Item,
+  type ItemTag,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
@@ -180,9 +181,19 @@ export class NoteFeatures extends Service<void> {
         getAnnotationsByParent(client, attachment.itemID, libraryID),
       );
     }
-    const tags = getTagsByItemIDs(client, [item.itemID], libraryID).map(
-      (t) => t.name,
+    const annotationIDs = [...annotationsByAttachment.values()].flatMap(
+      (annotations) => annotations.map((annotation) => annotation.itemID),
     );
+    const tagsByItemID = new Map<number, ItemTag[]>(
+      [item.itemID, ...annotationIDs].map((itemID) => [itemID, []]),
+    );
+    for (const itemTag of getTagsByItemIDs(
+      client,
+      [item.itemID, ...annotationIDs],
+      libraryID,
+    )) {
+      tagsByItemID.get(itemTag.itemID)?.push(itemTag);
+    }
 
     const dataDir = this.#zoteroPref.dataDir;
     const baseAttachmentPath = this.#zoteroPref.baseAttachmentPath;
@@ -191,7 +202,7 @@ export class NoteFeatures extends Service<void> {
       item,
       attachments,
       annotationsByAttachment,
-      tags,
+      tagsByItemID,
       authorsShort: creatorSummary(item),
       fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),
     });

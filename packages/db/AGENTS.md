@@ -10,6 +10,31 @@ Prefer, in order:
 
 Wrap queries with `defineQuery(...)` from `src/queries/_shared.ts` and prefer prepared statements with placeholders (`sql.placeholder("name")`). See the `defineQuery` / `DefinedQuery` JSDoc for cached (`.prepared`) vs one-shot (`.prepare`) variants and when to fall back to the bare call.
 
+### Zotero integer domains
+
+Zotero stores several enum-like domains as raw integers, such as
+`itemAttachments.linkMode`, `itemTags.type`, and `creators.fieldMode`.
+
+For these fields:
+
+- Define the int-to-name map **module-private** in the relevant `src/lib/zt-*.ts`
+  module (`ANNOT_TYPE`, `LINK_MODE`, `TAG_TYPE`, `CREATOR_FIELD_MODE`). Do not
+  export the map. Export the key type and name type derived from it, e.g.
+  `LinkMode` / `LinkModeName`, `TagType` / `TagTypeName`.
+- Apply the raw key type at the Drizzle schema boundary with
+  `integer().$type<...>()` in `drizzle/schema.ts`, preserving nullability from
+  Zotero's schema.
+- Resolve int→name only through a `<domain>ToName` converter exported from the
+  same module (`annotationTypeToName`, `linkModeToName`, `tagTypeToName`,
+  `creatorFieldModeToName`). The converter takes the raw key type, returns
+  `<Domain>Name | "unknown"`, and `logger.warn`s on a value outside the map so
+  Zotero adding a future enum member degrades gracefully instead of throwing. Never index the
+  raw map at a call site (`LINK_MODE[mode]`).
+- Query models should carry the raw typed integer. Template-facing helpers
+  resolve it via the converter when the string name is the template vocabulary.
+- Do not add per-query casts for these columns. If a query needs a narrower
+  type, fix the schema column typing or add the missing `zt-*` domain type.
+
 ### Many-row lookups
 
 Default to a single-row `col = placeholder("col")` query and loop in the consumer (`.prepared`, cached). Use dynamic `col IN (...)` via `.prepare` (uncached) only when the per-row query is heavy enough that N round trips dominate.

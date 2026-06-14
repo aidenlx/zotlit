@@ -1,6 +1,6 @@
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
-import { annotationTypeFromID, type Annotation } from "@/lib/zt-annot";
+import { type Annotation } from "@/lib/zt-annot";
 
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
@@ -110,7 +110,7 @@ function toAnnotation(row: AnnotationRow): Annotation {
     libraryID: row.item.libraryID,
     dateAdded: row.item.dateAdded,
     dateModified: row.item.dateModified,
-    type: annotationTypeFromID(row.type, row.item.key),
+    type: row.type,
     text: row.text,
     comment: row.comment,
     color: row.color,

@@ -2,6 +2,7 @@ import { type Temporal } from "@zotlit/shared/temporal";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
+import { type CreatorFieldMode } from "@/lib/zt-item";
 
 import { groupsQuery } from "./_groups";
 import { CHILD_ITEM_TYPES, defineQuery, type QueryRow } from "./_shared";
@@ -10,7 +11,7 @@ import { formatIndexedKey } from "./items";
 export interface IndexedCreator {
   firstName: string | null;
   lastName: string | null;
-  fieldMode: number;
+  fieldMode: CreatorFieldMode;
 }
 
 export interface IndexedItem {

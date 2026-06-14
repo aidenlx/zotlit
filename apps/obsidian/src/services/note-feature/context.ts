@@ -5,6 +5,7 @@ import {
   type Annotation,
   type Attachment,
   type Item,
+  type ItemTag,
   type TemplateAnnotation,
   type TemplateAttachment,
   type TemplateCreator,
@@ -23,8 +24,8 @@ export interface NoteContextInput {
   attachments: readonly Attachment[];
   /** Annotations keyed by their parent attachment's `itemID`. */
   annotationsByAttachment: ReadonlyMap<number, readonly Annotation[]>;
-  /** Flat tag names for the item. */
-  tags: readonly string[];
+  /** Tag applications keyed by Zotero itemID. */
+  tagsByItemID: ReadonlyMap<number, readonly ItemTag[]>;
   /** Short author summary (e.g. `"Smith et al."`). */
   authorsShort: string;
   /** Resolve an attachment to its vault link; `""` when unresolvable. */
@@ -38,7 +39,8 @@ export interface NoteContextInput {
  */
 export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
   const { item } = input;
-  const itemData = itemToTemplateData(item);
+  const itemTags = input.tagsByItemID.get(item.itemID) ?? [];
+  const itemData = itemToTemplateData(item, itemTags);
   const groupID = groupIDFromIndexedKey(item.indexedKey, item.key);
 
   const attachments: TemplateAttachment[] = input.attachments.map((a) => ({
@@ -52,7 +54,10 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     const annots = input.annotationsByAttachment.get(attachment.itemID) ?? [];
     for (const annot of annots) {
       annotations.push({
-        ...annotationToTemplateData(annot),
+        ...annotationToTemplateData(
+          annot,
+          input.tagsByItemID.get(annot.itemID) ?? [],
+        ),
         // Image-excerpt import is deferred (Stage 9); empty for now.
         imgEmbed: "",
         backlink: annotationBacklink({
@@ -76,7 +81,6 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     backlink: itemBacklink(item.key, groupID),
     annotations,
     attachments,
-    tags: [...input.tags],
     authors,
     authorsShort: input.authorsShort,
   };

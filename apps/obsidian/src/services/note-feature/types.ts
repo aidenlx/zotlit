@@ -8,7 +8,7 @@ import {
 /**
  * The `zt` root for the `note` template: {@link TemplateItemData} plus the
  * runtime-computed fields assembled at the app layer (backlinks, resolved
- * attachment links, flattened annotations/tags, author conveniences).
+ * attachment links, flattened annotations, author conveniences).
  */
 export interface NoteTemplateContext extends TemplateItemData {
   /** Zotero deep link to the literature item (`zotero://select/...`). */
@@ -17,8 +17,6 @@ export interface NoteTemplateContext extends TemplateItemData {
   annotations: TemplateAnnotation[];
   /** All attachments for the item. */
   attachments: TemplateAttachment[];
-  /** Flat tag names. */
-  tags: string[];
   /** Creators filtered to {@link TemplateItemData.primaryCreatorType}. */
   authors: TemplateCreator[];
   /** Formatted short author string, e.g. `"Smith et al."`. */

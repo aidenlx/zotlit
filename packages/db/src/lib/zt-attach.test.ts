@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAttachmentPath } from "./zt-attach";
+import { parseAttachmentPath, type LinkMode } from "./zt-attach";
 
 describe("parseAttachmentPath", () => {
-  it.each([
+  it.each<[string, LinkMode]>([
     ["imported_file", 0],
     ["imported_url", 1],
     ["embedded_image", 4],
@@ -57,7 +57,7 @@ describe("parseAttachmentPath", () => {
   });
 
   it("returns unknown for out-of-range linkMode", () => {
-    expect(parseAttachmentPath("storage:paper.pdf", 99)).toEqual({
+    expect(parseAttachmentPath("storage:paper.pdf", 99 as LinkMode)).toEqual({
       kind: "unknown",
       raw: "storage:paper.pdf",
     });
