@@ -48,6 +48,7 @@ new BaseNotice(m.notice_indexed_library({ count }));
 ```
 
 - **Compilation**: `paraglideVitePlugin` in `vite.config.ts` re-emits `src/paraglide/` on every `dev`/`build`/`build:dev`. The output is gitignored, so the compiled `m.*` and `paraglide/runtime` exports do not exist yet on fresh checkout.
+- **Recompile without a full build** (e.g. after editing `messages/*.json`, so typecheck sees new `m.*`): `pnpm run paraglide:compile`.
 
 When extending the test `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
 
