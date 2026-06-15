@@ -15,8 +15,8 @@ function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
   return {
     itemID: 1,
     libraryID: 1,
-    key: "ITEM0001",
-    indexedKey: "ITEM0001",
+    key: "ITEM2345",
+    indexedKey: "ITEM2345",
     dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: "author",
@@ -105,7 +105,7 @@ describe("buildNoteContext", () => {
       imgEmbed: (annotation) => `![[${annotation.key}.png]]`,
     });
 
-    expect(ctx.backlink).toBe("zotero://select/library/items/ITEM0001");
+    expect(ctx.backlink).toBe("zotero://select/library/items/ITEM2345");
     expect(ctx.tags).toEqual([
       { itemID: item.itemID, tag: itemTagRecord, type: 0 },
     ]);
@@ -135,8 +135,8 @@ describe("buildNoteContext", () => {
     const ctx = buildNoteContext({
       item: makeItem({
         itemType: "book",
-        key: "ITEM0001",
-        indexedKey: "ITEM0001g99",
+        key: "ITEM2345",
+        indexedKey: "ITEM2345g99",
       }),
       attachments: [],
       annotationsByAttachment: new Map(),
@@ -145,6 +145,6 @@ describe("buildNoteContext", () => {
       fileLink: () => "",
       imgEmbed: () => "",
     });
-    expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM0001");
+    expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM2345");
   });
 });

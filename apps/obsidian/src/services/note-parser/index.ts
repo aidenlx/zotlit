@@ -2,6 +2,7 @@ import type TurndownService from "turndown";
 
 import {
   annotationColorToName,
+  annotationOpenUri,
   getAttachmentByKey,
   parseAttachmentPath,
 } from "@zotlit/db";
@@ -176,16 +177,17 @@ function renderAnnotationMark(
 }
 
 /**
- * Build the `zotero://open/` backlink for an annotation. The format-agnostic
- * `open` scheme handles PDF / EPUB / snapshot; `annotation=` navigates and the
- * optional `page=` is a positioning hint. Returns `null` when the attachment URI
- * was malformed (no resolved ref), so the caller drops the link gracefully.
+ * Build the `zotero://open/` backlink for an annotation. Returns `null` when the
+ * attachment URI was malformed (no resolved ref), so the caller drops the link
+ * gracefully.
  */
 function annotationHref(info: NoteAnnotation): string | null {
   const ref = info.attachment;
   if (!ref) return null;
-  const libraryPart =
-    ref.libraryType === "group" ? `groups/${ref.groupID}` : "library";
-  const page = info.pageLabel ? `page=${info.pageLabel}&` : "";
-  return `zotero://open/${libraryPart}/items/${ref.key}?${page}annotation=${info.annotationKey}`;
+  return annotationOpenUri({
+    attachmentKey: ref.key,
+    annotationKey: info.annotationKey,
+    pageLabel: info.pageLabel ?? null,
+    groupID: ref.libraryType === "group" ? ref.groupID : null,
+  });
 }

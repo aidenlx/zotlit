@@ -1,39 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  annotationBacklink,
-  groupIDFromIndexedKey,
-  itemBacklink,
-} from "./backlink";
+import { annotationOpenUri, itemSelectUri } from "./zt-uri";
 
-describe("groupIDFromIndexedKey", () => {
-  it("returns null for a personal-library key", () => {
-    expect(groupIDFromIndexedKey("ABC12345", "ABC12345")).toBeNull();
-  });
-
-  it("extracts the group id from a group key", () => {
-    expect(groupIDFromIndexedKey("ABC12345g42", "ABC12345")).toBe(42);
-  });
-});
-
-describe("itemBacklink", () => {
+describe("itemSelectUri", () => {
   it("uses the library path for personal items", () => {
-    expect(itemBacklink("ABC12345", null)).toBe(
+    expect(itemSelectUri("ABC12345", null)).toBe(
       "zotero://select/library/items/ABC12345",
     );
   });
 
   it("uses the group path for group items", () => {
-    expect(itemBacklink("ABC12345", 42)).toBe(
+    expect(itemSelectUri("ABC12345", 42)).toBe(
       "zotero://select/groups/42/items/ABC12345",
     );
   });
 });
 
-describe("annotationBacklink", () => {
+describe("annotationOpenUri", () => {
   it("links to the annotation within its attachment with a page hint", () => {
     expect(
-      annotationBacklink({
+      annotationOpenUri({
         attachmentKey: "ATCH1234",
         annotationKey: "ANNO5678",
         pageLabel: "12",
@@ -44,7 +30,7 @@ describe("annotationBacklink", () => {
 
   it("omits the page hint when there is no page label", () => {
     expect(
-      annotationBacklink({
+      annotationOpenUri({
         attachmentKey: "ATCH1234",
         annotationKey: "ANNO5678",
         pageLabel: null,

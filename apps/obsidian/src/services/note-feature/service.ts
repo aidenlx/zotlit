@@ -12,6 +12,7 @@ import {
   getLibraries,
   getItemsByKey,
   getTagsByItemIDs,
+  parseIndexedKey,
   type Annotation,
   type Item,
   type ItemTag,
@@ -19,7 +20,7 @@ import {
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
-import { PATTERN_ZOTERO_KEY, MARKER_END, MARKER_START } from "@/lib/constants";
+import { MARKER_END, MARKER_START } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import {
   type AttachmentImport,
@@ -33,7 +34,6 @@ import { formatManagedRegion } from "@/services/template/eta";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { groupIDFromIndexedKey } from "./backlink";
 import { buildNoteContext } from "./context";
 import { attachmentFileLink } from "./file-link";
 import { buildFrontmatter, mergeManagedFrontmatter } from "./frontmatter";
@@ -224,7 +224,7 @@ export class NoteFeatures extends Service<void> {
 
     const dataDir = this.#zoteroPref.dataDir;
     const baseAttachmentPath = this.#zoteroPref.baseAttachmentPath;
-    const groupID = groupIDFromIndexedKey(item.indexedKey, item.key);
+    const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
 
     return buildNoteContext({
       item,
@@ -251,7 +251,7 @@ export class NoteFeatures extends Service<void> {
   ): Promise<NoteTemplateContext> {
     await this.#db.ready;
     const client = this.#db.client;
-    const parsed = parseIndexedKey(client, indexedKey);
+    const parsed = resolveIndexedKeyLibrary(client, indexedKey);
     if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
 
     const [item] = getItemsByKey(client, parsed.libraryID, [parsed.key]);
@@ -302,16 +302,16 @@ export interface UpdateResult {
   duplicateRegionCount: number;
 }
 
-function parseIndexedKey(
+function resolveIndexedKeyLibrary(
   client: NodeDatabaseClient,
   indexedKey: string,
 ): { key: string; libraryID: number } | null {
-  const match = PATTERN_ZOTERO_KEY.exec(indexedKey);
-  if (!match) return null;
-  const { key, groupID } = match.groups;
-  if (!groupID) return { key, libraryID: 1 };
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed) return null;
+  const { key, groupID } = parsed;
+  if (groupID == null) return { key, libraryID: 1 };
   const library = getLibraries(client).find(
-    (entry) => entry.groupID === Number(groupID),
+    (entry) => entry.groupID === groupID,
   );
   if (!library) return null;
   return {

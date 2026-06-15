@@ -4,7 +4,6 @@ export {
   type Library,
 } from "./queries/libraries";
 export {
-  formatIndexedKey,
   getItemsByID,
   getItemsByIDAsync,
   getItemsByKey,
@@ -16,6 +15,17 @@ export {
   type Item,
   type ItemOfType,
 } from "./queries/items";
+export {
+  formatIndexedKey,
+  isIndexedKey,
+  parseIndexedKey,
+  type ParsedIndexedKey,
+} from "./lib/zt-key";
+export {
+  annotationOpenUri,
+  itemSelectUri,
+  type AnnotationOpenUriOptions,
+} from "./lib/zt-uri";
 export {
   getAnnotationsByKey,
   getAnnotationsByKeyAsync,
