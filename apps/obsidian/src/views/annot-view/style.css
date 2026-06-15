@@ -1,0 +1,10 @@
+/* Let the React tree own the full pane: strip Obsidian's default content
+   padding and make the leaf a flex column so the toolbar stays pinned and the
+   annotation list scrolls. Scoped to this view's own leaf type. */
+.workspace-leaf-content[data-type="zotero-annotation-view"] .view-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+}
