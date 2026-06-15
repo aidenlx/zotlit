@@ -136,6 +136,7 @@ Full spec: [`STAGE3_CITATION_SUGGEST.md`](./STAGE3_CITATION_SUGGEST.md). Highlig
 - `apps/obsidian/src/views/quick-switch/` — register-func adds `zotlit:open-lit-note` command; opens `SuggestModal<SearchHit>` and on select opens the matching literature note via NoteIndex. Multi-note → alphabetical first (v1 parity, TODO carried). Miss → `BaseNotice`; create-arm lands in Stage 5.
 - Scoring: MiniSearch BM25 with cross-field AND combine, prefix matching, and length-graduated fuzzy (`≤3: 0`, `≤5: 0.1`, else `0.2`). Field boosts `title:2.5, creators:2, date:1` — the queryable surface matches v1's `matchFields` exactly (title, creators, date). Citekey is **not** indexed as a query target: direct `[@key]` lookup is left to the citekey-click flow (Stage 7) so that fuzzy author/date queries don't get bubble noise from BBT-generated citekeys. A mild multiplicative recency bonus (`1 + 0.1 · exp(-daysElapsed/30)`, capped at 1.1×) reorders near-ties without overriding strict-relevance wins; empty-query ordering remains pure `dateModified DESC`. Title highlights are wrapped in a `renderTruncatedHighlight` window so a deep match stays in the row's CSS-ellipsis budget. See [`STAGE_3_1_SEARCH.md`](./STAGE_3_1_SEARCH.md) for the full engine spec.
 - Suggestion row rendering (`apps/obsidian/src/services/item-lookup/render-hit.ts` + `views/citation-suggest/style.css`): mirrors v1's `components/item-suggest/core.ts` layout — title row, optional pill-styled citekey chip (gated on `citation.show-citekey-in-suggester`), and a journal-article-only `.meta` line containing `author (year), publication, vol(issue), pages.` All punctuation (parens around year/issue, commas between meta children, trailing period, inter-word space) is driven by CSS `::before` / `::after` pseudo-elements. No `.suggestion-aux` icon column (v1 had per-field type/user/calendar icons keyed off matched fields; v2 drops them).
+- **Known gaps:** (1) The current citation item row in editor-suggest and quick-switcher has styling issues. (2) Fuzzy search is functional but not well tuned — scoring/heuristics still need empirical bench work (`packages/item-lookup/TODOS.md`).
 
 **Stage 4 — NoteParser (done)**
 
@@ -226,5 +227,7 @@ For traceability during the migration; all paths under `/Users/aidenlx/repo/zotl
 
 ## 7. Open items
 
+- **Citation suggester styling.** The current citation item row rendered in editor-suggest and quick-switcher has styling issues.
+- **ItemLookup fuzzy search tuning.** MiniSearch scoring is functional but not well tuned; empirical bench/tuner work is planned (`packages/item-lookup/TODOS.md`).
 - `apps/zotero` companion migration — not yet scoped. v1 protocol is compatible with v2's eventual server, so v1's companion can keep working against v2 during the deferral window.
 - Whether `bg:notify` is needed at all once the server lands (fs.watch already covers DB refresh; `bg:notify` only retains value for export/open flows).
