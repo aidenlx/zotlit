@@ -17,6 +17,7 @@
     "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
   },
   "dependencies": {
+    "@std/async": "jsr:1.4.0",
     "@std/collections": "jsr:1.2.0",
     "@std/ini": "jsr:0.225.2",
     "@zotlit/db": "workspace:*",

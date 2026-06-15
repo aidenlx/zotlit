@@ -1,36 +1,18 @@
-/**
- * `DatabaseService` — owns a read-only connection to Zotero's `zotero.sqlite`
- * and re-opens it on disk changes.
- *
- * **Single refresh lane** — watcher events, settings changes, and manual
- * `refresh()` all funnel through `#scheduleRefresh()`: at most one open is
- * in flight at a time, and any triggers that arrive during it collapse into
- * a single trailing rerun.
- *
- * **Open mode** — `?mode=ro&immutable=1`. The connection ignores `-wal`/`-shm`
- * and assumes the main DB file is unchanging for its lifetime. We get
- * freshness by closing + re-opening on every refresh; see spec §Freshness model.
- *
- * **State** — `loading` until the first open attempt settles; then `ready`
- * iff `#activeClient` is set, else `degraded`. `ready` resolves on both
- * success and failure of the first open so the settings subscription is
- * always committed and recovery is possible.
- */
-
-import { type FSWatcher, type Stats, watch } from "node:fs";
-import { stat as fsStat } from "node:fs/promises";
-import { dirname } from "node:path";
-import { pathToFileURL } from "node:url";
+import { existsSync, watch, type FSWatcher, type WatchOptions } from "node:fs";
+import { dirname, join } from "node:path";
 
 import {
   createClient,
-  type NodeDatabaseClient,
   type DatabaseOptions,
+  type NodeDatabaseClient,
 } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { ZOTERO_DB_FILENAME } from "@/lib/constants";
+import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
+import { DisposableAbortController } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
+import * as m from "@/paraglide/messages";
 import { Service } from "@/services/service-base";
 import {
   type Settings,
@@ -38,49 +20,49 @@ import {
 } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import {
+  buildSqliteUri,
+  type ConfiguredReadMode,
+  type EffectiveReadMode,
+  type PreparedRead,
+  prepareRead,
+  reapStaleReadTemps,
+} from "./read-source";
+
 const logger = getLogger("database");
-
-const DEBOUNCE_MS = 500;
-
 const DB_OPTIONS: DatabaseOptions = {
   jit: true,
 };
-
-export type DatabaseErrorCode = "not-ready" | "degraded";
+const WATCH_DEBOUNCE_MS = 800;
+// `persistent: false` so no watcher keeps Node's event loop alive on its own —
+// Obsidian (Electron) owns the loop, and a leaked watcher must not block
+// process exit if plugin disposal fails.
+const WATCH_OPTIONS: WatchOptions = { persistent: false };
 
 export class DatabaseError extends Error {
-  readonly code: DatabaseErrorCode;
-  override readonly cause?: unknown;
-
-  constructor(code: DatabaseErrorCode, options?: { cause?: unknown }) {
-    super(code === "not-ready" ? "Database not ready" : "Database degraded");
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
     this.name = "DatabaseError";
-    this.code = code;
-    if (options?.cause !== undefined) this.cause = options.cause;
   }
 }
 
-export interface DbEvents {
-  /** A new working client is now active. Re-query if you cache results. */
+export interface DatabaseEvents {
+  /** A new working client is active. Re-query if you cache results. */
   changed: () => void;
-  /** Service is now degraded (no active client). */
   degraded: (error: DatabaseError) => void;
   /**
-   * A refresh attempt failed without changing service state — the previous
-   * working client (or already-degraded condition) is retained. Distinct
-   * from `degraded`, which fires only on healthy → degraded transitions.
-   * UIs may surface the latest attempt error without invalidating cached data.
+   * A refresh attempt failed. The service is only `degraded` when there is no
+   * previous working client to keep serving.
    */
   "refresh-failed": (error: DatabaseError) => void;
   /**
-   * Edge transitions of refresh activity. Fires `true` when the service
-   * enters a busy state, `false` when the chain drains. Coalesced refreshes
-   * stay `true` between attempts (no flicker on trailing reruns).
+   * Refresh activity edge transitions. Coalesced trailing reruns stay active
+   * until the shared refresh lane drains, so UI busy state does not flicker.
    */
   refreshing: (active: boolean) => void;
 }
 
-export interface DatabaseServiceOptions {
+export interface DatabaseServiceDeps {
   settings: SettingsService;
   zoteroPref: ZoteroPrefService;
 }
@@ -88,425 +70,297 @@ export interface DatabaseServiceOptions {
 export class DatabaseService extends Service<void> {
   readonly #settings;
   readonly #zoteroPref;
-  readonly #emitter = createNanoEvents<DbEvents>();
+  readonly #emitter = createNanoEvents<DatabaseEvents>();
 
-  #firstSettled = false;
-
-  #activeClient: NodeDatabaseClient | null = null;
-  /** The resolved DB path the *active client* was opened against. */
-  #activePath: string | null = null;
-  /** `(mtimeMs, size)` captured immediately after the active open. */
-  #activeStat: { mtime: number; size: number } | null = null;
-  #degradedError: DatabaseError | null = null;
-
-  /** Latest configured resolved DB path, updated synchronously from settings. */
-  #lastDbPath = "";
-  #lastAutoRefresh = false;
+  #state: "loading" | "ready" | "degraded" = "loading";
+  #error: DatabaseError | null = null;
+  #client: NodeDatabaseClient | null = null;
+  #sourcePath: string | null = null;
+  #readMode: EffectiveReadMode | null = null;
+  #activeReadStack: AsyncDisposableStack | null = null;
+  #watchers: FSWatcher[] = [];
+  #walWatcher: FSWatcher | null = null;
+  #watchTimer: ReturnType<typeof setTimeout> | null = null;
+  #refreshInFlight: Promise<void> | null = null;
+  #refreshAgain = false;
+  #lastSourcePath: string | null = null;
+  #lastConfiguredMode: ConfiguredReadMode | null = null;
+  #lastAutoRefresh: boolean | null = null;
+  readonly #shownFallbackNotices = new Set<string>();
 
   /**
-   * Dual watch: parent directory + file path. macOS
-   * FSEvents only surfaces Zotero's in-place WAL auto-checkpoints to a
-   * file-level watch; the dir-level watch only fires on VACUUM atomic-rename
-   * and the close-time `wal_checkpoint(TRUNCATE)`. Each is a blind spot for
-   * the other.
+   * Startup-only: awaits upstream deps, runs the first open attempt, and commits
+   * subscriptions/teardown. Always settles (the first open swallows its own
+   * failure into `degraded` state) so a failed start still leaves the service
+   * recoverable via {@link refresh}.
    */
-  #watchers: { dir: FSWatcher; file: FSWatcher } | null = null;
-  #debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  ready: Promise<void>;
 
-  #refreshInFlight: Promise<void> | null = null;
-  #refreshPending = false;
-  /** Tracks `refreshing` event state separately from `#refreshInFlight` so
-   * coalesced trailing reruns don't bounce the event back to `false`. */
-  #refreshingActive = false;
-  #disposed = false;
-
-  readonly ready: Promise<void>;
-
-  constructor(options: DatabaseServiceOptions) {
+  constructor(deps: DatabaseServiceDeps) {
     super();
-    this.#settings = options.settings;
-    this.#zoteroPref = options.zoteroPref;
+    this.#settings = deps.settings;
+    this.#zoteroPref = deps.zoteroPref;
     this.ready = this.#load();
   }
 
   get state(): "loading" | "ready" | "degraded" {
-    if (!this.#firstSettled) return "loading";
-    return this.#activeClient ? "ready" : "degraded";
+    return this.#state;
   }
 
-  /**
-   * @throws {@link DatabaseError} with code `"not-ready"` when still loading,
-   *   `"degraded"` when no active client is available.
-   */
+  get activeReadMode(): EffectiveReadMode | null {
+    return this.#readMode;
+  }
+
+  get error(): DatabaseError | null {
+    return this.#error;
+  }
+
   get client(): NodeDatabaseClient {
-    if (!this.#firstSettled) throw new DatabaseError("not-ready");
-    if (!this.#activeClient) {
-      throw this.#degradedError ?? new DatabaseError("degraded");
+    if (!this.#client) {
+      throw new DatabaseError("degraded", this.#error);
     }
-    return this.#activeClient;
+    return this.#client;
   }
 
-  /**
-   * Compare the on-disk `(mtime, size)` of the active DB file against what we
-   * observed at open time.
-   * @returns `false` while a hot path switch is in flight.
-   * @throws {@link DatabaseError} while not in `"ready"` state.
-   */
-  async isUpToDate(): Promise<boolean> {
-    if (!this.#firstSettled) throw new DatabaseError("not-ready");
-    if (!this.#activeClient || !this.#activePath || !this.#activeStat) {
-      throw this.#degradedError ?? new DatabaseError("degraded");
-    }
-    if (this.#activePath !== this.#lastDbPath) return false;
-    const stat = await fsStat(this.#activePath);
-    return (
-      stat.mtimeMs === this.#activeStat.mtime &&
-      stat.size === this.#activeStat.size
-    );
-  }
-
-  /**
-   * Drain the refresh lane until quiet. The user sees the *final* state.
-   * @throws {@link DatabaseError} with code `"degraded"` if the final state
-   *   is degraded.
-   */
-  async refresh(): Promise<void> {
-    // Mark dirty / kick off once at the call site so the drain loop is a pure
-    // join and cannot self-dirty.
-    if (this.#refreshInFlight) {
-      this.#refreshPending = true;
-    } else {
-      void this.#scheduleRefresh();
-    }
-    while (this.#refreshInFlight) {
-      await this.#refreshInFlight.catch(() => undefined);
-    }
-    if (this.state === "degraded") {
-      throw this.#degradedError ?? new DatabaseError("degraded");
-    }
-  }
-
-  on<K extends keyof DbEvents>(event: K, cb: DbEvents[K]): () => void {
+  on<K extends keyof DatabaseEvents>(
+    event: K,
+    cb: DatabaseEvents[K],
+  ): () => void {
     return this.#emitter.on(event, cb);
   }
 
-  once<K extends keyof DbEvents>(event: K, cb: DbEvents[K]): () => void {
-    return this.#emitter.once(event, cb);
+  async refresh(): Promise<void> {
+    await this.ready;
+    await this.#enqueueRefresh();
+    if (this.#state === "degraded") {
+      throw new DatabaseError("degraded", this.#error);
+    }
   }
 
   async #load(): Promise<void> {
+    await this.#zoteroPref.ready;
+    const settings = await this.#settings.loaded;
+
     await using stack = new AsyncDisposableStack();
-    // LIFO: unsubscribe (registered last) runs first; teardown runs after.
+    const reapAbort = stack.use(new DisposableAbortController());
+    void reapStaleReadTemps(reapAbort.signal).catch((error) => {
+      if (reapAbort.signal.aborted) return;
+      logger.warn("Failed to reap stale database read temps", { error });
+    });
+    stack.defer(() => this.#disposeWatchers());
     stack.defer(async () => {
-      await this.#tearDownActive();
+      await this.#activeReadStack?.disposeAsync();
+      this.#activeReadStack = null;
+      this.#client = null;
     });
 
-    const snapshot = await this.#settings.loaded;
-    // The DB path derives from the Zotero profile's prefs (data dir), which
-    // ZoteroPrefService resolves; await it so the initial open uses the real
-    // path rather than the loading-time default. `ready` always settles.
-    await this.#zoteroPref.ready;
-    const dbPath = this.#zoteroPref.databasePath;
-    const autoRefresh = snapshot["zotero.auto-refresh"];
-    // Cache configured snapshot regardless of open outcome — required for the
-    // synchronous initial subscriber fire to no-op (§5).
-    this.#lastDbPath = dbPath;
-    this.#lastAutoRefresh = autoRefresh;
-
-    // Tracked separately so a post-open stat failure releases the new client
-    // instead of leaking it into degraded state.
-    let pendingClient: NodeDatabaseClient | null = null;
-    try {
-      pendingClient = createClient(buildSqliteUri(dbPath), DB_OPTIONS);
-      const stat = await fsStat(dbPath);
-      this.#activeClient = pendingClient;
-      pendingClient = null;
-      this.#activePath = dbPath;
-      this.#activeStat = { mtime: stat.mtimeMs, size: stat.size };
-      if (autoRefresh) this.#startWatcher(dbPath);
-      logger.debug("Initial database open succeeded", {
-        dbPath,
-        mtime: stat.mtimeMs,
-        size: stat.size,
-        autoRefresh,
-      });
-    } catch (error) {
-      if (pendingClient) closeClient(pendingClient);
-      this.#degradedError = new DatabaseError("degraded", { cause: error });
-      logger.warn("Initial database open failed", { error, dbPath });
-    }
+    this.#lastSourcePath = this.#zoteroPref.databasePath;
+    this.#lastConfiguredMode = settings["zotero.read-mode"];
+    this.#lastAutoRefresh = settings["zotero.auto-refresh"];
 
     stack.defer(
       this.#settings.subscribe((value) => {
-        if (value === null) return;
-        this.#onSettingsChanged(value);
+        if (value) this.#onSettingsChanged(value);
       }),
     );
     stack.defer(
       this.#zoteroPref.on("changed", () => {
-        this.#onDataDirChanged();
+        const next = this.#zoteroPref.databasePath;
+        if (next === this.#lastSourcePath) return;
+        this.#lastSourcePath = next;
+        this.#scheduleRefresh();
       }),
     );
 
-    this.#firstSettled = true;
+    await this.#refreshOnce();
     this.commit(stack.move());
   }
 
-  #onSettingsChanged(s: Readonly<Settings>): void {
-    const autoRefresh = s["zotero.auto-refresh"];
-    if (autoRefresh === this.#lastAutoRefresh) return;
-    this.#lastAutoRefresh = autoRefresh;
-    logger.debug("Auto-refresh toggled", { autoRefresh });
-    this.#applyAutoRefresh(autoRefresh);
+  #onSettingsChanged(settings: Readonly<Settings>): void {
+    const readMode = settings["zotero.read-mode"];
+    const autoRefresh = settings["zotero.auto-refresh"];
+    if (autoRefresh !== this.#lastAutoRefresh) {
+      this.#lastAutoRefresh = autoRefresh;
+      void this.#rebindWatchers();
+    }
+    if (readMode === this.#lastConfiguredMode) return;
+    this.#lastConfiguredMode = readMode;
+    this.#scheduleRefresh();
+  }
+
+  #scheduleRefresh(): void {
+    void this.#enqueueRefresh().catch((error) => {
+      logger.error("Scheduled database refresh failed", { error });
+    });
   }
 
   /**
-   * The Zotero data dir (and thus the DB path) changed because the profile's
-   * prefs were re-read. #runRefresh re-reads the path and (on success) rebinds
-   * the watcher atomically with the new client; it does not touch the watcher
-   * here, which would briefly bind it to the new dir while the active client
-   * is still on the old dir.
+   * Single-flight refresh lane with trailing-rerun coalescing: every trigger
+   * (manual refresh, settings/path change, watcher event) shares one in-flight
+   * run. Triggers arriving mid-run set a single trailing rerun rather than
+   * queueing, so a burst of watcher events collapses into one extra refresh.
    */
-  #onDataDirChanged(): void {
-    const dbPath = this.#zoteroPref.databasePath;
-    if (dbPath === this.#lastDbPath) return;
-    this.#lastDbPath = dbPath;
-    logger.debug("DB path changed; scheduling refresh", { dbPath });
-    void this.#scheduleRefresh();
-  }
-
-  #applyAutoRefresh(enabled: boolean): void {
-    if (enabled) {
-      if (this.#activeClient && !this.#watchers && this.#activePath) {
-        this.#startWatcher(this.#activePath);
-      }
-    } else {
-      this.#stopWatcher();
-    }
-  }
-
-  #scheduleRefresh(): Promise<void> {
-    // After disposal the service must not start new work; #tearDownActive
-    // relies on this so the trailing-rerun chain terminates while it drains.
-    if (this.#disposed) return Promise.resolve();
+  #enqueueRefresh(): Promise<void> {
     if (this.#refreshInFlight) {
-      this.#refreshPending = true;
+      this.#refreshAgain = true;
       return this.#refreshInFlight;
     }
-    if (!this.#refreshingActive) {
-      this.#refreshingActive = true;
-      this.#emitter.emit("refreshing", true);
-    }
-    this.#refreshInFlight = this.#runRefresh().finally(() => {
+    this.#refreshInFlight = this.#refreshLoop().finally(() => {
       this.#refreshInFlight = null;
-      if (this.#refreshPending && !this.#disposed) {
-        this.#refreshPending = false;
-        void this.#scheduleRefresh();
-      } else {
-        this.#refreshPending = false;
-        this.#refreshingActive = false;
-        this.#emitter.emit("refreshing", false);
-      }
     });
     return this.#refreshInFlight;
   }
 
-  async #runRefresh(): Promise<void> {
-    const dbPath = this.#lastDbPath;
-    const prevClient = this.#activeClient;
-
-    let nextClient: NodeDatabaseClient | null = null;
-    let stat: Stats;
+  async #refreshLoop(): Promise<void> {
+    this.#emitter.emit("refreshing", true);
     try {
-      nextClient = createClient(buildSqliteUri(dbPath), DB_OPTIONS);
-      stat = await fsStat(dbPath);
-    } catch (error) {
-      // Close the freshly-opened client if stat (not createClient) failed,
-      // so a transient stat error doesn't leak the new SQLite handle.
-      if (nextClient) closeClient(nextClient);
-      this.#handleRefreshFailure(dbPath, error);
-      return;
+      do {
+        this.#refreshAgain = false;
+        await this.#refreshOnce();
+      } while (this.#refreshAgain);
+    } finally {
+      this.#emitter.emit("refreshing", false);
     }
+  }
 
-    const prevPath = this.#activePath;
+  async #refreshOnce(): Promise<void> {
+    try {
+      await using refreshStack = new AsyncDisposableStack();
+      const settings = this.#settings.current ?? (await this.#settings.loaded);
+      const sourcePath = this.#zoteroPref.databasePath;
+      const configuredMode = settings["zotero.read-mode"];
+      const prepared = refreshStack.use(
+        await prepareRead(configuredMode, sourcePath),
+      );
+      const uri = buildSqliteUri(prepared.path, prepared.uriOptions);
+      const client = createClient(uri, DB_OPTIONS);
+      refreshStack.use(client.$client);
+      this.#showFallbackNotice(prepared);
 
-    // Open-then-close: commit the new client before releasing the old.
-    this.#activeClient = nextClient;
-    this.#activePath = dbPath;
-    this.#activeStat = { mtime: stat.mtimeMs, size: stat.size };
-    this.#degradedError = null;
+      const previousReadStack = this.#activeReadStack;
+      // Commit the new client before releasing the old read stack.
+      this.#client = client;
+      this.#activeReadStack = refreshStack.move();
+      this.#sourcePath = sourcePath;
+      this.#readMode = prepared.effectiveMode;
+      this.#state = "ready";
+      this.#error = null;
 
-    if (prevClient && prevClient !== nextClient) {
-      closeClient(prevClient);
+      await previousReadStack?.disposeAsync();
+      await this.#rebindWatchers();
+      this.#emitter.emit("changed");
+      logger.info("Opened Zotero database", {
+        sourcePath,
+        readMode: this.#readMode,
+      });
+    } catch (cause) {
+      const error = new DatabaseError("refresh-failed", cause);
+      this.#emitter.emit("refresh-failed", error);
+      logger.warn("Failed to refresh Zotero database", { error });
+
+      // Keep serving the previous client on a failed refresh; only go degraded
+      // (and tear down watchers) when there was never a working client to fall
+      // back to. Fallback notices are kept separate from refresh-failure events.
+      if (this.#client) {
+        this.#error = error;
+      } else {
+        this.#state = "degraded";
+        this.#disposeWatchers();
+        const degraded = new DatabaseError("degraded", error);
+        this.#error = degraded;
+        this.#emitter.emit("degraded", degraded);
+      }
     }
+  }
 
-    // Watcher self-heal: every successful open rebinds against the current dir.
-    this.#stopWatcher();
-    if (this.#lastAutoRefresh) this.#startWatcher(dbPath);
-
-    logger.debug("Refresh succeeded", {
-      dbPath,
-      mtime: stat.mtimeMs,
-      size: stat.size,
-      hotSwitch: prevPath !== null && prevPath !== dbPath,
-      recoveredFromDegraded: prevClient === null,
+  #showFallbackNotice(prepared: PreparedRead): void {
+    if (!prepared.fallbackNotice) return;
+    if (this.#shownFallbackNotices.has(prepared.fallbackNotice)) return;
+    this.#shownFallbackNotices.add(prepared.fallbackNotice);
+    logger.warn("Database read mode fell back", {
+      fallbackNotice: prepared.fallbackNotice,
+      effectiveMode: prepared.effectiveMode,
     });
-
-    this.#emitter.emit("changed");
+    new BaseNotice(m.notice_db_reflink_unsupported());
   }
 
   /**
-   * Reads `#activeClient`/`#activePath` directly — the failure path in
-   * `#runRefresh` runs before those fields are touched.
+   * Rebinds after a successful swap so watchers always track the now-active
+   * source path and effective mode. Auto-refresh off means no watchers at all.
+   * macOS FSEvents reports WAL checkpoints and VACUUM replacement through
+   * different watch targets, so the parent directory, DB file, and live WAL file
+   * each cover blind spots in the others.
    */
-  #handleRefreshFailure(dbPath: string, error: unknown): void {
-    const prevClient = this.#activeClient;
-    const prevPath = this.#activePath;
-    const hotSwitch =
-      prevClient !== null && prevPath !== null && prevPath !== dbPath;
+  async #rebindWatchers(): Promise<void> {
+    this.#disposeWatchers();
+    const settings = this.#settings.current;
+    if (!settings?.["zotero.auto-refresh"]) return;
+    if (!this.#sourcePath || !this.#readMode) return;
 
-    if (hotSwitch) {
-      logger.warn("Hot switch failed; degrading", { error, dbPath, prevPath });
-      closeClient(prevClient);
-      this.#activeClient = null;
-      this.#activePath = null;
-      this.#activeStat = null;
-      this.#stopWatcher();
-      const dbError = new DatabaseError("degraded", { cause: error });
-      this.#degradedError = dbError;
-      this.#emitter.emit("degraded", dbError);
-      return;
-    }
-
-    if (prevClient) {
-      // Same-path failure: keep the previous client; state unchanged.
-      logger.warn("Refresh failed; keeping previous client", { error, dbPath });
-      this.#emitter.emit(
-        "refresh-failed",
-        new DatabaseError("degraded", { cause: error }),
-      );
-      return;
-    }
-
-    // Already degraded → stay degraded; refresh attempt itself failed.
-    logger.warn("Refresh failed while degraded", { error, dbPath });
-    const dbError = new DatabaseError("degraded", { cause: error });
-    this.#degradedError = dbError;
-    this.#emitter.emit("refresh-failed", dbError);
+    const parent = dirname(this.#sourcePath);
+    this.#watchers.push(
+      watch(parent, WATCH_OPTIONS, (_event, filename) => {
+        const name = filename?.toString();
+        if (!this.#watchedFilename(name)) return;
+        if (name === ZOTERO_WAL_FILENAME) this.#syncWalWatcher();
+        this.#scheduleWatchedRefresh();
+      }),
+    );
+    this.#watchers.push(
+      watch(this.#sourcePath, WATCH_OPTIONS, () =>
+        this.#scheduleWatchedRefresh(),
+      ),
+    );
+    this.#syncWalWatcher();
   }
 
-  #startWatcher(dbPath: string): void {
-    const dir = dirname(dbPath);
-    // `persistent: false` so neither watcher keeps Node's event loop alive on
-    // its own — Obsidian (Electron) owns the loop, and a leaked watcher must
-    // not block process exit if plugin disposal fails.
-    let dirWatcher: FSWatcher;
+  #watchedFilename(name: string | undefined): boolean {
+    if (name === ZOTERO_DB_FILENAME) return true;
+    // Immutable reads ignore the live WAL, so WAL churn can't change what we'd
+    // read — only the main DB file is worth watching in that mode.
+    return this.#readMode !== "immutable" && name === ZOTERO_WAL_FILENAME;
+  }
+
+  #syncWalWatcher(): void {
+    if (!this.#sourcePath || this.#readMode === "immutable") {
+      this.#closeWalWatcher();
+      return;
+    }
+    const walPath = join(dirname(this.#sourcePath), ZOTERO_WAL_FILENAME);
+    if (!existsSync(walPath)) {
+      this.#closeWalWatcher();
+      return;
+    }
+    if (this.#walWatcher) return;
     try {
-      dirWatcher = watch(
-        dir,
-        { persistent: false, recursive: false },
-        (event, filename) => {
-          if (filename != null && filename !== ZOTERO_DB_FILENAME) return;
-          logger.debug("Dir watcher event for DB file", { event, filename });
-          this.#debouncedRefresh();
-        },
+      this.#walWatcher = watch(walPath, WATCH_OPTIONS, () =>
+        this.#scheduleWatchedRefresh(),
       );
     } catch (error) {
-      logger.warn("Failed to start dir watcher", { error, dir });
-      return;
+      logger.warn("Failed to watch Zotero WAL", { error, walPath });
     }
-    let fileWatcher: FSWatcher;
-    try {
-      fileWatcher = watch(dbPath, { persistent: false }, (event, filename) => {
-        logger.debug("File watcher event for DB file", { event, filename });
-        this.#debouncedRefresh();
-      });
-    } catch (error) {
-      logger.warn("Failed to start file watcher", { error, dbPath });
-      try {
-        dirWatcher.close();
-      } catch (closeError) {
-        logger.warn("Failed to roll back dir watcher", { error: closeError });
-      }
-      return;
-    }
-    const onError = (source: "dir" | "file") => (error: Error) => {
-      logger.warn("Database {source} watcher error", { source, error });
-      this.#stopWatcher();
-      void this.#scheduleRefresh();
-    };
-    dirWatcher.on("error", onError("dir"));
-    fileWatcher.on("error", onError("file"));
-    this.#watchers = { dir: dirWatcher, file: fileWatcher };
-    logger.debug("Watchers started", { dir, dbPath });
   }
 
-  #stopWatcher(): void {
-    if (this.#debounceTimer !== null) {
-      clearTimeout(this.#debounceTimer);
-      this.#debounceTimer = null;
-    }
-    const watchers = this.#watchers;
-    if (!watchers) return;
-    this.#watchers = null;
-    for (const source of ["dir", "file"] as const) {
-      try {
-        watchers[source].close();
-      } catch (error) {
-        logger.warn("Database {source} watcher close failed", {
-          source,
-          error,
-        });
-      }
-    }
-    logger.debug("Watchers stopped");
+  #scheduleWatchedRefresh(): void {
+    if (this.#watchTimer) clearTimeout(this.#watchTimer);
+    this.#watchTimer = setTimeout(() => {
+      this.#watchTimer = null;
+      this.#scheduleRefresh();
+    }, WATCH_DEBOUNCE_MS);
   }
 
-  #debouncedRefresh(): void {
-    if (this.#debounceTimer !== null) clearTimeout(this.#debounceTimer);
-    this.#debounceTimer = setTimeout(() => {
-      this.#debounceTimer = null;
-      logger.debug("Debounce fired; scheduling refresh");
-      void this.#scheduleRefresh();
-    }, DEBOUNCE_MS);
-  }
-
-  async #tearDownActive(): Promise<void> {
-    logger.debug("Disposing database service");
-    // Block any further #scheduleRefresh chains (incl. the trailing-rerun
-    // that the in-flight refresh's `finally` would otherwise queue).
-    this.#disposed = true;
-    this.#stopWatcher();
-
-    // Drain the refresh lane. With #disposed set, the finally chain stops
-    // queueing trailing reruns, so this loop terminates.
-    while (this.#refreshInFlight) {
-      await this.#refreshInFlight.catch(() => undefined);
+  #disposeWatchers(): void {
+    if (this.#watchTimer) {
+      clearTimeout(this.#watchTimer);
+      this.#watchTimer = null;
     }
-
-    // The drained refresh may have started a watcher / installed a new
-    // client just before we set #disposed. Tear those down now.
-    this.#stopWatcher();
-    const client = this.#activeClient;
-    this.#activeClient = null;
-    this.#activePath = null;
-    this.#activeStat = null;
-    if (client) closeClient(client);
-    logger.debug("Database service disposed");
+    for (const watcher of this.#watchers) watcher.close();
+    this.#watchers = [];
+    this.#closeWalWatcher();
   }
-}
 
-function buildSqliteUri(dbPath: string): string {
-  const url = pathToFileURL(dbPath);
-  url.searchParams.set("mode", "ro");
-  url.searchParams.set("immutable", "1");
-  return url.toString();
-}
-
-function closeClient(client: NodeDatabaseClient): void {
-  try {
-    client.$client.close();
-  } catch (error) {
-    logger.warn("Failed to close database client", { error });
+  #closeWalWatcher(): void {
+    this.#walWatcher?.close();
+    this.#walWatcher = null;
   }
 }

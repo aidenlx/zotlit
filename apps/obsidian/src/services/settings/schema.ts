@@ -67,6 +67,9 @@ const imgExcerptImport = v.union([
 ]);
 export type ImgExcerptImport = v.InferOutput<typeof imgExcerptImport>;
 
+const zoteroReadMode = v.picklist(["auto", "reflink", "copy", "immutable"]);
+export type ZoteroReadMode = v.InferOutput<typeof zoteroReadMode>;
+
 const serverPort = v.pipe(
   settingsNumber,
   v.integer(),
@@ -97,6 +100,7 @@ export const schema = v.object({
   "template.auto-trim-trailing": autoTrim,
 
   "zotero.auto-refresh": v.boolean(),
+  "zotero.read-mode": zoteroReadMode,
   "zotero.profile-dir": v.nullable(v.string()),
   "zotero.citation-library": settingsNumber,
 
@@ -129,6 +133,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "template.auto-trim-leading": false,
   "template.auto-trim-trailing": false,
   "zotero.auto-refresh": true,
+  "zotero.read-mode": "auto",
   "zotero.profile-dir": null,
   "zotero.citation-library": 1,
   "img-excerpt.import": null,
