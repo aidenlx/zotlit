@@ -6,6 +6,7 @@ import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { ZotLitSettingTab } from "./setting-tab";
+import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReactSmoke } from "./views/react-smoke";
@@ -59,6 +60,8 @@ export default class ZotLitPlugin extends Plugin {
       noteFeatures: services.noteFeatures,
       settings: services.settings,
     });
+
+    registerAnnotView(this);
 
     if (__DEV__) registerReactSmoke(this, { app: this.app });
 

@@ -1,5 +1,6 @@
-/* Tailwind 4.3 — theme + utilities only. Preflight is intentionally skipped
-   to avoid clobbering Obsidian's base styles; first-party CSS resets nothing. */
+/* Tailwind 4.3. The explicit layer order keeps `utilities` above `base`, so
+   spacing/border utilities win over the scoped preflight declared at the end. */
+@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 
 /* `reference` keeps same-name Obsidian tokens like --color-red compile-time only. */
@@ -109,3 +110,16 @@
 }
 
 @import "tailwindcss/utilities.css" layer(utilities);
+
+/* Scoped preflight. Resets UA/Obsidian element defaults *inside plugin UI roots
+   only* — mark a root with `class="zt-root"` — so semantic HTML (blockquote, p,
+   ul, headings, hr) renders clean and Tailwind owns the box-model. Kept in
+   `@layer base` on purpose: `utilities` outranks it (spacing/border utilities
+   still apply) and Obsidian's unlayered styles outrank it (native <select> /
+   <button> keep their look). Never touches Obsidian's own DOM, which has no
+   `.zt-root`. The nested @import is inlined + scoped by Tailwind at build time. */
+@layer base {
+  .zt-root {
+    @import "tailwindcss/preflight.css";
+  }
+}

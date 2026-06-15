@@ -49,6 +49,60 @@ Obsidian fully styles `<button>`, `<input>` (all types), `<textarea>`, and `<sel
 - **Don't add Tailwind background/border/padding/radius classes to these elements** — you'll be fighting Obsidian's styles. Use the elements bare and they look correct.
 - **Tailwind layout classes are safe** — `flex`, `gap-2`, `w-full`, `mt-2` etc. don't conflict because Obsidian's preflight doesn't set layout on these elements.
 - **Prefer native components** — bare `<input type="checkbox">`, `<input type="radio">`, and other preflighted elements need no wrapper. See next section for which elements have React wrappers and which don't.
+- **The flip side** — non-form semantic elements (`blockquote`, `p`, headings, lists, `hr`, …) that Obsidian doesn't reset get cleaned up by a **scoped preflight** applied to plugin roots. See **Scoped preflight (`.zt-root`)** below.
+
+## Scoped preflight (`.zt-root`)
+
+`src/zt-main.css` applies Tailwind's preflight **scoped to plugin UI roots**, never globally:
+
+```css
+@layer theme, base, components, utilities;          /* explicit order: utilities > base */
+@import "tailwindcss/theme.css" layer(theme);
+/* …@theme tokens… */
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@layer base {
+  .zt-root { @import "tailwindcss/preflight.css"; } /* Tailwind inlines + scopes this at build */
+}
+```
+
+**Add `zt-root` to the container the view owns** — `ItemView.contentEl`, a modal's `contentEl`, a settings pane — not inside the React tree. Then write normal **semantic HTML** — `<blockquote>`, `<p>`, `<ul>`/`<li>`, `<h2>`, `<hr>` — plus Tailwind border utilities; they render clean because preflight zeroes the UA margins/padding and sets `border-style: solid`. No `div role` workaround, no `border-solid`.
+
+```tsx
+// Set the scope on the container the view owns — not in the React tree:
+class AnnotationView extends ItemView {
+  async onOpen() {
+    this.contentEl.classList.add("zt-root");
+    createRoot(this.contentEl).render(<AnnotView />);
+  }
+}
+
+// Inside, semantic HTML + border utilities just work — no div+role, no border-solid:
+<blockquote className="border-l-2 pl-2" style={{ borderLeftColor: color }}>{text}</blockquote>
+<p className="select-text">{text}</p>
+```
+
+### Why it's safe (the cascade)
+
+Preflight sits in `@layer base`, between two things that outrank it:
+
+- **`@layer utilities` > `base`** (the explicit order statement) → your `px-2` / `m-4` / `border-l-2` beat preflight's `*{margin:0;padding:0;border:0 solid}`. Spacing and border utilities work normally inside the scope.
+- **Obsidian's stylesheet is entirely unlayered**, and unlayered author styles beat *any* `@layer` regardless of specificity → native controls (`<select class="dropdown">`, `<button>`, inputs) keep their Obsidian look inside `.zt-root`; preflight's `select{background:transparent}` simply loses.
+
+So scoped preflight only overrides **browser UA defaults** — exactly the leaks you want gone: `<blockquote>` `margin:1em 40px`, `<p>` `margin:1em 0`, `<ul>`/`<ol>` 40px indent, `<table>` border-spacing, `<fieldset>` groove border.
+
+### Caveats
+
+- **It does NOT reset Obsidian's own *unlayered* bare-element rules** (unlayered beats `@layer base`). Per `references/app.css`, exactly **three** structural tags have them: `<hr>` (`border-top: var(--hr-thickness)` + `margin: 2rem 0`), `<h1>`–`<h6>` (per-level themed typography — size/weight/color/font/line-height — + `var(--p-spacing)` margin), and `<ol>` (`list-style-type: var(--list-numbered-style)` → **numbering survives**). Everything else (`<p>`, `<blockquote>`, `<ul>`, `<table>`, `<fieldset>`, …) has *no* bare Obsidian rule — those are pure Chrome UA, so preflight clears them (note the asymmetry: a bare `<ul>` loses its markers + 40px indent, but `<ol>` keeps its numbers). Neutralize the three with a utility/inline or a plain `<div>` if you don't want them.
+- **`.zt-root` is for your own custom DOM.** Markdown rendered via `MarkdownRenderer` inside it still looks right (Obsidian's `.markdown-rendered` rules are unlayered → they win), but don't lean on preflight to style markdown.
+
+### Borders
+
+Inside `.zt-root` a width utility is all you need: `border` / `border-l-2` render **solid** (preflight supplies the style) and `divide-y divide-border` gives clean section rules — no `border-solid` / `divide-solid`. For a data-driven color (e.g. an annotation highlight) keep the width in the utility and set `style={{ borderLeftColor: color }}`.
+
+### No `.zt-root`? (fallback)
+
+Outside a scoped root there is no preflight, so a width utility sets only width — `border-style` stays `none` (so `border` alone is invisible) and unset sides fall back to UA `medium`, making `border-l-2 border-solid` a full **box**. There, add `border-solid` / set the border inline, or render a `<div>` with the matching ARIA role (`role="blockquote"`, `role="paragraph"`, `role="list"` + child `role="listitem"`, `role="heading"` + `aria-level`, `role="separator"`). Prefer adding `zt-root` — simpler, and keeps real semantics.
 
 ## Native components
 
@@ -201,9 +255,27 @@ Prefix with `--zt-…` and default to an Obsidian variable.
 
 ## Verifying
 
-Before declaring a component "done":
+### Inspect the running UI with the `obsidian` CLI
 
-1. Toggle **Settings → Appearance → Base color scheme** between Light and Dark — your component should look correct in both with no extra CSS.
+The dev test vault (`apps/obsidian/tests/zt-vault`) hot-reloads the plugin from a dev build, and the Obsidian.app binary doubles as a CLI (`/Applications/Obsidian.app/Contents/MacOS/obsidian` on macOS) that drives the running app — so you can verify styling against the *real* rendered DOM instead of guessing. The loop:
+
+1. **Build** → `pnpm --filter @zotlit/obsidian build:dev` (copies the bundle into the vault's `.obsidian/plugins/zotlit`).
+2. **Reload** → `obsidian plugin:reload id=zotlit`.
+3. **Open the view** → `obsidian command id=zotlit:<command-id>` (list them with `obsidian commands filter=zotlit`), or `obsidian eval code='…'` to mount it in a specific split.
+4. **Measure — the DOM is the source of truth.** `obsidian eval code='…'` runs JS in the app and returns the value. Use `getComputedStyle(el)` / `el.getBoundingClientRect()` to assert what actually rendered: confirm a token resolved (`getComputedStyle(el).backgroundColor`), catch a leaked UA style (a bare `<blockquote>` outside a `.zt-root` reporting `marginLeft: "40px"` — see **Scoped preflight** above), or compare left-edge offsets and element heights across components. A computed-style assertion is worth more than eyeballing a screenshot.
+5. **Screenshot** → `obsidian dev:screenshot path=<absolute-path>` (path must be absolute; save inside the workspace, never `/tmp`, and delete the throwaways when done — see the no-`/tmp` rule).
+6. **Errors / logs** → `obsidian dev:errors`, `obsidian dev:console` (mock/`console.log` handlers show up here).
+
+Two traps, learned the hard way:
+
+- **Screenshots can be stale/transitional frames.** A capture taken immediately after a reload or `revealLeaf` may show the *old* DOM while the change is already live. Always cross-check a screenshot against an `eval` computed-style/DOM query; if they disagree, the DOM query wins — re-shoot. (A DevTools window open over Obsidian can also steal the capture — close it first.)
+- **`eval` has no `await`.** The code runs in a non-async wrapper, so a top-level `await` is a syntax error. Fire the promise and verify in a *follow-up* `eval` call, or grab references synchronously — e.g. hold the leaf returned by `getLeaf(...)` and `revealLeaf(it)` in the same call, rather than re-querying `getLeavesOfType(...)` right after an async `setViewState`, which races and returns an empty list.
+
+### Cross-theme checklist
+
+Then confirm it holds up across themes:
+
+1. Toggle **Settings → Appearance → Base color scheme** between Light and Dark — your component should look correct in both with no extra CSS. Confirm which is active with `obsidian eval code='document.body.className'` (expect `theme-light` / `theme-dark`).
 2. Change the accent color — interactive elements should follow it.
 3. Try a popular community theme (Minimal, Things) — your component should still look at home. If something feels off, you're probably hardcoding a value that the theme is overriding.
 
