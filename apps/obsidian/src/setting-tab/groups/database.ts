@@ -11,6 +11,10 @@ import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
+import {
+  type ConfiguredReadMode,
+  type EffectiveReadMode,
+} from "@/services/database/read-source";
 import { type DatabaseService } from "@/services/database/service";
 import {
   RESET_SETTING,
@@ -64,6 +68,7 @@ export function databaseSection(ctx: DatabaseSectionContext): Disposable {
 
   stack.use(renderDatabaseFileRow(rowCtx));
   stack.use(renderProfileDirRow(rowCtx));
+  stack.use(renderReadModeRow(rowCtx));
   stack.use(renderAutoRefreshRow(rowCtx));
   stack.use(renderLibraryRow(rowCtx));
 
@@ -117,13 +122,9 @@ function renderDatabaseFileRow(ctx: RowContext): Disposable {
   let lastErrorMessage: string | null = null;
 
   // Events miss the loading→ready/degraded transition (T14 contract), so we
-  // probe the active client on mount to seed the tooltip when already degraded.
-  if (ctx.db.state === "degraded") {
-    try {
-      void ctx.db.client;
-    } catch (err) {
-      if (err instanceof Error) lastErrorMessage = extractErrorMessage(err);
-    }
+  // seed the tooltip from the service's error when already degraded on mount.
+  if (ctx.db.state === "degraded" && ctx.db.error) {
+    lastErrorMessage = extractErrorMessage(ctx.db.error);
   }
 
   const applyStatus = (): void => {
@@ -191,6 +192,76 @@ function renderDatabaseFileRow(ctx: RowContext): Disposable {
       applyStatus();
     }),
   );
+
+  return stack.move();
+}
+
+function renderReadModeRow(ctx: RowContext): Disposable {
+  using stack = new DisposableStack();
+
+  const desc = document.createDocumentFragment();
+  desc.append(m.settings_db_read_mode_desc());
+  const options = document.createElement("ul");
+  for (const [name, details] of [
+    [m.settings_db_read_mode_reflink(), m.settings_db_read_mode_reflink_desc()],
+    [m.settings_db_read_mode_copy(), m.settings_db_read_mode_copy_desc()],
+    [
+      m.settings_db_read_mode_immutable(),
+      m.settings_db_read_mode_immutable_desc(),
+    ],
+  ] as const) {
+    const item = document.createElement("li");
+    item.append(`${name}: ${details}`);
+    options.append(item);
+  }
+  desc.append(options);
+  desc.append(document.createElement("br"));
+  const activeMode = document.createElement("span");
+  desc.append(activeMode);
+
+  const modeLabel = (mode: ConfiguredReadMode | EffectiveReadMode): string => {
+    switch (mode) {
+      case "auto":
+        return m.settings_db_read_mode_auto();
+      case "reflink":
+        return m.settings_db_read_mode_reflink();
+      case "copy":
+        return m.settings_db_read_mode_copy();
+      case "immutable":
+        return m.settings_db_read_mode_immutable();
+    }
+  };
+
+  const applyActiveMode = (): void => {
+    const mode = ctx.db.activeReadMode;
+    activeMode.textContent = mode
+      ? m.settings_db_active_read_mode({ mode: modeLabel(mode) })
+      : "";
+  };
+
+  ctx.group.addSetting((setting) => {
+    setting
+      .setName(m.settings_db_read_mode_name())
+      .setDesc(desc)
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("auto", modeLabel("auto"))
+          .addOption("reflink", modeLabel("reflink"))
+          .addOption("copy", modeLabel("copy"))
+          .addOption("immutable", modeLabel("immutable"))
+          .setValue(ctx.settings.current!["zotero.read-mode"])
+          .onChange((value) => {
+            ctx.settings.update({
+              "zotero.read-mode": value as ConfiguredReadMode,
+            });
+          });
+      });
+  });
+
+  applyActiveMode();
+  stack.defer(ctx.db.on("changed", applyActiveMode));
+  stack.defer(ctx.db.on("degraded", applyActiveMode));
+  stack.defer(ctx.db.on("refresh-failed", applyActiveMode));
 
   return stack.move();
 }
