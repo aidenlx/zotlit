@@ -1,6 +1,7 @@
 import { type Temporal } from "@zotlit/shared/temporal";
 
 import { annotationTypeToName, type Annotation } from "./zt-annot";
+import { annotationColorToName, type AnnotationColorName } from "./zt-color";
 import { type ItemTag } from "./zt-tag";
 import { type TemplateAttachment } from "./zt-template-attach";
 import { type TemplateItemData } from "./zt-template-item";
@@ -20,7 +21,9 @@ export interface TemplateAnnotation {
   text: string | null;
   comment: string | null;
   /** Hex color, e.g. `"#ffd400"`. */
-  color: string | null;
+  colorHex: string | null;
+  /** Color name, e.g. `"yellow"`. */
+  colorName: AnnotationColorName | null;
   pageLabel: string | null;
   authorName: string | null;
   isExternal: boolean;
@@ -60,7 +63,8 @@ export function annotationToTemplateData(
     type: annotationTypeToName(annotation.type),
     text: annotation.text,
     comment: annotation.comment,
-    color: annotation.color,
+    colorHex: annotation.color,
+    colorName: annotationColorToName(annotation.color),
     pageLabel: annotation.pageLabel,
     authorName: annotation.authorName,
     isExternal: annotation.isExternal,

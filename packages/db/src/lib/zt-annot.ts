@@ -32,6 +32,7 @@ export interface Annotation {
   type: AnnotationType;
   text: string | null;
   comment: string | null;
+  /** Hex color code, e.g. `"#ffd400"`. */
   color: string | null;
   pageLabel: string | null;
   /**
