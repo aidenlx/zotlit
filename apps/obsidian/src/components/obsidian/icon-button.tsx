@@ -1,6 +1,8 @@
 import { type IconName } from "obsidian";
 import { type HTMLAttributes, type Ref } from "react";
-import { tv, type VariantProps } from "tailwind-variants";
+import { type VariantProps } from "tailwind-variants";
+
+import { tv } from "@/lib/tw";
 
 import { Icon } from "./icon";
 

@@ -14,17 +14,21 @@ The biggest mistake is hardcoding values (`#1e1e1e`, `12px`, `1px solid #ccc`). 
 
 ## Styling approach
 
-**Tailwind-first.** Default to Tailwind utility classes for all styling. Avoid writing raw CSS stylesheets. The Tailwind theme in `src/zt-main.css` maps Obsidian CSS variables to Tailwind tokens, so classes like `bg-background`, `text-foreground`, `rounded-md` resolve to the right Obsidian variables at runtime.
+**Tailwind-first with `zt:` prefix.** Default to Tailwind utility classes for all styling. Avoid writing raw CSS stylesheets. The Tailwind theme in `src/zt-main.css` maps Obsidian CSS variables to Tailwind tokens.
 
-When no Tailwind token exists for an Obsidian variable, either extend `zt-main.css` (follow the existing pattern) or use Tailwind's arbitrary CSS variable syntax: `bg-(--obsidian-var)`, `text-(--some-color)`, `p-(--size-4-3)`, etc. These compile to `var(--…)` at build time with full utility support.
+**Every utility class uses the `zt:` prefix** — `zt:flex`, `zt:gap-2`, `zt:bg-background`, `zt:text-muted-foreground`, `zt:rounded-md`. Variants chain after the prefix: `zt:hover:opacity-100`, `zt:@md:columns-2`. This is Tailwind v4's `prefix()` feature applied to both `theme.css` and `utilities.css` imports. The prefix scopes compiled selectors (`.zt\:flex`, `.zt\:gap-2`) so they never collide with other plugins' Tailwind output.
 
-Use `cn()` from `@/lib/utils` to merge Tailwind classes with conflict resolution — never raw string concatenation.
+Tailwind's internal theme CSS variables are also prefixed: `--zt-spacing`, `--zt-leading-tight`, `--zt-default-font-family`, etc. Custom `@theme` variables defined in `zt-main.css` (colors, radii, shadows mapped to Obsidian tokens) are not prefixed — they keep their authored names.
 
-For React components with Obsidian modifier classes (`mod-cta`, `is-enabled`, `clickable-icon`), use `tailwind-variants` (`tv`) for variant composition — see the existing wrappers in `src/components/obsidian/` for the pattern.
+When no Tailwind token exists for an Obsidian variable, either extend `zt-main.css` (follow the existing pattern) or use Tailwind's arbitrary CSS variable syntax: `zt:bg-(--obsidian-var)`, `zt:text-(--some-color)`, `zt:p-(--size-4-3)`, etc. These compile to `var(--…)` at build time with full utility support.
+
+Use `cn()` from `@/lib/utils` to merge Tailwind classes with conflict resolution — never raw string concatenation. `cn()` is prefix-aware via `twMerge` from `@/lib/tw`.
+
+For React components with Obsidian modifier classes (`mod-cta`, `is-enabled`, `clickable-icon`), use `tv` from `@/lib/tw` (not directly from `tailwind-variants`) for variant composition — it's pre-configured with the `zt` prefix for correct class merging. See the existing wrappers in `src/components/obsidian/` for the pattern.
 
 ## The three rules
 
-1. **Use Tailwind tokens, never hardcode.** No `#hex`, no `rgb(…)`, no `8px` in feature code. Use the mapped tokens (`bg-background`, `text-muted`, `text-sm`, `rounded-md`, `shadow-md`). For spacing, Tailwind's default scale (`gap-2`, `p-3`, `mt-4`) is fine — Obsidian's `--size-4-N` variables are just fixed `4px` multiples that no theme overrides. If a *color/radius/shadow* value has no token, extend `zt-main.css` or use `var(--…)` inline. See `references/foundations.md` and the component reference files for available Obsidian variables.
+1. **Use Tailwind tokens, never hardcode.** No `#hex`, no `rgb(…)`, no `8px` in feature code. Use the mapped tokens (`zt:bg-background`, `zt:text-muted`, `zt:text-sm`, `zt:rounded-md`, `zt:shadow-md`). For spacing, Tailwind's default scale (`zt:gap-2`, `zt:p-3`, `zt:mt-4`) is fine — Obsidian's `--size-4-N` variables are just fixed `4px` multiples that no theme overrides. If a *color/radius/shadow* value has no token, extend `zt-main.css` or use `var(--…)` inline. See `references/foundations.md` and the component reference files for available Obsidian variables.
 2. **Prefer native components over custom elements.** Obsidian fully styles `<button>`, `<input>`, `<select>`, `<textarea>`, and toggle (`.checkbox-container`) via its own preflight. Use the React wrappers in `src/components/obsidian/` or the imperative `obsidian` API classes (`ButtonComponent`, `ToggleComponent`, etc.) instead of rebuilding these from scratch. See the **Obsidian element preflights** section below.
 3. **No `!important`, keep custom CSS scoped.** `!important` blocks user snippets. If you need custom CSS beyond Tailwind utilities (e.g. exposing custom properties for user snippets, targeting child elements), scope it under a root class prefixed `zt-` and keep specificity low. Don't target Obsidian's internal class names beyond what's documented.
 
@@ -33,12 +37,12 @@ For React components with Obsidian modifier classes (`mod-cta`, `is-enabled`, `c
 Picking a style goes:
 
 1. **A native component exists** → use the React wrapper from `src/components/obsidian/` (or the imperative `obsidian` API class). Don't restyle it with Tailwind — Obsidian's preflight handles appearance.
-2. **Color** → pick a semantic token (`text-muted`, `bg-background`, `text-accent-foreground`), not a raw palette one. Semantic tokens already track light/dark and the user's accent color. See `references/colors.md`.
-3. **Spacing / size** → use Tailwind's default spacing scale (`gap-2`, `p-3`, `mt-4`). Obsidian's `--size-4-N` variables are just fixed multiples of 4px (never overridden by themes) and map 1:1 to Tailwind's scale, so there's no reason to use them directly.
-4. **Radius** → `rounded-sm/md/lg/xl` (mapped to `--radius-s/m/l/xl`).
-5. **Typography** → `text-xs/sm/base/lg` (mapped to Obsidian UI font sizes). See `references/foundations.md#typography`.
-6. **A component CSS variable exists** (e.g. `--modal-background`, `--button-radius`, `--tab-text-color`) → use the arbitrary variable syntax (`bg-(--modal-background)`) or extend `zt-main.css`. See `references/components.md`, `references/editor.md`, `references/window.md`, `references/plugins.md`.
-7. **Nothing fits** → use the arbitrary variable syntax (`bg-(--obsidian-var)`) to reference the Obsidian variable directly. If you want to expose it for user snippets, add a local custom property at your component root (`.zt-foo { --zt-foo-bg: var(--background-secondary); }`) and consume it via `bg-(--zt-foo-bg)`.
+2. **Color** → pick a semantic token (`zt:text-muted`, `zt:bg-background`, `zt:text-accent-foreground`), not a raw palette one. Semantic tokens already track light/dark and the user's accent color. See `references/colors.md`.
+3. **Spacing / size** → use Tailwind's default spacing scale (`zt:gap-2`, `zt:p-3`, `zt:mt-4`). Obsidian's `--size-4-N` variables are just fixed multiples of 4px (never overridden by themes) and map 1:1 to Tailwind's scale, so there's no reason to use them directly.
+4. **Radius** → `zt:rounded-sm/md/lg/xl` (mapped to `--radius-s/m/l/xl`).
+5. **Typography** → `zt:text-xs/sm/base/lg` (mapped to Obsidian UI font sizes). See `references/foundations.md#typography`.
+6. **A component CSS variable exists** (e.g. `--modal-background`, `--button-radius`, `--tab-text-color`) → use the arbitrary variable syntax (`zt:bg-(--modal-background)`) or extend `zt-main.css`. See `references/components.md`, `references/editor.md`, `references/window.md`, `references/plugins.md`.
+7. **Nothing fits** → use the arbitrary variable syntax (`zt:bg-(--obsidian-var)`) to reference the Obsidian variable directly. If you want to expose it for user snippets, add a local custom property at your component root (`.zt-foo { --zt-foo-bg: var(--background-secondary); }`) and consume it via `zt:bg-(--zt-foo-bg)`.
 
 ## Obsidian element preflights
 
@@ -47,7 +51,7 @@ Obsidian fully styles `<button>`, `<input>` (all types), `<textarea>`, and `<sel
 ### What this means for you
 
 - **Don't add Tailwind background/border/padding/radius classes to these elements** — you'll be fighting Obsidian's styles. Use the elements bare and they look correct.
-- **Tailwind layout classes are safe** — `flex`, `gap-2`, `w-full`, `mt-2` etc. don't conflict because Obsidian's preflight doesn't set layout on these elements.
+- **Tailwind layout classes are safe** — `zt:flex`, `zt:gap-2`, `zt:w-full`, `zt:mt-2` etc. don't conflict because Obsidian's preflight doesn't set layout on these elements.
 - **Prefer native components** — bare `<input type="checkbox">`, `<input type="radio">`, and other preflighted elements need no wrapper. See next section for which elements have React wrappers and which don't.
 - **The flip side** — non-form semantic elements (`blockquote`, `p`, headings, lists, `hr`, …) that Obsidian doesn't reset get cleaned up by a **scoped preflight** applied to plugin roots. See **Scoped preflight (`.zt-root`)** below.
 
@@ -57,9 +61,9 @@ Obsidian fully styles `<button>`, `<input>` (all types), `<textarea>`, and `<sel
 
 ```css
 @layer theme, base, components, utilities;          /* explicit order: utilities > base */
-@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/theme.css" layer(theme) prefix(zt);
 /* …@theme tokens… */
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(zt);
 
 @layer base {
   .zt-root { @import "tailwindcss/preflight.css"; } /* Tailwind inlines + scopes this at build */
@@ -78,15 +82,15 @@ class AnnotationView extends ItemView {
 }
 
 // Inside, semantic HTML + border utilities just work — no div+role, no border-solid:
-<blockquote className="border-l-2 pl-2" style={{ borderLeftColor: color }}>{text}</blockquote>
-<p className="select-text">{text}</p>
+<blockquote className="zt:border-l-2 zt:pl-2" style={{ borderLeftColor: color }}>{text}</blockquote>
+<p className="zt:select-text">{text}</p>
 ```
 
 ### Why it's safe (the cascade)
 
 Preflight sits in `@layer base`, between two things that outrank it:
 
-- **`@layer utilities` > `base`** (the explicit order statement) → your `px-2` / `m-4` / `border-l-2` beat preflight's `*{margin:0;padding:0;border:0 solid}`. Spacing and border utilities work normally inside the scope.
+- **`@layer utilities` > `base`** (the explicit order statement) → your `zt:px-2` / `zt:m-4` / `zt:border-l-2` beat preflight's `*{margin:0;padding:0;border:0 solid}`. Spacing and border utilities work normally inside the scope.
 - **Obsidian's stylesheet is entirely unlayered**, and unlayered author styles beat *any* `@layer` regardless of specificity → native controls (`<select class="dropdown">`, `<button>`, inputs) keep their Obsidian look inside `.zt-root`; preflight's `select{background:transparent}` simply loses.
 
 So scoped preflight only overrides **browser UA defaults** — exactly the leaks you want gone: `<blockquote>` `margin:1em 40px`, `<p>` `margin:1em 0`, `<ul>`/`<ol>` 40px indent, `<table>` border-spacing, `<fieldset>` groove border.
@@ -98,11 +102,11 @@ So scoped preflight only overrides **browser UA defaults** — exactly the leaks
 
 ### Borders
 
-Inside `.zt-root` a width utility is all you need: `border` / `border-l-2` render **solid** (preflight supplies the style) and `divide-y divide-border` gives clean section rules — no `border-solid` / `divide-solid`. For a data-driven color (e.g. an annotation highlight) keep the width in the utility and set `style={{ borderLeftColor: color }}`.
+Inside `.zt-root` a width utility is all you need: `zt:border` / `zt:border-l-2` render **solid** (preflight supplies the style) and `zt:divide-y zt:divide-border` gives clean section rules — no `zt:border-solid` / `zt:divide-solid`. For a data-driven color (e.g. an annotation highlight) keep the width in the utility and set `style={{ borderLeftColor: color }}`.
 
 ### No `.zt-root`? (fallback)
 
-Outside a scoped root there is no preflight, so a width utility sets only width — `border-style` stays `none` (so `border` alone is invisible) and unset sides fall back to UA `medium`, making `border-l-2 border-solid` a full **box**. There, add `border-solid` / set the border inline, or render a `<div>` with the matching ARIA role (`role="blockquote"`, `role="paragraph"`, `role="list"` + child `role="listitem"`, `role="heading"` + `aria-level`, `role="separator"`). Prefer adding `zt-root` — simpler, and keeps real semantics.
+Outside a scoped root there is no preflight, so a width utility sets only width — `border-style` stays `none` (so `zt:border` alone is invisible) and unset sides fall back to UA `medium`, making `zt:border-l-2 zt:border-solid` a full **box**. There, add `zt:border-solid` / set the border inline, or render a `<div>` with the matching ARIA role (`role="blockquote"`, `role="paragraph"`, `role="list"` + child `role="listitem"`, `role="heading"` + `aria-level`, `role="separator"`). Prefer adding `zt-root` — simpler, and keeps real semantics.
 
 ## Native components
 
@@ -197,34 +201,34 @@ Prefix custom properties with `--zt-…` to avoid colliding with Obsidian's. Def
 
 ```tsx
 // bad
-<div className="bg-[#2a2a2a] text-[#ddd]" />
+<div className="zt:bg-[#2a2a2a] zt:text-[#ddd]" />
 // good
-<div className="bg-background text-foreground" />
+<div className="zt:bg-background zt:text-foreground" />
 ```
 
 **Hardcoded spacing** → use Tailwind spacing.
 
 ```tsx
 // bad
-<div className="p-[8px_12px] gap-[6px]" />
+<div className="zt:p-[8px_12px] zt:gap-[6px]" />
 // good
-<div className="px-3 py-2 gap-1.5" />
+<div className="zt:px-3 zt:py-2 zt:gap-1.5" />
 ```
 
 **Manual dark mode** → trust semantic tokens.
 
 ```tsx
 // bad
-<div className="bg-white dark:bg-[#1e1e1e]" />
+<div className="zt:bg-white dark:zt:bg-[#1e1e1e]" />
 // good
-<div className="bg-background" />
+<div className="zt:bg-background" />
 ```
 
 **Restyling a native element** → let Obsidian's preflight work.
 
 ```tsx
 // bad — fighting Obsidian's button styles
-<button className="bg-primary text-primary-foreground rounded-md px-3 py-1">Save</button>
+<button className="zt:bg-primary zt:text-primary-foreground zt:rounded-md zt:px-3 zt:py-1">Save</button>
 // good — bare button is already styled; use mod-cta for primary variant
 <Button variant="cta">Save</Button>
 ```
@@ -239,19 +243,6 @@ Prefix custom properties with `--zt-…` to avoid colliding with Obsidian's. Def
 ```
 
 `**!important` to win specificity** → restructure the selector. Almost every legitimate use is in a snippet, not in plugin code.
-
-## When to inject your own CSS variables
-
-If a value is reused across many rules, or you want to expose it for user snippets, declare a custom property at your component root:
-
-```css
-.zt-zotero-pane {
-  --zt-pane-padding-x: var(--size-4-4);
-  padding-inline: var(--zt-pane-padding-x);
-}
-```
-
-Prefix with `--zt-…` and default to an Obsidian variable.
 
 ## Verifying
 
@@ -294,10 +285,10 @@ These are catalogs — read on demand, not all at once. Each file lists the Obsi
 
 To find a variable when you only have a CSS property in mind:
 
-- "background color of a panel" → `bg-background` / `bg-card` (see `references/foundations.md#colors`).
-- "muted secondary text" → `text-muted-foreground`.
-- "the user's accent color" → `bg-primary` (bg) or `text-accent-foreground` (text).
-- "a tab/pane border" → `border-border`.
-- "icon button hover bg" → `bg-muted`.
-- "modal/popover surface" → `bg-popover` (see `references/components.md#modal`).
+- "background color of a panel" → `zt:bg-background` / `zt:bg-card` (see `references/foundations.md#colors`).
+- "muted secondary text" → `zt:text-muted-foreground`.
+- "the user's accent color" → `zt:bg-primary` (bg) or `zt:text-accent-foreground` (text).
+- "a tab/pane border" → `zt:border-border`.
+- "icon button hover bg" → `zt:bg-muted`.
+- "modal/popover surface" → `zt:bg-popover` (see `references/components.md#modal`).
 

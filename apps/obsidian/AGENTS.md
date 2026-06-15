@@ -112,6 +112,8 @@ Pass `swallowError: false` if the caller needs the resolved value or wants to re
 
 View-specific styles live next to the view (e.g. `views/<view>/style.css`) and are imported from that view's entry module. Only put truly global styles in `src/zt-main.css`.
 
+**Tailwind prefix (`zt:`).** Theme and utilities imports use `prefix(zt)` — write every utility as `zt:flex`, `zt:gap-2`, `zt:hover:opacity-100`, `zt:@md:columns-2`. 
+
 ## Testing
 
 Vitest runs in Node and resolves `"obsidian"` to a local mock via

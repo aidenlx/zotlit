@@ -164,7 +164,7 @@ function Playground() {
       <Row name="Default" description={`value: ${slider} (commit on release)`}>
         <Slider
           value={slider}
-          className="bg-(--hello-world)"
+          className="zt:bg-(--hello-world)"
           onChange={setSlider}
           min={0}
           max={100}

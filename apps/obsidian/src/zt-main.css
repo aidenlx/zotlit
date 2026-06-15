@@ -1,7 +1,7 @@
 /* Tailwind 4.3. The explicit layer order keeps `utilities` above `base`, so
    spacing/border utilities win over the scoped preflight declared at the end. */
 @layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/theme.css" layer(theme) prefix(zt);
 
 /* `reference` keeps same-name Obsidian tokens like --color-red compile-time only. */
 @theme inline reference {
@@ -109,7 +109,7 @@
   --ease-in-out: var(--anim-motion-smooth);
 }
 
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(zt);
 
 /* Scoped preflight. Resets UA/Obsidian element defaults *inside plugin UI roots
    only* — mark a root with `class="zt-root"` — so semantic HTML (blockquote, p,

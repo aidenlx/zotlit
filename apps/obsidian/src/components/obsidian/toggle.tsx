@@ -1,5 +1,7 @@
 import { type HTMLAttributes, type Ref } from "react";
-import { tv, type VariantProps } from "tailwind-variants";
+import { type VariantProps } from "tailwind-variants";
+
+import { tv } from "@/lib/tw";
 
 const toggle = tv({
   base: "checkbox-container",

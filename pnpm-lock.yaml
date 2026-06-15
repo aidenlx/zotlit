@@ -154,6 +154,9 @@ importers:
       '@logtape/logtape':
         specifier: 'catalog:'
         version: 2.1.0
+      '@tailwindcss/node':
+        specifier: ^4.3.0
+        version: 4.3.0
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.3.0(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
