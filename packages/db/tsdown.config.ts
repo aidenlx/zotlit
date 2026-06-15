@@ -5,6 +5,7 @@ export default defineConfig({
     {
       index: "./src/index.ts",
       "client/*": "./src/client/*.ts",
+      path: "./src/lib/zt-path.ts",
       schema: "./drizzle/schema.ts",
     },
   ],

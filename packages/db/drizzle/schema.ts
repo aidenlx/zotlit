@@ -14,7 +14,7 @@ import { Temporal } from "@zotlit/shared/temporal";
 
 import { type AnnotationType } from "@/lib/zt-annot";
 import { type LinkMode } from "@/lib/zt-attach";
-import { type CreatorFieldMode } from "@/lib/zt-item";
+import { type CreatorFieldMode } from "@/lib/zt-creator";
 import { type TagType } from "@/lib/zt-tag";
 
 type SqliteAnyOut =

@@ -102,6 +102,7 @@ describe("buildNoteContext", () => {
       ]),
       authorsShort: "Smith et al.",
       fileLink: () => "[paper.pdf](file:///x/paper.pdf)",
+      imgEmbed: (annotation) => `![[${annotation.key}.png]]`,
     });
 
     expect(ctx.backlink).toBe("zotero://select/library/items/ITEM0001");
@@ -121,7 +122,7 @@ describe("buildNoteContext", () => {
     expect(annot.backlink).toBe(
       "zotero://open/library/items/ATCH0001?page=5&annotation=ANNO0001",
     );
-    expect(annot.imgEmbed).toBe("");
+    expect(annot.imgEmbed).toBe("![[ANNO0001.png]]");
     expect(annot.tags[0]?.tag).toBe(annotTagRecord);
     expect(annot.parentAttachment).toBe(ctx.attachments[0]);
     expect(annot.parentItem.citationKey).toBe("smith2024");
@@ -142,6 +143,7 @@ describe("buildNoteContext", () => {
       tagsByItemID: new Map(),
       authorsShort: "",
       fileLink: () => "",
+      imgEmbed: () => "",
     });
     expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM0001");
   });

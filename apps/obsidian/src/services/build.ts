@@ -1,5 +1,6 @@
 import type ZotLitPlugin from "@/zt-main";
 
+import { AttachmentImportService } from "./attachment-import/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
@@ -50,6 +51,10 @@ export function buildServices(
         new DatabaseService({ settings, zoteroPref }),
     })
     .use({
+      attachmentImport: ({ settings }) =>
+        new AttachmentImportService({ app: plugin.app, settings }),
+    })
+    .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
@@ -61,13 +66,20 @@ export function buildServices(
         }),
     })
     .use({
-      noteFeatures: ({ template, db, zoteroPref, settings }) =>
+      noteFeatures: ({
+        template,
+        db,
+        zoteroPref,
+        settings,
+        attachmentImport,
+      }) =>
         new NoteFeatures({
           app: plugin.app,
           template,
           db,
           zoteroPref,
           settings,
+          attachmentImport,
         }),
     });
 }

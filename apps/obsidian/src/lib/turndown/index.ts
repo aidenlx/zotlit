@@ -96,15 +96,9 @@ function addZoteroRules(
   td.addRule("embeddedImage", {
     filter: (node) =>
       node.nodeName === "IMG" && node.hasAttribute("data-attachment-key"),
-    replacement: (_content, node) => {
-      const el = node as Element;
-      if (el.hasAttribute("data-annotation")) {
-        // TBD Stage 9: image-excerpt annotation → real Obsidian embed
-        return el.outerHTML;
-      }
-      // TBD Stage 9: plain attachment embed → real Obsidian embed
-      return el.outerHTML;
-    },
+    replacement:
+      options.embeddedImage ??
+      ((_content, node) => (node as Element).outerHTML),
   });
 
   td.addRule("citation", {
@@ -132,6 +126,11 @@ export interface NoteTurndownOptions {
    * for a later stage. `parseNote` injects the resolver that renders linked marks.
    */
   annotationExcerpt?: TurndownService.ReplacementFunction;
+  /**
+   * Replacement for Zotero note embedded images (`img[data-attachment-key]`).
+   * Defaults to raw-HTML passthrough so standalone conversion keeps the key.
+   */
+  embeddedImage?: TurndownService.ReplacementFunction;
 }
 
 /**

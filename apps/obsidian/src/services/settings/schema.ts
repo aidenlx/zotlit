@@ -1,5 +1,4 @@
 import { getLogLevels } from "@logtape/logtape";
-import { Platform } from "obsidian";
 import * as v from "valibot";
 
 import {
@@ -56,17 +55,6 @@ const autoTrim = v.union([
 ]);
 export type AutoTrim = v.InferOutput<typeof autoTrim>;
 
-/**
- * How PDF image-annotation excerpts are brought into the vault: `"symlink"`
- * links to Zotero's cache, `"copy"` duplicates the file, `false` disables.
- */
-const imgExcerptImport = v.union([
-  v.literal(false),
-  v.literal("symlink"),
-  v.literal("copy"),
-]);
-export type ImgExcerptImport = v.InferOutput<typeof imgExcerptImport>;
-
 const zoteroReadMode = v.picklist(["auto", "reflink", "copy", "immutable"]);
 export type ZoteroReadMode = v.InferOutput<typeof zoteroReadMode>;
 
@@ -104,8 +92,8 @@ export const schema = v.object({
   "zotero.profile-dir": v.nullable(v.string()),
   "zotero.citation-library": settingsNumber,
 
-  "img-excerpt.import": v.nullable(imgExcerptImport),
-  "img-excerpt.path": v.string(),
+  "attachment.folder-path": v.nullable(v.string()),
+  "attachment.import": v.boolean(),
 }) satisfies v.GenericSchema<unknown, Record<string, SettingsValue>>;
 
 export type Settings = v.InferOutput<typeof schema>;
@@ -136,18 +124,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "zotero.read-mode": "auto",
   "zotero.profile-dir": null,
   "zotero.citation-library": 1,
-  "img-excerpt.import": null,
-  "img-excerpt.path": "ZtImgExcerpt",
+  "attachment.folder-path": null,
+  "attachment.import": true,
 } satisfies Settings);
-
-/**
- * Resolve `img-excerpt.import`: returns the user-set value when non-null
- * (`false` is a legitimate explicit "disabled"), otherwise the platform
- * default — `"copy"` on Windows (symlinks need elevated permissions),
- * `"symlink"` elsewhere.
- */
-export function resolveImgExcerptImport(
-  value: ImgExcerptImport | null,
-): ImgExcerptImport {
-  return value ?? (Platform.isWin ? "copy" : "symlink");
-}

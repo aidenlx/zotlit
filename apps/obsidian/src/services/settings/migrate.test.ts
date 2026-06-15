@@ -1,12 +1,6 @@
-import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { migrateLegacyV0 } from "./migrate";
-import { resolveImgExcerptImport } from "./schema";
-
-afterEach(() => {
-  resetMockPlatform();
-});
 
 describe("migrateLegacyV0", () => {
   it("returns an empty object for non-plain inputs", () => {
@@ -23,7 +17,6 @@ describe("migrateLegacyV0", () => {
   });
 
   it("remaps every non-default v0 key to its v1 dotted equivalent", () => {
-    setMockPlatform({ isWin: false });
     expect(
       migrateLegacyV0({
         logLevel: "DEBUG",
@@ -63,8 +56,8 @@ describe("migrateLegacyV0", () => {
       "template.auto-trim-trailing": "slurp",
       "zotero.auto-refresh": false,
       "zotero.citation-library": 2,
-      "img-excerpt.import": false,
-      "img-excerpt.path": "ZtImg",
+      "attachment.import": false,
+      "attachment.folder-path": "ZtImg",
     });
   });
 
@@ -154,7 +147,6 @@ describe("migrateLegacyV0", () => {
   });
 
   it("drops values equal to legacy defaults", () => {
-    setMockPlatform({ isWin: false });
     expect(
       migrateLegacyV0({
         logLevel: "INFO",
@@ -176,41 +168,19 @@ describe("migrateLegacyV0", () => {
         autoTrim: [false, false],
         autoRefresh: true,
         citationLibrary: 1,
-        imgExcerptImport: resolveImgExcerptImport(null),
+        imgExcerptImport: "symlink",
         imgExcerptPath: "ZtImgExcerpt",
       }),
     ).toEqual({});
   });
 
-  it.each([
-    {
-      expectedDefault: "symlink",
-      isWin: false,
-      preservedNonDefault: "copy",
-    },
-    {
-      expectedDefault: "copy",
-      isWin: true,
-      preservedNonDefault: "symlink",
-    },
-  ] as const)(
-    "drops platform image import default on isWin=$isWin",
-    ({ expectedDefault, isWin, preservedNonDefault }) => {
-      setMockPlatform({ isWin });
-      expect(resolveImgExcerptImport(null)).toBe(expectedDefault);
-      expect(migrateLegacyV0({ imgExcerptImport: expectedDefault })).toEqual(
-        {},
-      );
-      expect(
-        migrateLegacyV0({ imgExcerptImport: preservedNonDefault }),
-      ).toEqual({
-        "img-excerpt.import": preservedNonDefault,
-      });
-      expect(migrateLegacyV0({ imgExcerptImport: false })).toEqual({
-        "img-excerpt.import": false,
-      });
-    },
-  );
+  it("maps legacy image import modes to the attachment import setting", () => {
+    expect(migrateLegacyV0({ imgExcerptImport: "symlink" })).toEqual({});
+    expect(migrateLegacyV0({ imgExcerptImport: "copy" })).toEqual({});
+    expect(migrateLegacyV0({ imgExcerptImport: false })).toEqual({
+      "attachment.import": false,
+    });
+  });
 
   it("passes through values it cannot validate; the service does per-key cleanup", () => {
     expect(
