@@ -56,12 +56,12 @@ v1 kept a denormalized item map per library inside the worker (`lib/db-worker/sr
 - Literature note **create + update** flows
 - **Citation suggesters** (editor-suggest + popup modal + quick-switch). Editor-suggest and quick-switch land in Stage 3; the popup-modal `Insert citation` command and the full citation pipeline land in Stage 5.
 - **Citekey-click**
-- **Annotation side-panel view** (with image-cache importer + PDF outline)
-- **PDF outline parser** (`services/pdf-parser/`, ported)
+- **Annotation side-panel view** (with image-cache importer)
 - **Setting-tab groups** for everything except `server`
 
 ### 3.2 Deferred (companion-dependent or post-alpha)
 
+- **PDF outline parser** (`services/pdf-parser/`) — v1 ships `getPDFOutline` / `getCachedOutlineKeys` but **never calls them**: no API, server, or view consumer references the service (it is only `this.use()`-registered). Don't port until the annot view (or another feature) actually consumes an outline; then it lands as its own stage.
 - `services/server/` (HTTP listener on localhost)
 - `services/protocol/` (`zotero://open|update|export` handlers)
 - `topic-import/` (tag-driven auto-create; uses `bg:notify`)
@@ -71,7 +71,7 @@ v1 kept a denormalized item map per library inside the worker (`lib/db-worker/sr
 - Zotero note import (HTML → Markdown) — companion-independent single stage. Alpha keeps the current fixed Zotero note HTML → Obsidian Markdown format; the same stage later adds configurable import output and Zotero Better Notes compatibility.
 - **Template service follow-ups** (post-Stage 1 enhancements, not alpha-blocking):
   - Field-name completion in `EtaSuggest` (`it.title`, `it.citekey`, `it.creators`, `it.tags`, ...) — needs Stage 5 helper type definitions to drive the suggestion list.
-  - `template-edited` event on `TemplateService` (nanoevents) — add when a live-preview consumer (Stage 9 annot view) actually needs to re-render on template edits; today one-shot renders rely on the vault watcher refreshing template content and the render-time mtime+size check invalidating compiled functions.
+  - `template-edited` event on `TemplateService` (nanoevents) — add when a live-preview consumer (Stage 8 annot view) actually needs to re-render on template edits; today one-shot renders rely on the vault watcher refreshing template content and the render-time mtime+size check invalidating compiled functions.
   - Async render path (`renderAsync`) — only if a consumer ever needs `await`-able rendering; Stage 1 is sync end-to-end.
 
 ### 3.3 Dropped
@@ -97,14 +97,13 @@ Each stage produces a shippable plugin; queries are added in the stage that firs
 | 1   | (done) **Template service**                                            | —                                                                                                          | `apps/obsidian/src/services/template/`: upstream `eta@^4`, embedded defaults, vault watcher, mtime+size compile invalidation, auto-pair, EtaSuggest                                                                                                                                                                                     |
 | 2   | (done) **NoteIndex**                                                   | —                                                                                                          | Obsidian metadata index: `{itemKey → file[]}`, `{citekey → file[]}` (block-ID `{annotKey → block[]}` map removed in Stage 5 — dead infra)                                                                                                                                                                                                                                             |
 | 3   | (done) **Citation suggesters + quick-switch**                          | `items` (by library, lean shape)                                                                           | Headless `ItemLookup` service (MiniSearch cache + scoring) + editor-suggest + quick-switch register-funcs. See [`STAGE3_CITATION_SUGGEST.md`](./STAGE3_CITATION_SUGGEST.md) and [`STAGE_3_1_SEARCH.md`](./STAGE_3_1_SEARCH.md).                                                                                                         |
-| 4   | (done) **NoteParser**                                                  | —                                                                                                          | Turndown converter + Zotero HTML rules; payload-only annotation marks; schema gate. Mark/color parsing lives in `@zotlit/db` (`zt-note-mark`, `zt-color`). Citation DB leg + `cite` render deferred to the Zotero note import stage; image embeds to Stage 9.                                                                                |
+| 4   | (done) **NoteParser**                                                  | —                                                                                                          | Turndown converter + Zotero HTML rules; payload-only annotation marks; schema gate. Mark/color parsing lives in `@zotlit/db` (`zt-note-mark`, `zt-color`). Citation DB leg + `cite` render deferred to the Zotero note import stage; image embeds to Stage 8.                                                                                |
 | 5   | **NoteFeatures (create + update) + citation finishers**                | —                                                                                                          | Commands: `update-note`, `overwrite-note`, popup `Insert citation`. Note update uses a **managed-region overwrite** (marker-delimited `%%zt-managed%%` region re-rendered wholesale via `vault.process` + `processFrontMatter`), **not** v1's block-ID/`EditorState` incremental merge. Replace Stage-3 editor-suggest `selectSuggestion` with full `insertCitation` pipeline. Wire quick-switch's create-arm via NoteFeatures.create. See §4.1 Stage 5. |
 | 6   | **Setting-tab groups**                                                 | —                                                                                                          | `note`, `citation`, `template`, `img-excerpt` (skip `server`)                                                                                                                                                                                                                                                                           |
 | 7   | **Citekey-click**                                                      | —                                                                                                          | Editor monkey-patch using NoteIndex + existing `citekey` query                                                                                                                                                                                                                                                                          |
-| 8   | **PDF outline parser**                                                 | —                                                                                                          | Port `services/pdf-parser/`: `pdfjs-dist` + `idb` cache keyed by path + mtime                                                                                                                                                                                                                                                           |
-| 9   | **Annot view + img-cache importer** _(alpha blocker)_                  | refine `annotations`/`attachments` shape if needed                                                         | First React 19.2 + jotai surface; integrates PDF outline from stage 8; drag-insert annotations to editor; image-cache copy/symlink with mtime-skip + symlink-fallback-to-copy                                                                                                                                                           |
+| 8   | **Annot view + img-cache importer** _(alpha blocker)_                  | refine `annotations`/`attachments` shape if needed                                                         | First React 19.2 + jotai surface; drag-insert annotations to editor; image-cache copy/symlink with mtime-skip + symlink-fallback-to-copy. (PDF outline deferred — see §3.2.)                                                                                                                                                            |
 | →   | **v2 alpha ships**                                                     |                                                                                                            |                                                                                                                                                                                                                                                                                                                                         |
-| 10  | **Zotero note import** _(post-alpha)_                                  | maybe `index-items` if citation resolution needs it                                                        | Wire Zotero note HTML → Obsidian Markdown import. Start from the fixed Stage-4 NoteParser output, then make the import output customizable and compatible with Zotero Better Notes' enhanced native-note HTML. Resolve note citations in this stage because `parseNote` has no import-flow consumer before it.                              |
+| 9   | **Zotero note import** _(post-alpha)_                                  | maybe `index-items` if citation resolution needs it                                                        | Wire Zotero note HTML → Obsidian Markdown import. Start from the fixed Stage-4 NoteParser output, then make the import output customizable and compatible with Zotero Better Notes' enhanced native-note HTML. Resolve note citations in this stage because `parseNote` has no import-flow consumer before it.                              |
 
 ### 4.1 Per-stage deliverables
 
@@ -140,7 +139,7 @@ Full spec: [`STAGE3_CITATION_SUGGEST.md`](./STAGE3_CITATION_SUGGEST.md). Highlig
 
 **Stage 4 — NoteParser (done)**
 
-Converts Zotero 9 note HTML → Obsidian Markdown, resolving annotation excerpts to flat inline marks. Citation resolution is **deferred to the Zotero note import stage** because `parseNote` has no import-flow consumer yet; image embeds to **Stage 9**. No DB queries this stage — annotation marks are payload-only.
+Converts Zotero 9 note HTML → Obsidian Markdown, resolving annotation excerpts to flat inline marks. Citation resolution is **deferred to the Zotero note import stage** because `parseNote` has no import-flow consumer yet; image embeds to **Stage 8**. No DB queries this stage — annotation marks are payload-only.
 
 - **Converter** — `apps/obsidian/src/lib/turndown/`: `createNoteTurndown(Turndown, options?)` builds a fresh `TurndownService` (Obsidian `htmlToMarkdown` base + Zotero body rules: math, bare-`<pre>` code, styled strike, sub/sup/underline, colored spans, a single `embeddedImage` rule for all `img[data-attachment-key]`, and citation passthrough). The SPAN-only `annotationExcerpt` rule takes an injectable replacement via `options.annotationExcerpt`.
 - **Mark/color parsing (DOM-free)** — `packages/db/src/lib/zt-note-mark.ts` (valibot + `URLPattern` payload parsers) and `zt-color.ts` (annotation/highlight/text color → palette name), re-exported from `@zotlit/db`.
@@ -172,17 +171,13 @@ _References:_ Zotero 9.0.3 source at `/Users/aidenlx/repo/zotlit-repo/zotero/` (
 
 - `apps/obsidian/src/services/citekey-click/service.ts`. Monkey-patches `getClickableTokenAt` / `triggerClickableToken`; resolves `@citekey` via NoteIndex + `queries/citekey`; falls back to NoteFeatures.create on miss.
 
-**Stage 8 — PDF outline parser**
-
-- `apps/obsidian/src/services/pdf-parser/service.ts`: `getPDFOutline(pdfPath, force?)`, `getCachedOutlineKeys()`. `idb`-backed cache keyed by path + mtime.
-
-**Stage 9 — Annot view + img-cache importer**
+**Stage 8 — Annot view + img-cache importer**
 
 - `apps/obsidian/src/services/annot-view/`: React 19.2 view mounted via `createRoot`; jotai atoms declared at module scope with a per-leaf `createStore()` on the `ItemView` subclass and `<Provider store={this.#store}>` wrapping the tree; drag-insert handler; reactive sync to active file + Zotero reader focus.
 - `apps/obsidian/src/services/img-cache/service.ts`: deferred queue with `import()` / `flush()` / `cancel()`; platform-aware default (symlink on Unix, copy on Windows); mtime skip; symlink → copy fallback on permission error.
 - Vite config: no plugin needed (esbuild handles JSX from tsconfig). Add `react`, `react-dom`, `jotai` to `apps/obsidian/package.json` `dependencies`; `@types/react`, `@types/react-dom` to `devDependencies`. No catalog entries yet (single consumer).
 
-**Stage 10 — Zotero note import**
+**Stage 9 — Zotero note import**
 
 - Add the import flow for Zotero native notes using the Stage-4 `NoteParser`. Alpha-quality import output is the fixed current parser format: Zotero note HTML → Obsidian Markdown with inline annotation marks.
 - Make import output customizable in this same stage. Zotero Better Notes enhances native Zotero notes rather than replacing them with a separate source type, so compatibility belongs in this importer: preserve the fixed parser as the baseline, then add extension points for Better Notes' enhanced native-note HTML and user-controlled Markdown output.
@@ -207,7 +202,7 @@ For traceability during the migration; all paths under `/Users/aidenlx/repo/zotl
 | NoteFeatures update           | `note-feature/update-note.ts`                                                                                           |
 | Setting-tab groups            | `setting-tab/{general,suggester,template,update,misc}/`                                                                 |
 | Citekey-click                 | `services/citekey-click/service.ts`                                                                                     |
-| PDF outline parser            | `services/pdf-parser/service.ts`                                                                                        |
+| **Deferred** PDF outline parser | `services/pdf-parser/service.ts`                                                                                      |
 | Annot view                    | `note-feature/annot-view/{view,store,drag-insert,more-options}.tsx`                                                     |
 | Img-cache importer            | `services/zotero-db/img-import/service.ts`                                                                              |
 | **Deferred** Server           | `services/server/service.ts`                                                                                            |
