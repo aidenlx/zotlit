@@ -13,6 +13,7 @@ import {
   getItemsByKey,
   getTagsByItemIDs,
   parseIndexedKey,
+  USER_LIBRARY_ID,
   type Annotation,
   type Item,
   type ItemTag,
@@ -309,7 +310,7 @@ function resolveIndexedKeyLibrary(
   const parsed = parseIndexedKey(indexedKey);
   if (!parsed) return null;
   const { key, groupID } = parsed;
-  if (groupID == null) return { key, libraryID: 1 };
+  if (groupID == null) return { key, libraryID: USER_LIBRARY_ID };
   const library = getLibraries(client).find(
     (entry) => entry.groupID === groupID,
   );

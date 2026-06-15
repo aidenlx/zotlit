@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type IndexedItem } from "@zotlit/db";
+import { type IndexedItem, USER_LIBRARY_ID } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { buildIndex, cleanQuery, searchIndex } from "./engine";
@@ -106,7 +106,7 @@ describe("item lookup engine", () => {
       key: "A",
       title: "Senior citizen transit ID cards",
     });
-    const index = buildIndex([target], opts(), { libraryID: 1 });
+    const index = buildIndex([target], opts(), { libraryID: USER_LIBRARY_ID });
 
     expect(searchIndex(index, "   ", { tokenizer: opts(), limit: 50 })).toEqual(
       [],
@@ -198,7 +198,9 @@ describe("item lookup engine", () => {
 
 function searchItems(items: readonly IndexedItem[], query: string) {
   const tokenizerOpts = opts();
-  const index = buildIndex(items, tokenizerOpts, { libraryID: 1 });
+  const index = buildIndex(items, tokenizerOpts, {
+    libraryID: USER_LIBRARY_ID,
+  });
   return searchIndex(index, query, { tokenizer: tokenizerOpts, limit: 50 });
 }
 

@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { USER_LIBRARY_ID } from "@/lib/constants";
+
 import { type Attachment } from "./zt-attach";
 import { attachmentAbsPath, resolveAnnotCachePath } from "./zt-path";
 
 function attachment(overrides: Partial<Attachment>): Attachment {
   return {
     itemID: 1,
-    libraryID: 1,
+    libraryID: USER_LIBRARY_ID,
     key: "ATTACH1",
     parentItemID: 2,
     path: null,

@@ -26,6 +26,7 @@ export {
   itemSelectUri,
   type AnnotationOpenUriOptions,
 } from "./lib/zt-uri";
+export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
   getAnnotationsByKeyAsync,

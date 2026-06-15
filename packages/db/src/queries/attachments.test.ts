@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { USER_LIBRARY_ID } from "@/lib/constants";
 
 import { getAttachmentByKey, getAttachmentsByParents } from "./attachments";
 
@@ -23,7 +24,7 @@ afterEach(() => {
 
 describe("getAttachmentsByParents", () => {
   it("returns visible attachments tagged with their parentItemID for caller grouping", () => {
-    const result = getAttachmentsByParents(db, [100, 200], 1);
+    const result = getAttachmentsByParents(db, [100, 200], USER_LIBRARY_ID);
 
     expect(result.map((a) => [a.parentItemID, a.key])).toEqual([
       [100, "ATTA1"],
@@ -34,7 +35,7 @@ describe("getAttachmentsByParents", () => {
 
   it("excludes deleted attachments via item.deletedItem filter", () => {
     const keys = new Set(
-      getAttachmentsByParents(db, [100], 1).map((a) => a.key),
+      getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map((a) => a.key),
     );
 
     expect(keys.has("TRASHED")).toBe(false);
@@ -42,22 +43,22 @@ describe("getAttachmentsByParents", () => {
 
   it("excludes attachments from other libraries", () => {
     const keys = new Set(
-      getAttachmentsByParents(db, [100], 1).map((a) => a.key),
+      getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map((a) => a.key),
     );
 
     expect(keys.has("ATTOTHER")).toBe(false);
   });
 
   it("returns an empty array when no parent has attachments", () => {
-    expect(getAttachmentsByParents(db, [999], 1)).toEqual([]);
+    expect(getAttachmentsByParents(db, [999], USER_LIBRARY_ID)).toEqual([]);
   });
 
   it("returns an empty array for empty parent input", () => {
-    expect(getAttachmentsByParents(db, [], 1)).toEqual([]);
+    expect(getAttachmentsByParents(db, [], USER_LIBRARY_ID)).toEqual([]);
   });
 
   it("surfaces path, contentType, and raw linkMode", () => {
-    const [first] = getAttachmentsByParents(db, [100], 1);
+    const [first] = getAttachmentsByParents(db, [100], USER_LIBRARY_ID);
 
     expect(first).toMatchObject({
       key: "ATTA1",
@@ -71,21 +72,24 @@ describe("getAttachmentsByParents", () => {
   });
 
   it("reuses the prepared statement across different parent IDs", () => {
-    const r1 = getAttachmentsByParents(db, [100], 1).map((a) => a.key);
-    const r2 = getAttachmentsByParents(db, [200], 1).map((a) => a.key);
+    const r1 = getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map(
+      (a) => a.key,
+    );
+    const r2 = getAttachmentsByParents(db, [200], USER_LIBRARY_ID).map(
+      (a) => a.key,
+    );
 
     expect(r1).toEqual(["ATTA1", "ATTA2"]);
     expect(r2).toEqual(["ATTB1"]);
-    expect(getAttachmentsByParents(db, [100], 1).map((a) => a.key)).toEqual([
-      "ATTA1",
-      "ATTA2",
-    ]);
+    expect(
+      getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map((a) => a.key),
+    ).toEqual(["ATTA1", "ATTA2"]);
   });
 });
 
 describe("getAttachmentByKey", () => {
   it("returns a visible attachment by library and key", () => {
-    expect(getAttachmentByKey(db, "ATTA1", 1)).toMatchObject({
+    expect(getAttachmentByKey(db, "ATTA1", USER_LIBRARY_ID)).toMatchObject({
       key: "ATTA1",
       parentItemID: 100,
       path: "storage:paper.pdf",
@@ -93,9 +97,9 @@ describe("getAttachmentByKey", () => {
   });
 
   it("returns null for missing, deleted, or other-library attachments", () => {
-    expect(getAttachmentByKey(db, "MISSING", 1)).toBeNull();
-    expect(getAttachmentByKey(db, "TRASHED", 1)).toBeNull();
-    expect(getAttachmentByKey(db, "ATTOTHER", 1)).toBeNull();
+    expect(getAttachmentByKey(db, "MISSING", USER_LIBRARY_ID)).toBeNull();
+    expect(getAttachmentByKey(db, "TRASHED", USER_LIBRARY_ID)).toBeNull();
+    expect(getAttachmentByKey(db, "ATTOTHER", USER_LIBRARY_ID)).toBeNull();
   });
 });
 

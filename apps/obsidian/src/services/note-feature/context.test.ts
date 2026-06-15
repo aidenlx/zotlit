@@ -7,6 +7,7 @@ import {
   type ItemTag,
   type Tag,
 } from "@zotlit/db";
+import { USER_LIBRARY_ID } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { buildNoteContext } from "./context";
@@ -14,7 +15,7 @@ import { buildNoteContext } from "./context";
 function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
   return {
     itemID: 1,
-    libraryID: 1,
+    libraryID: USER_LIBRARY_ID,
     key: "ITEM2345",
     indexedKey: "ITEM2345",
     dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
@@ -28,7 +29,7 @@ function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
 function makeAttachment(overrides: Partial<Attachment>): Attachment {
   return {
     itemID: 10,
-    libraryID: 1,
+    libraryID: USER_LIBRARY_ID,
     key: "ATCH0001",
     parentItemID: 1,
     path: "storage:paper.pdf",
@@ -44,7 +45,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
   return {
     itemID: 100,
     key: "ANNO0001",
-    libraryID: 1,
+    libraryID: USER_LIBRARY_ID,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     type: 1,
