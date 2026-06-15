@@ -54,7 +54,12 @@ async function makeLogging(initial: Record<string, unknown> | null = null) {
   });
   const logging = new LoggingService({ plugin: stub.plugin, settings });
   await logging.ready;
-  return { ...stub, settings, logging };
+  return {
+    ...stub,
+    settings,
+    logging,
+    [Symbol.asyncDispose]: () => logging[Symbol.asyncDispose](),
+  };
 }
 
 /**
@@ -92,7 +97,7 @@ afterEach(() => {
 
 describe("LoggingService", () => {
   it("configures with the initial settings (level=info, file off)", async () => {
-    const { logging } = await makeLogging({
+    await using _ = await makeLogging({
       "log.level": "info",
       "log.to-file": false,
     });
@@ -117,15 +122,14 @@ describe("LoggingService", () => {
       sinks: ["console"],
       lowestLevel: "warning",
     });
-
-    await logging[Symbol.asyncDispose]();
   });
 
   it("opens the vault file sink when log.to-file is true", async () => {
-    const { logging, write } = await makeLogging({
+    await using harness = await makeLogging({
       "log.level": "debug",
       "log.to-file": true,
     });
+    const { write } = harness;
 
     expect(write).toHaveBeenCalledWith(
       ".obsidian/plugins/zotlit/zotlit.log.jsonl",
@@ -138,15 +142,14 @@ describe("LoggingService", () => {
     expect(Object.keys(config.sinks).sort()).toEqual(["console", "file"]);
     expect(config.loggers[0]!.sinks).toEqual(["console", "file"]);
     expect(config.loggers[1]!.sinks).toEqual(["console", "file"]);
-
-    await logging[Symbol.asyncDispose]();
   });
 
   it("uses empty zotlit sinks when log.level is null", async () => {
-    const { logging, write } = await makeLogging({
+    await using harness = await makeLogging({
       "log.level": null,
       "log.to-file": true,
     });
+    const { write } = harness;
 
     expect(write).not.toHaveBeenCalled();
     const config = configureMock.mock.calls[0]![0]! as {
@@ -159,15 +162,14 @@ describe("LoggingService", () => {
       sinks: [],
     });
     expect(config.loggers[1]!.sinks).toEqual(["console"]);
-
-    await logging[Symbol.asyncDispose]();
   });
 
   it("reconfigures when log.level changes", async () => {
-    const { logging, settings } = await makeLogging({
+    await using harness = await makeLogging({
       "log.level": "info",
       "log.to-file": false,
     });
+    const { settings } = harness;
     expect(configureMock).toHaveBeenCalledTimes(1);
 
     settings.update({ "log.level": "debug" });
@@ -178,15 +180,14 @@ describe("LoggingService", () => {
       loggers: Array<{ lowestLevel: string }>;
     };
     expect(second.loggers[0]!.lowestLevel).toBe("debug");
-
-    await logging[Symbol.asyncDispose]();
   });
 
   it("opens then closes the file sink as log.to-file toggles", async () => {
-    const { logging, settings, write } = await makeLogging({
+    await using harness = await makeLogging({
       "log.level": "info",
       "log.to-file": false,
     });
+    const { settings, write } = harness;
 
     settings.update({ "log.to-file": true });
     await flushAll();
@@ -199,15 +200,14 @@ describe("LoggingService", () => {
       sinks: Record<string, unknown>;
     };
     expect(Object.keys(lastConfig.sinks)).toEqual(["console"]);
-
-    await logging[Symbol.asyncDispose]();
   });
 
   it("bail-if-same: rapid toggles coalesce — fewer configures than updates", async () => {
-    const { logging, settings } = await makeLogging({
+    await using harness = await makeLogging({
       "log.level": "info",
       "log.to-file": false,
     });
+    const { settings } = harness;
     configureMock.mockClear();
 
     // Four rapid same-tick updates ending in `false`. The loop body for the
@@ -224,8 +224,6 @@ describe("LoggingService", () => {
       sinks: Record<string, unknown>;
     };
     expect(Object.keys(last.sinks)).toEqual(["console"]);
-
-    await logging[Symbol.asyncDispose]();
   });
 
   it("background reconfigure failures are reported, not unhandled", async () => {
@@ -233,10 +231,11 @@ describe("LoggingService", () => {
       .spyOn(console, "error")
       .mockImplementation(() => {});
 
-    const { logging, settings } = await makeLogging({
+    await using harness = await makeLogging({
       "log.level": "info",
       "log.to-file": false,
     });
+    const { settings } = harness;
 
     // First call (initial configure) already succeeded; reject the next one.
     configureMock.mockRejectedValueOnce(new Error("boom"));
@@ -250,7 +249,6 @@ describe("LoggingService", () => {
     );
 
     consoleErrorSpy.mockRestore();
-    await logging[Symbol.asyncDispose]();
   });
 
   it("dispose waits for in-flight reconfigure so the sink doesn't leak", async () => {

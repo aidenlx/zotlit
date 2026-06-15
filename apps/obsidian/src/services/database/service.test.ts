@@ -1,7 +1,6 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaults, type Settings } from "@/services/settings/schema";
@@ -145,8 +144,11 @@ describe("DatabaseService", () => {
         "file:///clone/zotero.sqlite?mode=ro",
         { jit: true },
       );
-      expect(reapStaleReadTempsMock).toHaveBeenCalledWith(expect.any(AbortSignal));
-      const reapSignal = reapStaleReadTempsMock.mock.calls[0]![0] as AbortSignal;
+      expect(reapStaleReadTempsMock).toHaveBeenCalledWith(
+        expect.any(AbortSignal),
+      );
+      const reapSignal = reapStaleReadTempsMock.mock
+        .calls[0]![0] as AbortSignal;
       expect(reapSignal.aborted).toBe(false);
       expect(service.state).toBe("ready");
       expect(service.activeReadMode).toBe("copy");
@@ -162,14 +164,12 @@ describe("DatabaseService", () => {
   it("settles ready as degraded when startup open fails", async () => {
     prepareMock.mockRejectedValueOnce(new Error("missing"));
 
-    const service = new DatabaseService(deps(settings, zoteroPref));
+    await using service = new DatabaseService(deps(settings, zoteroPref));
     await expect(service.ready).resolves.toBeUndefined();
 
     expect(service.state).toBe("degraded");
     expect(() => service.client).toThrow(DatabaseError);
     await expect(service.refresh()).rejects.toThrow(DatabaseError);
-
-    await service[Symbol.asyncDispose]();
   });
 
   it("keeps the active client when refresh fails", async () => {
@@ -177,7 +177,7 @@ describe("DatabaseService", () => {
     prepareMock.mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"));
     createClientMock.mockReturnValueOnce(firstClient);
 
-    const service = new DatabaseService(deps(settings, zoteroPref));
+    await using service = new DatabaseService(deps(settings, zoteroPref));
     await service.ready;
 
     prepareMock.mockRejectedValueOnce(new Error("busy"));
@@ -186,8 +186,6 @@ describe("DatabaseService", () => {
     expect(service.state).toBe("ready");
     expect(service.client).toBe(firstClient);
     expect(firstClient.$client.close).not.toHaveBeenCalled();
-
-    await service[Symbol.asyncDispose]();
   });
 
   it("refreshes when read mode or database path changes", async () => {
@@ -200,7 +198,7 @@ describe("DatabaseService", () => {
       .mockReturnValueOnce(fakeClient())
       .mockReturnValueOnce(fakeClient());
 
-    const service = new DatabaseService(deps(settings, zoteroPref));
+    await using service = new DatabaseService(deps(settings, zoteroPref));
     await service.ready;
 
     settings.set({ "zotero.read-mode": "immutable" });
@@ -214,8 +212,6 @@ describe("DatabaseService", () => {
       ["immutable", "/zotero/zotero.sqlite"],
       ["immutable", "/next/zotero.sqlite"],
     ]);
-
-    await service[Symbol.asyncDispose]();
   });
 
   it("keeps refreshing active across coalesced trailing reruns", async () => {
@@ -229,7 +225,7 @@ describe("DatabaseService", () => {
       .mockReturnValueOnce(fakeClient())
       .mockReturnValueOnce(fakeClient());
 
-    const service = new DatabaseService(deps(settings, zoteroPref));
+    await using service = new DatabaseService(deps(settings, zoteroPref));
     await service.ready;
 
     const events: boolean[] = [];
@@ -247,8 +243,6 @@ describe("DatabaseService", () => {
     expect(events).toEqual([true]);
     await Promise.all([firstRefresh, secondRefresh]);
     expect(events).toEqual([true, false]);
-
-    await service[Symbol.asyncDispose]();
   });
 
   it("shows a one-time fallback notice for explicit reflink fallback", async () => {
@@ -262,7 +256,7 @@ describe("DatabaseService", () => {
     createClientMock.mockReturnValue(fakeClient());
     settings.set({ "zotero.read-mode": "reflink" });
 
-    const service = new DatabaseService(deps(settings, zoteroPref));
+    await using service = new DatabaseService(deps(settings, zoteroPref));
     await service.ready;
     await service.refresh();
 
@@ -270,8 +264,6 @@ describe("DatabaseService", () => {
     expect(noticesLog[0]?.message).toBe(
       "Reflink clones are unavailable on this volume. ZotLit is reading the immutable Zotero database.",
     );
-
-    await service[Symbol.asyncDispose]();
   });
 });
 
