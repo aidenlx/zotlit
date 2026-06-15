@@ -38,22 +38,22 @@ export function Annotation({ annot, tags, collapsed }: AnnotationProps) {
 
   return (
     <div
-      className="zt-annot-card mb-2 flex break-inside-avoid flex-col divide-y divide-border overflow-hidden rounded-sm border border-border bg-background transition-colors @md:mb-3"
+      className="zt-annot-card zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:@md:mb-3"
       data-id={annot.itemID}
     >
       <div
-        className="flex cursor-context-menu items-center gap-1 bg-card px-2"
+        className="zt:flex zt:cursor-context-menu zt:items-center zt:gap-1 zt:bg-card zt:px-2"
         onContextMenu={(e) => actions.onMoreOptions(e, annot)}
       >
         <span
-          className="flex cursor-grab items-center"
+          className="zt:flex zt:cursor-grab zt:items-center"
           draggable
           onDragStart={(e) => actions.onDragStart(e, annot)}
           {...tooltipAttrs(typeLabel(annot.type))}
         >
           <Icon name={typeIcon(annot.type)} size={16} style={{ color }} />
         </span>
-        <div className="flex items-center gap-1 opacity-0 transition-opacity [--icon-size:16px] hover:opacity-100">
+        <div className="zt:flex zt:items-center zt:gap-1 zt:opacity-0 zt:transition-opacity zt:[--icon-size:16px] zt:hover:opacity-100">
           <IconButton
             icon="info"
             onClick={() => actions.onShowDetails("annot", annot.itemID)}
@@ -65,18 +65,18 @@ export function Annotation({ annot, tags, collapsed }: AnnotationProps) {
             {...tooltipAttrs(m.annot_view_more_tooltip())}
           />
         </div>
-        <div className="flex-1" />
+        <div className="zt:flex-1" />
         <PageLabel
           page={annot.pageLabel}
           backlink={actions.getBacklink(annot)}
         />
       </div>
 
-      <div className="px-2 py-1">
+      <div className="zt:px-2 zt:py-1">
         <blockquote
           className={cn(
-            "border-l-2 pl-2 leading-tight",
-            collapsed && "line-clamp-3",
+            "zt:border-l-2 zt:pl-2 zt:leading-tight",
+            collapsed && "zt:line-clamp-3",
           )}
           style={{ borderLeftColor: color ?? "var(--interactive-accent)" }}
         >
@@ -85,13 +85,13 @@ export function Annotation({ annot, tags, collapsed }: AnnotationProps) {
       </div>
 
       {annot.comment && (
-        <div className="overflow-x-auto px-2 py-1 break-words whitespace-pre-wrap text-muted-foreground select-text">
+        <div className="zt:overflow-x-auto zt:px-2 zt:py-1 zt:break-words zt:whitespace-pre-wrap zt:text-muted-foreground zt:select-text">
           {annot.comment}
         </div>
       )}
 
       {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-2 py-1">
+        <div className="zt:flex zt:flex-wrap zt:gap-1 zt:px-2 zt:py-1">
           {tags.map((tag) => (
             <a key={tag.tagID} className="tag">
               {tag.name}
@@ -114,16 +114,16 @@ function Excerpt({
   const name = annotationTypeToName(annot.type);
 
   if (name === "highlight" || name === "underline" || name === "text") {
-    return <p className="select-text">{annot.text}</p>;
+    return <p className="zt:select-text">{annot.text}</p>;
   }
   if (name === "image") {
     return (
       <img
         className={cn(
-          "w-full",
+          "zt:w-full",
           collapsed
-            ? "max-h-20 object-cover object-left-top"
-            : "object-scale-down",
+            ? "zt:max-h-20 zt:object-cover zt:object-left-top"
+            : "zt:object-scale-down",
         )}
         src={actions.getImgSrc(annot)}
         alt={annot.text ?? `Area excerpt for page ${annot.pageLabel ?? "?"}`}
@@ -145,7 +145,7 @@ function PageLabel({
   if (backlink) {
     return (
       <a
-        className="external-link text-xs"
+        className="external-link zt:text-xs"
         href={backlink}
         {...tooltipAttrs(m.annot_view_open_page())}
       >
@@ -153,5 +153,5 @@ function PageLabel({
       </a>
     );
   }
-  return <span className="text-xs">{label}</span>;
+  return <span className="zt:text-xs">{label}</span>;
 }

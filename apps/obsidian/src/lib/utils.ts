@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from "clsx";
 import { type TooltipOptions } from "obsidian";
-import { twMerge } from "tailwind-merge";
+
+import { twMerge } from "@/lib/tw";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

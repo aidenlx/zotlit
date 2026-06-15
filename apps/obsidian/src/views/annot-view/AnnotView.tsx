@@ -22,14 +22,14 @@ export function AnnotView() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
       <Toolbar
         hasDoc={doc !== null}
         collapsed={collapsed}
         onToggleCollapsed={() => setCollapsed((c) => !c)}
       />
       {doc === null ? (
-        <div className="pane-empty p-2">{m.annot_view_empty()}</div>
+        <div className="pane-empty zt:p-2">{m.annot_view_empty()}</div>
       ) : (
         <AnnotList collapsed={collapsed} />
       )}
@@ -89,7 +89,7 @@ function FollowButton() {
   const actions = useContext(AnnotActionsContext);
 
   return (
-    <span className="flex items-center">
+    <span className="zt:flex zt:items-center">
       <IconButton
         className="nav-action-button"
         icon={follow === null ? "unlink" : "link"}
@@ -98,7 +98,7 @@ function FollowButton() {
         {...tooltipAttrs(m.annot_view_follow_tooltip())}
       />
       {follow !== null && (
-        <span className="ml-1 text-xs text-muted-foreground">
+        <span className="zt:ml-1 zt:text-xs zt:text-muted-foreground">
           {follow === "ob-note" ? "ob" : "zt"}
         </span>
       )}
@@ -112,9 +112,9 @@ function AttachmentSelector() {
   const setAttachmentID = useSetAtom(attachmentIDAtom);
 
   if (!attachments)
-    return <span className="text-xs">{m.annot_view_loading()}</span>;
+    return <span className="zt:text-xs">{m.annot_view_loading()}</span>;
   if (attachments.length === 0) {
-    return <span className="text-xs">{m.annot_view_no_attachments()}</span>;
+    return <span className="zt:text-xs">{m.annot_view_no_attachments()}</span>;
   }
   if (attachments.length === 1) return null;
 
@@ -139,12 +139,12 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
   const attachment = useAtomValue(activeAttachmentAtom);
 
   if (!annotations || !attachment) {
-    return <div className="pane-empty p-2">{m.annot_view_loading()}</div>;
+    return <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>;
   }
 
   return (
-    <div className="annots-container @container min-h-0 flex-1 overflow-auto px-3 pt-1 pb-8 text-xs">
-      <div className="columns-1 gap-2 @md:columns-2 @md:gap-3 @2xl:columns-3 @4xl:columns-4">
+    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1 zt:pb-8 zt:text-xs">
+      <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
         {annotations.map((annot) => (
           <Annotation
             key={annot.itemID}

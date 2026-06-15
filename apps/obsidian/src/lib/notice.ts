@@ -41,7 +41,7 @@ class NoticeRenderer {
   addAction(cb: (component: ButtonComponent) => void): this {
     if (!this.actionsEl) {
       this.actionsEl = this.containerEl.createDiv("zt-notice-actions");
-      this.actionsEl.addClasses(["flex", "gap-4", "justify-end"]);
+      this.actionsEl.addClasses(["zt:flex", "zt:gap-4", "zt:justify-end"]);
     }
     cb(new ButtonComponent(this.actionsEl));
     return this;
@@ -57,8 +57,12 @@ export class BaseNotice extends Notice {
 
   constructor(message: string | DocumentFragment, duration?: number) {
     super(message, duration);
-    this.containerEl.addClasses(["zt-notice", "max-w-[300px]"]);
+    this.containerEl.addClasses(["zt-notice", "zt:max-w-[300px]"]);
     const messageEl = this.containerEl.querySelector(".notice-message");
-    messageEl?.addClasses(["flex", "flex-col", "gap-[var(--size-2-3)]"]);
+    messageEl?.addClasses([
+      "zt:flex",
+      "zt:flex-col",
+      "zt:gap-[var(--size-2-3)]",
+    ]);
   }
 }
