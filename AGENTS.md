@@ -134,6 +134,56 @@ Split only when at least one of the following is true and the extraction has a c
 
 If none of those apply, a single file with private methods is the simpler answer. Do not pre-split for hypothetical future complexity.
 
+### Resource disposal
+
+Use `using` / `await using` when the resource lifetime matches a lexical block scope — acquired, used, and cleaned up when control exits the enclosing `{}`.
+
+```ts
+// Scope-bound — use `await using`
+await using client = createClient(uri);
+await using stack = new AsyncDisposableStack();
+const abort = stack.use(new DisposableAbortController());
+stack.defer(() => watcher.close());
+
+// Field disposal at arbitrary time — manual call
+this.#currentSink = null;
+await sink[Symbol.asyncDispose]();
+```
+
+Use manual `[Symbol.dispose]()` / `[Symbol.asyncDispose]()` when:
+
+- The resource is stored in a class field and disposed at a different time than scope exit.
+- Ownership is transferred out of the creating scope (e.g., `stack.move()`).
+- Disposal is conditional on runtime logic.
+
+`DisposableStack` / `AsyncDisposableStack` coordinate multi-resource lifetimes. Use the safe-constructor pattern (`await using stack` locally, then `stack.move()` on the success path) so partial construction rolls back automatically.
+
+In tests: prefer `await using` for routine cleanup so disposal is exception-safe. Keep manual calls only when the test is **exercising disposal behavior itself** (drain-on-dispose, idempotent dispose, racing dispose with in-flight work).
+
+```ts
+// Routine cleanup — `await using` handles it
+it("opens the resource", async () => {
+  await using svc = new MyService(deps);
+  await svc.ready;
+  expect(svc.state).toBe("ready");
+});
+
+// Testing disposal behavior — manual call IS the assertion
+it("drains on dispose", async () => {
+  const svc = new MyService(deps);
+  svc.enqueue("pending");
+  await svc[Symbol.asyncDispose]();
+  expect(svc.drained).toBe(true);
+});
+```
+
+`await using` does not support destructuring. When a factory returns a plain object with multiple fields, either make the returned object itself `AsyncDisposable` or use a two-step pattern:
+
+```ts
+await using harness = await makeHarness();
+const { service, settings } = harness;
+```
+
 ### Regex
 
 `arkregex`'s `regex(...)` is a zero-runtime wrapper whose only payoff is **typed capture groups**: named and positional captures come back typed off `.exec()` / `.match()` instead of `string | undefined`, and referencing a group that doesn't exist is a compile error rather than a runtime `undefined`.
