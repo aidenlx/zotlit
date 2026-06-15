@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { USER_LIBRARY_ID } from "@/lib/constants";
 import { type Item } from "@/queries/items";
 
 import { itemToTemplateData, type TemplateCreator } from "./zt-template-item";
@@ -9,7 +10,7 @@ import { itemToTemplateData, type TemplateCreator } from "./zt-template-item";
 function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
   return {
     itemID: 1,
-    libraryID: 1,
+    libraryID: USER_LIBRARY_ID,
     key: "ABC12345",
     indexedKey: "ABC12345",
     dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),

@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { USER_LIBRARY_ID } from "@/lib/constants";
 
 import { CHILD_ITEM_TYPES } from "./_shared";
 
@@ -34,7 +35,10 @@ describe("relations.ts", () => {
       .sync();
 
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.item).toEqual({ key: "ANNOT001", libraryID: 1 });
+    expect(rows[0]?.item).toEqual({
+      key: "ANNOT001",
+      libraryID: USER_LIBRARY_ID,
+    });
     expect(rows[0]?.parentAttachment).toEqual({
       itemID: 200,
       contentType: "application/pdf",

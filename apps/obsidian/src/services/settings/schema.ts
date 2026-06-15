@@ -1,6 +1,8 @@
 import { getLogLevels } from "@logtape/logtape";
 import * as v from "valibot";
 
+import { USER_LIBRARY_ID } from "@zotlit/db";
+
 import {
   DEFAULT_FRONTMATTER_FIELDS,
   DEFAULT_NOTE_FILENAME,
@@ -123,7 +125,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "zotero.auto-refresh": true,
   "zotero.read-mode": "auto",
   "zotero.profile-dir": null,
-  "zotero.citation-library": 1,
+  "zotero.citation-library": USER_LIBRARY_ID,
   "attachment.folder-path": null,
   "attachment.import": true,
 } satisfies Settings);

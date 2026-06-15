@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { type IndexedItem, type Item } from "@zotlit/db";
+import { USER_LIBRARY_ID } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import {
   makeCreator as creator,
@@ -99,17 +100,22 @@ describe("ItemLookup", () => {
     const deps = createDeps({
       settings,
       loadItems: vi.fn((_client, libraryID) => [
-        indexedItem({ key: libraryID === 1 ? "A" : "B", libraryID }),
+        indexedItem({
+          key: libraryID === USER_LIBRARY_ID ? "A" : "B",
+          libraryID,
+        }),
       ]),
       hydrateItems: vi.fn((_client, _libraryID, itemIDs) => {
         const id = itemIDs[0]!;
-        const libraryID = id === "B".charCodeAt(0) ? 2 : 1;
-        return [item({ key: libraryID === 1 ? "A" : "B", libraryID })];
+        const libraryID = id === "B".charCodeAt(0) ? 2 : USER_LIBRARY_ID;
+        return [
+          item({ key: libraryID === USER_LIBRARY_ID ? "A" : "B", libraryID }),
+        ];
       }),
     });
     const lookup = new ItemLookup(deps);
 
-    expect((await lookup.search(""))[0]?.item.libraryID).toBe(1);
+    expect((await lookup.search(""))[0]?.item.libraryID).toBe(USER_LIBRARY_ID);
     settings.setLibrary(2);
     expect((await lookup.search(""))[0]?.item.libraryID).toBe(2);
     expect(deps.loadItems).toHaveBeenCalledTimes(2);
@@ -343,7 +349,7 @@ class FakeDb {
 
 class FakeSettings {
   #value = {
-    "zotero.citation-library": 1,
+    "zotero.citation-library": USER_LIBRARY_ID,
     "citation.editor-suggester": true,
     "citation.show-citekey-in-suggester": false,
   } as Settings;

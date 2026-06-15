@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseAnnotationPosition } from "@/lib/zt-annot-pos";
 
 import { getAnnotationsByKey, getAnnotationsByParent } from "./annotations";
@@ -24,7 +25,7 @@ afterEach(() => {
 
 describe("getAnnotationsByParent", () => {
   it("returns visible annotations sorted by sortIndex", () => {
-    const result = getAnnotationsByParent(db, 9058, 1);
+    const result = getAnnotationsByParent(db, 9058, USER_LIBRARY_ID);
 
     expect(result).toHaveLength(6);
     expect(result.map((annotation) => annotation.key)).toEqual([
@@ -51,7 +52,7 @@ describe("getAnnotationsByParent", () => {
   });
 
   it("narrows fixture PDF positions", () => {
-    const result = getAnnotationsByParent(db, 9058, 1);
+    const result = getAnnotationsByParent(db, 9058, USER_LIBRARY_ID);
     const kinds = Object.fromEntries(
       result.map((annotation) => [
         annotation.key,
@@ -72,7 +73,11 @@ describe("getAnnotationsByParent", () => {
 
 describe("getAnnotationsByKey", () => {
   it("returns requested visible annotation keys", () => {
-    const result = getAnnotationsByKey(db, ["JDJKX3N6", "V78IHLM9"], 1);
+    const result = getAnnotationsByKey(
+      db,
+      ["JDJKX3N6", "V78IHLM9"],
+      USER_LIBRARY_ID,
+    );
 
     expect(result).toHaveLength(2);
     expect(result.map((annotation) => annotation.key)).toEqual([
@@ -82,7 +87,7 @@ describe("getAnnotationsByKey", () => {
   });
 
   it("returns an empty array for empty keys", () => {
-    expect(getAnnotationsByKey(db, [], 1)).toEqual([]);
+    expect(getAnnotationsByKey(db, [], USER_LIBRARY_ID)).toEqual([]);
   });
 });
 

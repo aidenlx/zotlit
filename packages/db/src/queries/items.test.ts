@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createClient, type NodeDatabaseClient } from "@/client/node";
+import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseItemLanguage } from "@/lib/zt-lang";
 
 import { getItemsByID, getItemsByKey, getItemsByLibrary } from "./items";
@@ -28,13 +29,17 @@ afterEach(async () => {
 
 describe("getItemsByLibrary", () => {
   it("excludes deleted items via the deletedItem: false predicate", () => {
-    const keys = new Set(getItemsByLibrary(db, 1).map((item) => item.key));
+    const keys = new Set(
+      getItemsByLibrary(db, USER_LIBRARY_ID).map((item) => item.key),
+    );
 
     expect(keys.has("DELETED")).toBe(false);
   });
 
   it("excludes child item types via itemType.typeName notIn predicate", () => {
-    const keys = new Set(getItemsByLibrary(db, 1).map((item) => item.key));
+    const keys = new Set(
+      getItemsByLibrary(db, USER_LIBRARY_ID).map((item) => item.key),
+    );
 
     expect(keys.has("ATTACH")).toBe(false);
     expect(keys.has("NOTE")).toBe(false);
@@ -42,13 +47,13 @@ describe("getItemsByLibrary", () => {
   });
 
   it("returns lean non-deleted regular items for the requested library", () => {
-    const result = getItemsByLibrary(db, 1);
+    const result = getItemsByLibrary(db, USER_LIBRARY_ID);
 
     expect(result.map((item) => item.key)).toEqual(["USER2", "USER1"]);
     expect(result).toMatchObject([
       {
         itemID: 6,
-        libraryID: 1,
+        libraryID: USER_LIBRARY_ID,
         indexedKey: "USER2",
         itemType: "book",
         creators: [],
@@ -56,7 +61,7 @@ describe("getItemsByLibrary", () => {
       },
       {
         itemID: 1,
-        libraryID: 1,
+        libraryID: USER_LIBRARY_ID,
         indexedKey: "USER1",
         itemType: "journalArticle",
         title: "Alpha kernels",
@@ -68,7 +73,7 @@ describe("getItemsByLibrary", () => {
   });
 
   it("populates journal-article fields and narrows via itemType", () => {
-    const result = getItemsByLibrary(db, 1);
+    const result = getItemsByLibrary(db, USER_LIBRARY_ID);
     const journal = result.find((item) => item.key === "USER1");
     const book = result.find((item) => item.key === "USER2");
 
@@ -100,7 +105,9 @@ describe("getItemsByLibrary", () => {
   });
 
   it("keeps custom fields in the leftover map", () => {
-    const item = getItemsByLibrary(db, 1).find((i) => i.key === "USER1");
+    const item = getItemsByLibrary(db, USER_LIBRARY_ID).find(
+      (i) => i.key === "USER1",
+    );
 
     expect(item?.fields.get("mood")).toBe("curious");
     expect(item?.fields.has("title")).toBe(false);
@@ -108,7 +115,7 @@ describe("getItemsByLibrary", () => {
   });
 
   it("parses dateModified as a UTC instant", () => {
-    const [recent, older] = getItemsByLibrary(db, 1);
+    const [recent, older] = getItemsByLibrary(db, USER_LIBRARY_ID);
 
     // Fixture timestamps are '2024-07-01 00:00:00' (UTC) and
     // '2024-02-01 00:00:00' (UTC) — assert via epoch ms to confirm the UTC
@@ -122,7 +129,7 @@ describe("getItemsByLibrary", () => {
   });
 
   it("stitches creators in Zotero order with field mode", () => {
-    const [recent, item] = getItemsByLibrary(db, 1);
+    const [recent, item] = getItemsByLibrary(db, USER_LIBRARY_ID);
 
     expect(recent?.creators).toEqual([]);
     expect(item?.creators).toEqual([
@@ -162,7 +169,7 @@ describe("getItemsByLibrary", () => {
   });
 
   it("resolves the primary creator type per item type via itemTypeCreatorTypes", () => {
-    const [book, journal] = getItemsByLibrary(db, 1);
+    const [book, journal] = getItemsByLibrary(db, USER_LIBRARY_ID);
 
     // Both fixture item types (book/journalArticle) have `author` as their
     // primaryField=1 entry, so the extras subquery should pick it for both.
@@ -171,7 +178,7 @@ describe("getItemsByLibrary", () => {
   });
 
   it("resolves itemType via the extras subquery to the typeName string", () => {
-    const result = getItemsByLibrary(db, 1);
+    const result = getItemsByLibrary(db, USER_LIBRARY_ID);
 
     // Scalar correlated subquery — each row.itemType must be the raw
     // typeName string, not an array/object from a non-scalar select.
@@ -189,7 +196,7 @@ describe("getItemsByLibrary", () => {
     // first caller's libraryID as a literal, so subsequent calls with a
     // different libraryID silently returned the original library's rows.
     // sql.placeholder("libraryID") makes the cached statement parametric.
-    const lib1 = getItemsByLibrary(db, 1);
+    const lib1 = getItemsByLibrary(db, USER_LIBRARY_ID);
     const lib2 = getItemsByLibrary(db, 2);
 
     expect(lib1.map((item) => item.key)).toEqual(["USER2", "USER1"]);
@@ -197,14 +204,13 @@ describe("getItemsByLibrary", () => {
 
     // Calling lib 1 again after lib 2 must still return lib 1's rows —
     // proves the placeholder rebinds per call rather than being frozen.
-    expect(getItemsByLibrary(db, 1).map((item) => item.key)).toEqual([
-      "USER2",
-      "USER1",
-    ]);
+    expect(
+      getItemsByLibrary(db, USER_LIBRARY_ID).map((item) => item.key),
+    ).toEqual(["USER2", "USER1"]);
   });
 
   it("returns raw language so consumers can parse with their own lookup", () => {
-    const [, item] = getItemsByLibrary(db, 1);
+    const [, item] = getItemsByLibrary(db, USER_LIBRARY_ID);
     if (!item || !("language" in item)) {
       throw new Error("expected USER1 to have a language field");
     }
@@ -223,19 +229,19 @@ describe("getItemsByLibrary", () => {
 
 describe("getItemsByID", () => {
   it("hydrates only requested regular items from the requested library", () => {
-    const result = getItemsByID(db, 1, [1, 6, 2, 3, 7]);
+    const result = getItemsByID(db, USER_LIBRARY_ID, [1, 6, 2, 3, 7]);
     const byID = new Map(result.map((item) => [item.itemID, item]));
 
     expect([...byID.keys()].sort((a, b) => a - b)).toEqual([1, 6]);
     expect(byID.get(1)).toMatchObject({
       key: "USER1",
-      libraryID: 1,
+      libraryID: USER_LIBRARY_ID,
       title: "Alpha kernels",
       citationKey: "doe2024alpha",
     });
     expect(byID.get(6)).toMatchObject({
       key: "USER2",
-      libraryID: 1,
+      libraryID: USER_LIBRARY_ID,
       itemType: "book",
     });
     expect(byID.has(2)).toBe(false);
@@ -244,13 +250,13 @@ describe("getItemsByID", () => {
   });
 
   it("returns an empty array for empty input", () => {
-    expect(getItemsByID(db, 1, [])).toEqual([]);
+    expect(getItemsByID(db, USER_LIBRARY_ID, [])).toEqual([]);
   });
 });
 
 describe("getItemsByKey", () => {
   it("hydrates only requested regular items from the requested library", () => {
-    const result = getItemsByKey(db, 1, [
+    const result = getItemsByKey(db, USER_LIBRARY_ID, [
       "USER1",
       "USER2",
       "DELETED",
@@ -262,13 +268,13 @@ describe("getItemsByKey", () => {
     expect([...byKey.keys()].sort()).toEqual(["USER1", "USER2"]);
     expect(byKey.get("USER1")).toMatchObject({
       itemID: 1,
-      libraryID: 1,
+      libraryID: USER_LIBRARY_ID,
       title: "Alpha kernels",
       citationKey: "doe2024alpha",
     });
     expect(byKey.get("USER2")).toMatchObject({
       itemID: 6,
-      libraryID: 1,
+      libraryID: USER_LIBRARY_ID,
       itemType: "book",
     });
     expect(byKey.has("DELETED")).toBe(false);
@@ -277,11 +283,11 @@ describe("getItemsByKey", () => {
   });
 
   it("returns an empty array for empty input", () => {
-    expect(getItemsByKey(db, 1, [])).toEqual([]);
+    expect(getItemsByKey(db, USER_LIBRARY_ID, [])).toEqual([]);
   });
 
   it("returns an empty array when no key matches", () => {
-    expect(getItemsByKey(db, 1, ["NOPE"])).toEqual([]);
+    expect(getItemsByKey(db, USER_LIBRARY_ID, ["NOPE"])).toEqual([]);
   });
 });
 
