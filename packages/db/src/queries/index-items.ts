@@ -3,10 +3,10 @@ import { type Temporal } from "@zotlit/shared/temporal";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { type CreatorFieldMode } from "@/lib/zt-creator";
+import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupsQuery } from "./_groups";
 import { CHILD_ITEM_TYPES, defineQuery, type QueryRow } from "./_shared";
-import { formatIndexedKey } from "./items";
 
 export interface IndexedCreator {
   firstName: string | null;

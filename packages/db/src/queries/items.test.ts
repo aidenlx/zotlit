@@ -8,12 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createClient, type NodeDatabaseClient } from "@/client/node";
 import { parseItemLanguage } from "@/lib/zt-lang";
 
-import {
-  formatIndexedKey,
-  getItemsByID,
-  getItemsByKey,
-  getItemsByLibrary,
-} from "./items";
+import { getItemsByID, getItemsByKey, getItemsByLibrary } from "./items";
 
 let tempDir: string;
 let dbPath: string;
@@ -223,12 +218,6 @@ describe("getItemsByLibrary", () => {
       code: "en",
       raw: "English",
     });
-  });
-
-  it("formats indexed keys without requiring a database fixture branch", () => {
-    expect(formatIndexedKey("ABCD1234", null)).toBe("ABCD1234");
-    expect(formatIndexedKey("ABCD1234", undefined)).toBe("ABCD1234");
-    expect(formatIndexedKey("ABCD1234", 42)).toBe("ABCD1234g42");
   });
 });
 

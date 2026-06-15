@@ -4,6 +4,7 @@ import { type ItemFields } from "@zotlit/zotero-types";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { type CreatorFieldMode } from "@/lib/zt-creator";
+import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupsQuery } from "./_groups";
 import {
@@ -49,13 +50,6 @@ export type ItemOfType<T extends ItemFields["itemType"]> = Extract<
   Item,
   { itemType: T }
 >;
-
-export function formatIndexedKey(
-  key: string,
-  groupID: number | null | undefined,
-): string {
-  return groupID == null ? key : `${key}g${groupID}`;
-}
 
 const itemFindOptions = {
   columns: {

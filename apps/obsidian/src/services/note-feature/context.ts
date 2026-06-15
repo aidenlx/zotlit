@@ -1,7 +1,10 @@
 import {
+  annotationOpenUri,
   annotationToTemplateData,
   attachmentToTemplateData,
+  itemSelectUri,
   itemToTemplateData,
+  parseIndexedKey,
   type Annotation,
   type Attachment,
   type Item,
@@ -11,11 +14,6 @@ import {
   type TemplateCreator,
 } from "@zotlit/db";
 
-import {
-  annotationBacklink,
-  groupIDFromIndexedKey,
-  itemBacklink,
-} from "./backlink";
 import { type NoteTemplateContext } from "./types";
 
 export interface NoteContextInput {
@@ -43,7 +41,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
   const { item } = input;
   const itemTags = input.tagsByItemID.get(item.itemID) ?? [];
   const itemData = itemToTemplateData(item, itemTags);
-  const groupID = groupIDFromIndexedKey(item.indexedKey, item.key);
+  const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
 
   const attachments: TemplateAttachment[] = input.attachments.map((a) => ({
     ...attachmentToTemplateData(a),
@@ -61,7 +59,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
           input.tagsByItemID.get(annot.itemID) ?? [],
         ),
         imgEmbed: input.imgEmbed(annot, attachment),
-        backlink: annotationBacklink({
+        backlink: annotationOpenUri({
           attachmentKey: attachment.key,
           annotationKey: annot.key,
           pageLabel: annot.pageLabel,
@@ -79,7 +77,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
 
   return {
     ...itemData,
-    backlink: itemBacklink(item.key, groupID),
+    backlink: itemSelectUri(item.key, groupID),
     annotations,
     attachments,
     authors,

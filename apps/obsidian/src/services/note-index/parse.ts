@@ -1,10 +1,8 @@
 import { type CachedMetadata } from "obsidian";
 
-import {
-  FIELD_CITEKEY,
-  FIELD_ZOTERO_KEY,
-  PATTERN_ZOTERO_KEY,
-} from "@/lib/constants";
+import { isIndexedKey } from "@zotlit/db";
+
+import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 
 export interface FileContributions {
   itemKey: string | null;
@@ -34,7 +32,7 @@ export function itemKeyFromFrontmatter(
 ): string | null {
   const value = cache?.frontmatter?.[FIELD_ZOTERO_KEY];
   if (typeof value !== "string") return null;
-  return PATTERN_ZOTERO_KEY.test(value) ? value : null;
+  return isIndexedKey(value) ? value : null;
 }
 
 export function diffContributions(
