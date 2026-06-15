@@ -1,6 +1,12 @@
 import type TurndownService from "turndown";
 
-import { annotationColorToName } from "@zotlit/db";
+import {
+  annotationColorToName,
+  getAttachmentByKey,
+  parseAttachmentPath,
+} from "@zotlit/db";
+import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import { attachmentAbsPath, type AttachmentPathContext } from "@zotlit/db/path";
 
 import { getLogger } from "@/lib/log";
 import { createNoteTurndown } from "@/lib/turndown";
@@ -19,6 +25,14 @@ const EXTRA_BLANK_LINES = /\n{3,}/g;
 export interface ParseNoteDeps {
   /** Obsidian's `TurndownService` global at runtime; the npm package in tests. */
   Turndown: typeof TurndownService;
+  embeddedImage?: NoteEmbeddedImageDeps;
+}
+
+export interface NoteEmbeddedImageDeps {
+  client: NodeDatabaseClient;
+  libraryID: number;
+  pathContext: AttachmentPathContext;
+  resolveEmbed: (sourcePath: string, vaultName: string) => string;
 }
 
 /**
@@ -45,6 +59,9 @@ export function parseNote(deps: ParseNoteDeps, html: string): string {
 
   const td = createNoteTurndown(deps.Turndown, {
     annotationExcerpt: resolveAnnotationExcerpt,
+    embeddedImage: deps.embeddedImage
+      ? resolveEmbeddedImage(deps.embeddedImage)
+      : undefined,
   });
   const md = td.turndown(schema.container.innerHTML);
   return md.replace(EXTRA_BLANK_LINES, "\n\n");
@@ -77,6 +94,40 @@ const resolveAnnotationExcerpt: TurndownService.ReplacementFunction = (
   }
   return renderAnnotationMark(kind, info, content);
 };
+
+function resolveEmbeddedImage(
+  deps: NoteEmbeddedImageDeps,
+): TurndownService.ReplacementFunction {
+  return (_content, node) => {
+    const el = node as Element;
+    const key = el.getAttribute("data-attachment-key");
+    if (!key) return el.outerHTML;
+
+    const attachment = getAttachmentByKey(deps.client, key, deps.libraryID);
+    if (!attachment) {
+      logger.warn("Embedded image attachment not found", { key });
+      return el.outerHTML;
+    }
+
+    const sourcePath = attachmentAbsPath(attachment, deps.pathContext);
+    if (!sourcePath) {
+      logger.warn("Embedded image attachment path is unresolved", { key });
+      return el.outerHTML;
+    }
+
+    const parsed = parseAttachmentPath(attachment.path, attachment.linkMode);
+    const filename =
+      parsed.kind === "storage"
+        ? parsed.filename
+        : basenameFromPath(sourcePath);
+    return deps.resolveEmbed(sourcePath, `${attachment.key}-${filename}`);
+  };
+}
+
+function basenameFromPath(path: string): string {
+  const index = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return index === -1 ? path : path.slice(index + 1);
+}
 
 type AnnotationMarkKind = "highlight" | "underline";
 

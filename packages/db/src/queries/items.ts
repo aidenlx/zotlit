@@ -3,7 +3,7 @@ import { type ItemFields } from "@zotlit/zotero-types";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
-import { type CreatorFieldMode } from "@/lib/zt-item";
+import { type CreatorFieldMode } from "@/lib/zt-creator";
 
 import { groupsQuery } from "./_groups";
 import {

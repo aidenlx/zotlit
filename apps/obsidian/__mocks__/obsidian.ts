@@ -73,6 +73,18 @@ export class Vault {
   }
 }
 
+export class FileSystemAdapter {
+  constructor(readonly basePath = "/vault") {}
+
+  getFullPath(normalizedPath: string): string {
+    return `${this.basePath}/${normalizedPath}`;
+  }
+}
+
+export function normalizePath(path: string): string {
+  return path.replaceAll("\\", "/").replaceAll(/\/+/g, "/").replace(/\/$/, "");
+}
+
 export abstract class EditorSuggest<T> {
   context: EditorSuggestContext | null = null;
   limit = 0;

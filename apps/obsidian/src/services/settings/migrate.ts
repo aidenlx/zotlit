@@ -1,10 +1,5 @@
 import { isPlainObject } from "./classify";
-import {
-  defaults,
-  resolveImgExcerptImport,
-  type LogLevel,
-  type Settings,
-} from "./schema";
+import { defaults, type LogLevel, type Settings } from "./schema";
 
 /**
  * Log4js severity levels
@@ -85,7 +80,7 @@ export interface ZotLitSettingsV0 {
   citationLibrary: number;
 
   // --- Image excerpt importer (v1: services/zotero-db/img-import/settings.ts) ---
-  /** How PDF image-annotation excerpts are brought into the vault: "symlink" links to Zotero's cache, "copy" duplicates the file, false disables import. Default: "copy" on Windows, "symlink" elsewhere. */
+  /** How PDF image-annotation excerpts are brought into the vault: "symlink" links to Zotero's cache, "copy" duplicates the file, false disables import. */
   imgExcerptImport: false | "symlink" | "copy";
   /** Vault-relative folder where imported image excerpts are placed. Default: "ZtImgExcerpt". */
   imgExcerptPath: string;
@@ -138,6 +133,10 @@ export function migrateLegacyV0(raw: unknown): Partial<Settings> {
     out["template.auto-trim-trailing"] = v0.autoTrim[1];
   }
 
+  if (v0.imgExcerptImport !== undefined) {
+    out["attachment.import"] = v0.imgExcerptImport !== false;
+  }
+
   dropLegacyDefaultValues(out);
   return out as Partial<Settings>;
 }
@@ -160,8 +159,7 @@ const V0_KEY_MAP: ReadonlyArray<
   ["autoPairEta", "template.auto-pair-eta"],
   ["autoRefresh", "zotero.auto-refresh"],
   ["citationLibrary", "zotero.citation-library"],
-  ["imgExcerptImport", "img-excerpt.import"],
-  ["imgExcerptPath", "img-excerpt.path"],
+  ["imgExcerptPath", "attachment.folder-path"],
 ];
 
 /**
@@ -203,7 +201,8 @@ function dropLegacyDefaultValues(out: Record<string, unknown>): void {
 }
 
 function getLegacyDefaultValue(key: string): unknown {
-  if (key === "img-excerpt.import") return resolveImgExcerptImport(null);
+  if (key === "attachment.import") return true;
+  if (key === "attachment.folder-path") return "ZtImgExcerpt";
   if (key === "log.level") return "info";
   if (!Object.hasOwn(defaults, key)) return undefined;
   return defaults[key as keyof Settings];

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
 
-import { getAttachmentsByParents } from "./attachments";
+import { getAttachmentByKey, getAttachmentsByParents } from "./attachments";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -80,6 +80,22 @@ describe("getAttachmentsByParents", () => {
       "ATTA1",
       "ATTA2",
     ]);
+  });
+});
+
+describe("getAttachmentByKey", () => {
+  it("returns a visible attachment by library and key", () => {
+    expect(getAttachmentByKey(db, "ATTA1", 1)).toMatchObject({
+      key: "ATTA1",
+      parentItemID: 100,
+      path: "storage:paper.pdf",
+    });
+  });
+
+  it("returns null for missing, deleted, or other-library attachments", () => {
+    expect(getAttachmentByKey(db, "MISSING", 1)).toBeNull();
+    expect(getAttachmentByKey(db, "TRASHED", 1)).toBeNull();
+    expect(getAttachmentByKey(db, "ATTOTHER", 1)).toBeNull();
   });
 });
 

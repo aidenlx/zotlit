@@ -23,6 +23,7 @@ export {
   getAnnotationsByParentAsync,
 } from "./queries/annotations";
 export {
+  getAttachmentByKey,
   getAttachmentsByParents,
   getAttachmentsByParentsAsync,
 } from "./queries/attachments";
@@ -31,7 +32,7 @@ export {
   creatorFieldModeToName,
   type CreatorFieldMode,
   type CreatorFieldModeName,
-} from "./lib/zt-item";
+} from "./lib/zt-creator";
 export {
   tagTypeToName,
   type ItemTag,

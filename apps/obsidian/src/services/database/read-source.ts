@@ -18,22 +18,20 @@
  */
 
 import { delay } from "@std/async";
-import { execFile } from "node:child_process";
-import { constants, copyFile, mkdtemp, rm, stat } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
+import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
 import { type ZoteroReadMode } from "@/services/settings/schema";
 
 export { reapStaleReadTemps } from "./reap-stale-read-temps";
 
 const logger = getLogger(["database", "read-source"]);
-const execFileAsync = promisify(execFile);
 const CLONE_ATTEMPTS = 3;
 const RETRY_BACKOFF_MS = 25;
 
@@ -65,13 +63,6 @@ type FileFingerprint =
     };
 
 type TempReadMode = "reflink" | "copy";
-
-class ReflinkUnsupportedError extends Error {
-  constructor(cause?: unknown) {
-    super("Native reflink is unsupported", { cause });
-    this.name = "ReflinkUnsupportedError";
-  }
-}
 
 export function buildSqliteUri(
   dbPath: string,
@@ -197,35 +188,6 @@ async function copySource(
     return;
   }
   await reflink(sourcePath, targetPath);
-}
-
-async function reflink(sourcePath: string, targetPath: string): Promise<void> {
-  if (process.platform === "darwin") {
-    await reflinkMac(sourcePath, targetPath);
-    return;
-  }
-  if (process.platform === "linux") {
-    await copyFile(sourcePath, targetPath, constants.COPYFILE_FICLONE_FORCE);
-    return;
-  }
-  throw new ReflinkUnsupportedError();
-}
-
-/**
- * Uses `cp -c` because Node's macOS copy-file flags do not expose a dependable
- * clonefile primitive. `cp -c` first tries `clonefile(2)` and falls back to
- * `copyfile(2)` on the same volume when clonefile is unsupported (accepted); a
- * cross-device clone exits non-zero and is treated as a capability failure.
- *
- * @see https://github.com/libuv/libuv/pull/2578
- * @see https://github.com/libuv/libuv/pull/3654
- * @see https://github.com/libuv/libuv/pull/3987
- */
-async function reflinkMac(
-  sourcePath: string,
-  targetPath: string,
-): Promise<void> {
-  await execFileAsync("cp", ["-c", sourcePath, targetPath]);
 }
 
 async function snapshotPair(

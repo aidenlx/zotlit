@@ -11,6 +11,7 @@
     ".": "./dist/index.mjs",
     "./client/node": "./dist/client/node.mjs",
     "./client/web": "./dist/client/web.mjs",
+    "./path": "./dist/path.mjs",
     "./schema": "./dist/schema.mjs",
     "./package.json": "./package.json"
   },

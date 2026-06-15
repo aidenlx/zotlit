@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { type Attachment } from "@zotlit/db";
+import { attachmentAbsPath } from "@zotlit/db/path";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { attachmentAbsPath, attachmentFileLink } from "./file-link";
+import { attachmentFileLink } from "./file-link";
 
 function makeAttachment(overrides: Partial<Attachment>): Attachment {
   return {

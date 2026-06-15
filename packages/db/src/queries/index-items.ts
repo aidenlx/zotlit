@@ -2,7 +2,7 @@ import { type Temporal } from "@zotlit/shared/temporal";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
-import { type CreatorFieldMode } from "@/lib/zt-item";
+import { type CreatorFieldMode } from "@/lib/zt-creator";
 
 import { groupsQuery } from "./_groups";
 import { CHILD_ITEM_TYPES, defineQuery, type QueryRow } from "./_shared";

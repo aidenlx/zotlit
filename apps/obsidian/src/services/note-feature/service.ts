@@ -17,9 +17,14 @@ import {
   type ItemTag,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import { PATTERN_ZOTERO_KEY, MARKER_END, MARKER_START } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
+import {
+  type AttachmentImport,
+  type AttachmentImportService,
+} from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { Service } from "@/services/service-base";
@@ -28,6 +33,7 @@ import { formatManagedRegion } from "@/services/template/eta";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import { groupIDFromIndexedKey } from "./backlink";
 import { buildNoteContext } from "./context";
 import { attachmentFileLink } from "./file-link";
 import { buildFrontmatter, mergeManagedFrontmatter } from "./frontmatter";
@@ -49,6 +55,7 @@ export interface NoteFeaturesDeps {
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
   settings: SettingsService;
+  attachmentImport: AttachmentImportService;
 }
 
 /**
@@ -62,6 +69,7 @@ export class NoteFeatures extends Service<void> {
   readonly #db;
   readonly #zoteroPref;
   readonly #settings;
+  readonly #attachmentImport;
 
   readonly ready: Promise<void> = Promise.resolve();
 
@@ -72,6 +80,7 @@ export class NoteFeatures extends Service<void> {
     this.#db = deps.db;
     this.#zoteroPref = deps.zoteroPref;
     this.#settings = deps.settings;
+    this.#attachmentImport = deps.attachmentImport;
   }
 
   /**
@@ -83,10 +92,12 @@ export class NoteFeatures extends Service<void> {
    */
   async create(item: Item): Promise<TFile> {
     const settings = await this.#settings.loaded;
-    const context = this.#buildContext(item);
+    const titleContext = this.#buildContext(item, {
+      resolveEmbed: () => "",
+    });
 
     const filename = this.#renderFilename(
-      context,
+      titleContext,
       settings["template.filename"],
     );
     const folder = normalizePath(settings["note.literature-folder"]);
@@ -97,6 +108,8 @@ export class NoteFeatures extends Service<void> {
 
     await this.#ensureFolder(folder);
 
+    const attachmentImport = await this.#attachmentImport.prepare(path);
+    const context = this.#buildContext(item, attachmentImport);
     const body = this.#template.render("note", context);
     const fm = buildFrontmatter(context, {
       fields: settings["note.frontmatter-fields"],
@@ -106,6 +119,7 @@ export class NoteFeatures extends Service<void> {
     const content = `---\n${stringifyYaml(fm)}---\n\n${body}`;
 
     const file = await this.#app.vault.create(path, content);
+    await attachmentImport.flush();
     logger.info("Created literature note", {
       path,
       itemKey: item.indexedKey,
@@ -114,7 +128,11 @@ export class NoteFeatures extends Service<void> {
   }
 
   async update(file: TFile, indexedKey: string): Promise<UpdateResult> {
-    const context = await this.#contextForIndexedKey(indexedKey);
+    const attachmentImport = await this.#attachmentImport.prepare(file.path);
+    const context = await this.#contextForIndexedKey(
+      indexedKey,
+      attachmentImport,
+    );
     await this.#refreshFrontmatter(file, context);
 
     const region = this.#renderManagedRegion(context);
@@ -127,6 +145,7 @@ export class NoteFeatures extends Service<void> {
       replaced = true;
       return content.replace(MANAGED_REGION, region);
     });
+    await attachmentImport.flush();
 
     if (duplicateCount > 0) {
       logger.warn("Literature note has duplicate managed regions", {
@@ -143,13 +162,18 @@ export class NoteFeatures extends Service<void> {
   }
 
   async overwrite(file: TFile, indexedKey: string): Promise<void> {
-    const context = await this.#contextForIndexedKey(indexedKey);
+    const attachmentImport = await this.#attachmentImport.prepare(file.path);
+    const context = await this.#contextForIndexedKey(
+      indexedKey,
+      attachmentImport,
+    );
     await this.#refreshFrontmatter(file, context);
     const body = this.#template.render("note", context);
     await this.#app.vault.process(file, (content) => {
       const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
       return `${prefix}${body}`;
     });
+    await attachmentImport.flush();
     logger.info("Overwrote literature note", {
       path: file.path,
       itemKey: indexedKey,
@@ -165,7 +189,10 @@ export class NoteFeatures extends Service<void> {
    * Build the full note context for `item`. Synchronous DB reads via the active
    * client; throws {@link DatabaseError} if the database is not ready.
    */
-  #buildContext(item: Item): NoteTemplateContext {
+  #buildContext(
+    item: Item,
+    attachmentImport: Pick<AttachmentImport, "resolveEmbed">,
+  ): NoteTemplateContext {
     const client: NodeDatabaseClient = this.#db.client;
     const libraryID = item.libraryID;
 
@@ -197,6 +224,7 @@ export class NoteFeatures extends Service<void> {
 
     const dataDir = this.#zoteroPref.dataDir;
     const baseAttachmentPath = this.#zoteroPref.baseAttachmentPath;
+    const groupID = groupIDFromIndexedKey(item.indexedKey, item.key);
 
     return buildNoteContext({
       item,
@@ -205,11 +233,21 @@ export class NoteFeatures extends Service<void> {
       tagsByItemID,
       authorsShort: creatorSummary(item),
       fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),
+      imgEmbed: (annotation) =>
+        attachmentImport.resolveEmbed(
+          resolveAnnotCachePath({
+            annotKey: annotation.key,
+            groupID,
+            dataDir,
+          }),
+          `${annotation.key}.png`,
+        ),
     });
   }
 
   async #contextForIndexedKey(
     indexedKey: string,
+    attachmentImport: Pick<AttachmentImport, "resolveEmbed">,
   ): Promise<NoteTemplateContext> {
     await this.#db.ready;
     const client = this.#db.client;
@@ -218,7 +256,7 @@ export class NoteFeatures extends Service<void> {
 
     const [item] = getItemsByKey(client, parsed.libraryID, [parsed.key]);
     if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
-    return this.#buildContext(item);
+    return this.#buildContext(item, attachmentImport);
   }
 
   async #refreshFrontmatter(

@@ -30,6 +30,8 @@ export interface NoteContextInput {
   authorsShort: string;
   /** Resolve an attachment to its vault link; `""` when unresolvable. */
   fileLink: (attachment: Attachment) => string;
+  /** Resolve an annotation image excerpt to its vault embed. */
+  imgEmbed: (annotation: Annotation, parentAttachment: Attachment) => string;
 }
 
 /**
@@ -58,8 +60,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
           annot,
           input.tagsByItemID.get(annot.itemID) ?? [],
         ),
-        // Image-excerpt import is deferred (Stage 9); empty for now.
-        imgEmbed: "",
+        imgEmbed: input.imgEmbed(annot, attachment),
         backlink: annotationBacklink({
           attachmentKey: attachment.key,
           annotationKey: annot.key,
