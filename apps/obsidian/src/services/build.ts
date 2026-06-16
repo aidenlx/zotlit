@@ -1,6 +1,7 @@
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
+import { CitekeyClick } from "./citekey-click/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
@@ -80,6 +81,16 @@ export function buildServices(
           zoteroPref,
           settings,
           attachmentImport,
+        }),
+    })
+    .use({
+      citekeyClick: ({ noteIndex, noteFeatures, db, settings }) =>
+        new CitekeyClick({
+          app: plugin.app,
+          noteIndex,
+          noteFeatures,
+          db,
+          settings,
         }),
     });
 }

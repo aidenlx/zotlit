@@ -28,6 +28,7 @@
     "eta": "^4.6.0",
     "fflate": "^0.8.2",
     "jotai": "^2.10.0",
+    "monkey-around": "3.0.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-textarea-autosize": "^8.5.9",
