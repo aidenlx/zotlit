@@ -9,27 +9,33 @@ import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
 import {
   activeAttachmentAtom,
-  allAttachmentsAtom,
   annotationsAtom,
   attachmentIDAtom,
-  docAtom,
-  followAtom,
-  tagsAtom,
+  attachmentsAtom,
+  itemKeyAtom,
 } from "./store";
 
 export function AnnotView() {
-  const doc = useAtomValue(docAtom);
+  const itemKey = useAtomValue(itemKeyAtom);
+  const attachments = useAtomValue(attachmentsAtom);
   const [collapsed, setCollapsed] = useState(false);
 
+  const hasItem =
+    itemKey !== null && attachments !== null && attachments.length > 0;
+
   return (
-    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
+    <div className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
       <Toolbar
-        hasDoc={doc !== null}
+        hasItem={hasItem}
         collapsed={collapsed}
         onToggleCollapsed={() => setCollapsed((c) => !c)}
       />
-      {doc === null ? (
+      {itemKey === null ? (
         <div className="pane-empty zt:p-2">{m.annot_view_empty()}</div>
+      ) : attachments === null ? (
+        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
+      ) : attachments.length === 0 ? (
+        <div className="pane-empty zt:p-2">{m.annot_view_no_attachments()}</div>
       ) : (
         <AnnotList collapsed={collapsed} />
       )}
@@ -38,26 +44,19 @@ export function AnnotView() {
 }
 
 interface ToolbarProps {
-  hasDoc: boolean;
+  hasItem: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
 
-function Toolbar({ hasDoc, collapsed, onToggleCollapsed }: ToolbarProps) {
+function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
   const actions = useContext(AnnotActionsContext);
-  const doc = useAtomValue(docAtom);
 
   return (
-    <div className="nav-header">
-      <div className="nav-buttons-container">
-        {hasDoc && doc && (
+    <div className="nav-header zt:flex zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
+      <div className="nav-buttons-container zt:@sm:w-auto zt:@sm:shrink-0">
+        {hasItem && (
           <>
-            <IconButton
-              className="nav-action-button"
-              icon="info"
-              onClick={() => actions.onShowDetails("doc-item", doc.itemID)}
-              {...tooltipAttrs(m.annot_view_details_tooltip())}
-            />
             <IconButton
               className="nav-action-button"
               icon={collapsed ? "chevrons-up-down" : "chevrons-down-up"}
@@ -77,65 +76,38 @@ function Toolbar({ hasDoc, collapsed, onToggleCollapsed }: ToolbarProps) {
             />
           </>
         )}
-        <FollowButton />
       </div>
-      {hasDoc && <AttachmentSelector />}
+      {hasItem && <AttachmentSelector />}
     </div>
   );
 }
 
-function FollowButton() {
-  const follow = useAtomValue(followAtom);
-  const actions = useContext(AnnotActionsContext);
-
-  return (
-    <span className="zt:flex zt:items-center">
-      <IconButton
-        className="nav-action-button"
-        icon={follow === null ? "unlink" : "link"}
-        active={follow === null}
-        onClick={(e) => actions.onSetFollow(e)}
-        {...tooltipAttrs(m.annot_view_follow_tooltip())}
-      />
-      {follow !== null && (
-        <span className="zt:ml-1 zt:text-xs zt:text-muted-foreground">
-          {follow === "ob-note" ? "ob" : "zt"}
-        </span>
-      )}
-    </span>
-  );
-}
-
 function AttachmentSelector() {
-  const attachments = useAtomValue(allAttachmentsAtom);
+  const attachments = useAtomValue(attachmentsAtom);
   const active = useAtomValue(activeAttachmentAtom);
   const setAttachmentID = useSetAtom(attachmentIDAtom);
 
-  if (!attachments)
-    return <span className="zt:text-xs">{m.annot_view_loading()}</span>;
-  if (attachments.length === 0) {
-    return <span className="zt:text-xs">{m.annot_view_no_attachments()}</span>;
-  }
-  if (attachments.length === 1) return null;
+  if (!attachments || attachments.length <= 1) return null;
 
   return (
-    <select
-      className="dropdown"
-      value={String(active?.itemID ?? "")}
-      onChange={(e) => setAttachmentID(Number(e.currentTarget.value))}
-    >
-      {attachments.map((atch) => (
-        <option key={atch.itemID} value={atch.itemID}>
-          ({atch.annotCount}) {atch.path?.replace(/^storage:/, "")}
-        </option>
-      ))}
-    </select>
+    <div className="zt:mx-auto zt:w-full zt:max-w-xs zt:min-w-0 zt:@sm:mx-0">
+      <select
+        className="dropdown zt:w-full zt:truncate"
+        value={String(active?.itemID ?? "")}
+        onChange={(e) => setAttachmentID(Number(e.currentTarget.value))}
+      >
+        {attachments.map((atch) => (
+          <option key={atch.itemID} value={atch.itemID}>
+            ({atch.annotCount}) {atch.path?.replace(/^storage:/, "")}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
 function AnnotList({ collapsed }: { collapsed: boolean }) {
   const annotations = useAtomValue(annotationsAtom);
-  const tags = useAtomValue(tagsAtom);
   const attachment = useAtomValue(activeAttachmentAtom);
 
   if (!annotations || !attachment) {
@@ -146,12 +118,7 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1 zt:pb-8 zt:text-xs">
       <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
         {annotations.map((annot) => (
-          <Annotation
-            key={annot.itemID}
-            annot={annot}
-            tags={tags[annot.itemID] ?? []}
-            collapsed={collapsed}
-          />
+          <Annotation key={annot.itemID} annot={annot} collapsed={collapsed} />
         ))}
       </div>
     </div>

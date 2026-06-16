@@ -1,20 +1,24 @@
 import { useContext } from "react";
 
-import { annotationTypeToName, type AnnotationType } from "@zotlit/db";
+import {
+  annotationTypeToName,
+  type AnnotationType,
+  type AnnotViewItem,
+} from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
-import { IconButton } from "@/components/obsidian/icon-button";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import * as m from "@/paraglide/messages";
 
 import { AnnotActionsContext } from "./actions";
-import { type AnnotItem, type TagItem } from "./store";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
   underline: "underline",
   image: "frame",
-  text: "text-select",
+  ink: "pen-line",
+  text: "type",
+  note: "sticky-note",
 };
 
 function typeIcon(type: AnnotationType): string {
@@ -27,22 +31,21 @@ function typeLabel(type: AnnotationType): string {
 }
 
 interface AnnotationProps {
-  annot: AnnotItem;
-  tags: TagItem[];
+  annot: AnnotViewItem;
   collapsed: boolean;
 }
 
-export function Annotation({ annot, tags, collapsed }: AnnotationProps) {
+export function Annotation({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
   const color = annot.color ?? undefined;
 
   return (
     <div
-      className="zt-annot-card zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:@md:mb-3"
+      className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:@md:mb-3"
       data-id={annot.itemID}
     >
       <div
-        className="zt:flex zt:cursor-context-menu zt:items-center zt:gap-1 zt:bg-card zt:px-2"
+        className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2"
         onContextMenu={(e) => actions.onMoreOptions(e, annot)}
       >
         <span
@@ -53,46 +56,33 @@ export function Annotation({ annot, tags, collapsed }: AnnotationProps) {
         >
           <Icon name={typeIcon(annot.type)} size={16} style={{ color }} />
         </span>
-        <div className="zt:flex zt:items-center zt:gap-1 zt:opacity-0 zt:transition-opacity zt:[--icon-size:16px] zt:hover:opacity-100">
-          <IconButton
-            icon="info"
-            onClick={() => actions.onShowDetails("annot", annot.itemID)}
-            {...tooltipAttrs(m.annot_view_details_tooltip())}
-          />
-          <IconButton
-            icon="more-vertical"
-            onClick={(e) => actions.onMoreOptions(e, annot)}
-            {...tooltipAttrs(m.annot_view_more_tooltip())}
-          />
-        </div>
-        <div className="zt:flex-1" />
         <PageLabel
           page={annot.pageLabel}
           backlink={actions.getBacklink(annot)}
         />
+        <div className="zt:flex-1" />
+        <span
+          role="button"
+          tabIndex={0}
+          className="zt:flex zt:cursor-pointer zt:items-center zt:text-muted-foreground zt:transition-colors zt:hover:text-foreground"
+          onClick={(e) => actions.onMoreOptions(e, annot)}
+          {...tooltipAttrs(m.annot_view_more_tooltip())}
+        >
+          <Icon name="more-horizontal" size={16} />
+        </span>
       </div>
 
-      <div className="zt:px-2 zt:py-1">
-        <blockquote
-          className={cn(
-            "zt:border-l-2 zt:pl-2 zt:leading-tight",
-            collapsed && "zt:line-clamp-3",
-          )}
-          style={{ borderLeftColor: color ?? "var(--interactive-accent)" }}
-        >
-          <Excerpt annot={annot} collapsed={collapsed} />
-        </blockquote>
-      </div>
+      <ExcerptBlock annot={annot} collapsed={collapsed} color={color} />
 
       {annot.comment && (
-        <div className="zt:overflow-x-auto zt:px-2 zt:py-1 zt:break-words zt:whitespace-pre-wrap zt:text-muted-foreground zt:select-text">
+        <div className="zt:warp-break-words zt:overflow-x-auto zt:px-2 zt:py-1 zt:whitespace-pre-wrap zt:text-muted-foreground zt:select-text">
           {annot.comment}
         </div>
       )}
 
-      {tags.length > 0 && (
+      {annot.tags.length > 0 && (
         <div className="zt:flex zt:flex-wrap zt:gap-1 zt:px-2 zt:py-1">
-          {tags.map((tag) => (
+          {annot.tags.map((tag) => (
             <a key={tag.tagID} className="tag">
               {tag.name}
             </a>
@@ -103,34 +93,57 @@ export function Annotation({ annot, tags, collapsed }: AnnotationProps) {
   );
 }
 
-function Excerpt({
+function ExcerptBlock({
   annot,
   collapsed,
+  color,
 }: {
-  annot: AnnotItem;
+  annot: AnnotViewItem;
   collapsed: boolean;
+  color: string | undefined;
 }) {
   const actions = useContext(AnnotActionsContext);
   const name = annotationTypeToName(annot.type);
 
-  if (name === "highlight" || name === "underline" || name === "text") {
-    return <p className="zt:select-text">{annot.text}</p>;
-  }
-  if (name === "image") {
-    return (
+  if ((name === "note" || name === "text") && !annot.text) return null;
+
+  const isImage = name === "image" || name === "ink";
+
+  let content: React.ReactNode;
+  if (isImage) {
+    content = (
       <img
         className={cn(
-          "zt:w-full",
-          collapsed
-            ? "zt:max-h-20 zt:object-cover zt:object-left-top"
-            : "zt:object-scale-down",
+          "zt:w-full zt:object-contain zt:object-left",
+          collapsed && "zt:max-h-20",
         )}
         src={actions.getImgSrc(annot)}
         alt={annot.text ?? `Area excerpt for page ${annot.pageLabel ?? "?"}`}
       />
     );
+  } else if (annot.text) {
+    content = <p className="zt:select-text">{annot.text}</p>;
+  } else {
+    content = m.annot_view_unsupported_type({ type: name });
   }
-  return <>{m.annot_view_unsupported_type({ type: name })}</>;
+
+  return (
+    <div className="zt:px-2 zt:py-1">
+      <blockquote
+        className={cn(
+          "zt:border-l-2 zt:border-l-(--zt-annot-color) zt:pl-2 zt:leading-tight",
+          collapsed && !isImage && "zt:line-clamp-3",
+        )}
+        style={
+          {
+            "--zt-annot-color": color ?? "var(--interactive-accent)",
+          } as React.CSSProperties
+        }
+      >
+        {content}
+      </blockquote>
+    </div>
+  );
 }
 
 function PageLabel({
@@ -145,7 +158,7 @@ function PageLabel({
   if (backlink) {
     return (
       <a
-        className="external-link zt:text-xs"
+        className="external-link zt:font-medium"
         href={backlink}
         {...tooltipAttrs(m.annot_view_open_page())}
       >
@@ -153,5 +166,5 @@ function PageLabel({
       </a>
     );
   }
-  return <span className="zt:text-xs">{label}</span>;
+  return <span className="zt:font-medium">{label}</span>;
 }

@@ -1,17 +1,37 @@
 import "./style.css";
-import { type Plugin } from "obsidian";
+import { type App, type Plugin } from "obsidian";
 
 import * as m from "@/paraglide/messages";
+import { type DatabaseService } from "@/services/database/service";
+import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { ANNOT_VIEW_TYPE, AnnotationView } from "./view";
+import { ANNOT_VIEW_TYPE, AnnotationView, type AnnotViewDeps } from "./view";
 
 type AnnotViewPlugin = Pick<
   Plugin,
   "registerView" | "addCommand" | "addRibbonIcon" | "app"
 >;
 
-export function registerAnnotView(plugin: AnnotViewPlugin): void {
-  plugin.registerView(ANNOT_VIEW_TYPE, (leaf) => new AnnotationView(leaf));
+export interface AnnotViewRegistrationDeps {
+  app: App;
+  db: DatabaseService;
+  zoteroPref: ZoteroPrefService;
+}
+
+export function registerAnnotView(
+  plugin: AnnotViewPlugin,
+  deps: AnnotViewRegistrationDeps,
+): void {
+  const viewDeps: AnnotViewDeps = {
+    app: deps.app,
+    db: deps.db,
+    zoteroPref: deps.zoteroPref,
+  };
+
+  plugin.registerView(
+    ANNOT_VIEW_TYPE,
+    (leaf) => new AnnotationView(leaf, viewDeps),
+  );
 
   const open = () => {
     void activateView(plugin);

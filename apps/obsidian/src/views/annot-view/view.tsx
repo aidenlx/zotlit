@@ -1,35 +1,61 @@
 import { createStore, Provider } from "jotai";
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import { type App, ItemView, type WorkspaceLeaf } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
 
-import * as m from "@/paraglide/messages";
-
-import { AnnotView } from "./AnnotView";
-import { mockAnnotations, mockAttachments, mockDoc, mockTags } from "./mock";
 import {
-  allAttachmentsAtom,
+  getAnnotViewAnnotations,
+  getAnnotViewAttachments,
+  getLibraries,
+  parseIndexedKey,
+  USER_LIBRARY_ID,
+  type Library,
+} from "@zotlit/db";
+
+import { getLogger } from "@/lib/log";
+import * as m from "@/paraglide/messages";
+import { type DatabaseService } from "@/services/database/service";
+import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
+import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+
+import {
+  AnnotActionsContext,
+  createAnnotActions,
+  type AnnotActions,
+} from "./actions";
+import { AnnotView } from "./AnnotView";
+import {
   annotationsAtom,
-  docAtom,
-  tagsAtom,
+  attachmentIDAtom,
+  attachmentsAtom,
+  groupIDAtom,
+  itemKeyAtom,
 } from "./store";
 
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
-export class AnnotationView extends ItemView {
-  // Per-instance jotai store keeps each leaf's state isolated; module-scope
-  // atoms hold the keys, this store holds the values.
-  readonly #store = createStore();
-  #root: Root | null = null;
+const logger = getLogger(["views", "annot-view"]);
 
-  constructor(leaf: WorkspaceLeaf) {
+const STORAGE_KEY_PREFIX = "zotlit-annot-atch-";
+
+export interface AnnotViewDeps {
+  app: App;
+  db: DatabaseService;
+  zoteroPref: ZoteroPrefService;
+}
+
+export class AnnotationView extends ItemView {
+  readonly #store = createStore();
+  readonly #deps: AnnotViewDeps;
+  #root: Root | null = null;
+  #actions: AnnotActions | null = null;
+  #groupID: number | null = null;
+  #librariesCache: Library[] | null = null;
+  #loadDisposables: DisposableStack | null = null;
+
+  constructor(leaf: WorkspaceLeaf, deps: AnnotViewDeps) {
     super(leaf);
     this.contentEl.addClass("zt-root");
-    // Stage 8 replaces this seed with live DB queries reacting to the active
-    // file / Zotero reader; for now the view renders fixed mock data.
-    this.#store.set(docAtom, mockDoc);
-    this.#store.set(allAttachmentsAtom, mockAttachments);
-    this.#store.set(annotationsAtom, mockAnnotations);
-    this.#store.set(tagsAtom, mockTags);
+    this.#deps = deps;
   }
 
   override getViewType(): string {
@@ -45,18 +71,206 @@ export class AnnotationView extends ItemView {
   }
 
   protected override async onOpen(): Promise<void> {
-    // Scope Tailwind's preflight to this view's DOM (see `.zt-root` in zt-main.css).
-    this.contentEl.classList.add("zt-root");
+    this.#actions = createAnnotActions({
+      app: this.#deps.app,
+      getGroupID: () => this.#groupID,
+      getDataDir: () => this.#deps.zoteroPref.dataDir,
+      refresh: () => this.#deps.db.refresh(),
+    });
+
     this.#root = createRoot(this.contentEl);
     this.#root.render(
       <Provider store={this.#store}>
-        <AnnotView />
+        <AnnotActionsContext value={this.#actions}>
+          <AnnotView />
+        </AnnotActionsContext>
       </Provider>,
     );
+
+    this.register(
+      this.#deps.db.on("changed", () => {
+        logger.debug("DB changed, refreshing annot view");
+        this.#librariesCache = null;
+        this.#resolveAndLoad();
+      }),
+    );
+
+    this.registerEvent(
+      this.#deps.app.workspace.on("active-leaf-change", () => {
+        this.#resolveAndLoad();
+      }),
+    );
+
+    this.registerEvent(
+      this.#deps.app.metadataCache.on("changed", (file) => {
+        const activeFile = this.#deps.app.workspace.getActiveFile();
+        if (activeFile && file.path === activeFile.path) {
+          this.#resolveAndLoad();
+        }
+      }),
+    );
+
+    await this.#deps.db.ready;
+    this.#resolveAndLoad();
   }
 
   protected override async onClose(): Promise<void> {
+    this.#loadDisposables?.[Symbol.dispose]();
+    this.#loadDisposables = null;
     this.#root?.unmount();
     this.#root = null;
+    this.#actions = null;
+  }
+
+  #resolveAndLoad(): void {
+    const { db } = this.#deps;
+    if (db.state !== "ready") {
+      this.#clearState();
+      return;
+    }
+
+    const activeFile = this.#deps.app.workspace.getActiveFile();
+    if (!activeFile) {
+      this.#clearState();
+      return;
+    }
+
+    const cache = this.#deps.app.metadataCache.getFileCache(activeFile);
+    const indexedKey = itemKeyFromFrontmatter(cache);
+    if (!indexedKey) {
+      this.#clearState();
+      return;
+    }
+
+    const parsed = parseIndexedKey(indexedKey);
+    if (!parsed) {
+      this.#clearState();
+      return;
+    }
+
+    const { key, groupID } = parsed;
+    const libraryID = this.#resolveLibraryID(groupID);
+    if (libraryID === null) {
+      logger.warn("Could not resolve library for group {groupID}", { groupID });
+      this.#clearState();
+      return;
+    }
+
+    this.#groupID = groupID;
+    this.#store.set(groupIDAtom, groupID);
+    this.#store.set(itemKeyAtom, indexedKey);
+
+    try {
+      const client = db.client;
+      const attachments = getAnnotViewAttachments(client, key, libraryID);
+      this.#store.set(attachmentsAtom, attachments);
+
+      this.#loadDisposables?.[Symbol.dispose]();
+      this.#loadDisposables = new DisposableStack();
+
+      const savedAtchID = this.#loadAttachmentSelection(indexedKey);
+      if (
+        savedAtchID !== null &&
+        attachments.some((a) => a.itemID === savedAtchID)
+      ) {
+        this.#store.set(attachmentIDAtom, savedAtchID);
+      } else if (attachments.length > 0) {
+        this.#store.set(attachmentIDAtom, attachments[0]!.itemID);
+      } else {
+        this.#store.set(attachmentIDAtom, null);
+        this.#store.set(annotationsAtom, null);
+        return;
+      }
+
+      const activeAtchID = this.#store.get(attachmentIDAtom);
+      if (activeAtchID !== null) {
+        const annotations = getAnnotViewAnnotations(
+          client,
+          activeAtchID,
+          libraryID,
+        );
+        this.#store.set(annotationsAtom, annotations);
+      }
+
+      this.#loadDisposables.defer(
+        this.#store.sub(attachmentIDAtom, () => {
+          const atchID = this.#store.get(attachmentIDAtom);
+          if (atchID !== null) {
+            this.#saveAttachmentSelection(indexedKey, atchID);
+            try {
+              const annots = getAnnotViewAnnotations(
+                db.client,
+                atchID,
+                libraryID,
+              );
+              this.#store.set(annotationsAtom, annots);
+            } catch (err) {
+              logger.warn(
+                "Failed to load annotations for attachment {atchID}",
+                {
+                  atchID,
+                  error: err,
+                },
+              );
+            }
+          }
+        }),
+      );
+
+      logger.debug("Annot view loaded", {
+        key,
+        libraryID,
+        attachments: attachments.length,
+      });
+    } catch (err) {
+      logger.warn("Failed to load annot view data", { key, error: err });
+      this.#clearState();
+    }
+  }
+
+  #resolveLibraryID(groupID: number | null): number | null {
+    if (groupID === null) return USER_LIBRARY_ID;
+    const libraries = this.#getLibraries();
+    if (!libraries) return null;
+    const lib = libraries.find((l) => l.groupID === groupID);
+    return lib?.libraryID ?? null;
+  }
+
+  #getLibraries(): Library[] | null {
+    if (this.#librariesCache) return this.#librariesCache;
+    try {
+      this.#librariesCache = getLibraries(this.#deps.db.client);
+      return this.#librariesCache;
+    } catch {
+      return null;
+    }
+  }
+
+  #clearState(): void {
+    this.#loadDisposables?.[Symbol.dispose]();
+    this.#loadDisposables = null;
+    this.#store.set(itemKeyAtom, null);
+    this.#store.set(attachmentsAtom, null);
+    this.#store.set(attachmentIDAtom, null);
+    this.#store.set(annotationsAtom, null);
+    this.#groupID = null;
+  }
+
+  #loadAttachmentSelection(indexedKey: string): number | null {
+    const raw = this.#deps.app.loadLocalStorage(
+      STORAGE_KEY_PREFIX + indexedKey,
+    );
+    if (typeof raw === "string") {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  }
+
+  #saveAttachmentSelection(indexedKey: string, atchID: number): void {
+    this.#deps.app.saveLocalStorage(
+      STORAGE_KEY_PREFIX + indexedKey,
+      String(atchID),
+    );
   }
 }
