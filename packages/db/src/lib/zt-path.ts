@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { annotationHasCacheImage, type Annotation } from "./zt-annot";
 import { parseAttachmentPath, type Attachment } from "./zt-attach";
 
 export interface AttachmentPathContext {
@@ -12,30 +13,32 @@ export interface AttachmentPathContext {
   baseAttachmentPath: string | null;
 }
 
-export interface ResolveAnnotCachePathOptions {
-  annotKey: string;
-  /** Group library ID; `null` for the user library. */
-  groupID: number | null;
+export interface AnnotCachePathContext {
   /** Zotero data directory. */
   dataDir: string;
+  /** Group library ID; `null` for the user library. */
+  groupID: number | null;
 }
 
 /**
- * Cache path for an image/ink annotation's rendered PNG. Mirrors Zotero's
- * `getCacheImagePath` joining the per-library cache dir (`library` for the
- * user library, `groups/<groupID>` otherwise) with `<key>.png`.
+ * Absolute path to an annotation's rendered excerpt PNG, or `null` when the
+ * annotation type has no cached image (everything but `image` and `ink`).
+ * Mirrors Zotero's `getCacheImagePath`, joining the per-library cache dir
+ * (`library` for the user library, `groups/<groupID>` otherwise) with
+ * `<key>.png`, gated by the same `['image', 'ink']` rule Zotero uses to decide
+ * whether a cache file exists at all.
  *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L46-L49
- * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L103-L116
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L62
  */
-export function resolveAnnotCachePath({
-  annotKey,
-  groupID,
-  dataDir,
-}: ResolveAnnotCachePathOptions): string {
+export function resolveAnnotCachePath(
+  annotation: Pick<Annotation, "key" | "type">,
+  { dataDir, groupID }: AnnotCachePathContext,
+): string | null {
+  if (!annotationHasCacheImage(annotation.type)) return null;
   const libraryPath =
     groupID === null ? "library" : join("groups", String(groupID));
-  return join(dataDir, "cache", libraryPath, `${annotKey}.png`);
+  return join(dataDir, "cache", libraryPath, `${annotation.key}.png`);
 }
 
 /**

@@ -132,6 +132,30 @@ describe("buildNoteContext", () => {
     expect(ctx.authors.map((a) => a.family)).toEqual(["Smith"]);
   });
 
+  it("passes the resolver's image embed through, including null", () => {
+    const attachment = makeAttachment({});
+    const annotations: Annotation[] = [
+      makeAnnotation({ itemID: 100, key: "WITHIMG1" }),
+      makeAnnotation({ itemID: 101, key: "NOIMG001" }),
+    ];
+
+    const ctx = buildNoteContext({
+      item: makeItem({ itemType: "journalArticle" }),
+      attachments: [attachment],
+      annotationsByAttachment: new Map([[attachment.itemID, annotations]]),
+      tagsByItemID: new Map(),
+      authorsShort: "",
+      fileLink: () => "",
+      imgEmbed: (annotation) =>
+        annotation.key === "WITHIMG1" ? `![[${annotation.key}.png]]` : null,
+    });
+
+    expect(ctx.annotations.map((a) => a.imgEmbed)).toEqual([
+      "![[WITHIMG1.png]]",
+      null,
+    ]);
+  });
+
   it("resolves group backlinks from a group indexedKey", () => {
     const ctx = buildNoteContext({
       item: makeItem({

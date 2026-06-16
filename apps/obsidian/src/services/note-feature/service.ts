@@ -234,15 +234,16 @@ export class NoteFeatures extends Service<void> {
       tagsByItemID,
       authorsShort: creatorSummary(item),
       fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),
-      imgEmbed: (annotation) =>
-        attachmentImport.resolveEmbed(
-          resolveAnnotCachePath({
-            annotKey: annotation.key,
-            groupID,
-            dataDir,
-          }),
-          `${annotation.key}.png`,
-        ),
+      imgEmbed: (annotation) => {
+        const cachePath = resolveAnnotCachePath(annotation, {
+          dataDir,
+          groupID,
+        });
+        return (
+          cachePath &&
+          attachmentImport.resolveEmbed(cachePath, `${annotation.key}.png`)
+        );
+      },
     });
   }
 

@@ -23,24 +23,39 @@ function attachment(overrides: Partial<Attachment>): Attachment {
 }
 
 describe("resolveAnnotCachePath", () => {
-  it("resolves personal-library annotation cache images", () => {
+  it("resolves personal-library image/ink annotation cache images", () => {
     expect(
-      resolveAnnotCachePath({
-        annotKey: "ANNOT1",
-        groupID: null,
-        dataDir: "/zotero",
-      }),
+      resolveAnnotCachePath(
+        { key: "ANNOT1", type: 3 },
+        { groupID: null, dataDir: "/zotero" },
+      ),
+    ).toBe("/zotero/cache/library/ANNOT1.png");
+    expect(
+      resolveAnnotCachePath(
+        { key: "ANNOT1", type: 4 },
+        { groupID: null, dataDir: "/zotero" },
+      ),
     ).toBe("/zotero/cache/library/ANNOT1.png");
   });
 
   it("resolves group annotation cache images", () => {
     expect(
-      resolveAnnotCachePath({
-        annotKey: "ANNOT1",
-        groupID: 42,
-        dataDir: "/zotero",
-      }),
+      resolveAnnotCachePath(
+        { key: "ANNOT1", type: 3 },
+        { groupID: 42, dataDir: "/zotero" },
+      ),
     ).toBe("/zotero/cache/groups/42/ANNOT1.png");
+  });
+
+  it("returns null for annotation types Zotero never caches an image for", () => {
+    for (const type of [1, 2, 5, 6] as const) {
+      expect(
+        resolveAnnotCachePath(
+          { key: "ANNOT1", type },
+          { groupID: null, dataDir: "/zotero" },
+        ),
+      ).toBeNull();
+    }
   });
 });
 
