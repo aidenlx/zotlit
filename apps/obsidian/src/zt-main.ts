@@ -65,6 +65,8 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       zoteroPref: services.zoteroPref,
+      noteFeatures: services.noteFeatures,
+      attachmentImport: services.attachmentImport,
     });
 
     if (__DEV__) registerReactSmoke(this, { app: this.app });
