@@ -10,4 +10,25 @@ declare module "obsidian" {
       plugins: Record<string, unknown>;
     };
   }
+
+  /** Position-resolved link/tag token from {@link Editor.getClickableTokenAt}. */
+  interface ClickableToken {
+    type: string;
+    text: string;
+    start: EditorPosition;
+    end: EditorPosition;
+  }
+  interface Editor {
+    getClickableTokenAt(pos: EditorPosition): ClickableToken | null;
+  }
+  interface MarkdownView {
+    /** Live-preview / source edit sub-view; absent in pure reading mode. */
+    editMode?: MarkdownEditView;
+  }
+  interface MarkdownEditView {
+    triggerClickableToken(
+      token: ClickableToken,
+      newLeaf: boolean | PaneType,
+    ): void;
+  }
 }

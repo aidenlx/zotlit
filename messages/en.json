@@ -37,6 +37,8 @@
   "modal_overwrite_note_confirm": "Overwrite",
   "modal_cancel": "Cancel",
   "notice_no_citekey": "Selected item has no citekey: {key}.",
+  "notice_citekey_not_found": "No Zotero item with citekey @{citekey}.",
+  "notice_citekey_db_unavailable": "Open the Zotero database to look up @{citekey}.",
   "instruction_navigate": "to navigate",
   "instruction_dismiss": "to dismiss",
   "instruction_insert_citation": "to insert citation",

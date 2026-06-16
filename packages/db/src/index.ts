@@ -39,6 +39,7 @@ export {
   getAttachmentsByParents,
   getAttachmentsByParentsAsync,
 } from "./queries/attachments";
+export { getItemIDByCitekey, getItemIDByCitekeyAsync } from "./queries/citekey";
 export { getTagsByItemIDs, getTagsByItemIDsAsync } from "./queries/tags";
 export {
   getAnnotViewAnnotations,
