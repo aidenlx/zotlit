@@ -1,5 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+
+// oxlint-disable-next-line no-restricted-imports
+import schema from "../zotero-schema/schema.json" with { type: "json" };
 
 interface ZoteroSchema {
   readonly version: number;
@@ -16,10 +19,7 @@ interface ZoteroField {
   readonly baseField?: string;
 }
 
-const schemaFile = join("zotero-schema", "schema.json");
 const outputFile = join("src", "fields.ts");
-
-const schema = JSON.parse(await readFile(schemaFile, "utf8")) as ZoteroSchema;
 
 await writeFile(outputFile, render(schema));
 
