@@ -57,3 +57,12 @@ export function annotationTypeToName(
   logger.warn("Unknown annotation type {type}", { type });
   return "unknown";
 }
+
+/**
+ * Whether Zotero renders a cached excerpt image for this annotation type.
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L62
+ */
+export function annotationHasCacheImage(_type: AnnotationType): boolean {
+  const type = ANNOT_TYPE[_type];
+  return type === "image" || type === "ink";
+}

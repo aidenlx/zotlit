@@ -33,6 +33,7 @@ describe("copyAttachments", () => {
     await expect(copyAttachments([{ source, dest }])).resolves.toEqual({
       copied: 1,
       skipped: 0,
+      missing: 0,
     });
     expect(await readFile(dest, "utf8")).toBe("image");
 
@@ -46,6 +47,24 @@ describe("copyAttachments", () => {
     await expect(copyAttachments([{ source, dest }])).resolves.toEqual({
       copied: 0,
       skipped: 1,
+      missing: 0,
     });
+  });
+
+  it("skips a missing source without aborting the rest of the batch", async () => {
+    const present = join(dir, "present.png");
+    const presentDest = join(dir, "present-dest.png");
+    await writeFile(present, "image");
+
+    await expect(
+      copyAttachments([
+        {
+          source: join(dir, "missing.png"),
+          dest: join(dir, "missing-dest.png"),
+        },
+        { source: present, dest: presentDest },
+      ]),
+    ).resolves.toEqual({ copied: 1, skipped: 0, missing: 1 });
+    expect(await readFile(presentDest, "utf8")).toBe("image");
   });
 });

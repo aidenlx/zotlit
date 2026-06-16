@@ -32,10 +32,11 @@ export interface TemplateAnnotation {
   tags: readonly ItemTag[];
 
   /**
-   * Image-excerpt embed (e.g. `![[image.png]]`); empty for non-image
-   * annotations. Computed at the app layer.
+   * Image-excerpt embed (e.g. `![[image.png]]`); `null` for annotation types
+   * that have no cached excerpt image (everything but `image` and `ink`).
+   * Computed at the app layer.
    */
-  imgEmbed: string;
+  imgEmbed: string | null;
   /** Zotero deep link to this annotation. Computed at the app layer. */
   backlink: string;
 

@@ -108,6 +108,7 @@ class AttachmentImportBatch implements AttachmentImport {
     logger.info("Imported attachments", {
       copied: result.copied,
       skipped: result.skipped,
+      missing: result.missing,
     });
     return result;
   }
