@@ -1,11 +1,11 @@
 import {
-  ConfirmationModal,
   TFile,
   type MarkdownFileInfo,
   type MarkdownView,
   type Plugin,
 } from "obsidian";
 
+import { confirm } from "@/lib/confirm";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import {
@@ -45,23 +45,22 @@ export function addNoteFeatureActions(
     name: m.command_overwrite_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
       return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        const modal = new ConfirmationModal(plugin.app);
-        modal.setTitle(m.modal_overwrite_note_title());
-        modal.setContent(m.modal_overwrite_note_desc());
-        modal.addButton((button) => {
-          button
-            .setButtonText(m.modal_overwrite_note_confirm())
-            .setDestructive()
-            .onClick(() => {
-              void toast.promise(deps.noteFeatures.overwrite(file, itemKey), {
-                loading: m.notice_overwriting_note(),
-                success: m.notice_overwrote_note(),
-                error: m.notice_overwrite_note_failed(),
-              });
-            });
+        void confirm(
+          {
+            title: m.modal_overwrite_note_title(),
+            content: m.modal_overwrite_note_desc(),
+            action: m.modal_overwrite_note_confirm(),
+            destructive: true,
+          },
+          plugin.app,
+        ).then(async (yes) => {
+          if (!yes) return;
+          await toast.promise(deps.noteFeatures.overwrite(file, itemKey), {
+            loading: m.notice_overwriting_note(),
+            success: m.notice_overwrote_note(),
+            error: m.notice_overwrite_note_failed(),
+          });
         });
-        modal.addCancelButton(m.modal_cancel());
-        modal.open();
       });
     },
   });
