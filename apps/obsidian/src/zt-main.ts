@@ -61,7 +61,11 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
-    registerAnnotView(this);
+    registerAnnotView(this, {
+      app: this.app,
+      db: services.db,
+      zoteroPref: services.zoteroPref,
+    });
 
     if (__DEV__) registerReactSmoke(this, { app: this.app });
 

@@ -40,6 +40,12 @@ export {
 } from "./queries/attachments";
 export { getTagsByItemIDs, getTagsByItemIDsAsync } from "./queries/tags";
 export {
+  getAnnotViewAnnotations,
+  getAnnotViewAttachments,
+  type AnnotViewAttachment,
+  type AnnotViewItem,
+} from "./queries/annot-view";
+export {
   creatorFieldModeToName,
   type CreatorFieldMode,
   type CreatorFieldModeName,
