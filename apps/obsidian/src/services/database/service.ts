@@ -157,6 +157,11 @@ export class DatabaseService extends Service<void> {
     this.#lastSourcePath = this.#zoteroPref.databasePath;
     this.#lastConfiguredMode = settings["zotero.read-mode"];
     this.#lastAutoRefresh = settings["zotero.auto-refresh"];
+    logger.debug("Database service initializing", {
+      sourcePath: this.#lastSourcePath,
+      configuredMode: this.#lastConfiguredMode,
+      autoRefresh: this.#lastAutoRefresh,
+    });
 
     stack.defer(
       this.#settings.subscribe((value) => {
@@ -167,6 +172,10 @@ export class DatabaseService extends Service<void> {
       this.#zoteroPref.on("changed", () => {
         const next = this.#zoteroPref.databasePath;
         if (next === this.#lastSourcePath) return;
+        logger.debug("Zotero database path changed", {
+          prev: this.#lastSourcePath,
+          next,
+        });
         this.#lastSourcePath = next;
         this.#scheduleRefresh();
       }),
@@ -180,10 +189,18 @@ export class DatabaseService extends Service<void> {
     const readMode = settings["zotero.read-mode"];
     const autoRefresh = settings["zotero.auto-refresh"];
     if (autoRefresh !== this.#lastAutoRefresh) {
+      logger.debug("Auto-refresh setting changed", {
+        prev: this.#lastAutoRefresh,
+        next: autoRefresh,
+      });
       this.#lastAutoRefresh = autoRefresh;
       void this.#rebindWatchers();
     }
     if (readMode === this.#lastConfiguredMode) return;
+    logger.debug("Read mode setting changed", {
+      prev: this.#lastConfiguredMode,
+      next: readMode,
+    });
     this.#lastConfiguredMode = readMode;
     this.#scheduleRefresh();
   }
@@ -202,9 +219,11 @@ export class DatabaseService extends Service<void> {
    */
   #enqueueRefresh(): Promise<void> {
     if (this.#refreshInFlight) {
+      logger.debug("Refresh in flight, coalescing trailing rerun");
       this.#refreshAgain = true;
       return this.#refreshInFlight;
     }
+    logger.debug("Enqueueing database refresh");
     this.#refreshInFlight = this.#refreshLoop().finally(() => {
       this.#refreshInFlight = null;
     });
@@ -213,13 +232,17 @@ export class DatabaseService extends Service<void> {
 
   async #refreshLoop(): Promise<void> {
     this.#emitter.emit("refreshing", true);
+    logger.debug("Refresh loop started");
     try {
       do {
         this.#refreshAgain = false;
         await this.#refreshOnce();
+        if (this.#refreshAgain)
+          logger.debug("Trailing request queued, rerunning refresh");
       } while (this.#refreshAgain);
     } finally {
       this.#emitter.emit("refreshing", false);
+      logger.debug("Refresh loop complete");
     }
   }
 
@@ -294,22 +317,37 @@ export class DatabaseService extends Service<void> {
   async #rebindWatchers(): Promise<void> {
     this.#disposeWatchers();
     const settings = this.#settings.current;
-    if (!settings?.["zotero.auto-refresh"]) return;
+    if (!settings?.["zotero.auto-refresh"]) {
+      logger.debug("Auto-refresh disabled, skipping watcher bind");
+      return;
+    }
     if (!this.#sourcePath || !this.#readMode) return;
 
     const parent = dirname(this.#sourcePath);
+    logger.debug("Binding database watchers", {
+      sourcePath: this.#sourcePath,
+      readMode: this.#readMode,
+      parent,
+    });
     this.#watchers.push(
-      watch(parent, WATCH_OPTIONS, (_event, filename) => {
+      watch(parent, WATCH_OPTIONS, (event, filename) => {
         const name = filename?.toString();
-        if (!this.#watchedFilename(name)) return;
+        const relevant = this.#watchedFilename(name);
+        logger.trace("Directory watcher event", {
+          event,
+          filename: name,
+          relevant,
+        });
+        if (!relevant) return;
         if (name === ZOTERO_WAL_FILENAME) this.#syncWalWatcher();
         this.#scheduleWatchedRefresh();
       }),
     );
     this.#watchers.push(
-      watch(this.#sourcePath, WATCH_OPTIONS, () =>
-        this.#scheduleWatchedRefresh(),
-      ),
+      watch(this.#sourcePath, WATCH_OPTIONS, (event) => {
+        logger.trace("Database file watcher event", { event });
+        this.#scheduleWatchedRefresh();
+      }),
     );
     this.#syncWalWatcher();
   }
@@ -328,28 +366,40 @@ export class DatabaseService extends Service<void> {
     }
     const walPath = join(dirname(this.#sourcePath), ZOTERO_WAL_FILENAME);
     if (!existsSync(walPath)) {
+      logger.debug("WAL file absent, closing WAL watcher", { walPath });
       this.#closeWalWatcher();
       return;
     }
     if (this.#walWatcher) return;
     try {
-      this.#walWatcher = watch(walPath, WATCH_OPTIONS, () =>
-        this.#scheduleWatchedRefresh(),
-      );
+      this.#walWatcher = watch(walPath, WATCH_OPTIONS, (event) => {
+        logger.trace("WAL watcher event", { event });
+        this.#scheduleWatchedRefresh();
+      });
+      logger.debug("WAL watcher opened", { walPath });
     } catch (error) {
       logger.warn("Failed to watch Zotero WAL", { error, walPath });
     }
   }
 
   #scheduleWatchedRefresh(): void {
+    const rescheduled = !!this.#watchTimer;
     if (this.#watchTimer) clearTimeout(this.#watchTimer);
     this.#watchTimer = setTimeout(() => {
       this.#watchTimer = null;
+      logger.debug("Watcher debounce elapsed, scheduling refresh");
       this.#scheduleRefresh();
     }, WATCH_DEBOUNCE_MS);
+    logger.trace("Watch debounce timer {action}", {
+      action: rescheduled ? "reset" : "started",
+      debounceMs: WATCH_DEBOUNCE_MS,
+    });
   }
 
   #disposeWatchers(): void {
+    const watcherCount = this.#watchers.length;
+    const hadPendingTimer = !!this.#watchTimer;
+    const hadWalWatcher = !!this.#walWatcher;
     if (this.#watchTimer) {
       clearTimeout(this.#watchTimer);
       this.#watchTimer = null;
@@ -357,6 +407,13 @@ export class DatabaseService extends Service<void> {
     for (const watcher of this.#watchers) watcher.close();
     this.#watchers = [];
     this.#closeWalWatcher();
+    if (watcherCount > 0 || hadPendingTimer || hadWalWatcher) {
+      logger.debug("Database watchers disposed", {
+        watcherCount,
+        hadPendingTimer,
+        hadWalWatcher,
+      });
+    }
   }
 
   #closeWalWatcher(): void {
