@@ -83,8 +83,6 @@ export const schema = v.object({
 
   "template.folder": v.string(),
   "template.filename": v.string(),
-  "template.update-annot-block": v.boolean(),
-  "template.update-overwrite": v.boolean(),
   "template.auto-pair-eta": v.boolean(),
   "template.auto-trim-leading": autoTrim,
   "template.auto-trim-trailing": autoTrim,
@@ -117,8 +115,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "server.hostname": "127.0.0.1",
   "template.folder": "ZtTemplates",
   "template.filename": DEFAULT_NOTE_FILENAME,
-  "template.update-annot-block": false,
-  "template.update-overwrite": false,
   "template.auto-pair-eta": false,
   "template.auto-trim-leading": false,
   "template.auto-trim-trailing": false,

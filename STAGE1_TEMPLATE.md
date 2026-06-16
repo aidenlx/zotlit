@@ -28,12 +28,12 @@ v1 source: `/Users/aidenlx/repo/zotlit-repo/zotlit-v1/app/obsidian/src/services/
 - Helper objects (`DocItemHelper`, `AnnotHelper`, `toHelper`) — same reason.
 - Frontmatter logic (`extractFrontmatter`, `toFrontmatterRecord`,
   `setFrontmatterTo`) — belongs in Stage 5 (NoteFeatures).
-- `template.update-annot-block` and `template.update-overwrite` settings —
-  Stage 5/6 own them.
 - Eject-defaults command — Stage 6 setting tab.
 
 ### 1.3 Dropped from v1
 
+- `updateAnnotBlock` / `updateOverwrite` (v1) — block-ID/overwrite-gating
+  infra removed in Stage 5; no v2 schema keys.
 - `@ophidian/core` (`Service`, `use`, `@calc`, `@effect`) — replaced by
   v2's `ServiceContainer` + settings subscriber.
 - `vault.trigger("zotero:template-updated", type)` global event — no consumers
