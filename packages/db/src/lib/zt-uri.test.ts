@@ -25,7 +25,7 @@ describe("annotationOpenUri", () => {
         pageLabel: "12",
         groupID: null,
       }),
-    ).toBe("zotero://open/library/items/ATCH1234?page=12&annotation=ANNO5678");
+    ).toBe("zotero://open/library/items/ATCH1234?annotation=ANNO5678&page=12");
   });
 
   it("omits the page hint when there is no page label", () => {

@@ -121,7 +121,7 @@ describe("buildNoteContext", () => {
     expect(ctx.annotations).toHaveLength(1);
     const annot = ctx.annotations[0]!;
     expect(annot.backlink).toBe(
-      "zotero://open/library/items/ATCH0001?page=5&annotation=ANNO0001",
+      "zotero://open/library/items/ATCH0001?annotation=ANNO0001&page=5",
     );
     expect(annot.imgEmbed).toBe("![[ANNO0001.png]]");
     expect(annot.tags[0]?.tag).toBe(annotTagRecord);
