@@ -62,10 +62,6 @@ export interface ZotLitSettingsV0 {
   // --- Templates (v1: services/template/settings.ts) ---
   /** Eta template config: `folder` is the vault path holding template files; `templates` maps each embedded template type to its inline source. */
   template: { folder: string; templates: Record<V0EmbededTplType, string> };
-  /** When refreshing a note, rewrite existing annotation blocks (matched by block-id) instead of skipping them. Default: false. */
-  updateAnnotBlock: boolean;
-  /** When refreshing notes, overwrite content outside annotation blocks too (destructive). Default: false. */
-  updateOverwrite: boolean;
   /** Auto-close Eta tag pairs (`<% %>`, `<%= %>`, …) while editing template files. Default: false. */
   autoPairEta: boolean;
   /** Eta `autoTrim` setting — tuple of [leading, trailing] whitespace trim modes applied to template output. Default: [false, false]. */
@@ -154,8 +150,6 @@ const V0_KEY_MAP: ReadonlyArray<
   ["enableServer", "server.enabled"],
   ["serverPort", "server.port"],
   ["serverHostname", "server.hostname"],
-  ["updateAnnotBlock", "template.update-annot-block"],
-  ["updateOverwrite", "template.update-overwrite"],
   ["autoPairEta", "template.auto-pair-eta"],
   ["autoRefresh", "zotero.auto-refresh"],
   ["citationLibrary", "zotero.citation-library"],
