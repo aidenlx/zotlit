@@ -9,7 +9,7 @@ import {
 import {
   getAnnotationsByParent,
   getAttachmentsByParents,
-  getLibraries,
+  getLibraryByGroupID,
   getItemsByKey,
   getTagsByItemIDs,
   parseIndexedKey,
@@ -187,12 +187,43 @@ export class NoteFeatures extends Service<void> {
   }
 
   /**
+   * Render a single annotation through the `annotation` template for the annot
+   * view's drag-insert. Synchronous (so it can populate `dataTransfer` during
+   * `dragstart`): requires a ready database and a pre-prepared `attachmentImport`
+   * handle whose `flush()` the caller runs on drop. Only the dragged
+   * annotation's image is recorded for import. Returns `null` when the item or
+   * annotation can't be resolved.
+   */
+  renderAnnotationForDrag(
+    indexedKey: string,
+    annotationKey: string,
+    attachmentImport: Pick<AttachmentImport, "resolveEmbed">,
+  ): string | null {
+    if (this.#db.state !== "ready") return null;
+    const parsed = resolveIndexedKeyLibrary(this.#db.client, indexedKey);
+    if (!parsed) return null;
+    const [item] = getItemsByKey(this.#db.client, parsed.libraryID, [
+      parsed.key,
+    ]);
+    if (!item) return null;
+
+    const context = this.#buildContext(item, attachmentImport, annotationKey);
+    const annot = context.annotations.find((a) => a.key === annotationKey);
+    return annot ? this.#template.render("annotation", annot) : null;
+  }
+
+  /**
    * Build the full note context for `item`. Synchronous DB reads via the active
    * client; throws {@link DatabaseError} if the database is not ready.
+   *
+   * When `targetAnnotationKey` is set, only that annotation's image excerpt is
+   * resolved through `attachmentImport` (so a single-annotation render records
+   * one pending import); every other annotation's `imgEmbed` is `null`.
    */
   #buildContext(
     item: Item,
     attachmentImport: Pick<AttachmentImport, "resolveEmbed">,
+    targetAnnotationKey?: string,
   ): NoteTemplateContext {
     const client: NodeDatabaseClient = this.#db.client;
     const libraryID = item.libraryID;
@@ -235,6 +266,12 @@ export class NoteFeatures extends Service<void> {
       authorsShort: creatorSummary(item),
       fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),
       imgEmbed: (annotation) => {
+        if (
+          targetAnnotationKey != null &&
+          annotation.key !== targetAnnotationKey
+        ) {
+          return null;
+        }
         const cachePath = resolveAnnotCachePath(annotation, {
           dataDir,
           groupID,
@@ -312,9 +349,7 @@ function resolveIndexedKeyLibrary(
   if (!parsed) return null;
   const { key, groupID } = parsed;
   if (groupID == null) return { key, libraryID: USER_LIBRARY_ID };
-  const library = getLibraries(client).find(
-    (entry) => entry.groupID === groupID,
-  );
+  const library = getLibraryByGroupID(client, groupID);
   if (!library) return null;
   return {
     key,

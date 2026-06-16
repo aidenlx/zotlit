@@ -1,6 +1,7 @@
 export {
   getLibraries,
   getLibrariesAsync,
+  getLibraryByGroupID,
   type Library,
 } from "./queries/libraries";
 export {

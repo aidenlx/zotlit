@@ -3,7 +3,7 @@ import { type LibraryType } from "@drizzle/schema";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 
-import { defineQuery, type QueryRow } from "./_shared";
+import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
 export interface Library {
   libraryID: number;
@@ -14,16 +14,28 @@ export interface Library {
   name: string | null;
 }
 
+const libraryColumns = {
+  columns: { libraryID: true, type: true },
+  with: {
+    groups: {
+      columns: { groupID: true, name: true },
+    },
+  },
+} satisfies FindManyOptions<"libraries">;
+
 const librariesQuery = defineQuery<void>()((db) =>
   db.query.libraries.findMany({
-    columns: { libraryID: true, type: true },
-    with: {
-      groups: {
-        columns: { groupID: true, name: true },
-      },
-    },
+    ...libraryColumns,
     orderBy: { libraryID: "asc" },
   }),
+);
+
+const libraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
+  (db, { placeholder }) =>
+    db.query.libraries.findFirst({
+      ...libraryColumns,
+      where: { groups: { groupID: placeholder("groupID") } },
+    }),
 );
 
 type LibraryRow = QueryRow<typeof librariesQuery>;
@@ -44,6 +56,18 @@ function toLibrary(row: LibraryRow): Library {
  */
 export function getLibraries(db: NodeDatabaseClient): Library[] {
   return librariesQuery.prepared(db).all().map(toLibrary);
+}
+
+/**
+ * Resolve the {@link Library} backing a Zotero group by its `groupID`, or
+ * `null` when no group library matches.
+ */
+export function getLibraryByGroupID(
+  db: NodeDatabaseClient,
+  groupID: number,
+): Library | null {
+  const row = libraryByGroupIDQuery.prepared(db).get({ groupID });
+  return row ? toLibrary(row) : null;
 }
 
 export async function getLibrariesAsync(

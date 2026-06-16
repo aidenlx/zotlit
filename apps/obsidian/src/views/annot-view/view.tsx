@@ -13,7 +13,12 @@ import {
 
 import { getLogger } from "@/lib/log";
 import * as m from "@/paraglide/messages";
+import {
+  type AttachmentImport,
+  type AttachmentImportService,
+} from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
+import { type NoteFeatures } from "@/services/note-feature/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -23,6 +28,7 @@ import {
   type AnnotActions,
 } from "./actions";
 import { AnnotView } from "./AnnotView";
+import { createDragInsertHandler } from "./drag-insert";
 import {
   annotationsAtom,
   attachmentIDAtom,
@@ -41,6 +47,8 @@ export interface AnnotViewDeps {
   app: App;
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
+  noteFeatures: NoteFeatures;
+  attachmentImport: AttachmentImportService;
 }
 
 export class AnnotationView extends ItemView {
@@ -51,6 +59,8 @@ export class AnnotationView extends ItemView {
   #groupID: number | null = null;
   #librariesCache: Library[] | null = null;
   #loadDisposables: DisposableStack | null = null;
+  #itemKey: string | null = null;
+  #importHandle: AttachmentImport | null = null;
 
   constructor(leaf: WorkspaceLeaf, deps: AnnotViewDeps) {
     super(leaf);
@@ -76,6 +86,18 @@ export class AnnotationView extends ItemView {
       getGroupID: () => this.#groupID,
       getDataDir: () => this.#deps.zoteroPref.dataDir,
       refresh: () => this.#deps.db.refresh(),
+      onDragStart: createDragInsertHandler({
+        workspace: this.#deps.app.workspace,
+        noteFeatures: this.#deps.noteFeatures,
+        getIndexedKey: () => this.#itemKey,
+        getImportHandle: () => this.#importHandle,
+        onSettled: () => {
+          const activeFile = this.#deps.app.workspace.getActiveFile();
+          if (this.#itemKey !== null && activeFile) {
+            this.#prepareImportHandle(activeFile.path);
+          }
+        },
+      }),
     });
 
     this.#root = createRoot(this.contentEl);
@@ -157,8 +179,10 @@ export class AnnotationView extends ItemView {
     }
 
     this.#groupID = groupID;
+    this.#itemKey = indexedKey;
     this.#store.set(groupIDAtom, groupID);
     this.#store.set(itemKeyAtom, indexedKey);
+    this.#prepareImportHandle(activeFile.path);
 
     try {
       const client = db.client;
@@ -254,6 +278,31 @@ export class AnnotationView extends ItemView {
     this.#store.set(attachmentIDAtom, null);
     this.#store.set(annotationsAtom, null);
     this.#groupID = null;
+    this.#itemKey = null;
+    this.#importHandle = null;
+  }
+
+  /**
+   * Prepare a fresh attachment-import handle for the active note so drag-insert
+   * can resolve image embeds synchronously and `flush()` them on drop. Discards
+   * any prior handle (and its un-dropped pending imports).
+   */
+  #prepareImportHandle(notePath: string): void {
+    this.#importHandle = null;
+    void this.#deps.attachmentImport
+      .prepare(notePath)
+      .then((handle) => {
+        // Ignore if the active note changed while preparing.
+        if (this.#deps.app.workspace.getActiveFile()?.path === notePath) {
+          this.#importHandle = handle;
+        }
+      })
+      .catch((error) => {
+        logger.warn("Failed to prepare attachment import for drag-insert", {
+          notePath,
+          error,
+        });
+      });
   }
 
   #loadAttachmentSelection(indexedKey: string): number | null {

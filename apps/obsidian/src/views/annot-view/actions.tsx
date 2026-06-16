@@ -25,6 +25,8 @@ export interface AnnotActionDeps {
   getGroupID: () => number | null;
   getDataDir: () => string;
   refresh: () => Promise<void>;
+  /** Templated drag-insert handler built by the view (owns the import handle). */
+  onDragStart: AnnotActions["onDragStart"];
 }
 
 const IMG_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(
@@ -102,11 +104,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         menu.showAtMouseEvent(evt.nativeEvent as globalThis.MouseEvent);
       }
     },
-    onDragStart(evt, annot) {
-      const payload = annot.text ?? getBacklink(annot) ?? annot.key;
-      evt.dataTransfer.setData("text/plain", payload);
-      evt.dataTransfer.dropEffect = "copy";
-    },
+    onDragStart: deps.onDragStart,
     onRefresh() {
       void toast.promise(deps.refresh(), {
         loading: m.annot_view_refreshing(),
