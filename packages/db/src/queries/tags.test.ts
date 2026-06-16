@@ -128,7 +128,7 @@ function seed(sqlite: DatabaseSync): void {
 
     insert into itemTags (itemID, tagID, type)
       values
-        (1, 11, USER_LIBRARY_ID),
+        (1, 11, 1),
         (1, 10, 0),
         (2, 10, 0),
         (2, 12, 0),

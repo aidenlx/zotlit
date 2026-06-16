@@ -75,7 +75,7 @@ describe("highlight annotation", () => {
       '[<mark class="zotlit-hl" data-color="magenta" ' +
         'style="background-color: var(--zotlit-hl-magenta, #e56eee);">' +
         "might aid in our understanding</mark>]" +
-        "(zotero://open/library/items/T2P8T29G?page=62&annotation=C2DF35H3)",
+        "(zotero://open/library/items/T2P8T29G?annotation=C2DF35H3&page=62)",
     );
   });
 });
@@ -101,7 +101,7 @@ describe("underline annotation", () => {
       '[<u class="zotlit-ul" data-color="yellow" ' +
         'style="text-decoration-color: var(--zotlit-ul-yellow, #ffd400);">' +
         "reference alternative as valu</u>]" +
-        "(zotero://open/library/items/T2P8T29G?page=62&annotation=7SUQ86WL)",
+        "(zotero://open/library/items/T2P8T29G?annotation=7SUQ86WL&page=62)",
     );
   });
 });

@@ -31,5 +31,6 @@ export function annotationOpenUri({
 }: AnnotationOpenUriOptions): string {
   const params = new URLSearchParams([["annotation", annotationKey]]);
   if (pageLabel) params.set("page", encodeURIComponent(pageLabel));
+  params.sort();
   return `zotero://open/${libraryPath(groupID)}/items/${attachmentKey}?${params.toString()}`;
 }
