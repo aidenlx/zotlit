@@ -7,7 +7,8 @@ export async function ensureAttachmentFolder(
   sourcePath?: string,
 ): Promise<TFolder> {
   let path: string;
-  if (folderPath === null) {
+  // Empty (settings-tab "use default") is treated the same as null.
+  if (!folderPath) {
     path = dirname(
       await app.fileManager.getAvailablePathForAttachment(
         "zotlit-attachment",
@@ -24,7 +25,10 @@ export async function ensureAttachmentFolder(
   return ensureFolder(app, path);
 }
 
-async function ensureFolder(app: App, folderPath: string): Promise<TFolder> {
+export async function ensureFolder(
+  app: App,
+  folderPath: string,
+): Promise<TFolder> {
   const existing = app.vault.getAbstractFileByPath(folderPath);
   if (existing instanceof TFolder) return existing;
   if (existing instanceof TFile) {

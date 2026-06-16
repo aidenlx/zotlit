@@ -2,7 +2,8 @@ import { join } from "node:path";
 import {
   type DropdownComponent,
   type ExtraButtonComponent,
-  SettingGroup,
+  type SettingDefinitionItem,
+  type Setting,
 } from "obsidian";
 
 import { getLibraries, type Library } from "@zotlit/db";
@@ -24,11 +25,9 @@ import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
 } from "@/services/zotero-pref/prefs-file";
-import {
-  type ZoteroPrefService,
-  type ZoteroProfileInfo,
-} from "@/services/zotero-pref/service";
-import { type SectionContext } from "@/setting-tab/section";
+import { type ZoteroProfileInfo } from "@/services/zotero-pref/service";
+
+import { type SettingsKey, type SettingTabContext } from "./context";
 
 const logger = getLogger(["setting-tab", "database"]);
 
@@ -37,52 +36,60 @@ const PROFILE_AUTO = "";
 /** Profile-dropdown sentinel that opens the folder picker; NUL can't be in a path. */
 const PROFILE_BROWSE = "\0browse";
 
-export interface DatabaseSectionContext extends SectionContext {
-  db: DatabaseService;
-  zoteroPref: ZoteroPrefService;
+/** Items for the "Zotero database" sub-page: connection, status, read mode. */
+export function databasePageItems(
+  ctx: SettingTabContext,
+): SettingDefinitionItem<SettingsKey>[] {
+  return [
+    {
+      name: m.settings_db_profile_dir_name(),
+      desc: m.settings_db_profile_dir_desc(),
+      render: (setting) => renderProfileDirRow(setting, ctx),
+    },
+    {
+      name: m.settings_db_file_name(),
+      desc: m.settings_db_file_desc(),
+      render: (setting) => renderDatabaseFileRow(setting, ctx),
+    },
+    {
+      name: m.settings_db_read_mode_name(),
+      desc: m.settings_db_read_mode_desc(),
+      render: (setting) => renderReadModeRow(setting, ctx),
+    },
+    {
+      name: m.settings_db_auto_refresh_name(),
+      desc: m.settings_db_auto_refresh_desc(),
+      control: { type: "toggle", key: "zotero.auto-refresh" },
+    },
+  ];
 }
 
-interface RowContext {
-  group: SettingGroup;
-  settings: SettingsService;
-  db: DatabaseService;
-  zoteroPref: ZoteroPrefService;
-}
-
-export function databaseSection(ctx: DatabaseSectionContext): Disposable {
-  using stack = new DisposableStack();
-
-  if (!ctx.settings.current) {
-    throw new Error("databaseSection: settings have not loaded yet");
-  }
-
-  const group = new SettingGroup(ctx.containerEl).setHeading(
-    m.settings_db_heading(),
-  );
-  const rowCtx: RowContext = {
-    group,
-    settings: ctx.settings,
-    db: ctx.db,
-    zoteroPref: ctx.zoteroPref,
+/**
+ * Default-library picker, surfaced on the main tab. Populated from
+ * {@link getLibraries} when the DB is ready, repopulated on `changed`/`degraded`,
+ * and seeded after the initial `loading→ready` settle (which `changed` skips).
+ */
+export function libraryDefinition(
+  ctx: SettingTabContext,
+): SettingDefinitionItem<SettingsKey> {
+  return {
+    name: m.settings_db_library_name(),
+    desc: m.settings_db_library_desc(),
+    render: (setting) => renderLibraryRow(setting, ctx),
   };
-
-  stack.use(renderDatabaseFileRow(rowCtx));
-  stack.use(renderProfileDirRow(rowCtx));
-  stack.use(renderReadModeRow(rowCtx));
-  stack.use(renderAutoRefreshRow(rowCtx));
-  stack.use(renderLibraryRow(rowCtx));
-
-  return stack.move();
 }
 
 /**
  * Database file row: resolved `zotero.sqlite` path + a refresh button + an
  * inline status line that surfaces loading / refreshing / degraded /
  * refresh-failed states. The path derives from the Zotero profile's data dir
- * ({@link ZoteroPrefService.dataDir}), so it updates when the profile changes.
+ * ({@link ZoteroPrefService.databasePath}), so it updates when the profile changes.
  */
-function renderDatabaseFileRow(ctx: RowContext): Disposable {
-  using stack = new DisposableStack();
+function renderDatabaseFileRow(
+  setting: Setting,
+  ctx: SettingTabContext,
+): () => void {
+  const stack = new DisposableStack();
 
   const desc = document.createDocumentFragment();
   desc.append(m.settings_db_file_desc());
@@ -98,22 +105,17 @@ function renderDatabaseFileRow(ctx: RowContext): Disposable {
 
   let refreshButton: ExtraButtonComponent | undefined;
 
-  ctx.group.addSetting((setting) => {
-    setting
-      .setName(m.settings_db_file_name())
-      .setDesc(desc)
-      .addExtraButton((button) => {
-        refreshButton = button;
-        button
-          .setIcon("refresh-cw")
-          .setTooltip(m.settings_db_refresh())
-          .onClick(() => {
-            void toast.promise(ctx.db.refresh(), {
-              loading: m.notice_db_refreshing(),
-              success: m.notice_db_refreshed(),
-              error: m.notice_db_refresh_failed(),
-            });
-          });
+  setting.setDesc(desc).addExtraButton((button) => {
+    refreshButton = button;
+    button
+      .setIcon("refresh-cw")
+      .setTooltip(m.settings_db_refresh())
+      .onClick(() => {
+        void toast.promise(ctx.db.refresh(), {
+          loading: m.notice_db_refreshing(),
+          success: m.notice_db_refreshed(),
+          error: m.notice_db_refresh_failed(),
+        });
       });
   });
 
@@ -193,11 +195,14 @@ function renderDatabaseFileRow(ctx: RowContext): Disposable {
     }),
   );
 
-  return stack.move();
+  return () => stack.dispose();
 }
 
-function renderReadModeRow(ctx: RowContext): Disposable {
-  using stack = new DisposableStack();
+function renderReadModeRow(
+  setting: Setting,
+  ctx: SettingTabContext,
+): () => void {
+  const stack = new DisposableStack();
 
   const desc = document.createDocumentFragment();
   desc.append(m.settings_db_read_mode_desc());
@@ -239,22 +244,17 @@ function renderReadModeRow(ctx: RowContext): Disposable {
       : "";
   };
 
-  ctx.group.addSetting((setting) => {
-    setting
-      .setName(m.settings_db_read_mode_name())
-      .setDesc(desc)
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption("auto", modeLabel("auto"))
-          .addOption("reflink", modeLabel("reflink"))
-          .addOption("copy", modeLabel("copy"))
-          .addOption("immutable", modeLabel("immutable"))
-          .setValue(ctx.settings.current!["zotero.read-mode"])
-          .onChange((value) => {
-            ctx.settings.update({
-              "zotero.read-mode": value as ConfiguredReadMode,
-            });
-          });
+  setting.setDesc(desc).addDropdown((dropdown) => {
+    dropdown
+      .addOption("auto", modeLabel("auto"))
+      .addOption("reflink", modeLabel("reflink"))
+      .addOption("copy", modeLabel("copy"))
+      .addOption("immutable", modeLabel("immutable"))
+      .setValue(ctx.settings.current!["zotero.read-mode"])
+      .onChange((value) => {
+        ctx.settings.update({
+          "zotero.read-mode": value as ConfiguredReadMode,
+        });
       });
   });
 
@@ -263,7 +263,7 @@ function renderReadModeRow(ctx: RowContext): Disposable {
   stack.defer(ctx.db.on("degraded", applyActiveMode));
   stack.defer(ctx.db.on("refresh-failed", applyActiveMode));
 
-  return stack.move();
+  return () => stack.dispose();
 }
 
 /**
@@ -272,9 +272,11 @@ function renderReadModeRow(ctx: RowContext): Disposable {
  * opens a folder dialog. The description shows the resolved `prefs.js` path and
  * an inline loading / failed-to-read status from {@link ZoteroPrefService}.
  */
-function renderProfileDirRow(ctx: RowContext): Disposable {
-  using stack = new DisposableStack();
-
+function renderProfileDirRow(
+  setting: Setting,
+  ctx: SettingTabContext,
+): () => void {
+  const stack = new DisposableStack();
   const pref = ctx.zoteroPref;
 
   const desc = document.createDocumentFragment();
@@ -308,24 +310,19 @@ function renderProfileDirRow(ctx: RowContext): Disposable {
     dropdown.setValue(current);
   };
 
-  ctx.group.addSetting((setting) => {
-    setting
-      .setName(m.settings_db_profile_dir_name())
-      .setDesc(desc)
-      .addDropdown((d) => {
-        dropdown = d;
-        d.onChange((value) => {
-          if (value === PROFILE_BROWSE) {
-            d.setValue(selectedValue()); // browse isn't itself a saved choice
-            void browseForProfileDir(ctx.settings);
-          } else if (value === PROFILE_AUTO) {
-            ctx.settings.update({ "zotero.profile-dir": RESET_SETTING });
-          } else {
-            ctx.settings.update({ "zotero.profile-dir": value });
-          }
-        });
-        repopulate();
-      });
+  setting.setDesc(desc).addDropdown((d) => {
+    dropdown = d;
+    d.onChange((value) => {
+      if (value === PROFILE_BROWSE) {
+        d.setValue(selectedValue()); // browse isn't itself a saved choice
+        void browseForProfileDir(ctx.settings);
+      } else if (value === PROFILE_AUTO) {
+        ctx.settings.update({ "zotero.profile-dir": RESET_SETTING });
+      } else {
+        ctx.settings.update({ "zotero.profile-dir": value });
+      }
+    });
+    repopulate();
   });
 
   const applyStatus = (): void => {
@@ -373,7 +370,7 @@ function renderProfileDirRow(ctx: RowContext): Disposable {
   );
   stack.defer(pref.on("changed", applyStatus));
 
-  return stack.move();
+  return () => stack.dispose();
 }
 
 function profileLabel(p: ZoteroProfileInfo): string {
@@ -381,29 +378,11 @@ function profileLabel(p: ZoteroProfileInfo): string {
   return p.isDefault ? m.settings_db_profile_default({ name }) : name;
 }
 
-/** Auto-refresh toggle. No state, no subscriptions — just a write. */
-function renderAutoRefreshRow(ctx: RowContext): Disposable {
-  const snapshot = ctx.settings.current!;
-  ctx.group.addSetting((setting) => {
-    setting
-      .setName(m.settings_db_auto_refresh_name())
-      .setDesc(m.settings_db_auto_refresh_desc())
-      .addToggle((toggle) => {
-        toggle.setValue(snapshot["zotero.auto-refresh"]).onChange((checked) => {
-          ctx.settings.update({ "zotero.auto-refresh": checked });
-        });
-      });
-  });
-  return { [Symbol.dispose]() {} };
-}
-
-/**
- * Default-library dropdown. Populated from {@link getLibraries} when the DB is
- * ready, repopulated on `changed`/`degraded`, and seeded after the initial
- * `loading→ready` settle (which `changed` skips per T14).
- */
-function renderLibraryRow(ctx: RowContext): Disposable {
-  using stack = new DisposableStack();
+function renderLibraryRow(
+  setting: Setting,
+  ctx: SettingTabContext,
+): () => void {
+  const stack = new DisposableStack();
 
   let dropdown: DropdownComponent | undefined;
   const repopulate = (): void => {
@@ -413,24 +392,21 @@ function renderLibraryRow(ctx: RowContext): Disposable {
     fillLibraryDropdown(dropdown, libraries, current);
   };
 
-  ctx.group.addSetting((setting) => {
-    setting
-      .setName(m.settings_db_library_name())
-      .setDesc(
-        ctx.db.state === "ready"
-          ? m.settings_db_library_desc()
-          : m.settings_db_library_unavailable(),
-      )
-      .addDropdown((d) => {
-        dropdown = d;
-        d.onChange((value) => {
-          const id = Number(value);
-          if (!Number.isFinite(id)) return;
-          ctx.settings.update({ "zotero.citation-library": id });
-        });
-        repopulate();
+  setting
+    .setDesc(
+      ctx.db.state === "ready"
+        ? m.settings_db_library_desc()
+        : m.settings_db_library_unavailable(),
+    )
+    .addDropdown((d) => {
+      dropdown = d;
+      d.onChange((value) => {
+        const id = Number(value);
+        if (!Number.isFinite(id)) return;
+        ctx.settings.update({ "zotero.citation-library": id });
       });
-  });
+      repopulate();
+    });
 
   if (ctx.db.state === "loading") {
     void ctx.db.ready.then(() => {
@@ -450,7 +426,7 @@ function renderLibraryRow(ctx: RowContext): Disposable {
   stack.defer(ctx.db.on("changed", repopulate));
   stack.defer(ctx.db.on("degraded", repopulate));
 
-  return stack.move();
+  return () => stack.dispose();
 }
 
 function extractErrorMessage(err: Error): string {
