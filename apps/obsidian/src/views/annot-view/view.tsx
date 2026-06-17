@@ -1,4 +1,3 @@
-import { createStore, Provider } from "jotai";
 import { type App, ItemView, type WorkspaceLeaf } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -29,13 +28,7 @@ import {
 } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { createDragInsertHandler } from "./drag-insert";
-import {
-  annotationsAtom,
-  attachmentIDAtom,
-  attachmentsAtom,
-  groupIDAtom,
-  itemKeyAtom,
-} from "./store";
+import { AnnotStoreProvider, createAnnotStore } from "./store";
 
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
@@ -52,7 +45,7 @@ export interface AnnotViewDeps {
 }
 
 export class AnnotationView extends ItemView {
-  readonly #store = createStore();
+  readonly #store = createAnnotStore();
   readonly #deps: AnnotViewDeps;
   #root: Root | null = null;
   #actions: AnnotActions | null = null;
@@ -102,11 +95,11 @@ export class AnnotationView extends ItemView {
 
     this.#root = createRoot(this.contentEl);
     this.#root.render(
-      <Provider store={this.#store}>
+      <AnnotStoreProvider value={this.#store}>
         <AnnotActionsContext value={this.#actions}>
           <AnnotView />
         </AnnotActionsContext>
-      </Provider>,
+      </AnnotStoreProvider>,
     );
 
     this.register(
@@ -180,14 +173,13 @@ export class AnnotationView extends ItemView {
 
     this.#groupID = groupID;
     this.#itemKey = indexedKey;
-    this.#store.set(groupIDAtom, groupID);
-    this.#store.set(itemKeyAtom, indexedKey);
+    this.#store.setState({ groupID, itemKey: indexedKey });
     this.#prepareImportHandle(activeFile.path);
 
     try {
       const client = db.client;
       const attachments = getAnnotViewAttachments(client, key, libraryID);
-      this.#store.set(attachmentsAtom, attachments);
+      this.#store.setState({ attachments });
 
       this.#loadDisposables?.[Symbol.dispose]();
       this.#loadDisposables = new DisposableStack();
@@ -197,48 +189,49 @@ export class AnnotationView extends ItemView {
         savedAtchID !== null &&
         attachments.some((a) => a.itemID === savedAtchID)
       ) {
-        this.#store.set(attachmentIDAtom, savedAtchID);
+        this.#store.setState({ attachmentID: savedAtchID });
       } else if (attachments.length > 0) {
-        this.#store.set(attachmentIDAtom, attachments[0]!.itemID);
+        this.#store.setState({ attachmentID: attachments[0]!.itemID });
       } else {
-        this.#store.set(attachmentIDAtom, null);
-        this.#store.set(annotationsAtom, null);
+        this.#store.setState({ attachmentID: null, annotations: null });
         return;
       }
 
-      const activeAtchID = this.#store.get(attachmentIDAtom);
+      const activeAtchID = this.#store.getState().attachmentID;
       if (activeAtchID !== null) {
         const annotations = getAnnotViewAnnotations(
           client,
           activeAtchID,
           libraryID,
         );
-        this.#store.set(annotationsAtom, annotations);
+        this.#store.setState({ annotations });
       }
 
       this.#loadDisposables.defer(
-        this.#store.sub(attachmentIDAtom, () => {
-          const atchID = this.#store.get(attachmentIDAtom);
-          if (atchID !== null) {
-            this.#saveAttachmentSelection(indexedKey, atchID);
-            try {
-              const annots = getAnnotViewAnnotations(
-                db.client,
-                atchID,
-                libraryID,
-              );
-              this.#store.set(annotationsAtom, annots);
-            } catch (err) {
-              logger.warn(
-                "Failed to load annotations for attachment {atchID}",
-                {
+        this.#store.subscribe(
+          (s) => s.attachmentID,
+          (atchID) => {
+            if (atchID !== null) {
+              this.#saveAttachmentSelection(indexedKey, atchID);
+              try {
+                const annots = getAnnotViewAnnotations(
+                  db.client,
                   atchID,
-                  error: err,
-                },
-              );
+                  libraryID,
+                );
+                this.#store.setState({ annotations: annots });
+              } catch (err) {
+                logger.warn(
+                  "Failed to load annotations for attachment {atchID}",
+                  {
+                    atchID,
+                    error: err,
+                  },
+                );
+              }
             }
-          }
-        }),
+          },
+        ),
       );
 
       logger.debug("Annot view loaded", {
@@ -273,10 +266,12 @@ export class AnnotationView extends ItemView {
   #clearState(): void {
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
-    this.#store.set(itemKeyAtom, null);
-    this.#store.set(attachmentsAtom, null);
-    this.#store.set(attachmentIDAtom, null);
-    this.#store.set(annotationsAtom, null);
+    this.#store.setState({
+      itemKey: null,
+      attachments: null,
+      attachmentID: null,
+      annotations: null,
+    });
     this.#groupID = null;
     this.#itemKey = null;
     this.#importHandle = null;
