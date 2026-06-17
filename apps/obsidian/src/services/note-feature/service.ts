@@ -117,7 +117,7 @@ export class NoteFeatures extends Service<void> {
       onError: (key, error) =>
         logger.warn("Frontmatter expression failed", { key, error }),
     });
-    const content = `---\n${stringifyYaml(fm)}---\n\n${body}`;
+    const content = `---\n${stringifyYaml(fm)}---\n${body}`;
 
     const file = await this.#app.vault.create(path, content);
     await attachmentImport.flush();
