@@ -16,6 +16,12 @@ export interface AnnotActions {
   onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotViewItem): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotViewItem): void;
   onRefresh(): void;
+  /** Toggle reader-follow on/off; off reverts to following the active note. */
+  onToggleFollowReader(): void;
+  /** Pick a Zotero item to pin the view to (manual-link mode). */
+  onLinkItem(): void;
+  /** Exit linked mode, revert to following the active note. */
+  onUnlinkItem(): void;
   getImgSrc(annot: AnnotViewItem): string;
   getBacklink(annot: AnnotViewItem): string | undefined;
 }
@@ -27,6 +33,9 @@ export interface AnnotActionDeps {
   refresh: () => Promise<void>;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
+  onToggleFollowReader: AnnotActions["onToggleFollowReader"];
+  onLinkItem: AnnotActions["onLinkItem"];
+  onUnlinkItem: AnnotActions["onUnlinkItem"];
 }
 
 const IMG_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(
@@ -105,6 +114,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       }
     },
     onDragStart: deps.onDragStart,
+    onToggleFollowReader: deps.onToggleFollowReader,
+    onLinkItem: deps.onLinkItem,
+    onUnlinkItem: deps.onUnlinkItem,
     onRefresh() {
       void toast.promise(deps.refresh(), {
         loading: m.annot_view_refreshing(),
@@ -118,6 +130,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
   onDragStart: () => {},
+  onToggleFollowReader: () => {},
+  onLinkItem: () => {},
+  onUnlinkItem: () => {},
   onRefresh: () => {},
   getImgSrc: () => IMG_PLACEHOLDER,
   getBacklink: () => undefined,

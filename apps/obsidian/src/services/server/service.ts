@@ -24,6 +24,12 @@ export interface ServerEvents {
   "item/update": (event: ItemUpdate) => void;
   "reader/annot-select": (event: ReaderAnnotSelect) => void;
   "reader/active": (event: ReaderActive) => void;
+  /**
+   * Edge transitions of {@link ServerService.available} — fired when the
+   * listener starts accepting connections or stops (settings off, port rebind,
+   * or a bind error). Consumers gate reader-follow features on this.
+   */
+  available: (available: boolean) => void;
 }
 
 export interface ServerServiceDeps {
@@ -48,6 +54,8 @@ export class ServerService extends Service<void> {
   #enabled = false;
   #port = 0;
   #hostname = "";
+  #listening = false;
+  #available = false;
 
   ready: Promise<void>;
 
@@ -57,8 +65,22 @@ export class ServerService extends Service<void> {
     this.ready = this.#load();
   }
 
+  /** `true` only while the listener is enabled and accepting connections. */
+  get available(): boolean {
+    return this.#available;
+  }
+
   on<K extends keyof ServerEvents>(event: K, cb: ServerEvents[K]): () => void {
     return this.#emitter.on(event, cb);
+  }
+
+  /** Recompute {@link available} from enabled+listening, emitting on change. */
+  #refreshAvailability(): void {
+    const next = this.#enabled && this.#listening;
+    if (next === this.#available) return;
+    this.#available = next;
+    logger.debug("Server availability changed", { available: next });
+    this.#emitter.emit("available", next);
   }
 
   /** Fan a parsed notify event out to its typed channel. */
@@ -138,13 +160,18 @@ export class ServerService extends Service<void> {
 
     const server = serve(
       { fetch: app.fetch, port: this.#port, hostname: this.#hostname },
-      (info) =>
+      (info) => {
+        this.#listening = true;
+        this.#refreshAvailability();
         logger.info("Server listening", {
           address: info.address,
           port: info.port,
-        }),
+        });
+      },
     );
     server.on("error", (error) => {
+      this.#listening = false;
+      this.#refreshAvailability();
       logger.error("Server error", { error });
     });
     this.#server = server;
@@ -153,6 +180,8 @@ export class ServerService extends Service<void> {
   async #stopServer(): Promise<void> {
     const server = this.#server;
     this.#server = null;
+    this.#listening = false;
+    this.#refreshAvailability();
     if (!server) return;
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

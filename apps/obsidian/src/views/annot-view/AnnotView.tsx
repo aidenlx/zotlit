@@ -9,12 +9,13 @@ import { Annotation } from "./Annotation";
 import {
   selectActiveAttachment,
   useAnnotStore,
-  useSetAttachmentID,
+  useSetSelectedAttachmentID,
 } from "./store";
 
 export function AnnotView() {
   const itemKey = useAnnotStore((s) => s.itemKey);
   const attachments = useAnnotStore((s) => s.attachments);
+  const followMode = useAnnotStore((s) => s.followMode);
   const [collapsed, setCollapsed] = useState(false);
 
   const hasItem =
@@ -27,8 +28,15 @@ export function AnnotView() {
         collapsed={collapsed}
         onToggleCollapsed={() => setCollapsed((c) => !c)}
       />
+      <ItemIdentityLabel />
       {itemKey === null ? (
-        <div className="pane-empty zt:p-2">{m.annot_view_empty()}</div>
+        <div className="pane-empty zt:p-2">
+          {followMode === "reader"
+            ? m.annot_view_empty_reader()
+            : followMode === "linked"
+              ? m.annot_view_empty_linked()
+              : m.annot_view_empty()}
+        </div>
       ) : attachments === null ? (
         <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
       ) : attachments.length === 0 ? (
@@ -48,10 +56,12 @@ interface ToolbarProps {
 
 function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
   const actions = useContext(AnnotActionsContext);
+  const followMode = useAnnotStore((s) => s.followMode);
 
   return (
     <div className="nav-header zt:flex zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
       <div className="nav-buttons-container zt:@sm:w-auto zt:@sm:shrink-0">
+        <FollowControls />
         {hasItem && (
           <>
             <IconButton
@@ -74,7 +84,63 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
           </>
         )}
       </div>
-      {hasItem && <AttachmentSelector />}
+      {hasItem && followMode !== "reader" && <AttachmentSelector />}
+    </div>
+  );
+}
+
+function FollowControls() {
+  const actions = useContext(AnnotActionsContext);
+  const followMode = useAnnotStore((s) => s.followMode);
+  const serverAvailable = useAnnotStore((s) => s.serverAvailable);
+
+  const followingReader = followMode === "reader";
+  const isLinked = followMode === "linked";
+
+  const readerTooltip = followingReader
+    ? m.annot_view_follow_reader_active_tooltip()
+    : serverAvailable
+      ? m.annot_view_follow_reader_tooltip()
+      : m.annot_view_follow_reader_disabled_tooltip();
+
+  return (
+    <>
+      <IconButton
+        className="nav-action-button zt:data-[active]:text-accent-foreground"
+        icon="book-open"
+        active={followingReader}
+        data-active={followingReader ? "" : undefined}
+        disabled={!serverAvailable && !followingReader}
+        onClick={() => actions.onToggleFollowReader()}
+        {...tooltipAttrs(readerTooltip)}
+      />
+      <IconButton
+        className="nav-action-button zt:data-[active]:text-accent-foreground"
+        icon={isLinked ? "unlink" : "link"}
+        active={isLinked}
+        data-active={isLinked ? "" : undefined}
+        onClick={() =>
+          isLinked ? actions.onUnlinkItem() : actions.onLinkItem()
+        }
+        {...tooltipAttrs(
+          isLinked
+            ? m.annot_view_unlink_tooltip()
+            : m.annot_view_link_tooltip(),
+        )}
+      />
+    </>
+  );
+}
+
+function ItemIdentityLabel() {
+  const followMode = useAnnotStore((s) => s.followMode);
+  const label = useAnnotStore((s) => s.itemDisplayLabel);
+
+  if (followMode === "note" || !label) return null;
+
+  return (
+    <div className="zt:truncate zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
+      {label}
     </div>
   );
 }
@@ -82,7 +148,7 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
 function AttachmentSelector() {
   const attachments = useAnnotStore((s) => s.attachments);
   const active = useAnnotStore(selectActiveAttachment);
-  const setAttachmentID = useSetAttachmentID();
+  const setAttachmentID = useSetSelectedAttachmentID();
 
   if (!attachments || attachments.length <= 1) return null;
 

@@ -3,16 +3,33 @@ import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
 
-import { type AnnotViewAttachment, type AnnotViewItem } from "@zotlit/db";
+import {
+  type AnnotViewAttachment,
+  type AnnotViewItem,
+  type ItemRef,
+} from "@zotlit/db";
+
+/**
+ * What the view tracks: the active literature note (default), the active Zotero
+ * reader (push-driven, server-gated), or a manually pinned item.
+ */
+export type FollowMode = "note" | "reader" | "linked";
 
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
-  attachmentID: number | null;
+  selectedAttachmentID: number | null;
   annotations: AnnotViewItem[] | null;
-  /** Item key extracted from the active literature note's frontmatter. */
+  /** Indexed key of the item currently displayed; `null` when none resolves. */
   itemKey: string | null;
+  /** Pre-formatted identity label for reader/linked modes (e.g. "Title — Author (2024)"). */
+  itemDisplayLabel: string | null;
   /** Group library ID for the current item; `null` for user library. */
   groupID: number | null;
+  followMode: FollowMode;
+  /** Item pinned via manual-link mode; persists across mode switches. */
+  linked: { target: ItemRef; displayLabel: string } | null;
+  /** Whether the Zotero reader can be followed (server enabled and listening). */
+  serverAvailable: boolean;
 }
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
@@ -22,10 +39,14 @@ export function createAnnotStore() {
     subscribeWithSelector(
       (): AnnotState => ({
         attachments: null,
-        attachmentID: null,
+        selectedAttachmentID: null,
         annotations: null,
         itemKey: null,
+        itemDisplayLabel: null,
         groupID: null,
+        followMode: "note",
+        linked: null,
+        serverAvailable: false,
       }),
     ),
   );
@@ -37,7 +58,8 @@ export function selectActiveAttachment(
 ): AnnotViewAttachment | null {
   if (!s.attachments || s.attachments.length === 0) return null;
   return (
-    s.attachments.find((a) => a.itemID === s.attachmentID) ?? s.attachments[0]!
+    s.attachments.find((a) => a.itemID === s.selectedAttachmentID) ??
+    s.attachments[0]!
   );
 }
 
@@ -56,7 +78,7 @@ export function useAnnotStore<T>(selector: (s: AnnotState) => T): T {
   return useStore(useAnnotStoreApi(), selector);
 }
 
-export function useSetAttachmentID(): (id: number) => void {
+export function useSetSelectedAttachmentID(): (id: number) => void {
   const store = useAnnotStoreApi();
-  return (attachmentID) => store.setState({ attachmentID });
+  return (id) => store.setState({ selectedAttachmentID: id });
 }

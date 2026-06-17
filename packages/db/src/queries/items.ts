@@ -4,6 +4,7 @@ import { type ItemFields } from "@zotlit/zotero-types";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { type CreatorFieldMode } from "@/lib/zt-creator";
+import { itemDateYear, parseItemDate } from "@/lib/zt-date";
 import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupsQuery } from "./_groups";
@@ -135,6 +136,14 @@ const itemByKeyQuery = defineQuery<{ libraryID: number; key: string }>()(
     }),
 );
 
+const itemRefByIdQuery = defineQuery<{ itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.items.findFirst({
+      columns: { key: true, libraryID: true },
+      where: { itemID: placeholder("itemID"), deletedItem: false },
+    }),
+);
+
 type ItemRow = QueryRow<typeof itemsByLibraryQuery>;
 
 function toItem(row: ItemRow, groupID: number | null): Item {
@@ -223,6 +232,117 @@ export async function getItemsByIDAsync(
   ]);
   const groupId = group?.groupID ?? null;
   return batches.flat().map((r) => toItem(r, groupId));
+}
+
+/** A Zotero item resolved to its key + owning library, library-scope-free. */
+export interface ItemRef {
+  itemID: number;
+  key: string;
+  libraryID: number;
+  /** `groups.groupID` for a group library, `null` for the user library. */
+  groupID: number | null;
+  /** `key`, or `key + 'g' + groupID` for group-library items. */
+  indexedKey: string;
+}
+
+/**
+ * Resolve a Zotero item to its key + owning library by global item id, with no
+ * caller-supplied library scope. Item ids are unique across libraries, so the
+ * Zotero reader's `itemID` (which travels without a library) maps cleanly here.
+ *
+ * @returns the {@link ItemRef}, or `null` when no live item has that id.
+ */
+export function getItemRefByID(
+  db: NodeDatabaseClient,
+  itemID: number,
+): ItemRef | null {
+  const row = itemRefByIdQuery.prepared(db).get({ itemID });
+  if (!row) return null;
+  const groupID =
+    groupsQuery.prepared(db).get({ libraryID: row.libraryID })?.groupID ?? null;
+  return {
+    itemID,
+    key: row.key,
+    libraryID: row.libraryID,
+    groupID,
+    indexedKey: formatIndexedKey(row.key, groupID),
+  };
+}
+
+/** Lightweight display fields for the annotation view's item identity label. */
+export interface ItemDisplayInfo {
+  title: string | null;
+  creators: {
+    firstName: string | null;
+    lastName: string | null;
+    fieldMode: CreatorFieldMode;
+  }[];
+  year: number | null;
+}
+
+const itemDisplayInfoQuery = defineQuery<{ itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.items.findFirst({
+      columns: {},
+      where: { itemID: placeholder("itemID"), deletedItem: false },
+      with: {
+        itemData: {
+          columns: {},
+          with: {
+            fieldsCombined: { columns: { fieldName: true, custom: true } },
+            itemDataValue: { columns: { value: true } },
+          },
+        },
+        itemCreators: {
+          columns: {},
+          orderBy: { orderIndex: "asc" },
+          with: {
+            creator: {
+              columns: {
+                firstName: true,
+                lastName: true,
+                fieldMode: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+);
+
+/**
+ * Fetch title, creators, and year for a single item by global item id.
+ * Used by the annotation view to build the item identity label.
+ */
+export function getItemDisplayInfoByID(
+  db: NodeDatabaseClient,
+  itemID: number,
+): ItemDisplayInfo | null {
+  const row = itemDisplayInfoQuery.prepared(db).get({ itemID });
+  if (!row) return null;
+
+  let title: string | null = null;
+  let dateRaw: string | null = null;
+  for (const d of row.itemData) {
+    if (!d.fieldsCombined || d.fieldsCombined.custom === 1) continue;
+    if (d.fieldsCombined.fieldName === "title") {
+      title = d.itemDataValue?.value ?? null;
+    } else if (d.fieldsCombined.fieldName === "date") {
+      dateRaw = d.itemDataValue?.value ?? null;
+    }
+  }
+
+  const creators = row.itemCreators.map((ic) => ({
+    firstName: ic.creator?.firstName ?? null,
+    lastName: ic.creator?.lastName ?? null,
+    fieldMode: (ic.creator?.fieldMode ?? 0) as CreatorFieldMode,
+  }));
+
+  return {
+    title,
+    creators,
+    year: itemDateYear(parseItemDate(dateRaw)),
+  };
 }
 
 export function getItemsByKey(

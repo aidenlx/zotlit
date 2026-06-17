@@ -137,6 +137,18 @@ export class DatabaseService extends Service<void> {
     }
   }
 
+  /**
+   * External "the database changed" signal (e.g. a Zotero push notification).
+   * Feeds the same debounced, single-flight refresh lane as the filesystem
+   * watchers, so a push and an fs.watch tick for the same write coalesce into
+   * one refresh. Independent of `zotero.auto-refresh` — that flag only governs
+   * fs.watch binding; a push is its own change source and always refreshes.
+   */
+  notifyExternalChange(): void {
+    logger.debug("External change signalled, scheduling watched refresh");
+    this.#scheduleWatchedRefresh();
+  }
+
   async #load(): Promise<void> {
     await this.#zoteroPref.ready;
     const settings = await this.#settings.loaded;

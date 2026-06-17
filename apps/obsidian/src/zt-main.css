@@ -110,6 +110,7 @@
 }
 
 @import "tailwindcss/utilities.css" layer(utilities) prefix(zt);
+@import "tw-animate-css" prefix(zt);
 
 /* Scoped preflight. Resets UA/Obsidian element defaults *inside plugin UI roots
    only* — mark a root with `class="zt-root"` — so semantic HTML (blockquote, p,
