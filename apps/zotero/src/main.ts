@@ -5,6 +5,7 @@ import {
 import { attachFluentToWindow } from "./lib/l10n";
 import { logger, setupLogging } from "./lib/logger";
 import { registerMenus } from "./menus";
+import { registerNotify } from "./notify";
 import { registerPrefPane } from "./prefs";
 
 export interface PluginData {
@@ -42,6 +43,7 @@ export class ZotLitZotero {
     }
     await registerPrefPane(this.#data.id);
     stack.use(await registerMenus(this.#data.id));
+    stack.use(registerNotify());
     logger.info("startup", {
       version: this.#data.version,
       id: this.#data.id,
