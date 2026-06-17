@@ -8,6 +8,7 @@ import { ItemLookup } from "./item-lookup/service";
 import { LoggingService } from "./log/service";
 import { NoteFeatures } from "./note-feature/service";
 import { NoteIndex } from "./note-index/service";
+import { ServerService } from "./server/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
@@ -46,6 +47,9 @@ export function buildServices(
     })
     .use({
       zoteroPref: ({ settings }) => new ZoteroPrefService({ settings }),
+    })
+    .use({
+      server: ({ settings }) => new ServerService({ settings }),
     })
     .use({
       db: ({ settings, zoteroPref }) =>

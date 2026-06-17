@@ -93,6 +93,12 @@ importers:
 
   apps/obsidian:
     dependencies:
+      '@hono/node-server':
+        specifier: ^2.0.4
+        version: 2.0.4(hono@4.12.25)
+      '@hono/valibot-validator':
+        specifier: ^0.6.1
+        version: 0.6.1(hono@4.12.25)(valibot@1.4.0)
       '@std/async':
         specifier: jsr:1.4.0
         version: '@jsr/std__async@1.4.0'
@@ -108,6 +114,9 @@ importers:
       '@zotlit/item-lookup':
         specifier: workspace:*
         version: link:../../packages/item-lookup
+      '@zotlit/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -123,6 +132,9 @@ importers:
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
+      hono:
+        specifier: ^4.12.25
+        version: 4.12.25
       monkey-around:
         specifier: 3.0.0
         version: 3.0.0
@@ -484,6 +496,9 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260421.2)
+      valibot:
+        specifier: ^1.0.0
+        version: 1.4.0
       vitest:
         specifier: 'catalog:'
         version: 4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
@@ -859,6 +874,18 @@ packages:
   '@fluent/syntax@0.19.0':
     resolution: {integrity: sha512-5D2qVpZrgpjtqU4eNOcWGp1gnUCgjfM+vKGE2y03kKN6z5EBhtx0qdRFbg8QuNNj8wXNoX93KJoYb+NqoxswmQ==}
     engines: {node: '>=14.0.0', npm: '>=7.0.0'}
+
+  '@hono/node-server@2.0.4':
+    resolution: {integrity: sha512-Ut3y0dMMPWy6bZ2kVfx25EOVbZlm15dhF4mOsezMlhpNHy+4MkU1qN9Y6lnruYi4wPmFzimGX2X7LF/FwHli4A==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4
+
+  '@hono/valibot-validator@0.6.1':
+    resolution: {integrity: sha512-rqKhQJI8IVR8gRRNHHf2wGtIT7sKEqV1KoGL5f2SocNytl+tBNn4EtRu4zfk/D6axgWSswnaxeiuJhM5yNFrCg==}
+    peerDependencies:
+      hono: '>=3.9.0'
+      valibot: ^1.0.0 || ^1.0.0-beta.4 || ^1.0.0-rc
 
   '@inlang/paraglide-js@2.18.0':
     resolution: {integrity: sha512-Acp6htA5W7rS2kL3iMjhSr08eECz696MYsud+FBKrmahzM7PdywPVq9UOr9MaC/aV7AZPElrYcqYZOOlUri5fg==}
@@ -2767,6 +2794,10 @@ packages:
   has-property-descriptors@1.0.2:
     resolution: {integrity: sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg==}
 
+  hono@4.12.25:
+    resolution: {integrity: sha512-2NFaIyNVgJmBs/ecmtGzlmluTFs5cHEWGTdu0t1HBwYzoGXOL5nUQBRMXsXWla5i4KkG//QMzVP88m1+I3fdAQ==}
+    engines: {node: '>=16.9.0'}
+
   hookable@6.1.1:
     resolution: {integrity: sha512-U9LYDy1CwhMCnprUfeAZWZGByVbhd54hwepegYTK7Pi5NvqEj63ifz5z+xukznehT7i6NIZRu89Ay1AZmRsLEQ==}
 
@@ -4121,6 +4152,15 @@ snapshots:
     optional: true
 
   '@fluent/syntax@0.19.0': {}
+
+  '@hono/node-server@2.0.4(hono@4.12.25)':
+    dependencies:
+      hono: 4.12.25
+
+  '@hono/valibot-validator@0.6.1(hono@4.12.25)(valibot@1.4.0)':
+    dependencies:
+      hono: 4.12.25
+      valibot: 1.4.0
 
   '@inlang/paraglide-js@2.18.0':
     dependencies:
@@ -5690,6 +5730,8 @@ snapshots:
     dependencies:
       es-define-property: 1.0.1
     optional: true
+
+  hono@4.12.25: {}
 
   hookable@6.1.1: {}
 
