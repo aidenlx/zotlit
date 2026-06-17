@@ -4,7 +4,10 @@ import { type App, type Plugin } from "obsidian";
 import * as m from "@/paraglide/messages";
 import { type AttachmentImportService } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
+import { type ItemLookup } from "@/services/item-lookup/service";
 import { type NoteFeatures } from "@/services/note-feature/service";
+import { type ServerService } from "@/services/server/service";
+import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { ANNOT_VIEW_TYPE, AnnotationView, type AnnotViewDeps } from "./view";
@@ -17,9 +20,12 @@ type AnnotViewPlugin = Pick<
 export interface AnnotViewRegistrationDeps {
   app: App;
   db: DatabaseService;
+  server: ServerService;
   zoteroPref: ZoteroPrefService;
   noteFeatures: NoteFeatures;
   attachmentImport: AttachmentImportService;
+  itemLookup: ItemLookup;
+  settings: SettingsService;
 }
 
 export function registerAnnotView(
@@ -29,9 +35,12 @@ export function registerAnnotView(
   const viewDeps: AnnotViewDeps = {
     app: deps.app,
     db: deps.db,
+    server: deps.server,
     zoteroPref: deps.zoteroPref,
     noteFeatures: deps.noteFeatures,
     attachmentImport: deps.attachmentImport,
+    itemLookup: deps.itemLookup,
+    settings: deps.settings,
   };
 
   plugin.registerView(

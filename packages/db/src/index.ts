@@ -5,6 +5,8 @@ export {
   type Library,
 } from "./queries/libraries";
 export {
+  getItemDisplayInfoByID,
+  getItemRefByID,
   getItemsByID,
   getItemsByIDAsync,
   getItemsByKey,
@@ -14,7 +16,9 @@ export {
   type BaseItem,
   type Creator,
   type Item,
+  type ItemDisplayInfo,
   type ItemOfType,
+  type ItemRef,
 } from "./queries/items";
 export {
   formatIndexedKey,

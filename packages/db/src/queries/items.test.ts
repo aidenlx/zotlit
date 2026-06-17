@@ -9,7 +9,12 @@ import { createClient, type NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseItemLanguage } from "@/lib/zt-lang";
 
-import { getItemsByID, getItemsByKey, getItemsByLibrary } from "./items";
+import {
+  getItemRefByID,
+  getItemsByID,
+  getItemsByKey,
+  getItemsByLibrary,
+} from "./items";
 
 let tempDir: string;
 let dbPath: string;
@@ -288,6 +293,36 @@ describe("getItemsByKey", () => {
 
   it("returns an empty array when no key matches", () => {
     expect(getItemsByKey(db, USER_LIBRARY_ID, ["NOPE"])).toEqual([]);
+  });
+});
+
+describe("getItemRefByID", () => {
+  it("resolves a user-library item to its key and library, no scope needed", () => {
+    expect(getItemRefByID(db, 1)).toEqual({
+      itemID: 1,
+      key: "USER1",
+      libraryID: USER_LIBRARY_ID,
+      groupID: null,
+      indexedKey: "USER1",
+    });
+  });
+
+  it("attaches the group id and indexed key for a group-library item", () => {
+    expect(getItemRefByID(db, 7)).toEqual({
+      itemID: 7,
+      key: "GRP1",
+      libraryID: 2,
+      groupID: 17,
+      indexedKey: "GRP1g17",
+    });
+  });
+
+  it("returns null for a deleted item", () => {
+    expect(getItemRefByID(db, 2)).toBeNull();
+  });
+
+  it("returns null for an unknown item id", () => {
+    expect(getItemRefByID(db, 9999)).toBeNull();
   });
 });
 

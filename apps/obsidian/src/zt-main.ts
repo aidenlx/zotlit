@@ -63,10 +63,21 @@ export default class ZotLitPlugin extends Plugin {
     registerAnnotView(this, {
       app: this.app,
       db: services.db,
+      server: services.server,
       zoteroPref: services.zoteroPref,
       noteFeatures: services.noteFeatures,
       attachmentImport: services.attachmentImport,
+      itemLookup: services.itemLookup,
+      settings: services.settings,
     });
+
+    // A Zotero item add/modify/trash push means the database changed; feed it
+    // into the same coalesced refresh lane as the filesystem watchers.
+    stack.defer(
+      services.server.on("item/update", () => {
+        services.db.notifyExternalChange();
+      }),
+    );
 
     console.log("ZotLit loaded");
 
