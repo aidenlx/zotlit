@@ -226,27 +226,27 @@ Prefix custom properties with `--zt-…` to avoid colliding with Obsidian's. Def
 
 ## Verifying
 
-### Inspect the running UI with the `obsidian` CLI
+### Inspect the running UI with the `obsidian-cli` CLI
 
-The dev test vault (`apps/obsidian/tests/zt-vault`) hot-reloads the plugin from a dev build, and the Obsidian.app binary doubles as a CLI (`/Applications/Obsidian.app/Contents/MacOS/obsidian` on macOS) that drives the running app — so you can verify styling against the *real* rendered DOM instead of guessing. The loop:
+The dev test vault (`apps/obsidian/tests/zt-vault`) hot-reloads the plugin from a dev build, and the `obsidian-cli` command (wrapping the Obsidian.app binary at `/Applications/Obsidian.app/Contents/MacOS/obsidian` on macOS) drives the running app — so you can verify styling against the *real* rendered DOM instead of guessing. The loop:
 
 1. **Build** → `pnpm --filter @zotlit/obsidian build:dev` (copies the bundle into the vault's `.obsidian/plugins/zotlit`).
-2. **Reload** → `obsidian plugin:reload id=zotlit`.
-3. **Open the view** → `obsidian command id=zotlit:<command-id>` (list them with `obsidian commands filter=zotlit`), or `obsidian eval code='…'` to mount it in a specific split.
-4. **Measure — the DOM is the source of truth.** `obsidian eval code='…'` runs JS in the app and returns the value. Use `getComputedStyle(el)` / `el.getBoundingClientRect()` to assert what actually rendered: confirm a token resolved (`getComputedStyle(el).backgroundColor`), catch a leaked UA style (a bare `<blockquote>` outside a `.zt-root` reporting `marginLeft: "40px"` — see **Scoped preflight** above), or compare left-edge offsets and element heights across components. A computed-style assertion is worth more than eyeballing a screenshot.
-5. **Screenshot** → `obsidian dev:screenshot path=<absolute-path>` (path must be absolute; save inside the workspace, never `/tmp`, and delete the throwaways when done — see the no-`/tmp` rule).
-6. **Errors / logs** → `obsidian dev:errors`, `obsidian dev:console` (mock/`console.log` handlers show up here).
+2. **Reload** → `obsidian-cli plugin:reload id=zotlit`.
+3. **Open the view** → `obsidian-cli command id=zotlit:<command-id>` (list them with `obsidian-cli commands filter=zotlit`), or `obsidian-cli eval code='…'` to mount it in a specific split.
+4. **Measure — the DOM is the source of truth.** `obsidian-cli eval code='…'` runs JS in the app and returns the value. Use `getComputedStyle(el)` / `el.getBoundingClientRect()` to assert what actually rendered: confirm a token resolved (`getComputedStyle(el).backgroundColor`), catch a leaked UA style (a bare `<blockquote>` outside a `.zt-root` reporting `marginLeft: "40px"` — see **Scoped preflight** above), or compare left-edge offsets and element heights across components. A computed-style assertion is worth more than eyeballing a screenshot.
+5. **Screenshot** → `obsidian-cli dev:screenshot path=<absolute-path>` (path must be absolute; save inside the workspace, never `/tmp`, and delete the throwaways when done — see the no-`/tmp` rule).
+6. **Errors / logs** → `obsidian-cli dev:errors`, `obsidian-cli dev:console` (mock/`console.log` handlers show up here).
 
 Two traps, learned the hard way:
 
 - **Screenshots can be stale/transitional frames.** A capture taken immediately after a reload or `revealLeaf` may show the *old* DOM while the change is already live. Always cross-check a screenshot against an `eval` computed-style/DOM query; if they disagree, the DOM query wins — re-shoot. (A DevTools window open over Obsidian can also steal the capture — close it first.)
-- **`eval` has no `await`.** The code runs in a non-async wrapper, so a top-level `await` is a syntax error. Fire the promise and verify in a *follow-up* `eval` call, or grab references synchronously — e.g. hold the leaf returned by `getLeaf(...)` and `revealLeaf(it)` in the same call, rather than re-querying `getLeavesOfType(...)` right after an async `setViewState`, which races and returns an empty list.
+- **`obsidian-cli eval` has no `await`.** The code runs in a non-async wrapper, so a top-level `await` is a syntax error. Fire the promise and verify in a *follow-up* `eval` call, or grab references synchronously — e.g. hold the leaf returned by `getLeaf(...)` and `revealLeaf(it)` in the same call, rather than re-querying `getLeavesOfType(...)` right after an async `setViewState`, which races and returns an empty list.
 
 ### Cross-theme checklist
 
 Then confirm it holds up across themes:
 
-1. Toggle **Settings → Appearance → Base color scheme** between Light and Dark — your component should look correct in both with no extra CSS. Confirm which is active with `obsidian eval code='document.body.className'` (expect `theme-light` / `theme-dark`).
+1. Toggle **Settings → Appearance → Base color scheme** between Light and Dark — your component should look correct in both with no extra CSS. Confirm which is active with `obsidian-cli eval code='document.body.className'` (expect `theme-light` / `theme-dark`).
 2. Change the accent color — interactive elements should follow it.
 3. Try a popular community theme (Minimal, Things) — your component should still look at home. If something feels off, you're probably hardcoding a value that the theme is overriding.
 
