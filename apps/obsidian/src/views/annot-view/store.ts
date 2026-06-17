@@ -1,21 +1,62 @@
-import { atom } from "jotai";
+import { createContext, useContext } from "react";
+import { useStore } from "zustand";
+import { subscribeWithSelector } from "zustand/middleware";
+import { createStore } from "zustand/vanilla";
 
 import { type AnnotViewAttachment, type AnnotViewItem } from "@zotlit/db";
 
-export const attachmentsAtom = atom<AnnotViewAttachment[] | null>(null);
-export const attachmentIDAtom = atom<number | null>(null);
-export const annotationsAtom = atom<AnnotViewItem[] | null>(null);
+export interface AnnotState {
+  attachments: AnnotViewAttachment[] | null;
+  attachmentID: number | null;
+  annotations: AnnotViewItem[] | null;
+  /** Item key extracted from the active literature note's frontmatter. */
+  itemKey: string | null;
+  /** Group library ID for the current item; `null` for user library. */
+  groupID: number | null;
+}
 
-/** Item key extracted from the active literature note's frontmatter. */
-export const itemKeyAtom = atom<string | null>(null);
+export type AnnotStore = ReturnType<typeof createAnnotStore>;
 
-/** Group library ID for the current item; `null` for user library. */
-export const groupIDAtom = atom<number | null>(null);
+export function createAnnotStore() {
+  return createStore<AnnotState>()(
+    subscribeWithSelector(
+      (): AnnotState => ({
+        attachments: null,
+        attachmentID: null,
+        annotations: null,
+        itemKey: null,
+        groupID: null,
+      }),
+    ),
+  );
+}
 
 /** Selected attachment, falling back to the first when none is chosen. */
-export const activeAttachmentAtom = atom((get) => {
-  const all = get(attachmentsAtom);
-  if (!all || all.length === 0) return null;
-  const id = get(attachmentIDAtom);
-  return all.find((a) => a.itemID === id) ?? all[0];
-});
+export function selectActiveAttachment(
+  s: AnnotState,
+): AnnotViewAttachment | null {
+  if (!s.attachments || s.attachments.length === 0) return null;
+  return (
+    s.attachments.find((a) => a.itemID === s.attachmentID) ?? s.attachments[0]!
+  );
+}
+
+const AnnotStoreContext = createContext<AnnotStore | null>(null);
+export const AnnotStoreProvider = AnnotStoreContext.Provider;
+
+function useAnnotStoreApi(): AnnotStore {
+  const store = useContext(AnnotStoreContext);
+  if (!store) {
+    throw new Error("useAnnotStore must be used within AnnotStoreProvider");
+  }
+  return store;
+}
+
+export function useAnnotStore<T>(selector: (s: AnnotState) => T): T {
+  return useStore(useAnnotStoreApi(), selector);
+}
+
+export function useSetAttachmentID(): (id: number) => void {
+  const store = useAnnotStoreApi();
+  return (attachmentID) => store.setState({ attachmentID });
+}

@@ -1,4 +1,3 @@
-import { useAtomValue, useSetAtom } from "jotai";
 import { useContext, useState } from "react";
 
 import { IconButton } from "@/components/obsidian/icon-button";
@@ -8,16 +7,14 @@ import * as m from "@/paraglide/messages";
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
 import {
-  activeAttachmentAtom,
-  annotationsAtom,
-  attachmentIDAtom,
-  attachmentsAtom,
-  itemKeyAtom,
+  selectActiveAttachment,
+  useAnnotStore,
+  useSetAttachmentID,
 } from "./store";
 
 export function AnnotView() {
-  const itemKey = useAtomValue(itemKeyAtom);
-  const attachments = useAtomValue(attachmentsAtom);
+  const itemKey = useAnnotStore((s) => s.itemKey);
+  const attachments = useAnnotStore((s) => s.attachments);
   const [collapsed, setCollapsed] = useState(false);
 
   const hasItem =
@@ -83,9 +80,9 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
 }
 
 function AttachmentSelector() {
-  const attachments = useAtomValue(attachmentsAtom);
-  const active = useAtomValue(activeAttachmentAtom);
-  const setAttachmentID = useSetAtom(attachmentIDAtom);
+  const attachments = useAnnotStore((s) => s.attachments);
+  const active = useAnnotStore(selectActiveAttachment);
+  const setAttachmentID = useSetAttachmentID();
 
   if (!attachments || attachments.length <= 1) return null;
 
@@ -107,8 +104,8 @@ function AttachmentSelector() {
 }
 
 function AnnotList({ collapsed }: { collapsed: boolean }) {
-  const annotations = useAtomValue(annotationsAtom);
-  const attachment = useAtomValue(activeAttachmentAtom);
+  const annotations = useAnnotStore((s) => s.annotations);
+  const attachment = useAnnotStore(selectActiveAttachment);
 
   if (!annotations || !attachment) {
     return <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>;

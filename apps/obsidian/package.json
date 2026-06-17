@@ -27,13 +27,13 @@
     "clsx": "^2.1.1",
     "eta": "^4.6.0",
     "fflate": "^0.8.2",
-    "jotai": "^2.10.0",
     "monkey-around": "3.0.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-textarea-autosize": "^8.5.9",
     "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.2.2"
+    "tailwind-variants": "^3.2.2",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@codemirror/state": "6.5.0",
