@@ -4,7 +4,6 @@ export default defineConfig({
   entry: [
     {
       index: "./src/index.ts",
-      types: "./src/types.ts",
     },
   ],
   tsconfig: "./tsconfig.lib.json",
