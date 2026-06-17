@@ -36,6 +36,9 @@ catalogs:
     drizzle-orm:
       specifier: 1.0.0-rc.3
       version: 1.0.0-rc.3
+    monkey-around:
+      specifier: 3.0.0
+      version: 3.0.0
     oxfmt:
       specifier: ^0.48.0
       version: 0.48.0
@@ -136,7 +139,7 @@ importers:
         specifier: ^4.12.25
         version: 4.12.25
       monkey-around:
-        specifier: 3.0.0
+        specifier: 'catalog:'
         version: 3.0.0
       react:
         specifier: 'catalog:'
@@ -320,6 +323,9 @@ importers:
       core-js:
         specifier: ^3.39.0
         version: 3.49.0
+      monkey-around:
+        specifier: 'catalog:'
+        version: 3.0.0
     devDependencies:
       '@fluent/syntax':
         specifier: ^0.19.0

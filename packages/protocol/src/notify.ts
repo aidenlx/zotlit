@@ -14,15 +14,11 @@ export const itemUpdateSchema = v.object({
   trash: v.array(itemRef),
 });
 
-/** Annotation items toggled in the Zotero reader, with their new state. */
+/** The full set of annotation items currently selected in a reader. */
 export const readerAnnotSelectSchema = v.object({
   event: v.literal("reader/annot-select"),
-  updates: v.array(
-    v.object({
-      itemID: v.number(),
-      selected: v.boolean(),
-    }),
-  ),
+  attachmentID: v.number(),
+  selected: v.array(v.number()),
 });
 
 /** The Zotero reader switched to a different attachment. */
