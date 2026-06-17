@@ -16,6 +16,7 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { databasePageItems, libraryDefinition } from "./database";
+import { liveUpdatesPageItems } from "./live-updates";
 import {
   decodeLogLevel,
   encodeLogLevel,
@@ -146,6 +147,12 @@ export class ZotLitSettingTab extends PluginSettingTab {
         name: m.settings_page_attachments(),
         desc: m.settings_page_attachments_desc(),
         items: attachmentPageItems(ctx),
+      },
+      {
+        type: "page",
+        name: m.settings_page_live_updates(),
+        desc: m.settings_page_live_updates_desc(),
+        items: liveUpdatesPageItems(ctx),
       },
       {
         type: "page",
