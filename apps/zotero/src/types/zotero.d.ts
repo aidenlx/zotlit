@@ -13,6 +13,21 @@ declare global {
     }
   }
 
+  // `zotero-types@4.1.2` omits the reducer that mutates the internal reader's
+  // `_state`. It is the single write path (`this._state = { ...this._state,
+  // ...state }`), so wrapping it is how we observe selection changes.
+  // https://github.com/zotero/reader/blob/9.0.4/src/common/reader.js#L493
+  namespace _ZoteroTypes {
+    namespace Reader {
+      interface InternalReader<T extends keyof ViewTypeMap> {
+        _updateState(
+          state: Partial<InternalReader<T>["_state"]>,
+          init?: boolean,
+        ): void;
+      }
+    }
+  }
+
   interface Window {
     /**
      * Gecko chrome-window global. We only use `insertFTLIfNeeded`, which

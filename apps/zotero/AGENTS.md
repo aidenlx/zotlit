@@ -8,6 +8,10 @@ Zotero 9 (Firefox 140 ESR) companion plugin. No backward-compat with Zotero 8 or
 
 Default transport is `fetch`. Switch to `Zotero.HTTP.request` only when need CORS bypass that `fetch` from chrome scope can't do.
 
+### Patching reader internals
+
+The reader (`reader._internalReader`) lives in the iframe's **content** compartment; the plugin runs in **chrome**. Patch content reader methods by **plain assignment** (`obj.method = fn`) plus restore-on-dispose — never `monkey-around`/`around()`, whose cross-compartment prototype reparenting trips Gecko's security membrane and breaks the reader. `monkey-around` is fine in `apps/obsidian` (single compartment), not here. See `docs/reader-patching.md`.
+
 ### Logging
 
 Always via LogTape `getLogger(["zotlit", "zotero", ...])`. Never call `console.*` or `Zotero.debug` directly from feature code.

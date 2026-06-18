@@ -5,10 +5,13 @@ import { currentSelection, notifyEnabled } from "./shared";
 
 const logger = appLogger.getChild(["notify", "annot-select"]);
 
+type InternalReader = _ZoteroTypes.ReaderInstance["_internalReader"];
+
 interface Hook {
-  mo: MutationObserver;
-  /** The observed `body`, used to detect iframe recreation. */
-  body: HTMLElement;
+  /** The patched internal reader, used to detect reader recreation on reload. */
+  internal: InternalReader;
+  /** The original `_updateState`, reinstated on rebind/dispose. */
+  original: InternalReader["_updateState"];
   libraryID: number;
   /** Signature of the last pushed selection, to diff against the live state. */
   lastSig: string;
@@ -20,47 +23,47 @@ interface Hook {
  *
  * There is no Zotero API for selection — it never leaves the reader iframe — but
  * `_internalReader._state.selectedAnnotationIDs` holds the authoritative set
- * (annotation **keys**). We don't patch the reducer (`_updateState`) that
- * mutates it: instead a `MutationObserver` on the iframe's `document.body`
- * cheaply signals "something changed" (every selection path toggles the
- * `selected` class on a sidebar row), and the flush *reads* the state, maps
- * keys → item ids, and pushes the full current set whenever it differs from the
- * last push. No DOM parsing — the observer is only a trigger.
+ * (annotation **keys**). That state has a single write path: the reader's
+ * `_updateState` reducer (`this._state = { ...this._state, ...state }`). We wrap
+ * it so every selection change — from the sidebar, a view click, or a tool
+ * switch — re-reads the post-update state, maps keys → item ids, and pushes the
+ * full current set whenever it differs from the last push.
  *
- * The observer is on the stable `document.body` (not the `#annotations` node,
- * which React unmounts when the sidebar closes). The one blind spot is a fully
- * *closed* sidebar, where no rows exist to mutate and thus nothing triggers a
- * re-read.
+ * The wrapper calls the original first and never mutates state; the flush runs
+ * after and is fully guarded, so a fault in our code can't break the reader.
+ * This replaces an earlier `MutationObserver` on the sidebar's `selected` class,
+ * whose blind spot was a hidden/closed sidebar: deselecting there toggles no row
+ * and never fired, so the deselect went unsent.
  *
- * @see https://github.com/zotero/reader/blob/9.0.3/src/common/reader.js#L493
+ * @see https://github.com/zotero/reader/blob/9.0.4/src/common/reader.js#L493
  */
 export function registerAnnotSelectNotify(send: Send): Disposable {
   const hooks = new Map<_ZoteroTypes.ReaderInstance, Hook>();
   const hooking = new Set<_ZoteroTypes.ReaderInstance>(); // dedupe concurrent hooks
 
-  const flush = () => {
+  const flush = (reader: _ZoteroTypes.ReaderInstance) => {
     if (!notifyEnabled()) return;
-    for (const [reader, hook] of hooks) {
-      const selected = currentSelection(reader, hook.libraryID);
-      const sig = selected.join(",");
-      if (sig === hook.lastSig) continue;
-      hook.lastSig = sig;
-      const attachmentID = reader.itemID;
-      if (typeof attachmentID !== "number") continue;
-      const itemID = Zotero.Items.get(attachmentID)?.parentItemID;
-      if (typeof itemID !== "number") continue; // standalone attachment, no parent
-      logger.debug("annot selection changed", {
-        itemID,
-        attachmentID,
-        count: selected.length,
-      });
-      void send({
-        event: "reader/annot-select",
-        itemID,
-        attachmentID,
-        selected,
-      });
-    }
+    const hook = hooks.get(reader);
+    if (!hook) return;
+    const selected = currentSelection(reader, hook.libraryID);
+    const sig = selected.join(",");
+    if (sig === hook.lastSig) return;
+    hook.lastSig = sig;
+    const attachmentID = reader.itemID;
+    if (typeof attachmentID !== "number") return;
+    const itemID = Zotero.Items.get(attachmentID)?.parentItemID;
+    if (typeof itemID !== "number") return; // standalone attachment, no parent
+    logger.debug("annot selection changed", {
+      itemID,
+      attachmentID,
+      count: selected.length,
+    });
+    void send({
+      event: "reader/annot-select",
+      itemID,
+      attachmentID,
+      selected,
+    });
   };
 
   async function hookReader(
@@ -70,25 +73,35 @@ export function registerAnnotSelectNotify(send: Send): Disposable {
     hooking.add(reader);
     try {
       await reader._initPromise;
-      const win = reader._iframeWindow as
-        | (typeof globalThis & Window)
-        | undefined;
+      const internal = reader._internalReader;
       const attachmentID = reader.itemID;
-      if (!win || typeof attachmentID !== "number") return;
-      const body = win.document.body;
-      if (hooks.get(reader)?.body === body) return; // already bound to live iframe
-      hooks.get(reader)?.mo.disconnect(); // iframe was recreated — rebind
+      if (!internal || typeof attachmentID !== "number") return;
+      const prev = hooks.get(reader);
+      if (prev?.internal === internal) return; // already bound
+      if (prev) prev.internal._updateState = prev.original; // recreated — rebind
 
       const libraryID = Zotero.Items.get(attachmentID)?.libraryID;
       if (typeof libraryID !== "number") return;
 
-      const mo = new win.MutationObserver(() => flush());
-      mo.observe(body, { attributeFilter: ["class"], subtree: true });
+      // Patch by plain assignment, NOT `monkey-around`: `around()` reparents
+      // prototypes across the chrome/content membrane and breaks the reader.
+      // @see docs/reader-patching.md
+      // oxlint-disable-next-line typescript/unbound-method
+      const original = internal._updateState;
+      internal._updateState = function (this: InternalReader, ...args) {
+        const ret = original.call(this, ...args);
+        try {
+          flush(reader);
+        } catch (error) {
+          logger.error("annot-select flush failed", { attachmentID, error });
+        }
+        return ret;
+      };
       // Seed from the live selection so an existing selection at hook time isn't
       // re-pushed; only later changes flush.
       hooks.set(reader, {
-        mo,
-        body,
+        internal,
+        original,
         libraryID,
         lastSig: currentSelection(reader, libraryID).join(","),
       });
@@ -123,7 +136,8 @@ export function registerAnnotSelectNotify(send: Send): Disposable {
   return {
     [Symbol.dispose]() {
       Zotero.Notifier.unregisterObserver(notifierID);
-      for (const { mo } of hooks.values()) mo.disconnect();
+      for (const { internal, original } of hooks.values())
+        internal._updateState = original;
       hooks.clear();
       logger.debug("unregistered annot-select notifier");
     },
