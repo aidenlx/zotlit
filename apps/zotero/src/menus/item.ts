@@ -1,15 +1,26 @@
+import { type ProtocolAction } from "@zotlit/protocol";
+
 import { registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
+
+import { openInObsidian } from "./obsidian.js";
 
 const logger = appLogger.getChild(["menus", "item"]);
 
 const MENU_ID = "zotlit-item-menu";
 
-type ItemAction = "open" | "update" | "export";
+type LibraryMenuContext = _ZoteroTypes.MenuManager.LibraryMenuContext;
 
-function onCommand(action: ItemAction) {
-  return (): void => {
-    logger.info("library-item menu invoked", { action });
+function onCommand(action: ProtocolAction) {
+  return (_event: Event, context: LibraryMenuContext): void => {
+    const items = (context.items ?? []).filter((item) => item.isRegularItem());
+    if (items.length === 0) {
+      logger.debug("library-item menu invoked with no regular items", {
+        action,
+      });
+      return;
+    }
+    for (const item of items) openInObsidian(action, item);
   };
 }
 
@@ -21,25 +32,14 @@ export function registerItemMenu(pluginID: string): Disposable {
     target: "main/library/item",
     menus: [
       {
-        menuType: "submenu",
-        l10nID: "zotlit-menu-item-submenu",
-        menus: [
-          {
-            menuType: "menuitem",
-            l10nID: "zotlit-menu-item-open",
-            onCommand: onCommand("open"),
-          },
-          {
-            menuType: "menuitem",
-            l10nID: "zotlit-menu-item-update",
-            onCommand: onCommand("update"),
-          },
-          {
-            menuType: "menuitem",
-            l10nID: "zotlit-menu-item-export",
-            onCommand: onCommand("export"),
-          },
-        ],
+        menuType: "menuitem",
+        l10nID: "zotlit-menu-item-open",
+        onCommand: onCommand("open"),
+      },
+      {
+        menuType: "menuitem",
+        l10nID: "zotlit-menu-item-update",
+        onCommand: onCommand("update"),
       },
     ],
   });

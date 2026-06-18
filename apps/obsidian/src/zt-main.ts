@@ -5,6 +5,7 @@ import { BaseNotice } from "./lib/notice";
 import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
+import { registerProtocolHandlers } from "./services/protocol/register";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
@@ -58,6 +59,14 @@ export default class ZotLitPlugin extends Plugin {
       noteIndex: services.noteIndex,
       noteFeatures: services.noteFeatures,
       settings: services.settings,
+    });
+
+    registerProtocolHandlers(this, {
+      app: this.app,
+      db: services.db,
+      zoteroPref: services.zoteroPref,
+      noteFeatures: services.noteFeatures,
+      noteIndex: services.noteIndex,
     });
 
     registerAnnotView(this, {

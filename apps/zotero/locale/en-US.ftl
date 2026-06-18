@@ -22,14 +22,9 @@ zotlit-prefs-log-level-error =
 zotlit-prefs-log-level-fatal =
     .label = Fatal
 
-zotlit-menu-item-submenu =
-    .label = Obsidian Actions
 zotlit-menu-item-open =
     .label = Open Literature Note
 zotlit-menu-item-update =
     .label = Update Literature Note
-zotlit-menu-item-export =
-    .label = Create Literature Note(s)
 zotlit-menu-reader-annot-merge = Merge Annotations
-zotlit-menu-reader-annot-export = Export to Obsidian Note
 zotlit-menu-reader-page-open = Open Note in Obsidian

@@ -63,7 +63,7 @@ v1 kept a denormalized item map per library inside the worker (`lib/db-worker/sr
 
 - **PDF outline parser** (`services/pdf-parser/`) — v1 ships `getPDFOutline` / `getCachedOutlineKeys` but **never calls them**: no API, server, or view consumer references the service (it is only `this.use()`-registered). Don't port until the annot view (or another feature) actually consumes an outline; then it lands as its own stage.
 - `services/server/` (HTTP listener on localhost)
-- `services/protocol/` (`zotero://open|update|export` handlers)
+- ~~`services/protocol/`~~ **(done)** Obsidian-side handlers for `obsidian://zotlit/{open,update,export}` (wire contract in `packages/protocol/src/url.ts`; Zotero-side menu links + Obsidian-side handlers both ship). `open` = open-or-create, `update` = update-or-create, `export` = always create fresh. Source-id filtering rejects links from a non-configured Zotero install. Batch variants (`zotlit/update-many`, `zotlit/export-many`) remain future work.
 - `topic-import/` (tag-driven auto-create; uses `bg:notify`)
 - Setting-tab `server` group
 - `apps/zotero` companion plugin itself
@@ -261,7 +261,7 @@ For traceability during the migration; all paths under `/Users/aidenlx/repo/zotl
 | Annot view                    | `note-feature/annot-view/{view,store,drag-insert,more-options}.tsx`                                                     |
 | Attachment import              | `services/zotero-db/img-import/service.ts` (feature-set reference only; v2 design is a fresh coordinator, not a port)    |
 | **Deferred** Server           | `services/server/service.ts`                                                                                            |
-| **Deferred** Protocol         | `note-feature/protocol/service.ts`                                                                                      |
+| Protocol handlers             | `note-feature/protocol/service.ts`                                                                                      |
 | **Deferred** Topic-import     | `note-feature/topic-import/`                                                                                            |
 | Zotero note import            | `note-feature/note-import/index.ts`                                                                                     |
 | **Deferred** Template preview | `note-feature/template-preview/`                                                                                        |

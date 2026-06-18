@@ -205,6 +205,10 @@
   "notice_template_reset_failed": "Failed to reset template.",
   "notice_template_deleted": "Template file moved to trash.",
   "notice_template_delete_failed": "Failed to move template file to trash.",
+  "notice_protocol_source_mismatch": "This link was created by a different Zotero install.",
+  "notice_protocol_item_not_found": "Zotero item not found.",
+  "notice_protocol_db_unavailable": "Open the Zotero database to handle this link.",
+  "notice_protocol_invalid": "Invalid ZotLit protocol link.",
   "creator_summary": [
     {
       "declarations": ["input count", "input first", "input second"],
