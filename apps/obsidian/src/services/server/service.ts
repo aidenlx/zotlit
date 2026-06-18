@@ -20,10 +20,28 @@ import {
 
 const logger = getLogger("server");
 
+/**
+ * Live state of the Zotero reader, derived from the companion's reader pushes.
+ * The service is the authoritative holder; views sync from {@link
+ * ServerService.readerTarget} on mount and the reader events thereafter.
+ */
+export interface ReaderTarget {
+  /** Parent (regular) item the open attachment belongs to. */
+  itemID: number;
+  /** The open attachment item. */
+  attachmentID: number;
+  /** Item IDs of the annotations currently selected in the reader. */
+  selected: readonly number[];
+}
+
 export interface ServerEvents {
   "item/update": (event: ItemUpdate) => void;
-  "reader/annot-select": (event: ReaderAnnotSelect) => void;
-  "reader/active": (event: ReaderActive) => void;
+  /**
+   * Aggregated reader state: fired whenever the companion reports a reader
+   * switch or a selection change, carrying the new {@link ReaderTarget}.
+   * Consumers diff `attachmentID` to tell a document switch from a re-select.
+   */
+  "reader/target": (target: ReaderTarget) => void;
   /**
    * Edge transitions of {@link ServerService.available} — fired when the
    * listener starts accepting connections or stops (settings off, port rebind,
@@ -56,6 +74,7 @@ export class ServerService extends Service<void> {
   #hostname = "";
   #listening = false;
   #available = false;
+  #readerTarget: ReaderTarget | null = null;
 
   ready: Promise<void>;
 
@@ -70,6 +89,11 @@ export class ServerService extends Service<void> {
     return this.#available;
   }
 
+  /** Latest reader state pushed by the companion; `null` until the first push. */
+  get readerTarget(): ReaderTarget | null {
+    return this.#readerTarget;
+  }
+
   on<K extends keyof ServerEvents>(event: K, cb: ServerEvents[K]): () => void {
     return this.#emitter.on(event, cb);
   }
@@ -79,6 +103,8 @@ export class ServerService extends Service<void> {
     const next = this.#enabled && this.#listening;
     if (next === this.#available) return;
     this.#available = next;
+    // The held reader state is only valid while the companion can reach us.
+    if (!next) this.#readerTarget = null;
     logger.debug("Server availability changed", { available: next });
     this.#emitter.emit("available", next);
   }
@@ -90,12 +116,21 @@ export class ServerService extends Service<void> {
         this.#emitter.emit(event.event, event);
         break;
       case "reader/annot-select":
-        this.#emitter.emit(event.event, event);
-        break;
       case "reader/active":
-        this.#emitter.emit(event.event, event);
+        this.#emitter.emit("reader/target", this.#trackReader(event));
         break;
     }
+  }
+
+  /** Refresh the authoritative reader target from a reader push. */
+  #trackReader(event: ReaderActive | ReaderAnnotSelect): ReaderTarget {
+    const target: ReaderTarget = {
+      itemID: event.itemID,
+      attachmentID: event.attachmentID,
+      selected: event.selected,
+    };
+    this.#readerTarget = target;
+    return target;
   }
 
   async #load(): Promise<void> {
@@ -151,12 +186,22 @@ export class ServerService extends Service<void> {
 
   #startServer(): void {
     const app = new Hono();
-    app.post("/notify", vValidator("json", notifyEventSchema), (c) => {
-      const event = c.req.valid("json");
-      logger.debug("Received notify event", { event: event.event });
-      this.#dispatch(event);
-      return c.body(null, 204);
-    });
+    app.post(
+      "/notify",
+      vValidator("json", notifyEventSchema, (result, c) => {
+        if (result.success) return;
+        logger.warn("Received notify event failed validation", {
+          issues: result.issues,
+        });
+        return c.json(result, 400);
+      }),
+      (c) => {
+        const event = c.req.valid("json");
+        logger.debug("Received notify event", { event: event.event });
+        this.#dispatch(event);
+        return c.body(null, 204);
+      },
+    );
 
     const server = serve(
       { fetch: app.fetch, port: this.#port, hostname: this.#hostname },

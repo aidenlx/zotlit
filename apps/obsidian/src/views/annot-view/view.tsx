@@ -115,9 +115,6 @@ export class AnnotationView extends ItemView {
   #itemKey: string | null = null;
   #importHandle: AttachmentImport | null = null;
 
-  /** Latest reader pushed by the companion; loaded only while following it. */
-  #readerTarget: { itemID: number; attachmentID: number } | null = null;
-
   /** Follow mode lives in the store (single source of truth); read it here. */
   get #followMode(): FollowMode {
     return this.#store.getState().followMode;
@@ -206,6 +203,7 @@ export class AnnotationView extends ItemView {
 
     this.#store.setState({
       serverAvailable: this.#deps.server.available,
+      readerTarget: this.#deps.server.readerTarget,
     });
 
     this.#root = createRoot(this.contentEl);
@@ -240,16 +238,17 @@ export class AnnotationView extends ItemView {
     );
 
     this.register(
-      this.#deps.server.on("reader/active", ({ itemID, attachmentID }) => {
-        this.#readerTarget = { itemID, attachmentID };
-        logger.debug("Reader changed", { itemID, attachmentID });
-        if (this.#followMode === "reader") this.#reload();
-      }),
-    );
-
-    this.register(
-      this.#deps.server.on("reader/annot-select", ({ selected }) => {
-        this.#scrollToSelected(selected);
+      this.#deps.server.on("reader/target", (target) => {
+        const prev = this.#store.getState().readerTarget;
+        this.#store.setState({ readerTarget: target });
+        logger.debug("Reader target changed", {
+          itemID: target.itemID,
+          attachmentID: target.attachmentID,
+        });
+        if (this.#followMode !== "reader") return;
+        // A new attachment needs a full reload; a re-select only re-highlights.
+        if (target.attachmentID !== prev?.attachmentID) this.#reload();
+        else this.#scrollToSelected(target.selected);
       }),
     );
 
@@ -361,11 +360,12 @@ export class AnnotationView extends ItemView {
       case "note":
         return null;
       case "reader": {
-        if (!this.#readerTarget) return null;
+        const readerTarget = this.#deps.server.readerTarget;
+        if (!readerTarget) return null;
         try {
           const info = getItemDisplayInfoByID(
             this.#deps.db.client,
-            this.#readerTarget.itemID,
+            readerTarget.itemID,
           );
           if (!info) return null;
           return formatDisplayLabel(info, target.key);
@@ -428,7 +428,7 @@ export class AnnotationView extends ItemView {
   }
 
   #resolveReader(): LoadTarget | null {
-    const target = this.#readerTarget;
+    const target = this.#deps.server.readerTarget;
     if (!target) return null;
     let ref: ItemRef | null;
     try {

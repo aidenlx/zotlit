@@ -17,6 +17,7 @@ export const itemUpdateSchema = v.object({
 /** The full set of annotation items currently selected in a reader. */
 export const readerAnnotSelectSchema = v.object({
   event: v.literal("reader/annot-select"),
+  itemID: v.number(),
   attachmentID: v.number(),
   selected: v.array(v.number()),
 });
@@ -26,6 +27,8 @@ export const readerActiveSchema = v.object({
   event: v.literal("reader/active"),
   itemID: v.number(),
   attachmentID: v.number(),
+  /** Item IDs of the annotations selected in the newly-active reader. */
+  selected: v.array(v.number()),
 });
 
 export type ItemUpdate = v.InferOutput<typeof itemUpdateSchema>;
