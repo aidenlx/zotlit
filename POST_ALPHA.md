@@ -1,6 +1,6 @@
 # ZotLit v2 post-alpha plan
 
-Extracted from [`MIGRATION.md`](./MIGRATION.md) after alpha (Stages 0–8) shipped.
+Extracted from `[MIGRATION.md](./MIGRATION.md)` after alpha (Stages 0–8) shipped.
 
 ## 1. Zotero note import (Stage 9)
 
@@ -26,7 +26,7 @@ Already implemented in Stage 8. Remaining: wire the import flow to construct `No
 
 1. **DB** — `IndexedItem.citationKey` from `queries/index-items.ts` (not `getItemsByKey`); resolve only against the note's own `libraryID`.
 2. **Embedded** — `data-citation-items[uri].itemData["citation-key"]` (standard CSL-JSON).
-3. **Sentinel** — `` `${key}?` `` — truthy, survives the default `cite` template's `filter(lit => !!lit.citekey)`, renders a visible greppable `[@KEY?]`.
+3. **Sentinel** — ``${key}?`` — truthy, survives the default `cite` template's `filter(lit => !!lit.citekey)`, renders a visible greppable `[@KEY?]`.
 
 **Embedded map** is URI-keyed (each entry's `itemData.id` is the full library-qualified URI). Build `Map<uri, itemData>`, resolve a citation by walking its `uris` for the first hit. Sits on the same `<div>` as `data-schema-version` — `parseNoteSchema(root).container.getAttribute("data-citation-items")` reaches it. Needs a small valibot schema.
 
@@ -40,30 +40,33 @@ Already implemented in Stage 8. Remaining: wire the import flow to construct `No
 
 ## 2. Companion-dependent features
 
-Require `apps/zotero` companion plugin or the localhost server.
+Core companion surface ships: `apps/zotero` pushes events over HTTP, Obsidian listens via `LiveUpdateService`, and Zotero menus launch `obsidian://zotlit/{open,update}` links. Remaining gaps are below.
 
-| Feature | v1 source | Notes |
-| --- | --- | --- |
-| Server (HTTP listener) | `services/server/service.ts` | localhost relay for Zotero ↔ Obsidian |
-| ~~Protocol handlers~~ | `note-feature/protocol/service.ts` | **(done)** `obsidian://zotlit/{open,update,export}` handlers ship in `services/protocol/register.ts`. Batch `zotlit/update-many` + `zotlit/export-many` remain future work here. |
-| Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; uses `bg:notify` |
-| Setting-tab `server` group | `setting-tab/` | Depends on the server service |
-| `apps/zotero` companion | — | Not yet scoped; v1 protocol compatible with v2's eventual server |
-| `bg:notify` evaluation | — | May be unnecessary once server + fs.watch cover all refresh/export/open flows |
+
+| Feature                        | v1 source                          | Notes                                                                                                                                                                                                                                                                            |
+| ------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~Server (HTTP listener)~~     | `services/server/service.ts`       | **(done)** `LiveUpdateService` (`services/live-update/service.ts`): Hono `POST /notify`, validates `@zotlit/protocol` events, drives annot-view reader follow. Settings live under `server.*`.                                                                                   |
+| ~~Protocol handlers~~          | `note-feature/protocol/service.ts` | **(partial)** `obsidian://zotlit/{open,update}` handlers in `services/protocol/register.ts`; Zotero menus in `apps/zotero/src/menus/`. `export` (always create fresh) and batch `update-many` / `export-many` remain future work. Wire contract: `packages/protocol/src/url.ts`. |
+| ~~Setting-tab `server` group~~ | `setting-tab/`                     | **(done)** "Live updates" sub-page (`setting-tab/live-updates.ts`): `server.enabled`, `server.port`, `server.hostname`.                                                                                                                                                          |
+| ~~`apps/zotero` companion~~    | —                                  | **(MVP done)** Menus (library open/update, reader open), HTTP notify (`item/update`, `reader/active`, `reader/annot-select`), prefs pane. Release pipeline still in `apps/zotero/DEFERRED.md`.                                                                                   |
+| ~~`bg:notify`~~                | —                                  | **(dropped)** DB refresh is fs.watch; open/update/export flows use `obsidian://` links; live reader state uses HTTP notify.                                                                                                                                                      |
+| Topic-import                   | `note-feature/topic-import/`       | Tag-driven auto-create; not yet ported                                                                                                                                                                                                                                           |
+| Companion release              | —                                  | First user-installable XPI + `update.json` CI — see `apps/zotero/DEFERRED.md`                                                                                                                                                                                                    |
+
 
 ## 3. Annot view follow-ups
 
 Deferred from Stage 8.
 
 - **Annotation merging** — v1's `mergeAnnots` / `mergeTags`. Combine annotations from multiple attachments or deduplicate across updates. The Zotero-side reader annotation context-menu item ("Merge Annotations") is scaffolded but commented out in `apps/zotero/src/menus/reader-annotation.ts` (FTL `zotlit-menu-reader-annot-merge` retained); re-enable it here when the feature returns.
-- **Zotero-reader follow mode** — v1's `zt-reader` follow + details view; the view always tracks the active literature note. "Jump to note" is unbuildable — its block-ID index was removed as dead infra in Stage 5.
+- ~~**Zotero-reader follow mode**~~ — **(done)** Annot view follow modes (`note` / `reader` / `linked`) in `views/annot-view/`, driven by `LiveUpdateService` reader pushes; reader-selected annotations highlight in follow mode. v1 **"Jump to note"** remains unbuildable — its block-ID index was removed as dead infra in Stage 5.
 
 ## 4. Template service follow-ups
 
 Post-Stage 1 enhancements, not alpha-blocking.
 
 - **Field-name completion in `EtaSuggest`** — `it.title`, `it.citekey`, `it.creators`, `it.tags`, etc. Needs Stage 5 helper type definitions to drive the suggestion list.
-- **`template-edited` event** on `TemplateService` (nanoevents) — add when a live-preview consumer (annot view) needs to re-render on template edits. Today one-shot renders rely on the vault watcher refreshing template content and the render-time mtime+size check invalidating compiled functions.
+- `**template-edited` event** on `TemplateService` (nanoevents) — add when a live-preview consumer (annot view) needs to re-render on template edits. Today one-shot renders rely on the vault watcher refreshing template content and the render-time mtime+size check invalidating compiled functions.
 - **Async render path** (`renderAsync`) — only if a consumer ever needs `await`-able rendering; Stage 1 is sync end-to-end.
 
 ## 5. Setting-tab enhancements
@@ -79,7 +82,7 @@ Deferred from Stage 6.
 
 Deferred from Stage 5.
 
-- **`zt-attachments` frontmatter field** — read/write scoping + v1 numeric-ID migration. Lands with the attachment selection UI.
+- `**zt-attachments` frontmatter field** — read/write scoping + v1 numeric-ID migration. Lands with the attachment selection UI.
 - **Alt-mode secondary citation** — alternate citation insertion mode.
 
 ## 7. PDF outline parser
@@ -99,10 +102,13 @@ Known issues carried from alpha.
 
 Priority tiers rather than a strict linear sequence:
 
-| Tier | Items | Rationale |
-| --- | --- | --- |
-| **A — next up** | Zotero note import (§1), polish (§8) | Closest to ready; import has parsers shipped, polish is incremental |
-| **B — user-facing enhancements** | Annot view follow-ups (§3), note feature follow-ups (§6), setting-tab enhancements (§5) | Each is self-contained, can land independently |
-| **C — template DX** | Template service follow-ups (§4) | Nice-to-have; unblocks authoring ergonomics |
-| **D — companion** | Server, protocol, topic-import, companion plugin (§2) | Blocked on `apps/zotero` scoping |
-| **E — speculative** | PDF outline (§7) | No consumer exists yet |
+
+| Tier                             | Items                                                                                | Rationale                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| **A — next up**                  | Zotero note import (§1), polish (§8)                                                 | Closest to ready; import has parsers shipped, polish is incremental           |
+| **B — user-facing enhancements** | Annotation merging (§3), note feature follow-ups (§6), setting-tab enhancements (§5) | Each is self-contained, can land independently                                |
+| **C — template DX**              | Template service follow-ups (§4)                                                     | Nice-to-have; unblocks authoring ergonomics                                   |
+| **D — companion follow-ups**     | Topic-import, protocol export/batch, companion release (§2)                          | Core server + companion + open/update protocol ship; remainder is incremental |
+| **E — speculative**              | PDF outline (§7)                                                                     | No consumer exists yet                                                        |
+
+
