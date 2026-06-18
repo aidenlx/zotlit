@@ -1,6 +1,8 @@
 import { formatValue } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
+import { openInObsidian, readerTopLevelItem } from "./obsidian.js";
+
 const logger = appLogger.getChild(["menus", "reader-page"]);
 
 type ViewEvent = _ZoteroTypes.Reader.EventParams<"createViewContextMenu">;
@@ -16,11 +18,13 @@ export async function registerReaderPageMenu(
   }
   logger.debug("loaded reader-page label", { label });
 
-  const handler = ({ append }: ViewEvent): void => {
+  const handler = ({ reader, append }: ViewEvent): void => {
     append({
       label,
       onCommand: () => {
-        logger.info("reader-page menu invoked", { action: "open" });
+        const item = readerTopLevelItem(reader);
+        if (item === null) return;
+        openInObsidian("open", item);
       },
     });
   };

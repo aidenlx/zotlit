@@ -45,7 +45,7 @@ Require `apps/zotero` companion plugin or the localhost server.
 | Feature | v1 source | Notes |
 | --- | --- | --- |
 | Server (HTTP listener) | `services/server/service.ts` | localhost relay for Zotero ↔ Obsidian |
-| Protocol handlers | `note-feature/protocol/service.ts` | `zotero://open\|update\|export` |
+| ~~Protocol handlers~~ | `note-feature/protocol/service.ts` | **(done)** `obsidian://zotlit/{open,update,export}` handlers ship in `services/protocol/register.ts`. Batch `zotlit/update-many` + `zotlit/export-many` remain future work here. |
 | Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; uses `bg:notify` |
 | Setting-tab `server` group | `setting-tab/` | Depends on the server service |
 | `apps/zotero` companion | — | Not yet scoped; v1 protocol compatible with v2's eventual server |
@@ -55,7 +55,7 @@ Require `apps/zotero` companion plugin or the localhost server.
 
 Deferred from Stage 8.
 
-- **Annotation merging** — v1's `mergeAnnots` / `mergeTags`. Combine annotations from multiple attachments or deduplicate across updates.
+- **Annotation merging** — v1's `mergeAnnots` / `mergeTags`. Combine annotations from multiple attachments or deduplicate across updates. The Zotero-side reader annotation context-menu item ("Merge Annotations") is scaffolded but commented out in `apps/zotero/src/menus/reader-annotation.ts` (FTL `zotlit-menu-reader-annot-merge` retained); re-enable it here when the feature returns.
 - **Zotero-reader follow mode** — v1's `zt-reader` follow + details view; the view always tracks the active literature note. "Jump to note" is unbuildable — its block-ID index was removed as dead infra in Stage 5.
 
 ## 4. Template service follow-ups

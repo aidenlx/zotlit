@@ -9,3 +9,14 @@ export {
   itemUpdateSchema,
 } from "./notify";
 export { djb2a, normalizeFileUri, sourceIdFromUris } from "./source-id";
+export {
+  buildProtocolUrl,
+  parseProtocolQuery,
+  PROTOCOL_NAMESPACE,
+  type ProtocolAction,
+  protocolActionId,
+  protocolActions,
+  protocolSourceMatches,
+  type ProtocolQuery,
+  protocolQuerySchema,
+} from "./url";
