@@ -1,9 +1,7 @@
-import { debounce } from "@std/async/debounce";
-
 import { logger as appLogger } from "@/lib/logger";
 
 import { type Send } from "./send";
-import { NOTIFY_DEBOUNCE_MS, notifyEnabled } from "./shared";
+import { currentSelection, notifyEnabled } from "./shared";
 
 const logger = appLogger.getChild(["notify", "active-reader"]);
 
@@ -16,7 +14,7 @@ const logger = appLogger.getChild(["notify", "active-reader"]);
  */
 export function registerActiveReaderNotify(send: Send): Disposable {
   let lastActiveAttachment: number | null = null;
-  const flushActive = debounce(() => {
+  const flushActive = () => {
     if (!notifyEnabled()) return;
     const tabID = Zotero.getMainWindows()[0]?.Zotero_Tabs.selectedID;
     if (!tabID) return;
@@ -25,15 +23,25 @@ export function registerActiveReaderNotify(send: Send): Disposable {
     if (typeof attachmentID !== "number") return; // selected tab isn't a reader
     if (attachmentID === lastActiveAttachment) return;
     lastActiveAttachment = attachmentID;
-    const itemID = Zotero.Items.get(attachmentID)?.parentItemID;
+    const attachment = Zotero.Items.get(attachmentID);
+    const itemID = attachment?.parentItemID;
     if (typeof itemID !== "number") return; // standalone attachment, no parent
-    logger.debug("active reader changed", { itemID, attachmentID });
+    const selected =
+      typeof attachment?.libraryID === "number"
+        ? currentSelection(reader, attachment.libraryID)
+        : [];
+    logger.debug("active reader changed", {
+      itemID,
+      attachmentID,
+      selected: selected.length,
+    });
     void send({
       event: "reader/active",
       itemID,
       attachmentID,
+      selected,
     });
-  }, NOTIFY_DEBOUNCE_MS);
+  };
 
   const observer: { notify: _ZoteroTypes.Notifier.Notify } = {
     notify(event, type) {
@@ -51,7 +59,6 @@ export function registerActiveReaderNotify(send: Send): Disposable {
   return {
     [Symbol.dispose]() {
       Zotero.Notifier.unregisterObserver(notifierID);
-      flushActive.clear();
       logger.debug("unregistered active-reader notifier");
     },
   };

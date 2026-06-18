@@ -11,6 +11,7 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 import * as m from "@/paraglide/messages";
 
 import { AnnotActionsContext } from "./actions";
+import { useAnnotStore } from "./store";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -38,14 +39,20 @@ interface AnnotationProps {
 export function Annotation({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
   const color = annot.color ?? undefined;
+  const selected = useAnnotStore(
+    (s) =>
+      s.followMode === "reader" &&
+      (s.readerTarget?.selected.includes(annot.itemID) ?? false),
+  );
 
   return (
     <div
-      className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:@md:mb-3"
+      className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:data-[selected]:border-primary zt:data-[selected]:bg-primary/10 zt:data-[selected]:ring-1 zt:data-[selected]:ring-primary zt:@md:mb-3"
       data-id={annot.itemID}
+      data-selected={selected ? "" : undefined}
     >
       <div
-        className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2"
+        className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-[selected]:bg-transparent"
         onContextMenu={(e) => actions.onMoreOptions(e, annot)}
       >
         <span

@@ -9,6 +9,8 @@ import {
   type ItemRef,
 } from "@zotlit/db";
 
+import { type ReaderTarget } from "@/services/server/service";
+
 /**
  * What the view tracks: the active literature note (default), the active Zotero
  * reader (push-driven, server-gated), or a manually pinned item.
@@ -19,6 +21,8 @@ export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   selectedAttachmentID: number | null;
   annotations: AnnotViewItem[] | null;
+  /** Synced mirror of {@link ServerService.readerTarget} for reactive rendering. */
+  readerTarget: ReaderTarget | null;
   /** Indexed key of the item currently displayed; `null` when none resolves. */
   itemKey: string | null;
   /** Pre-formatted identity label for reader/linked modes (e.g. "Title — Author (2024)"). */
@@ -41,6 +45,7 @@ export function createAnnotStore() {
         attachments: null,
         selectedAttachmentID: null,
         annotations: null,
+        readerTarget: null,
         itemKey: null,
         itemDisplayLabel: null,
         groupID: null,

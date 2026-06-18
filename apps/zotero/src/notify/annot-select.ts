@@ -1,9 +1,7 @@
-import { debounce } from "@std/async/debounce";
-
 import { logger as appLogger } from "@/lib/logger";
 
 import { type Send } from "./send";
-import { NOTIFY_DEBOUNCE_MS, notifyEnabled } from "./shared";
+import { currentSelection, notifyEnabled } from "./shared";
 
 const logger = appLogger.getChild(["notify", "annot-select"]);
 
@@ -25,9 +23,9 @@ interface Hook {
  * (annotation **keys**). We don't patch the reducer (`_updateState`) that
  * mutates it: instead a `MutationObserver` on the iframe's `document.body`
  * cheaply signals "something changed" (every selection path toggles the
- * `selected` class on a sidebar row), and the debounced flush *reads* the state,
- * maps keys → item ids, and pushes the full current set whenever it differs from
- * the last push. No DOM parsing — the observer is only a trigger.
+ * `selected` class on a sidebar row), and the flush *reads* the state, maps
+ * keys → item ids, and pushes the full current set whenever it differs from the
+ * last push. No DOM parsing — the observer is only a trigger.
  *
  * The observer is on the stable `document.body` (not the `#annotations` node,
  * which React unmounts when the sidebar closes). The one blind spot is a fully
@@ -40,19 +38,7 @@ export function registerAnnotSelectNotify(send: Send): Disposable {
   const hooks = new Map<_ZoteroTypes.ReaderInstance, Hook>();
   const hooking = new Set<_ZoteroTypes.ReaderInstance>(); // dedupe concurrent hooks
 
-  /** Sorted item ids of the reader's current selection (drops unresolved keys). */
-  function currentSelection(
-    reader: _ZoteroTypes.ReaderInstance,
-    libraryID: number,
-  ): number[] {
-    const keys = reader._internalReader?._state?.selectedAnnotationIDs ?? [];
-    return [...keys]
-      .map((key) => Zotero.Items.getIDFromLibraryAndKey(libraryID, key))
-      .filter((id): id is number => id !== false)
-      .sort((a, b) => a - b);
-  }
-
-  const flush = debounce(() => {
+  const flush = () => {
     if (!notifyEnabled()) return;
     for (const [reader, hook] of hooks) {
       const selected = currentSelection(reader, hook.libraryID);
@@ -61,17 +47,21 @@ export function registerAnnotSelectNotify(send: Send): Disposable {
       hook.lastSig = sig;
       const attachmentID = reader.itemID;
       if (typeof attachmentID !== "number") continue;
+      const itemID = Zotero.Items.get(attachmentID)?.parentItemID;
+      if (typeof itemID !== "number") continue; // standalone attachment, no parent
       logger.debug("annot selection changed", {
+        itemID,
         attachmentID,
         count: selected.length,
       });
       void send({
         event: "reader/annot-select",
+        itemID,
         attachmentID,
         selected,
       });
     }
-  }, NOTIFY_DEBOUNCE_MS);
+  };
 
   async function hookReader(
     reader: _ZoteroTypes.ReaderInstance,
@@ -135,7 +125,6 @@ export function registerAnnotSelectNotify(send: Send): Disposable {
       Zotero.Notifier.unregisterObserver(notifierID);
       for (const { mo } of hooks.values()) mo.disconnect();
       hooks.clear();
-      flush.clear();
       logger.debug("unregistered annot-select notifier");
     },
   };

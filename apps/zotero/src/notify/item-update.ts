@@ -1,11 +1,9 @@
-import { debounce } from "@std/async/debounce";
-
 import { type ItemUpdate } from "@zotlit/protocol";
 
 import { logger as appLogger } from "@/lib/logger";
 
 import { type Send } from "./send";
-import { NOTIFY_DEBOUNCE_MS, notifyEnabled } from "./shared";
+import { notifyEnabled } from "./shared";
 
 const logger = appLogger.getChild(["notify", "item"]);
 
@@ -24,11 +22,9 @@ const EVENT_TO_KIND: Partial<Record<_ZoteroTypes.Notifier.Event, UpdateKind>> =
   };
 
 /**
- * Push regular-item add / modify / trash to the Obsidian listener.
- *
- * Bursts (e.g. a sync) are coalesced into one {@link ItemUpdate} over a
- * {@link NOTIFY_DEBOUNCE_MS} window; each bucket is a `Map<itemID, libraryID>`
- * so repeated events for the same item collapse to one entry.
+ * Push regular-item add / modify / trash to the Obsidian listener. Each notifier
+ * batch flushes one {@link ItemUpdate}; each bucket is a `Map<itemID, libraryID>`
+ * so repeated ids within a batch collapse to one entry.
  */
 export function registerItemUpdateNotify(send: Send): Disposable {
   const queue: Record<UpdateKind, Map<number, number>> = {
@@ -37,7 +33,7 @@ export function registerItemUpdateNotify(send: Send): Disposable {
     trash: new Map(),
   };
 
-  const flush = debounce(() => {
+  const flush = () => {
     const toRefs = (bucket: Map<number, number>) =>
       [...bucket].map(([itemID, libraryID]) => ({ itemID, libraryID }));
     const event: ItemUpdate = {
@@ -58,7 +54,7 @@ export function registerItemUpdateNotify(send: Send): Disposable {
       trash: event.trash.length,
     });
     void send(event);
-  }, NOTIFY_DEBOUNCE_MS);
+  };
 
   const observer: { notify: _ZoteroTypes.Notifier.Notify } = {
     notify(event, type, ids) {
@@ -85,7 +81,6 @@ export function registerItemUpdateNotify(send: Send): Disposable {
   return {
     [Symbol.dispose]() {
       Zotero.Notifier.unregisterObserver(id);
-      flush.clear();
       logger.debug("unregistered item notifier");
     },
   };
