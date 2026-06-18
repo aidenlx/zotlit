@@ -36,7 +36,7 @@ export function registerItemUpdateNotify(send: Send): Disposable {
   const flush = () => {
     const toRefs = (bucket: Map<number, number>) =>
       [...bucket].map(([itemID, libraryID]) => ({ itemID, libraryID }));
-    const event: ItemUpdate = {
+    const event: Omit<ItemUpdate, "sourceId"> = {
       event: "item/update",
       add: toRefs(queue.add),
       modify: toRefs(queue.modify),

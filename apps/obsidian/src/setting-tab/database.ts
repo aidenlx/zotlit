@@ -17,10 +17,7 @@ import {
   type EffectiveReadMode,
 } from "@/services/database/read-source";
 import { type DatabaseService } from "@/services/database/service";
-import {
-  RESET_SETTING,
-  type SettingsService,
-} from "@/services/settings/service";
+import { RESET_SETTING } from "@/services/settings/service";
 import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
@@ -31,10 +28,10 @@ import { type SettingsKey, type SettingTabContext } from "./context";
 
 const logger = getLogger(["setting-tab", "database"]);
 
-/** Profile-dropdown sentinel for auto-detect — a real profile dir is never empty. */
-const PROFILE_AUTO = "";
-/** Profile-dropdown sentinel that opens the folder picker; NUL can't be in a path. */
-const PROFILE_BROWSE = "\0browse";
+/** Folder-picker dropdown sentinel for auto-detect — a real dir is never empty. */
+const PICKER_AUTO = "";
+/** Folder-picker dropdown sentinel that opens the folder picker; NUL can't be in a path. */
+const PICKER_BROWSE = "\0browse";
 
 /** Items for the "Zotero database" sub-page: connection, status, read mode. */
 export function databasePageItems(
@@ -60,6 +57,22 @@ export function databasePageItems(
       name: m.settings_db_auto_refresh_name(),
       desc: m.settings_db_auto_refresh_desc(),
       control: { type: "toggle", key: "zotero.auto-refresh" },
+    },
+    {
+      type: "group",
+      heading: m.settings_db_advanced(),
+      items: [
+        {
+          name: m.settings_db_data_dir_name(),
+          desc: m.settings_db_data_dir_desc(),
+          render: (setting) => renderDataDirRow(setting, ctx),
+        },
+        {
+          name: m.settings_db_source_id_name(),
+          desc: m.settings_db_source_id_desc(),
+          render: (setting) => renderSourceIdRow(setting, ctx),
+        },
+      ],
     },
   ];
 }
@@ -294,29 +307,35 @@ function renderProfileDirRow(
   let profiles: readonly ZoteroProfileInfo[] = [];
 
   const selectedValue = (): string =>
-    ctx.settings.current?.["zotero.profile-dir"] ?? PROFILE_AUTO;
+    ctx.settings.current?.["zotero.profile-dir"] ?? PICKER_AUTO;
 
   const repopulate = (): void => {
     if (!dropdown) return;
     const current = selectedValue();
     dropdown.selectEl.replaceChildren();
-    dropdown.addOption(PROFILE_AUTO, m.settings_db_profile_auto());
+    dropdown.addOption(PICKER_AUTO, m.settings_db_profile_auto());
     for (const p of profiles) dropdown.addOption(p.dir, profileLabel(p));
     // A manually-chosen folder that isn't one of the listed profiles.
-    if (current !== PROFILE_AUTO && !profiles.some((p) => p.dir === current)) {
+    if (current !== PICKER_AUTO && !profiles.some((p) => p.dir === current)) {
       dropdown.addOption(current, current);
     }
-    dropdown.addOption(PROFILE_BROWSE, m.settings_db_profile_browse());
+    dropdown.addOption(PICKER_BROWSE, m.settings_db_profile_browse());
     dropdown.setValue(current);
   };
 
   setting.setDesc(desc).addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
-      if (value === PROFILE_BROWSE) {
+      if (value === PICKER_BROWSE) {
         d.setValue(selectedValue()); // browse isn't itself a saved choice
-        void browseForProfileDir(ctx.settings);
-      } else if (value === PROFILE_AUTO) {
+        void browseForDir({
+          title: m.settings_db_profile_dir_dialog_title(),
+          startPath:
+            ctx.settings.current?.["zotero.profile-dir"] ??
+            getZoteroProfilesRoot(),
+          onPick: (path) => ctx.settings.update({ "zotero.profile-dir": path }),
+        });
+      } else if (value === PICKER_AUTO) {
         ctx.settings.update({ "zotero.profile-dir": RESET_SETTING });
       } else {
         ctx.settings.update({ "zotero.profile-dir": value });
@@ -364,7 +383,7 @@ function renderProfileDirRow(
   stack.defer(
     ctx.settings.subscribe((value) => {
       if (value === null || !dropdown) return;
-      const current = value["zotero.profile-dir"] ?? PROFILE_AUTO;
+      const current = value["zotero.profile-dir"] ?? PICKER_AUTO;
       if (dropdown.getValue() !== current) repopulate();
     }),
   );
@@ -483,18 +502,153 @@ function ensureLibraryOption(
   }
 }
 
-async function browseForProfileDir(settings: SettingsService): Promise<void> {
-  const current = settings.current?.["zotero.profile-dir"];
-  const startPath = current ?? getZoteroProfilesRoot();
+/**
+ * Open a folder picker and hand the chosen directory to `onPick`. `startPath`
+ * seeds the dialog when the bound setting is unset.
+ */
+async function browseForDir(opts: {
+  title: string;
+  startPath: string | undefined;
+  onPick: (path: string) => void;
+}): Promise<void> {
   try {
     const result = await requireDialog().showOpenDialog({
-      title: m.settings_db_profile_dir_dialog_title(),
-      defaultPath: startPath,
+      title: opts.title,
+      defaultPath: opts.startPath,
       properties: ["openDirectory"],
     });
     if (result.canceled || result.filePaths.length === 0) return;
-    settings.update({ "zotero.profile-dir": result.filePaths[0]! });
+    opts.onPick(result.filePaths[0]!);
   } catch (error) {
-    logger.error("Failed to open profile folder dialog", { error });
+    logger.error("Failed to open folder dialog", { error });
   }
+}
+
+/**
+ * Advanced data-directory override (auto-detect / a chosen folder). Wins over
+ * the profile-derived data dir in {@link ZoteroPrefService.dataDir}; the resolved
+ * path is echoed live so the user sees the effective value either way.
+ */
+function renderDataDirRow(
+  setting: Setting,
+  ctx: SettingTabContext,
+): () => void {
+  const stack = new DisposableStack();
+  const pref = ctx.zoteroPref;
+
+  const desc = document.createDocumentFragment();
+  desc.append(m.settings_db_data_dir_desc());
+  desc.append(document.createElement("br"));
+  const pathCode = document.createElement("code");
+  desc.append(pathCode);
+
+  let dropdown: DropdownComponent | undefined;
+
+  const selectedValue = (): string =>
+    ctx.settings.current?.["zotero.data-dir"] ?? PICKER_AUTO;
+
+  const repopulate = (): void => {
+    if (!dropdown) return;
+    const current = selectedValue();
+    dropdown.selectEl.replaceChildren();
+    dropdown.addOption(PICKER_AUTO, m.settings_db_data_dir_auto());
+    if (current !== PICKER_AUTO) dropdown.addOption(current, current);
+    dropdown.addOption(PICKER_BROWSE, m.settings_db_profile_browse());
+    dropdown.setValue(current);
+  };
+
+  const applyPath = (): void => {
+    pathCode.textContent = pref.dataDir;
+  };
+
+  setting.setDesc(desc).addDropdown((d) => {
+    dropdown = d;
+    d.onChange((value) => {
+      if (value === PICKER_BROWSE) {
+        d.setValue(selectedValue()); // browse isn't itself a saved choice
+        void browseForDir({
+          title: m.settings_db_data_dir_dialog_title(),
+          startPath: ctx.settings.current?.["zotero.data-dir"] ?? undefined,
+          onPick: (path) => ctx.settings.update({ "zotero.data-dir": path }),
+        });
+      } else if (value === PICKER_AUTO) {
+        ctx.settings.update({ "zotero.data-dir": RESET_SETTING });
+      } else {
+        ctx.settings.update({ "zotero.data-dir": value });
+      }
+    });
+    repopulate();
+  });
+
+  applyPath();
+  if (pref.state === "loading") {
+    void pref.ready.then(() => {
+      if (pathCode.isConnected) applyPath();
+    });
+  }
+
+  stack.defer(
+    ctx.settings.subscribe((value) => {
+      if (value === null || !dropdown) return;
+      const current = value["zotero.data-dir"] ?? PICKER_AUTO;
+      if (dropdown.getValue() !== current) repopulate();
+      applyPath();
+    }),
+  );
+  stack.defer(pref.on("changed", applyPath));
+  stack.defer(pref.on("data-dir-changed", applyPath));
+
+  return () => stack.dispose();
+}
+
+/**
+ * Live echo of the resolved profile dir, data dir, and computed
+ * {@link ZoteroPrefService.sourceId}. Live updates are accepted only from a
+ * Zotero install whose own profile + data dir hash to this same id, so showing
+ * all three makes a mismatch diagnosable instead of silent.
+ */
+function renderSourceIdRow(
+  setting: Setting,
+  ctx: SettingTabContext,
+): () => void {
+  const stack = new DisposableStack();
+  const pref = ctx.zoteroPref;
+
+  const desc = document.createDocumentFragment();
+  desc.append(m.settings_db_source_id_desc());
+  const profileLine = appendLabeledCode(
+    desc,
+    m.settings_db_source_id_profile(),
+  );
+  const dataLine = appendLabeledCode(desc, m.settings_db_source_id_data());
+  const idLine = appendLabeledCode(desc, m.settings_db_source_id_value());
+
+  const refresh = (): void => {
+    profileLine.textContent = pref.resolvedProfileDir ?? "—";
+    dataLine.textContent = pref.dataDir;
+    idLine.textContent = pref.sourceId ?? "—";
+  };
+
+  setting.setDesc(desc);
+  refresh();
+  if (pref.state === "loading") {
+    void pref.ready.then(() => {
+      if (idLine.isConnected) refresh();
+    });
+  }
+
+  stack.defer(ctx.settings.subscribe(() => refresh()));
+  stack.defer(pref.on("changed", refresh));
+  stack.defer(pref.on("data-dir-changed", refresh));
+
+  return () => stack.dispose();
+}
+
+/** Append a `label: <code/>` line to `frag`, returning the `<code>` to fill in. */
+function appendLabeledCode(frag: DocumentFragment, label: string): HTMLElement {
+  frag.append(document.createElement("br"));
+  frag.append(label);
+  const code = document.createElement("code");
+  frag.append(" ", code);
+  return code;
 }

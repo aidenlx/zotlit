@@ -9,7 +9,7 @@ import {
   type ItemRef,
 } from "@zotlit/db";
 
-import { type ReaderTarget } from "@/services/server/service";
+import { type ReaderTarget } from "@/services/live-update/service";
 
 /**
  * What the view tracks: the active literature note (default), the active Zotero
@@ -21,7 +21,7 @@ export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   selectedAttachmentID: number | null;
   annotations: AnnotViewItem[] | null;
-  /** Synced mirror of {@link ServerService.readerTarget} for reactive rendering. */
+  /** Synced mirror of {@link LiveUpdateService.readerTarget} for reactive rendering. */
   readerTarget: ReaderTarget | null;
   /** Indexed key of the item currently displayed; `null` when none resolves. */
   itemKey: string | null;

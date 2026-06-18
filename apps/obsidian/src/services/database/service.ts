@@ -180,17 +180,21 @@ export class DatabaseService extends Service<void> {
         if (value) this.#onSettingsChanged(value);
       }),
     );
+    const onSourcePathMaybeChanged = (): void => {
+      const next = this.#zoteroPref.databasePath;
+      if (next === this.#lastSourcePath) return;
+      logger.debug("Zotero database path changed", {
+        prev: this.#lastSourcePath,
+        next,
+      });
+      this.#lastSourcePath = next;
+      this.#scheduleRefresh();
+    };
+    // `changed` (profile re-read) and `data-dir-changed` (override) can both
+    // move the resolved database path.
+    stack.defer(this.#zoteroPref.on("changed", onSourcePathMaybeChanged));
     stack.defer(
-      this.#zoteroPref.on("changed", () => {
-        const next = this.#zoteroPref.databasePath;
-        if (next === this.#lastSourcePath) return;
-        logger.debug("Zotero database path changed", {
-          prev: this.#lastSourcePath,
-          next,
-        });
-        this.#lastSourcePath = next;
-        this.#scheduleRefresh();
-      }),
+      this.#zoteroPref.on("data-dir-changed", onSourcePathMaybeChanged),
     );
 
     await this.#refreshOnce();

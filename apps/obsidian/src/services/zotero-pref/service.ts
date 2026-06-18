@@ -13,7 +13,9 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
+import { sourceIdFromUris } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { ZOTERO_DB_FILENAME } from "@/lib/constants";
@@ -42,6 +44,12 @@ const logger = getLogger("zotero-pref");
 export interface ZoteroPrefEvents {
   /** Prefs were re-read after the profile dir changed. Re-read if you cache. */
   changed: () => void;
+  /**
+   * The `zotero.data-dir` override changed. Prefs are untouched, but
+   * {@link ZoteroPrefService.dataDir}, {@link ZoteroPrefService.databasePath},
+   * and {@link ZoteroPrefService.sourceId} now differ.
+   */
+  "data-dir-changed": () => void;
 }
 
 /** A Zotero profile resolved to its absolute directory, for the settings picker. */
@@ -69,6 +77,8 @@ export class ZoteroPrefService extends Service<void> {
   #error: Error | null = null;
   /** The `zotero.profile-dir` setting value last applied to a reload. */
   #appliedProfileDir: string | null = null;
+  /** The `zotero.data-dir` override last applied — wins over prefs in {@link dataDir}. */
+  #appliedDataDir: string | null = null;
   /** Discards stale reloads when settings change faster than reads complete. */
   #loadGen = 0;
 
@@ -109,16 +119,18 @@ export class ZoteroPrefService extends Service<void> {
   }
 
   /**
-   * The Zotero data directory holding `zotero.sqlite`, resolved from prefs.
-   * Mirrors Zotero's `DataDirectory.init`: the `dataDir` pref wins when
-   * `useDataDir` is set, otherwise the default `$HOME/Zotero`. Falls back to
-   * the default while prefs are loading / degraded (empty map), matching a
-   * fresh Zotero install.
+   * The Zotero data directory holding `zotero.sqlite`. The `zotero.data-dir`
+   * override wins when set (an advanced escape hatch for a non-default running
+   * profile); otherwise resolved from prefs, mirroring Zotero's
+   * `DataDirectory.init`: the `dataDir` pref wins when `useDataDir` is set,
+   * else the default `$HOME/Zotero`. Falls back to the default while prefs are
+   * loading / degraded (empty map), matching a fresh Zotero install.
    *
    * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/dataDirectory.js#L40-L46
    * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/dataDirectory.js#L83-L84
    */
   get dataDir(): string {
+    if (this.#appliedDataDir) return this.#appliedDataDir;
     const dataDir = this.get("dataDir");
     if (
       this.get("useDataDir") === true &&
@@ -135,6 +147,22 @@ export class ZoteroPrefService extends Service<void> {
    */
   get databasePath(): string {
     return join(this.dataDir, ZOTERO_DB_FILENAME);
+  }
+
+  /**
+   * Stable id for the active Zotero install, hashed from its profile and data
+   * directory — the same hash the Zotero companion stamps on every notify
+   * event. `LiveUpdateService` discards events whose `sourceId` doesn't match this.
+   *
+   * `null` while the profile dir is unknown (loading / detection failed), where
+   * no incoming event can be meaningfully matched.
+   */
+  get sourceId(): string | null {
+    if (!this.#resolvedProfileDir) return null;
+    return sourceIdFromUris(
+      pathToFileURL(this.#resolvedProfileDir).href,
+      pathToFileURL(this.dataDir).href,
+    );
   }
 
   on<K extends keyof ZoteroPrefEvents>(
@@ -170,6 +198,7 @@ export class ZoteroPrefService extends Service<void> {
 
     const snapshot = await this.#settings.loaded;
     this.#appliedProfileDir = snapshot["zotero.profile-dir"];
+    this.#appliedDataDir = snapshot["zotero.data-dir"];
     await this.#reload(this.#appliedProfileDir);
 
     stack.defer(
@@ -184,11 +213,24 @@ export class ZoteroPrefService extends Service<void> {
   }
 
   #onSettingsChanged(s: Readonly<Settings>): void {
-    const dir = s["zotero.profile-dir"];
-    if (dir === this.#appliedProfileDir) return;
-    this.#appliedProfileDir = dir;
-    logger.debug("Profile dir changed; re-reading prefs", { dir });
-    void this.#reload(dir).then(() => this.#emitter.emit("changed"));
+    const profileDir = s["zotero.profile-dir"];
+    const dataDir = s["zotero.data-dir"];
+    const profileChanged = profileDir !== this.#appliedProfileDir;
+    const dataDirChanged = dataDir !== this.#appliedDataDir;
+    this.#appliedProfileDir = profileDir;
+    this.#appliedDataDir = dataDir;
+    if (profileChanged) {
+      // A profile change moves prefs.js, so re-read; the new data-dir override
+      // (if it also changed) is already live via the getter.
+      logger.debug("Profile dir changed; re-reading prefs", {
+        dir: profileDir,
+      });
+      void this.#reload(profileDir).then(() => this.#emitter.emit("changed"));
+    } else if (dataDirChanged) {
+      // Only the data-dir override changed — prefs are unaffected.
+      logger.debug("Data dir override changed", { dir: dataDir });
+      this.#emitter.emit("data-dir-changed");
+    }
   }
 
   async #reload(settingDir: string | null): Promise<void> {

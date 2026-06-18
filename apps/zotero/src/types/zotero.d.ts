@@ -4,6 +4,15 @@ declare global {
   // Vite-injected build-time constant.
   const __DEV__: boolean;
 
+  // `zotero-types@4.1.2` types `Zotero.DataDirectory.dir` but not
+  // `Zotero.Profile`. We only read its profile directory.
+  // https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/profile.js#L30
+  namespace Zotero {
+    namespace Profile {
+      const dir: string;
+    }
+  }
+
   interface Window {
     /**
      * Gecko chrome-window global. We only use `insertFTLIfNeeded`, which

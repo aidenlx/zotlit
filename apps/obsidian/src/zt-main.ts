@@ -63,7 +63,7 @@ export default class ZotLitPlugin extends Plugin {
     registerAnnotView(this, {
       app: this.app,
       db: services.db,
-      server: services.server,
+      liveUpdate: services.liveUpdate,
       zoteroPref: services.zoteroPref,
       noteFeatures: services.noteFeatures,
       attachmentImport: services.attachmentImport,
@@ -74,7 +74,7 @@ export default class ZotLitPlugin extends Plugin {
     // A Zotero item add/modify/trash push means the database changed; feed it
     // into the same coalesced refresh lane as the filesystem watchers.
     stack.defer(
-      services.server.on("item/update", () => {
+      services.liveUpdate.on("item/update", () => {
         services.db.notifyExternalChange();
       }),
     );

@@ -6,8 +6,22 @@ const itemRef = v.object({
   libraryID: v.number(),
 });
 
+/**
+ * Identity of the Zotero install an event came from, merged into every event.
+ * `sourceId` lets the listener discard events from an install it isn't
+ * configured to read. The raw `profilePath` / `dataPath` are present only when
+ * the companion's debug logging is on, to make a mismatch diagnosable.
+ * @see sourceIdFromUris
+ */
+const source = v.object({
+  sourceId: v.string(),
+  profilePath: v.optional(v.string()),
+  dataPath: v.optional(v.string()),
+});
+
 /** Regular items added / modified / trashed in Zotero. */
 export const itemUpdateSchema = v.object({
+  ...source.entries,
   event: v.literal("item/update"),
   add: v.array(itemRef),
   modify: v.array(itemRef),
@@ -16,6 +30,7 @@ export const itemUpdateSchema = v.object({
 
 /** The full set of annotation items currently selected in a reader. */
 export const readerAnnotSelectSchema = v.object({
+  ...source.entries,
   event: v.literal("reader/annot-select"),
   itemID: v.number(),
   attachmentID: v.number(),
@@ -24,6 +39,7 @@ export const readerAnnotSelectSchema = v.object({
 
 /** The Zotero reader switched to a different attachment. */
 export const readerActiveSchema = v.object({
+  ...source.entries,
   event: v.literal("reader/active"),
   itemID: v.number(),
   attachmentID: v.number(),
