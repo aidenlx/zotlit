@@ -17,13 +17,22 @@ import {
   type Settings,
   type SettingsService,
 } from "@/services/settings/service";
+import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-const logger = getLogger("server");
+const logger = getLogger("live-update");
+
+/** Sender's raw profile/data dirs, present only when its debug logging is on. */
+function senderDirs(event: NotifyEvent): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (event.profilePath !== undefined) out.profilePath = event.profilePath;
+  if (event.dataPath !== undefined) out.dataPath = event.dataPath;
+  return out;
+}
 
 /**
  * Live state of the Zotero reader, derived from the companion's reader pushes.
  * The service is the authoritative holder; views sync from {@link
- * ServerService.readerTarget} on mount and the reader events thereafter.
+ * LiveUpdateService.readerTarget} on mount and the reader events thereafter.
  */
 export interface ReaderTarget {
   /** Parent (regular) item the open attachment belongs to. */
@@ -34,7 +43,7 @@ export interface ReaderTarget {
   selected: readonly number[];
 }
 
-export interface ServerEvents {
+export interface LiveUpdateEvents {
   "item/update": (event: ItemUpdate) => void;
   /**
    * Aggregated reader state: fired whenever the companion reports a reader
@@ -43,15 +52,16 @@ export interface ServerEvents {
    */
   "reader/target": (target: ReaderTarget) => void;
   /**
-   * Edge transitions of {@link ServerService.available} — fired when the
+   * Edge transitions of {@link LiveUpdateService.available} — fired when the
    * listener starts accepting connections or stops (settings off, port rebind,
    * or a bind error). Consumers gate reader-follow features on this.
    */
   available: (available: boolean) => void;
 }
 
-export interface ServerServiceDeps {
+export interface LiveUpdateServiceDeps {
   settings: SettingsService;
+  zoteroPref: ZoteroPrefService;
 }
 
 /**
@@ -62,9 +72,10 @@ export interface ServerServiceDeps {
  * `server.*` settings; lifecycle transitions are serialized so a port change
  * can't race a half-closed server.
  */
-export class ServerService extends Service<void> {
+export class LiveUpdateService extends Service<void> {
   readonly #settings;
-  readonly #emitter = createNanoEvents<ServerEvents>();
+  readonly #zoteroPref;
+  readonly #emitter = createNanoEvents<LiveUpdateEvents>();
 
   #server: ServerType | null = null;
   #chain: Promise<void> = Promise.resolve();
@@ -78,9 +89,10 @@ export class ServerService extends Service<void> {
 
   ready: Promise<void>;
 
-  constructor(deps: ServerServiceDeps) {
+  constructor(deps: LiveUpdateServiceDeps) {
     super();
     this.#settings = deps.settings;
+    this.#zoteroPref = deps.zoteroPref;
     this.ready = this.#load();
   }
 
@@ -94,7 +106,10 @@ export class ServerService extends Service<void> {
     return this.#readerTarget;
   }
 
-  on<K extends keyof ServerEvents>(event: K, cb: ServerEvents[K]): () => void {
+  on<K extends keyof LiveUpdateEvents>(
+    event: K,
+    cb: LiveUpdateEvents[K],
+  ): () => void {
     return this.#emitter.on(event, cb);
   }
 
@@ -197,7 +212,20 @@ export class ServerService extends Service<void> {
       }),
       (c) => {
         const event = c.req.valid("json");
-        logger.debug("Received notify event", { event: event.event });
+        const expected = this.#zoteroPref.sourceId;
+        if (expected === null || event.sourceId !== expected) {
+          logger.warn("Discarded notify event: source id mismatch", {
+            event: event.event,
+            expected,
+            received: event.sourceId,
+            ...senderDirs(event),
+          });
+          return c.body(null, 204);
+        }
+        logger.debug("Received notify event", {
+          event: event.event,
+          ...senderDirs(event),
+        });
         this.#dispatch(event);
         return c.body(null, 204);
       },

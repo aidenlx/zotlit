@@ -5,8 +5,8 @@ import * as m from "@/paraglide/messages";
 import { type AttachmentImportService } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
 import { type ItemLookup } from "@/services/item-lookup/service";
+import { type LiveUpdateService } from "@/services/live-update/service";
 import { type NoteFeatures } from "@/services/note-feature/service";
-import { type ServerService } from "@/services/server/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -20,7 +20,7 @@ type AnnotViewPlugin = Pick<
 export interface AnnotViewRegistrationDeps {
   app: App;
   db: DatabaseService;
-  server: ServerService;
+  liveUpdate: LiveUpdateService;
   zoteroPref: ZoteroPrefService;
   noteFeatures: NoteFeatures;
   attachmentImport: AttachmentImportService;
@@ -35,7 +35,7 @@ export function registerAnnotView(
   const viewDeps: AnnotViewDeps = {
     app: deps.app,
     db: deps.db,
-    server: deps.server,
+    liveUpdate: deps.liveUpdate,
     zoteroPref: deps.zoteroPref,
     noteFeatures: deps.noteFeatures,
     attachmentImport: deps.attachmentImport,

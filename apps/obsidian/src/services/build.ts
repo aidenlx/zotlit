@@ -5,10 +5,10 @@ import { CitekeyClick } from "./citekey-click/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
+import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
 import { NoteFeatures } from "./note-feature/service";
 import { NoteIndex } from "./note-index/service";
-import { ServerService } from "./server/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
@@ -49,7 +49,8 @@ export function buildServices(
       zoteroPref: ({ settings }) => new ZoteroPrefService({ settings }),
     })
     .use({
-      server: ({ settings }) => new ServerService({ settings }),
+      liveUpdate: ({ settings, zoteroPref }) =>
+        new LiveUpdateService({ settings, zoteroPref }),
     })
     .use({
       db: ({ settings, zoteroPref }) =>

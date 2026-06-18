@@ -8,3 +8,4 @@ export {
   type ItemUpdate,
   itemUpdateSchema,
 } from "./notify";
+export { djb2a, normalizeFileUri, sourceIdFromUris } from "./source-id";

@@ -339,8 +339,8 @@ class FakeZoteroPref {
     return this.#databasePath;
   }
 
-  on(event: "changed", cb: () => void): () => void {
-    expect(event).toBe("changed");
+  on(event: "changed" | "data-dir-changed", cb: () => void): () => void {
+    expect(["changed", "data-dir-changed"]).toContain(event);
     this.#subscribers.add(cb);
     return () => {
       this.#subscribers.delete(cb);

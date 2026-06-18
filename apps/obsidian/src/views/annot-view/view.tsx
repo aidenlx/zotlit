@@ -30,9 +30,9 @@ import {
 } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
 import { type ItemLookup } from "@/services/item-lookup/service";
+import { type LiveUpdateService } from "@/services/live-update/service";
 import { type NoteFeatures } from "@/services/note-feature/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { type ServerService } from "@/services/server/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -96,7 +96,7 @@ interface LoadTarget {
 export interface AnnotViewDeps {
   app: App;
   db: DatabaseService;
-  server: ServerService;
+  liveUpdate: LiveUpdateService;
   zoteroPref: ZoteroPrefService;
   noteFeatures: NoteFeatures;
   attachmentImport: AttachmentImportService;
@@ -163,7 +163,7 @@ export class AnnotationView extends ItemView {
       followMode === "reader" ||
       followMode === "linked"
     ) {
-      if (followMode === "reader" && !this.#deps.server.available) {
+      if (followMode === "reader" && !this.#deps.liveUpdate.available) {
         this.#store.setState({ followMode: "note" });
       } else if (
         followMode === "linked" &&
@@ -202,8 +202,8 @@ export class AnnotationView extends ItemView {
     });
 
     this.#store.setState({
-      serverAvailable: this.#deps.server.available,
-      readerTarget: this.#deps.server.readerTarget,
+      serverAvailable: this.#deps.liveUpdate.available,
+      readerTarget: this.#deps.liveUpdate.readerTarget,
     });
 
     this.#root = createRoot(this.contentEl);
@@ -238,7 +238,7 @@ export class AnnotationView extends ItemView {
     );
 
     this.register(
-      this.#deps.server.on("reader/target", (target) => {
+      this.#deps.liveUpdate.on("reader/target", (target) => {
         const prev = this.#store.getState().readerTarget;
         this.#store.setState({ readerTarget: target });
         logger.debug("Reader target changed", {
@@ -253,7 +253,7 @@ export class AnnotationView extends ItemView {
     );
 
     this.register(
-      this.#deps.server.on("available", (available) => {
+      this.#deps.liveUpdate.on("available", (available) => {
         this.#store.setState({ serverAvailable: available });
         if (!available && this.#followMode === "reader") {
           logger.debug("Server unavailable, leaving reader-follow mode");
@@ -281,7 +281,7 @@ export class AnnotationView extends ItemView {
       this.#setFollowMode("note");
       return;
     }
-    if (!this.#deps.server.available) return; // also gated in the UI
+    if (!this.#deps.liveUpdate.available) return; // also gated in the UI
     this.#setFollowMode("reader");
   }
 
@@ -360,7 +360,7 @@ export class AnnotationView extends ItemView {
       case "note":
         return null;
       case "reader": {
-        const readerTarget = this.#deps.server.readerTarget;
+        const readerTarget = this.#deps.liveUpdate.readerTarget;
         if (!readerTarget) return null;
         try {
           const info = getItemDisplayInfoByID(
@@ -428,7 +428,7 @@ export class AnnotationView extends ItemView {
   }
 
   #resolveReader(): LoadTarget | null {
-    const target = this.#deps.server.readerTarget;
+    const target = this.#deps.liveUpdate.readerTarget;
     if (!target) return null;
     let ref: ItemRef | null;
     try {
