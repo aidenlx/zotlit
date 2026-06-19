@@ -32,8 +32,10 @@ export function compileFrontmatterFields(
 }
 
 function compileExpr(expr: string): (zt: object) => unknown {
+  // Newline before `)` so an expr ending in a `//` line comment doesn't swallow
+  // the closing paren — matches the engine's `#assertExpressionSyntax` check.
   // oxlint-disable-next-line no-implied-eval
-  return new Function("zt", `return (${expr});`) as (zt: object) => unknown;
+  return new Function("zt", `return (${expr}\n);`) as (zt: object) => unknown;
 }
 
 /** Defer a syntax error to eval time so {@link evalFrontmatterFields} reports it. */
