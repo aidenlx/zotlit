@@ -21,8 +21,8 @@
     "lefthook": "^2.1.1",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
-    "oxlint-tsgolint": "^0.22.1",
-    "turbo": "^2.9.9"
+    "oxlint-tsgolint": "^0.23.0",
+    "turbo": "^2.9.18"
   },
   "packageManager": "pnpm@11.1.3"
 }
