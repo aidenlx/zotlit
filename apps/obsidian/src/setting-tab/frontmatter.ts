@@ -1,5 +1,7 @@
 import { type SettingDefinitionItem } from "obsidian";
 
+import { validateFrontmatterExpr } from "@zotlit/templates/frontmatter";
+
 import { confirm } from "@/lib/confirm";
 import * as m from "@/paraglide/messages";
 
@@ -41,12 +43,25 @@ export function frontmatterPageItems(
       onDelete: (index) => deleteField(ctx, index),
       items: fields.map((field) => ({
         name: field.key || m.settings_note_frontmatter_empty_key(),
-        desc: field.expr,
+        desc: describeField(field.expr),
         searchable: false,
         action: (_el, index) => openFieldModal(ctx, index),
       })),
     },
   ];
+}
+
+/** Show the expression, flagging it in red when it doesn't compile. The raw
+ *  parser error is left to the edit modal, where it can be fixed. */
+function describeField(expr: string): string | DocumentFragment {
+  if (!expr || !validateFrontmatterExpr(expr)) return expr;
+  const desc = document.createDocumentFragment();
+  desc.append(expr);
+  const note = document.createElement("div");
+  note.className = "zt:mt-2 zt:text-(--text-error)";
+  note.textContent = m.settings_frontmatter_compile_error();
+  desc.append(note);
+  return desc;
 }
 
 function openFieldModal(ctx: SettingTabContext, index: number | null): void {

@@ -9,10 +9,8 @@ import {
 } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MARKER_END, MARKER_START } from "@/lib/constants";
 import { SettingsService } from "@/services/settings/service";
 
-import { formatBlockquote } from "./eta";
 import { TemplateService } from "./service";
 
 type VaultEvent = "create" | "modify" | "rename" | "delete";
@@ -215,128 +213,109 @@ describe("TemplateService", () => {
     ).toContain("# Paper");
   });
 
-  it("resolves embedded includes through canonical template names", async () => {
-    const { service } = await makeHarness();
-
-    const rendered = service.render("content", {
-      annotations: [
-        { pageLabel: "4", imgEmbed: "", text: "Highlighted text", comment: "" },
-      ],
-    });
-
-    expect(rendered).toContain("Page 4");
-    expect(rendered).toContain("Highlighted text");
-  });
-
-  it("wraps content includes in managed-region markers", async () => {
-    const { service } = await makeHarness();
-
-    const rendered = service.render("note", {
-      title: "Paper",
-      backlink: "zotero://select/items/1",
-      attachments: [],
-      annotations: [],
-    });
-
-    expect(rendered).toContain(`${MARKER_START}\n\n${MARKER_END}`);
-  });
-
-  it("keeps multi-line annotation text and comment inside the callout", async () => {
-    const { service } = await makeHarness();
-
-    const rendered = service.render("annotation", {
-      pageLabel: "5",
-      imgEmbed: "",
-      text: "first line\nsecond line",
-      comment: "comment A\ncomment B",
-    });
-
-    expect(rendered).toBe(
-      [
-        "> [!note] Page 5",
-        ">",
-        "> first line",
-        "> second line",
-        ">",
-        "> comment A",
-        "> comment B",
-        "",
-      ].join("\n"),
-    );
-  });
-
-  it("omits the comment block when the annotation has no comment", async () => {
-    const { service } = await makeHarness();
-
-    const rendered = service.render("annotation", {
-      pageLabel: "5",
-      imgEmbed: "",
-      text: "only text",
-      comment: "",
-    });
-
-    expect(rendered).toBe(
-      ["> [!note] Page 5", ">", "> only text", ""].join("\n"),
-    );
-  });
-
   it("renders a vault template when present", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zt-note.eta.md", "custom <%= zt.title %>");
+    vault.addFile("ZtTemplates/zotlit-note.eta.md", "custom <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
   });
 
+  it("fails loudly for a broken vault template instead of falling back to the default", async () => {
+    const vault = new MockVault();
+    vault.addFile("ZtTemplates/zotlit-note.eta.md", "broken <%= ) %>");
+    const { service } = await makeHarness({ vault });
+
+    expect(() => service.render("note", { title: "Paper" })).toThrow();
+    expect(service.compileErrors.get("note")).toBeDefined();
+  });
+
+  it("propagates a broken included template instead of rendering its default", async () => {
+    const vault = new MockVault();
+    vault.addFile("ZtTemplates/zotlit-content.eta.md", "broken <%= ) %>");
+    const { service } = await makeHarness({ vault });
+
+    expect(() =>
+      service.render("note", {
+        title: "Paper",
+        backlink: "zotero://select/items/1",
+        attachments: [],
+        annotations: [],
+      }),
+    ).toThrow();
+    expect(service.compileErrors.get("content")).toBeDefined();
+  });
+
+  it("recovers once a broken template is fixed by a later modify event", async () => {
+    const vault = new MockVault();
+    vault.addFile("ZtTemplates/zotlit-note.eta.md", "broken <%= ) %>");
+    const { service } = await makeHarness({ vault });
+
+    expect(() => service.render("note", { title: "A" })).toThrow();
+
+    vault.modifyFile("ZtTemplates/zotlit-note.eta.md", "fixed <%= zt.title %>");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(service.render("note", { title: "B" })).toBe("fixed B");
+    expect(service.compileErrors.get("note")).toBeUndefined();
+  });
+
   it("refreshes compiled templates after debounced vault modify events", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zt-note.eta.md", "first <%= zt.title %>");
+    vault.addFile("ZtTemplates/zotlit-note.eta.md", "first <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     expect(service.render("note", { title: "A" })).toBe("first A");
-    vault.modifyFile("ZtTemplates/zt-note.eta.md", "second <%= zt.title %>");
+    vault.modifyFile(
+      "ZtTemplates/zotlit-note.eta.md",
+      "second <%= zt.title %>",
+    );
 
     await vi.advanceTimersByTimeAsync(500);
 
     expect(service.render("note", { title: "B" })).toBe("second B");
   });
 
-  it("renders literal template strings without file lookup", async () => {
-    const { service } = await makeHarness();
-
-    expect(service.renderString("<%= zt.x %>", { x: 1 })).toBe("1");
-  });
-
-  it("points a syntax error at the offending expression line and column", async () => {
-    const { service } = await makeHarness();
-
-    expect(() =>
-      service.renderString("line one\nbad: <%= 1 + + %>\n", {}),
-    ).toThrow(
-      [
-        "Bad expression — Unexpected token ')' at line 2 col 10:",
-        "",
-        "  bad: <%= 1 + + %>",
-        "           ^",
-      ].join("\n"),
-    );
-  });
-
-  it("compiles expressions referencing unbound template identifiers", async () => {
-    const { service } = await makeHarness();
-
-    expect(() => service.renderString("<%~ zt.missing %>", {})).not.toThrow();
-  });
-
-  it("rebuilds the content map when the template folder setting changes", async () => {
+  it("rebuilds templates when the template folder setting changes", async () => {
     const vault = new MockVault();
-    vault.addFile("OtherTemplates/zt-note.eta.md", "other <%= zt.title %>");
+    vault.addFile("OtherTemplates/zotlit-note.eta.md", "other <%= zt.title %>");
     const { service, settings } = await makeHarness({ vault });
 
     settings.update({ "template.folder": "OtherTemplates" });
     await flushAsync();
 
     expect(service.render("note", { title: "Paper" })).toBe("other Paper");
+  });
+
+  it("drops non-canonical templates from the previous folder when it changes", async () => {
+    const vault = new MockVault();
+    vault.addFile("ZtTemplates/zotlit-custom.eta.md", "custom <%= zt.title %>");
+    const { service, settings } = await makeHarness({ vault });
+
+    expect(service.render("custom", { title: "Paper" })).toBe("custom Paper");
+
+    settings.update({ "template.folder": "OtherTemplates" });
+    await flushAsync();
+
+    expect(() => service.render("custom", { title: "Paper" })).toThrow();
+  });
+
+  it("ignores template files in nested subfolders", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "ZtTemplates/nested/zotlit-note.eta.md",
+      "nested <%= zt.title %>",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(
+      service.render("note", {
+        title: "Paper",
+        backlink: "zotero://select/items/1",
+        attachments: [],
+        annotations: [],
+      }),
+    ).toContain("# Paper");
   });
 
   it("toggles the auto-pair extension array from settings", async () => {
@@ -353,42 +332,17 @@ describe("TemplateService", () => {
 
   it("unsubscribes vault events on dispose", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zt-note.eta.md", "first <%= zt.title %>");
+    vault.addFile("ZtTemplates/zotlit-note.eta.md", "first <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     await service[Symbol.asyncDispose]();
-    vault.modifyFile("ZtTemplates/zt-note.eta.md", "second <%= zt.title %>");
+    vault.modifyFile(
+      "ZtTemplates/zotlit-note.eta.md",
+      "second <%= zt.title %>",
+    );
     await vi.advanceTimersByTimeAsync(500);
 
     expect(vault.cachedRead).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("formatBlockquote", () => {
-  it("prefixes every line of multi-line content", () => {
-    expect(formatBlockquote("first\nsecond\nthird")).toBe(
-      "> first\n> second\n> third",
-    );
-  });
-
-  it("renders interior blank lines as a bare '>'", () => {
-    expect(formatBlockquote("title\n\nbody")).toBe("> title\n>\n> body");
-  });
-
-  it("collapses consecutive blank lines into one", () => {
-    expect(formatBlockquote("a\n\n\n\nb")).toBe("> a\n>\n> b");
-  });
-
-  it("trims surrounding whitespace before prefixing", () => {
-    expect(formatBlockquote("\n\n  body  \n\n")).toBe("> body");
-  });
-
-  it("nests already-quoted content", () => {
-    expect(formatBlockquote("> quoted\nplain")).toBe("> > quoted\n> plain");
-  });
-
-  it("returns a lone '>' for empty content", () => {
-    expect(formatBlockquote("")).toBe(">");
   });
 });
 

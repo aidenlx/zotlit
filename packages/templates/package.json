@@ -1,14 +1,20 @@
 {
-  "name": "@zotlit/protocol",
+  "name": "@zotlit/templates",
   "version": "0.0.0",
   "private": true,
   "files": [
-    "dist"
+    "dist",
+    "defaults"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./dist/index.mjs",
-    "./package.json": "./package.json"
+    "./constants": "./dist/constants.mjs",
+    "./frontmatter": "./dist/frontmatter.mjs",
+    "./obsidian": "./dist/obsidian.mjs",
+    "./package.json": "./package.json",
+    "./defaults/*": "./defaults/*.eta"
   },
   "scripts": {
     "build": "tsdown",
@@ -18,16 +24,17 @@
     "lint": "oxlint",
     "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
   },
+  "dependencies": {
+    "eta": "catalog:",
+    "valibot": "catalog:"
+  },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
-    "valibot": "catalog:",
+    "vite": "catalog:",
     "vitest": "catalog:"
-  },
-  "peerDependencies": {
-    "valibot": "catalog:"
   }
 }

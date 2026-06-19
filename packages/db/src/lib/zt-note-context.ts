@@ -1,20 +1,41 @@
-import {
-  annotationOpenUri,
-  annotationToTemplateData,
-  attachmentToTemplateData,
-  itemSelectUri,
-  itemToTemplateData,
-  parseIndexedKey,
-  type Annotation,
-  type Attachment,
-  type Item,
-  type ItemTag,
-  type TemplateAnnotation,
-  type TemplateAttachment,
-  type TemplateCreator,
-} from "@zotlit/db";
+import { type Item } from "@/queries/items";
 
-import { type NoteTemplateContext } from "./types";
+import { type Annotation } from "./zt-annot";
+import { type Attachment } from "./zt-attach";
+import { parseIndexedKey } from "./zt-key";
+import { type ItemTag } from "./zt-tag";
+import {
+  annotationToTemplateData,
+  type TemplateAnnotation,
+} from "./zt-template-annot";
+import {
+  attachmentToTemplateData,
+  type TemplateAttachment,
+} from "./zt-template-attach";
+import {
+  itemToTemplateData,
+  type TemplateCreator,
+  type TemplateItemData,
+} from "./zt-template-item";
+import { annotationOpenUri, itemSelectUri } from "./zt-uri";
+
+/**
+ * The `zt` root for the `note` template: {@link TemplateItemData} plus the
+ * runtime-computed fields assembled at the app layer (backlinks, resolved
+ * attachment links, flattened annotations, author conveniences).
+ */
+export interface NoteTemplateContext extends TemplateItemData {
+  /** Zotero deep link to the literature item (`zotero://select/...`). */
+  backlink: string;
+  /** Flat annotation list across all (or scoped) attachments. */
+  annotations: TemplateAnnotation[];
+  /** All attachments for the item. */
+  attachments: TemplateAttachment[];
+  /** Creators filtered to {@link TemplateItemData.primaryCreatorType}. */
+  authors: TemplateCreator[];
+  /** Formatted short author string, e.g. `"Smith et al."`. */
+  authorsShort: string;
+}
 
 export interface NoteContextInput {
   item: Item;

@@ -1,8 +1,4 @@
-import {
-  PluginSettingTab,
-  type SettingDefinitionItem,
-  type TAbstractFile,
-} from "obsidian";
+import { PluginSettingTab, type SettingDefinitionItem } from "obsidian";
 
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
@@ -10,7 +6,7 @@ import {
   type SettingsPatch,
   type SettingsService,
 } from "@/services/settings/service";
-import { isEtaTemplatePath } from "@/services/template/path";
+import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -35,6 +31,7 @@ export interface ZotLitSettingTabOptions {
   settings: SettingsService;
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
+  template: TemplateService;
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
@@ -43,21 +40,20 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #db: DatabaseService;
   readonly #zoteroPref: ZoteroPrefService;
 
-  constructor({ plugin, settings, db, zoteroPref }: ZotLitSettingTabOptions) {
+  constructor({
+    plugin,
+    settings,
+    db,
+    zoteroPref,
+    template,
+  }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
     this.#plugin = plugin;
     this.#settings = settings;
     this.#db = db;
     this.#zoteroPref = zoteroPref;
 
-    // Vault: ejectable-template rows and the template-folder file list track
-    // template files created/removed/renamed.
-    const onVaultChange = (file: TAbstractFile): void => {
-      if (isEtaTemplatePath(file.path)) this.update();
-    };
-    plugin.registerEvent(plugin.app.vault.on("create", onVaultChange));
-    plugin.registerEvent(plugin.app.vault.on("delete", onVaultChange));
-    plugin.registerEvent(plugin.app.vault.on("rename", onVaultChange));
+    plugin.register(template.on("compile-status-changed", () => this.update()));
 
     // Settings: the frontmatter list is structural — its edits add/remove rows,
     // so the tab must re-render. Reference identity changes only when that key

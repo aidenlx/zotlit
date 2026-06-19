@@ -1,4 +1,3 @@
-import { join } from "node:path/posix";
 import {
   type App,
   type SettingControl,
@@ -13,16 +12,17 @@ import { ensureFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
+import { DEFAULT_NOTE_FILENAME } from "@/services/note-feature/defaults";
 import { type AutoTrim } from "@/services/settings/schema";
 import {
-  CANONICAL_NAMES,
-  DEFAULT_NOTE_FILENAME,
-  EMBEDDED_DEFAULTS,
+  DEFAULT_TEMPLATES,
+  templatePath,
+  TEMPLATE_NAMES,
   type TemplateName,
-  toFilename,
 } from "@/services/template/defaults";
 import { normalizeVaultPath } from "@/services/template/path";
 
+import { appendCompileError } from "./compile-error";
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { frontmatterPageItems } from "./frontmatter";
 
@@ -100,12 +100,7 @@ export function templatesPageItems(
         {
           name: m.settings_template_filename_name(),
           desc: m.settings_template_filename_desc(),
-          control: {
-            type: "textarea",
-            key: "template.filename",
-            placeholder: DEFAULT_NOTE_FILENAME,
-            rows: 3,
-          },
+          render: (setting) => renderFilenameRow(setting, ctx),
         },
         {
           type: "page",
@@ -113,7 +108,7 @@ export function templatesPageItems(
           desc: m.settings_page_frontmatter_desc(),
           items: frontmatterPageItems(ctx),
         },
-        ...CANONICAL_NAMES.map(
+        ...TEMPLATE_NAMES.map(
           (name): SettingDefinition<SettingsKey> => ({
             name: TEMPLATE_META[name].title(),
             desc: TEMPLATE_META[name].desc(),
@@ -145,7 +140,7 @@ function trimControl(key: AutoTrimKey): SettingControl<SettingsKey> {
 
 /**
  * One row per built-in template. A template is "ejected" when a vault file
- * exists at its path; {@link TemplateService} then loads it instead of the
+ * exists at its path; `TemplateService` then loads it instead of the
  * embedded default. Ejected → open / reset; not ejected → eject.
  */
 function renderEjectableRow(
@@ -157,6 +152,7 @@ function renderEjectableRow(
   const path = templatePath(folder, name);
   const file = ctx.app.vault.getFileByPath(path);
 
+  const compileError = ctx.plugin.services.template.compileErrors.get(name);
   const desc = document.createDocumentFragment();
   desc.append(TEMPLATE_META[name].desc());
   desc.append(document.createElement("br"));
@@ -166,6 +162,9 @@ function renderEjectableRow(
     desc.append(code);
   } else {
     desc.append(m.settings_template_using_default());
+  }
+  if (compileError) {
+    appendCompileError(desc, compileError, m.settings_template_compile_error());
   }
   setting.setDesc(desc);
 
@@ -259,7 +258,7 @@ async function ejectAndRefresh(
     let file = ctx.app.vault.getFileByPath(path);
     if (!file) {
       await ensureFolder(ctx.app, folder);
-      file = await ctx.app.vault.create(path, EMBEDDED_DEFAULTS[name]);
+      file = await ctx.app.vault.create(path, DEFAULT_TEMPLATES[name]);
     }
     new BaseNotice(m.notice_template_ejected({ path }));
     await openTemplate(ctx.app, file);
@@ -277,7 +276,7 @@ async function resetAndRefresh(
   name: TemplateName,
 ): Promise<void> {
   try {
-    await ctx.app.vault.modify(file, EMBEDDED_DEFAULTS[name]);
+    await ctx.app.vault.modify(file, DEFAULT_TEMPLATES[name]);
     new BaseNotice(m.notice_template_reset());
   } catch (error) {
     logger.error("Failed to reset template", { name, error });
@@ -305,7 +304,7 @@ async function deleteAndRefresh(
 
 async function ejectAll(ctx: SettingTabContext): Promise<void> {
   const folder = currentFolder(ctx);
-  const missing = CANONICAL_NAMES.filter(
+  const missing = TEMPLATE_NAMES.filter(
     (name) => !ctx.app.vault.getFileByPath(templatePath(folder, name)),
   );
   if (missing.length === 0) {
@@ -318,7 +317,7 @@ async function ejectAll(ctx: SettingTabContext): Promise<void> {
       missing.map((name) =>
         ctx.app.vault.create(
           templatePath(folder, name),
-          EMBEDDED_DEFAULTS[name],
+          DEFAULT_TEMPLATES[name],
         ),
       ),
     );
@@ -339,9 +338,50 @@ function currentFolder(ctx: SettingTabContext): string {
   return normalizeVaultPath(ctx.settings.current?.["template.folder"] ?? "");
 }
 
-function templatePath(folder: string, name: TemplateName): string {
-  const file = toFilename(name)!;
-  return folder === "" ? file : join(folder, file);
+function renderFilenameRow(setting: Setting, ctx: SettingTabContext): void {
+  const { template } = ctx.plugin.services;
+  const saved = ctx.settings.current?.["template.filename"] ?? "";
+  const filenameError = template.filenameError;
+
+  if (filenameError) {
+    const desc = document.createDocumentFragment();
+    desc.append(m.settings_template_filename_desc());
+    appendCompileError(
+      desc,
+      filenameError,
+      m.settings_template_compile_error(),
+    );
+    setting.setDesc(desc);
+  }
+
+  setting.addTextArea((ta) => {
+    ta.setPlaceholder(DEFAULT_NOTE_FILENAME);
+    ta.setValue(saved);
+    ta.inputEl.rows = 3;
+  });
+
+  setting.addExtraButton((btn) => {
+    btn
+      .setIcon("check")
+      .setTooltip(m.settings_frontmatter_save())
+      .onClick(() => {
+        const textarea = setting.controlEl.querySelector("textarea");
+        if (!textarea) return;
+
+        const value = textarea.value.trim();
+        const error = value ? template.validateSource(value) : null;
+
+        if (error) {
+          const desc = document.createDocumentFragment();
+          desc.append(m.settings_template_filename_desc());
+          appendCompileError(desc, error, m.settings_template_compile_error());
+          setting.setDesc(desc);
+          return;
+        }
+
+        ctx.settings.update({ "template.filename": value });
+      });
+  });
 }
 
 const TEMPLATE_META: Record<

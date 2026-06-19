@@ -1,5 +1,7 @@
 import { type App, Modal, Setting } from "obsidian";
 
+import { validateFrontmatterExpr } from "@zotlit/templates/frontmatter";
+
 import { AbortError } from "@/lib/abort-error";
 import {
   FIELD_ATTACHMENTS,
@@ -7,6 +9,8 @@ import {
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
 import * as m from "@/paraglide/messages";
+
+import { appendCompileError } from "./compile-error";
 
 /** Keys ZotLit writes from item data; user fields cannot target them. */
 const RESERVED_KEYS: ReadonlySet<string> = new Set([
@@ -55,7 +59,7 @@ export function openFrontmatterFieldModal(
       );
     });
 
-  new Setting(form)
+  const exprSetting = new Setting(form)
     .setName(m.settings_frontmatter_expr_name())
     .setDesc(m.settings_frontmatter_expr_desc())
     .addTextArea((text) => {
@@ -63,9 +67,10 @@ export function openFrontmatterFieldModal(
       text.inputEl.rows = 4;
       text.inputEl.cols = 32;
       text.setValue(field?.expr ?? "");
-      text.inputEl.addEventListener("input", () =>
-        text.inputEl.setCustomValidity(""),
-      );
+      text.inputEl.addEventListener("input", () => {
+        text.inputEl.setCustomValidity("");
+        exprSetting.setDesc(m.settings_frontmatter_expr_desc());
+      });
     });
 
   new Setting(form)
@@ -112,6 +117,15 @@ export function openFrontmatterFieldModal(
     if (!expr) {
       exprInput.setCustomValidity(m.settings_frontmatter_error_empty_expr());
       form.reportValidity();
+      return;
+    }
+
+    const exprError = validateFrontmatterExpr(expr);
+    if (exprError) {
+      const desc = document.createDocumentFragment();
+      desc.append(m.settings_frontmatter_expr_desc());
+      appendCompileError(desc, exprError);
+      exprSetting.setDesc(desc);
       return;
     }
 
