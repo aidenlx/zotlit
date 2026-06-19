@@ -1,0 +1,14 @@
+import * as v from "valibot";
+
+/**
+ * Eta `autoTrim` mode for one side of a template tag. `"nl"` strips a single
+ * newline, `"slurp"` strips all whitespace, `false` keeps it. Single source of
+ * truth for both the runtime validator and the {@link AutoTrim} type.
+ */
+export const autoTrimSchema = v.union([
+  v.literal(false),
+  v.literal("nl"),
+  v.literal("slurp"),
+]);
+
+export type AutoTrim = v.InferOutput<typeof autoTrimSchema>;

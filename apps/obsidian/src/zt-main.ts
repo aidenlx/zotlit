@@ -42,6 +42,7 @@ export default class ZotLitPlugin extends Plugin {
         settings: services.settings,
         db: services.db,
         zoteroPref: services.zoteroPref,
+        template: services.template,
       }),
     );
 

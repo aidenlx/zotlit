@@ -36,6 +36,9 @@ catalogs:
     drizzle-orm:
       specifier: 1.0.0-rc.3
       version: 1.0.0-rc.3
+    eta:
+      specifier: 4.6.0
+      version: 4.6.0
     monkey-around:
       specifier: 3.0.0
       version: 3.0.0
@@ -57,6 +60,9 @@ catalogs:
     tsdown:
       specifier: ^0.22.0
       version: 0.22.0
+    valibot:
+      specifier: ^1.0.0
+      version: 1.4.0
     vite:
       specifier: ^8.0.0
       version: 8.0.13
@@ -123,6 +129,9 @@ importers:
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@zotlit/templates':
+        specifier: workspace:*
+        version: link:../../packages/templates
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
@@ -130,7 +139,7 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       eta:
-        specifier: ^4.6.0
+        specifier: 'catalog:'
         version: 4.6.0
       fflate:
         specifier: ^0.8.2
@@ -224,7 +233,7 @@ importers:
         specifier: 7.2.0
         version: 7.2.0
       valibot:
-        specifier: ^1.0.0
+        specifier: 'catalog:'
         version: 1.4.0
       vite:
         specifier: 'catalog:'
@@ -364,7 +373,7 @@ importers:
         specifier: ^0.2.16
         version: 0.2.16
       valibot:
-        specifier: ^1.0.0
+        specifier: 'catalog:'
         version: 1.4.0
       vite:
         specifier: 'catalog:'
@@ -406,7 +415,7 @@ importers:
         specifier: ^0.18.0
         version: 0.18.0(drizzle-orm@1.0.0-rc.3(valibot@1.4.0)(zod@3.25.76))(kysely@0.28.17)(react@19.2.6)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
       valibot:
-        specifier: ^1.0.0
+        specifier: 'catalog:'
         version: 1.4.0
     devDependencies:
       '@types/node-22':
@@ -506,7 +515,7 @@ importers:
         specifier: 'catalog:'
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260615.1)
       valibot:
-        specifier: ^1.0.0
+        specifier: 'catalog:'
         version: 1.4.0
       vitest:
         specifier: 'catalog:'
@@ -551,6 +560,37 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260615.1)
+
+  packages/templates:
+    dependencies:
+      eta:
+        specifier: 'catalog:'
+        version: 4.6.0
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.0
+    devDependencies:
+      '@types/node-25':
+        specifier: npm:@types/node@^25.6.2
+        version: '@types/node@25.8.0'
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260615.1
+      '@zotlit/config':
+        specifier: workspace:*
+        version: link:../config
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.70.0(oxlint-tsgolint@0.23.0)
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260615.1)
+      vite:
+        specifier: 'catalog:'
+        version: 8.0.13(@types/node@25.8.0)(jiti@2.7.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.6(@types/node@25.8.0)(happy-dom@20.9.0)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0))
 
   packages/zotero-types:
     devDependencies:

@@ -1,31 +1,39 @@
 import { type Extension } from "@codemirror/state";
-import { EtaError } from "eta/core";
+import { dirname } from "node:path/posix";
 import {
   TFile,
-  Vault,
   type App,
   type EventRef,
   type Plugin,
   type TAbstractFile,
 } from "obsidian";
 
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { TemplateEngine, type TemplateFunction } from "@zotlit/templates";
+import { type AutoTrim } from "@zotlit/templates/constants";
+import { managedRegionTransform } from "@zotlit/templates/obsidian";
+
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
-import { type AutoTrim, type Settings } from "@/services/settings/schema";
+import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
 
-import { EMBEDDED_DEFAULTS, fromFilename } from "./defaults";
+import {
+  DEFAULT_TEMPLATES,
+  isTemplateName,
+  MANAGED_CONTENT_TEMPLATE,
+  templateNameFromPath,
+  TEMPLATE_NAMES,
+} from "./defaults";
 import { bracketExtension } from "./editor/bracket";
 import { EtaSuggest } from "./editor/suggest";
-import { ObsidianEta } from "./eta";
-import { isEtaTemplatePath, isPathInFolder, normalizeVaultPath } from "./path";
+import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
 
-interface CompileSnapshot {
-  mtime: number;
-  size: number;
+export interface TemplateServiceEvents {
+  "compile-status-changed": () => void;
 }
 
 export interface TemplateServiceOptions {
@@ -38,11 +46,16 @@ export class TemplateService extends Service<void> {
   readonly #plugin;
   readonly #app;
   readonly #settings;
-  readonly #eta;
-  readonly #contentMap = new Map<string, string>();
-  readonly #compileSnapshots = new Map<string, CompileSnapshot>();
+  readonly #engine = new TemplateEngine({
+    transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+  });
+  readonly #emitter = createNanoEvents<TemplateServiceEvents>();
+  readonly #compileErrors = new Map<string, string>();
   readonly #pendingFlush = new Set<string>();
   readonly #autoPairExtensions: Extension[] = [];
+
+  #filenameError: string | null = null;
+  #filenameFn: TemplateFunction | null = null;
 
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
   #folderGeneration = 0;
@@ -51,6 +64,7 @@ export class TemplateService extends Service<void> {
   #lastTemplateFolder = "";
   #lastAutoTrim: [AutoTrim, AutoTrim] = [false, false];
   #lastAutoPairEta = false;
+  #lastFilename = "";
 
   ready: Promise<void>;
 
@@ -59,30 +73,70 @@ export class TemplateService extends Service<void> {
     this.#plugin = options.plugin;
     this.#app = options.app;
     this.#settings = options.settings;
-    this.#eta = new ObsidianEta({
-      getAutoTrim: () => this.#lastAutoTrim,
-      getTemplateFolder: () => this.#lastTemplateFolder,
-      prepareTemplate: (path) => this.#prepareTemplate(path),
-      readTemplateContent: (path) => this.#readTemplateContent(path),
-    });
     this.ready = this.#load();
   }
 
-  /**
-   * @throws EtaError when the template cannot be resolved, compiled, or
-   *   rendered.
-   */
-  render<T>(name: string, data: T): string {
-    this.#requireLoaded("render");
-    return this.#eta.render(name, data as object);
+  get compileErrors(): ReadonlyMap<string, string> {
+    return this.#compileErrors;
+  }
+
+  /** The note-filename expression's compile error, or `null` when it is valid. */
+  get filenameError(): string | null {
+    return this.#filenameError;
+  }
+
+  on<K extends keyof TemplateServiceEvents>(
+    event: K,
+    cb: TemplateServiceEvents[K],
+  ): () => void {
+    return this.#emitter.on(event, cb);
   }
 
   /**
-   * @throws EtaError when the source cannot be compiled or rendered.
+   * @throws when the named template has a recorded compile error; or `EtaError`
+   *   when the engine cannot resolve or render it — including an `include()` of
+   *   a template that failed to compile (such a template is left undefined, so
+   *   rendering never silently falls back to a default).
    */
-  renderString<T>(source: string, data: T): string {
-    this.#requireLoaded("renderString");
-    return this.#eta.renderString(source, data as object);
+  render<T extends object>(name: string, data: T): string {
+    this.#requireLoaded("render");
+    const compileError = this.#compileErrors.get(name);
+    if (compileError !== undefined) {
+      throw new Error(
+        `Template '${name}' has a compile error:\n${compileError}`,
+      );
+    }
+    return this.#engine.render(name, data);
+  }
+
+  /**
+   * Render the configured note-filename expression, compiled once on settings
+   * change rather than per call.
+   *
+   * @returns the rendered name, or `""` when no filename expression is set (the
+   *   caller falls back to the item key).
+   * @throws when the filename expression has a compile error — note creation
+   *   must fail loudly rather than silently name files from a broken template.
+   */
+  renderFilename<T extends object>(data: T): string {
+    this.#requireLoaded("renderFilename");
+    if (this.#filenameError !== null) {
+      throw new Error(
+        `Note filename template has a compile error:\n${this.#filenameError}`,
+      );
+    }
+    if (this.#filenameFn === null) return "";
+    return this.#engine.render(this.#filenameFn, data);
+  }
+
+  /** @returns `null` when valid, or the error message when the source fails to compile. */
+  validateSource(source: string): string | null {
+    try {
+      this.#engine.compile(source);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
   }
 
   async #load(): Promise<void> {
@@ -93,6 +147,9 @@ export class TemplateService extends Service<void> {
       snapshot["template.auto-trim-trailing"],
     ];
     this.#lastAutoPairEta = snapshot["template.auto-pair-eta"];
+    this.#lastFilename = snapshot["template.filename"];
+    this.#engine.setAutoTrim(this.#lastAutoTrim);
+    this.#compileFilename(this.#lastFilename);
 
     await using stack = new AsyncDisposableStack();
     await this.#rebuildFolder(this.#lastTemplateFolder);
@@ -148,6 +205,7 @@ export class TemplateService extends Service<void> {
       settings["template.auto-trim-trailing"],
     ];
     const autoPairEta = settings["template.auto-pair-eta"];
+    const filename = settings["template.filename"];
 
     const folderChanged = folder !== this.#lastTemplateFolder;
     const autoTrimChanged =
@@ -155,20 +213,27 @@ export class TemplateService extends Service<void> {
       autoTrim[1] !== this.#lastAutoTrim[1];
     const autoPairChanged = autoPairEta !== this.#lastAutoPairEta;
 
+    const filenameChanged = filename !== this.#lastFilename;
+
     this.#lastTemplateFolder = folder;
     this.#lastAutoTrim = autoTrim;
     this.#lastAutoPairEta = autoPairEta;
+    this.#lastFilename = filename;
+
+    if (autoTrimChanged) {
+      this.#engine.setAutoTrim(autoTrim);
+      logger.debug("Template autoTrim changed", { autoTrim });
+    }
 
     if (folderChanged) {
       void this.#rebuildFolder(folder).catch((error) => {
         logger.warn("Template folder rebuild failed", { error, folder });
       });
-    } else if (autoTrimChanged) {
-      this.#resetCompileCache();
-      logger.debug("Template autoTrim changed; compile cache reset", {
-        autoTrim,
-      });
     }
+
+    // The compiled filename fn embeds the active autoTrim, so recompile it
+    // whenever either the expression or the trim config changes.
+    if (filenameChanged || autoTrimChanged) this.#compileFilename(filename);
 
     if (autoPairChanged) this.#setAutoPairEnabled(autoPairEta, true);
   }
@@ -177,41 +242,41 @@ export class TemplateService extends Service<void> {
     const generation = ++this.#folderGeneration;
     this.#cancelFlush();
     this.#pendingFlush.clear();
-    this.#contentMap.clear();
-    this.#compileSnapshots.clear();
-    this.#resetCompileCache();
 
     const root =
       folder === ""
         ? this.#app.vault.getRoot()
         : this.#app.vault.getFolderByPath(folder);
 
-    if (!root) {
+    const files: TFile[] = [];
+    if (root) {
+      for (const child of root.children) {
+        if (
+          child instanceof TFile &&
+          templateNameFromPath(child.path) !== null
+        ) {
+          files.push(child);
+        }
+      }
+    } else {
       logger.debug("Template folder not found; embedded defaults remain", {
         folder,
       });
-      return;
     }
-
-    const files: TFile[] = [];
-    Vault.recurseChildren(root, (file) => {
-      if (file instanceof TFile && isWatchedTemplatePath(file.path, folder)) {
-        files.push(file);
-      }
-    });
 
     const entries = await Promise.all(
       files.map(async (file) => {
         const content = await this.#app.vault.cachedRead(file);
-        return [normalizeVaultPath(file.path), content] as const;
+        return [templateNameFromPath(file.path), content] as const;
       }),
     );
     if (generation !== this.#folderGeneration) return;
 
-    for (const [path, content] of entries) this.#contentMap.set(path, content);
+    this.#loadTemplates(entries);
+    this.#emitter.emit("compile-status-changed");
     logger.debug("Template folder rebuilt", {
       folder,
-      count: this.#contentMap.size,
+      count: entries.length,
     });
   }
 
@@ -231,11 +296,10 @@ export class TemplateService extends Service<void> {
       file instanceof TFile && this.#isWatchedTemplatePath(newPath);
 
     if (oldWatched) {
-      const previousContent = this.#contentMap.get(oldPath);
       this.#dropTemplatePath(oldPath);
-      if (newWatched && previousContent !== undefined) {
-        this.#contentMap.set(newPath, previousContent);
-      }
+      // The new side, when watched, emits after its flush; otherwise emit the
+      // drop now so the setting tab reflects the revert to the package default.
+      if (!newWatched) this.#emitter.emit("compile-status-changed");
     }
 
     if (newWatched) {
@@ -248,6 +312,7 @@ export class TemplateService extends Service<void> {
     const path = normalizeVaultPath(file.path);
     if (!this.#isWatchedTemplatePath(path)) return;
     this.#dropTemplatePath(path);
+    this.#emitter.emit("compile-status-changed");
   }
 
   #scheduleFlush(): void {
@@ -263,60 +328,67 @@ export class TemplateService extends Service<void> {
     this.#pendingFlush.clear();
     await Promise.all(paths.map((path) => this.#readAndStore(path)));
 
-    for (const path of paths) this.#invalidateCompiled(path);
+    this.#emitter.emit("compile-status-changed");
     logger.debug("Template flush completed", { count: paths.length });
   }
 
   async #readAndStore(path: string): Promise<void> {
     const file = this.#app.vault.getFileByPath(path);
     if (!file || !this.#isWatchedTemplatePath(file.path)) {
-      this.#contentMap.delete(path);
+      this.#dropTemplatePath(path);
       return;
     }
 
+    const name = templateNameFromPath(path);
+    if (!name) return;
+
+    let content: string;
     try {
-      this.#contentMap.set(path, await this.#app.vault.cachedRead(file));
+      content = await this.#app.vault.cachedRead(file);
     } catch (error) {
-      this.#contentMap.delete(path);
+      this.#dropTemplatePath(path);
       logger.warn("Failed to read template file", { error, path });
-    }
-  }
-
-  #prepareTemplate(path: string): void {
-    const normalizedPath = normalizeVaultPath(path);
-    const file = this.#app.vault.getFileByPath(normalizedPath);
-    if (!file) {
-      this.#compileSnapshots.delete(normalizedPath);
       return;
     }
 
-    const next = { mtime: file.stat.mtime, size: file.stat.size };
-    const previous = this.#compileSnapshots.get(normalizedPath);
-    if (
-      !previous ||
-      previous.mtime !== next.mtime ||
-      previous.size !== next.size
-    ) {
-      this.#eta.templatesSync.remove(normalizedPath);
-      this.#compileSnapshots.set(normalizedPath, next);
+    this.#defineTemplate(name, content);
+  }
+
+  /**
+   * Compile and register a vault template, recording any compile error. A
+   * template that fails to compile is removed from the engine and never falls
+   * back to a package default: it fails loudly through {@link render} and
+   * through any template that `include()`s it, and surfaces in the setting tab.
+   */
+  #defineTemplate(name: string, content: string): void {
+    try {
+      this.#engine.define(name, content);
+      this.#compileErrors.delete(name);
+    } catch (error) {
+      this.#compileErrors.set(
+        name,
+        error instanceof Error ? error.message : String(error),
+      );
+      logger.warn("Failed to compile vault template", { error, name });
+      this.#engine.remove(name);
     }
   }
 
-  #readTemplateContent(path: string): string {
-    const normalizedPath = normalizeVaultPath(path);
-    const loaded = this.#contentMap.get(normalizedPath);
-    if (loaded !== undefined) return loaded;
-
-    const fallback = fromFilename(normalizedPath, this.#lastTemplateFolder);
-    if (fallback) {
-      logger.debug("Using embedded template fallback", {
-        template: fallback,
-        path: normalizedPath,
-      });
-      return EMBEDDED_DEFAULTS[fallback];
+  /** Use a canonical name's package default when no vault override exists, else remove a non-canonical one. */
+  #useDefault(name: string): void {
+    if (!isTemplateName(name)) {
+      this.#engine.remove(name);
+      return;
     }
-
-    throw new EtaError(`File '${normalizedPath}' not found`);
+    try {
+      this.#engine.define(name, DEFAULT_TEMPLATES[name]);
+    } catch (error) {
+      logger.error("Built-in default template failed to compile", {
+        error,
+        name,
+      });
+      this.#engine.remove(name);
+    }
   }
 
   #isWatchedTemplatePath(path: string): boolean {
@@ -327,19 +399,27 @@ export class TemplateService extends Service<void> {
 
   #dropTemplatePath(path: string): void {
     this.#pendingFlush.delete(path);
-    this.#contentMap.delete(path);
-    this.#invalidateCompiled(path);
+    const name = templateNameFromPath(path);
+    if (!name) return;
+    this.#compileErrors.delete(name);
+    this.#useDefault(name);
   }
 
-  #invalidateCompiled(path: string): void {
-    this.#eta.templatesSync.remove(path);
-    this.#compileSnapshots.delete(path);
-  }
-
-  #resetCompileCache(): void {
-    this.#eta.templatesSync.reset();
-    this.#eta.templatesAsync.reset();
-    this.#eta.filepathCache = {};
+  /** Replace the engine's entire template set with the folder's overrides, filling any canonical name they don't cover with its package default. */
+  #loadTemplates(
+    entries: ReadonlyArray<readonly [string | null, string]>,
+  ): void {
+    this.#engine.reset();
+    this.#compileErrors.clear();
+    const provided = new Set<string>();
+    for (const [name, content] of entries) {
+      if (!name) continue;
+      provided.add(name);
+      this.#defineTemplate(name, content);
+    }
+    for (const name of TEMPLATE_NAMES) {
+      if (!provided.has(name)) this.#useDefault(name);
+    }
   }
 
   #setAutoPairEnabled(enabled: boolean, updateWorkspace: boolean): void {
@@ -348,6 +428,25 @@ export class TemplateService extends Service<void> {
       this.#autoPairExtensions.push(bracketExtension(this.#app.vault));
     }
     if (updateWorkspace) this.#app.workspace.updateOptions();
+  }
+
+  /** Compile the filename expression with the active autoTrim, holding the
+   *  function for reuse and recording any compile error. */
+  #compileFilename(filename: string): void {
+    if (!filename) {
+      this.#filenameFn = null;
+      this.#filenameError = null;
+    } else {
+      try {
+        this.#filenameFn = this.#engine.compile(filename);
+        this.#filenameError = null;
+      } catch (error) {
+        this.#filenameFn = null;
+        this.#filenameError =
+          error instanceof Error ? error.message : String(error);
+      }
+    }
+    this.#emitter.emit("compile-status-changed");
   }
 
   #cancelFlush(): void {
@@ -363,6 +462,11 @@ export class TemplateService extends Service<void> {
   }
 }
 
+/** A watched template is a `zotlit-<name>.eta.md` file directly inside `folder` (no recursion). */
 function isWatchedTemplatePath(path: string, folder: string): boolean {
-  return isEtaTemplatePath(path) && isPathInFolder(path, folder);
+  const normalized = normalizeVaultPath(path);
+  return (
+    templateNameFromPath(normalized) !== null &&
+    normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
+  );
 }

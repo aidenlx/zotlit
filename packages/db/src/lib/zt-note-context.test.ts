@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  type Annotation,
-  type Attachment,
-  type Item,
-  type ItemTag,
-  type Tag,
-} from "@zotlit/db";
-import { USER_LIBRARY_ID } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { buildNoteContext } from "./context";
+import { type Item } from "@/queries/items";
+
+import { USER_LIBRARY_ID } from "./constants";
+import { type Annotation } from "./zt-annot";
+import { type Attachment } from "./zt-attach";
+import { buildNoteContext } from "./zt-note-context";
+import { type ItemTag, type Tag } from "./zt-tag";
 
 function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
   return {
@@ -128,7 +126,6 @@ describe("buildNoteContext", () => {
     expect(annot.parentAttachment).toBe(ctx.attachments[0]);
     expect(annot.parentItem.citationKey).toBe("smith2024");
 
-    // authors filtered to the primary creator type
     expect(ctx.authors.map((a) => a.family)).toEqual(["Smith"]);
   });
 

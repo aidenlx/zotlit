@@ -135,3 +135,8 @@ export {
   type CitationItem,
   type ZoteroRef,
 } from "./lib/zt-note-mark";
+export {
+  buildNoteContext,
+  type NoteContextInput,
+  type NoteTemplateContext,
+} from "./lib/zt-note-context";

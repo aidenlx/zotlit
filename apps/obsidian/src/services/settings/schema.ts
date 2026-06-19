@@ -2,11 +2,12 @@ import { getLogLevels } from "@logtape/logtape";
 import * as v from "valibot";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
+import { autoTrimSchema, type AutoTrim } from "@zotlit/templates/constants";
 
 import {
   DEFAULT_FRONTMATTER_FIELDS,
   DEFAULT_NOTE_FILENAME,
-} from "@/services/template/defaults";
+} from "@/services/note-feature/defaults";
 
 /**
  * JSON-safe values a setting may take. Recursive so structured settings (e.g.
@@ -46,16 +47,7 @@ export const settingsNumber = v.pipe(v.number(), v.finite());
 const logLevel = v.nullable(v.picklist(getLogLevels()));
 export type LogLevel = v.InferOutput<typeof logLevel>;
 
-/**
- * Eta `autoTrim` mode for one side of a template tag. `"nl"` strips a single
- * newline, `"slurp"` strips all whitespace, `false` keeps it.
- */
-const autoTrim = v.union([
-  v.literal(false),
-  v.literal("nl"),
-  v.literal("slurp"),
-]);
-export type AutoTrim = v.InferOutput<typeof autoTrim>;
+export type { AutoTrim };
 
 const zoteroReadMode = v.picklist(["auto", "reflink", "copy", "immutable"]);
 export type ZoteroReadMode = v.InferOutput<typeof zoteroReadMode>;
@@ -84,8 +76,8 @@ export const schema = v.object({
   "template.folder": v.string(),
   "template.filename": v.string(),
   "template.auto-pair-eta": v.boolean(),
-  "template.auto-trim-leading": autoTrim,
-  "template.auto-trim-trailing": autoTrim,
+  "template.auto-trim-leading": autoTrimSchema,
+  "template.auto-trim-trailing": autoTrimSchema,
 
   "zotero.auto-refresh": v.boolean(),
   "zotero.read-mode": zoteroReadMode,

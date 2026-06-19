@@ -33,7 +33,7 @@
     "oxlint": "catalog:",
     "semver": "^7.8.0",
     "tinyglobby": "^0.2.16",
-    "valibot": "^1.0.0",
+    "valibot": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
     "zotero-types": "4.1.2"

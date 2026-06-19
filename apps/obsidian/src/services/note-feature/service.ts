@@ -7,6 +7,7 @@ import {
 } from "obsidian";
 
 import {
+  buildNoteContext,
   getAnnotationsByParent,
   getAttachmentsByParents,
   getLibraryByGroupID,
@@ -17,12 +18,19 @@ import {
   type Annotation,
   type Item,
   type ItemTag,
+  type NoteTemplateContext,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
+import {
+  type CompiledFrontmatterField,
+  type FrontmatterField,
+} from "@zotlit/templates/frontmatter";
+import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import { MARKER_END, MARKER_START } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
+import * as m from "@/paraglide/messages";
 import {
   type AttachmentImport,
   type AttachmentImportService,
@@ -30,25 +38,23 @@ import {
 import { type DatabaseService } from "@/services/database/service";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { Service } from "@/services/service-base";
+import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
-import { formatManagedRegion } from "@/services/template/eta";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { buildNoteContext } from "./context";
 import { attachmentFileLink } from "./file-link";
-import { buildFrontmatter, mergeManagedFrontmatter } from "./frontmatter";
-import { type NoteTemplateContext } from "./types";
+import {
+  buildFrontmatter,
+  compileFrontmatter,
+  mergeManagedFrontmatter,
+} from "./frontmatter";
 
 const logger = getLogger("note-feature");
 
 /** Characters Obsidian / common filesystems reject in a file name. */
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 const FRONTMATTER_BLOCK = /^---\n[\s\S]*?\n---(?:\n+|$)/;
-const MANAGED_REGION = new RegExp(
-  `${RegExp.escape(MARKER_START)}[\\s\\S]*?${RegExp.escape(MARKER_END)}`,
-);
-const MANAGED_REGION_GLOBAL = new RegExp(MANAGED_REGION, "g");
 
 export interface NoteFeaturesDeps {
   app: App;
@@ -71,6 +77,11 @@ export class NoteFeatures extends Service<void> {
   readonly #zoteroPref;
   readonly #settings;
   readonly #attachmentImport;
+
+  /** Compiled frontmatter fields, memoized by the settings array reference
+   *  (which changes only when the list is mutated). */
+  #lastFrontmatterFields: readonly FrontmatterField[] | null = null;
+  #compiledFrontmatterFields: readonly CompiledFrontmatterField[] = [];
 
   readonly ready: Promise<void> = Promise.resolve();
 
@@ -97,10 +108,7 @@ export class NoteFeatures extends Service<void> {
       resolveEmbed: () => "",
     });
 
-    const filename = this.#renderFilename(
-      titleContext,
-      settings["template.filename"],
-    );
+    const filename = this.#renderFilename(titleContext);
     const folder = normalizePath(settings["note.literature-folder"]);
     const path =
       folder === "" || folder === "/"
@@ -112,11 +120,7 @@ export class NoteFeatures extends Service<void> {
     const attachmentImport = await this.#attachmentImport.prepare(path);
     const context = this.#buildContext(item, attachmentImport);
     const body = this.#template.render("note", context);
-    const fm = buildFrontmatter(context, {
-      fields: settings["note.frontmatter-fields"],
-      onError: (key, error) =>
-        logger.warn("Frontmatter expression failed", { key, error }),
-    });
+    const fm = this.#buildFrontmatter(context, settings);
     const content = `---\n${stringifyYaml(fm)}---\n${body}`;
 
     const file = await this.#app.vault.create(path, content);
@@ -140,11 +144,10 @@ export class NoteFeatures extends Service<void> {
     let replaced = false;
     let duplicateCount = 0;
     await this.#app.vault.process(file, (content) => {
-      const matches = content.match(MANAGED_REGION_GLOBAL) ?? [];
-      duplicateCount = Math.max(0, matches.length - 1);
-      if (matches.length === 0) return content;
-      replaced = true;
-      return content.replace(MANAGED_REGION, region);
+      const result = replaceManagedRegion(content, region);
+      replaced = result.replaced;
+      duplicateCount = result.duplicateCount;
+      return result.content;
     });
     await attachmentImport.flush();
 
@@ -311,22 +314,55 @@ export class NoteFeatures extends Service<void> {
     context: NoteTemplateContext,
   ): Promise<void> {
     const settings = await this.#settings.loaded;
-    const managed = buildFrontmatter(context, {
-      fields: settings["note.frontmatter-fields"],
-      onError: (key, error) =>
-        logger.warn("Frontmatter expression failed", { key, error }),
-    });
+    const managed = this.#buildFrontmatter(context, settings);
     await this.#app.fileManager.processFrontMatter(file, (fm) => {
       mergeManagedFrontmatter(fm, managed);
     });
   }
 
-  #renderManagedRegion(context: NoteTemplateContext): string {
-    return formatManagedRegion(this.#template.render("content", context));
+  /**
+   * Build the managed frontmatter record. Field expressions that throw are
+   * skipped so the import still completes; the skipped keys are logged and
+   * surfaced in one toast.
+   */
+  #buildFrontmatter(
+    context: NoteTemplateContext,
+    settings: Readonly<Settings>,
+  ): Record<string, unknown> {
+    const failed: string[] = [];
+    const fm = buildFrontmatter(context, {
+      compiled: this.#frontmatterFields(settings["note.frontmatter-fields"]),
+      onError: (key, error) => {
+        failed.push(key);
+        logger.warn("Frontmatter expression failed", { key, error });
+      },
+    });
+    if (failed.length > 0) {
+      new BaseNotice(
+        m.notice_frontmatter_eval_failed({ fields: failed.join(", ") }),
+      );
+    }
+    return fm;
   }
 
-  #renderFilename(context: NoteTemplateContext, source: string): string {
-    const raw = this.#template.renderString(source, context).trim();
+  #frontmatterFields(
+    fields: readonly FrontmatterField[],
+  ): readonly CompiledFrontmatterField[] {
+    if (fields !== this.#lastFrontmatterFields) {
+      this.#compiledFrontmatterFields = compileFrontmatter(fields);
+      this.#lastFrontmatterFields = fields;
+    }
+    return this.#compiledFrontmatterFields;
+  }
+
+  #renderManagedRegion(context: NoteTemplateContext): string {
+    // The engine's transformRender wraps the "content" template in markers, so
+    // render("content") returns the managed region already wrapped.
+    return this.#template.render("content", context);
+  }
+
+  #renderFilename(context: NoteTemplateContext): string {
+    const raw = this.#template.renderFilename(context).trim();
     const sanitized = raw.replace(ILLEGAL_FILENAME_CHARS, "_").trim();
     return sanitized || context.key;
   }

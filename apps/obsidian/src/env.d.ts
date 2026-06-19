@@ -1,6 +1,6 @@
 declare module "*.css" {}
 
-declare module "*.eta.md?raw" {
+declare module "@zotlit/templates/defaults/*?raw" {
   const source: string;
   export default source;
 }

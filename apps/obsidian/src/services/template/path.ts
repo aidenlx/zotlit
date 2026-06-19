@@ -10,13 +10,3 @@ export function normalizeVaultPath(path: string): string {
 export function isEtaTemplatePath(path: string): boolean {
   return normalizeVaultPath(path).endsWith(".eta.md");
 }
-
-export function isPathInFolder(path: string, folder: string): boolean {
-  const normalizedPath = normalizeVaultPath(path);
-  const normalizedFolder = normalizeVaultPath(folder);
-  return (
-    normalizedFolder === "" ||
-    normalizedPath === normalizedFolder ||
-    normalizedPath.startsWith(`${normalizedFolder}/`)
-  );
-}

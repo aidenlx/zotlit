@@ -1,65 +1,53 @@
-import { join } from "node:path/posix";
+import { regex } from "arkregex";
+import { basename, join } from "node:path/posix";
 
-import zAnnot from "./defaults/zt-annot.eta.md?raw";
-import zCite from "./defaults/zt-cite.eta.md?raw";
-import zCite2 from "./defaults/zt-cite2.eta.md?raw";
-import zContent from "./defaults/zt-content.eta.md?raw";
-import zNote from "./defaults/zt-note.eta.md?raw";
+import annotation from "@zotlit/templates/defaults/annotation?raw";
+import cite from "@zotlit/templates/defaults/cite?raw";
+import cite2 from "@zotlit/templates/defaults/cite2?raw";
+import content from "@zotlit/templates/defaults/content?raw";
+import note from "@zotlit/templates/defaults/note?raw";
+
 import { normalizeVaultPath } from "./path";
 
-export const CANONICAL_NAMES = [
+const TEMPLATE_FILE = regex("^zotlit-(?<name>[A-Za-z0-9-]+)\\.eta\\.md$");
+
+/** Template whose render output is wrapped in managed-region markers. */
+export const MANAGED_CONTENT_TEMPLATE = "content" as const;
+
+export type TemplateName = (typeof TEMPLATE_NAMES)[number];
+
+export const TEMPLATE_NAMES = [
   "note",
   "annotation",
-  "content",
+  MANAGED_CONTENT_TEMPLATE,
   "cite",
   "cite2",
 ] as const;
 
-export type TemplateName = (typeof CANONICAL_NAMES)[number];
-
-const canonicalNameSet: ReadonlySet<string> = new Set(CANONICAL_NAMES);
-
-export const EMBEDDED_DEFAULTS: Record<TemplateName, string> = {
-  note: zNote,
-  annotation: zAnnot,
-  content: zContent,
-  cite: zCite,
-  cite2: zCite2,
+export const DEFAULT_TEMPLATES: Record<TemplateName, string> = {
+  note,
+  annotation,
+  content,
+  cite,
+  cite2,
 };
 
-export function toFilename(name: string): string | null {
-  if (name === "annotation") return "zt-annot.eta.md";
-  if (canonicalNameSet.has(name)) return `zt-${name}.eta.md`;
-  return null;
+function templateFilename(name: TemplateName): string {
+  return `zotlit-${name}.eta.md`;
 }
 
-/**
- * Default Eta expression used as the literature-note filename stem.
- * @see {@link https://eta.js.org} for template syntax.
- */
-export const DEFAULT_NOTE_FILENAME =
-  "<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>";
-
-/**
- * Default frontmatter fields injected into every literature note.
- * Each entry maps a YAML key to a JS expression evaluated over `zt`.
- */
-export const DEFAULT_FRONTMATTER_FIELDS: ReadonlyArray<{
-  readonly key: string;
-  readonly expr: string;
-}> = Object.freeze([Object.freeze({ key: "title", expr: "zt.title" })]);
-
-export function fromFilename(
-  filepath: string,
-  folder: string,
-): TemplateName | null {
-  const normalizedPath = normalizeVaultPath(filepath);
+export function templatePath(folder: string, name: TemplateName): string {
+  const file = templateFilename(name);
   const normalizedFolder = normalizeVaultPath(folder);
+  return normalizedFolder === "" ? file : join(normalizedFolder, file);
+}
 
-  for (const name of CANONICAL_NAMES) {
-    if (join(normalizedFolder, toFilename(name)!) === normalizedPath) {
-      return name;
-    }
-  }
-  return null;
+/** Extract the `<name>` from a `zotlit-<name>.eta.md` vault path; `null` if it doesn't match. */
+export function templateNameFromPath(path: string): string | null {
+  const filename = basename(normalizeVaultPath(path));
+  return TEMPLATE_FILE.exec(filename)?.groups.name ?? null;
+}
+
+export function isTemplateName(name: string): name is TemplateName {
+  return (TEMPLATE_NAMES as readonly string[]).includes(name);
 }
