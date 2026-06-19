@@ -131,11 +131,17 @@ export class TemplateService extends Service<void> {
 
   /** @returns `null` when valid, or the error message when the source fails to compile. */
   validateSource(source: string): string | null {
+    return this.#compileSource(source).error;
+  }
+
+  /** Compile `source`, returning either the compiled function or the compile-error message — never both. */
+  #compileSource(
+    source: string,
+  ): { fn: TemplateFunction; error: null } | { fn: null; error: string } {
     try {
-      this.#engine.compile(source);
-      return null;
+      return { fn: this.#engine.compile(source), error: null };
     } catch (error) {
-      return error instanceof Error ? error.message : String(error);
+      return { fn: null, error: errorMessage(error) };
     }
   }
 
@@ -377,10 +383,7 @@ export class TemplateService extends Service<void> {
       this.#engine.define(name, content);
       this.#compileErrors.delete(name);
     } catch (error) {
-      this.#compileErrors.set(
-        name,
-        error instanceof Error ? error.message : String(error),
-      );
+      this.#compileErrors.set(name, errorMessage(error));
       logger.warn("Failed to compile vault template", { error, name });
       this.#engine.remove(name);
     }
@@ -396,10 +399,7 @@ export class TemplateService extends Service<void> {
       this.#engine.define(name, DEFAULT_TEMPLATES[name]);
       this.#compileErrors.delete(name);
     } catch (error) {
-      this.#compileErrors.set(
-        name,
-        error instanceof Error ? error.message : String(error),
-      );
+      this.#compileErrors.set(name, errorMessage(error));
       logger.error("Built-in default template failed to compile", {
         error,
         name,
@@ -450,18 +450,13 @@ export class TemplateService extends Service<void> {
   /** Compile the filename expression with the active autoTrim, holding the
    *  function for reuse and recording any compile error. */
   #compileFilename(filename: string): void {
-    if (!filename) {
+    if (filename) {
+      const { fn, error } = this.#compileSource(filename);
+      this.#filenameFn = fn;
+      this.#filenameError = error;
+    } else {
       this.#filenameFn = null;
       this.#filenameError = null;
-    } else {
-      try {
-        this.#filenameFn = this.#engine.compile(filename);
-        this.#filenameError = null;
-      } catch (error) {
-        this.#filenameFn = null;
-        this.#filenameError =
-          error instanceof Error ? error.message : String(error);
-      }
     }
     this.#emitter.emit("compile-status-changed");
   }
@@ -477,6 +472,11 @@ export class TemplateService extends Service<void> {
       throw new Error(`TemplateService.${method}(): service is not ready`);
     }
   }
+}
+
+/** Extract a human-readable message from an unknown thrown value. */
+function errorMessage(error: unknown): string {
+  return Error.isError(error) ? error.message : String(error);
 }
 
 /** A watched template is a `zotlit-<name>.eta.md` file directly inside `folder` (no recursion). */
