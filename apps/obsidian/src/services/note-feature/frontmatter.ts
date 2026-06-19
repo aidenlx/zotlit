@@ -12,18 +12,8 @@ import {
   FIELD_ATTACHMENTS,
   FIELD_CITEKEY,
   FIELD_ZOTERO_KEY,
+  RESERVED_KEYS,
 } from "@/lib/constants";
-
-/**
- * Frontmatter keys owned by the system; user expressions cannot target them.
- * Item identity fields are written from item data; attachment scope is managed
- * by the update flow.
- */
-const RESERVED_KEYS: ReadonlySet<string> = new Set([
-  FIELD_ZOTERO_KEY,
-  FIELD_CITEKEY,
-  FIELD_ATTACHMENTS,
-]);
 
 /**
  * Compile the user fields once for repeated note builds, dropping reserved keys

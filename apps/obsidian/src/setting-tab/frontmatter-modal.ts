@@ -3,21 +3,10 @@ import { type App, Modal, Setting } from "obsidian";
 import { validateFrontmatterExpr } from "@zotlit/templates/frontmatter";
 
 import { AbortError } from "@/lib/abort-error";
-import {
-  FIELD_ATTACHMENTS,
-  FIELD_CITEKEY,
-  FIELD_ZOTERO_KEY,
-} from "@/lib/constants";
+import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/paraglide/messages";
 
 import { appendCompileError } from "./compile-error";
-
-/** Keys ZotLit writes from item data; user fields cannot target them. */
-const RESERVED_KEYS: ReadonlySet<string> = new Set([
-  FIELD_ZOTERO_KEY,
-  FIELD_CITEKEY,
-  FIELD_ATTACHMENTS,
-]);
 
 export interface FrontmatterFieldValue {
   key: string;
