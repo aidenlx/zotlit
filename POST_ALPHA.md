@@ -159,7 +159,17 @@ Known issues carried from alpha.
 - **Citation suggester styling** — the current citation item row in editor-suggest and quick-switcher has styling issues.
 - **ItemLookup fuzzy search tuning** — MiniSearch scoring is functional but not well tuned; empirical bench/tuner work is planned (`packages/item-lookup/TODOS.md`).
 
-## 9. Stage order (suggested)
+## 9. Contributor testing fixtures & collaboration guide *(TBD)*
+
+Shared fixtures and onboarding so contributors can exercise ZotLit end-to-end with the same baseline data and workflows.
+
+- **Common testing Zotero database** *(TBD)* — A repo-maintained Zotero library fixture for reproducible manual and automated testing.
+- **Common testing Obsidian vault** *(TBD)* — A matching vault fixture aligned with the shared library (templates, sample notes, plugin settings).
+- **Collaboration guide** *(TBD)* — How to set up the fixtures, run the dev stack, and work in this monorepo.
+- **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/)** *(TBD)* — A root `CHANGELOG.md` with curated, human-readable release notes (not raw git logs).
+- **Conventional Commits** *(TBD)* — A shared commit-message convention so history, changelogs, and release tooling stay consistent across the monorepo.
+
+## 10. Stage order (suggested)
 
 Priority tiers rather than a strict linear sequence:
 
@@ -170,6 +180,7 @@ Priority tiers rather than a strict linear sequence:
 | **B — user-facing enhancements** | Annotation merging (§3), note feature follow-ups (§6), setting-tab enhancements (§5) | Each is self-contained, can land independently                                |
 | **C — template DX**              | Template service follow-ups (§4)                                                     | Nice-to-have; unblocks authoring ergonomics                                   |
 | **D — companion follow-ups**     | Topic-import, protocol export/batch, companion release (§2)                          | Core server + companion + open/update protocol ship; remainder is incremental |
-| **E — speculative**              | PDF outline (§7)                                                                     | No consumer exists yet                                                        |
+| **E — contributor DX**           | Testing fixtures & collaboration guide (§9)                                          | *(TBD)* Lowers the bar for end-to-end contribution and review                 |
+| **F — speculative**              | PDF outline (§7)                                                                     | No consumer exists yet                                                        |
 
 
