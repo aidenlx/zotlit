@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsService } from "@/services/settings/service";
 
+import { DEFAULT_TEMPLATES } from "./defaults";
 import { TemplateService } from "./service";
 
 type VaultEvent = "create" | "modify" | "rename" | "delete";
@@ -244,6 +245,19 @@ describe("TemplateService", () => {
       }),
     ).toThrow();
     expect(service.compileErrors.get("content")).toBeDefined();
+  });
+
+  it("records a compile error when a built-in default itself fails to compile", async () => {
+    const original = DEFAULT_TEMPLATES.note;
+    DEFAULT_TEMPLATES.note = "broken <%= ) %>";
+    try {
+      const { service } = await makeHarness();
+
+      expect(() => service.render("note", { title: "Paper" })).toThrow();
+      expect(service.compileErrors.get("note")).toBeDefined();
+    } finally {
+      DEFAULT_TEMPLATES.note = original;
+    }
   });
 
   it("recovers once a broken template is fixed by a later modify event", async () => {
