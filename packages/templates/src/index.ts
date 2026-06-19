@@ -74,27 +74,33 @@ export class TemplateEngine extends Eta {
 
   define(name: string, source: string): void {
     if (name === "") throw new EtaError("Template name is empty");
-    const compiled = this.compile(source);
+    const compiledSync = this.compile(source);
+    const compiledAsync = this.compile(source, { async: true });
     this.#sources.set(name, source);
-    this.templatesSync.define(name, compiled);
+    this.templatesSync.define(name, compiledSync);
+    this.templatesAsync.define(name, compiledAsync);
   }
 
   remove(name: string): void {
     this.#sources.delete(name);
     this.templatesSync.remove(name);
+    this.templatesAsync.remove(name);
   }
 
   /** Drop every defined template and clear compiled caches. */
   reset(): void {
     this.#sources.clear();
     this.templatesSync.reset();
+    this.templatesAsync.reset();
   }
 
   setAutoTrim(autoTrim: readonly [AutoTrim, AutoTrim]): void {
     this.config.autoTrim = [...autoTrim] as [AutoTrim, AutoTrim];
     this.templatesSync.reset();
+    this.templatesAsync.reset();
     for (const [name, source] of this.#sources) {
       this.templatesSync.define(name, this.compile(source));
+      this.templatesAsync.define(name, this.compile(source, { async: true }));
     }
   }
 
