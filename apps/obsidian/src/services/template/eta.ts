@@ -1,6 +1,7 @@
 import {
   Eta,
   EtaError,
+  EtaParseError,
   type EtaConfig,
   type Options,
   type TemplateFunction,
@@ -65,7 +66,73 @@ export class ObsidianEta extends Eta {
       }
       return renderBase.call(this, template, data, meta);
     }) as typeof this.render;
+
+    const compileBase = this.compile;
+    this.compile = ((template, options) => {
+      this.#assertExpressionSyntax(template);
+      return compileBase.call(this, template, options);
+    }) as typeof this.compile;
   }
+
+  /**
+   * Pre-validate every interpolation (`<%= %>`) and raw (`<%~ %>`) tag so a JS
+   * syntax error reports the offending template line and column instead of
+   * Eta's default dump of the generated function source.
+   *
+   * Each expression is a standalone JS expression, so it can be parsed in
+   * isolation via `new Function`; this only parses (never runs) the snippet, so
+   * unbound template identifiers such as `zt` cannot cause a false positive.
+   * Evaluate tags (`<% %>`) are intentionally skipped — they may be partial
+   * statements (`<% if (x) { %>`) that are syntax errors on their own — and
+   * fall through to Eta's compiler.
+   *
+   * @throws EtaParseError when an expression tag contains invalid JavaScript.
+   */
+  #assertExpressionSyntax(template: string): void {
+    let searchFrom = 0;
+    for (const node of this.parse(template)) {
+      if (typeof node !== "object" || (node.t !== "i" && node.t !== "r")) {
+        continue;
+      }
+
+      const index = template.indexOf(node.val, searchFrom);
+      if (index !== -1) searchFrom = index + node.val.length;
+
+      try {
+        // Parse-only syntax check of a standalone expression; the function is
+        // never invoked, so this evaluates nothing.
+        // oxlint-disable-next-line no-implied-eval
+        new Function(`return (${node.val}\n);`);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        throw new EtaParseError(
+          pointToSyntaxError(
+            template,
+            index === -1 ? searchFrom : index,
+            `Bad expression — ${error.message}`,
+          ),
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Render an Eta-style location pointer (`message at line L col C:` followed by
+ * the source line and a caret) for the character at `index` in `source`.
+ *
+ * @see https://github.com/eta-dev/eta/blob/v4.6.0/src/err.ts ParseErr
+ */
+function pointToSyntaxError(
+  source: string,
+  index: number,
+  message: string,
+): string {
+  const before = source.slice(0, index).split("\n");
+  const line = before.length;
+  const col = before[before.length - 1]!.length + 1;
+  const sourceLine = source.split("\n")[line - 1] ?? "";
+  return `${message} at line ${line} col ${col}:\n\n  ${sourceLine}\n  ${" ".repeat(col - 1)}^`;
 }
 
 const directIncludeDataPlugin: EtaConfig["plugins"][number] = {
