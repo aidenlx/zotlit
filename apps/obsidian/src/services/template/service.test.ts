@@ -215,7 +215,7 @@ describe("TemplateService", () => {
 
   it("renders a vault template when present", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zotlit-note.eta.md", "custom <%= zt.title %>");
+    vault.addFile("templates/zotlit-note.eta.md", "custom <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
@@ -223,7 +223,7 @@ describe("TemplateService", () => {
 
   it("fails loudly for a broken vault template instead of falling back to the default", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zotlit-note.eta.md", "broken <%= ) %>");
+    vault.addFile("templates/zotlit-note.eta.md", "broken <%= ) %>");
     const { service } = await makeHarness({ vault });
 
     expect(() => service.render("note", { title: "Paper" })).toThrow();
@@ -232,7 +232,7 @@ describe("TemplateService", () => {
 
   it("propagates a broken included template instead of rendering its default", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zotlit-content.eta.md", "broken <%= ) %>");
+    vault.addFile("templates/zotlit-content.eta.md", "broken <%= ) %>");
     const { service } = await makeHarness({ vault });
 
     expect(() =>
@@ -248,12 +248,12 @@ describe("TemplateService", () => {
 
   it("recovers once a broken template is fixed by a later modify event", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zotlit-note.eta.md", "broken <%= ) %>");
+    vault.addFile("templates/zotlit-note.eta.md", "broken <%= ) %>");
     const { service } = await makeHarness({ vault });
 
     expect(() => service.render("note", { title: "A" })).toThrow();
 
-    vault.modifyFile("ZtTemplates/zotlit-note.eta.md", "fixed <%= zt.title %>");
+    vault.modifyFile("templates/zotlit-note.eta.md", "fixed <%= zt.title %>");
     await vi.advanceTimersByTimeAsync(500);
 
     expect(service.render("note", { title: "B" })).toBe("fixed B");
@@ -262,14 +262,11 @@ describe("TemplateService", () => {
 
   it("refreshes compiled templates after debounced vault modify events", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zotlit-note.eta.md", "first <%= zt.title %>");
+    vault.addFile("templates/zotlit-note.eta.md", "first <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     expect(service.render("note", { title: "A" })).toBe("first A");
-    vault.modifyFile(
-      "ZtTemplates/zotlit-note.eta.md",
-      "second <%= zt.title %>",
-    );
+    vault.modifyFile("templates/zotlit-note.eta.md", "second <%= zt.title %>");
 
     await vi.advanceTimersByTimeAsync(500);
 
@@ -289,7 +286,7 @@ describe("TemplateService", () => {
 
   it("drops non-canonical templates from the previous folder when it changes", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zotlit-custom.eta.md", "custom <%= zt.title %>");
+    vault.addFile("templates/zotlit-custom.eta.md", "custom <%= zt.title %>");
     const { service, settings } = await makeHarness({ vault });
 
     expect(service.render("custom", { title: "Paper" })).toBe("custom Paper");
@@ -303,7 +300,7 @@ describe("TemplateService", () => {
   it("ignores template files in nested subfolders", async () => {
     const vault = new MockVault();
     vault.addFile(
-      "ZtTemplates/nested/zotlit-note.eta.md",
+      "templates/nested/zotlit-note.eta.md",
       "nested <%= zt.title %>",
     );
     const { service } = await makeHarness({ vault });
@@ -332,14 +329,11 @@ describe("TemplateService", () => {
 
   it("unsubscribes vault events on dispose", async () => {
     const vault = new MockVault();
-    vault.addFile("ZtTemplates/zotlit-note.eta.md", "first <%= zt.title %>");
+    vault.addFile("templates/zotlit-note.eta.md", "first <%= zt.title %>");
     const { service } = await makeHarness({ vault });
 
     await service[Symbol.asyncDispose]();
-    vault.modifyFile(
-      "ZtTemplates/zotlit-note.eta.md",
-      "second <%= zt.title %>",
-    );
+    vault.modifyFile("templates/zotlit-note.eta.md", "second <%= zt.title %>");
     await vi.advanceTimersByTimeAsync(500);
 
     expect(vault.cachedRead).toHaveBeenCalledTimes(1);
