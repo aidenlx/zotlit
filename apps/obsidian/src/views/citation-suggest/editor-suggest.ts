@@ -19,6 +19,8 @@ const TRIGGER = regex("[\\[【]@([^\\]】]*)$");
 
 export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   readonly #deps: CitationSuggestDeps;
+  /** Set in {@link onTrigger}: query ended with `/`, so render `cite2`. */
+  #secondary = false;
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -27,6 +29,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
+      { command: "/ ↵", purpose: m.instruction_insert_secondary_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
   }
@@ -50,10 +53,13 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       ? { line: cursor.line, ch: cursor.ch + 1 }
       : cursor;
 
+    const raw = match[1] ?? "";
+    this.#secondary = raw.endsWith("/");
+
     return {
       start,
       end,
-      query: match[1] ?? "",
+      query: this.#secondary ? raw.slice(0, -1) : raw,
     };
   }
 
@@ -80,7 +86,10 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       return;
     }
 
-    const rendered = this.#deps.noteFeatures.renderCitation([{ citationKey }]);
+    const rendered = this.#deps.noteFeatures.renderCitation(
+      [{ citationKey }],
+      this.#secondary,
+    );
     context.editor.replaceRange(rendered, context.start, context.end);
     context.editor.setCursor(
       context.editor.offsetToPos(
