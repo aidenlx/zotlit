@@ -5,6 +5,7 @@ import { Hono } from "hono/tiny";
 import {
   type NotifyEvent,
   notifyEventSchema,
+  PROTOCOL_VERSION_HEADER,
   type ReaderActive,
   type ReaderAnnotSelect,
   type ItemUpdate,
@@ -12,6 +13,7 @@ import {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
+import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
 import { Service } from "@/services/service-base";
 import {
   type Settings,
@@ -203,6 +205,18 @@ export class LiveUpdateService extends Service<void> {
     const app = new Hono();
     app.post(
       "/notify",
+      async (c, next) => {
+        if (
+          rejectIncompatibleProtocol(
+            c.req.header(PROTOCOL_VERSION_HEADER),
+            logger,
+            { transport: "http" },
+          )
+        ) {
+          return c.body(null, 204);
+        }
+        await next();
+      },
       vValidator("json", notifyEventSchema, (result, c) => {
         if (result.success) return;
         logger.warn("Received notify event failed validation", {

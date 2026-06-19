@@ -2,6 +2,7 @@ import { type App, type ObsidianProtocolData, type Plugin } from "obsidian";
 
 import { getItemRefByID, getItemsByID, type ItemRef } from "@zotlit/db";
 import {
+  getProtocolUrlVersion,
   parseProtocolQuery,
   type ProtocolAction,
   protocolActionId,
@@ -18,6 +19,7 @@ import { type DatabaseService } from "@/services/database/service";
 import { type NoteFeatures } from "@/services/note-feature/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import { type NoteIndex } from "@/services/note-index/service";
+import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 const logger = getLogger("protocol");
@@ -53,6 +55,15 @@ async function handleProtocol(
   data: ObsidianProtocolData,
   deps: ProtocolDeps,
 ): Promise<void> {
+  if (
+    rejectIncompatibleProtocol(getProtocolUrlVersion(data), logger, {
+      action,
+      transport: "url",
+    })
+  ) {
+    return;
+  }
+
   let query: ProtocolQuery;
   try {
     query = parseProtocolQuery(data);

@@ -6,6 +6,7 @@ import {
   protocolActions,
   protocolSourceMatches,
 } from "./url";
+import { PROTOCOL_VERSION } from "./version";
 
 const SOURCE = "a1b2c3d4";
 
@@ -21,7 +22,9 @@ function decode(url: string): Record<string, string> {
 describe("zotlit obsidian protocol", () => {
   it.each(protocolActions)("builds + round-trips %s", (action) => {
     const url = buildProtocolUrl(action, 42, SOURCE);
-    expect(url).toBe(`obsidian://zotlit/${action}?item=42&source-id=${SOURCE}`);
+    expect(url).toBe(
+      `obsidian://zotlit/${action}?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
+    );
     expect(decode(url).action).toBe(`zotlit/${action}`);
     expect(parseProtocolQuery(decode(url))).toEqual({
       item: 42,

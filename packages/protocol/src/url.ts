@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+import { PROTOCOL_VERSION, PROTOCOL_VERSION_PARAM } from "./version";
+
 /**
  * Obsidian protocol namespace ZotLit owns. Each action is registered as
  * `"zotlit/<action>"` following Obsidian's URI convention
@@ -63,8 +65,13 @@ export function buildProtocolUrl(
   const params = new URLSearchParams({
     item: String(item),
     "source-id": sourceId,
+    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
   });
   return `obsidian://${protocolActionId(action)}?${params}`;
+}
+
+export function getProtocolUrlVersion(data: Record<string, unknown>): unknown {
+  return data[PROTOCOL_VERSION_PARAM];
 }
 
 /**
