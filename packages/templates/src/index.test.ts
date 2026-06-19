@@ -40,6 +40,47 @@ describe("TemplateEngine", () => {
     expect(rendered).toContain("Highlighted text");
   });
 
+  it("keeps multi-line annotation text and comment inside the callout", () => {
+    const engine = new TemplateEngine();
+    engine.define("annotation", annotation);
+
+    const rendered = engine.render("annotation", {
+      pageLabel: "5",
+      imgEmbed: "",
+      text: "first line\nsecond line",
+      comment: "comment A\ncomment B",
+    });
+
+    expect(rendered).toBe(
+      [
+        "> [!note] Page 5",
+        ">",
+        "> first line",
+        "> second line",
+        ">",
+        "> comment A",
+        "> comment B",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("omits the comment block when the annotation has no comment", () => {
+    const engine = new TemplateEngine();
+    engine.define("annotation", annotation);
+
+    const rendered = engine.render("annotation", {
+      pageLabel: "5",
+      imgEmbed: "",
+      text: "only text",
+      comment: "",
+    });
+
+    expect(rendered).toBe(
+      ["> [!note] Page 5", ">", "> only text", ""].join("\n"),
+    );
+  });
+
   it("resolves async includes by registered name", async () => {
     const engine = new TemplateEngine();
     engine.define("child", "<%= Array.isArray(zt) %>:<%= zt.length %>");
