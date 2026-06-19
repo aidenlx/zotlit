@@ -324,17 +324,27 @@ export class TemplateService extends Service<void> {
   }
 
   async #flushPending(): Promise<void> {
+    const generation = this.#folderGeneration;
     const paths = [...this.#pendingFlush];
     this.#pendingFlush.clear();
-    await Promise.all(paths.map((path) => this.#readAndStore(path)));
+    await Promise.all(
+      paths.map((path) => this.#readAndStore(path, generation)),
+    );
+
+    if (generation !== this.#folderGeneration) return;
 
     this.#emitter.emit("compile-status-changed");
     logger.debug("Template flush completed", { count: paths.length });
   }
 
-  async #readAndStore(path: string): Promise<void> {
+  async #readAndStore(path: string, generation: number): Promise<void> {
+    // Folder changes rebuild the full template set; stale reads from the old
+    // folder must not redefine or drop templates loaded by the newer rebuild.
+    if (generation !== this.#folderGeneration) return;
+
     const file = this.#app.vault.getFileByPath(path);
     if (!file || !this.#isWatchedTemplatePath(file.path)) {
+      if (generation !== this.#folderGeneration) return;
       this.#dropTemplatePath(path);
       return;
     }
@@ -346,11 +356,13 @@ export class TemplateService extends Service<void> {
     try {
       content = await this.#app.vault.cachedRead(file);
     } catch (error) {
+      if (generation !== this.#folderGeneration) return;
       this.#dropTemplatePath(path);
       logger.warn("Failed to read template file", { error, path });
       return;
     }
 
+    if (generation !== this.#folderGeneration) return;
     this.#defineTemplate(name, content);
   }
 
