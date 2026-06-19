@@ -1,5 +1,10 @@
 # @zotlit/db
 
+Zotero database layer for ZotLit — Drizzle schema, typed queries, and domain
+helpers for reading `zotero.sqlite`. App-agnostic: consumers create a client and
+call the exports; opening the data directory and watching for changes lives
+elsewhere.
+
 ## Query authoring
 
 Prefer, in order:

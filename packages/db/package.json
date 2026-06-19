@@ -2,6 +2,7 @@
   "name": "@zotlit/db",
   "version": "0.0.0",
   "private": true,
+  "description": "Zotero SQLite database layer for reading Zotero libraries",
   "files": [
     "dist"
   ],
