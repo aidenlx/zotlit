@@ -307,6 +307,27 @@ describe("TemplateService", () => {
     expect(service.renderString("<%= zt.x %>", { x: 1 })).toBe("1");
   });
 
+  it("points a syntax error at the offending expression line and column", async () => {
+    const { service } = await makeHarness();
+
+    expect(() =>
+      service.renderString("line one\nbad: <%= 1 + + %>\n", {}),
+    ).toThrow(
+      [
+        "Bad expression — Unexpected token ')' at line 2 col 10:",
+        "",
+        "  bad: <%= 1 + + %>",
+        "           ^",
+      ].join("\n"),
+    );
+  });
+
+  it("compiles expressions referencing unbound template identifiers", async () => {
+    const { service } = await makeHarness();
+
+    expect(() => service.renderString("<%~ zt.missing %>", {})).not.toThrow();
+  });
+
   it("rebuilds the content map when the template folder setting changes", async () => {
     const vault = new MockVault();
     vault.addFile("OtherTemplates/zt-note.eta.md", "other <%= zt.title %>");
