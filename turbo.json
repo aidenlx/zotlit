@@ -43,13 +43,6 @@
     "//#format:fix": {
       "cache": false,
       "dependsOn": ["//#lint:fix"]
-    },
-    "//#quality": {
-      "dependsOn": ["//#lint", "//#format"]
-    },
-    "//#quality:fix": {
-      "cache": false,
-      "dependsOn": ["//#format:fix"]
     }
   }
 }

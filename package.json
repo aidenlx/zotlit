@@ -11,8 +11,8 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
-    "quality": "turbo run quality",
-    "quality:fix": "turbo run quality:fix",
+    "quality": "turbo run lint format",
+    "quality:fix": "turbo run lint:fix format:fix",
     "prepare": "lefthook install"
   },
   "devDependencies": {
