@@ -4,11 +4,12 @@ Extracted from `[MIGRATION.md](./MIGRATION.md)` after alpha (Stages 0–8) shipp
 
 ## 1. Zotero note import (Stage 9)
 
-The first post-alpha stage. Wires the Stage-4 `NoteParser` into a user-facing import flow with citation resolution, embedded-image resolution, and customizable output.
+The first post-alpha stage. Wires the Stage-4 `NoteParser` into a Zotero-initiated import flow with citation resolution, embedded-image resolution, and customizable output.
 
 ### 1.1 Import flow
 
-- Add the import command/UI. Alpha-quality output is the fixed Stage-4 format: Zotero note HTML → Obsidian Markdown with inline annotation marks.
+- **Trigger from Zotero, not Obsidian UI.** No command-palette import command, modal, or in-vault note picker. The companion initiates import the same way open/update do today: Zotero context menus → `obsidian://zotlit/…` → Obsidian protocol handler → orchestrator (v1: `note-feature/note-import/index.ts`). Extend the existing library-item menus and/or add child-note menus; a dedicated protocol action is fine if import needs its own verb, but the entry point stays on the Zotero side.
+- Alpha-quality output is the fixed Stage-4 format: Zotero note HTML → Obsidian Markdown with inline annotation marks.
 - Make import output customizable. Zotero Better Notes enhances native Zotero notes (not a separate source type), so compatibility belongs in this importer: fixed parser as baseline, extension points for Better Notes' enhanced HTML and user-controlled Markdown output.
 
 ### 1.2 Embedded image resolution
@@ -46,13 +47,27 @@ Core companion surface ships: `apps/zotero` pushes events over HTTP, Obsidian li
 | Feature                        | v1 source                          | Notes                                                                                                                                                                                                                                                                            |
 | ------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~Server (HTTP listener)~~     | `services/server/service.ts`       | **(done)** `LiveUpdateService` (`services/live-update/service.ts`): Hono `POST /notify`, validates `@zotlit/protocol` events, drives annot-view reader follow. Settings live under `server.*`.                                                                                   |
-| ~~Protocol handlers~~          | `note-feature/protocol/service.ts` | **(partial)** `obsidian://zotlit/{open,update}` handlers in `services/protocol/register.ts`; Zotero menus in `apps/zotero/src/menus/`. `export` (always create fresh) and batch `update-many` / `export-many` remain future work. Wire contract: `packages/protocol/src/url.ts`. |
+| ~~Protocol handlers~~          | `note-feature/protocol/service.ts` | **(partial)** `obsidian://zotlit/{open,update}` handlers in `services/protocol/register.ts`; Zotero menus in `apps/zotero/src/menus/`. Stage 9 note import extends this pattern (Zotero menu → protocol → Obsidian orchestrator), not an Obsidian import UI. `export` (always create fresh) and batch `update-many` / `export-many` remain future work. Wire contract: `packages/protocol/src/url.ts`. |
 | ~~Setting-tab `server` group~~ | `setting-tab/`                     | **(done)** "Live updates" sub-page (`setting-tab/live-updates.ts`): `server.enabled`, `server.port`, `server.hostname`.                                                                                                                                                          |
 | ~~`apps/zotero` companion~~    | —                                  | **(MVP done)** Menus (library open/update, reader open), HTTP notify (`item/update`, `reader/active`, `reader/annot-select`), prefs pane. Release pipeline still in `apps/zotero/DEFERRED.md`.                                                                                   |
 | ~~`bg:notify`~~                | —                                  | **(dropped)** DB refresh is fs.watch; open/update/export flows use `obsidian://` links; live reader state uses HTTP notify.                                                                                                                                                      |
-| Topic-import                   | `note-feature/topic-import/`       | Tag-driven auto-create; not yet ported                                                                                                                                                                                                                                           |
+| Topic-import                   | `note-feature/topic-import/`       | Tag-driven auto-create; not yet ported (see §2.1)                                                                                                                                                                                                                                |
 | Companion release              | —                                  | First user-installable XPI + `update.json` CI — see `apps/zotero/DEFERRED.md`                                                                                                                                                                                                    |
 
+
+### 2.1 Topic-import (v1 reference)
+
+A "subscribe a note to a Zotero tag" workflow: attach a `#zt-topic/<name>` tag to a note, flip the status-bar toggle, and every item subsequently **added** in Zotero auto-generates a Markdown note tagged with that topic. Lets the user collect literature under one Zotero subject and have it land in the vault automatically.
+
+v1 lives in `app/obsidian/src/note-feature/topic-import/` (~267 lines, an `@ophidian/core` `Service` across 4 files):
+
+- **Topic detection** (`service.tsx` + `utils.ts`) — listens to `workspace.on("file-open")` + `metadataCache.on("changed")`, runs `getAllTags(cache)`, keeps the tags prefixed `#zt-topic/`. A zustand store holds `topics: string[]` + `activeTopic`. A note may carry several topic tags.
+- **Status-bar UI** (`status.tsx`) — `ImportingStatus` checkbox. No topic → "no topic", disabled; one → `#name`; many → a `Menu` to pick which topic before watching. Checking it pins `activeTopic`. **Watching locks the topic**: while `watching`, `onFileOpen` returns early so switching notes doesn't change the subscribed topic.
+- **Auto-create** (`service.tsx onload` + `create-note.tsx`) — subscribes to the server's `bg:notify` event carrying `INotifyRegularItem` (`{ event: "regular-item/update", add[], modify[], trash[] }`, `lib/protocol/src/bg.ts`). On an `add` while a topic is active, `untilDbRefreshed` waits for the local DB to catch up (Zotero pushes before fs-watch refresh), then `createNote` renders each new item through the template, injecting the topic as a tag (`renderNote(extra, ctx, { tags: [currTopic] })`).
+
+Data flow: Zotero notifier → HTTP push → server `bg:notify` → `TopicImport`. **Companion-dependent**: without the `apps/zotero` push there is no `add` signal to subscribe to, which is why it sits post-alpha.
+
+**v2 porting note:** v1's `bg:notify` + `regular-item/update` were **dropped** in v2 (see the table row above) — DB refresh is now fs.watch and live state uses HTTP `/notify`. A v2 port must drive the auto-create leg off `LiveUpdateService` `item/update` events instead, with topic detection/UI carried over largely intact.
 
 ## 3. Annot view follow-ups
 
