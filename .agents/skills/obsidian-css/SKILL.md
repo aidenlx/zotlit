@@ -1,9 +1,6 @@
 ---
 name: obsidian-css
 description: "Style Obsidian plugin UI with Tailwind + native components. Use when writing or reviewing any styled React/JSX in apps/obsidian/ — picking colors, spacing, typography, borders, radius, shadows, dark-mode tokens, or choosing between Tailwind utilities, Obsidian native components, and custom CSS. Also use for .zt-root preflight setup, zt: prefix usage, theme compatibility, component wrapper selection, or any CSS/styling decision in the plugin."
-paths:
-  - "apps/obsidian/**/*.css"
-  - "apps/obsidian/**/*.tsx"
 ---
 
 # Obsidian Plugin CSS & Tailwind Style Guide
