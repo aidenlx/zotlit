@@ -394,7 +394,12 @@ export class TemplateService extends Service<void> {
     }
     try {
       this.#engine.define(name, DEFAULT_TEMPLATES[name]);
+      this.#compileErrors.delete(name);
     } catch (error) {
+      this.#compileErrors.set(
+        name,
+        error instanceof Error ? error.message : String(error),
+      );
       logger.error("Built-in default template failed to compile", {
         error,
         name,
