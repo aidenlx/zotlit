@@ -19,6 +19,7 @@ import {
   LOG_LEVEL_KEY,
   loggingPageItems,
 } from "./logging";
+import { defaultPlaceholder } from "./placeholder";
 import {
   AUTO_TRIM_KEYS,
   decodeAutoTrim,
@@ -111,7 +112,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
         control: {
           type: "folder",
           key: "note.literature-folder",
-          placeholder: "LiteratureNotes",
+          placeholder: defaultPlaceholder("note.literature-folder"),
         },
       },
       {

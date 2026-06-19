@@ -142,7 +142,7 @@ describe("migrateLegacyV0", () => {
     });
   });
 
-  it("drops values equal to legacy defaults", () => {
+  it("drops values equal to legacy defaults except v0 folder paths", () => {
     expect(
       migrateLegacyV0({
         logLevel: "INFO",
@@ -165,7 +165,22 @@ describe("migrateLegacyV0", () => {
         imgExcerptImport: "symlink",
         imgExcerptPath: "ZtImgExcerpt",
       }),
-    ).toEqual({});
+    ).toEqual({
+      "note.literature-folder": "LiteratureNotes",
+      "template.folder": "ZtTemplates",
+    });
+  });
+
+  it("preserves v0 folder paths even when they match v1 defaults", () => {
+    expect(
+      migrateLegacyV0({
+        literatureNoteFolder: "literatures",
+        template: { folder: "templates", templates: {} },
+      }),
+    ).toEqual({
+      "note.literature-folder": "literatures",
+      "template.folder": "templates",
+    });
   });
 
   it("maps legacy image import modes to the attachment import setting", () => {

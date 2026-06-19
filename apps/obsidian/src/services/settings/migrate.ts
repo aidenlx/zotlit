@@ -184,8 +184,15 @@ function mapLogLevel(value: unknown): LogLevel | undefined {
   }
 }
 
+/** v0 folder paths are always carried over so upgraded users keep their layout. */
+const PRESERVED_V0_FOLDER_KEYS = new Set([
+  "note.literature-folder",
+  "template.folder",
+]);
+
 function dropLegacyDefaultValues(out: Record<string, unknown>): void {
   for (const key of Object.keys(out)) {
+    if (PRESERVED_V0_FOLDER_KEYS.has(key)) continue;
     const legacyDefault = getLegacyDefaultValue(key);
     if (legacyDefault === undefined) continue;
     if (Object.is(out[key], legacyDefault)) {

@@ -3,6 +3,7 @@ import { type SettingDefinitionItem } from "obsidian";
 import * as m from "@/paraglide/messages";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
+import { defaultPlaceholder } from "./placeholder";
 
 /** Items for the "Live updates" sub-page. */
 export function liveUpdatesPageItems(
@@ -23,7 +24,7 @@ export function liveUpdatesPageItems(
       control: {
         type: "number",
         key: "server.port",
-        placeholder: "9091",
+        placeholder: defaultPlaceholder("server.port"),
         min: 1024,
         max: 65535,
       },
@@ -39,7 +40,7 @@ export function liveUpdatesPageItems(
           control: {
             type: "text",
             key: "server.hostname",
-            placeholder: "127.0.0.1",
+            placeholder: defaultPlaceholder("server.hostname"),
           },
         },
       ],

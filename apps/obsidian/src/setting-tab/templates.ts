@@ -12,7 +12,6 @@ import { ensureFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
-import { DEFAULT_NOTE_FILENAME } from "@/services/note-feature/defaults";
 import { type AutoTrim } from "@/services/settings/schema";
 import {
   DEFAULT_TEMPLATES,
@@ -25,6 +24,7 @@ import { normalizeVaultPath } from "@/services/template/path";
 import { appendCompileError } from "./compile-error";
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { frontmatterPageItems } from "./frontmatter";
+import { defaultPlaceholder } from "./placeholder";
 
 const logger = getLogger(["setting-tab", "templates"]);
 
@@ -62,7 +62,7 @@ export function templatesPageItems(
       control: {
         type: "folder",
         key: "template.folder",
-        placeholder: "ZtTemplates",
+        placeholder: defaultPlaceholder("template.folder"),
       },
     },
     {
@@ -355,7 +355,7 @@ function renderFilenameRow(setting: Setting, ctx: SettingTabContext): void {
   }
 
   setting.addTextArea((ta) => {
-    ta.setPlaceholder(DEFAULT_NOTE_FILENAME);
+    ta.setPlaceholder(defaultPlaceholder("template.filename"));
     ta.setValue(saved);
     ta.inputEl.rows = 3;
   });
