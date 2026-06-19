@@ -1,4 +1,4 @@
-import { SuggestModal, type Editor } from "obsidian";
+import { Keymap, SuggestModal, type Editor } from "obsidian";
 
 import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
@@ -24,6 +24,7 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
+      { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
   }
@@ -36,13 +37,19 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
     renderSearchHit(this.#deps.settings, hit, el);
   }
 
-  override onChooseSuggestion(hit: SearchHit): void {
+  override onChooseSuggestion(
+    hit: SearchHit,
+    evt: MouseEvent | KeyboardEvent,
+  ): void {
     const citationKey = "citationKey" in hit.item ? hit.item.citationKey : null;
     if (!citationKey) {
       new BaseNotice(m.notice_no_citekey({ key: hit.item.key }));
       return;
     }
-    const rendered = this.#deps.noteFeatures.renderCitation([{ citationKey }]);
+    const rendered = this.#deps.noteFeatures.renderCitation(
+      [{ citationKey }],
+      Keymap.isModifier(evt, "Shift"),
+    );
     this.#editor.replaceSelection(rendered);
   }
 }

@@ -181,9 +181,17 @@ export class NoteFeatures extends Service<void> {
     });
   }
 
-  /** Render the configured cite template for the given items. */
-  renderCitation(items: readonly { citationKey: string | null }[]): string {
-    return this.#template.render("cite", { items });
+  /**
+   * Render the configured cite template for the given items.
+   *
+   * @param secondary - render the bare `cite2` template (narrative/in-prose,
+   *   e.g. `@key`) instead of the default bracketed `cite` template (`[@key]`).
+   */
+  renderCitation(
+    items: readonly { citationKey: string | null }[],
+    secondary = false,
+  ): string {
+    return this.#template.render(secondary ? "cite2" : "cite", { items });
   }
 
   /**

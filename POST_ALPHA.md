@@ -83,7 +83,18 @@ Deferred from Stage 6.
 Deferred from Stage 5.
 
 - `**zt-attachments` frontmatter field** — read/write scoping + v1 numeric-ID migration. Lands with the attachment selection UI.
-- **Alt-mode secondary citation** — alternate citation insertion mode.
+
+### 6.1 Alt-mode secondary citation — **(done)**
+
+Insert a **secondary** (narrative/in-prose) citation alongside the default **primary** one: primary renders bracketed (`cite` template → `[@key]`), secondary renders bare (`cite2` template → `@key`) for "as @author shows…" prose.
+
+Migrated from v1 (`note-feature/citation-suggest/`):
+
+- **Render switch** — `NoteFeatures.renderCitation` (`services/note-feature/service.ts`) takes a `secondary` arg selecting `"cite2"` vs `"cite"`. Single chokepoint both insertion paths share.
+- **Editor-suggest trigger** (`views/citation-suggest/editor-suggest.ts`) — a **trailing `/`** in the query (stripped before searching) sets `#secondary`, read in `selectSuggestion`. Instruction: "/ ↵".
+- **Insert-modal trigger** (`views/citation-suggest/insert-modal.ts`) — **Shift+Enter** via `Keymap.isModifier(evt, "Shift")` on `onChooseSuggestion`'s evt. Instruction: "⇧↵".
+
+The `cite2` template was already registered, shipped a default (`defaults/zt-cite2.eta.md`), is user-editable, and migrates from v1; no new settings needed.
 
 ## 7. PDF outline parser
 
