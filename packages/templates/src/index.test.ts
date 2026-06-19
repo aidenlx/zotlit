@@ -16,6 +16,15 @@ describe("TemplateEngine", () => {
     expect(engine.render("note", { title: "Paper" })).toBe("# Paper");
   });
 
+  it("renders templates registered by name asynchronously", async () => {
+    const engine = new TemplateEngine();
+    engine.define("note", "# <%= zt.title %>");
+
+    await expect(engine.renderAsync("note", { title: "Paper" })).resolves.toBe(
+      "# Paper",
+    );
+  });
+
   it("resolves includes by registered name", () => {
     const engine = new TemplateEngine();
     engine.define("annotation", annotation);
@@ -29,6 +38,18 @@ describe("TemplateEngine", () => {
 
     expect(rendered).toContain("Page 4");
     expect(rendered).toContain("Highlighted text");
+  });
+
+  it("resolves async includes by registered name", async () => {
+    const engine = new TemplateEngine();
+    engine.define("child", "<%= Array.isArray(zt) %>:<%= zt.length %>");
+
+    const parent = engine.compile(
+      '<% output(await includeAsync("child", [1, 2, 3])) %>',
+      { async: true },
+    );
+
+    await expect(engine.renderAsync(parent, {})).resolves.toBe("true:3");
   });
 
   describe("includeDataPlugin", () => {
