@@ -31,6 +31,13 @@ describe("evalFrontmatterFields", () => {
     expect(fm).toEqual({});
   });
 
+  it("evaluates an expression ending in a line comment", () => {
+    const fm = evalFields([{ key: "title", expr: "zt.title // primary" }], {
+      title: "A Study",
+    });
+    expect(fm).toEqual({ title: "A Study" });
+  });
+
   it("skips a failing expression and reports it", () => {
     const errors: string[] = [];
     const fm = evalFields([{ key: "boom", expr: "zt.nope.deep" }], {}, (key) =>
