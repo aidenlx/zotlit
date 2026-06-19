@@ -1,4 +1,8 @@
-import { type NotifyEvent } from "@zotlit/protocol";
+import {
+  type NotifyEvent,
+  PROTOCOL_VERSION,
+  PROTOCOL_VERSION_HEADER,
+} from "@zotlit/protocol";
 
 import { logger as appLogger } from "@/lib/logger";
 import { prefs } from "@/prefs";
@@ -54,7 +58,10 @@ export function createSender(): Send {
         try {
           await fetch(new URL("/notify", base), {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+            },
             body,
           });
           logger.debug("notified target", { event: event.event, base });

@@ -11,6 +11,7 @@ export {
 export { djb2a, normalizeFileUri, sourceIdFromUris } from "./source-id";
 export {
   buildProtocolUrl,
+  getProtocolUrlVersion,
   parseProtocolQuery,
   PROTOCOL_NAMESPACE,
   type ProtocolAction,
@@ -20,3 +21,11 @@ export {
   type ProtocolQuery,
   protocolQuerySchema,
 } from "./url";
+export {
+  checkProtocolVersion,
+  parseProtocolVersion,
+  PROTOCOL_VERSION,
+  PROTOCOL_VERSION_HEADER,
+  PROTOCOL_VERSION_PARAM,
+  type ProtocolVersionCheck,
+} from "./version";

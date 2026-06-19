@@ -213,6 +213,8 @@
   "notice_protocol_item_not_found": "Zotero item not found.",
   "notice_protocol_db_unavailable": "Open the Zotero database to handle this link.",
   "notice_protocol_invalid": "Invalid ZotLit protocol link.",
+  "notice_protocol_update_obsidian": "Update the ZotLit Obsidian plugin to use this Zotero companion.",
+  "notice_protocol_update_zotero": "Update the ZotLit Zotero companion to use this Obsidian plugin.",
   "creator_summary": [
     {
       "declarations": ["input count", "input first", "input second"],
