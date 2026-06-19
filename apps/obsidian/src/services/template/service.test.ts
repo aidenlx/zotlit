@@ -284,6 +284,62 @@ describe("TemplateService", () => {
     expect(service.render("note", { title: "Paper" })).toBe("other Paper");
   });
 
+  it("ignores stale template reads after the template folder setting changes", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.eta.md", "first <%= zt.title %>");
+    vault.addFile("OtherTemplates/zotlit-note.eta.md", "other <%= zt.title %>");
+    const { service, settings } = await makeHarness({ vault });
+    const staleRead = deferred<string>();
+
+    vault.cachedRead.mockImplementation(async (file) => {
+      if (file.path === "templates/zotlit-note.eta.md") {
+        return await staleRead.promise;
+      }
+      return vault.contents.get(file.path) ?? "";
+    });
+
+    vault.modifyFile("templates/zotlit-note.eta.md", "stale <%= zt.title %>");
+    await vi.advanceTimersByTimeAsync(500);
+
+    settings.update({ "template.folder": "OtherTemplates" });
+    await flushAsync();
+
+    expect(service.render("note", { title: "A" })).toBe("other A");
+
+    staleRead.resolve("stale <%= zt.title %>");
+    await flushAsync();
+
+    expect(service.render("note", { title: "B" })).toBe("other B");
+  });
+
+  it("ignores stale template read failures after the template folder setting changes", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.eta.md", "first <%= zt.title %>");
+    vault.addFile("OtherTemplates/zotlit-note.eta.md", "other <%= zt.title %>");
+    const { service, settings } = await makeHarness({ vault });
+    const staleRead = deferred<string>();
+
+    vault.cachedRead.mockImplementation(async (file) => {
+      if (file.path === "templates/zotlit-note.eta.md") {
+        return await staleRead.promise;
+      }
+      return vault.contents.get(file.path) ?? "";
+    });
+
+    vault.modifyFile("templates/zotlit-note.eta.md", "stale <%= zt.title %>");
+    await vi.advanceTimersByTimeAsync(500);
+
+    settings.update({ "template.folder": "OtherTemplates" });
+    await flushAsync();
+
+    expect(service.render("note", { title: "A" })).toBe("other A");
+
+    staleRead.reject(new Error("stale read failed"));
+    await flushAsync();
+
+    expect(service.render("note", { title: "B" })).toBe("other B");
+  });
+
   it("drops non-canonical templates from the previous folder when it changes", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-custom.eta.md", "custom <%= zt.title %>");
@@ -405,4 +461,18 @@ async function flushAsync(): Promise<void> {
   for (let i = 0; i < 5; i++) {
     await Promise.resolve();
   }
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return { promise, resolve, reject };
 }
