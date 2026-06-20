@@ -1,0 +1,193 @@
+name: Release
+
+on:
+  push:
+    branches: [main, next]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  obsidian:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      # `mise run init` installs deps (frozen lockfile), builds packages/*, and
+      # compiles Paraglide messages. `--no-submodules` skips checkout since
+      # actions/checkout already fetched them. The obsidian app is built by the
+      # Build step below.
+      - uses: jdx/mise-action@v2
+      # Restores the pnpm store (keyed on pnpm-lock.yaml) before the install
+      # inside `mise run init`. pnpm itself is activated by mise's corepack
+      # post-install, so this step no-ops on install and is here for the cache.
+      - uses: pnpm/action-setup@v4
+        with:
+          cache: true
+      - run: mise run init --no-submodules
+
+      - name: Resolve version
+        id: meta
+        run: |
+          version="$(node -p "require('./apps/obsidian/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
+          if node -e "process.exit(require('semver').prerelease('$version') ? 0 : 1)"; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Tag existence is the idempotency gate: re-running on the same version is a no-op.
+      - name: Check release exists
+        id: gate
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.gate.outputs.exists == 'false'
+        run: pnpm turbo run build --filter=@zotlit/obsidian
+
+      - name: Create release
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --title "${{ steps.meta.outputs.tag }}" \
+            --notes "ZotLit Obsidian plugin v${{ steps.meta.outputs.version }}" \
+            ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }} \
+            apps/obsidian/dist/main.js \
+            apps/obsidian/dist/manifest.json \
+            apps/obsidian/dist/styles.css
+
+      - name: Attest provenance
+        if: steps.gate.outputs.exists == 'false'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            apps/obsidian/dist/main.js
+            apps/obsidian/dist/manifest.json
+            apps/obsidian/dist/styles.css
+
+  zotero:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      # `mise run init` installs deps (frozen lockfile), builds packages/*, and
+      # compiles Paraglide messages. `--no-submodules` skips checkout since
+      # actions/checkout already fetched them. The zotero app is built by the
+      # Build step below.
+      - uses: jdx/mise-action@v2
+      # Restores the pnpm store (keyed on pnpm-lock.yaml) before the install
+      # inside `mise run init`. pnpm itself is activated by mise's corepack
+      # post-install, so this step no-ops on install and is here for the cache.
+      - uses: pnpm/action-setup@v4
+        with:
+          cache: true
+      - run: mise run init --no-submodules
+
+      - name: Resolve version
+        id: meta
+        run: |
+          version="$(node -p "require('./apps/zotero/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=zt-$version" >> "$GITHUB_OUTPUT"
+          echo "xpi=apps/zotero/dist/zotlit-zotero-$version.xpi" >> "$GITHUB_OUTPUT"
+          if node -e "process.exit(require('semver').prerelease('$version') ? 0 : 1)"; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check release exists
+        id: gate
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.gate.outputs.exists == 'false'
+        run: pnpm turbo run build --filter=@zotlit/zotero
+
+      # Pull the current channel manifests off the rolling `release` host so the
+      # next step's version-gate can compare against them (`|| true`: the host
+      # doesn't exist on the very first release). Runs after Build because turbo
+      # may restore dist/** from cache, which would drop pre-existing files.
+      - name: Download current update manifests
+        if: steps.gate.outputs.exists == 'false'
+        run: gh release download release --pattern 'update*.json' --dir apps/zotero/dist || true
+
+      # Version-gated write: replaces a channel entry only when this version is
+      # gt the downloaded one, else leaves it in place. Emits `attest` (the files
+      # this run actually built) for the provenance step.
+      - name: Build update manifests
+        id: updates
+        if: steps.gate.outputs.exists == 'false'
+        run: node apps/zotero/scripts/build-update-json.ts
+
+      # `--latest=false`: Zotero ships via update.json, not the repo's "Latest"
+      # release pointer, which is left to the Obsidian plugin (the headline
+      # product) so a stable dual release resolves "Latest" deterministically.
+      - name: Create release
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --title "${{ steps.meta.outputs.tag }}" \
+            --notes "ZotLit Zotero companion v${{ steps.meta.outputs.version }}" \
+            ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest=false' }} \
+            "${{ steps.meta.outputs.xpi }}"
+
+      # Rolling `release` tag hosts the update manifests for Zotero auto-update.
+      # It is permanent, marked prerelease, and never "Latest". Assets are
+      # clobbered each run; update.json is left intact on prerelease builds.
+      # Notes are refreshed from the build-step-generated file every run so the
+      # hosted timestamp / version / channel stay current.
+      - name: Refresh update channel
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          notes="apps/zotero/dist/release-host-notes.md"
+          if gh release view release >/dev/null 2>&1; then
+            gh release edit release \
+              --title "Release Manifest" \
+              --notes-file "$notes" \
+              --prerelease \
+              --latest=false
+          else
+            gh release create release \
+              --title "Release Manifest" \
+              --notes-file "$notes" \
+              --prerelease \
+              --latest=false
+          fi
+          for f in apps/zotero/dist/update*.json; do
+            gh release upload release "$f" --clobber
+          done
+
+      # Attest only what this run built: the XPI plus any channel manifest the
+      # version-gate actually rewrote (a carried-forward update-beta.json is not
+      # re-attested). The path list comes from the build-update step.
+      - name: Attest provenance
+        if: steps.gate.outputs.exists == 'false'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.updates.outputs.attest }}

@@ -28,5 +28,12 @@ export default defineConfig({
         "typescript/no-floating-promises": "off",
       },
     },
+    {
+      // Root release script reaches across apps to reuse their manifest helpers.
+      files: ["scripts/**"],
+      rules: {
+        "no-restricted-imports": "off",
+      },
+    },
   ],
 });

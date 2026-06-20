@@ -22,7 +22,7 @@
     "typecheck": "tsgo --noEmit -p tsconfig.lib.json",
     "typecheck:test": "tsgo --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
+    "test": "vitest run"
   },
   "dependencies": {
     "eta": "catalog:",

@@ -4,6 +4,7 @@
     "noEmit": true,
     "allowJs": true,
     "checkJs": true,
+    "allowImportingTsExtensions": true,
     "isolatedDeclarations": false,
     "types": ["node-25"]
   },

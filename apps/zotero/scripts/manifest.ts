@@ -1,4 +1,4 @@
-import { coerce, valid } from "semver";
+import { valid } from "semver";
 import * as v from "valibot";
 
 /**
@@ -31,27 +31,29 @@ export const ZoteroManifestSchema = v.object({
 export type ZoteroManifest = v.InferOutput<typeof ZoteroManifestSchema>;
 
 /**
- * Synthesize the Zotero manifest from `package.json`.
+ * `version` is passed through verbatim (no `coerce()`) so prerelease
+ * identifiers like `-alpha.1` survive into the manifest — Zotero's Mozilla
+ * toolkit comparator orders them correctly, and stripping them would break
+ * auto-update between prereleases. The schema still rejects non-semver garbage.
  *
- * Source of truth: top-level `version`/`description`/`author`/`homepage` plus
- * a dedicated `zotero` block holding plugin-specific fields. Mirrors the
- * pattern in `apps/obsidian/scripts/manifest.js`.
+ * @param updateUrl build-time `update_url` for `applications.zotero`, resolved
+ *   from `package.json#repository` + prerelease status.
+ * @see apps/obsidian/scripts/manifest.js — sibling manifest synthesizer.
+ * @see release-constants.ts#updateUrl — derives the `updateUrl` argument.
  */
-export function parseManifest(data: any): ZoteroManifest {
+export function parseManifest(data: any, updateUrl: string): ZoteroManifest {
   const {
     version,
     description,
     author,
     homepage,
-    zotero: { id, strict_min_version, strict_max_version, update_url } = {},
+    zotero: { id, strict_min_version, strict_max_version } = {},
   } = data;
-
-  const cleanVersion = coerce(version)?.version ?? version;
 
   return v.parse(ZoteroManifestSchema, {
     manifest_version: 2,
     name: "ZotLit",
-    version: cleanVersion,
+    version,
     description,
     author,
     homepage_url: homepage,
@@ -66,7 +68,7 @@ export function parseManifest(data: any): ZoteroManifest {
         id,
         strict_min_version,
         strict_max_version,
-        update_url,
+        update_url: updateUrl,
       },
     },
   });

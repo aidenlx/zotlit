@@ -1,28 +1,39 @@
 {
   "name": "zotlit",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aidenlx/zotlit"
+  },
   "type": "module",
   "scripts": {
+    "release": "node scripts/release.ts",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint": "oxlint",
+    "lint": "turbo run //#lint:repo",
     "lint:fix": "oxlint --fix",
+    "lint:repo": "oxlint",
+    "lint:repo:fix": "oxlint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
-    "quality": "turbo run lint format",
-    "quality:fix": "turbo run lint:fix format:fix",
+    "quality": "turbo run //#lint:repo //#format",
+    "quality:fix": "pnpm lint:repo:fix && pnpm format:fix",
     "prepare": "lefthook install"
   },
   "devDependencies": {
+    "@clack/prompts": "^0.11.0",
     "@electron/asar": "^4.2.0",
+    "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
     "lefthook": "^2.1.1",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "^0.23.0",
-    "turbo": "^2.9.18"
+    "semver": "^7.8.0",
+    "turbo": "^2.9.18",
+    "zx": "^8.3.0"
   },
   "packageManager": "pnpm@11.1.3"
 }
