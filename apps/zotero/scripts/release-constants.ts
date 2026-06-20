@@ -9,7 +9,7 @@ import { prerelease } from "semver";
  * {@link UPDATE_BETA_JSON} (stable + prerelease channel) as assets. Per-version
  * XPIs live on `zt-{version}` releases.
  */
-export const RELEASE_TAG = "release";
+export const RELEASE_TAG = "zotero-release";
 export const UPDATE_JSON = "update.json";
 export const UPDATE_BETA_JSON = "update-beta.json";
 
