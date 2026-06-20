@@ -4,10 +4,6 @@ import baseConfig from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
-  options: {
-    typeAware: true,
-    typeCheck: true,
-  },
   ignorePatterns: [
     "**/dist/**",
     "**/dist-dev/**",
