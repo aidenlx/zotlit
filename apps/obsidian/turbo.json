@@ -2,12 +2,25 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
+    "paraglide:compile": {
+      "inputs": [
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
+      "outputs": ["src/paraglide/**"]
+    },
     "build": {
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ]
+    },
+    "typecheck": {
+      "dependsOn": ["transit", "paraglide:compile"]
+    },
+    "test": {
+      "dependsOn": ["transit", "paraglide:compile"]
     }
   }
 }
