@@ -125,14 +125,14 @@ jobs:
         if: steps.gate.outputs.exists == 'false'
         run: pnpm turbo run build --filter=@zotlit/zotero
 
-      # Requires a pre-existing `release` host with its manifests (bootstrap
+      # Requires a pre-existing `zotero-release` host with its manifests (bootstrap
       # manually — see docs/CI_SETUP.md). A missing host fails the step to
       # guard against the version-gate clobbering a newer beta. Runs after
       # Build because turbo may restore dist/** from cache, dropping
       # pre-existing files.
       - name: Download current update manifests
         if: steps.gate.outputs.exists == 'false'
-        run: gh release download release --pattern 'update*.json' --dir apps/zotero/dist
+        run: gh release download zotero-release --pattern 'update*.json' --dir apps/zotero/dist
 
       # Replaces a channel entry only when this version is gt the existing one.
       # Emits `attest` scoped to files this run actually built.
@@ -153,19 +153,19 @@ jobs:
             ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest=false' }} \
             "${{ steps.meta.outputs.xpi }}"
 
-      # The `release` tag is permanent: prerelease, never "Latest". Uses `edit`
+      # The `zotero-release` tag is permanent: prerelease, never "Latest". Uses `edit`
       # to enforce the pre-existence invariant from the Download step.
       - name: Refresh update channel
         if: steps.gate.outputs.exists == 'false'
         run: |
           notes="apps/zotero/dist/release-host-notes.md"
-          gh release edit release \
+          gh release edit zotero-release \
             --title "Release Manifest" \
             --notes-file "$notes" \
             --prerelease \
             --latest=false
           for f in apps/zotero/dist/update*.json; do
-            gh release upload release "$f" --clobber
+            gh release upload zotero-release "$f" --clobber
           done
 
       # Scoped to files this run actually built: the XPI and any channel

@@ -39,10 +39,10 @@ that includes artifact attestations.
   merge). See the branching model in
   [CONTRIBUTING.md](../CONTRIBUTING.md#branching-model).
 
-## Zotero auto-update: the rolling `release` host
+## Zotero auto-update: the rolling `zotero-release` host
 
 Zotero auto-update is served from a **single permanent GitHub release tagged
-`release`**. It hosts the Mozilla-format update manifests as assets:
+`zotero-release`**. It hosts the Mozilla-format update manifests as assets:
 
 | Asset | Channel | Served to |
 |---|---|---|
@@ -51,22 +51,23 @@ Zotero auto-update is served from a **single permanent GitHub release tagged
 
 The `update_url` compiled into **every shipped XPI** resolves to an asset on
 this release, e.g.
-`https://github.com/aidenlx/zotlit/releases/download/release/update.json`
+`https://github.com/aidenlx/zotlit/releases/download/zotero-release/update.json`
 (see `apps/zotero/scripts/release-constants.ts`). Per-version XPIs live on their
-own `zt-<version>` releases; the `release` tag only carries the update pointers.
+own `zt-<version>` releases; the `zotero-release` tag only carries the update pointers.
 
-> **Do not delete or rename the `release` tag/release.** Doing so breaks
+> **Do not delete or rename the `zotero-release` tag/release.** Doing so breaks
 > auto-update for every installed copy.
 
 ### Bootstrap the host manually — required before the first Zotero release
 
-`release.yml` does **not** create the `release` host. By design, the `zotero`
-job fails if it is missing or empty:
+`release.yml` does **not** create the `zotero-release` host. By design, the
+`zotero` job fails if it is missing or empty:
 
-- `Download current update manifests` runs `gh release download release …` with
-  no `|| true`, so a missing host (or one with no `update*.json` assets) errors.
-- `Refresh update channel` runs `gh release edit release`, which errors rather
-  than recreating the host.
+- `Download current update manifests` runs
+  `gh release download zotero-release …` with no `|| true`, so a missing host
+  (or one with no `update*.json` assets) errors.
+- `Refresh update channel` runs `gh release edit zotero-release`, which errors
+  rather than recreating the host.
 
 This is deliberate: silently recreating an absent host would let the
 version-gate see no existing entry and clobber a newer beta. If a job 404s on
@@ -88,14 +89,14 @@ node apps/zotero/scripts/build-update-json.ts
 
 # 3. Create the permanent host release (prerelease, never "Latest"), seeding its
 #    body from the generated notes.
-gh release create release \
+gh release create zotero-release \
   --title "Release Manifest" \
   --notes-file apps/zotero/dist/release-host-notes.md \
   --prerelease --latest=false
 
 # 4. Upload the generated manifests as the host's assets.
 for f in apps/zotero/dist/update*.json; do
-  gh release upload release "$f" --clobber
+  gh release upload zotero-release "$f" --clobber
 done
 ```
 
@@ -106,14 +107,14 @@ that run completes. From then on every run `edit`s this same release and
 
 ## How a release flows
 
-0. **One-time:** bootstrap the `release` host (above) before the first Zotero
-   release — `release.yml` requires it and won't create it.
+0. **One-time:** bootstrap the `zotero-release` host (above) before the first
+   Zotero release — `release.yml` requires it and won't create it.
 1. `pnpm release` (local) bumps the version, runs quality gates, and opens a PR.
 2. `ci.yml` gates the PR (format/lint/test).
 3. On merge, `release.yml` runs. Each job's **tag-existence gate** makes it
    idempotent: if the tag (`<version>` for Obsidian, `zt-<version>` for Zotero)
    already exists, the job is a no-op. Pushes that don't bump the version do
    nothing.
-4. The `zotero` job downloads the current manifests off the `release` host,
+4. The `zotero` job downloads the current manifests off the `zotero-release` host,
    version-gates them so a stable patch never clobbers an active beta in
    `update-beta.json`, then `edit`s the host and re-uploads the assets.
