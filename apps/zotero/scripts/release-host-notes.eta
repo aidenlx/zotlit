@@ -1,0 +1,14 @@
+# Zotero Auto-Update Manifest Host
+
+Permanent release hosting the Mozilla-format update manifests that Zotero polls for auto-update. **Do not delete or rename** — the `update_url` compiled into every shipped XPI resolves to the assets on this release.
+
+| Channel | Manifest | Serves |
+| --- | --- | --- |
+| Stable | `<%= it.updateJson %>` | stable installs |
+| Beta | `<%= it.updateBetaJson %>` | stable + prerelease installs |
+
+Per-version XPIs live on their own `zt-<version>` releases; this release only carries the update pointers.
+
+- **Add-on:** `<%= it.addonId %>`
+<% if (it.compat) { %>- **Compatible Zotero:** <%= it.compat %>
+<% } %>- **Last refreshed:** <%= it.refreshedAt %> for **<%= it.version %>** — updated <%= it.refreshed %>.

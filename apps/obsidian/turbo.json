@@ -17,10 +17,10 @@
       ]
     },
     "typecheck": {
-      "dependsOn": ["transit", "paraglide:compile"]
+      "dependsOn": ["$TURBO_EXTENDS$", "paraglide:compile"]
     },
     "test": {
-      "dependsOn": ["transit", "paraglide:compile"]
+      "dependsOn": ["$TURBO_EXTENDS$", "paraglide:compile"]
     }
   }
 }

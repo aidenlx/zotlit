@@ -10,7 +10,11 @@ $.verbose = true;
 // for copying .env* files from the primary worktree
 const primary = argv._[0];
 
-await $`git submodule update --init --jobs 8 --depth 1 --single-branch`;
+// `--no-submodules` skips checkout when the caller already has them — e.g. CI
+// where actions/checkout fetches submodules itself.
+if (argv.submodules !== false) {
+  await $`git submodule update --init --jobs 8 --depth 1 --single-branch`;
+}
 
 if (primary) {
   await $`pnpm install --frozen-lockfile --prefer-offline`;

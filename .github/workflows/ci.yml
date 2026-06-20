@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, next]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # `mise run init` installs deps (frozen lockfile), builds packages/*, and
+      # compiles Paraglide messages — so no separate install step is needed.
+      # `--no-submodules` skips checkout since actions/checkout already fetched
+      # them above.
+      - uses: jdx/mise-action@v2
+      # Restores the pnpm store (keyed on pnpm-lock.yaml) before the install
+      # inside `mise run init`. pnpm itself is activated by mise's corepack
+      # post-install, so this step no-ops on install and is here for the cache.
+      - uses: pnpm/action-setup@v4
+        with:
+          cache: true
+      - run: mise run init --no-submodules
+
+      # Persist Turborepo's local cache (.turbo) across runs so unchanged
+      # build/test tasks restore instead of recomputing. github.sha makes each
+      # run save a fresh entry; restore-keys fall back to the most recent cache.
+      - name: Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Format check
+        run: |
+          if ! pnpm exec oxfmt --check; then
+            {
+              echo "### Unformatted files"
+              echo '```'
+              pnpm exec oxfmt --list-different
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      # oxlint.base.ts sets typeAware + typeCheck, so `-f github` emits ::error
+      # workflow commands → inline annotations on the diff, type errors included.
+      # turbo's dependsOn handles transitive builds (no explicit build step).
+      - name: Lint
+        run: pnpm lint -- -f github
+
+      # Vitest's `github-actions` reporter emits ::error for inline test
+      # annotations; `default` provides console output. Reporters are passed
+      # via turbo passthrough.
+      - name: Test
+        run: pnpm turbo run test -- --reporter=default --reporter=github-actions

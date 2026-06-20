@@ -10,7 +10,8 @@
     "build:dev": "vite build --mode development",
     "dev": "vite build --watch --mode development --config vite.serve.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
-    "test": "tsgo --noEmit -p tsconfig.node.json && vitest run",
+    "typecheck:test": "tsgo --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
     "lint": "oxlint"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
     "adm-zip": "^0.5.16",
+    "eta": "catalog:",
     "oxc-parser": "^0.129.0",
     "oxlint": "catalog:",
     "semver": "^7.8.0",
@@ -39,8 +41,7 @@
     "zotero-types": "4.1.2"
   },
   "zotero": {
-    "id": "zotlit@aidenlx.top",
-    "update_url": "https://raw.githubusercontent.com/aidenlx/zotlit/main/apps/zotero/update.json",
+    "id": "zotlit@aidenlx.site",
     "strict_min_version": "9.0",
     "strict_max_version": "9.*"
   }

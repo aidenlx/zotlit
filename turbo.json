@@ -14,25 +14,35 @@
       "persistent": true
     },
     "typecheck": {
-      "dependsOn": ["transit"]
+      "dependsOn": ["^build", "transit"]
+    },
+    "typecheck:test": {
+      "dependsOn": ["^build", "transit"]
     },
     "test": {
-      "dependsOn": ["transit"]
+      "dependsOn": ["^build", "transit"]
     },
-    "//#lint": {
-      "dependsOn": ["^build"],
+    "//#lint:repo:deps": {
+      "dependsOn": [
+        "@zotlit/db#build",
+        "@zotlit/item-lookup#build",
+        "@zotlit/obsidian#paraglide:compile",
+        "@zotlit/protocol#build",
+        "@zotlit/shared#build",
+        "@zotlit/templates#build",
+        "@zotlit/zotero-types#build"
+      ]
+    },
+    "//#lint:repo": {
+      "dependsOn": ["//#lint:repo:deps"],
       "inputs": [
         "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
         ".oxlintrc.json",
         "**/.oxlintrc.json",
         "packages/config/oxlint.base.json",
-        "tsconfig.json",
-        "**/tsconfig.json"
+        "tsconfig*.json",
+        "**/tsconfig*.json"
       ]
-    },
-    "//#lint:fix": {
-      "cache": false,
-      "dependsOn": ["^build"]
     },
     "//#format": {
       "inputs": [
@@ -40,10 +50,6 @@
         ".oxfmtrc.json",
         "**/.oxfmtrc.json"
       ]
-    },
-    "//#format:fix": {
-      "cache": false,
-      "dependsOn": ["//#lint:fix"]
     }
   }
 }

@@ -14,7 +14,7 @@
     "typecheck": "tsgo --noEmit -p tsconfig.app.json",
     "typecheck:test": "tsgo --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "tsgo --noEmit -p tsconfig.test.json && vitest run"
+    "test": "vitest run"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.4",
