@@ -239,7 +239,8 @@ async function pickVersion(
         validate: (val) => (valid(val) ? undefined : "Invalid semver version"),
       });
       if (p.isCancel(custom)) return null;
-      next = custom;
+      // Normalize: `valid()` also accepts noncanonical input like `v2.0.0`.
+      next = valid(custom);
     } else {
       next = inc(current, kind, preid);
     }
