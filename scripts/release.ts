@@ -1,7 +1,7 @@
 import * as p from "@clack/prompts";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { coerce, gte, inc, lte, prerelease, valid } from "semver";
+import { inc, prerelease, valid } from "semver";
 import { $ } from "zx";
 
 import { parseManifest as parseObsidianManifest } from "../apps/obsidian/scripts/manifest.js";
@@ -16,12 +16,12 @@ import { parseManifest as parseObsidianManifest } from "../apps/obsidian/scripts
  * cuts tags/releases on merge to the line the PR targets (`main` = stable,
  * `next` = beta), keyed on package version.
  *
- * The line is inferred from the branch the script runs on: a stable release
- * from `main`, a beta release from `next`. A floor-guard reads the counterpart
- * line's version and rejects out-of-policy bumps (stable must stay below the
- * beta floor; beta must stay strictly above the stable head).
+ * The release line is inferred from the branch the script runs on: a stable
+ * release from `main`, a beta release from `next`. Keeping the beta line
+ * strictly ahead of stable is a manual convention — see CONTRIBUTING.md
+ * "Version policy"; it is not enforced here.
  *
- * @see HANDOFF.md "Phase 1 — Local version bump", "Branching model"
+ * @see CONTRIBUTING.md "Branching model"
  */
 
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -61,21 +61,9 @@ const currentBranch = (
   await $({ cwd: repoRoot })`git rev-parse --abbrev-ref HEAD`
 ).stdout.trim();
 
-/** Release line inferred from the branch: `main` ships stable, `next` ships beta. */
-const line: "stable" | "beta" | "other" =
-  currentBranch === "main"
-    ? "stable"
-    : currentBranch === "next"
-      ? "beta"
-      : "other";
-
-/** The opposite line's branch, whose version the floor-guard reads. */
-const counterpartBranch =
-  currentBranch === "main" ? "next" : currentBranch === "next" ? "main" : null;
-
-if (line === "other") {
+if (currentBranch !== "main" && currentBranch !== "next") {
   p.log.warn(
-    `Releasing from "${currentBranch}" (not main/next): floor-guard is advisory and the PR base will target this branch.`,
+    `Releasing from "${currentBranch}" (not main/next): the PR base will target this branch.`,
   );
 }
 
@@ -97,13 +85,7 @@ const targets: AppMeta[] =
 const bumps: Bump[] = [];
 for (const app of targets) {
   const current = (await readPackageJson(app.pkgPath)).version as string;
-  const counterpart = await counterpartVersion(app);
-  if (counterpartBranch && counterpart === null) {
-    p.log.warn(
-      `Counterpart branch "${counterpartBranch}" has no ${app.display} version; floor-guard is advisory for this app.`,
-    );
-  }
-  const next = await pickVersion(app, current, counterpart);
+  const next = await pickVersion(app, current);
   if (next === null) cancel();
   bumps.push({ app, current, next });
 }
@@ -213,18 +195,13 @@ async function openPR(
 }
 
 /**
- * Interactive semver picker with the branching-model floor-guard. Re-prompts on
- * an out-of-policy choice.
+ * Interactive semver picker.
  *
- * @param counterpart the counterpart line's current version (stable head when on
- *   `next`, beta head when on `main`), or `null` when that branch is absent — in
- *   which case the guard is advisory.
  * @returns the chosen version, or `null` if cancelled.
  */
 async function pickVersion(
   app: AppMeta,
   current: string,
-  counterpart: string | null,
 ): Promise<string | null> {
   const preid = prerelease(current)?.[0]?.toString() ?? "beta";
   while (true) {
@@ -270,67 +247,8 @@ async function pickVersion(
       p.log.error("Could not compute the next version; pick another.");
       continue;
     }
-
-    const violation = floorViolation(next, counterpart);
-    if (violation) {
-      p.log.error(violation);
-      continue;
-    }
     return next;
   }
-}
-
-/**
- * Read the counterpart line's version for `app` via `git show`.
- *
- * @returns the version string, or `null` when the branch or its `package.json`
- *   doesn't exist yet — the guard then becomes advisory.
- */
-async function counterpartVersion(app: AppMeta): Promise<string | null> {
-  if (!counterpartBranch) return null;
-  const res = await $({
-    cwd: repoRoot,
-    nothrow: true,
-  })`git show ${`${counterpartBranch}:apps/${app.name}/package.json`}`;
-  if (res.exitCode !== 0) return null;
-  try {
-    return (JSON.parse(res.stdout) as { version?: string }).version ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Enforce the version-monotonicity invariant between the stable and beta lines.
- *
- * - On `main` (stable): reject when `coerce(next) >= coerce(beta)` — stable must
- *   stay below the beta's release namespace.
- * - On `next` (beta): reject when `coerce(next) <= stableHead` — the beta base
- *   must stay strictly above the stable head.
- *
- * @returns a human-readable rejection reason, or `null` when the choice is in
- *   policy (or the guard is advisory).
- */
-function floorViolation(
-  next: string,
-  counterpart: string | null,
-): string | null {
-  if (line === "other" || counterpart === null) return null;
-  const c = coerce(next);
-  if (!c) return null;
-
-  if (line === "stable") {
-    const floor = coerce(counterpart);
-    if (floor && gte(c, floor)) {
-      return `Stable releases from main must stay below the beta floor ${floor.version} (beta is ${counterpart}). Pick a patch or a custom version below ${floor.version}.`;
-    }
-  } else {
-    const head = coerce(counterpart);
-    if (head && lte(c, head)) {
-      return `Beta releases from next must stay strictly above the stable head ${counterpart}. Pick a higher minor/major.`;
-    }
-  }
-  return null;
 }
 
 /**
