@@ -1,0 +1,10 @@
+{
+  "id": "zotlit",
+  "name": "ZotLit",
+  "version": "1.1.12",
+  "minAppVersion": "1.6.7",
+  "description": "Plugin to integrate with Zotero, create literature notes and insert citations from a Zotero library.",
+  "author": "AidenLx",
+  "authorUrl": "https://github.com/aidenlx",
+  "isDesktopOnly": true
+}
