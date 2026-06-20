@@ -23,8 +23,19 @@ Each app's `apps/{app}/package.json#version` is the sole version source.
 - **`main`** = stable. Patch-only (`2.0.x`) while a beta exists.
 - **`next`** = beta. Next minor/major (`2.1.0-beta.N`).
 
-Fix bugs on `main`, then merge `main` → `next`. The beta version must always
-be strictly greater than stable.
+Fix bugs on `main`, then merge `main` → `next`.
+
+### Version policy
+
+Keep the **beta line strictly ahead of stable**: every `next` version must be
+greater than the current `main` version, and `main` stays on patch bumps
+(`2.0.x`) until the in-flight beta graduates. Promote the beta to GA by shipping
+its release version from `main` (e.g. `2.1.0-beta.N` on `next` → `2.1.0` on
+`main`), then re-base `next` onto the next pre-release (`2.2.0-beta.0`).
+
+This is a **maintainer convention, enforced by review** — `pnpm release` does
+not block out-of-policy bumps. Double-check the chosen version against the
+counterpart line before merging a release PR.
 
 ### How to release
 
