@@ -4,6 +4,7 @@
     "transit": {
       "dependsOn": ["^transit"]
     },
+    "paraglide:compile": {},
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
