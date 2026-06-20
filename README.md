@@ -1,42 +1,14 @@
-# Turborepo starter with shell commands
+# ZotLit
 
-This Turborepo starter is maintained by the Turborepo core team. This template is great for issue reproductions and exploring building task graphs without frameworks.
+[![GitHub stars](https://custom-icon-badges.demolab.com/github/stars/aidenlx/zotlit?logo=star)](https://github.com/aidenlx/zotlit/stargazers "GitHub stars") [![GitHub issues](https://custom-icon-badges.demolab.com/github/issues-raw/aidenlx/zotlit?logo=issue)](https://github.com/aidenlx/zotlit/issues "GitHub issues") [![repo license](https://custom-icon-badges.demolab.com/github/license/aidenlx/zotlit?logo=law&logoColor=white)](https://github.com/aidenlx/zotlit/blob/main/LICENSE "repo license") [![current obsidian plugin version](https://custom-icon-badges.demolab.com/badge/dynamic/json?color=8b6cef&label=obsidian%20plugin&query=version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit%2Fmaster%2Fapp%2Fobsidian%2Fmanifest.json&logo=obsidian-full)](https://zotlit.aidenlx.top/getting-started/install/obsidian "open obsidian plugin page") [![current zotero plugin version](https://custom-icon-badges.demolab.com/badge/dynamic/json?color=bc3a3c&label=zotero%20plugin&query=version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fobsidian-zotero%2Fmaster%2Fapp%2Fzotero%2Fpackage.json&logo=zotero-32)](https://zotlit.aidenlx.top/getting-started/install/zotero "open zotero plugin page")
 
-## Using this example
+ZotLit is a third-party project that aims to facilitate the integration between [Obsidian.md](https://obsidian.md) and [Zotero](https://www.zotero.org), by providing a set of community plugins for both Obsidian and Zotero.
 
-Run the following command:
+- [Full Documentation](https://zotlit.aidenlx.top/)
+- [中文文档](https://zotlit.aidenlx.top/zh-CN/)
 
-```sh
-npx create-turbo@latest -e with-shell-commands
-```
+[![open in obsidian](https://custom-icon-badges.demolab.com/badge/-Open%20In%20Obsidian-d4d4d4?style=for-the-badge&logo=obsidian-full)](https://community.obsidian.md/plugins/zotlit "open in obsidian")
 
-### For bug reproductions
+Disclaimer: The plugins in this project is manitained by third-party developer, who is not affiliated with Obsidian or Zotero. This means that they may be broken at any time due to Zotero and/or Obsidian updates. Although they are not intended to perform any write operations to your Zotero database, there are still risks of data-loss. Therefore, please make proper backup for your data before and when using this plugin, especially when you are using beta version.
 
-Giving the Turborepo core team a minimal reproduction is the best way to create a tight feedback loop for a bug you'd like to report.
-
-Because most monorepos will rely on more tooling than Turborepo (frameworks, linters, formatters, etc.), it's often useful for us to have a reproduction that strips away all of this other tooling so we can focus _only_ on Turborepo's role in your repo. This example does exactly that, giving you a good starting point for creating a reproduction.
-
-- Feel free to rename/delete packages for your reproduction so that you can be confident it most closely matches your use case.
-- If you need to use a different package manager to produce your bug, run `npx @turbo/workspaces convert` to switch package managers.
-- It's possible that your bug really **does** have to do with the interaction of Turborepo and other tooling within your repository. If you find that your bug does not reproduce in this minimal example and you're confident Turborepo is still at fault, feel free to bring that other tooling into your reproduction.
-
-## What's inside?
-
-This Turborepo includes the following packages:
-
-### Apps and Packages
-
-- `app-a`: A final package that depends on all other packages in the graph and has no dependents. This could resemble an application in your monorepo that consumes everything in your monorepo through its topological tree.
-- `app-b`: Another final package with many dependencies. No dependents, lots of dependencies.
-- `pkg-a`: A package that has all scripts in the root `package.json`.
-- `pkg-b`: A package with _almost_ all scripts in the root `package.json`.
-- `tooling-config`: A package to simulate a common configuration used for all of your repository. This could resemble a configuration for tools like TypeScript or ESLint that are installed into all of your packages.
-
-### Some scripts to try
-
-If you haven't yet, [install global `turbo`](https://turborepo.dev/docs/installing#install-globally) to run tasks.
-
-- `turbo build lint check-types`: Runs all tasks in the default graph.
-- `turbo build`: A basic command to build `app-a` and `app-b` in parallel.
-- `turbo build --filter=app-a`: Building only `app-a` and its dependencies.
-- `turbo lint`: A basic command for running lints in all packages in parallel.
+If you have any questions or suggestions, please feel free to [open a discussion](https://github.com/aidenlx/zotlit/discussions/new/choose) or [create an issue](https://github.com/aidenlx/zotlit/issues/new).
