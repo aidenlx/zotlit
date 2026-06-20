@@ -81,7 +81,7 @@ function connect(port: number, host = "127.0.0.1"): Promise<Rdp> {
     const rdp = new Rdp(socket);
     socket.once("error", reject);
     // Root actor greets us first.
-    rdp.next((p) => p.from === "root").then(() => resolve(rdp));
+    rdp.next((p) => p.from === "root").then(() => resolve(rdp), reject);
   });
 }
 
