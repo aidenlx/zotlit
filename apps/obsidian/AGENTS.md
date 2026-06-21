@@ -119,11 +119,9 @@ View-specific styles live next to the view (e.g. `views/<view>/style.css`) and a
 Vitest runs in Node and resolves `"obsidian"` to a local mock via
 `resolve.alias`. Types still come from `packages/obsidian-api`.
 
-Run from this package:
+Run the full task via turbo (see root AGENTS.md → Commands). For tight iteration, call Vitest directly from this package:
 
-- `pnpm test` — runs `vitest run`.
 - `pnpm exec vitest run path/to/file.test.ts` — single file.
-- Typecheck: run `pnpm lint` from repo root (builds deps, typechecks, lints in one cached pass).
 - `pnpm exec vitest` — watch mode.
 
 Extend the mock when a service starts touching new `obsidian` exports; add the

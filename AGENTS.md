@@ -21,7 +21,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 ## Commands
 
-Root scripts (run from repo root):
+**Prefer turbo for `build` / `test` / `lint`.** Going through turbo resolves the workspace dependency graph (upstream packages build first) and caches outputs, so repeat runs are near-instant. The root scripts below already delegate to `turbo run` — run them from the repo root:
 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -34,14 +34,7 @@ Root scripts (run from repo root):
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 
-Per-package tasks: use pnpm filters, e.g.:
-
-- `pnpm --filter @zotlit/obsidian build` (Vite build)
-- `pnpm --filter @zotlit/obsidian dev` (Vite watch, dev mode)
-- `pnpm --filter @zotlit/obsidian test` (`vitest run`)
-- `pnpm --filter @zotlit/obsidian exec vitest run path/to/file.test.ts` (single file)
-- `pnpm --filter @zotlit/db build` / `dev` (tsdown)
-- `pnpm --filter @zotlit/db db:pull` (drizzle-kit pull)
+Scope a task to one package with a turbo filter so its deps still build first: `turbo run <task> --filter=@zotlit/obsidian`. For tight inner-loop iteration that doesn't need the dep graph (single-file Vitest, `db:pull`, etc.), call the package tool directly — see each package's `AGENTS.md`.
 
 ## Truth-first reasoning
 
