@@ -41,7 +41,8 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): void {
-    const citationKey = "citationKey" in hit.item ? hit.item.citationKey : null;
+    const citationKey =
+      "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
     if (!citationKey) {
       new BaseNotice(m.notice_no_citekey({ key: hit.item.key }));
       return;

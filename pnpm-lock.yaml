@@ -144,6 +144,9 @@ importers:
       '@zotlit/templates':
         specifier: workspace:*
         version: link:../../packages/templates
+      '@zotlit/zotero-types':
+        specifier: workspace:*
+        version: link:../../packages/zotero-types
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
@@ -466,6 +469,9 @@ importers:
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../shared
+      '@zotlit/zotero-types':
+        specifier: workspace:*
+        version: link:../zotero-types
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5

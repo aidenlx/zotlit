@@ -70,16 +70,16 @@ return q.prepare(db, { keys }).all({ libraryID });
 
 ## Item fields
 
-`Item = BaseItem & ItemFields` — see `src/queries/items.ts` for the type and `toItem` construction; `ItemFields` is the generated discriminated union from `@zotlit/zotero-types` (`packages/zotero-types/src/generated.ts`).
+`Item = BaseItem & { fields: ItemFields }` — see `src/queries/items.ts` for the type and `toItem` construction; `ItemFields` is the generated discriminated union from `@zotlit/zotero-types` (`packages/zotero-types/src/fields.ts`).
 
 Categorization is driven by `fieldsCombined.custom` at SQL level:
 
-- `custom = 0` (built-in, present in the v42 schema snapshot) → named property on the item (typed via `ItemFields`).
-- `custom = 1` (user-defined, *or* built-ins newer than our snapshot) → entry in `item.fields: ReadonlyMap<string, string | null>`.
+- `custom = 0` (built-in, present in the v42 schema snapshot) → named property nested under `item.fields` (typed via `ItemFields`; `item.fields.itemType` carries the type name).
+- `custom = 1` (user-defined, *or* built-ins newer than our snapshot) → entry in `item.customFields: ReadonlyMap<string, string | null>`.
 
-**Field naming follows the schema's type-specific names** — `BookSectionFields.bookTitle`, not `publicationTitle`. The schema's `baseField` aliasing is not reflected in the generated types; if cross-type lookup is ever needed, query `baseFieldMappingsCombined` (see `drizzle/schema.ts`).
+**Field naming follows the schema's type-specific names** — `BookSectionFields.bookTitle`, not `publicationTitle`. To resolve a type-specific name to its canonical base field, use the exported `FIELD_ALIASES` map from `@zotlit/zotero-types` (built from the schema's `baseField` annotations); `baseFieldMappingsCombined` is the DB-level source (see `drizzle/schema.ts`).
 
-To narrow by item type, use the discriminator directly: `if (item.itemType === "journalArticle")`. `ItemOfType<T>` is exported for parameter typing.
+To narrow by item type, discriminate on `item.fields`: `if (item.fields.itemType === "bookSection")` narrows it to `BookSectionFields`.
 
 ## Date and language parsing
 

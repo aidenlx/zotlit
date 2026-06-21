@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
+import { type ItemFields } from "@zotlit/zotero-types";
 
-import { type Item } from "@/queries/items";
+import { type BaseItem, type Item } from "@/queries/items";
 
 import { USER_LIBRARY_ID } from "./constants";
 import { type Annotation } from "./zt-annot";
@@ -10,7 +11,10 @@ import { type Attachment } from "./zt-attach";
 import { buildNoteContext } from "./zt-note-context";
 import { type ItemTag, type Tag } from "./zt-tag";
 
-function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
+function makeItem(
+  fields: { itemType: string } & Record<string, string | null>,
+  base?: Partial<BaseItem>,
+): Item {
   return {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
@@ -20,8 +24,9 @@ function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
     creators: [],
     primaryCreatorType: "author",
     customFields: new Map(),
-    ...overrides,
-  } as Item;
+    ...base,
+    fields: fields as ItemFields,
+  };
 }
 
 function makeAttachment(overrides: Partial<Attachment>): Attachment {
@@ -67,25 +72,29 @@ function itemTag(itemID: number, tag: Tag, type: 0 | 1 = 0): ItemTag {
 
 describe("buildNoteContext", () => {
   it("assembles backlink, attachments, flattened annotations and parents", () => {
-    const item = makeItem({
-      itemType: "journalArticle",
-      title: "A Study",
-      citationKey: "smith2024",
-      creators: [
-        {
-          firstName: "Jane",
-          lastName: "Smith",
-          creatorType: "author",
-          fieldMode: 0,
-        },
-        {
-          firstName: "Ed",
-          lastName: "Jones",
-          creatorType: "editor",
-          fieldMode: 0,
-        },
-      ],
-    });
+    const item = makeItem(
+      {
+        itemType: "journalArticle",
+        title: "A Study",
+        citationKey: "smith2024",
+      },
+      {
+        creators: [
+          {
+            firstName: "Jane",
+            lastName: "Smith",
+            creatorType: "author",
+            fieldMode: 0,
+          },
+          {
+            firstName: "Ed",
+            lastName: "Jones",
+            creatorType: "editor",
+            fieldMode: 0,
+          },
+        ],
+      },
+    );
     const attachment = makeAttachment({});
     const annotation = makeAnnotation({});
     const itemTagRecord = { tagID: 1, name: "zt" };
@@ -155,11 +164,10 @@ describe("buildNoteContext", () => {
 
   it("resolves group backlinks from a group indexedKey", () => {
     const ctx = buildNoteContext({
-      item: makeItem({
-        itemType: "book",
-        key: "ITEM2345",
-        indexedKey: "ITEM2345g99",
-      }),
+      item: makeItem(
+        { itemType: "book" },
+        { key: "ITEM2345", indexedKey: "ITEM2345g99" },
+      ),
       attachments: [],
       annotationsByAttachment: new Map(),
       tagsByItemID: new Map(),

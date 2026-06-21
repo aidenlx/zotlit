@@ -23,6 +23,7 @@
   "dependencies": {
     "@zotlit/db": "workspace:*",
     "@zotlit/shared": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
     "minisearch": "^7.2.0"
   },

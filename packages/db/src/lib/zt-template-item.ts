@@ -63,31 +63,20 @@ export interface TemplateItemData {
   [field: string]: unknown;
 }
 
-const BASE_ITEM_KEYS = new Set([
-  "itemID",
-  "libraryID",
-  "key",
-  "indexedKey",
-  "dateModified",
-  "creators",
-  "primaryCreatorType",
-  "customFields",
-  "itemType",
-]);
-
 export function itemToTemplateData(
   item: Item,
   tags: readonly ItemTag[] = [],
 ): TemplateItemData {
   const allFields: Record<string, string> = {};
 
-  for (const [key, val] of Object.entries(item)) {
-    if (BASE_ITEM_KEYS.has(key) || typeof val !== "string") continue;
+  for (const [key, val] of Object.entries(item.fields)) {
+    if (key === "itemType" || typeof val !== "string") continue;
     const canonical = FIELD_ALIASES[key] ?? key;
     allFields[canonical] = val;
   }
+  // Built-in fields win over a custom field of the same name.
   for (const [key, val] of item.customFields) {
-    if (val != null) allFields[key] = val;
+    if (val != null && !(key in allFields)) allFields[key] = val;
   }
 
   const creators = item.creators.map(toTemplateCreator);
@@ -97,7 +86,7 @@ export function itemToTemplateData(
     key: item.key,
     libraryID: item.libraryID,
     indexedKey: item.indexedKey,
-    itemType: item.itemType,
+    itemType: item.fields.itemType,
     dateModified: item.dateModified,
     creators,
     primaryCreatorType: item.primaryCreatorType,

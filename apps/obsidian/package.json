@@ -27,6 +27,7 @@
     "@zotlit/protocol": "workspace:*",
     "@zotlit/shared": "workspace:*",
     "@zotlit/templates": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
     "clsx": "^2.1.1",
     "eta": "catalog:",

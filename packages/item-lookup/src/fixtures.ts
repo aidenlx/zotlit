@@ -3,14 +3,17 @@ import {
   type Creator,
   type IndexedItem,
   type Item,
-  type ItemOfType,
 } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
+import {
+  type ItemFields,
+  type JournalArticleFields,
+} from "@zotlit/zotero-types";
 
 export interface ItemFixtureOptions {
   key: string;
   libraryID?: number;
-  itemType?: Item["itemType"];
+  itemType?: ItemFields["itemType"];
   title?: string | null;
   citationKey?: string | null;
   date?: string | null;
@@ -73,15 +76,17 @@ export function makeItem(options: ItemFixtureOptions): Item {
   if (itemType === "journalArticle") {
     return {
       ...base,
-      itemType: "journalArticle",
-      ...fields,
-      publicationTitle: options.publicationTitle ?? null,
-      volume: options.volume ?? null,
-      issue: options.issue ?? null,
-      pages: options.pages ?? null,
-    } satisfies ItemOfType<"journalArticle">;
+      fields: {
+        itemType: "journalArticle",
+        ...fields,
+        publicationTitle: options.publicationTitle ?? null,
+        volume: options.volume ?? null,
+        issue: options.issue ?? null,
+        pages: options.pages ?? null,
+      } satisfies JournalArticleFields,
+    };
   }
-  return { ...base, itemType, ...fields } as Item;
+  return { ...base, fields: { itemType, ...fields } as ItemFields };
 }
 
 export function makeCreator(firstName: string, lastName: string): Creator {

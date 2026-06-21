@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
+import { type ItemFields } from "@zotlit/zotero-types";
 
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { type Item } from "@/queries/items";
+import { type BaseItem, type Item } from "@/queries/items";
 
 import { itemToTemplateData, type TemplateCreator } from "./zt-template-item";
 
-function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
+function makeItem(
+  fields: { itemType: string } & Record<string, string | null>,
+  base?: Partial<BaseItem>,
+): Item {
   return {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
@@ -17,8 +21,9 @@ function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
     creators: [],
     primaryCreatorType: null,
     customFields: new Map(),
-    ...overrides,
-  } as Item;
+    ...base,
+    fields: fields as ItemFields,
+  };
 }
 
 describe("itemToTemplateData", () => {
@@ -58,7 +63,7 @@ describe("itemToTemplateData", () => {
       itemType: "blogPost",
       title: "My Post",
       blogTitle: "Tech Blog",
-    } as Partial<Item> & { itemType: string });
+    });
 
     const result = itemToTemplateData(item);
 
@@ -70,7 +75,7 @@ describe("itemToTemplateData", () => {
     const item = makeItem({
       itemType: "audioRecording",
       label: "Sony Music",
-    } as Partial<Item> & { itemType: string });
+    });
 
     const result = itemToTemplateData(item);
 
@@ -78,23 +83,25 @@ describe("itemToTemplateData", () => {
   });
 
   it("converts two-field creators", () => {
-    const item = makeItem({
-      itemType: "book",
-      creators: [
-        {
-          firstName: "Jane",
-          lastName: "Smith",
-          creatorType: "author",
-          fieldMode: 0,
-        },
-        {
-          firstName: "Bob",
-          lastName: "Jones",
-          creatorType: "editor",
-          fieldMode: 0,
-        },
-      ],
-    });
+    const item = makeItem(
+      { itemType: "book" },
+      {
+        creators: [
+          {
+            firstName: "Jane",
+            lastName: "Smith",
+            creatorType: "author",
+            fieldMode: 0,
+          },
+          {
+            firstName: "Bob",
+            lastName: "Jones",
+            creatorType: "editor",
+            fieldMode: 0,
+          },
+        ],
+      },
+    );
 
     const result = itemToTemplateData(item);
 
@@ -117,17 +124,19 @@ describe("itemToTemplateData", () => {
   });
 
   it("converts institutional creators (fieldMode=1)", () => {
-    const item = makeItem({
-      itemType: "report",
-      creators: [
-        {
-          firstName: null,
-          lastName: "World Health Organization",
-          creatorType: "author",
-          fieldMode: 1,
-        },
-      ],
-    });
+    const item = makeItem(
+      { itemType: "report" },
+      {
+        creators: [
+          {
+            firstName: null,
+            lastName: "World Health Organization",
+            creatorType: "author",
+            fieldMode: 1,
+          },
+        ],
+      },
+    );
 
     const result = itemToTemplateData(item);
 
@@ -141,10 +150,10 @@ describe("itemToTemplateData", () => {
   });
 
   it("includes custom fields as direct properties", () => {
-    const item = makeItem({
-      itemType: "journalArticle",
-      customFields: new Map([["myCustomField", "custom value"]]),
-    });
+    const item = makeItem(
+      { itemType: "journalArticle" },
+      { customFields: new Map([["myCustomField", "custom value"]]) },
+    );
 
     const result = itemToTemplateData(item);
 
@@ -181,7 +190,7 @@ describe("itemToTemplateData", () => {
     const item = makeItem({
       itemType: "journalArticle",
       citationKey: "smith2024",
-    } as Partial<Item> & { itemType: string });
+    });
 
     const result = itemToTemplateData(item);
 
