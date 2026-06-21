@@ -163,17 +163,19 @@ function ItemTable({ rows }: { rows: Item[] }) {
           {rows.map((row) => (
             <tr key={row.itemID} className="border-t border-neutral-100">
               <td className="px-3 py-2 text-neutral-700">
-                {"citationKey" in row ? (row.citationKey ?? "—") : "—"}
+                {"citationKey" in row.fields
+                  ? (row.fields.citationKey ?? "—")
+                  : "—"}
               </td>
               <td className="px-3 py-2">
-                {"title" in row ? (row.title ?? "—") : "—"}
+                {"title" in row.fields ? (row.fields.title ?? "—") : "—"}
               </td>
               <td className="px-3 py-2 text-neutral-700">
                 {row.creators[0]?.lastName ?? "—"}
               </td>
               <td className="px-3 py-2 text-neutral-700">
                 {formatItemDate(
-                  parseItemDate("date" in row ? row.date : null),
+                  parseItemDate("date" in row.fields ? row.fields.date : null),
                 ) || "—"}
               </td>
             </tr>

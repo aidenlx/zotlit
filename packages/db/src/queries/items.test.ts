@@ -60,19 +60,21 @@ describe("getItemsByLibrary", () => {
         itemID: 6,
         libraryID: USER_LIBRARY_ID,
         indexedKey: "USER2",
-        itemType: "book",
         creators: [],
-        fields: new Map(),
+        customFields: new Map(),
+        fields: { itemType: "book" },
       },
       {
         itemID: 1,
         libraryID: USER_LIBRARY_ID,
         indexedKey: "USER1",
-        itemType: "journalArticle",
-        title: "Alpha kernels",
-        citationKey: "doe2024alpha",
-        date: "2024-02-03 February 3, 2024",
-        language: "English",
+        fields: {
+          itemType: "journalArticle",
+          title: "Alpha kernels",
+          citationKey: "doe2024alpha",
+          date: "2024-02-03 February 3, 2024",
+          language: "English",
+        },
       },
     ]);
   });
@@ -82,31 +84,31 @@ describe("getItemsByLibrary", () => {
     const journal = result.find((item) => item.key === "USER1");
     const book = result.find((item) => item.key === "USER2");
 
-    expect(journal?.itemType).toBe("journalArticle");
-    expect(book?.itemType).toBe("book");
+    expect(journal?.fields.itemType).toBe("journalArticle");
+    expect(book?.fields.itemType).toBe("book");
 
-    if (!journal || journal.itemType !== "journalArticle") {
+    if (!journal || journal.fields.itemType !== "journalArticle") {
       throw new Error("expected USER1 to be a journal article");
     }
-    expect(journal).toMatchObject({
+    expect(journal.fields).toMatchObject({
       publicationTitle: "Journal of Kernels",
       volume: "12",
       issue: "3",
       pages: "45-67",
     });
 
-    expect(book).not.toHaveProperty("publicationTitle");
+    expect(book?.fields).not.toHaveProperty("publicationTitle");
   });
 
   it("leaves journal-article fields absent when Zotero omits them", () => {
     const [item] = getItemsByLibrary(db, 2);
-    if (!item || item.itemType !== "journalArticle") {
+    if (!item || item.fields.itemType !== "journalArticle") {
       throw new Error("expected GRP1 to be a journal article");
     }
-    expect(item).not.toHaveProperty("publicationTitle");
-    expect(item).not.toHaveProperty("volume");
-    expect(item).not.toHaveProperty("issue");
-    expect(item).not.toHaveProperty("pages");
+    expect(item.fields).not.toHaveProperty("publicationTitle");
+    expect(item.fields).not.toHaveProperty("volume");
+    expect(item.fields).not.toHaveProperty("issue");
+    expect(item.fields).not.toHaveProperty("pages");
   });
 
   it("keeps custom fields in the leftover map", () => {
@@ -158,9 +160,6 @@ describe("getItemsByLibrary", () => {
       {
         key: "GRP1",
         indexedKey: "GRP1g17",
-        title: "Group paper",
-        citationKey: "group2025paper",
-        language: "en_US",
         creators: [
           {
             firstName: null,
@@ -169,6 +168,11 @@ describe("getItemsByLibrary", () => {
             fieldMode: 1,
           },
         ],
+        fields: {
+          title: "Group paper",
+          citationKey: "group2025paper",
+          language: "en_US",
+        },
       },
     ]);
   });
@@ -188,9 +192,9 @@ describe("getItemsByLibrary", () => {
     // Scalar correlated subquery — each row.itemType must be the raw
     // typeName string, not an array/object from a non-scalar select.
     for (const item of result) {
-      expect(typeof item.itemType).toBe("string");
+      expect(typeof item.fields.itemType).toBe("string");
     }
-    expect(result.map((item) => [item.key, item.itemType])).toEqual([
+    expect(result.map((item) => [item.key, item.fields.itemType])).toEqual([
       ["USER2", "book"],
       ["USER1", "journalArticle"],
     ]);
@@ -216,14 +220,14 @@ describe("getItemsByLibrary", () => {
 
   it("returns raw language so consumers can parse with their own lookup", () => {
     const [, item] = getItemsByLibrary(db, USER_LIBRARY_ID);
-    if (!item || !("language" in item)) {
+    if (!item || !("language" in item.fields)) {
       throw new Error("expected USER1 to have a language field");
     }
-    const parsed = parseItemLanguage(item.language, (input) =>
+    const parsed = parseItemLanguage(item.fields.language, (input) =>
       input.toLowerCase() === "english" ? "en" : null,
     );
 
-    expect(item.language).toBe("English");
+    expect(item.fields.language).toBe("English");
     expect(parsed).toEqual({
       kind: "iso6391",
       code: "en",
@@ -241,13 +245,12 @@ describe("getItemsByID", () => {
     expect(byID.get(1)).toMatchObject({
       key: "USER1",
       libraryID: USER_LIBRARY_ID,
-      title: "Alpha kernels",
-      citationKey: "doe2024alpha",
+      fields: { title: "Alpha kernels", citationKey: "doe2024alpha" },
     });
     expect(byID.get(6)).toMatchObject({
       key: "USER2",
       libraryID: USER_LIBRARY_ID,
-      itemType: "book",
+      fields: { itemType: "book" },
     });
     expect(byID.has(2)).toBe(false);
     expect(byID.has(3)).toBe(false);
@@ -274,13 +277,12 @@ describe("getItemsByKey", () => {
     expect(byKey.get("USER1")).toMatchObject({
       itemID: 1,
       libraryID: USER_LIBRARY_ID,
-      title: "Alpha kernels",
-      citationKey: "doe2024alpha",
+      fields: { title: "Alpha kernels", citationKey: "doe2024alpha" },
     });
     expect(byKey.get("USER2")).toMatchObject({
       itemID: 6,
       libraryID: USER_LIBRARY_ID,
-      itemType: "book",
+      fields: { itemType: "book" },
     });
     expect(byKey.has("DELETED")).toBe(false);
     expect(byKey.has("ATTACH")).toBe(false);

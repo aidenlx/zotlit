@@ -45,12 +45,7 @@ export interface BaseItem {
   customFields: ReadonlyMap<string, string | null>;
 }
 
-export type Item = BaseItem & ItemFields;
-
-export type ItemOfType<T extends ItemFields["itemType"]> = Extract<
-  Item,
-  { itemType: T }
->;
+export type Item = BaseItem & { fields: ItemFields };
 
 const itemFindOptions = {
   columns: {
@@ -176,9 +171,8 @@ function toItem(row: ItemRow, groupID: number | null): Item {
     creators,
     primaryCreatorType,
     customFields,
-    itemType: row.itemType.typeName,
-    ...namedProps,
-  } as Item;
+    fields: { itemType: row.itemType.typeName, ...namedProps } as ItemFields,
+  };
 }
 
 export function getItemsByLibrary(

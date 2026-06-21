@@ -17,7 +17,6 @@ export {
   type Creator,
   type Item,
   type ItemDisplayInfo,
-  type ItemOfType,
   type ItemRef,
 } from "./queries/items";
 export {

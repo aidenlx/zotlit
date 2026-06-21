@@ -337,10 +337,10 @@ export class AnnotationView extends ItemView {
         },
         displayLabel: formatDisplayLabel(
           {
-            title: "title" in item ? item.title : null,
+            title: "title" in item.fields ? item.fields.title : null,
             creators: item.creators,
             year: itemDateYear(
-              parseItemDate("date" in item ? item.date : null),
+              parseItemDate("date" in item.fields ? item.fields.date : null),
             ),
           },
           item.key,
