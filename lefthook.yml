@@ -6,5 +6,5 @@ pre-commit:
       stage_fixed: true
     lint:
       glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
-      run: mise exec -- turbo run //#lint:repo -- {staged_files} --no-error-on-unmatched-pattern
+      run: mise exec -- turbo run //#lint:repo -- --fix {staged_files} --no-error-on-unmatched-pattern
       stage_fixed: true
