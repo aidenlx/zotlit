@@ -4,6 +4,59 @@ import { Temporal } from "@zotlit/shared/temporal";
 
 import { defineToString } from "./to-string";
 
+/** Full Y/M/D date parsed into a `Temporal.PlainDate`. */
+export interface ItemDateYMD {
+  kind: "date";
+  value: Temporal.PlainDate;
+  year: number;
+  month: number;
+  day: number;
+  raw: string;
+  toString(): string;
+}
+
+/** Year and month only; `Temporal.PlainYearMonth` (no day). */
+export interface ItemDateYearMonth {
+  kind: "yearMonth";
+  value: Temporal.PlainYearMonth;
+  year: number;
+  month: number;
+  day: null;
+  raw: string;
+  toString(): string;
+}
+
+/**
+ * Year only. Also covers Zotero's `01 2003` misparse where the user-string day
+ * is meaningful but month is missing (the spurious day is dropped since no
+ * `Temporal` type fits "year + day without month").
+ */
+export interface ItemDateYear {
+  kind: "year";
+  value: null;
+  year: number;
+  month: null;
+  day: null;
+  raw: string;
+  toString(): string;
+}
+
+/**
+ * Unparseable / text-only: year is missing or the SQL prefix is absent. `text`
+ * holds the renderable user portion (or the entire raw value if non-multipart);
+ * `year` is regex-extracted from it when a `\d{4}` run is present, else null.
+ */
+export interface ItemDateText {
+  kind: "text";
+  value: null;
+  text: string;
+  year: number | null;
+  month: null;
+  day: null;
+  raw: string;
+  toString(): string;
+}
+
 /**
  * Parsed view of Zotero's "multipart" date field.
  *
@@ -11,25 +64,25 @@ import { defineToString } from "./to-string";
  * year/month/day may be `00` to mark missing precision (e.g.
  * `2013-01-00 January 2013`, `0000-00-00 submitted`).
  *
- * - `date`      — full Y/M/D parsed into `Temporal.PlainDate`.
- * - `yearMonth` — only Y/M; `Temporal.PlainYearMonth`.
- * - `year`      — only Y; also covers Zotero's `01 2003` misparse where the
- *   user-string day is meaningful but month is missing (the spurious day
- *   is dropped since no Temporal type fits "year + day without month").
- * - `text`      — year is missing or the SQL prefix is absent. `text` holds
- *   the renderable user portion (or the entire raw value if non-multipart).
+ * Every variant exposes the common parts so templates can read them without
+ * narrowing on `kind`:
+ * - `year`  — numeric year (regex-extracted for {@link ItemDateText}); null
+ *   only when none is found.
+ * - `month` — 1–12 when known, else null.
+ * - `day`   — day-of-month for full dates ({@link ItemDateYMD}) only, else null.
+ * - `value` — precise `Temporal` value; null for {@link ItemDateYear} /
+ *   {@link ItemDateText}.
+ * - `raw`   — verbatim stored value, retained for round-tripping.
+ * - `toString()` — ISO-normalized rendering (see {@link formatItemDate});
+ *   drives `${date}`.
  *
- * `raw` is always the verbatim stored value, retained for round-tripping.
+ * `kind` narrows `value` to its concrete `Temporal` type for TS consumers.
  */
-export type ItemDate = (
-  | { kind: "date"; plain: Temporal.PlainDate; raw: string }
-  | { kind: "yearMonth"; plain: Temporal.PlainYearMonth; raw: string }
-  | { kind: "year"; year: number; raw: string }
-  | { kind: "text"; text: string; raw: string }
-) & {
-  /** ISO-normalized rendering (see {@link formatItemDate}); drives `${date}`. */
-  toString(): string;
-};
+export type ItemDate =
+  | ItemDateYMD
+  | ItemDateYearMonth
+  | ItemDateYear
+  | ItemDateText;
 
 /**
  * Ported verbatim from upstream Zotero (with named captures added for typed
@@ -42,12 +95,14 @@ const MULTIPART_RE = regex(
   "^(?<year>[0-9]{4})-(?<month>0[0-9]|10|11|12)-(?<day>0[0-9]|[1-2][0-9]|30|31) (?<text>[\\s\\S]*)$",
 );
 
-const YEAR_RE = regex("[12]\\d{3}");
+const YEAR_RE = regex("\\b[12]\\d{3}\\b");
 
 /**
  * The returned object carries a non-enumerable `toString` (ISO-normalized, via
- * {@link formatItemDate}) so `<%= zt.date %>` renders a machine-friendly date
- * while `zt.date.plain` stays available for locale formatting.
+ * {@link formatItemDate}) so `<%= zt.date %>` renders a machine-friendly date,
+ * while `zt.date.value` stays available for locale formatting (e.g.
+ * `zt.date.value?.toLocaleString(...)`). `toString` is hidden from spread /
+ * `JSON.stringify` / `Object.keys`.
  */
 export function parseItemDate(raw: string | null | undefined): ItemDate | null {
   const date = parseItemDateInner(raw);
@@ -63,45 +118,26 @@ function parseItemDateInner(raw: string | null | undefined): ItemDate | null {
   if (!raw) return null;
 
   const match = MULTIPART_RE.exec(raw);
-  if (!match) return { kind: "text", text: raw, raw };
+  if (!match) return textDate(raw, raw);
 
   const { year: yearStr, month: monthStr, day: dayStr, text } = match.groups;
 
-  if (yearStr === "0000") return { kind: "text", text, raw };
+  if (yearStr === "0000") return textDate(text, raw);
 
   const year = Number(yearStr);
-  if (monthStr === "00") return { kind: "year", year, raw };
+  if (monthStr === "00") return yearOnly(year, raw);
 
   const month = Number(monthStr);
   if (dayStr === "00") {
-    return tryYearMonth({ year, month }, raw) ?? { kind: "year", year, raw };
+    return tryYearMonth({ year, month }, raw) ?? yearOnly(year, raw);
   }
 
   const day = Number(dayStr);
   return (
     tryDate({ year, month, day }, raw) ??
-    tryYearMonth({ year, month }, raw) ?? { kind: "year", year, raw }
+    tryYearMonth({ year, month }, raw) ??
+    yearOnly(year, raw)
   );
-}
-
-/**
- * - Structured kinds (`date` / `yearMonth` / `year`) return their stored year.
- * - `text` falls back to a `\d{4}` regex over the user text; returns `null`
- *   when no 4-digit run is present (e.g. `submitted`, `January 19XX`).
- */
-export function itemDateYear(date: ItemDate | null | undefined): number | null {
-  if (!date) return null;
-  switch (date.kind) {
-    case "date":
-    case "yearMonth":
-      return date.plain.year;
-    case "year":
-      return date.year;
-    case "text": {
-      const match = YEAR_RE.exec(date.text);
-      return match ? Number(match[0]) : null;
-    }
-  }
 }
 
 /**
@@ -114,7 +150,7 @@ export function formatItemDate(date: ItemDate | null | undefined): string {
   switch (date.kind) {
     case "date":
     case "yearMonth":
-      return date.plain.toString();
+      return date.value.toString();
     case "year":
       return String(date.year);
     case "text":
@@ -122,14 +158,35 @@ export function formatItemDate(date: ItemDate | null | undefined): string {
   }
 }
 
+function textDate(text: string, raw: string): ItemDateText {
+  const match = YEAR_RE.exec(text);
+  return {
+    kind: "text",
+    value: null,
+    text,
+    year: match ? Number(match[0]) : null,
+    month: null,
+    day: null,
+    raw,
+  };
+}
+
+function yearOnly(year: number, raw: string): ItemDateYear {
+  return { kind: "year", value: null, year, month: null, day: null, raw };
+}
+
 function tryDate(
   parts: { year: number; month: number; day: number },
   raw: string,
-): Extract<ItemDate, { kind: "date" }> | null {
+): ItemDateYMD | null {
   try {
+    const value = Temporal.PlainDate.from(parts, { overflow: "reject" });
     return {
       kind: "date",
-      plain: Temporal.PlainDate.from(parts, { overflow: "reject" }),
+      value,
+      year: value.year,
+      month: value.month,
+      day: value.day,
       raw,
     };
   } catch {
@@ -140,11 +197,15 @@ function tryDate(
 function tryYearMonth(
   parts: { year: number; month: number },
   raw: string,
-): Extract<ItemDate, { kind: "yearMonth" }> | null {
+): ItemDateYearMonth | null {
   try {
+    const value = Temporal.PlainYearMonth.from(parts, { overflow: "reject" });
     return {
       kind: "yearMonth",
-      plain: Temporal.PlainYearMonth.from(parts, { overflow: "reject" }),
+      value,
+      year: value.year,
+      month: value.month,
+      day: null,
       raw,
     };
   } catch {

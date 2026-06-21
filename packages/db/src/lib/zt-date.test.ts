@@ -2,12 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
-import {
-  formatItemDate,
-  itemDateYear,
-  parseItemDate,
-  type ItemDate,
-} from "./zt-date";
+import { formatItemDate, parseItemDate, type ItemDate } from "./zt-date";
 
 describe("parseItemDate", () => {
   it("returns null for null/undefined/empty input", () => {
@@ -20,7 +15,7 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("2015-04-27 April 27, 2015");
     expect(parsed?.kind).toBe("date");
     if (parsed?.kind !== "date") throw new Error("expected date");
-    expect(parsed.plain.equals(Temporal.PlainDate.from("2015-04-27"))).toBe(
+    expect(parsed.value.equals(Temporal.PlainDate.from("2015-04-27"))).toBe(
       true,
     );
     expect(parsed.raw).toBe("2015-04-27 April 27, 2015");
@@ -30,7 +25,7 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("2013-01-00 January 2013");
     expect(parsed?.kind).toBe("yearMonth");
     if (parsed?.kind !== "yearMonth") throw new Error("expected yearMonth");
-    expect(parsed.plain.equals(Temporal.PlainYearMonth.from("2013-01"))).toBe(
+    expect(parsed.value.equals(Temporal.PlainYearMonth.from("2013-01"))).toBe(
       true,
     );
   });
@@ -39,7 +34,10 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("2014-00-00 2014");
     expect(parsed).toEqual<ItemDate>({
       kind: "year",
+      value: null,
       year: 2014,
+      month: null,
+      day: null,
       raw: "2014-00-00 2014",
     });
   });
@@ -51,7 +49,10 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("2003-00-01 01 2003");
     expect(parsed).toEqual<ItemDate>({
       kind: "year",
+      value: null,
       year: 2003,
+      month: null,
+      day: null,
       raw: "2003-00-01 01 2003",
     });
   });
@@ -60,7 +61,11 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("0000-00-00 submitted");
     expect(parsed).toEqual<ItemDate>({
       kind: "text",
+      value: null,
       text: "submitted",
+      year: null,
+      month: null,
+      day: null,
       raw: "0000-00-00 submitted",
     });
   });
@@ -69,7 +74,11 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("0000-12-00 December 19XX");
     expect(parsed).toEqual<ItemDate>({
       kind: "text",
+      value: null,
       text: "December 19XX",
+      year: null,
+      month: null,
+      day: null,
       raw: "0000-12-00 December 19XX",
     });
   });
@@ -80,7 +89,11 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("in press");
     expect(parsed).toEqual<ItemDate>({
       kind: "text",
+      value: null,
       text: "in press",
+      year: null,
+      month: null,
+      day: null,
       raw: "in press",
     });
   });
@@ -92,7 +105,7 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("2015-02-30 February 30, 2015");
     expect(parsed?.kind).toBe("yearMonth");
     if (parsed?.kind !== "yearMonth") throw new Error("expected yearMonth");
-    expect(parsed.plain.equals(Temporal.PlainYearMonth.from("2015-02"))).toBe(
+    expect(parsed.value.equals(Temporal.PlainYearMonth.from("2015-02"))).toBe(
       true,
     );
   });
@@ -106,34 +119,9 @@ describe("parseItemDate", () => {
     const parsed = parseItemDate("2024-02-29 February 29, 2024");
     expect(parsed?.kind).toBe("date");
     if (parsed?.kind !== "date") throw new Error("expected date");
-    expect(parsed.plain.equals(Temporal.PlainDate.from("2024-02-29"))).toBe(
+    expect(parsed.value.equals(Temporal.PlainDate.from("2024-02-29"))).toBe(
       true,
     );
-  });
-});
-
-describe("itemDateYear", () => {
-  it("returns null for null/undefined", () => {
-    expect(itemDateYear(null)).toBeNull();
-    expect(itemDateYear(undefined)).toBeNull();
-  });
-
-  it("reads the structured year for each typed variant", () => {
-    expect(itemDateYear(parseItemDate("2015-04-27 April 27, 2015"))).toBe(2015);
-    expect(itemDateYear(parseItemDate("2013-01-00 January 2013"))).toBe(2013);
-    expect(itemDateYear(parseItemDate("2014-00-00 2014"))).toBe(2014);
-    expect(itemDateYear(parseItemDate("2003-00-01 01 2003"))).toBe(2003);
-  });
-
-  it("regex-extracts a 1xxx/2xxx year from text variants", () => {
-    expect(itemDateYear(parseItemDate("0000-00-00 around 1995"))).toBe(1995);
-    expect(itemDateYear(parseItemDate("circa 1850"))).toBe(1850);
-  });
-
-  it("returns null when text has no 1xxx/2xxx run", () => {
-    expect(itemDateYear(parseItemDate("0000-00-00 submitted"))).toBeNull();
-    expect(itemDateYear(parseItemDate("0000-12-00 December 19XX"))).toBeNull();
-    expect(itemDateYear(parseItemDate("0000-00-00 9999"))).toBeNull();
   });
 });
 
@@ -186,5 +174,42 @@ describe("parseItemDate toString", () => {
     expect(Object.keys(parsed)).not.toContain("toString");
     expect(parsed.propertyIsEnumerable("toString")).toBe(false);
     expect(JSON.stringify(parsed)).not.toContain("toString");
+  });
+});
+
+describe("ItemDate flat accessors", () => {
+  it("exposes year/month/day/value for a full date", () => {
+    const parsed = parseItemDate("2015-04-27 April 27, 2015")!;
+    expect(parsed.year).toBe(2015);
+    expect(parsed.month).toBe(4);
+    expect(parsed.day).toBe(27);
+    expect(parsed.value?.toString()).toBe("2015-04-27");
+  });
+
+  it("drops day for a yearMonth", () => {
+    const parsed = parseItemDate("2013-01-00 January 2013")!;
+    expect(parsed.year).toBe(2013);
+    expect(parsed.month).toBe(1);
+    expect(parsed.day).toBeNull();
+    expect(parsed.value?.toString()).toBe("2013-01");
+  });
+
+  it("exposes only year for the year kind, value null", () => {
+    const parsed = parseItemDate("2014-00-00 2014")!;
+    expect(parsed.year).toBe(2014);
+    expect(parsed.month).toBeNull();
+    expect(parsed.day).toBeNull();
+    expect(parsed.value).toBeNull();
+  });
+
+  it("regex-extracts year for text, with null month/day/value", () => {
+    const parsed = parseItemDate("circa 1850")!;
+    expect(parsed.year).toBe(1850);
+    expect(parsed.month).toBeNull();
+    expect(parsed.day).toBeNull();
+    expect(parsed.value).toBeNull();
+
+    const noYear = parseItemDate("0000-00-00 submitted")!;
+    expect(noYear.year).toBeNull();
   });
 });

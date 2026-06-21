@@ -1,6 +1,6 @@
 import { renderMatches, type SearchMatches } from "obsidian";
 
-import { itemDateYear, parseItemDate, type Item } from "@zotlit/db";
+import { parseItemDate, type Item } from "@zotlit/db";
 import { type JournalArticleFields } from "@zotlit/zotero-types";
 
 import { type SettingsService } from "@/services/settings/service";
@@ -47,7 +47,7 @@ function appendJournalMeta(
   fields: JournalArticleFields,
 ): void {
   const creators = creatorSummary(item);
-  const year = itemDateYear(parseItemDate(fields.date))?.toString() ?? "";
+  const year = parseItemDate(fields.date)?.year ?? "";
   const { publicationTitle, volume, issue, pages } = fields;
 
   const hasAuthorYear = !!creators || !!year;
@@ -59,7 +59,7 @@ function appendJournalMeta(
   if (hasAuthorYear) {
     const ay = metaEl.createSpan("author-year");
     if (creators) ay.createSpan({ cls: "creators", text: creators });
-    if (year) ay.createSpan({ cls: "date", text: year });
+    if (year) ay.createSpan({ cls: "date", text: year.toString() });
   }
   if (publicationTitle) {
     metaEl.createSpan({ cls: "publication", text: publicationTitle });

@@ -15,7 +15,6 @@ import {
   getLibraries,
   type Item,
   type ItemRef,
-  itemDateYear,
   parseIndexedKey,
   parseItemDate,
   USER_LIBRARY_ID,
@@ -339,9 +338,9 @@ export class AnnotationView extends ItemView {
           {
             title: "title" in item.fields ? item.fields.title : null,
             creators: item.creators,
-            year: itemDateYear(
-              parseItemDate("date" in item.fields ? item.fields.date : null),
-            ),
+            year:
+              parseItemDate("date" in item.fields ? item.fields.date : null)
+                ?.year ?? null,
           },
           item.key,
         ),

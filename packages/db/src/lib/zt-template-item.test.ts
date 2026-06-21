@@ -53,7 +53,10 @@ describe("itemToTemplateData", () => {
     expect(result.pages).toBe("100-110");
     expect(result.date).toEqual({
       kind: "yearMonth",
-      plain: Temporal.PlainYearMonth.from({ year: 2024, month: 6 }),
+      value: Temporal.PlainYearMonth.from({ year: 2024, month: 6 }),
+      year: 2024,
+      month: 6,
+      day: null,
       raw: "2024-06-00 June 2024",
     });
   });

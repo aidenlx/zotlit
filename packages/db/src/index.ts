@@ -81,12 +81,7 @@ export {
   type IndexedCreator,
   type IndexedItem,
 } from "./queries/index-items";
-export {
-  formatItemDate,
-  itemDateYear,
-  parseItemDate,
-  type ItemDate,
-} from "./lib/zt-date";
+export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";
 export {
   annotationTypeToName,
   type Annotation,
