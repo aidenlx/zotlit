@@ -2,6 +2,8 @@ import { regex } from "arkregex";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { defineToString } from "./to-string";
+
 /**
  * Parsed view of Zotero's "multipart" date field.
  *
@@ -19,11 +21,15 @@ import { Temporal } from "@zotlit/shared/temporal";
  *
  * `raw` is always the verbatim stored value, retained for round-tripping.
  */
-export type ItemDate =
+export type ItemDate = (
   | { kind: "date"; plain: Temporal.PlainDate; raw: string }
   | { kind: "yearMonth"; plain: Temporal.PlainYearMonth; raw: string }
   | { kind: "year"; year: number; raw: string }
-  | { kind: "text"; text: string; raw: string };
+  | { kind: "text"; text: string; raw: string }
+) & {
+  /** ISO-normalized rendering (see {@link formatItemDate}); drives `${date}`. */
+  toString(): string;
+};
 
 /**
  * Ported verbatim from upstream Zotero (with named captures added for typed
@@ -38,7 +44,22 @@ const MULTIPART_RE = regex(
 
 const YEAR_RE = regex("[12]\\d{3}");
 
+/**
+ * The returned object carries a non-enumerable `toString` (ISO-normalized, via
+ * {@link formatItemDate}) so `<%= zt.date %>` renders a machine-friendly date
+ * while `zt.date.plain` stays available for locale formatting.
+ */
 export function parseItemDate(raw: string | null | undefined): ItemDate | null {
+  const date = parseItemDateInner(raw);
+  return (
+    date &&
+    defineToString(date, function () {
+      return formatItemDate(this);
+    })
+  );
+}
+
+function parseItemDateInner(raw: string | null | undefined): ItemDate | null {
   if (!raw) return null;
 
   const match = MULTIPART_RE.exec(raw);
@@ -83,13 +104,19 @@ export function itemDateYear(date: ItemDate | null | undefined): number | null {
   }
 }
 
+/**
+ * ISO-normalized rendering: `date` / `yearMonth` via their `Temporal` value
+ * (`2015-04-27`, `2013-01`), `year` as the bare year. The `text` kind has no
+ * parseable date, so its raw user text is returned verbatim.
+ */
 export function formatItemDate(date: ItemDate | null | undefined): string {
   if (!date) return "";
   switch (date.kind) {
     case "date":
     case "yearMonth":
+      return date.plain.toString();
     case "year":
-      return date.raw.slice(11);
+      return String(date.year);
     case "text":
       return date.text;
   }
