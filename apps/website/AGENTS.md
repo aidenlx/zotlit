@@ -10,6 +10,14 @@ Before substantial work:
 
 # @zotlit/website
 
+ZotLit documentation site — TanStack Start (SSR React) + Tailwind CSS v4 + Nitro 3.
+
+## Commands
+
+Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
+
+- `pnpm --filter @zotlit/website dev` — Vite dev server.
+
 ## Stack
 
 - **TanStack Start** (SSR React) — `@tanstack/react-start`, `@tanstack/react-router`, file-based routing in `src/routes/`.

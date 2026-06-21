@@ -9,8 +9,12 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `apps/website` — the ZotLit website.
 - `packages/config` — shared `tsconfig.*`, `oxlint.base.ts`, `oxfmt.base.ts`. Consumed via the `@zotlit/config` exports map.
 - `packages/db` — Drizzle ORM client for Zotero database query.
+- `packages/item-lookup` — fuzzy item-search engine over `@zotlit/db`.
+- `packages/protocol` — wire format (valibot schemas) for ZotLit ↔ Zotero HTTP + URL protocol.
 - `packages/shared` — shared utilities.
-- `packages/scripts` — helpful scripts
+- `packages/templates` — Eta-based template rendering for literature notes and citations.
+- `packages/scripts` — helpful scripts.
+- `packages/pdfjs-dist` — vendored pdf.js type declarations.
 - `packages/zotero-types` — generated standalone TypeScript item-field shapes from Zotero's upstream schema.
 - `packages/obsidian-api` — **git submodule** (`obsidianmd/obsidian-api`) providing `obsidian.d.ts`. Must be initialized via `mise run init` (or `git submodule update --init --recursive`) before typecheck succeeds.
 
@@ -229,8 +233,8 @@ Run `/paraglide-i18n` skill for related task
   `pnpm-workspace.yaml`; package-local dependencies stay in that package's
   `package.json`. Catalog users reference shared entries as `"oxlint": "catalog:"`.
 - pnpm settings (`allowBuilds`, `minimumReleaseAge`, `catalog`) belong in `pnpm-workspace.yaml`, not under a `"pnpm"` key in `package.json`.
-- `minimumReleaseAge: 1440` (24h delay) is intentional, a supply-chain hardening measure.
+- `minimumReleaseAge` in `pnpm-workspace.yaml` is intentional, a supply-chain hardening measure.
 - `__DEV__` is replaced at build time (`true` in dev mode, `false` in production).
 - Use ripgrep (`rg`) in shell calls — a global hook denies `grep`/`egrep`/`fgrep`.
-- - **Package manager is pnpm.** Use `pnpm exec` instead of `npx`.
+- **Package manager is pnpm.** Use `pnpm exec` instead of `npx`.
 - Use ECMAScript private fields and methods (`#field`, `#method`) for internal state. Avoid TypeScript `private` for service internals.

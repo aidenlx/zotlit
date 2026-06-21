@@ -1,6 +1,13 @@
 # @zotlit/obsidian
 
-Shared constants live in `src/lib/constants.ts`.
+The Obsidian plugin. Shared constants live in `src/lib/constants.ts`.
+
+## Commands
+
+Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
+
+- `pnpm --filter @zotlit/obsidian dev` — Vite watch build.
+- `pnpm --filter @zotlit/obsidian paraglide:compile` — recompile Paraglide messages after editing `messages/*.json` outside dev/build.
 
 ## Logging
 
@@ -58,55 +65,7 @@ Run `/i18n-ui-text` skill when authoring or editing the wording of UI strings (c
 
 ## Notices and toasts
 
-Do **not** call `new Notice(...)` from `obsidian` directly. Use the wrappers in `@/lib/notice` and `@/lib/toast` so every toast picks up the shared layout and behavior.
-
-### Plain notice — `BaseNotice`
-
-For a one-shot string with no actions, use `new BaseNotice(message, duration?)`. It's a drop-in for Obsidian's `Notice` that applies the shared notice layout.
-
-```ts
-import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
-
-new BaseNotice(m.notice_export_failed());
-```
-
-### Notice with actions — `BaseNotice.render`
-
-`BaseNotice.render(cb)` returns a `DocumentFragment` with a title element and an actions row. Pass it to `new BaseNotice(frag)` or any API that accepts a `DocumentFragment` (including `toast.promise`).
-
-```ts
-import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
-
-new BaseNotice(
-  BaseNotice.render((renderer) => {
-    renderer.setTitle(m.notice_login_required());
-    renderer.addAction((button) => {
-      button.setButtonText(m.action_login()).onClick(() => {
-        void this.#deps.auth.openLoginDialog();
-      });
-    });
-  }),
-);
-```
-
-### Promise-driven flow — `toast.promise`
-
-Use `toast.promise` for any async user action where the user benefits from a loading → success/error transition (refresh, sync, import, export). It debounces the loading toast (default 200ms), reuses the same `Notice` for each phase, and silently drops `AbortError` rejections.
-
-```ts
-import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
-
-void toast.promise(db.refresh(), {
-  loading: m.notice_db_refreshing(),
-  success: m.notice_db_refreshed(),
-  error: m.notice_db_refresh_failed(),
-});
-```
-
-Pass `swallowError: false` if the caller needs the resolved value or wants to react to the rejection itself; otherwise the toast is the only side effect.
+Use `BaseNotice` from `@/lib/notice` and `toast.promise` from `@/lib/toast` — never raw `new Notice(...)` from `obsidian`. Read `src/lib/notice.ts` and `src/lib/toast.ts` for the API surface (`BaseNotice`, `BaseNotice.render`, `toast.promise`).
 
 ## CSS
 

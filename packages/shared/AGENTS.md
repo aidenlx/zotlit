@@ -1,5 +1,7 @@
 # @zotlit/shared
 
+Shared utilities consumed by multiple packages — app-agnostic.
+
 ## Module resolution
 
 `tsconfig.lib.json` uses `"moduleResolution": "bundler"` and the package is bundled by tsdown. Relative imports do **not** need a `.ts` extension:
