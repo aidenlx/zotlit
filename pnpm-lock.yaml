@@ -584,6 +584,9 @@ importers:
 
   packages/templates:
     dependencies:
+      '@zotlit/shared':
+        specifier: workspace:*
+        version: link:../shared
       eta:
         specifier: 'catalog:'
         version: 4.6.0

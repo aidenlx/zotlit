@@ -25,6 +25,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@zotlit/shared": "workspace:*",
     "eta": "catalog:",
     "valibot": "catalog:"
   },

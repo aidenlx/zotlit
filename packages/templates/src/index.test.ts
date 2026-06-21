@@ -3,6 +3,8 @@ import content from "@defaults/content.eta?raw";
 import note from "@defaults/note.eta?raw";
 import { describe, expect, it } from "vitest";
 
+import { Temporal } from "@zotlit/shared/temporal";
+
 import { formatBlockquote, TemplateEngine } from "./index";
 import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
 
@@ -234,5 +236,38 @@ describe("formatBlockquote", () => {
 
   it("returns a lone '>' for empty content", () => {
     expect(formatBlockquote("")).toBe(">");
+  });
+});
+
+describe("default value filtering", () => {
+  const render = (source: string, data: object): string => {
+    const engine = new TemplateEngine();
+    engine.define("t", source);
+    return engine.render("t", data);
+  };
+
+  it("renders null and undefined as empty strings", () => {
+    expect(render("[<%= zt.missing %>]", {})).toBe("[]");
+    expect(render("[<%= zt.value %>]", { value: null })).toBe("[]");
+  });
+
+  it("renders a Temporal.Instant as the local date", () => {
+    const instant = Temporal.Instant.from("2026-06-21T04:00:00Z");
+    const expected = instant
+      .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+      .toPlainDate()
+      .toString();
+
+    expect(render("<%= zt.value %>", { value: instant })).toBe(expected);
+  });
+
+  it("renders a Temporal.PlainDate as native ISO", () => {
+    const value = Temporal.PlainDate.from("2013-01-15");
+    expect(render("<%= zt.value %>", { value })).toBe("2013-01-15");
+  });
+
+  it("renders objects via their toString (e.g. ItemDate)", () => {
+    const value = { kind: "year", toString: () => "January 2013" };
+    expect(render("<%= zt.value %>", { value })).toBe("January 2013");
   });
 });

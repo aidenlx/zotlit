@@ -6,6 +6,8 @@ import {
   type TemplateFunction,
 } from "eta/core";
 
+import { Temporal } from "@zotlit/shared/temporal";
+
 import { type AutoTrim } from "./constants";
 import { replaceHelper } from "./replace-helper";
 
@@ -195,7 +197,16 @@ export function formatBlockquote(content: string): string {
 function filterUndefinedNull(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) return value.toISOString();
-  return value as string;
+  if (value instanceof Temporal.Instant) {
+    return value
+      .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+      .toPlainDate()
+      .toString();
+  }
+  // Coercing arbitrary values via their `toString` is this filter's job — e.g.
+  // ItemDate / creators carry a custom `toString`.
+  // oxlint-disable-next-line no-base-to-string
+  return String(value);
 }
 
 export type { TemplateFunction };
