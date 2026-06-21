@@ -143,23 +143,23 @@ describe("formatItemDate", () => {
     expect(formatItemDate(undefined)).toBe("");
   });
 
-  it("returns the user portion for the date variant", () => {
+  it("returns ISO for the date variant", () => {
     expect(formatItemDate(parseItemDate("2015-04-27 April 27, 2015"))).toBe(
-      "April 27, 2015",
+      "2015-04-27",
     );
   });
 
-  it("returns the user portion for the yearMonth variant", () => {
+  it("returns ISO year-month for the yearMonth variant", () => {
     expect(formatItemDate(parseItemDate("2013-01-00 January 2013"))).toBe(
-      "January 2013",
+      "2013-01",
     );
   });
 
-  it("returns the user portion for the year variant", () => {
+  it("returns the bare year for the year variant", () => {
     expect(formatItemDate(parseItemDate("2014-00-00 2014"))).toBe("2014");
   });
 
-  it("returns the user portion for the text variant (multipart prefix stripped)", () => {
+  it("returns the user text for the text variant (no parseable date)", () => {
     expect(formatItemDate(parseItemDate("0000-00-00 submitted"))).toBe(
       "submitted",
     );
@@ -167,5 +167,24 @@ describe("formatItemDate", () => {
 
   it("returns raw verbatim for a non-multipart text variant", () => {
     expect(formatItemDate(parseItemDate("in press"))).toBe("in press");
+  });
+});
+
+describe("parseItemDate toString", () => {
+  it("renders ISO-normalized output for every kind", () => {
+    expect(String(parseItemDate("2015-04-27 April 27, 2015"))).toBe(
+      "2015-04-27",
+    );
+    expect(String(parseItemDate("2013-01-00 January 2013"))).toBe("2013-01");
+    expect(String(parseItemDate("2014-00-00 2014"))).toBe("2014");
+    expect(String(parseItemDate("0000-00-00 submitted"))).toBe("submitted");
+    expect(String(parseItemDate("in press"))).toBe("in press");
+  });
+
+  it("keeps toString non-enumerable (clean spread / JSON)", () => {
+    const parsed = parseItemDate("2013-01-00 January 2013")!;
+    expect(Object.keys(parsed)).not.toContain("toString");
+    expect(parsed.propertyIsEnumerable("toString")).toBe(false);
+    expect(JSON.stringify(parsed)).not.toContain("toString");
   });
 });
