@@ -1,5 +1,6 @@
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
+import { defineToString } from "@/lib/to-string";
 import { type ItemTag, type Tag } from "@/lib/zt-tag";
 
 import { defineQuery, type QueryRow } from "./_shared";
@@ -45,11 +46,12 @@ function toItemTag(
   if (!tag) {
     throw new Error(`Missing tag row for tagID ${row.tagID}`);
   }
-  return {
-    itemID: row.itemID,
-    tag,
-    type: row.type,
-  };
+  return defineToString(
+    { itemID: row.itemID, tag, type: row.type },
+    function () {
+      return this.tag.name;
+    },
+  );
 }
 
 const byTagName = (a: ItemTag, b: ItemTag): number =>

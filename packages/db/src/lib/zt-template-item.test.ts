@@ -99,8 +99,20 @@ describe("itemToTemplateData", () => {
     const result = itemToTemplateData(item);
 
     expect(result.creators).toEqual<readonly TemplateCreator[]>([
-      { family: "Smith", given: "Jane", literal: null, role: "author" },
-      { family: "Jones", given: "Bob", literal: null, role: "editor" },
+      {
+        family: "Smith",
+        given: "Jane",
+        literal: null,
+        role: "author",
+        fullName: "Jane Smith",
+      },
+      {
+        family: "Jones",
+        given: "Bob",
+        literal: null,
+        role: "editor",
+        fullName: "Bob Jones",
+      },
     ]);
   });
 
@@ -124,6 +136,7 @@ describe("itemToTemplateData", () => {
       given: "",
       literal: "World Health Organization",
       role: "author",
+      fullName: "World Health Organization",
     });
   });
 
