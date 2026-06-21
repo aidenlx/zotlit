@@ -10,6 +10,7 @@ import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
+import { type CompatContext, renderCompatSettings } from "./compat";
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { databasePageItems, libraryDefinition } from "./database";
 import { liveUpdatesPageItems } from "./live-updates";
@@ -41,6 +42,13 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #db: DatabaseService;
   readonly #zoteroPref: ZoteroPrefService;
 
+  /**
+   * Backward-compat (Obsidian < 1.13.0) only: teardown for the event
+   * subscriptions wired up during the current imperative `display()`. Stays
+   * `undefined` on 1.13.0+, where the declarative path runs instead.
+   */
+  #compatStack: DisposableStack | undefined;
+
   constructor({
     plugin,
     settings,
@@ -54,7 +62,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#db = db;
     this.#zoteroPref = zoteroPref;
 
-    plugin.register(template.on("compile-status-changed", () => this.update()));
+    plugin.register(
+      template.on("compile-status-changed", () => this.#requestUpdate()),
+    );
 
     // Settings: the frontmatter list is structural — its edits add/remove rows,
     // so the tab must re-render. Reference identity changes only when that key
@@ -66,9 +76,21 @@ export class ZotLitSettingTab extends PluginSettingTab {
         const fields = value?.["note.frontmatter-fields"];
         if (fields === lastFields) return;
         lastFields = fields;
-        this.update();
+        this.#requestUpdate();
       }),
     );
+  }
+
+  /**
+   * Reactive refresh that works on both rendering paths. On 1.13.0+ the
+   * declarative `update()` re-runs `getSettingDefinitions()`; on < 1.13.0
+   * (where `update()` doesn't exist) it rebuilds the imperative tab, but only
+   * while it is open — `#compatStack` is set exactly when `display()` is live.
+   */
+  #requestUpdate(): void {
+    const maybeUpdate = (this as { update?: () => void }).update;
+    if (typeof maybeUpdate === "function") maybeUpdate.call(this);
+    else if (this.#compatStack) this.display();
   }
 
   /** Bridge declarative `control` reads to {@link SettingsService}. */
@@ -160,6 +182,38 @@ export class ZotLitSettingTab extends PluginSettingTab {
     ];
 
     return items;
+  }
+
+  /**
+   * Backward-compat render path for Obsidian < 1.13.0, which calls `display()`
+   * instead of reading {@link getSettingDefinitions}. On 1.13.0+ the non-empty
+   * definitions array wins and this is never invoked. Each call rebuilds from
+   * scratch and replaces the previous render's teardown stack.
+   */
+  override display(): void {
+    this.#compatStack?.dispose();
+    const stack = new DisposableStack();
+    this.#compatStack = stack;
+
+    this.containerEl.empty();
+
+    const ctx: CompatContext = {
+      app: this.#plugin.app,
+      plugin: this.#plugin,
+      settings: this.#settings,
+      db: this.#db,
+      zoteroPref: this.#zoteroPref,
+      rerender: () => this.display(),
+      defer: (cleanup) => stack.defer(cleanup),
+    };
+    renderCompatSettings(this.containerEl, ctx);
+  }
+
+  /** Tear down the imperative render's subscriptions (no-op on 1.13.0+). */
+  override hide(): void {
+    this.#compatStack?.dispose();
+    this.#compatStack = undefined;
+    super.hide();
   }
 }
 
