@@ -5,6 +5,13 @@ helpers for reading `zotero.sqlite`. App-agnostic: consumers create a client and
 call the exports; opening the data directory and watching for changes lives
 elsewhere.
 
+## Commands
+
+Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific tools:
+
+- `pnpm --filter @zotlit/db dev` — tsdown watch.
+- `pnpm --filter @zotlit/db db:pull` — drizzle-kit pull.
+
 ## Query authoring
 
 Prefer, in order:
