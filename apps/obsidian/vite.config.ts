@@ -6,7 +6,8 @@ import { join, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
 
-import { parseManifest } from "./scripts/manifest.js";
+import packageJson from "./package.json" with { type: "json" };
+import { parseManifest, parseMinElectronVersion } from "./scripts/manifest.js";
 
 const builtins = [
   ...builtinModules,
@@ -51,6 +52,9 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __DEV__: JSON.stringify(isDev),
+      __MIN_ELECTRON_VERSION__: JSON.stringify(
+        parseMinElectronVersion(packageJson),
+      ),
       "process.env.NODE_ENV": JSON.stringify(mode),
     },
     build: {

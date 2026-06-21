@@ -1,4 +1,7 @@
 import { Plugin } from "obsidian";
+import { gte as semverGte } from "semver";
+
+import * as m from "@/paraglide/messages";
 
 import { initI18n } from "./lib/i18n";
 import { BaseNotice } from "./lib/notice";
@@ -11,6 +14,36 @@ import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import "./zt-main.css";
+
+/**
+ * Block startup on Obsidian installers whose bundled Electron predates the
+ * `minElectronVersion` declared in package.json (injected at build time as
+ * `__MIN_ELECTRON_VERSION__`), pointing the user at the installer-update docs.
+ *
+ * @throws when the running Electron is too old, aborting plugin load.
+ */
+function assertElectronVersion(): void {
+  const version = process.versions.electron;
+  if (!version) return;
+  if (semverGte(version, __MIN_ELECTRON_VERSION__)) return;
+
+  new BaseNotice(
+    BaseNotice.render((renderer) => {
+      renderer.setTitle(m.notice_installer_update_needed());
+      renderer.addAction((button) => {
+        button
+          .setButtonText(m.notice_installer_update_learn_more())
+          .onClick(() => {
+            window.open("https://obsidian.md/help/updates#Installer+updates");
+          });
+      });
+    }),
+    0,
+  );
+  throw new Error(
+    `Obsidian installer is too old (Electron v${version}, required >=v${__MIN_ELECTRON_VERSION__})`,
+  );
+}
 
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
 export default class ZotLitPlugin extends Plugin {
@@ -30,6 +63,9 @@ export default class ZotLitPlugin extends Plugin {
 
     // Register the Paraglide locale strategy before any service can call `m.*`.
     initI18n();
+
+    // Block load on too-old Obsidian installers before allocating any resources.
+    assertElectronVersion();
 
     // Local stack gives automatic rollback if any synchronous startup wiring
     // fails before the plugin commits ownership with `stack.move()`.
