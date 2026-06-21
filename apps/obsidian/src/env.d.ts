@@ -6,3 +6,4 @@ declare module "@zotlit/templates/defaults/*?raw" {
 }
 
 var __DEV__: boolean;
+var __MIN_ELECTRON_VERSION__: string;
