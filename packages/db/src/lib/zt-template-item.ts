@@ -3,6 +3,7 @@ import { FIELD_ALIASES } from "@zotlit/zotero-types";
 
 import { type Creator, type Item } from "@/queries/items";
 
+import { defineToString } from "./to-string";
 import { parseItemDate, type ItemDate } from "./zt-date";
 import { type ItemTag } from "./zt-tag";
 
@@ -13,6 +14,8 @@ export interface TemplateCreator {
   literal: string | null;
   /** Zotero creator type: `"author"`, `"editor"`, `"translator"`, etc. */
   role: string;
+  /** `literal` for institutional creators, `"given family"` for personal names. */
+  fullName: string;
 }
 
 /**
@@ -126,17 +129,32 @@ export function itemToTemplateData(
 
 function toTemplateCreator(c: Creator): TemplateCreator {
   if (c.fieldMode === 1) {
-    return {
-      family: "",
-      given: "",
-      literal: c.lastName ?? "",
-      role: c.creatorType,
-    };
+    const literal = c.lastName ?? "";
+    return defineToString(
+      {
+        family: "",
+        given: "",
+        literal,
+        role: c.creatorType,
+        fullName: literal,
+      },
+      function () {
+        return this.fullName;
+      },
+    );
   }
-  return {
-    family: c.lastName ?? "",
-    given: c.firstName ?? "",
-    literal: null,
-    role: c.creatorType,
-  };
+  const family = c.lastName ?? "";
+  const given = c.firstName ?? "";
+  return defineToString(
+    {
+      family,
+      given,
+      literal: null,
+      role: c.creatorType,
+      fullName: `${given} ${family}`.trim(),
+    },
+    function () {
+      return this.fullName;
+    },
+  );
 }
