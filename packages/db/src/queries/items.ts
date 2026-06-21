@@ -42,7 +42,7 @@ export interface BaseItem {
    * are assigned as direct item properties, including built-ins newer than the
    * generated schema snapshot.
    */
-  fields: ReadonlyMap<string, string | null>;
+  customFields: ReadonlyMap<string, string | null>;
 }
 
 export type Item = BaseItem & ItemFields;
@@ -175,7 +175,7 @@ function toItem(row: ItemRow, groupID: number | null): Item {
     dateModified: row.dateModified,
     creators,
     primaryCreatorType,
-    fields: customFields,
+    customFields,
     itemType: row.itemType.typeName,
     ...namedProps,
   } as Item;

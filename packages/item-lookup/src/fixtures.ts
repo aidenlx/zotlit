@@ -62,7 +62,7 @@ export function makeItem(options: ItemFixtureOptions): Item {
     ),
     creators: options.creators ?? [],
     primaryCreatorType: options.primaryCreatorType ?? null,
-    fields: new Map<string, string | null>(),
+    customFields: new Map<string, string | null>(),
   };
   const fields = {
     title: options.title ?? null,

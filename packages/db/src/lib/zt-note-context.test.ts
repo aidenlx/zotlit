@@ -19,7 +19,7 @@ function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
     dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: "author",
-    fields: new Map(),
+    customFields: new Map(),
     ...overrides,
   } as Item;
 }

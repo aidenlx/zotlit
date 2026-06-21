@@ -16,7 +16,7 @@ function makeItem(overrides: Partial<Item> & { itemType: string }): Item {
     dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: null,
-    fields: new Map(),
+    customFields: new Map(),
     ...overrides,
   } as Item;
 }
@@ -143,7 +143,7 @@ describe("itemToTemplateData", () => {
   it("includes custom fields as direct properties", () => {
     const item = makeItem({
       itemType: "journalArticle",
-      fields: new Map([["myCustomField", "custom value"]]),
+      customFields: new Map([["myCustomField", "custom value"]]),
     });
 
     const result = itemToTemplateData(item);
