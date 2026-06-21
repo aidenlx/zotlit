@@ -15,7 +15,7 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -23,11 +23,11 @@ jobs:
       # compiles Paraglide messages — so no separate install step is needed.
       # `--no-submodules` skips checkout since actions/checkout already fetched
       # them above.
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
       # Restores the pnpm store (keyed on pnpm-lock.yaml) before the install
       # inside `mise run init`. pnpm itself is activated by mise's corepack
       # post-install, so this step no-ops on install and is here for the cache.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           cache: true
       - run: mise run init --no-submodules
@@ -36,7 +36,7 @@ jobs:
       # build/test tasks restore instead of recomputing. github.sha makes each
       # run save a fresh entry; restore-keys fall back to the most recent cache.
       - name: Turborepo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}

@@ -9,6 +9,7 @@ permissions:
   pull-requests: write
   id-token: write
   attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: release
@@ -20,16 +21,16 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       # `mise run init` installs deps (frozen lockfile), builds packages/*, and
       # compiles Paraglide messages. `--no-submodules` skips checkout since
       # actions/checkout already fetched them.
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
       # pnpm is activated by mise's corepack post-install; this step is only
       # here for the store cache.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           cache: true
       - run: mise run init --no-submodules
@@ -73,7 +74,7 @@ jobs:
 
       - name: Attest provenance
         if: steps.gate.outputs.exists == 'false'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest@v4
         with:
           subject-path: |
             apps/obsidian/dist/main.js
@@ -85,16 +86,16 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       # `mise run init` installs deps (frozen lockfile), builds packages/*, and
       # compiles Paraglide messages. `--no-submodules` skips checkout since
       # actions/checkout already fetched them.
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
       # pnpm is activated by mise's corepack post-install; this step is only
       # here for the store cache.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           cache: true
       - run: mise run init --no-submodules
@@ -172,6 +173,6 @@ jobs:
       # manifest the version-gate rewrote.
       - name: Attest provenance
         if: steps.gate.outputs.exists == 'false'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest@v4
         with:
           subject-path: ${{ steps.updates.outputs.attest }}
