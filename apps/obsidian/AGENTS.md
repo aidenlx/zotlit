@@ -50,7 +50,7 @@ new BaseNotice(m.notice_indexed_library({ count }));
 ```
 
 - **Compilation**: `paraglideVitePlugin` in `vite.config.ts` re-emits `src/paraglide/` on every `dev`/`build`/`build:dev`. The output is gitignored, so the compiled `m.*` and `paraglide/runtime` exports do not exist yet on fresh checkout.
-- **Recompile without a full build** (e.g. after editing `messages/*.json`, so typecheck sees new `m.*`): `pnpm run paraglide:compile`.
+- **Recompile manually** (e.g. after editing `messages/*.json` outside of `dev`/`build`): `pnpm run paraglide:compile`.
 
 When extending the test `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
 
@@ -121,9 +121,9 @@ Vitest runs in Node and resolves `"obsidian"` to a local mock via
 
 Run from this package:
 
-- `pnpm test` — typechecks `tsconfig.test.json` with tsgo, then runs `vitest run`.
-- `pnpm typecheck:test` — typecheck only (no test execution).
-- `pnpm exec vitest run path/to/file.test.ts` — single file, no typecheck.
+- `pnpm test` — runs `vitest run`.
+- `pnpm exec vitest run path/to/file.test.ts` — single file.
+- Typecheck: run `pnpm lint` from repo root (builds deps, typechecks, lints in one cached pass).
 - `pnpm exec vitest` — watch mode.
 
 Extend the mock when a service starts touching new `obsidian` exports; add the
