@@ -1,6 +1,6 @@
 # ZotLit v2 post-alpha plan
 
-Extracted from `[MIGRATION.md](./MIGRATION.md)` after alpha (Stages 0–8) shipped.
+Extracted from `[MIGRATION.md](./MIGRATION.md)` after alpha (Stages 0–8) shipped. Shipped work lives in git history and stage docs; this file tracks only what remains.
 
 ## 1. Zotero note import (Stage 9)
 
@@ -14,7 +14,7 @@ The first post-alpha stage. Wires the Stage-4 `NoteParser` into a Zotero-initiat
 
 ### 1.2 Embedded image resolution
 
-Already implemented in Stage 8. Remaining: wire the import flow to construct `NoteEmbeddedImageDeps` (`db.client`, `libraryID`, `AttachmentPathContext`, prepared `AttachmentImportService` handle) and pass it into `parseNote`.
+Stage-4 parser support ships; wire the import flow to construct `NoteEmbeddedImageDeps` (`db.client`, `libraryID`, `AttachmentPathContext`, prepared `AttachmentImportService` handle) and pass it into `parseNote`.
 
 ### 1.3 Citation resolution
 
@@ -41,83 +41,46 @@ Already implemented in Stage 8. Remaining: wire the import flow to construct `No
 
 ## 2. Companion-dependent features
 
-Core companion surface ships: `apps/zotero` pushes events over HTTP, Obsidian listens via `LiveUpdateService`, and Zotero menus launch `obsidian://zotlit/{open,update}` links. Remaining gaps are below.
-
-
-| Feature                        | v1 source                          | Notes                                                                                                                                                                                                                                                                            |
-| ------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ~~Server (HTTP listener)~~     | `services/server/service.ts`       | **(done)** `LiveUpdateService` (`services/live-update/service.ts`): Hono `POST /notify`, validates `@zotlit/protocol` events, drives annot-view reader follow. Settings live under `server.*`.                                                                                   |
-| ~~Protocol handlers~~          | `note-feature/protocol/service.ts` | **(partial)** `obsidian://zotlit/{open,update}` handlers in `services/protocol/register.ts`; Zotero menus in `apps/zotero/src/menus/`. Stage 9 note import extends this pattern (Zotero menu → protocol → Obsidian orchestrator), not an Obsidian import UI. `export` (always create fresh) and batch `update-many` / `export-many` remain future work. Wire contract: `packages/protocol/src/url.ts`. |
-| ~~Setting-tab `server` group~~ | `setting-tab/`                     | **(done)** "Live updates" sub-page (`setting-tab/live-updates.ts`): `server.enabled`, `server.port`, `server.hostname`.                                                                                                                                                          |
-| ~~`apps/zotero` companion~~    | —                                  | **(MVP done)** Menus (library open/update, reader open), HTTP notify (`item/update`, `reader/active`, `reader/annot-select`), prefs pane. Release pipeline still in `apps/zotero/DEFERRED.md`.                                                                                   |
-| ~~`bg:notify`~~                | —                                  | **(dropped)** DB refresh is fs.watch; open/update/export flows use `obsidian://` links; live reader state uses HTTP notify.                                                                                                                                                      |
-| Topic-import                   | `note-feature/topic-import/`       | Tag-driven auto-create; not yet ported (see §2.1)                                                                                                                                                                                                                                |
-| Companion release              | —                                  | First user-installable XPI + `update.json` CI — see `apps/zotero/DEFERRED.md`                                                                                                                                                                                                    |
-
+| Feature | v1 source | Notes |
+| --- | --- | --- |
+| Protocol batch actions | `note-feature/protocol/service.ts` | Batch `update-many` / `export-many` over the existing `{open,update}` wire contract (`packages/protocol/src/url.ts`). v1 `export` (always create fresh) is **dropped** — use `update` for in-place refresh. Stage 9 note import extends the same single-item pattern (Zotero menu → protocol → Obsidian orchestrator). |
+| Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; not yet ported (see §2.1) |
+| Companion release | — | First public release cut and Obsidian community-plugin listing. Release pipeline ships (`pnpm release`, `.github/workflows/{ci,release}.yml`, Zotero update manifests on `zotero-release`) — see `CONTRIBUTING.md` and `docs/CI_SETUP.md`. |
 
 ### 2.1 Topic-import (v1 reference)
 
-A "subscribe a note to a Zotero tag" workflow: attach a `#zt-topic/<name>` tag to a note, flip the status-bar toggle, and every item subsequently **added** in Zotero auto-generates a Markdown note tagged with that topic. Lets the user collect literature under one Zotero subject and have it land in the vault automatically.
+A "subscribe a note to a Zotero tag" workflow: attach a `#zt-topic/<name>` tag to a note, flip the status-bar toggle, and every item subsequently **added** in Zotero auto-generates a Markdown note tagged with that topic.
 
 v1 lives in `app/obsidian/src/note-feature/topic-import/` (~267 lines, an `@ophidian/core` `Service` across 4 files):
 
 - **Topic detection** (`service.tsx` + `utils.ts`) — listens to `workspace.on("file-open")` + `metadataCache.on("changed")`, runs `getAllTags(cache)`, keeps the tags prefixed `#zt-topic/`. A zustand store holds `topics: string[]` + `activeTopic`. A note may carry several topic tags.
 - **Status-bar UI** (`status.tsx`) — `ImportingStatus` checkbox. No topic → "no topic", disabled; one → `#name`; many → a `Menu` to pick which topic before watching. Checking it pins `activeTopic`. **Watching locks the topic**: while `watching`, `onFileOpen` returns early so switching notes doesn't change the subscribed topic.
-- **Auto-create** (`service.tsx onload` + `create-note.tsx`) — subscribes to the server's `bg:notify` event carrying `INotifyRegularItem` (`{ event: "regular-item/update", add[], modify[], trash[] }`, `lib/protocol/src/bg.ts`). On an `add` while a topic is active, `untilDbRefreshed` waits for the local DB to catch up (Zotero pushes before fs-watch refresh), then `createNote` renders each new item through the template, injecting the topic as a tag (`renderNote(extra, ctx, { tags: [currTopic] })`).
+- **Auto-create** (`service.tsx onload` + `create-note.tsx`) — subscribes to the server's `bg:notify` event carrying `INotifyRegularItem` (`{ event: "regular-item/update", add[], modify[], trash[] }`, `lib/protocol/src/bg.ts`). On an `add` while a topic is active, `untilDbRefreshed` waits for the local DB to catch up, then `createNote` renders each new item through the template, injecting the topic as a tag.
 
-Data flow: Zotero notifier → HTTP push → server `bg:notify` → `TopicImport`. **Companion-dependent**: without the `apps/zotero` push there is no `add` signal to subscribe to, which is why it sits post-alpha.
-
-**v2 porting note:** v1's `bg:notify` + `regular-item/update` were **dropped** in v2 (see the table row above) — DB refresh is now fs.watch and live state uses HTTP `/notify`. A v2 port must drive the auto-create leg off `LiveUpdateService` `item/update` events instead, with topic detection/UI carried over largely intact.
+**v2 porting note:** v1's `bg:notify` + `regular-item/update` were dropped — DB refresh is fs.watch and live state uses HTTP `/notify`. A v2 port must drive the auto-create leg off `LiveUpdateService` `item/update` events instead, with topic detection/UI carried over largely intact.
 
 ## 3. Annot view follow-ups
 
-Deferred from Stage 8.
-
 - **Annotation merging** — v1's `mergeAnnots` / `mergeTags`. Combine annotations from multiple attachments or deduplicate across updates. The Zotero-side reader annotation context-menu item ("Merge Annotations") is scaffolded but commented out in `apps/zotero/src/menus/reader-annotation.ts` (FTL `zotlit-menu-reader-annot-merge` retained); re-enable it here when the feature returns.
-- ~~**Zotero-reader follow mode**~~ — **(done)** Annot view follow modes (`note` / `reader` / `linked`) in `views/annot-view/`, driven by `LiveUpdateService` reader pushes; reader-selected annotations highlight in follow mode. v1 **"Jump to note"** remains unbuildable — its block-ID index was removed as dead infra in Stage 5.
 
 ## 4. Template service follow-ups
 
-Post-Stage 1 enhancements, not alpha-blocking.
-
-- **Template engine extraction → `@zotlit/templates`** — **(done)** The Eta renderer
-  lives in `packages/templates` (`TemplateEngine extends Eta`), Obsidian-free, with
-  `buildNoteContext` moved into `@zotlit/db`. `apps/obsidian`'s `TemplateService` is
-  now a thin host adapter (vault scan + watcher push + `setAutoTrim`). See §4.2 for
-  the design decisions that the code alone doesn't explain. The **hosted template
-  playground/preview** (an `apps/` editor over a real Zotero DB via sqlite-wasm) was
-  the motivation but is **not built** — this work shipped the extraction plus a
-  portability proof only (the package Vitest suite, `packages/templates/src/index.test.ts`,
-  passes with **no Obsidian mock**). Playground app, sqlite-wasm wiring, and editor UI
-  remain follow-up.
-- **Field-name completion in `EtaSuggest`** — `it.title`, `it.citekey`, `it.creators`, `it.tags`, etc. Needs Stage 5 helper type definitions to drive the suggestion list.
-- `**template-edited` event** on `TemplateService` (nanoevents) — add when a live-preview consumer (annot view) needs to re-render on template edits. Today one-shot renders rely on the vault watcher refreshing template content and the render-time mtime+size check invalidating compiled functions.
-- **Async render path** (`renderAsync`) — only if a consumer ever needs `await`-able rendering; Stage 1 is sync end-to-end.
+- **Template playground** — hosted editor over a real Zotero DB via sqlite-wasm (`apps/`). The `@zotlit/templates` extraction shipped; playground app, sqlite-wasm wiring, and editor UI remain.
+- **User-facing template docs** — drafted in `docs/template-v2/` (syntax, data reference, frontmatter, defaults, migration); wire into the website.
+- **Field-name completion in `EtaSuggest`** — `zt.title`, `zt.citekey`, `zt.creators`, `zt.tags`, etc. Needs template type definitions to drive the suggestion list.
+- **`template-edited` event** on `TemplateService` (nanoevents) — add when a live-preview consumer (annot view) needs to re-render on template edits.
+- **Async render path** (`renderAsync`) — only if a consumer ever needs `await`-able rendering.
 
 ### 4.1 v1 template syntax compat layer (deferred)
 
-A one-shot detector/transformer that keeps a user's **v1** template files rendering under the v2 engine, so upgraders aren't silently broken. v2 made several intentional, non-back-compatible template changes; none are migrated today. Deferred until there is demand from real upgraders — until then these are hard breaks documented for users, not shims.
+A one-shot detector/transformer that keeps a user's **v1** template files rendering under the v2 engine. Deferred until there is demand from real upgraders — until then these are hard breaks documented in `docs/template-v2/migration.md`, not shims.
 
 Known v1→v2 breaks the compat layer would cover:
 
 - **Variable prefix** — v1 `it.*` → v2 `zt.*` (`varName` changed globally).
 - **Field names** — v1 raw Zotero field names → v2 CSL-inspired (`abstractNote` → `abstract`, `publicationTitle` → `containerTitle`, flat `zt.*` with no `fields` sub-object).
-- **Default-template filenames** — the prefix changes from v1 `zt-*` to v2 `zotlit-*`, and the engine uses one uniform `zotlit-<name>.eta.md ↔ <name>` rule (scanner `^zotlit-([A-Za-z0-9-]+)\.eta\.md$`, no abbreviations), so every v1 filename is unrecognized: `zt-note` → `zotlit-note`, `zt-annots`/`zt-annot` → `zotlit-content`/`zotlit-annotation` (`annots`→`content` was Stage 5; `annot`→`annotation` de-abbreviates in the extraction), `zt-cite`/`zt-cite2` → `zotlit-cite`/`zotlit-cite2`. Removed entirely: `zt-field.eta.md`, `zt-colored.eta.md`.
+- **Default-template filenames** — v1 `zt-*` → v2 `zotlit-*` (`zt-note` → `zotlit-note`, `zt-annots`/`zt-annot` → `zotlit-content`/`zotlit-annotation`, `zt-cite`/`zt-cite2` → `zotlit-cite`/`zotlit-cite2`; removed: `zt-field`, `zt-colored`).
 - **`eta-prf` fork syntax** — any template relying on fork-only behavior not covered by upstream `eta@^4`.
-
-### 4.2 Template engine extraction — design notes (done)
-
-Rationale the shipped code doesn't surface, kept for the playground follow-up and future maintainers.
-
-- **Name mode, not file mode.** Eta resolves a template two ways: *file mode* (set both `resolvePath` + `readFile` → resolve a path, read fs, cache by filepath) and *name mode* (the `eta/core` default → plain `templatesSync.get(name)` against templates preloaded via `define(name, source)`). The old `ObsidianEta` hand-rolled file mode (`resolveTemplatePath`, `completeTemplatePath`, `dirContainsPath`, `filepathCache`, `views`, a `render` override). Every default template only does `include("content", …)` / `include("annotation", …)` — **bare names, no relative paths** — so file mode bought nothing. Dropping it is why all that path-resolution machinery, the `node:path/posix` dependency, and the `@`-prefix special case are gone. The engine holds its own `Map<name, source>` (eta's `Cacher` stores compiled fns, not source) so `setAutoTrim` can recompile every registered template from source.
-- **Freshness is push, not poll.** The old `CompileSnapshot` mtime+size polling is gone. The Obsidian watcher pushes: create/modify → `define(name, source)`; delete → re-`define` the package default if the name is canonical, else `remove(name)`; rename = drop old + define new.
-- **A broken override fails loudly, never silently falls back.** `#defineTemplate` records the compile error and `remove()`s the template from the engine — it does **not** install the package default in its place. So `render(name)` throws, and a parent template that `include()`s the broken name throws too (eta can't resolve it) rather than rendering the default and hiding the breakage. The package default is used only when there is genuinely no override (`#useDefault`, called from the initial scan and the delete/rename-away path), which is a no-override condition, not error recovery. The setting-tab row shows the override path plus the compile error and states that rendering will fail until fixed.
-- **tsdown-built, four entrypoints.** The package builds with tsdown (`exports: true` + `unbundle: true`, matching `@zotlit/db`'s built-dist convention) into `./dist/*.mjs`, exposing four entrypoints: `.` (the host-agnostic engine — `TemplateEngine`, `formatBlockquote`), `./constants` (the `autoTrimSchema` valibot schema and the `AutoTrim` type derived from it), `./obsidian` (the Obsidian seam — the managed-region markers, their formatter, and the opt-in managed-region wrap), and `./frontmatter` (`evalFrontmatterFields` + `FrontmatterField`). The `.eta` defaults stay raw source: `tsdown.config.ts`'s `customExports` re-adds the `./defaults/*` → `./defaults/*.eta` wildcard that auto-export generation otherwise drops, so `?raw` imports (`import note from "@zotlit/templates/defaults/note?raw"`) resolve through it unchanged.
-- **`autoTrimSchema` is the single source of truth for `AutoTrim`.** The valibot union lives on `./constants`; `AutoTrim` is `v.InferOutput<typeof autoTrimSchema>`, and the obsidian settings schema reuses `autoTrimSchema` directly for `template.auto-trim-{leading,trailing}` instead of redeclaring the literal union. `valibot` therefore joins `eta` as a runtime dep (already a dep of `@zotlit/db` and the obsidian app). The engine entrypoint imports only the `AutoTrim` **type** from `./constants`, so that import is erased at build and importing `.` pulls no valibot at runtime; valibot loads only for value-level consumers of `./constants` (the settings schema).
-- **Managed-region wrap is opt-in, not baked into the engine.** The engine bakes in only the generic include-data passthrough (eta-4 spreads `include()` data into the parent object; v1 templates pass arrays through `include()`, so it restores direct passthrough) — host-agnostic. The Obsidian-specific "wrap the content template's output in managed-region markers" behaviour ships on the `./obsidian` entrypoint, alongside the markers and their formatter (`lib/constants.ts` no longer defines the markers); the host opts into it when it constructs the engine. The wrap keys off the content template's name and runs on both the direct render and the `include()` path, so the content template wraps identically either way. **Consequence:** a host-agnostic consumer (the playground) leaves it out and renders the content template verbatim, or opts in for exact Obsidian behaviour. The engine itself never names `content` or the markers — the seam is host-supplied and the content-template name is the host's vault convention.
-- **`buildNoteContext` is portable.** Moved into `@zotlit/db` (`lib/zt-note-context.ts`). Its Obsidian-specific bits (`fileLink`, `imgEmbed`) are injected resolvers on `NoteContextInput`, so the playground supplies its own. The engine never sees DB types — only the plain `zt` object.
-- **Frontmatter is a value-producing mini-engine, also extracted.** `evalFrontmatterFields` + the `FrontmatterField` type moved into `@zotlit/templates` (`src/frontmatter.ts`, exposed as the `./frontmatter` entrypoint) so the playground can preview frontmatter the same way it renders the body. It stays a bare `new Function` evaluator rather than routing through `Eta.render` because it returns typed values (numbers/arrays stay intact) instead of a stringified render. It types `zt` as plain `object` — no `NoteTemplateContext`, no generic — so the package never imports DB types. The app-side `note-feature/frontmatter.ts` remains the composition layer: it pre-filters `RESERVED_KEYS`, injects system fields (`zotero-key`/`citekey`), handles attachment scope, and owns `mergeManagedFrontmatter` (the Obsidian `processFrontMatter` update path). The single-field `evalFrontmatterField` is a private helper, not exported — the playground will want the multi-field form; re-export if a single-expr caller (e.g. live per-row preview, §5) materializes.
-- **Feature-owned defaults stayed in `apps/obsidian`.** `DEFAULT_NOTE_FILENAME` + `DEFAULT_FRONTMATTER_FIELDS` relocated to `note-feature/defaults.ts` (per the template-service boundary); the `zotlit-<name>.eta.md ↔ <name>` scanner, the `zotlit-` prefix, and the `.md` extension are an Obsidian-vault convention the package knows nothing about.
 
 ## 5. Setting-tab enhancements
 
@@ -130,21 +93,22 @@ Deferred from Stage 6.
 
 ## 6. Note feature follow-ups
 
-Deferred from Stage 5.
+### 6.1 Multi-attachment behavior
 
-- `**zt-attachments` frontmatter field** — read/write scoping + v1 numeric-ID migration. Lands with the attachment selection UI.
+Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annotation Item.
 
-### 6.1 Alt-mode secondary citation — **(done)**
+**Alpha (shipped):**
 
-Insert a **secondary** (narrative/in-prose) citation alongside the default **primary** one: primary renders bracketed (`cite` template → `[@key]`), secondary renders bare (`cite2` template → `@key`) for "as @author shows…" prose.
+- **All attachments by default** — create, update, and overwrite always include every attachment; no selection UI; `zt-attachments` is never read.
+- **`zt.annotations`** — flat list across all attachments; each annotation carries `parentAttachment` so templates can group/filter by source.
+- **`zt.attachments`** — top-level `TemplateAttachment[]` on the note context.
+- **`zt-attachments` is scope input, not managed output** — excluded from the managed frontmatter set (union/append-only merge does not apply).
 
-Migrated from v1 (`note-feature/citation-suggest/`):
+**Post-alpha (land together):**
 
-- **Render switch** — `NoteFeatures.renderCitation` (`services/note-feature/service.ts`) takes a `secondary` arg selecting `"cite2"` vs `"cite"`. Single chokepoint both insertion paths share.
-- **Editor-suggest trigger** (`views/citation-suggest/editor-suggest.ts`) — a **trailing `/`** in the query (stripped before searching) sets `#secondary`, read in `selectSuggestion`. Instruction: "/ ↵".
-- **Insert-modal trigger** (`views/citation-suggest/insert-modal.ts`) — **Shift+Enter** via `Keymap.isModifier(evt, "Shift")` on `onChooseSuggestion`'s evt. Instruction: "⇧↵".
-
-The `cite2` template was already registered, shipped a default (`defaults/zt-cite2.eta.md`), is user-editable, and migrates from v1; no new settings needed.
+- **`zt-attachments` scoping** — missing or empty → all attachments at update time (including newly added ones). Present with keys → scoped to those specific attachments. Read/write wiring lands with the selection UI below.
+- **v1 backward compat** — `zt-attachments` values that are numeric strings (v1 item IDs) are resolved to attachments by ID, then migrated to string keys on first update. Stale v1 values left unread in alpha remain as harmless unmanaged metadata until then.
+- **Attachment selection UI** — v1 reference: `atch-suggest.ts` (`cacheAttachmentSelect`, `chooseAnnotAtch`). Port as whitelist + blacklist that writes `zt-attachments`; deferred from alpha.
 
 ## 7. PDF outline parser
 
@@ -154,33 +118,64 @@ Source: `services/pdf-parser/service.ts`.
 
 ## 8. Polish & tuning
 
-Known issues carried from alpha.
-
 - **Citation suggester styling** — the current citation item row in editor-suggest and quick-switcher has styling issues.
-- **ItemLookup fuzzy search tuning** — MiniSearch scoring is functional but not well tuned; empirical bench/tuner work is planned (`packages/item-lookup/TODOS.md`).
 
-## 9. Contributor testing fixtures & collaboration guide *(TBD)*
+### 8.1 ItemLookup bench/tuner
 
-Shared fixtures and onboarding so contributors can exercise ZotLit end-to-end with the same baseline data and workflows.
+MiniSearch scoring is functional but not well tuned. Build an empirical bench/tuner harness in `packages/item-lookup/bench/` to tune `ScoringConfig` against a real Zotero corpus (today: `/Users/aidenlx/repo/zotlit-repo/1287.zotero.migrated.sqlite`; future: §9 common testing DB).
 
-- **Common testing Zotero database** *(TBD)* — A repo-maintained Zotero library fixture for reproducible manual and automated testing.
-- **Common testing Obsidian vault** *(TBD)* — A matching vault fixture aligned with the shared library (templates, sample notes, plugin settings).
-- **Collaboration guide** *(TBD)* — How to set up the fixtures, run the dev stack, and work in this monorepo.
-- **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/)** *(TBD)* — A root `CHANGELOG.md` with curated, human-readable release notes (not raw git logs).
-- **Conventional Commits** *(TBD)* — A shared commit-message convention so history, changelogs, and release tooling stay consistent across the monorepo.
+**Shipped foundation** (commit `5d58e28`, `feat/search`):
 
-## 10. Stage order (suggested)
+- `@zotlit/item-lookup` package with injectable `scoring?: ScoringConfig`; `DEFAULT_SCORING` exported. `buildIndex` signature unchanged — nothing index-time is tunable.
+- Knobs: `boosts` (per-field MiniSearch boost), `recencyMaxBoost`, `recencyHalfLifeDays`, `exactYearBonus`, `fuzzy: (term) => number`, `prefix: boolean` — see `packages/item-lookup/src/engine.ts`.
+- Obsidian service uses hardcoded `DEFAULT_SCORING` (not surfaced to view consumers). CJK segmenter stays in `apps/obsidian/src/services/item-lookup/chs-segmenter.ts`.
+- Internal `src/jieba.ts` wraps `jieba-wasm` (devDep only; not in package exports) for bench/tests inside the monorepo.
 
-Priority tiers rather than a strict linear sequence:
+**Settled decisions**
 
+| Question | Settled |
+| --- | --- |
+| Bench location | `packages/item-lookup/bench/` (inside the package, not a new workspace) |
+| jieba public export? | No — internal `src/jieba.ts` only |
+| Wasm path plumbing? | No — jieba-wasm node entry handles it |
+| Production segmenter | Unchanged — Obsidian probes `cm-chs-patch` via `getChsSegmenter` |
+| `ScoringConfig` shape | Flat config object, no deep-partial merge. Bench spreads overrides from `DEFAULT_SCORING`. |
+| Obsidian service config | Hardcoded `DEFAULT_SCORING` |
+| REPL in this stage | No — bench only (judge-set + metrics + sweep). REPL deferred. |
 
-| Tier                             | Items                                                                                | Rationale                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| **A — next up**                  | Zotero note import (§1), polish (§8)                                                 | Closest to ready; import has parsers shipped, polish is incremental           |
-| **B — user-facing enhancements** | Annotation merging (§3), note feature follow-ups (§6), setting-tab enhancements (§5) | Each is self-contained, can land independently                                |
-| **C — template DX**              | Template service follow-ups (§4)                                                     | Nice-to-have; unblocks authoring ergonomics                                   |
-| **D — companion follow-ups**     | Topic-import, protocol export/batch, companion release (§2)                          | Core server + companion + open/update protocol ship; remainder is incremental |
-| **E — contributor DX**           | Testing fixtures & collaboration guide (§9)                                          | *(TBD)* Lowers the bar for end-to-end contribution and review                 |
-| **F — speculative**              | PDF outline (§7)                                                                     | No consumer exists yet                                                        |
+**Open questions** (decide before building):
 
+1. **Judge set source.** Hand-authored `query → expected-itemKey[]` JSON is the default — small (20–50 queries), diff-friendly, intentional about edge cases. Alternatives: synthetic from title/creator combinations, or mined user logs (none collected).
+2. **Metrics.** Default to all three: MRR, nDCG@10, precision@5. Single-metric tuning loses regression signal (e.g. precision up, recall down).
+3. **Sweep strategy.** Grid search per knob holding others at default, tabular output. Bayesian optimisation is overkill for ~6 knobs.
+4. **Report format.** `console.table` for interactive runs; markdown table under `bench/results/<config>.md` for PR diffs. Pick one to start.
+5. **Corpus snapshot.** Loading 1287 items from sqlite per run is ~100ms — acceptable. Pre-snapshot to JSON only if run time becomes a bottleneck.
 
+**Suggested order**
+
+1. Commit initial `bench/judge-set.json` after settling judge-set format.
+2. `bench/corpus.ts` — load `IndexedItem[]` via `@zotlit/db` + `NodeDatabaseClient`; skip with a clear message if sqlite is absent (same pattern as DB integration tests).
+3. `bench/metrics.ts` — MRR, nDCG@K, precision@K as pure functions with unit tests on trivial inputs.
+4. `bench/bench.ts` — build index once, sweep configs, emit results in the chosen report format.
+5. Add `"bench"` script to `packages/item-lookup/package.json` (check `packages/scripts` for the repo's tsx pattern). Keep `bench/**` outside tsdown `entry`.
+
+**Resources**
+
+- Corpus loader: `getIndexedItemsByLibrary` from `@zotlit/db` + `NodeDatabaseClient` from `@zotlit/db/client/node` → `buildIndex`.
+- CJK segmenter for Chinese-titled judge queries: `import { jieba } from "../jieba"` → `TokenizerOptions.chsSegmenter`.
+- Synthetic edge cases: `@zotlit/item-lookup/fixtures` (`makeIndexedItem`, `makeItem`, `makeCreator`).
+- Scoring rationale / Zotero `quicksearch-titleCreatorYear` parity: `search-comparison.md` at worktree root (untracked reference).
+
+**Deferred**
+
+- **REPL / interactive console** — typing-loop UI for eyeball tuning; add only if metric tuning hits the wall.
+- **Disk-persisted index** — Omnisearch-style cache; build time on 1287 items is well under budget (`search-comparison.md` §5.4).
+- **Hand pre-tuning** — recency curve, left-anchor creator boost, exact-title boost are what the bench tunes for; don't tune by hand ahead of empirical results.
+
+## 9. Contributor testing fixtures & collaboration guide
+
+- **Common testing Zotero database** — repo-maintained library fixture for reproducible manual and automated testing.
+- **Common testing Obsidian vault** — matching vault fixture (templates, sample notes, plugin settings).
+- **Dev-stack onboarding** — how to set up fixtures and run the dev stack end-to-end (release/CI docs already in `CONTRIBUTING.md` and `docs/CI_SETUP.md`).
+- **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/)** — root `CHANGELOG.md` with curated release notes.
+- **Conventional Commits** — shared commit-message convention for changelogs and release tooling.
