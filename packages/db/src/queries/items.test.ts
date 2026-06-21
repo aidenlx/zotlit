@@ -114,8 +114,8 @@ describe("getItemsByLibrary", () => {
       (i) => i.key === "USER1",
     );
 
-    expect(item?.fields.get("mood")).toBe("curious");
-    expect(item?.fields.has("title")).toBe(false);
+    expect(item?.customFields.get("mood")).toBe("curious");
+    expect(item?.customFields.has("title")).toBe(false);
     expect(item).not.toHaveProperty("mood");
   });
 

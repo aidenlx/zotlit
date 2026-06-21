@@ -71,7 +71,7 @@ const BASE_ITEM_KEYS = new Set([
   "dateModified",
   "creators",
   "primaryCreatorType",
-  "fields",
+  "customFields",
   "itemType",
 ]);
 
@@ -86,7 +86,7 @@ export function itemToTemplateData(
     const canonical = FIELD_ALIASES[key] ?? key;
     allFields[canonical] = val;
   }
-  for (const [key, val] of item.fields) {
+  for (const [key, val] of item.customFields) {
     if (val != null) allFields[key] = val;
   }
 
