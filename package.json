@@ -12,13 +12,12 @@
     "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run //#lint:repo",
-    "lint:fix": "oxlint --fix",
+    "lint:fix": "turbo run //#lint:repo -- --fix",
     "lint:repo": "oxlint",
-    "lint:repo:fix": "oxlint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
     "quality": "turbo run //#lint:repo //#format",
-    "quality:fix": "pnpm lint:repo:fix && pnpm format:fix",
+    "quality:fix": "pnpm lint:fix && pnpm format:fix",
     "prepare": "lefthook install"
   },
   "devDependencies": {
