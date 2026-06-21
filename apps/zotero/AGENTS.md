@@ -2,6 +2,12 @@
 
 Zotero 9 (Firefox 140 ESR) companion plugin. No backward-compat with Zotero 8 or earlier.
 
+## Commands
+
+Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
+
+- `pnpm --filter @zotlit/zotero dev` — watch build + Zotero reload.
+
 ## Rules
 
 ### HTTP
@@ -14,7 +20,15 @@ The reader (`reader._internalReader`) lives in the iframe's **content** compartm
 
 ### Logging
 
-Always via LogTape `getLogger(["zotlit", "zotero", ...])`. Never call `console.*` or `Zotero.debug` directly from feature code.
+Import `getLogger` directly from `@logtape/logtape` with a category rooted at `["zotlit", "zotero", ...]`. Never call `console.*` or `Zotero.debug` directly from feature code.
+
+```ts
+import { getLogger } from "@logtape/logtape";
+
+const logger = getLogger(["zotlit", "zotero", "reader"]);
+```
+
+Never call `configure()` here — that belongs to the consuming app.
 
 ### Fluent IDs
 

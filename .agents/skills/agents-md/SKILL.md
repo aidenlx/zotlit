@@ -54,6 +54,8 @@ Exclude:
 - Type signatures or API shapes (the agent reads the source)
 - Style rules the linter enforces (oxlint handles it)
 - Language defaults the model already knows (TypeScript syntax, etc.)
+- Hardcoded config values that live in a config file (version numbers, numeric settings,
+  thresholds). Point to the config file instead — the value will drift, the file won't.
 
 ### 2. Index over describe
 
