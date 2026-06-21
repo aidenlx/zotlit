@@ -27,9 +27,8 @@ Root scripts (run from repo root):
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm build`                      | `turbo run build` across the graph.                                                                                         |
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
-| `pnpm typecheck`                  | `turbo run typecheck`. Each package runs `tsgo` (the `@typescript/native-preview` / TypeScript 7 compiler) — **not** `tsc`. |
 | `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
-| `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. **the lint step also performs typechecking** via tsgo.                             |
+| `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks (tsgo) + lints in one pass. **Preferred over per-package typecheck.** |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt`.                                                                                                         |
 | `pnpm quality[:fix]`              | Lint + format together via turbo.                                                                                           |
 
@@ -37,10 +36,10 @@ Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `o
 
 Per-package tasks: use pnpm filters, e.g.:
 
-- `pnpm --filter @zotlit/obsidian build` (Vite build + typecheck)
+- `pnpm --filter @zotlit/obsidian build` (Vite build)
 - `pnpm --filter @zotlit/obsidian dev` (Vite watch, dev mode)
-- `pnpm --filter @zotlit/obsidian test` (typecheck test tsconfig + `vitest run`)
-- `pnpm --filter @zotlit/obsidian exec vitest run path/to/file.test.ts` (single file; skips typecheck)
+- `pnpm --filter @zotlit/obsidian test` (`vitest run`)
+- `pnpm --filter @zotlit/obsidian exec vitest run path/to/file.test.ts` (single file)
 - `pnpm --filter @zotlit/db build` / `dev` (tsdown)
 - `pnpm --filter @zotlit/db db:pull` (drizzle-kit pull)
 

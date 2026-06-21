@@ -10,7 +10,6 @@
     "release": "node scripts/release.ts",
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "lint": "turbo run //#lint:repo",
     "lint:fix": "oxlint --fix",
