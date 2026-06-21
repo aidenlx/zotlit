@@ -2,7 +2,6 @@ import { regex } from "arkregex";
 import MiniSearch from "minisearch";
 
 import {
-  itemDateYear,
   parseItemDate,
   parseItemLanguage,
   type IndexedItem,
@@ -119,7 +118,7 @@ export function buildIndex(
   const citationKeyById = new Map<number, string>();
   const indexed = items.map((item) => {
     byId.set(item.itemID, item);
-    const year = itemDateYear(parseItemDate(item.date))?.toString() ?? "";
+    const year = parseItemDate(item.date)?.year?.toString() ?? "";
     yearById.set(item.itemID, year);
     if (item.citationKey) {
       citationKeyById.set(item.itemID, normalize(item.citationKey));

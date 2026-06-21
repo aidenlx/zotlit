@@ -4,7 +4,7 @@ import { type ItemFields } from "@zotlit/zotero-types";
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { type CreatorFieldMode } from "@/lib/zt-creator";
-import { itemDateYear, parseItemDate } from "@/lib/zt-date";
+import { parseItemDate } from "@/lib/zt-date";
 import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupsQuery } from "./_groups";
@@ -335,7 +335,7 @@ export function getItemDisplayInfoByID(
   return {
     title,
     creators,
-    year: itemDateYear(parseItemDate(dateRaw)),
+    year: parseItemDate(dateRaw)?.year ?? null,
   };
 }
 
