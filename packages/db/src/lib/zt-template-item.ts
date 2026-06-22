@@ -61,11 +61,22 @@ export interface TemplateItemData {
 
   /** Additional Zotero fields beyond the explicitly typed ones above. */
   [field: string]: unknown;
+
+  /** Full vault-relative literature note path, including `.md`. */
+  notePath(): string;
+  /** Obsidian Markdown link to this item's literature note. */
+  noteLink(alias?: string): string;
+}
+
+export interface TemplateItemResolvers {
+  notePath: (item: TemplateItemData) => string;
+  noteLink: (item: TemplateItemData, alias?: string) => string;
 }
 
 export function itemToTemplateData(
   item: Item,
   tags: readonly ItemTag[] = [],
+  resolvers: TemplateItemResolvers = EMPTY_TEMPLATE_ITEM_RESOLVERS,
 ): TemplateItemData {
   const allFields: Record<string, string> = {};
 
@@ -113,8 +124,19 @@ export function itemToTemplateData(
     edition: allFields.edition ?? null,
     language: allFields.language ?? null,
     extra: allFields.extra ?? null,
+    notePath() {
+      return resolvers.notePath(this);
+    },
+    noteLink(alias?: string) {
+      return resolvers.noteLink(this, alias);
+    },
   };
 }
+
+const EMPTY_TEMPLATE_ITEM_RESOLVERS: TemplateItemResolvers = {
+  notePath: () => "",
+  noteLink: () => "",
+};
 
 function toTemplateCreator(c: Creator): TemplateCreator {
   if (c.fieldMode === 1) {

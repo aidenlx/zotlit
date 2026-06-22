@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { formatBlockquote, TemplateEngine } from "./index";
+import { basename, formatBlockquote, TemplateEngine } from "./index";
 import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
 
 const wrapContent = managedRegionTransform("content");
@@ -208,6 +208,35 @@ describe("TemplateEngine", () => {
     const engine = new TemplateEngine();
 
     expect(() => engine.renderString("<%~ zt.missing %>", {})).not.toThrow();
+  });
+
+  it("injects basename into Eta templates", () => {
+    const engine = new TemplateEngine();
+
+    expect(
+      engine.renderString(
+        "<%= basename(zt.path) %> / <%= basename(zt.path, '.txt') %>",
+        {
+          path: "folder/Smith2024.md",
+        },
+      ),
+    ).toBe("Smith2024 / Smith2024.md");
+  });
+});
+
+describe("basename", () => {
+  it("defaults to stripping a .md extension from the final path segment", () => {
+    expect(basename("folder/Smith2024.md")).toBe("Smith2024");
+    expect(basename("folder/Smith2024.txt")).toBe("Smith2024.txt");
+    expect(basename("folder/Smith2024.md/")).toBe("Smith2024");
+  });
+
+  it("matches POSIX basename suffix behavior for exact and partial ext matches", () => {
+    expect(basename("foo", "foo")).toBe("");
+    expect(basename("foo/", "foo")).toBe("foo");
+    expect(basename("folder/foo", "oo")).toBe("f");
+    expect(basename("folder/.md", ".md")).toBe(".md");
+    expect(basename(".md", ".md")).toBe("");
   });
 });
 

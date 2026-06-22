@@ -67,4 +67,19 @@ describe("evalFrontmatterFields", () => {
       title: "Second",
     });
   });
+
+  it("injects basename into frontmatter expressions", () => {
+    const fm = evalFields(
+      [
+        { key: "defaultExt", expr: "basename(zt.path)" },
+        { key: "customExt", expr: "basename(zt.path, '.txt')" },
+      ],
+      { path: "folder/Smith2024.md" },
+    );
+
+    expect(fm).toEqual({
+      defaultExt: "Smith2024",
+      customExt: "Smith2024.md",
+    });
+  });
 });

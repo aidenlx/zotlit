@@ -16,6 +16,7 @@ import {
   itemToTemplateData,
   type TemplateCreator,
   type TemplateItemData,
+  type TemplateItemResolvers,
 } from "./zt-template-item";
 import { annotationOpenUri, itemSelectUri } from "./zt-uri";
 
@@ -76,6 +77,10 @@ export interface NoteContextInput {
   authorsShort: (item: Item) => string;
   /** Resolve an attachment to its vault link; `""` when unresolvable. */
   fileLink: (attachment: Attachment) => string;
+  /** Resolve an item to its full vault-relative literature note path. */
+  notePath: (item: TemplateItemData) => string;
+  /** Resolve an item to its Obsidian Markdown literature-note link. */
+  noteLink: (item: TemplateItemData, alias?: string) => string;
   /**
    * Resolve an annotation's image-excerpt embed, or `null` when the annotation
    * type has no cached image.
@@ -91,7 +96,11 @@ export interface NoteContextInput {
 export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
   const { item } = input;
   const itemTags = input.tagsByItemID.get(item.itemID) ?? [];
-  const itemData = itemToTemplateData(item, itemTags);
+  const noteResolvers: TemplateItemResolvers = {
+    notePath: input.notePath,
+    noteLink: input.noteLink,
+  };
+  const itemData = itemToTemplateData(item, itemTags, noteResolvers);
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
 
   const attachments: TemplateAttachment[] = input.attachments.map((a) => ({
@@ -124,11 +133,12 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
 
   const relatedItems = input.relatedItems
     .map((related) =>
-      buildRelatedItem(
-        related,
-        input.tagsByItemID.get(related.itemID) ?? [],
-        input.authorsShort(related),
-      ),
+      buildRelatedItem({
+        item: related,
+        tags: input.tagsByItemID.get(related.itemID) ?? [],
+        authorsShort: input.authorsShort(related),
+        noteResolvers,
+      }),
     )
     .sort(byTitle);
 
@@ -150,12 +160,18 @@ function selectPrimaryAuthors(data: TemplateItemData): TemplateCreator[] {
     : [...data.creators];
 }
 
-function buildRelatedItem(
-  item: Item,
-  tags: readonly ItemTag[],
-  authorsShort: string,
-): TemplateRelatedItem {
-  const itemData = itemToTemplateData(item, tags);
+function buildRelatedItem({
+  item,
+  tags,
+  authorsShort,
+  noteResolvers,
+}: {
+  item: Item;
+  tags: readonly ItemTag[];
+  authorsShort: string;
+  noteResolvers: TemplateItemResolvers;
+}): TemplateRelatedItem {
+  const itemData = itemToTemplateData(item, tags, noteResolvers);
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
   return {
     ...itemData,

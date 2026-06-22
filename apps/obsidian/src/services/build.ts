@@ -75,6 +75,7 @@ export function buildServices(
       noteFeatures: ({
         template,
         db,
+        noteIndex,
         zoteroPref,
         settings,
         attachmentImport,
@@ -83,6 +84,7 @@ export function buildServices(
           app: plugin.app,
           template,
           db,
+          noteIndex,
           zoteroPref,
           settings,
           attachmentImport,
