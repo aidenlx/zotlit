@@ -6,6 +6,7 @@ export default defineConfig({
     "./src/constants.ts",
     "./src/obsidian.ts",
     "./src/frontmatter.ts",
+    "./src/frontmatter-merge.ts",
   ],
   tsconfig: "./tsconfig.lib.json",
   dts: { tsgo: true, enabled: true },

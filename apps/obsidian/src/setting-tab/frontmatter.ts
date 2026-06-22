@@ -7,6 +7,7 @@ import * as m from "@/paraglide/messages";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { openFrontmatterFieldModal } from "./frontmatter-modal";
+import { frontmatterFieldLabel } from "./frontmatter-strategy";
 
 export function frontmatterPageItems(
   ctx: SettingTabContext,
@@ -42,7 +43,7 @@ export function frontmatterPageItems(
       },
       onDelete: (index) => deleteField(ctx, index),
       items: fields.map((field) => ({
-        name: field.key || m.settings_note_frontmatter_empty_key(),
+        name: frontmatterFieldLabel(field),
         desc: describeField(field.expr),
         searchable: false,
         action: (_el, index) => openFieldModal(ctx, index),

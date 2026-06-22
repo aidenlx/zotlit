@@ -1,5 +1,6 @@
 import { type App, Modal, Setting } from "obsidian";
 
+import { type FrontmatterMergeStrategy } from "@zotlit/templates/constants";
 import { validateFrontmatterExpr } from "@zotlit/templates/frontmatter";
 
 import { AbortError } from "@/lib/abort-error";
@@ -7,10 +8,12 @@ import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/paraglide/messages";
 
 import { appendCompileError } from "./compile-error";
+import { frontmatterMergeStrategyLabel } from "./frontmatter-strategy";
 
 export interface FrontmatterFieldValue {
   key: string;
   expr: string;
+  merge: FrontmatterMergeStrategy;
 }
 
 export interface FrontmatterFieldModalOptions {
@@ -63,6 +66,20 @@ export function openFrontmatterFieldModal(
     });
 
   new Setting(form)
+    .setName(m.settings_frontmatter_merge_name())
+    .setDesc(m.settings_frontmatter_merge_desc())
+    .addDropdown((dropdown) => {
+      dropdown
+        .addOptions({
+          replace: frontmatterMergeStrategyLabel("replace"),
+          append: frontmatterMergeStrategyLabel("append"),
+          keep: frontmatterMergeStrategyLabel("keep"),
+        })
+        .setValue(field?.merge ?? "replace");
+      dropdown.selectEl.name = "merge";
+    });
+
+  new Setting(form)
     .addButton((btn) =>
       btn
         .setButtonText(m.settings_frontmatter_save())
@@ -85,17 +102,20 @@ export function openFrontmatterFieldModal(
 
     const keyInput = form.elements.namedItem("key") as HTMLInputElement;
     const exprInput = form.elements.namedItem("expr") as HTMLTextAreaElement;
+    const mergeInput = form.elements.namedItem("merge") as HTMLSelectElement;
 
     const key = keyInput.value.trim();
     const expr = exprInput.value.trim();
+    const merge = mergeInput.value as FrontmatterMergeStrategy;
 
-    const keyError = !key
-      ? m.settings_frontmatter_error_empty_key()
-      : RESERVED_KEYS.has(key)
-        ? m.settings_frontmatter_error_reserved({ key })
-        : usedKeys.has(key)
-          ? m.settings_frontmatter_error_duplicate({ key })
-          : null;
+    let keyError: string | null = null;
+    if (!key) {
+      keyError = m.settings_frontmatter_error_empty_key();
+    } else if (RESERVED_KEYS.has(key)) {
+      keyError = m.settings_frontmatter_error_reserved({ key });
+    } else if (usedKeys.has(key)) {
+      keyError = m.settings_frontmatter_error_duplicate({ key });
+    }
 
     if (keyError) {
       keyInput.setCustomValidity(keyError);
@@ -118,7 +138,7 @@ export function openFrontmatterFieldModal(
       return;
     }
 
-    resolve({ key, expr });
+    resolve({ key, expr, merge });
     modal.close();
   });
 

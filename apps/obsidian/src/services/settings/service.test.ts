@@ -212,6 +212,22 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
+  it("v1 frontmatter fields without merge are dropped and the v1 file is not rewritten", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.frontmatter-fields": [{ key: "title", expr: "zt.title" }],
+      "note.literature-folder": "/kept",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.literature-folder": "/kept",
+    });
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
   it("future __VERSION__ falls back to defaults and never saves", async () => {
     const plugin = new PluginStub({
       __VERSION__: 5,

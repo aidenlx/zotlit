@@ -1,6 +1,6 @@
 # Frontmatter
 
-v2 replaces v1's template-based frontmatter rendering with a structured **JS expression** system. Instead of writing YAML inside an Eta template, you configure `{key, expr}` pairs in settings. Each expression is evaluated against the template data and serialized to YAML automatically.
+v2 replaces v1's template-based frontmatter rendering with a structured **JS expression** system. Instead of writing YAML inside an Eta template, you configure frontmatter fields in settings. Each field has a key, an expression, and a merge strategy. The expression is evaluated against the template data and serialized to YAML automatically.
 
 ## System-managed fields
 
@@ -10,10 +10,15 @@ These fields are always written by ZotLit and cannot be overridden by user confi
 |-------|--------|-------------|
 | `zotero-key` | `zt.indexedKey` | The indexed item key (e.g. `"ABC12345"` or `"ABC12345g12345"` for group libraries) |
 | `citekey` | `zt.citationKey` | The citation key. Only written when the item has a citation key. |
+| `zt-attachments` | attachment scope | Attachment keys for attachment-scoped updates. Missing or empty means all attachments. |
 
 ## User-configurable fields
 
-User fields are a list of `{key, expr}` pairs configured in Settings > Templates > Frontmatter.
+User fields are configured in Settings > Templates > Frontmatter.
+
+- **Key**: The YAML property name to write.
+- **Expression**: A JavaScript expression that produces the value.
+- **Merge strategy**: How ZotLit handles that property when refreshing an existing note.
 
 Each `expr` is a JavaScript expression evaluated with the full note context available as `zt`. All item fields and properties like `authors`, `authorsShort`, `backlink`, `annotations`, and `attachments` are accessible:
 
@@ -29,11 +34,14 @@ Any valid JavaScript expression works. The return value is serialized to YAML au
 
 ### Default user fields
 
-Out of the box, ZotLit configures one user field:
+Out of the box, ZotLit configures these user fields:
 
-| Key | Expression |
-|-----|------------|
-| `title` | `zt.title` |
+| Key | Expression | Merge strategy |
+|-----|------------|----------------|
+| `title` | `zt.title` | Replace |
+| `related` | `zt.relatedItems.map((item) => item.noteLink()).filter(Boolean)` | Replace |
+
+The default `related` field mirrors Zotero's Related panel. Manage related-item links in Zotero; ZotLit refreshes this field from Zotero data.
 
 ### Reserved keys
 
@@ -41,7 +49,7 @@ The following keys are reserved and cannot be used in user field configuration:
 
 - `zotero-key` (system-managed)
 - `citekey` (system-managed)
-- `zt-attachments` (reserved for future attachment scoping)
+- `zt-attachments` (system-managed)
 
 Attempting to use a reserved key is rejected at configuration time.
 
@@ -53,21 +61,33 @@ The settings UI validates:
 - **Empty expression** -- rejected
 - **Reserved key** -- rejected
 - **Duplicate key** -- rejected
+- **Missing merge strategy** -- rejected
 
 Expression syntax errors are detected when you save the setting. Runtime errors (e.g. accessing a property on `null`) surface per-field at note-create time -- the failing field is skipped and reported, but remaining fields still evaluate.
 
 ## Frontmatter merge on update
 
-When you run "Update literature note", frontmatter is merged at the key level:
+When you run "Update literature note", ZotLit updates only the frontmatter keys it manages:
 
-1. **System fields** (`zotero-key`, `citekey`) are overwritten with current values.
-2. **User-configured fields** are re-evaluated and overwritten.
-3. **Array values**: if both the existing and new values are arrays, they are concatenated and deduplicated (union). This means values you add manually to an array field are preserved.
-4. **Unmanaged keys** (any frontmatter key not in the managed set -- e.g. `aliases`, `tags`, `cssclasses`) are **preserved**. The update never touches keys it doesn't own.
+1. **System fields** (`zotero-key`, `citekey`, `zt-attachments`) are refreshed from ZotLit.
+2. **User-configured fields** are re-evaluated and then applied using their merge strategy.
+3. **Unmanaged keys** (any frontmatter key not in the managed set -- e.g. `aliases`, `tags`, `cssclasses`) are preserved. The update never touches keys it does not own.
 
-Consequence: array-valued managed fields are union/append-only. A value removed in Zotero will linger in the frontmatter until you use "Overwrite literature note". This is intentional for fields like `tags` where manual additions should survive updates.
+The "Overwrite literature note" command uses the same frontmatter behavior. It fully replaces the note body, but it still preserves frontmatter keys that ZotLit does not manage.
 
-The "Overwrite literature note" command also uses key-level merge for frontmatter -- it does **not** nuke hand-added metadata. Only the note body (outside the YAML block) is fully replaced.
+### Merge strategies
+
+Each user-configured field chooses one of three merge strategies:
+
+| Strategy | Behavior | Use it for |
+|----------|----------|------------|
+| Replace | ZotLit writes the newly generated value each time. Existing values for this key are replaced. | Fields that should always match Zotero or your expression, such as `title`, `year`, or `DOI`. |
+| Append arrays | ZotLit keeps the existing array values and appends new generated array values. Manual additions remain. If the existing value is blank, ZotLit writes the generated value. If the existing value is not an array, ZotLit keeps the existing value. | Array fields where you may add values manually, such as `tags`, `aliases`, or custom lists. |
+| Keep existing | ZotLit writes the generated value only when the field is blank. Once the field has a value, ZotLit leaves it alone. | Fields you want ZotLit to initialize, then edit by hand, such as `status`, `rating`, or a custom summary field. |
+
+Blank values are treated like missing values for `Append arrays` and `Keep existing`. In practice, this means an absent field, `null`, an empty string, an empty array, or an empty object can be filled by ZotLit.
+
+If an expression returns `undefined`, ZotLit leaves that field untouched for every strategy. If an expression returns `null`, ZotLit writes YAML `null` where the selected strategy allows a write.
 
 ## v1 comparison
 
@@ -85,13 +105,13 @@ This approach had several problems:
 - No validation of the output -- a template typo produced invalid YAML silently.
 - The template mixed data logic with serialization concerns.
 
-v2 separates these: expressions produce **values**, and serialization is handled automatically. Users never write YAML directly.
+v2 separates these: expressions produce **values**, merge strategies decide how those values update existing notes, and serialization is handled automatically. Users never write YAML directly.
 
 ## `zt-attachments` field
 
-The `zt-attachments` frontmatter key is reserved for future attachment scoping:
+The `zt-attachments` frontmatter key is managed by ZotLit:
 
 - **Missing or empty** -> all attachments are included when updating.
 - **Present with keys** -> scoped to those specific attachments.
 
-For v2 alpha, nothing reads or writes this field. A v1 note with numeric `zt-attachments` values is treated as an unmanaged key and preserved as-is.
+Do not add this key as a custom frontmatter field. ZotLit writes or removes it as needed.

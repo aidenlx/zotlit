@@ -16,6 +16,7 @@ import {
 import { normalizeVaultPath } from "@/services/template/path";
 import { appendCompileError } from "@/setting-tab/compile-error";
 import { openFrontmatterFieldModal } from "@/setting-tab/frontmatter-modal";
+import { frontmatterFieldLabel } from "@/setting-tab/frontmatter-strategy";
 import { defaultPlaceholder } from "@/setting-tab/placeholder";
 
 import { type CompatContext } from "./context";
@@ -188,7 +189,7 @@ function renderFrontmatterList(
   fields.forEach((field, index) => {
     group.addSetting((setting) =>
       setting
-        .setName(field.key || m.settings_note_frontmatter_empty_key())
+        .setName(frontmatterFieldLabel(field))
         .setDesc(describeField(field.expr))
         .addExtraButton((btn) =>
           btn

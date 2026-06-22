@@ -46,11 +46,7 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { attachmentFileLink } from "./file-link";
 import { resolveNoteRelPath } from "./filename";
-import {
-  buildFrontmatter,
-  compileFrontmatter,
-  mergeManagedFrontmatter,
-} from "./frontmatter";
+import { applyManagedFrontmatter, compileFrontmatter } from "./frontmatter";
 
 const logger = getLogger("note-feature");
 
@@ -129,7 +125,8 @@ export class NoteFeatures extends Service<void> {
       sourcePath: path,
     });
     const body = this.#template.render("note", context);
-    const fm = this.#buildFrontmatter(context, settings);
+    const fm: Record<string, unknown> = {};
+    this.#applyFrontmatter(fm, context, settings);
     const content = `---\n${stringifyYaml(fm)}---\n${body}`;
 
     const file = await this.#app.vault.create(path, content);
@@ -410,27 +407,30 @@ export class NoteFeatures extends Service<void> {
     context: NoteTemplateContext,
   ): Promise<void> {
     const settings = await this.#settings.loaded;
-    const managed = this.#buildFrontmatter(context, settings);
     await this.#app.fileManager.processFrontMatter(file, (fm) => {
-      mergeManagedFrontmatter(fm, managed);
+      this.#applyFrontmatter(fm, context, settings);
     });
   }
 
   /**
-   * Build the managed frontmatter record. Field expressions that throw are
+   * Apply managed frontmatter into the target. Field expressions that throw are
    * skipped so the import still completes; the skipped keys are logged and
    * surfaced in one toast.
    */
-  #buildFrontmatter(
+  #applyFrontmatter(
+    fm: Record<string, unknown>,
     context: NoteTemplateContext,
     settings: Readonly<Settings>,
-  ): Record<string, unknown> {
+  ): void {
     const failed: string[] = [];
-    const fm = buildFrontmatter(context, {
+    applyManagedFrontmatter(fm, context, {
       compiled: this.#frontmatterFields(settings["note.frontmatter-fields"]),
       onError: (key, error) => {
         failed.push(key);
         logger.warn("Frontmatter expression failed", { key, error });
+      },
+      onConflict: (key, detail) => {
+        logger.warn("Skipped frontmatter append", { key, ...detail });
       },
     });
     if (failed.length > 0) {
@@ -438,7 +438,6 @@ export class NoteFeatures extends Service<void> {
         m.notice_frontmatter_eval_failed({ fields: failed.join(", ") }),
       );
     }
-    return fm;
   }
 
   #frontmatterFields(

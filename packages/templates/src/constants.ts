@@ -12,3 +12,19 @@ export const autoTrimSchema = v.union([
 ]);
 
 export type AutoTrim = v.InferOutput<typeof autoTrimSchema>;
+
+export const frontmatterMergeStrategySchema = v.picklist([
+  "replace",
+  "append",
+  "keep",
+]);
+export type FrontmatterMergeStrategy = v.InferOutput<
+  typeof frontmatterMergeStrategySchema
+>;
+
+export const frontmatterFieldSchema = v.object({
+  key: v.pipe(v.string(), v.trim(), v.nonEmpty()),
+  expr: v.pipe(v.string(), v.trim(), v.nonEmpty()),
+  merge: frontmatterMergeStrategySchema,
+});
+export type FrontmatterField = v.InferOutput<typeof frontmatterFieldSchema>;

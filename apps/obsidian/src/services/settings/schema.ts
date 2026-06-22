@@ -2,7 +2,11 @@ import { getLogLevels } from "@logtape/logtape";
 import * as v from "valibot";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import { autoTrimSchema, type AutoTrim } from "@zotlit/templates/constants";
+import {
+  autoTrimSchema,
+  frontmatterFieldSchema,
+  type AutoTrim,
+} from "@zotlit/templates/constants";
 
 import {
   DEFAULT_FRONTMATTER_FIELDS,
@@ -23,15 +27,12 @@ type SettingsValue =
   | readonly SettingsValue[]
   | { readonly [key: string]: SettingsValue };
 
-/**
- * A user frontmatter field: `key` mapped to a JS `expr` over `zt`. Deeply
- * `readonly` so snapshots (which share this array by reference with `defaults`)
- * cannot be mutated through the typed surface. Shape only — reserved/empty keys
- * are dropped at frontmatter-build time, see note-feature `buildFrontmatter`.
- */
 const frontmatterFieldsSchema = v.pipe(
-  v.array(
-    v.pipe(v.object({ key: v.string(), expr: v.string() }), v.readonly()),
+  v.array(frontmatterFieldSchema),
+  v.checkItems(
+    (item, index, array) =>
+      array.findIndex((field) => field.key === item.key) === index,
+    "Duplicate frontmatter key",
   ),
   v.readonly(),
 );
