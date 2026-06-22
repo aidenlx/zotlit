@@ -32,9 +32,7 @@ export async function ensureFolder(
   const existing = app.vault.getAbstractFileByPath(folderPath);
   if (existing instanceof TFolder) return existing;
   if (existing instanceof TFile) {
-    throw new Error(
-      `Cannot create attachment folder; a file exists at "${folderPath}"`,
-    );
+    throw new Error(`Cannot create folder; a file exists at "${folderPath}"`);
   }
   return await app.vault.createFolder(folderPath);
 }

@@ -1,10 +1,5 @@
-import {
-  normalizePath,
-  stringifyYaml,
-  TFile,
-  TFolder,
-  type App,
-} from "obsidian";
+import { dirname } from "node:path/posix";
+import { normalizePath, stringifyYaml, type App, type TFile } from "obsidian";
 
 import {
   buildNoteContext,
@@ -28,6 +23,7 @@ import {
 } from "@zotlit/templates/frontmatter";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
+import { ensureFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
@@ -44,6 +40,7 @@ import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { attachmentFileLink } from "./file-link";
+import { resolveNoteRelPath } from "./filename";
 import {
   buildFrontmatter,
   compileFrontmatter,
@@ -52,8 +49,6 @@ import {
 
 const logger = getLogger("note-feature");
 
-/** Characters Obsidian / common filesystems reject in a file name. */
-const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 const FRONTMATTER_BLOCK = /^---\n[\s\S]*?\n---(?:\n+|$)/;
 
 export interface NoteFeaturesDeps {
@@ -108,14 +103,15 @@ export class NoteFeatures extends Service<void> {
       resolveEmbed: () => "",
     });
 
-    const filename = this.#renderFilename(titleContext);
+    const rel = this.#renderFilename(titleContext);
     const folder = normalizePath(settings["note.literature-folder"]);
     const path =
-      folder === "" || folder === "/"
-        ? `${filename}.md`
-        : `${folder}/${filename}.md`;
+      folder === "" || folder === "/" ? `${rel}.md` : `${folder}/${rel}.md`;
 
-    await this.#ensureFolder(folder);
+    const dir = dirname(path);
+    if (dir !== "." && dir !== "/") {
+      await ensureFolder(this.#app, dir);
+    }
 
     const attachmentImport = await this.#attachmentImport.prepare(path);
     const context = this.#buildContext(item, attachmentImport);
@@ -361,22 +357,16 @@ export class NoteFeatures extends Service<void> {
     return this.#template.render("content", context);
   }
 
+  /**
+   * Render the filename template into a vault-relative path (no extension).
+   * `/` in the rendered name routes the note into nested subfolders under the
+   * literature-note folder.
+   *
+   * @throws {@link EmptyFilenameError} when the rendered filename is empty.
+   */
   #renderFilename(context: NoteTemplateContext): string {
-    const raw = this.#template.renderFilename(context).trim();
-    const sanitized = raw.replace(ILLEGAL_FILENAME_CHARS, "_").trim();
-    return sanitized || context.key;
-  }
-
-  async #ensureFolder(folder: string): Promise<void> {
-    if (folder === "" || folder === "/") return;
-    const existing = this.#app.vault.getAbstractFileByPath(folder);
-    if (existing instanceof TFolder) return;
-    if (existing instanceof TFile) {
-      throw new Error(
-        `Cannot create literature folder; a file exists at "${folder}"`,
-      );
-    }
-    await this.#app.vault.createFolder(folder);
+    const rendered = this.#template.renderFilename(context).trim();
+    return resolveNoteRelPath(rendered);
   }
 }
 

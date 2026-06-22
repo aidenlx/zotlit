@@ -4,6 +4,7 @@ import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
+import { EmptyFilenameError } from "@/services/note-feature/filename";
 
 import { type QuickSwitchDeps } from "./register";
 
@@ -57,7 +58,10 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
         {
           loading: m.notice_creating_note(),
           success: m.notice_created_note(),
-          error: m.notice_create_note_failed(),
+          error: (_msg, e) =>
+            e instanceof EmptyFilenameError
+              ? e.message
+              : m.notice_create_note_failed(),
           swallowError: false,
         },
       );
