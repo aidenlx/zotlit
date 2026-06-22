@@ -108,7 +108,8 @@ describe("buildNoteContext", () => {
         [item.itemID, [itemTag(item.itemID, itemTagRecord)]],
         [annotation.itemID, [itemTag(annotation.itemID, annotTagRecord, 1)]],
       ]),
-      authorsShort: "Smith et al.",
+      relatedItems: [],
+      authorsShort: () => "Smith et al.",
       fileLink: () => "[paper.pdf](file:///x/paper.pdf)",
       imgEmbed: (annotation) => `![[${annotation.key}.png]]`,
     });
@@ -150,7 +151,8 @@ describe("buildNoteContext", () => {
       attachments: [attachment],
       annotationsByAttachment: new Map([[attachment.itemID, annotations]]),
       tagsByItemID: new Map(),
-      authorsShort: "",
+      relatedItems: [],
+      authorsShort: () => "",
       fileLink: () => "",
       imgEmbed: (annotation) =>
         annotation.key === "WITHIMG1" ? `![[${annotation.key}.png]]` : null,
@@ -171,10 +173,77 @@ describe("buildNoteContext", () => {
       attachments: [],
       annotationsByAttachment: new Map(),
       tagsByItemID: new Map(),
-      authorsShort: "",
+      relatedItems: [],
+      authorsShort: () => "",
       fileLink: () => "",
       imgEmbed: () => "",
     });
     expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM2345");
+  });
+
+  it("maps related items title-sorted with flattened authors, untitled last", () => {
+    const related = [
+      makeItem(
+        { itemType: "journalArticle", title: "Beta", citationKey: "b2024" },
+        {
+          itemID: 2,
+          key: "RELB2345",
+          indexedKey: "RELB2345",
+          creators: [
+            {
+              firstName: "A",
+              lastName: "Adams",
+              creatorType: "author",
+              fieldMode: 0,
+            },
+            {
+              firstName: "E",
+              lastName: "Eng",
+              creatorType: "editor",
+              fieldMode: 0,
+            },
+          ],
+        },
+      ),
+      makeItem(
+        { itemType: "book", title: null },
+        { itemID: 3, key: "RELN2345", indexedKey: "RELN2345" },
+      ),
+      makeItem(
+        { itemType: "journalArticle", title: "Alpha" },
+        { itemID: 4, key: "RELA2345", indexedKey: "RELA2345g99" },
+      ),
+    ];
+
+    const betaTag = { tagID: 7, name: "method" };
+    const ctx = buildNoteContext({
+      item: makeItem({ itemType: "journalArticle" }),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map([[2, [itemTag(2, betaTag)]]]),
+      relatedItems: related,
+      authorsShort: (item) => `short:${item.key}`,
+      fileLink: () => "",
+      imgEmbed: () => "",
+    });
+
+    expect(ctx.relatedItems.map((r) => r.title)).toEqual([
+      "Alpha",
+      "Beta",
+      null,
+    ]);
+    const beta = ctx.relatedItems[1]!;
+    expect(beta.backlink).toBe("zotero://select/library/items/RELB2345");
+    expect(beta.authors.map((a) => a.family)).toEqual(["Adams"]);
+    expect(beta.authorsShort).toBe("short:RELB2345");
+    expect(beta.tags.map((t) => t.tag.name)).toEqual(["method"]);
+    // group backlink resolved from the related item's own indexedKey
+    expect(ctx.relatedItems[0]!.backlink).toBe(
+      "zotero://select/groups/99/items/RELA2345",
+    );
+    // depth-1 boundary: no nested annotations / attachments / relatedItems
+    expect("annotations" in beta).toBe(false);
+    expect("attachments" in beta).toBe(false);
+    expect("relatedItems" in beta).toBe(false);
   });
 });

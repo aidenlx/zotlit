@@ -133,4 +133,6 @@ export {
   buildNoteContext,
   type NoteContextInput,
   type NoteTemplateContext,
+  type TemplateRelatedItem,
 } from "./lib/zt-note-context";
+export { getRelatedKeysByItemID } from "./queries/item-relations";
