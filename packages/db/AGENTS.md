@@ -94,6 +94,12 @@ To narrow by item type, discriminate on `item.fields`: `if (item.fields.itemType
 
 Language name lookup is caller-provided via `createLanguageLookup()` — this package never reads a host locale.
 
+## Template data (`zt` variables)
+
+`src/lib/zt-template-item.ts`, `zt-template-annot.ts`, and `zt-template-attach.ts` define the template-facing interfaces (`TemplateItemData`, `TemplateAnnotation`, `TemplateAttachment`) and pure mappers from DB rows to those shapes. These are the `zt.*` properties users access in Eta templates.
+
+`src/lib/zt-note-context.ts` assembles the above into `NoteTemplateContext` — the `zt` root for the `note` template — combining item data with attachments, annotations, related items, and app-layer resolvers (backlinks, file links, image embeds) passed in by the caller. Pure: all I/O is done by the caller via `NoteContextInput`.
+
 ## Logging
 
 Import `getLogger` directly from `@logtape/logtape` with a category rooted at `["zotlit", "db", ...]`. Do **not** depend on the obsidian app's `@/lib/log` wrapper — libraries must stay app-agnostic.
