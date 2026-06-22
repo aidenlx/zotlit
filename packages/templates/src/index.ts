@@ -8,6 +8,7 @@ import {
 
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { basename } from "./basename";
 import { type AutoTrim } from "./constants";
 import { replaceHelper } from "./replace-helper";
 
@@ -31,6 +32,7 @@ export class TemplateEngine extends Eta {
   readonly #sources = new Map<string, string>();
 
   readonly bqHelper = formatBlockquote;
+  readonly basenameHelper = basename;
 
   constructor({
     autoTrim = [false, false],
@@ -43,7 +45,8 @@ export class TemplateEngine extends Eta {
       autoEscape: false,
       autoFilter: true,
       filterFunction: filterUndefinedNull,
-      functionHeader: "const bq = (fn) => output(this.bqHelper(capture(fn)));",
+      functionHeader:
+        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper;",
       plugins: [includeDataPlugin],
     });
 
@@ -136,6 +139,8 @@ export class TemplateEngine extends Eta {
     }
   }
 }
+
+export { basename } from "./basename";
 
 function pointToSyntaxError(
   source: string,

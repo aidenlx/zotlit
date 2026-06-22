@@ -8,6 +8,7 @@ import {
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
 
+import { DEFAULT_FRONTMATTER_FIELDS } from "./defaults";
 import {
   buildFrontmatter,
   compileFrontmatter,
@@ -72,6 +73,23 @@ describe("buildFrontmatter", () => {
           attachmentScope: [],
         }),
     ).toBe(false);
+  });
+
+  it("writes default related item note links as an array", () => {
+    const fm = buildFrontmatter(
+      makeContext({
+        relatedItems: [
+          { noteLink: () => "[[Related A]]" },
+          { noteLink: () => "" },
+          { noteLink: () => "[[Related B]]" },
+        ],
+      } as Partial<NoteTemplateContext>),
+      {
+        compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS),
+      },
+    );
+
+    expect(fm.related).toEqual(["[[Related A]]", "[[Related B]]"]);
   });
 });
 

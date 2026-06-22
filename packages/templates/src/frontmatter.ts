@@ -1,3 +1,8 @@
+import { basename } from "./basename";
+
+type BasenameHelper = (path: string, ext?: string) => string;
+type FrontmatterEvaluator = (zt: object, basename: BasenameHelper) => unknown;
+
 /** A user-configured frontmatter entry: `key` mapped to a JS `expr` over `zt`. */
 export interface FrontmatterField {
   key: string;
@@ -7,7 +12,7 @@ export interface FrontmatterField {
 /** A {@link FrontmatterField} whose `expr` is compiled once for repeated eval. */
 export interface CompiledFrontmatterField {
   key: string;
-  fn: (zt: object) => unknown;
+  fn: FrontmatterEvaluator;
 }
 
 /**
@@ -31,15 +36,19 @@ export function compileFrontmatterFields(
   return compiled;
 }
 
-function compileExpr(expr: string): (zt: object) => unknown {
+function compileExpr(expr: string): FrontmatterEvaluator {
   // Newline before `)` so an expr ending in a `//` line comment doesn't swallow
   // the closing paren — matches the engine's `#assertExpressionSyntax` check.
   // oxlint-disable-next-line no-implied-eval
-  return new Function("zt", `return (${expr}\n);`) as (zt: object) => unknown;
+  return new Function(
+    "zt",
+    "basename",
+    `return (${expr}\n);`,
+  ) as FrontmatterEvaluator;
 }
 
 /** Defer a syntax error to eval time so {@link evalFrontmatterFields} reports it. */
-function toEvaluator(expr: string): (zt: object) => unknown {
+function toEvaluator(expr: string): FrontmatterEvaluator {
   try {
     return compileExpr(expr);
   } catch (error) {
@@ -75,10 +84,12 @@ export function evalFrontmatterFields(
   const fm: Record<string, unknown> = {};
   for (const field of fields) {
     try {
-      fm[field.key] = field.fn(zt);
+      fm[field.key] = field.fn(zt, basename);
     } catch (error) {
       onError?.(field.key, error);
     }
   }
   return fm;
 }
+
+export { basename };

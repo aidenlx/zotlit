@@ -85,6 +85,12 @@ export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replaceAll(/\/+/g, "/").replace(/\/$/, "");
 }
 
+export function stringifyYaml(data: Record<string, unknown>): string {
+  return Object.entries(data)
+    .map(([key, value]) => `${key}: ${String(value)}\n`)
+    .join("");
+}
+
 export abstract class EditorSuggest<T> {
   context: EditorSuggestContext | null = null;
   limit = 0;

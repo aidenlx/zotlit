@@ -14,7 +14,9 @@ import {
   type Annotation,
   type Item,
   type ItemTag,
+  type NoteContextInput,
   type NoteTemplateContext,
+  type TemplateItemData,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
@@ -26,6 +28,7 @@ import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import { ensureFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
+import { syntheticFile } from "@/lib/markdown-link";
 import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
 import {
@@ -34,6 +37,7 @@ import {
 } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
+import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
@@ -56,6 +60,7 @@ export interface NoteFeaturesDeps {
   app: App;
   template: TemplateService;
   db: DatabaseService;
+  noteIndex: NoteIndex;
   zoteroPref: ZoteroPrefService;
   settings: SettingsService;
   attachmentImport: AttachmentImportService;
@@ -70,6 +75,7 @@ export class NoteFeatures extends Service<void> {
   readonly #app;
   readonly #template;
   readonly #db;
+  readonly #noteIndex;
   readonly #zoteroPref;
   readonly #settings;
   readonly #attachmentImport;
@@ -86,6 +92,7 @@ export class NoteFeatures extends Service<void> {
     this.#app = deps.app;
     this.#template = deps.template;
     this.#db = deps.db;
+    this.#noteIndex = deps.noteIndex;
     this.#zoteroPref = deps.zoteroPref;
     this.#settings = deps.settings;
     this.#attachmentImport = deps.attachmentImport;
@@ -100,14 +107,15 @@ export class NoteFeatures extends Service<void> {
    */
   async create(item: Item): Promise<TFile> {
     const settings = await this.#settings.loaded;
+    await this.#noteIndex.ready;
     const titleContext = this.#buildContext(item, {
-      resolveEmbed: () => "",
+      attachmentImport: { resolveEmbed: () => "" },
+      settings,
+      sourcePath: "",
     });
 
     const rel = this.#renderFilename(titleContext);
-    const folder = normalizePath(settings["note.literature-folder"]);
-    const path =
-      folder === "" || folder === "/" ? `${rel}.md` : `${folder}/${rel}.md`;
+    const path = literatureNotePath(settings["note.literature-folder"], rel);
 
     const dir = dirname(path);
     if (dir !== "." && dir !== "/") {
@@ -115,7 +123,11 @@ export class NoteFeatures extends Service<void> {
     }
 
     const attachmentImport = await this.#attachmentImport.prepare(path);
-    const context = this.#buildContext(item, attachmentImport);
+    const context = this.#buildContext(item, {
+      attachmentImport,
+      settings,
+      sourcePath: path,
+    });
     const body = this.#template.render("note", context);
     const fm = this.#buildFrontmatter(context, settings);
     const content = `---\n${stringifyYaml(fm)}---\n${body}`;
@@ -134,6 +146,7 @@ export class NoteFeatures extends Service<void> {
     const context = await this.#contextForIndexedKey(
       indexedKey,
       attachmentImport,
+      file.path,
     );
     await this.#refreshFrontmatter(file, context);
 
@@ -167,6 +180,7 @@ export class NoteFeatures extends Service<void> {
     const context = await this.#contextForIndexedKey(
       indexedKey,
       attachmentImport,
+      file.path,
     );
     await this.#refreshFrontmatter(file, context);
     const body = this.#template.render("note", context);
@@ -215,7 +229,12 @@ export class NoteFeatures extends Service<void> {
     ]);
     if (!item) return null;
 
-    const context = this.#buildContext(item, attachmentImport, annotationKey);
+    const context = this.#buildContext(item, {
+      attachmentImport,
+      settings: this.#settings.current,
+      sourcePath: "",
+      targetAnnotationKey: annotationKey,
+    });
     const annot = context.annotations.find((a) => a.key === annotationKey);
     return annot ? this.#template.render("annotation", annot) : null;
   }
@@ -228,11 +247,7 @@ export class NoteFeatures extends Service<void> {
    * resolved through `attachmentImport` (so a single-annotation render records
    * one pending import); every other annotation's `imgEmbed` is `null`.
    */
-  #buildContext(
-    item: Item,
-    attachmentImport: Pick<AttachmentImport, "resolveEmbed">,
-    targetAnnotationKey?: string,
-  ): NoteTemplateContext {
+  #buildContext(item: Item, options: BuildContextOptions): NoteTemplateContext {
     const client: NodeDatabaseClient = this.#db.client;
     const libraryID = item.libraryID;
 
@@ -279,10 +294,11 @@ export class NoteFeatures extends Service<void> {
       relatedItems,
       authorsShort: creatorSummary,
       fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),
+      ...this.#noteResolvers(options.settings, options.sourcePath),
       imgEmbed: (annotation) => {
         if (
-          targetAnnotationKey != null &&
-          annotation.key !== targetAnnotationKey
+          options.targetAnnotationKey != null &&
+          annotation.key !== options.targetAnnotationKey
         ) {
           return null;
         }
@@ -292,7 +308,10 @@ export class NoteFeatures extends Service<void> {
         });
         return (
           cachePath &&
-          attachmentImport.resolveEmbed(cachePath, `${annotation.key}.png`)
+          options.attachmentImport.resolveEmbed(
+            cachePath,
+            `${annotation.key}.png`,
+          )
         );
       },
     });
@@ -301,15 +320,89 @@ export class NoteFeatures extends Service<void> {
   async #contextForIndexedKey(
     indexedKey: string,
     attachmentImport: Pick<AttachmentImport, "resolveEmbed">,
+    sourcePath: string,
   ): Promise<NoteTemplateContext> {
-    await this.#db.ready;
+    await Promise.all([this.#db.ready, this.#noteIndex.ready]);
+    const settings = await this.#settings.loaded;
     const client = this.#db.client;
     const parsed = resolveIndexedKeyLibrary(client, indexedKey);
     if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
 
     const [item] = getItemsByKey(client, parsed.libraryID, [parsed.key]);
     if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
-    return this.#buildContext(item, attachmentImport);
+    return this.#buildContext(item, { attachmentImport, settings, sourcePath });
+  }
+
+  #noteResolvers(
+    settings: Readonly<Settings> | null,
+    sourcePath: string,
+  ): Pick<NoteContextInput, "notePath" | "noteLink"> {
+    const resolvingFallback = new Set<string>();
+    const resolveTarget = (item: TemplateItemData): NoteTarget =>
+      this.#resolveNoteTarget(item, settings, resolvingFallback);
+
+    return {
+      notePath: (item) => {
+        try {
+          return resolveTarget(item).path;
+        } catch (error) {
+          logger.warn("Failed to resolve literature note path", {
+            itemKey: item.indexedKey,
+            error,
+          });
+          return "";
+        }
+      },
+      noteLink: (item, alias) => {
+        try {
+          const target = resolveTarget(item);
+          return this.#app.fileManager.generateMarkdownLink(
+            target.file,
+            sourcePath,
+            undefined,
+            alias,
+          );
+        } catch (error) {
+          logger.warn("Failed to resolve literature note link", {
+            itemKey: item.indexedKey,
+            error,
+          });
+          return "";
+        }
+      },
+    };
+  }
+
+  #resolveNoteTarget(
+    item: TemplateItemData,
+    settings: Readonly<Settings> | null,
+    resolvingFallback: Set<string>,
+  ): NoteTarget {
+    const byItemKey = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
+    if (byItemKey) return { path: byItemKey.path, file: byItemKey };
+
+    if (item.citationKey) {
+      const byCitekey = this.#noteIndex.getNotesByCitekey(item.citationKey)[0];
+      if (byCitekey) return { path: byCitekey.path, file: byCitekey };
+    }
+
+    if (settings === null) {
+      throw new Error("Settings are not loaded");
+    }
+
+    if (resolvingFallback.has(item.indexedKey)) {
+      throw new Error("Recursive literature note path resolution");
+    }
+    resolvingFallback.add(item.indexedKey);
+    try {
+      const rel = resolveNoteRelPath(
+        this.#template.renderFilename(item).trim(),
+      );
+      const path = literatureNotePath(settings["note.literature-folder"], rel);
+      return { path, file: syntheticFile(path) };
+    } finally {
+      resolvingFallback.delete(item.indexedKey);
+    }
   }
 
   async #refreshFrontmatter(
@@ -380,6 +473,23 @@ export class NoteFeatures extends Service<void> {
 export interface UpdateResult {
   bodyUpdated: boolean;
   duplicateRegionCount: number;
+}
+
+interface BuildContextOptions {
+  attachmentImport: Pick<AttachmentImport, "resolveEmbed">;
+  settings: Readonly<Settings> | null;
+  sourcePath: string;
+  targetAnnotationKey?: string;
+}
+
+interface NoteTarget {
+  path: string;
+  file: TFile;
+}
+
+function literatureNotePath(folderSetting: string, rel: string): string {
+  const folder = normalizePath(folderSetting);
+  return folder === "" || folder === "/" ? `${rel}.md` : `${folder}/${rel}.md`;
 }
 
 function resolveIndexedKeyLibrary(

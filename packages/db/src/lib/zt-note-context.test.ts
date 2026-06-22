@@ -111,6 +111,8 @@ describe("buildNoteContext", () => {
       relatedItems: [],
       authorsShort: () => "Smith et al.",
       fileLink: () => "[paper.pdf](file:///x/paper.pdf)",
+      notePath: () => "",
+      noteLink: () => "",
       imgEmbed: (annotation) => `![[${annotation.key}.png]]`,
     });
 
@@ -154,6 +156,8 @@ describe("buildNoteContext", () => {
       relatedItems: [],
       authorsShort: () => "",
       fileLink: () => "",
+      notePath: () => "",
+      noteLink: () => "",
       imgEmbed: (annotation) =>
         annotation.key === "WITHIMG1" ? `![[${annotation.key}.png]]` : null,
     });
@@ -176,6 +180,8 @@ describe("buildNoteContext", () => {
       relatedItems: [],
       authorsShort: () => "",
       fileLink: () => "",
+      notePath: () => "",
+      noteLink: () => "",
       imgEmbed: () => "",
     });
     expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM2345");
@@ -224,6 +230,8 @@ describe("buildNoteContext", () => {
       relatedItems: related,
       authorsShort: (item) => `short:${item.key}`,
       fileLink: () => "",
+      notePath: () => "",
+      noteLink: () => "",
       imgEmbed: () => "",
     });
 
@@ -245,5 +253,49 @@ describe("buildNoteContext", () => {
     expect("annotations" in beta).toBe(false);
     expect("attachments" in beta).toBe(false);
     expect("relatedItems" in beta).toBe(false);
+  });
+
+  it("attaches lazy note path and note link helpers to root and related items", () => {
+    const related = makeItem(
+      { itemType: "journalArticle", title: "Related", citationKey: "rel2024" },
+      { itemID: 2, key: "REL12345", indexedKey: "REL12345" },
+    );
+    const calls: string[] = [];
+
+    const ctx = buildNoteContext({
+      item: makeItem(
+        { itemType: "journalArticle", citationKey: "main2024" },
+        { indexedKey: "MAIN2345" },
+      ),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      relatedItems: [related],
+      authorsShort: () => "",
+      fileLink: () => "",
+      notePath: (item) => {
+        calls.push(`path:${item.indexedKey}`);
+        return `notes/${item.indexedKey}.md`;
+      },
+      noteLink: (item, alias) => {
+        calls.push(`link:${item.indexedKey}:${alias ?? ""}`);
+        return alias
+          ? `[[${item.indexedKey}|${alias}]]`
+          : `[[${item.indexedKey}]]`;
+      },
+      imgEmbed: () => "",
+    });
+
+    expect(calls).toEqual([]);
+    expect(ctx.notePath()).toBe("notes/MAIN2345.md");
+    expect(ctx.noteLink("Main")).toBe("[[MAIN2345|Main]]");
+    expect(ctx.relatedItems[0]!.notePath()).toBe("notes/REL12345.md");
+    expect(ctx.relatedItems[0]!.noteLink()).toBe("[[REL12345]]");
+    expect(calls).toEqual([
+      "path:MAIN2345",
+      "link:MAIN2345:Main",
+      "path:REL12345",
+      "link:REL12345:",
+    ]);
   });
 });
