@@ -1,5 +1,3 @@
-import { distinct } from "@std/collections";
-
 import { type NoteTemplateContext } from "@zotlit/db";
 import {
   compileFrontmatterFields,
@@ -7,6 +5,10 @@ import {
   type CompiledFrontmatterField,
   type FrontmatterField,
 } from "@zotlit/templates/frontmatter";
+import {
+  type FrontmatterMergeConflictHandler,
+  mergeFrontmatterFields,
+} from "@zotlit/templates/frontmatter-merge";
 
 import {
   FIELD_ATTACHMENTS,
@@ -27,7 +29,7 @@ export function compileFrontmatter(
   );
 }
 
-export interface BuildFrontmatterOptions {
+export interface ApplyManagedFrontmatterOptions {
   compiled: readonly CompiledFrontmatterField[];
   /**
    * Attachment keys to persist; omit or pass empty to leave
@@ -35,35 +37,37 @@ export interface BuildFrontmatterOptions {
    */
   attachmentScope?: readonly string[];
   onError?: (key: string, error: unknown) => void;
+  onConflict?: FrontmatterMergeConflictHandler;
 }
 
-/**
- * Assemble the frontmatter record: system fields plus evaluated user fields. A
- * failing user expression is skipped (reported via `onError`).
- */
-export function buildFrontmatter(
+export function applyManagedFrontmatter(
+  fm: Record<string, unknown>,
   zt: NoteTemplateContext,
-  options: BuildFrontmatterOptions,
-): Record<string, unknown> {
-  const fm = evalFrontmatterFields(options.compiled, zt, options.onError);
+  options: ApplyManagedFrontmatterOptions,
+): void {
+  const evaluated = evalFrontmatterFields(
+    options.compiled,
+    zt,
+    options.onError,
+  );
+  const userPatch = mergeFrontmatterFields(options.compiled, evaluated, {
+    current: fm,
+    onConflict: options.onConflict,
+  });
+  for (const [key, value] of Object.entries(userPatch)) fm[key] = value;
 
   fm[FIELD_ZOTERO_KEY] = zt.indexedKey;
-  if (zt.citationKey) fm[FIELD_CITEKEY] = zt.citationKey;
+  if (zt.citationKey) {
+    fm[FIELD_CITEKEY] = zt.citationKey;
+  } else {
+    // In processFrontMatter, assigning `undefined` deletes the key while
+    // `null` serializes as YAML null. Use delete for absent system fields so
+    // create and refresh share the same explicit behavior.
+    delete fm[FIELD_CITEKEY];
+  }
   if (options.attachmentScope && options.attachmentScope.length > 0) {
     fm[FIELD_ATTACHMENTS] = [...options.attachmentScope];
-  }
-  return fm;
-}
-
-export function mergeManagedFrontmatter(
-  target: Record<string, unknown>,
-  managed: Record<string, unknown>,
-): void {
-  for (const [key, value] of Object.entries(managed)) {
-    const existing = target[key];
-    target[key] =
-      Array.isArray(existing) && Array.isArray(value)
-        ? distinct([...existing, ...value])
-        : value;
+  } else {
+    delete fm[FIELD_ATTACHMENTS];
   }
 }

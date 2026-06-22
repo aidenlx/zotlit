@@ -9,11 +9,7 @@ import {
 } from "@/lib/constants";
 
 import { DEFAULT_FRONTMATTER_FIELDS } from "./defaults";
-import {
-  buildFrontmatter,
-  compileFrontmatter,
-  mergeManagedFrontmatter,
-} from "./frontmatter";
+import { applyManagedFrontmatter, compileFrontmatter } from "./frontmatter";
 
 function makeContext(
   overrides: Partial<NoteTemplateContext> = {},
@@ -26,10 +22,13 @@ function makeContext(
   } as NoteTemplateContext;
 }
 
-describe("buildFrontmatter", () => {
+describe("applyManagedFrontmatter", () => {
   it("writes system fields and evaluated user expressions", () => {
-    const fm = buildFrontmatter(makeContext(), {
-      compiled: compileFrontmatter([{ key: "title", expr: "zt.title" }]),
+    const fm: Record<string, unknown> = {};
+    applyManagedFrontmatter(fm, makeContext(), {
+      compiled: compileFrontmatter([
+        { key: "title", expr: "zt.title", merge: "replace" },
+      ]),
     });
     expect(fm).toEqual({
       [FIELD_ZOTERO_KEY]: "ABC12345",
@@ -39,17 +38,19 @@ describe("buildFrontmatter", () => {
   });
 
   it("omits citekey when the item has none", () => {
-    const fm = buildFrontmatter(makeContext({ citationKey: null }), {
+    const fm: Record<string, unknown> = { [FIELD_CITEKEY]: "old" };
+    applyManagedFrontmatter(fm, makeContext({ citationKey: null }), {
       compiled: compileFrontmatter([]),
     });
     expect(fm).toEqual({ [FIELD_ZOTERO_KEY]: "ABC12345" });
   });
 
   it("skips reserved keys", () => {
-    const fm = buildFrontmatter(makeContext(), {
+    const fm: Record<string, unknown> = {};
+    applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: FIELD_ZOTERO_KEY, expr: "'x'" },
-        { key: "year", expr: "2024" },
+        { key: FIELD_ZOTERO_KEY, expr: "'x'", merge: "replace" },
+        { key: "year", expr: "2024", merge: "replace" },
       ]),
     });
     expect(fm).toEqual({
@@ -60,23 +61,27 @@ describe("buildFrontmatter", () => {
   });
 
   it("writes zt-attachments only when a non-empty scope is given", () => {
-    expect(
-      buildFrontmatter(makeContext(), {
-        compiled: compileFrontmatter([]),
-        attachmentScope: ["ATCH1", "ATCH2"],
-      })[FIELD_ATTACHMENTS],
-    ).toEqual(["ATCH1", "ATCH2"]);
-    expect(
-      FIELD_ATTACHMENTS in
-        buildFrontmatter(makeContext(), {
-          compiled: compileFrontmatter([]),
-          attachmentScope: [],
-        }),
-    ).toBe(false);
+    const scoped: Record<string, unknown> = {};
+    applyManagedFrontmatter(scoped, makeContext(), {
+      compiled: compileFrontmatter([]),
+      attachmentScope: ["ATCH1", "ATCH2"],
+    });
+    expect(scoped[FIELD_ATTACHMENTS]).toEqual(["ATCH1", "ATCH2"]);
+
+    const unscoped: Record<string, unknown> = {
+      [FIELD_ATTACHMENTS]: ["OLD"],
+    };
+    applyManagedFrontmatter(unscoped, makeContext(), {
+      compiled: compileFrontmatter([]),
+      attachmentScope: [],
+    });
+    expect(FIELD_ATTACHMENTS in unscoped).toBe(false);
   });
 
   it("writes default related item note links as an array", () => {
-    const fm = buildFrontmatter(
+    const fm: Record<string, unknown> = {};
+    applyManagedFrontmatter(
+      fm,
       makeContext({
         relatedItems: [
           { noteLink: () => "[[Related A]]" },
@@ -91,29 +96,105 @@ describe("buildFrontmatter", () => {
 
     expect(fm.related).toEqual(["[[Related A]]", "[[Related B]]"]);
   });
-});
 
-describe("mergeManagedFrontmatter", () => {
-  it("refreshes managed scalars and preserves unrelated keys", () => {
+  it("replaces default related links from Zotero data", () => {
+    const fm: Record<string, unknown> = { related: ["[[Manual]]"] };
+    applyManagedFrontmatter(
+      fm,
+      makeContext({
+        relatedItems: [{ noteLink: () => "[[Related A]]" }],
+      } as Partial<NoteTemplateContext>),
+      {
+        compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS),
+      },
+    );
+
+    expect(fm.related).toEqual(["[[Related A]]"]);
+  });
+
+  it("applies user field strategies against the target", () => {
     const fm = { aliases: ["old"], title: "Old" };
 
-    mergeManagedFrontmatter(fm, {
-      title: "New",
-      [FIELD_CITEKEY]: "smith2024",
+    applyManagedFrontmatter(fm, makeContext({ title: "New" }), {
+      compiled: compileFrontmatter([
+        { key: "title", expr: "zt.title", merge: "replace" },
+        { key: "aliases", expr: "['new']", merge: "append" },
+      ]),
     });
 
     expect(fm).toEqual({
-      aliases: ["old"],
+      aliases: ["old", "new"],
       title: "New",
       [FIELD_CITEKEY]: "smith2024",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
     });
   });
 
-  it("merges array-valued managed fields without duplicates", () => {
-    const fm: Record<string, unknown> = { tags: ["zotero", "read"] };
+  it("leaves existing values untouched when expressions return undefined", () => {
+    const fm: Record<string, unknown> = { title: "Manual" };
 
-    mergeManagedFrontmatter(fm, { tags: ["read", "paper"] });
+    applyManagedFrontmatter(fm, makeContext(), {
+      compiled: compileFrontmatter([
+        { key: "title", expr: "undefined", merge: "replace" },
+      ]),
+    });
 
-    expect(fm.tags).toEqual(["zotero", "read", "paper"]);
+    expect(fm.title).toBe("Manual");
+  });
+
+  it("writes null user values", () => {
+    const fm: Record<string, unknown> = { title: "Manual" };
+
+    applyManagedFrontmatter(fm, makeContext(), {
+      compiled: compileFrontmatter([
+        { key: "title", expr: "null", merge: "replace" },
+      ]),
+    });
+
+    expect(fm.title).toBe(null);
+  });
+
+  it("keeps meaningful existing values for keep fields", () => {
+    const fm: Record<string, unknown> = { title: "Manual", aliases: [] };
+
+    applyManagedFrontmatter(fm, makeContext(), {
+      compiled: compileFrontmatter([
+        { key: "title", expr: "zt.title", merge: "keep" },
+        { key: "aliases", expr: "['generated']", merge: "keep" },
+      ]),
+    });
+
+    expect(fm.title).toBe("Manual");
+    expect(fm.aliases).toEqual(["generated"]);
+  });
+
+  it("reports keep field expression errors even when the target has a value", () => {
+    const errors: string[] = [];
+    const fm: Record<string, unknown> = { title: "Manual" };
+
+    applyManagedFrontmatter(fm, makeContext(), {
+      compiled: compileFrontmatter([
+        { key: "title", expr: "zt.missing.deep", merge: "keep" },
+      ]),
+      onError: (key) => errors.push(key),
+    });
+
+    expect(fm.title).toBe("Manual");
+    expect(errors).toEqual(["title"]);
+  });
+
+  it("reports append conflicts without changing existing values", () => {
+    const conflicts: string[] = [];
+    const fm: Record<string, unknown> = { tags: "manual" };
+
+    applyManagedFrontmatter(fm, makeContext(), {
+      compiled: compileFrontmatter([
+        { key: "tags", expr: "['generated']", merge: "append" },
+      ]),
+      onConflict: (key, detail) => conflicts.push(`${key}:${detail.reason}`),
+    });
+
+    expect(fm.tags).toBe("manual");
+    expect(conflicts).toEqual(["tags:shape-mismatch"]);
   });
 });

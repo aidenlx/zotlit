@@ -175,16 +175,18 @@ If you customized `zt-field.eta.md`:
 
 1. **Delete** the template file -- it has no v2 equivalent.
 2. Open Settings > Templates > Frontmatter.
-3. For each field you had in the template, add a `{key, expr}` pair:
+3. For each field you had in the template, add a frontmatter field with a key, expression, and merge strategy:
 
 | v1 template line | v2 setting |
 |-----------------|------------|
-| `title: "<%= it.title %>"` | Key: `title`, Expr: `zt.title` |
-| `authors: ...` | Key: `authors`, Expr: `zt.authors.map(c => c.fullName)` |
-| `year: "<%= it.date %>"` | Key: `year`, Expr: `zt.date?.year` |
-| `tags: ...` | Key: `tags`, Expr: `zt.tags.map(t => t.tag.name)` |
+| `title: "<%= it.title %>"` | Key: `title`, Expr: `zt.title`, Merge: Replace |
+| `authors: ...` | Key: `authors`, Expr: `zt.authors.map(c => c.fullName)`, Merge: Replace |
+| `year: "<%= it.date %>"` | Key: `year`, Expr: `zt.date?.year`, Merge: Replace |
+| `tags: ...` | Key: `tags`, Expr: `zt.tags.map(t => t.tag.name)`, Merge: Append arrays |
 
 You no longer need to worry about YAML escaping -- `stringifyYaml()` handles it.
+
+Use **Replace** for fields that should follow Zotero on every update. Use **Append arrays** for array fields where manual additions should remain. Use **Keep existing** when ZotLit should fill a field once and then leave your edits alone.
 
 ## Step 11: Understand the managed region
 

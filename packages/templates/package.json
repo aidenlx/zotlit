@@ -12,6 +12,7 @@
     ".": "./dist/index.mjs",
     "./constants": "./dist/constants.mjs",
     "./frontmatter": "./dist/frontmatter.mjs",
+    "./frontmatter-merge": "./dist/frontmatter-merge.mjs",
     "./obsidian": "./dist/obsidian.mjs",
     "./package.json": "./package.json",
     "./defaults/*": "./defaults/*.eta"

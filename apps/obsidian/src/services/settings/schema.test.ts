@@ -14,4 +14,31 @@ describe("schema/defaults invariants", () => {
     const result = v.safeParse(schema, defaults);
     expect(result.success).toBe(true);
   });
+
+  it("trims frontmatter fields and requires unique keys", () => {
+    const entry = schema.entries["note.frontmatter-fields"];
+    const result = v.safeParse(entry, [
+      { key: " title ", expr: " zt.title ", merge: "replace" },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(result.output).toEqual([
+      { key: "title", expr: "zt.title", merge: "replace" },
+    ]);
+
+    expect(
+      v.safeParse(entry, [
+        { key: "title", expr: "zt.title", merge: "replace" },
+        { key: "title", expr: "zt.shortTitle", merge: "keep" },
+      ]).success,
+    ).toBe(false);
+  });
+
+  it("requires frontmatter merge strategy", () => {
+    expect(
+      v.safeParse(schema.entries["note.frontmatter-fields"], [
+        { key: "title", expr: "zt.title" },
+      ]).success,
+    ).toBe(false);
+  });
 });

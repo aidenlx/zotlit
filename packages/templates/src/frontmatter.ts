@@ -1,18 +1,17 @@
 import { basename } from "./basename";
+import {
+  type FrontmatterField,
+  type FrontmatterMergeStrategy,
+} from "./constants";
 
 type BasenameHelper = (path: string, ext?: string) => string;
 type FrontmatterEvaluator = (zt: object, basename: BasenameHelper) => unknown;
-
-/** A user-configured frontmatter entry: `key` mapped to a JS `expr` over `zt`. */
-export interface FrontmatterField {
-  key: string;
-  expr: string;
-}
 
 /** A {@link FrontmatterField} whose `expr` is compiled once for repeated eval. */
 export interface CompiledFrontmatterField {
   key: string;
   fn: FrontmatterEvaluator;
+  merge: FrontmatterMergeStrategy;
 }
 
 /**
@@ -31,7 +30,11 @@ export function compileFrontmatterFields(
   const compiled: CompiledFrontmatterField[] = [];
   for (const field of fields) {
     if (!field.key) continue;
-    compiled.push({ key: field.key, fn: toEvaluator(field.expr) });
+    compiled.push({
+      key: field.key,
+      fn: toEvaluator(field.expr),
+      merge: field.merge,
+    });
   }
   return compiled;
 }
@@ -77,14 +80,15 @@ export function validateFrontmatterExpr(expr: string): string | null {
  * `onError` rather than aborting the rest.
  */
 export function evalFrontmatterFields(
-  fields: readonly CompiledFrontmatterField[],
+  fields: readonly Pick<CompiledFrontmatterField, "key" | "fn">[],
   zt: object,
   onError?: (key: string, error: unknown) => void,
 ): Record<string, unknown> {
   const fm: Record<string, unknown> = {};
   for (const field of fields) {
     try {
-      fm[field.key] = field.fn(zt, basename);
+      const value = field.fn(zt, basename);
+      if (value !== undefined) fm[field.key] = value;
     } catch (error) {
       onError?.(field.key, error);
     }
@@ -93,3 +97,4 @@ export function evalFrontmatterFields(
 }
 
 export { basename };
+export type { FrontmatterField } from "./constants";
