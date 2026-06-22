@@ -107,8 +107,8 @@ class MockVault {
     this.#listeners[name].delete(callback);
   }
 
-  addFile(path: string): TFile {
-    const file = makeFile(path);
+  addFile(path: string, mtime = 0): TFile {
+    const file = makeFile(path, mtime);
     this.files.set(path, file);
     return file;
   }
@@ -163,7 +163,7 @@ describe("NoteIndex", () => {
       { initialized: true },
     );
 
-    expect(service.getNotesByItemKey(ITEM_A)).toEqual(["paper.md"]);
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
   it("waits for resolved when metadata is explicitly uninitialized", async () => {
@@ -178,7 +178,7 @@ describe("NoteIndex", () => {
 
     metadataCache.resolve();
 
-    expect(service.getNotesByItemKey(ITEM_A)).toEqual(["paper.md"]);
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
   it("builds indices on resolved and emits rebuilt once", async () => {
@@ -197,8 +197,8 @@ describe("NoteIndex", () => {
     metadataCache.resolve();
 
     expect(rebuilt).toBe(1);
-    expect(service.getNotesByItemKey(ITEM_A)).toEqual(["Notes/a.md"]);
-    expect(service.getNotesByCitekey("roe2025")).toEqual(["Notes/b.md"]);
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["Notes/a.md"]);
+    expect(paths(service.getNotesByCitekey("roe2025"))).toEqual(["Notes/b.md"]);
   });
 
   it("updates indices and emits changed for metadata edits", async () => {
@@ -207,7 +207,7 @@ describe("NoteIndex", () => {
     });
     metadataCache.resolve();
     const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file));
+    service.on("changed", (file) => changed.push(file.path));
 
     metadataCache.change(
       vault.files.get("paper.md")!,
@@ -215,7 +215,7 @@ describe("NoteIndex", () => {
     );
 
     expect(changed).toEqual(["paper.md"]);
-    expect(service.getNotesByItemKey(ITEM_A)).toEqual(["paper.md"]);
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
   it("does not emit changed for no-op metadata updates", async () => {
@@ -224,7 +224,7 @@ describe("NoteIndex", () => {
     });
     metadataCache.resolve();
     const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file));
+    service.on("changed", (file) => changed.push(file.path));
 
     metadataCache.change(
       vault.files.get("paper.md")!,
@@ -246,10 +246,10 @@ describe("NoteIndex", () => {
     );
 
     expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
-    expect(service.getNotesByItemKey(ITEM_B)).toEqual(["paper.md"]);
+    expect(paths(service.getNotesByItemKey(ITEM_B))).toEqual(["paper.md"]);
   });
 
-  it("handles vault renames by moving file-path contributions", async () => {
+  it("reflects vault renames without a rename handler", async () => {
     const { service, vault, metadataCache } = await makeHarness({
       "paper.md": cache({
         itemKey: ITEM_A,
@@ -260,8 +260,32 @@ describe("NoteIndex", () => {
 
     vault.renameFile("paper.md", "Notes/paper.md");
 
-    expect(service.getNotesByItemKey(ITEM_A)).toEqual(["Notes/paper.md"]);
-    expect(service.getNotesByCitekey("doe2024")).toEqual(["Notes/paper.md"]);
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
+      "Notes/paper.md",
+    ]);
+    expect(paths(service.getNotesByCitekey("doe2024"))).toEqual([
+      "Notes/paper.md",
+    ]);
+  });
+
+  it("orders shared-key notes by mtime descending, then path", async () => {
+    const { service, vault, metadataCache } = await makeHarness({
+      "old.md": cache({ itemKey: ITEM_A }),
+      "new.md": cache({ itemKey: ITEM_A }),
+      "tie-b.md": cache({ itemKey: ITEM_A }),
+      "tie-a.md": cache({ itemKey: ITEM_A }),
+    });
+    vault.files.get("old.md")!.stat.mtime = 100;
+    vault.files.get("new.md")!.stat.mtime = 200;
+    // tie-a.md and tie-b.md keep the default mtime 0 → path breaks the tie.
+    metadataCache.resolve();
+
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
+      "new.md",
+      "old.md",
+      "tie-a.md",
+      "tie-b.md",
+    ]);
   });
 
   it("drops note and citekey indices on delete", async () => {
@@ -327,8 +351,13 @@ function cache(options: {
   } as CachedMetadata;
 }
 
-function makeFile(path: string): TFile {
+function paths(files: TFile[]): string[] {
+  return files.map((file) => file.path);
+}
+
+function makeFile(path: string, mtime = 0): TFile {
   const file = new TFile();
+  file.stat = { ctime: 0, mtime, size: 0 };
   updateFilePath(file, path);
   return file;
 }

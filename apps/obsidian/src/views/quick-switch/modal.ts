@@ -1,4 +1,4 @@
-import { Keymap, SuggestModal } from "obsidian";
+import { Keymap, SuggestModal, type TFile } from "obsidian";
 
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
@@ -35,23 +35,22 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): Promise<void> {
-    const files = this.#deps.noteIndex
-      .getNotesByItemKey(hit.item.indexedKey)
-      .sort();
-    const first = files[0];
-    const path = first ?? (await this.#create(hit));
-    if (!path) return;
+    const existing = this.#deps.noteIndex.getNotesByItemKey(
+      hit.item.indexedKey,
+    )[0];
+    const file = existing ?? (await this.#create(hit));
+    if (!file) return;
 
     await this.#deps.app.workspace.openLinkText(
-      path,
+      file.path,
       "",
       Keymap.isModEvent(evt),
       { active: true },
     );
   }
 
-  /** Create-arm: no existing note → render one and return its path. */
-  async #create(hit: SearchHit): Promise<string | null> {
+  /** Create-arm: no existing note → render one and return it. */
+  async #create(hit: SearchHit): Promise<TFile | null> {
     try {
       const file = await toast.promise(
         this.#deps.noteFeatures.create(hit.item),
@@ -65,7 +64,7 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
           swallowError: false,
         },
       );
-      return file.path;
+      return file;
     } catch {
       // toast.promise already surfaced the failure to the user.
       return null;

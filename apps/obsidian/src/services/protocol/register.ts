@@ -111,10 +111,10 @@ async function handleProtocol(
 
 /** Open existing literature note, or create one if none exists. */
 async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
-  const existing = deps.noteIndex.getNotesByItemKey(ref.indexedKey).sort()[0];
+  const existing = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
 
   if (existing) {
-    await deps.app.workspace.openLinkText(existing, "", false, {
+    await deps.app.workspace.openLinkText(existing.path, "", false, {
       active: true,
     });
     return;
@@ -125,15 +125,12 @@ async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
 
 /** Update the existing literature note, or create if none exists. */
 async function updateNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
-  const existing = deps.noteIndex.getNotesByItemKey(ref.indexedKey).sort()[0];
+  const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
 
-  if (!existing) {
+  if (!file) {
     await createAndOpen(deps, ref);
     return;
   }
-
-  const file = deps.app.vault.getFileByPath(existing);
-  if (!file) return;
 
   const itemKey = itemKeyFromFrontmatter(
     deps.app.metadataCache.getFileCache(file),
