@@ -20,6 +20,22 @@ import {
 import { annotationOpenUri, itemSelectUri } from "./zt-uri";
 
 /**
+ * A single entry in {@link NoteTemplateContext.relatedItems}: the related
+ * item's own {@link TemplateItemData}, flattened with its backlink and author
+ * conveniences. Depth-1 — its own `annotations`, `attachments`, and
+ * `relatedItems` are deliberately absent (resolving them would require a
+ * per-related-item DB fan-out), marking the boundary of the relation graph.
+ */
+export interface TemplateRelatedItem extends TemplateItemData {
+  /** Zotero deep link to the related item (`zotero://select/...`). */
+  backlink: string;
+  /** Creators filtered to {@link TemplateItemData.primaryCreatorType}. */
+  authors: TemplateCreator[];
+  /** Formatted short author string, e.g. `"Smith et al."`. */
+  authorsShort: string;
+}
+
+/**
  * The `zt` root for the `note` template: {@link TemplateItemData} plus the
  * runtime-computed fields assembled at the app layer (backlinks, resolved
  * attachment links, flattened annotations, author conveniences).
@@ -35,6 +51,11 @@ export interface NoteTemplateContext extends TemplateItemData {
   authors: TemplateCreator[];
   /** Formatted short author string, e.g. `"Smith et al."`. */
   authorsShort: string;
+  /**
+   * Items from Zotero's "Related" panel (`dc:relation`), sorted by title.
+   * Same-library, forward-only, depth-1.
+   */
+  relatedItems: TemplateRelatedItem[];
 }
 
 export interface NoteContextInput {
@@ -45,8 +66,14 @@ export interface NoteContextInput {
   annotationsByAttachment: ReadonlyMap<number, readonly Annotation[]>;
   /** Tag applications keyed by Zotero itemID. */
   tagsByItemID: ReadonlyMap<number, readonly ItemTag[]>;
-  /** Short author summary (e.g. `"Smith et al."`). */
-  authorsShort: string;
+  /**
+   * Items related to {@link item} via Zotero's "Related" panel, already
+   * resolved (trashed / unresolvable relations omitted). Each is mapped to a
+   * {@link TemplateRelatedItem} and title-sorted.
+   */
+  relatedItems: readonly Item[];
+  /** Short author summary (e.g. `"Smith et al."`) for any item. */
+  authorsShort: (item: Item) => string;
   /** Resolve an attachment to its vault link; `""` when unresolvable. */
   fileLink: (attachment: Attachment) => string;
   /**
@@ -95,16 +122,59 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     }
   });
 
-  const authors: TemplateCreator[] = itemData.primaryCreatorType
-    ? itemData.creators.filter((c) => c.role === itemData.primaryCreatorType)
-    : [...itemData.creators];
+  const relatedItems = input.relatedItems
+    .map((related) =>
+      buildRelatedItem(
+        related,
+        input.tagsByItemID.get(related.itemID) ?? [],
+        input.authorsShort(related),
+      ),
+    )
+    .sort(byTitle);
 
   return {
     ...itemData,
     backlink: itemSelectUri(item.key, groupID),
     annotations,
     attachments,
-    authors,
-    authorsShort: input.authorsShort,
+    authors: selectPrimaryAuthors(itemData),
+    authorsShort: input.authorsShort(item),
+    relatedItems,
   };
+}
+
+/** Creators filtered to the item's primary creator type; all when none. */
+function selectPrimaryAuthors(data: TemplateItemData): TemplateCreator[] {
+  return data.primaryCreatorType
+    ? data.creators.filter((c) => c.role === data.primaryCreatorType)
+    : [...data.creators];
+}
+
+function buildRelatedItem(
+  item: Item,
+  tags: readonly ItemTag[],
+  authorsShort: string,
+): TemplateRelatedItem {
+  const itemData = itemToTemplateData(item, tags);
+  const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
+  return {
+    ...itemData,
+    backlink: itemSelectUri(item.key, groupID),
+    authors: selectPrimaryAuthors(itemData),
+    authorsShort,
+  };
+}
+
+/**
+ * Locale-aware title sort approximating Zotero's Related panel ordering;
+ * untitled items sort last. Diverges from Zotero intentionally: no
+ * article-stripping or display-title fallback (`getSortTitle`).
+ */
+function byTitle(a: TemplateRelatedItem, b: TemplateRelatedItem): number {
+  const at = a.title ?? "";
+  const bt = b.title ?? "";
+  if (!at && !bt) return 0;
+  if (!at) return 1;
+  if (!bt) return -1;
+  return at.localeCompare(bt);
 }

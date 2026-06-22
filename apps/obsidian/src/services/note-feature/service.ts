@@ -7,6 +7,7 @@ import {
   getAttachmentsByParents,
   getLibraryByGroupID,
   getItemsByKey,
+  getRelatedKeysByItemID,
   getTagsByItemIDs,
   parseIndexedKey,
   USER_LIBRARY_ID,
@@ -250,14 +251,19 @@ export class NoteFeatures extends Service<void> {
     const annotationIDs = [...annotationsByAttachment.values()].flatMap(
       (annotations) => annotations.map((annotation) => annotation.itemID),
     );
-    const tagsByItemID = new Map<number, ItemTag[]>(
-      [item.itemID, ...annotationIDs].map((itemID) => [itemID, []]),
-    );
-    for (const itemTag of getTagsByItemIDs(
+
+    const relatedItems = getItemsByKey(
       client,
-      [item.itemID, ...annotationIDs],
       libraryID,
-    )) {
+      getRelatedKeysByItemID(client, item.itemID),
+    );
+    const relatedItemIDs = relatedItems.map((related) => related.itemID);
+
+    const taggedItemIDs = [item.itemID, ...annotationIDs, ...relatedItemIDs];
+    const tagsByItemID = new Map<number, ItemTag[]>(
+      taggedItemIDs.map((itemID) => [itemID, []]),
+    );
+    for (const itemTag of getTagsByItemIDs(client, taggedItemIDs, libraryID)) {
       tagsByItemID.get(itemTag.itemID)?.push(itemTag);
     }
 
@@ -270,7 +276,8 @@ export class NoteFeatures extends Service<void> {
       attachments,
       annotationsByAttachment,
       tagsByItemID,
-      authorsShort: creatorSummary(item),
+      relatedItems,
+      authorsShort: creatorSummary,
       fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),
       imgEmbed: (annotation) => {
         if (

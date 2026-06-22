@@ -49,6 +49,7 @@ Common fields:
 | `zt.attachments` | `array` | All attachments for this item (see [Attachment shape](#attachment-shape)) | note, content, frontmatter |
 | `zt.authors` | `array` | Primary authors for this item (filtered from creators by the item's primary creator role). Creators coerce to `fullName` in string contexts. | note, content, frontmatter |
 | `zt.authorsShort` | `string` | Formatted short author string (e.g. `"Smith et al."`) | note, content, frontmatter |
+| `zt.relatedItems` | `array` | Items from Zotero's "Related" panel, sorted by title (see [Related items shape](#related-items-shape)) | note, content, frontmatter |
 
 Item-type-specific fields (e.g. `zt.reportNumber`, `zt.thesisType`, `zt.conferenceName`) are also available by their Zotero canonical name. Type-specific aliases (e.g. `blogTitle` for `publicationTitle`, `studio` for `publisher`) are normalized to their canonical form -- both names work. These have "all templates" availability.
 
@@ -249,6 +250,33 @@ Used in `zt.attachments` and `zt.parentAttachment`:
 | `contentType` | `string \| null` | MIME type (e.g. `"application/pdf"`) |
 | `linkMode` | `string` | `"imported_file"`, `"imported_url"`, `"linked_file"`, `"linked_url"`, `"embedded_image"`, or `"unknown"` |
 | `fileLink` | `string` | Resolved file link (vault-relative Markdown link or `file://` URI) |
+
+## Related items shape
+
+Used in `zt.relatedItems` (note, content, and frontmatter templates). The array
+mirrors Zotero's "Related" panel for the item: same library, the relations you
+see in Zotero, sorted by title (untitled items last). Trashed or unresolvable
+relations are omitted.
+
+Each entry has all the standard item fields, creators, tags, and aliases
+described above, plus the note-tier conveniences `backlink`, `authors`, and
+`authorsShort`:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `backlink` | `string` | Zotero deep link to the related item (`zotero://select/...`) |
+| `authors` | `array` | Primary authors for the related item |
+| `authorsShort` | `string` | Formatted short author string (e.g. `"Smith et al."`) |
+
+Related items are depth-1: an entry's own `annotations`, `attachments`, and
+`relatedItems` are not populated (they are absent, not empty), marking the edge
+of the relation graph.
+
+```md
+<% for (const r of zt.relatedItems) { %>
+- [<%= r.title ?? r.key %>](<%= r.backlink %>) — <%= r.authorsShort %>
+<% } %>
+```
 
 ## Filename template
 
