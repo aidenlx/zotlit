@@ -24,6 +24,7 @@ import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
+import { EmptyFilenameError } from "@/services/note-feature/filename";
 import { type NoteFeatures } from "@/services/note-feature/service";
 import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -173,7 +174,10 @@ export class CitekeyClick extends Service<void> {
       file = await toast.promise(this.#noteFeatures.create(item), {
         loading: m.notice_creating_note(),
         success: m.notice_created_note(),
-        error: m.notice_create_note_failed(),
+        error: (_msg, e) =>
+          e instanceof EmptyFilenameError
+            ? e.message
+            : m.notice_create_note_failed(),
         swallowError: false,
       });
     } catch {
