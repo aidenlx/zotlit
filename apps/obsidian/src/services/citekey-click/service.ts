@@ -153,9 +153,11 @@ export class CitekeyClick extends Service<void> {
     const { workspace } = this.#app;
 
     // A note may have appeared between building the token and the click.
-    const existing = this.#noteIndex.getNotesByCitekey(citekey).sort()[0];
+    const existing = this.#noteIndex.getNotesByCitekey(citekey)[0];
     if (existing) {
-      await workspace.openLinkText(existing, "", newLeaf, { active: true });
+      await workspace.openLinkText(existing.path, "", newLeaf, {
+        active: true,
+      });
       return;
     }
 
@@ -218,9 +220,9 @@ function findCitekeyToken(
     start: { line: pos.line, ch: token.start },
     end: { line: pos.line, ch: token.end },
   };
-  const existing = noteIndex.getNotesByCitekey(token.citekey).sort()[0];
+  const existing = noteIndex.getNotesByCitekey(token.citekey)[0];
   if (existing) {
-    return { type: "internal-link", text: existing, ...range };
+    return { type: "internal-link", text: existing.path, ...range };
   }
   const createToken: CreateToken = {
     type: "internal-link",

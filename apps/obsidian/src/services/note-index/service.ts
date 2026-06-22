@@ -26,7 +26,7 @@ export { itemKeyFromFrontmatter };
 const logger = getLogger("note-index");
 
 interface NoteIndexEvents {
-  changed: (file: string) => void;
+  changed: (file: TFile) => void;
   rebuilt: () => void;
 }
 
@@ -48,9 +48,9 @@ export class NoteIndex extends Service<void> {
   readonly #app;
   readonly #emitter = createNanoEvents<NoteIndexEvents>();
 
-  readonly #notesByItemKey = new Map<string, Set<string>>();
-  readonly #notesByCitekey = new Map<string, Set<string>>();
-  readonly #contribByFile = new Map<string, FileContributions>();
+  readonly #notesByItemKey = new Map<string, Set<TFile>>();
+  readonly #notesByCitekey = new Map<string, Set<TFile>>();
+  readonly #contribByFile = new Map<TFile, FileContributions>();
 
   ready: Promise<void>;
 
@@ -60,12 +60,12 @@ export class NoteIndex extends Service<void> {
     this.ready = this.#load();
   }
 
-  getNotesByItemKey(indexedKey: string): string[] {
-    return [...(this.#notesByItemKey.get(indexedKey) ?? [])];
+  getNotesByItemKey(indexedKey: string): TFile[] {
+    return sortNotes(this.#notesByItemKey.get(indexedKey));
   }
 
-  getNotesByCitekey(citekey: string): string[] {
-    return [...(this.#notesByCitekey.get(citekey) ?? [])];
+  getNotesByCitekey(citekey: string): TFile[] {
+    return sortNotes(this.#notesByCitekey.get(citekey));
   }
 
   on<K extends keyof NoteIndexEvents>(
@@ -89,14 +89,14 @@ export class NoteIndex extends Service<void> {
     stack.use(
       registerEvent(
         metadataCache.on("changed", (file, _data, cache) => {
-          if (isMarkdownFile(file)) this.#applyFile(file.path, cache);
+          if (isMarkdownFile(file)) this.#applyFile(file, cache);
         }),
       ),
     );
     stack.use(
       registerEvent(
         metadataCache.on("deleted", (file) => {
-          this.#applyFile(file.path, null);
+          this.#applyFile(file, null);
         }),
       ),
     );
@@ -109,18 +109,8 @@ export class NoteIndex extends Service<void> {
     );
     stack.use(
       registerEvent(
-        vault.on("rename", (file, oldPath) => {
-          this.#applyFile(oldPath, null);
-          if (isMarkdownFile(file)) {
-            this.#applyFile(file.path, metadataCache.getFileCache(file));
-          }
-        }),
-      ),
-    );
-    stack.use(
-      registerEvent(
         vault.on("delete", (file) => {
-          if (isMarkdownFile(file)) this.#applyFile(file.path, null);
+          if (isMarkdownFile(file)) this.#applyFile(file, null);
         }),
       ),
     );
@@ -130,19 +120,19 @@ export class NoteIndex extends Service<void> {
     this.commit(stack.move());
   }
 
-  #applyFile(path: string, cache: CachedMetadata | null): void {
-    const prev = this.#contribByFile.get(path) ?? EMPTY_CONTRIBUTIONS;
+  #applyFile(file: TFile, cache: CachedMetadata | null): void {
+    const prev = this.#contribByFile.get(file) ?? EMPTY_CONTRIBUTIONS;
     const next = cache ? fileContributions(cache) : EMPTY_CONTRIBUTIONS;
     const diff = diffContributions(prev, next);
     if (diff.empty) return;
 
-    this.#applyDiff(path, diff);
+    this.#applyDiff(file, diff);
     if (hasContributions(next)) {
-      this.#contribByFile.set(path, next);
+      this.#contribByFile.set(file, next);
     } else {
-      this.#contribByFile.delete(path);
+      this.#contribByFile.delete(file);
     }
-    this.#emitter.emit("changed", path);
+    this.#emitter.emit("changed", file);
   }
 
   #bulkRescan(): void {
@@ -152,14 +142,14 @@ export class NoteIndex extends Service<void> {
       const cache = this.#app.metadataCache.getFileCache(file);
       if (!cache) continue;
       const contributions = fileContributions(cache);
-      this.#insertContributions(file.path, contributions);
+      this.#insertContributions(file, contributions);
     }
 
     logger.debug("Note index rebuilt", { count: this.#contribByFile.size });
     this.#emitter.emit("rebuilt");
   }
 
-  #applyDiff(file: string, diff: ContribDiff): void {
+  #applyDiff(file: TFile, diff: ContribDiff): void {
     if (diff.itemKey.remove) {
       removeIndexedFile(this.#notesByItemKey, diff.itemKey.remove, file);
     }
@@ -175,7 +165,7 @@ export class NoteIndex extends Service<void> {
     }
   }
 
-  #insertContributions(file: string, contributions: FileContributions): void {
+  #insertContributions(file: TFile, contributions: FileContributions): void {
     if (!hasContributions(contributions)) return;
 
     if (contributions.itemKey) {
@@ -194,18 +184,26 @@ export class NoteIndex extends Service<void> {
   }
 }
 
+/** Most-recently-modified first; ties broken by path for stable ordering. */
+function sortNotes(files: Set<TFile> | undefined): TFile[] {
+  if (!files) return [];
+  return [...files].sort(
+    (a, b) => b.stat.mtime - a.stat.mtime || a.path.localeCompare(b.path),
+  );
+}
+
 function addIndexedFile(
-  index: Map<string, Set<string>>,
+  index: Map<string, Set<TFile>>,
   key: string,
-  file: string,
+  file: TFile,
 ): void {
   ensureSet(index, key).add(file);
 }
 
 function removeIndexedFile(
-  index: Map<string, Set<string>>,
+  index: Map<string, Set<TFile>>,
   key: string,
-  file: string,
+  file: TFile,
 ): void {
   const files = index.get(key);
   if (!files) return;
