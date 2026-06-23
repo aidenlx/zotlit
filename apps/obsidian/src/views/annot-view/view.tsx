@@ -30,7 +30,7 @@ import {
 import { type DatabaseService } from "@/services/database/service";
 import { type ItemLookup } from "@/services/item-lookup/service";
 import { type LiveUpdateService } from "@/services/live-update/service";
-import { type NoteFeatures } from "@/services/note-feature/service";
+import { type NoteFeatureContext } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -97,7 +97,7 @@ export interface AnnotViewDeps {
   db: DatabaseService;
   liveUpdate: LiveUpdateService;
   zoteroPref: ZoteroPrefService;
-  noteFeatures: NoteFeatures;
+  noteFeatures: NoteFeatureContext;
   attachmentImport: AttachmentImportService;
   itemLookup: ItemLookup;
   settings: SettingsService;
@@ -500,7 +500,7 @@ export class AnnotationView extends ItemView {
 
       this.#store.setState({ selectedAttachmentID: activeAtchID });
       this.#store.setState({
-        annotations: getAnnotViewAnnotations(client, activeAtchID, libraryID),
+        annotations: getAnnotViewAnnotations(client, activeAtchID),
       });
 
       this.#loadDisposables.defer(
@@ -513,11 +513,7 @@ export class AnnotationView extends ItemView {
             }
             try {
               this.#store.setState({
-                annotations: getAnnotViewAnnotations(
-                  db.client,
-                  atchID,
-                  libraryID,
-                ),
+                annotations: getAnnotViewAnnotations(db.client, atchID),
               });
             } catch (err) {
               logger.warn(

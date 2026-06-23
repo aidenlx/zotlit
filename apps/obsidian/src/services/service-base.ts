@@ -77,6 +77,19 @@ type RegisteredServices<TEntry extends ServiceRegistration<any>> = {
   readonly [K in keyof TEntry]: ReturnType<TEntry[K]>;
 };
 
+type ValueFactory<TServices extends object> = (
+  services: Readonly<TServices>,
+) => object;
+
+type ValueRegistration<TServices extends object> = Record<
+  string,
+  ValueFactory<TServices>
+>;
+
+type RegisteredValues<TEntry extends ValueRegistration<any>> = {
+  readonly [K in keyof TEntry]: ReturnType<TEntry[K]>;
+};
+
 type ServiceErrorHandler = (key: string, error: ServiceInitError) => void;
 
 /**
@@ -118,22 +131,7 @@ export class ServiceContainer<TServices extends object = {}> {
   use<const TEntry extends ServiceRegistration<TServices>>(
     entry: TEntry,
   ): ServiceContainer<TServices & RegisteredServices<TEntry>> {
-    const key = getServiceKey(entry);
-    if (Object.hasOwn(this.#services, key)) {
-      throw new Error(`Service "${key}" is already registered`);
-    }
-
-    const factory = entry[key];
-    if (!factory) {
-      throw new Error(`Service "${key}" factory is missing`);
-    }
-
-    let service: Service<any>;
-    try {
-      service = factory(this.services);
-    } catch (cause) {
-      throw new ServiceInitError(key, cause);
-    }
+    const { key, value: service } = this.#invokeFactory(entry);
     if (!(service instanceof Service)) {
       throw new TypeError(
         `Service "${key}" factory did not return a Service instance`,
@@ -162,14 +160,52 @@ export class ServiceContainer<TServices extends object = {}> {
       TServices & RegisteredServices<TEntry>
     >;
   }
+
+  /**
+   * Register one non-`Service` injected value and widen the container type with
+   * that key. Unlike {@link use}, the value carries no startup or disposal
+   * lifecycle: its factory runs once against the services registered so far, and
+   * the returned value is stored as-is. Use for stateless dependency bundles
+   * (e.g. composable-function contexts) that other services inject but that own
+   * no resources.
+   */
+  useValue<const TEntry extends ValueRegistration<TServices>>(
+    entry: TEntry,
+  ): ServiceContainer<TServices & RegisteredValues<TEntry>> {
+    const { key, value } = this.#invokeFactory(entry);
+    (this.#services as Record<string, object>)[key] = value;
+
+    return this as unknown as ServiceContainer<
+      TServices & RegisteredValues<TEntry>
+    >;
+  }
+
+  /** Validate a single-key registration entry and run its factory, wrapping a
+   *  factory throw in {@link ServiceInitError}. Shared by {@link use} and
+   *  {@link useValue}; the caller owns lifecycle/storage of the result. */
+  #invokeFactory<TValue>(
+    entry: Record<string, (services: Readonly<TServices>) => TValue>,
+  ): { key: string; value: TValue } {
+    const key = getServiceKey(entry);
+    if (Object.hasOwn(this.#services, key)) {
+      throw new Error(`Service "${key}" is already registered`);
+    }
+    const factory = entry[key];
+    if (!factory) {
+      throw new Error(`Service "${key}" factory is missing`);
+    }
+    try {
+      return { key, value: factory(this.services) };
+    } catch (cause) {
+      throw new ServiceInitError(key, cause);
+    }
+  }
 }
 
-function getServiceKey<TServices extends object>(
-  entry: ServiceRegistration<TServices>,
-): string {
+function getServiceKey(entry: Record<string, unknown>): string {
   const keys = Object.keys(entry);
   if (keys.length !== 1) {
-    throw new Error("ServiceContainer.use() expects exactly one service entry");
+    throw new Error("ServiceContainer registration expects exactly one entry");
   }
 
   return keys[0]!;

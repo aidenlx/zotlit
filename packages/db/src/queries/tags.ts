@@ -5,20 +5,15 @@ import { type ItemTag, type Tag } from "@/lib/zt-tag";
 
 import { defineQuery, type QueryRow } from "./_shared";
 
-const itemTagsByItemQuery = defineQuery<{
-  itemID: number;
-  libraryID: number;
-}>()((db, { placeholder }) =>
-  db.query.itemTags.findMany({
-    where: {
-      itemID: placeholder("itemID"),
-      item: {
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+const itemTagsByItemQuery = defineQuery<{ itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemTags.findMany({
+      where: {
+        itemID: placeholder("itemID"),
+        item: { deletedItem: false },
       },
-    },
-    columns: { itemID: true, tagID: true, type: true },
-  }),
+      columns: { itemID: true, tagID: true, type: true },
+    }),
 );
 
 const tagByIdQuery = defineQuery<{ tagID: number }>()((db, { placeholder }) =>
@@ -60,10 +55,9 @@ const byTagName = (a: ItemTag, b: ItemTag): number =>
 export function getTagsByItemIDs(
   db: NodeDatabaseClient,
   itemIDs: readonly number[],
-  libraryID: number,
 ): ItemTag[] {
   const batches = itemIDs.map((itemID) =>
-    itemTagsByItemQuery.prepared(db).all({ itemID, libraryID }),
+    itemTagsByItemQuery.prepared(db).all({ itemID }),
   );
   const rows = batches.flat();
   const tagsByID = new Map(
@@ -80,12 +74,9 @@ export function getTagsByItemIDs(
 export async function getTagsByItemIDsAsync(
   db: SQLocalDatabaseClient,
   itemIDs: readonly number[],
-  libraryID: number,
 ): Promise<ItemTag[]> {
   const batches = await Promise.all(
-    itemIDs.map((itemID) =>
-      itemTagsByItemQuery.prepared(db).all({ itemID, libraryID }),
-    ),
+    itemIDs.map((itemID) => itemTagsByItemQuery.prepared(db).all({ itemID })),
   );
   const rows = batches.flat();
   const tagRows = await Promise.all(

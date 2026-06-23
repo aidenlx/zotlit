@@ -165,6 +165,12 @@ importers:
       monkey-around:
         specifier: 'catalog:'
         version: 3.0.0
+      nanoid:
+        specifier: ^5.1.14
+        version: 5.1.15
+      p-limit:
+        specifier: ^7.3.0
+        version: 7.3.0
       react:
         specifier: 'catalog:'
         version: 19.2.6
@@ -593,6 +599,9 @@ importers:
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../shared
+      arkregex:
+        specifier: 'catalog:'
+        version: 0.0.5
       eta:
         specifier: 'catalog:'
         version: 4.6.0
@@ -3194,6 +3203,11 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  nanoid@5.1.15:
+    resolution: {integrity: sha512-kBg3RpGtIe+RpTbyXwoI6pk5yD7KUiI3sygUqgeBMRst42KmhB4RZC7eiO9Wa1HIpaCCtpE2DJ6OI4Wi5ebwFw==}
+    engines: {node: ^18 || >=20}
+    hasBin: true
+
   next-tick@1.1.0:
     resolution: {integrity: sha512-CXdUiJembsNjuToQvxayPZF9Vqht7hewsvy2sOWafLvi2awflj9mOC6bHIg50orX8IJvWKY9wYQ/zB2kogPslQ==}
 
@@ -3305,6 +3319,10 @@ packages:
   p-cancelable@2.1.1:
     resolution: {integrity: sha512-BZOr3nRQHOntUjTrH8+Lh54smKHoHyur8We1V8DSMVrl5A2malOOwuJRnKRDjSnkoeBh4at6BwEnb5I7Jl31wg==}
     engines: {node: '>=8'}
+
+  p-limit@7.3.0:
+    resolution: {integrity: sha512-7cIXg/Z0M5WZRblrsOla88S4wAK+zOQQWeBYfV3qJuJXMr+LnbYjaadrFaS0JILfEDPVqHyKnZ1Z/1d6J9VVUw==}
+    engines: {node: '>=20'}
 
   pako@1.0.11:
     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
@@ -3950,6 +3968,10 @@ packages:
 
   yauzl@2.10.0:
     resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
+
+  yocto-queue@1.2.2:
+    resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
+    engines: {node: '>=12.20'}
 
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
@@ -6090,6 +6112,8 @@ snapshots:
 
   nanoid@3.3.12: {}
 
+  nanoid@5.1.15: {}
+
   next-tick@1.1.0: {}
 
   nf3@0.3.17: {}
@@ -6281,6 +6305,10 @@ snapshots:
       oxlint-tsgolint: 0.23.0
 
   p-cancelable@2.1.1: {}
+
+  p-limit@7.3.0:
+    dependencies:
+      yocto-queue: 1.2.2
 
   pako@1.0.11: {}
 
@@ -6737,6 +6765,8 @@ snapshots:
     dependencies:
       buffer-crc32: 0.2.13
       fd-slicer: 1.1.0
+
+  yocto-queue@1.2.2: {}
 
   zod@3.25.76: {}
 

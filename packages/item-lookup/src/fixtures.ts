@@ -76,6 +76,7 @@ export function makeItem(options: ItemFixtureOptions): Item {
   if (itemType === "journalArticle") {
     return {
       ...base,
+      groupID: null,
       fields: {
         itemType: "journalArticle",
         ...fields,
@@ -86,7 +87,11 @@ export function makeItem(options: ItemFixtureOptions): Item {
       } satisfies JournalArticleFields,
     };
   }
-  return { ...base, fields: { itemType, ...fields } as ItemFields };
+  return {
+    ...base,
+    groupID: null,
+    fields: { itemType, ...fields } as ItemFields,
+  };
 }
 
 export function makeCreator(firstName: string, lastName: string): Creator {

@@ -67,6 +67,16 @@ export interface DatabaseServiceDeps {
   zoteroPref: ZoteroPrefService;
 }
 
+/**
+ * A pinned read handle from {@link DatabaseService.acquireRead}. Keeps the
+ * current client alive and defers refresh swaps until disposed. `client` is
+ * captured at acquire time and stays stable for the lease's whole life, so a
+ * long-running read (e.g. a batch) sees one snapshot instead of a torn one.
+ */
+interface DatabaseReadLease extends Disposable {
+  readonly client: NodeDatabaseClient;
+}
+
 export class DatabaseService extends Service<void> {
   readonly #settings;
   readonly #zoteroPref;
@@ -83,6 +93,9 @@ export class DatabaseService extends Service<void> {
   #watchTimer: ReturnType<typeof setTimeout> | null = null;
   #refreshInFlight: Promise<void> | null = null;
   #refreshAgain = false;
+  #leaseCount = 0;
+  #deferredRefresh: PromiseWithResolvers<void> | null = null;
+  #torndown = false;
   #lastSourcePath: string | null = null;
   #lastConfiguredMode: ConfiguredReadMode | null = null;
   #lastAutoRefresh: boolean | null = null;
@@ -135,6 +148,60 @@ export class DatabaseService extends Service<void> {
     if (this.#state === "degraded") {
       throw new DatabaseError("degraded", this.#error);
     }
+  }
+
+  /**
+   * Pin the current client and defer refresh swaps for the returned lease's
+   * lifetime. Use for reads that span a long async lifetime (e.g. a batch run)
+   * and would otherwise observe a mid-flight client swap as a closed-connection
+   * throw or a torn snapshot. Dispose the lease (via `using`) to let any
+   * deferred refresh run.
+   *
+   * @throws {@link DatabaseError} when the service is degraded.
+   */
+  async acquireRead(): Promise<DatabaseReadLease> {
+    await this.ready;
+    // Increment first (synchronous) so the refresh gate sees the lease before
+    // any future trigger can start a swap.
+    this.#leaseCount += 1;
+    try {
+      // A refresh that started before this increment is not gated; await it so
+      // the lease pins the post-swap client rather than a client about to close.
+      if (this.#refreshInFlight) await this.#refreshInFlight;
+      if (this.#state === "degraded" || !this.#client) {
+        throw new DatabaseError("degraded", this.#error);
+      }
+      return this.#createLease(this.#client);
+    } catch (error) {
+      this.#releaseLease();
+      throw error;
+    }
+  }
+
+  #createLease(client: NodeDatabaseClient): DatabaseReadLease {
+    let released = false;
+    return {
+      client,
+      [Symbol.dispose]: () => {
+        if (released) return;
+        released = true;
+        this.#releaseLease();
+      },
+    };
+  }
+
+  /**
+   * Synchronous lease release: the decrement → check-zero → start-refresh
+   * sequence must not yield, or a lease re-acquired in the gap would strand the
+   * deferred refresh. No-op once torn down — teardown ignores leases.
+   */
+  #releaseLease(): void {
+    this.#leaseCount -= 1;
+    if (this.#torndown || this.#leaseCount > 0 || !this.#deferredRefresh)
+      return;
+    const deferred = this.#deferredRefresh;
+    this.#deferredRefresh = null;
+    void this.#enqueueRefresh().finally(() => deferred.resolve());
   }
 
   /**
@@ -196,6 +263,14 @@ export class DatabaseService extends Service<void> {
     stack.defer(
       this.#zoteroPref.on("data-dir-changed", onSourcePathMaybeChanged),
     );
+    // Registered last so it runs first on disposal (stack is LIFO): the flag
+    // must flip before any client/watcher teardown, so a lease releasing during
+    // the async disposal window no-ops instead of scheduling a refresh against a
+    // half-disposed service. Teardown is unconditional and ignores leases; a
+    // still-deferred refresh() simply never resolves (its toast unloads with us).
+    stack.defer(() => {
+      this.#torndown = true;
+    });
 
     await this.#refreshOnce();
     this.commit(stack.move());
@@ -234,6 +309,16 @@ export class DatabaseService extends Service<void> {
    * queueing, so a burst of watcher events collapses into one extra refresh.
    */
   #enqueueRefresh(): Promise<void> {
+    // Gate before the coalesce branch: while a read lease is held, a trigger
+    // must not start a swap or set a trailing rerun. It only records that a
+    // refresh is owed; the last lease release runs it. One shared promise lets
+    // a user-initiated refresh() defer-and-wait for that post-drain run, while
+    // passive triggers simply leave the boolean set and ignore the result.
+    if (this.#leaseCount > 0) {
+      logger.debug("Refresh deferred while read lease held");
+      this.#deferredRefresh ??= Promise.withResolvers<void>();
+      return this.#deferredRefresh.promise;
+    }
     if (this.#refreshInFlight) {
       logger.debug("Refresh in flight, coalescing trailing rerun");
       this.#refreshAgain = true;

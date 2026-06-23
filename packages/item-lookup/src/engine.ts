@@ -101,11 +101,18 @@ const SEARCH_FIELDS = [
   "court",
 ] as const satisfies readonly SearchField[];
 
-export function buildIndex(
-  items: readonly IndexedItem[],
+/** Accumulates a {@link SearchIndex} across batches so a large library can be
+ * indexed in chunks with the caller yielding between {@link add} calls. */
+export interface SearchIndexBuilder {
+  /** Index a batch of items, preserving insertion order in `index.items`. */
+  add(items: readonly IndexedItem[]): void;
+  build(): SearchIndex;
+}
+
+export function createIndexBuilder(
   tokenizerOpts: TokenizerOptions,
   { libraryID, languageLookup = null }: BuildIndexOptions,
-): SearchIndex {
+): SearchIndexBuilder {
   const mini = new MiniSearch<IndexedSearchDocument>({
     idField: "id",
     fields: [...SEARCH_FIELDS],
@@ -113,20 +120,38 @@ export function buildIndex(
     tokenize: (text) => tokenize(text, tokenizerOpts),
     processTerm,
   });
+  const items: IndexedItem[] = [];
   const byId = new Map<number, IndexedItem>();
   const yearById = new Map<number, string>();
   const citationKeyById = new Map<number, string>();
-  const indexed = items.map((item) => {
-    byId.set(item.itemID, item);
-    const year = parseItemDate(item.date)?.year?.toString() ?? "";
-    yearById.set(item.itemID, year);
-    if (item.citationKey) {
-      citationKeyById.set(item.itemID, normalize(item.citationKey));
-    }
-    return toSearchDocument(item, languageLookup);
-  });
-  mini.addAll(indexed);
-  return { libraryID, items, byId, yearById, citationKeyById, mini };
+  return {
+    add(batch) {
+      const indexed = batch.map((item) => {
+        items.push(item);
+        byId.set(item.itemID, item);
+        const year = parseItemDate(item.date)?.year?.toString() ?? "";
+        yearById.set(item.itemID, year);
+        if (item.citationKey) {
+          citationKeyById.set(item.itemID, normalize(item.citationKey));
+        }
+        return toSearchDocument(item, languageLookup);
+      });
+      mini.addAll(indexed);
+    },
+    build() {
+      return { libraryID, items, byId, yearById, citationKeyById, mini };
+    },
+  };
+}
+
+export function buildIndex(
+  items: readonly IndexedItem[],
+  tokenizerOpts: TokenizerOptions,
+  options: BuildIndexOptions,
+): SearchIndex {
+  const builder = createIndexBuilder(tokenizerOpts, options);
+  builder.add(items);
+  return builder.build();
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

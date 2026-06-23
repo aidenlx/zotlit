@@ -1,54 +1,73 @@
-import { type App, type ObsidianProtocolData, type Plugin } from "obsidian";
+import { type ObsidianProtocolData, type Plugin } from "obsidian";
 
-import { getItemRefByID, getItemsByID, type ItemRef } from "@zotlit/db";
+import { getItemRefByID, type ItemRef } from "@zotlit/db";
 import {
+  batchProtocolActionId,
   getProtocolUrlVersion,
+  parseProtocolBatchQuery,
   parseProtocolQuery,
   type ProtocolAction,
   protocolActionId,
   protocolActions,
+  type ProtocolBatchQuery,
   protocolSourceMatches,
   type ProtocolQuery,
 } from "@zotlit/protocol";
 
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
-import { type DatabaseService } from "@/services/database/service";
-import { EmptyFilenameError } from "@/services/note-feature/filename";
-import { type NoteFeatures } from "@/services/note-feature/service";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import { type NoteIndex } from "@/services/note-index/service";
+import { type LiveUpdateService } from "@/services/live-update/service";
+import { runBatchUpdate } from "@/services/note-feature/batch-update";
+import {
+  createAndOpen,
+  type SingleUpdateDeps,
+  updateNote,
+} from "@/services/note-feature/single-update";
 import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 const logger = getLogger("protocol");
 
-export interface ProtocolDeps {
-  app: App;
-  db: DatabaseService;
+export interface ProtocolDeps extends SingleUpdateDeps {
   zoteroPref: ZoteroPrefService;
-  noteFeatures: NoteFeatures;
-  noteIndex: NoteIndex;
+  liveUpdate: LiveUpdateService;
 }
 
 /**
- * Register `obsidian://zotlit/{open,update}` handlers. Each link carries a
- * numeric `itemID` and a `source-id` hash; the handler validates both before
- * delegating to {@link NoteFeatures}.
+ * Register `obsidian://zotlit/{open,update}` plus the batch `update-many`
+ * handler. Each link carries a `source-id` hash the handler validates before
+ * delegating to the note-feature service.
+ *
+ * `update-many` is registered explicitly, outside the per-item loop, because it
+ * decodes a different query shape (an item-id list) and routes to the batch
+ * runner.
  *
  * Handlers auto-deregister when the plugin unloads.
  */
 export function registerProtocolHandlers(
   plugin: Pick<Plugin, "registerObsidianProtocolHandler">,
   deps: ProtocolDeps,
-): void {
+): Disposable {
+  using stack = new DisposableStack();
   for (const action of protocolActions) {
     plugin.registerObsidianProtocolHandler(protocolActionId(action), (data) => {
       void handleProtocol(action, data, deps);
     });
   }
+  plugin.registerObsidianProtocolHandler(batchProtocolActionId, (data) => {
+    void handleBatchProtocol(data, deps);
+  });
+
+  // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
+  // runs the same interactive flow as the `update-many` protocol link.
+  stack.defer(
+    deps.liveUpdate.on("update-many", (event) => {
+      void runBatchUpdate(deps, event.items);
+    }),
+  );
+
+  return stack.move();
 }
 
 async function handleProtocol(
@@ -109,6 +128,47 @@ async function handleProtocol(
   }
 }
 
+/**
+ * Handle `obsidian://zotlit/update-many`. Validates protocol version and
+ * source id at this transport edge, then hands the raw item-id list to
+ * {@link runBatchUpdate}, which owns the database-ready gate, classification,
+ * and the confirm/progress modal.
+ */
+async function handleBatchProtocol(
+  data: ObsidianProtocolData,
+  deps: ProtocolDeps,
+): Promise<void> {
+  const action = "update-many";
+  if (
+    rejectIncompatibleProtocol(getProtocolUrlVersion(data), logger, {
+      action,
+      transport: "url",
+    })
+  ) {
+    return;
+  }
+
+  let query: ProtocolBatchQuery;
+  try {
+    query = parseProtocolBatchQuery(data);
+  } catch (error) {
+    logger.warn("Invalid protocol query", { action, error });
+    new BaseNotice(m.notice_protocol_invalid());
+    return;
+  }
+
+  if (!protocolSourceMatches(query, deps.zoteroPref.sourceId)) {
+    logger.warn("Protocol source id mismatch", {
+      action,
+      received: query.sourceId,
+      expected: deps.zoteroPref.sourceId,
+    });
+    return;
+  }
+
+  await runBatchUpdate(deps, query.items);
+}
+
 /** Open existing literature note, or create one if none exists. */
 async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
   const existing = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
@@ -121,51 +181,4 @@ async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
   }
 
   await createAndOpen(deps, ref);
-}
-
-/** Update the existing literature note, or create if none exists. */
-async function updateNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
-  const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
-
-  if (!file) {
-    await createAndOpen(deps, ref);
-    return;
-  }
-
-  const itemKey = itemKeyFromFrontmatter(
-    deps.app.metadataCache.getFileCache(file),
-  );
-  if (!itemKey) return;
-
-  void toast.promise(deps.noteFeatures.update(file, itemKey), {
-    loading: m.notice_updating_note(),
-    success: (result) =>
-      result.bodyUpdated
-        ? m.notice_updated_note()
-        : m.notice_updated_note_no_region(),
-    error: m.notice_update_note_failed(),
-  });
-}
-
-/** Lazily resolve the full Item and create + open a new literature note. */
-async function createAndOpen(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
-  const [item] = getItemsByID(deps.db.client, ref.libraryID, [ref.itemID]);
-  if (!item) return;
-
-  try {
-    const file = await toast.promise(deps.noteFeatures.create(item), {
-      loading: m.notice_creating_note(),
-      success: m.notice_created_note(),
-      error: (_msg, e) =>
-        e instanceof EmptyFilenameError
-          ? e.message
-          : m.notice_create_note_failed(),
-      swallowError: false,
-    });
-    await deps.app.workspace.openLinkText(file.path, "", false, {
-      active: true,
-    });
-  } catch {
-    // toast.promise already surfaced the failure.
-  }
 }

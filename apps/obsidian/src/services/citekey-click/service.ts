@@ -24,8 +24,8 @@ import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
+import { createNote, type NoteFeatureContext } from "@/services/note-feature";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
-import { type NoteFeatures } from "@/services/note-feature/service";
 import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { type SettingsService } from "@/services/settings/service";
@@ -40,7 +40,7 @@ const CREATE_MARKER = "zotero";
 export interface CitekeyClickDeps {
   app: App;
   noteIndex: NoteIndex;
-  noteFeatures: NoteFeatures;
+  noteFeatures: NoteFeatureContext;
   db: DatabaseService;
   settings: SettingsService;
 }
@@ -173,7 +173,7 @@ export class CitekeyClick extends Service<void> {
 
     let file: TFile;
     try {
-      file = await toast.promise(this.#noteFeatures.create(item), {
+      file = await toast.promise(createNote(this.#noteFeatures, item), {
         loading: m.notice_creating_note(),
         success: m.notice_created_note(),
         error: (_msg, e) =>
@@ -196,7 +196,7 @@ export class CitekeyClick extends Service<void> {
       this.#settings.current?.["zotero.citation-library"] ?? USER_LIBRARY_ID;
     const itemID = getItemIDByCitekey(client, libraryID, citekey);
     if (itemID == null) return null;
-    const [item] = getItemsByID(client, libraryID, [itemID]);
+    const [item] = getItemsByID(client, [itemID]);
     return item ?? null;
   }
 }

@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe("getAttachmentsByParents", () => {
   it("returns visible attachments tagged with their parentItemID for caller grouping", () => {
-    const result = getAttachmentsByParents(db, [100, 200], USER_LIBRARY_ID);
+    const result = getAttachmentsByParents(db, [100, 200]);
 
     expect(result.map((a) => [a.parentItemID, a.key])).toEqual([
       [100, "ATTA1"],
@@ -34,31 +34,21 @@ describe("getAttachmentsByParents", () => {
   });
 
   it("excludes deleted attachments via item.deletedItem filter", () => {
-    const keys = new Set(
-      getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map((a) => a.key),
-    );
+    const keys = new Set(getAttachmentsByParents(db, [100]).map((a) => a.key));
 
     expect(keys.has("TRASHED")).toBe(false);
   });
 
-  it("excludes attachments from other libraries", () => {
-    const keys = new Set(
-      getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map((a) => a.key),
-    );
-
-    expect(keys.has("ATTOTHER")).toBe(false);
-  });
-
   it("returns an empty array when no parent has attachments", () => {
-    expect(getAttachmentsByParents(db, [999], USER_LIBRARY_ID)).toEqual([]);
+    expect(getAttachmentsByParents(db, [999])).toEqual([]);
   });
 
   it("returns an empty array for empty parent input", () => {
-    expect(getAttachmentsByParents(db, [], USER_LIBRARY_ID)).toEqual([]);
+    expect(getAttachmentsByParents(db, [])).toEqual([]);
   });
 
   it("surfaces path, contentType, and raw linkMode", () => {
-    const [first] = getAttachmentsByParents(db, [100], USER_LIBRARY_ID);
+    const [first] = getAttachmentsByParents(db, [100]);
 
     expect(first).toMatchObject({
       key: "ATTA1",
@@ -72,18 +62,15 @@ describe("getAttachmentsByParents", () => {
   });
 
   it("reuses the prepared statement across different parent IDs", () => {
-    const r1 = getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map(
-      (a) => a.key,
-    );
-    const r2 = getAttachmentsByParents(db, [200], USER_LIBRARY_ID).map(
-      (a) => a.key,
-    );
+    const r1 = getAttachmentsByParents(db, [100]).map((a) => a.key);
+    const r2 = getAttachmentsByParents(db, [200]).map((a) => a.key);
 
     expect(r1).toEqual(["ATTA1", "ATTA2"]);
     expect(r2).toEqual(["ATTB1"]);
-    expect(
-      getAttachmentsByParents(db, [100], USER_LIBRARY_ID).map((a) => a.key),
-    ).toEqual(["ATTA1", "ATTA2"]);
+    expect(getAttachmentsByParents(db, [100]).map((a) => a.key)).toEqual([
+      "ATTA1",
+      "ATTA2",
+    ]);
   });
 });
 
@@ -133,7 +120,8 @@ function seed(sqlite: DatabaseSync): void {
         (102, 2, '2024-01-04 00:00:00', '2024-01-04 00:00:00', 1, 'ATTA2'),
         (103, 2, '2024-01-05 00:00:00', '2024-01-05 00:00:00', 1, 'TRASHED'),
         (201, 2, '2024-01-06 00:00:00', '2024-01-06 00:00:00', 1, 'ATTB1'),
-        (301, 2, '2024-01-07 00:00:00', '2024-01-07 00:00:00', 2, 'ATTOTHER');
+        (300, 1, '2024-01-07 00:00:00', '2024-01-07 00:00:00', 2, 'PAROTHER'),
+        (301, 2, '2024-01-08 00:00:00', '2024-01-08 00:00:00', 2, 'ATTOTHER');
 
     insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
       values
@@ -141,7 +129,7 @@ function seed(sqlite: DatabaseSync): void {
         (102, 100, 2, 'application/epub+zip', '/abs/path/book.epub'),
         (103, 100, 0, 'application/pdf', 'storage:trashed.pdf'),
         (201, 200, 1, 'text/html', null),
-        (301, 100, 0, 'application/pdf', 'storage:other-lib.pdf');
+        (301, 300, 0, 'application/pdf', 'storage:other-lib.pdf');
 
     insert into deletedItems (itemID, dateDeleted)
       values (103, '2024-01-05 00:00:01');

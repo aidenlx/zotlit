@@ -2,7 +2,12 @@ import type * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
 import { notifyEventSchema } from "./notify";
-import { protocolActions, protocolQuerySchema } from "./url";
+import { SOURCE_ID_HEADER } from "./source-id";
+import {
+  batchUpdateRequestSchema,
+  protocolActions,
+  protocolQuerySchema,
+} from "./url";
 import { PROTOCOL_VERSION } from "./version";
 
 type ObjectSchema = v.ObjectSchema<
@@ -41,14 +46,32 @@ function protocolUrlWireSurface(): unknown {
   };
 }
 
+function literatureNotesWireSurface(): unknown {
+  const schema = batchUpdateRequestSchema as ObjectSchema;
+  return {
+    method: "PATCH",
+    // The batch is gated by the source-id header, not a body field.
+    sourceHeader: SOURCE_ID_HEADER,
+    body: Object.keys(schema.entries).sort(),
+  };
+}
+
 describe("wire format", () => {
   it("matches the protocol version snapshot", () => {
     expect({
       version: PROTOCOL_VERSION,
       notify: notifyWireSurface(),
       url: protocolUrlWireSurface(),
+      literatureNotes: literatureNotesWireSurface(),
     }).toMatchInlineSnapshot(`
       {
+        "literatureNotes": {
+          "body": [
+            "items",
+          ],
+          "method": "PATCH",
+          "sourceHeader": "X-Zotlit-Source-Id",
+        },
         "notify": [
           {
             "event": "item/update",
@@ -58,7 +81,6 @@ describe("wire format", () => {
               "event",
               "modify",
               "profilePath",
-              "sourceId",
               "trash",
             ],
           },
@@ -71,7 +93,6 @@ describe("wire format", () => {
               "itemID",
               "profilePath",
               "selected",
-              "sourceId",
             ],
           },
           {
@@ -83,7 +104,6 @@ describe("wire format", () => {
               "itemID",
               "profilePath",
               "selected",
-              "sourceId",
             ],
           },
         ],
@@ -97,7 +117,7 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "version": 1,
+        "version": 2,
       }
     `);
   });

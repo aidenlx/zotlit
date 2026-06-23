@@ -11,8 +11,14 @@ import {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { TemplateEngine, type TemplateFunction } from "@zotlit/templates";
 import { type AutoTrim } from "@zotlit/templates/constants";
+import {
+  compileFrontmatterFields,
+  type CompiledFrontmatterField,
+  type FrontmatterField,
+} from "@zotlit/templates/frontmatter";
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
+import { RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
@@ -57,6 +63,11 @@ export class TemplateService extends Service<void> {
   #filenameError: string | null = null;
   #filenameFn: TemplateFunction | null = null;
 
+  /** Compiled managed-frontmatter fields, memoized by the settings array
+   *  reference (which changes only when the list is mutated). */
+  #lastFrontmatterFields: readonly FrontmatterField[] | null = null;
+  #compiledFrontmatterFields: readonly CompiledFrontmatterField[] = [];
+
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
   #folderGeneration = 0;
   #loaded = false;
@@ -83,6 +94,15 @@ export class TemplateService extends Service<void> {
   /** The note-filename expression's compile error, or `null` when it is valid. */
   get filenameError(): string | null {
     return this.#filenameError;
+  }
+
+  /**
+   * Managed-frontmatter fields compiled from `note.frontmatter-fields`,
+   * recompiled on settings change. Consumed by the note feature when writing a
+   * note's frontmatter; reserved system keys are already filtered out.
+   */
+  get frontmatterFields(): readonly CompiledFrontmatterField[] {
+    return this.#compiledFrontmatterFields;
   }
 
   on<K extends keyof TemplateServiceEvents>(
@@ -156,6 +176,7 @@ export class TemplateService extends Service<void> {
     this.#lastFilename = snapshot["template.filename"];
     this.#engine.setAutoTrim(this.#lastAutoTrim);
     this.#compileFilename(this.#lastFilename);
+    this.#compileFrontmatter(snapshot["note.frontmatter-fields"]);
 
     await using stack = new AsyncDisposableStack();
     await this.#rebuildFolder(this.#lastTemplateFolder);
@@ -220,11 +241,16 @@ export class TemplateService extends Service<void> {
     const autoPairChanged = autoPairEta !== this.#lastAutoPairEta;
 
     const filenameChanged = filename !== this.#lastFilename;
+    const frontmatterFields = settings["note.frontmatter-fields"];
 
     this.#lastTemplateFolder = folder;
     this.#lastAutoTrim = autoTrim;
     this.#lastAutoPairEta = autoPairEta;
     this.#lastFilename = filename;
+
+    if (frontmatterFields !== this.#lastFrontmatterFields) {
+      this.#compileFrontmatter(frontmatterFields);
+    }
 
     if (autoTrimChanged) {
       this.#engine.setAutoTrim(autoTrim);
@@ -459,6 +485,15 @@ export class TemplateService extends Service<void> {
       this.#filenameError = null;
     }
     this.#emitter.emit("compile-status-changed");
+  }
+
+  /** Compile the managed-frontmatter fields, dropping reserved keys the system
+   *  owns so user and system keys stay disjoint, and hold them for reuse. */
+  #compileFrontmatter(fields: readonly FrontmatterField[]): void {
+    this.#lastFrontmatterFields = fields;
+    this.#compiledFrontmatterFields = compileFrontmatterFields(
+      fields.filter((field) => !RESERVED_KEYS.has(field.key)),
+    );
   }
 
   #cancelFlush(): void {

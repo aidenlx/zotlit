@@ -24,6 +24,17 @@ export function protocolActionId(
   return `${PROTOCOL_NAMESPACE}/${action}`;
 }
 
+/**
+ * Batch literature-note action. Kept out of {@link protocolActions} because it
+ * carries a different query shape (an `items` list, not a single `item`) and a
+ * different handler.
+ */
+const PROTOCOL_BATCH_ACTION = "update-many";
+
+/** Full Obsidian action string for the batch handler. */
+export const batchProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_BATCH_ACTION}` as const;
+
 /** Numeric Zotero `itemID`, carried on the wire as a decimal string. */
 const itemID = v.pipe(v.string(), v.regex(/^\d+$/u), v.transform(Number));
 
@@ -47,7 +58,7 @@ export type ProtocolQuery = v.InferOutput<typeof protocolQuerySchema>;
  * `expected` is unknown or when the query's `sourceId` differs.
  */
 export function protocolSourceMatches(
-  query: ProtocolQuery,
+  query: { sourceId: string },
   expected: string | null,
 ): boolean {
   return expected !== null && query.sourceId === expected;
@@ -68,6 +79,76 @@ export function buildProtocolUrl(
     [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
   });
   return `obsidian://${protocolActionId(action)}?${params}`;
+}
+
+/**
+ * Comma-separated decimal item ids carried by `update-many`. A trailing comma
+ * is tolerated, ids are deduped, and an empty list is rejected.
+ */
+const batchItems = v.pipe(
+  v.string(),
+  v.transform((raw) => raw.split(",").filter(Boolean)),
+  v.array(itemID),
+  v.transform((ids) => [...new Set(ids)]),
+  v.minLength(1),
+);
+
+/** Query payload for the `zotlit/update-many` protocol handler. */
+export const protocolBatchQuerySchema = v.pipe(
+  v.object({
+    items: batchItems,
+    "source-id": sourceIdValue,
+  }),
+  v.transform(({ items, "source-id": sourceId }) => ({ items, sourceId })),
+);
+
+/** Decoded, validated query for the batch literature-note action. */
+export type ProtocolBatchQuery = v.InferOutput<typeof protocolBatchQuerySchema>;
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/update-many` link.
+ *
+ * @param data decoded query record from Obsidian
+ * @returns the typed query, with deduped item ids
+ * @throws {v.ValiError} when `items` is empty/malformed or `source-id` is absent
+ */
+export function parseProtocolBatchQuery(
+  data: Record<string, unknown>,
+): ProtocolBatchQuery {
+  return v.parse(protocolBatchQuerySchema, data);
+}
+
+/**
+ * Body for `PATCH {host}/literature-notes` — the HTTP fallback the companion
+ * uses when a batch is too large to fit in an `obsidian://` URL. `items` carries
+ * the same invariants as the URL path (integer ids, deduped, non-empty) so both
+ * transports validate identically. The batch is gated by the
+ * {@link SOURCE_ID_HEADER} header, as the URL is gated by its `source-id` query.
+ */
+export const batchUpdateRequestSchema = v.object({
+  items: v.pipe(
+    v.array(v.pipe(v.number(), v.integer())),
+    v.transform((ids) => [...new Set(ids)]),
+    v.minLength(1),
+  ),
+});
+
+export type BatchUpdateRequest = v.InferOutput<typeof batchUpdateRequestSchema>;
+
+/**
+ * Build an `obsidian://zotlit/update-many?items=<id,id,…>&source-id=<hash>` link
+ * for `Zotero.launchURL` (symmetry with {@link buildProtocolUrl}).
+ */
+export function buildBatchProtocolUrl(
+  items: readonly number[],
+  sourceId: string,
+): string {
+  const params = new URLSearchParams({
+    items: items.join(","),
+    "source-id": sourceId,
+    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
+  });
+  return `obsidian://${batchProtocolActionId}?${params}`;
 }
 
 export function getProtocolUrlVersion(data: Record<string, unknown>): unknown {

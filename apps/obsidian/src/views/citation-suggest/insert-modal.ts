@@ -4,13 +4,14 @@ import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
+import { renderCitation } from "@/services/note-feature";
 
 import { type CitationSuggestDeps } from "./register";
 
 /**
  * Command-driven citation picker: search the library in a popup and insert the
  * rendered citation at the editor cursor. The inline `[@` flow lives in
- * {@link CitationEditorSuggest}; both render through `NoteFeatures.renderCitation`.
+ * {@link CitationEditorSuggest}; both render through `renderCitation`.
  */
 export class InsertCitationModal extends SuggestModal<SearchHit> {
   readonly #deps: CitationSuggestDeps;
@@ -47,7 +48,8 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
       new BaseNotice(m.notice_no_citekey({ key: hit.item.key }));
       return;
     }
-    const rendered = this.#deps.noteFeatures.renderCitation(
+    const rendered = renderCitation(
+      this.#deps.noteFeatures,
       [{ citationKey }],
       Keymap.isModifier(evt, "Shift"),
     );

@@ -98,13 +98,17 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
-    registerProtocolHandlers(this, {
-      app: this.app,
-      db: services.db,
-      zoteroPref: services.zoteroPref,
-      noteFeatures: services.noteFeatures,
-      noteIndex: services.noteIndex,
-    });
+    void stack.use(
+      registerProtocolHandlers(this, {
+        app: this.app,
+        settings: services.settings,
+        db: services.db,
+        zoteroPref: services.zoteroPref,
+        noteFeatures: services.noteFeatures,
+        noteIndex: services.noteIndex,
+        liveUpdate: services.liveUpdate,
+      }),
+    );
 
     registerAnnotView(this, {
       app: this.app,

@@ -22,20 +22,15 @@ const annotationFindOptions = {
   orderBy: { sortIndex: "asc" },
 } satisfies FindManyOptions<"itemAnnotations">;
 
-const annotationsByParentQuery = defineQuery<{
-  parentItemID: number;
-  libraryID: number;
-}>()((db, { placeholder }) =>
-  db.query.itemAnnotations.findMany({
-    where: {
-      parentItemID: placeholder("parentItemID"),
-      item: {
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+const annotationsByParentQuery = defineQuery<{ parentItemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        parentItemID: placeholder("parentItemID"),
+        item: { deletedItem: false },
       },
-    },
-    ...annotationFindOptions,
-  }),
+      ...annotationFindOptions,
+    }),
 );
 
 const annotationsByKeyQuery = defineQuery<{
@@ -59,22 +54,20 @@ type AnnotationRow = QueryRow<typeof annotationsByParentQuery>;
 export function getAnnotationsByParent(
   db: NodeDatabaseClient,
   parentItemID: number,
-  libraryID: number,
 ): Annotation[] {
   return annotationsByParentQuery
     .prepared(db)
-    .all({ parentItemID, libraryID })
+    .all({ parentItemID })
     .map(toAnnotation);
 }
 
 export async function getAnnotationsByParentAsync(
   db: SQLocalDatabaseClient,
   parentItemID: number,
-  libraryID: number,
 ): Promise<Annotation[]> {
   const rows = await annotationsByParentQuery
     .prepared(db)
-    .all({ parentItemID, libraryID });
+    .all({ parentItemID });
   return rows.map(toAnnotation);
 }
 
@@ -85,8 +78,12 @@ export function getAnnotationsByKey(
 ): Annotation[] {
   if (keys.length === 0) return [];
 
-  const stmt = annotationsByKeyQuery.prepared(db);
-  return keys.flatMap((key) => stmt.all({ libraryID, key }).map(toAnnotation));
+  return keys.flatMap((key) =>
+    annotationsByKeyQuery
+      .prepared(db)
+      .all({ libraryID, key })
+      .map(toAnnotation),
+  );
 }
 
 export async function getAnnotationsByKeyAsync(
@@ -96,9 +93,10 @@ export async function getAnnotationsByKeyAsync(
 ): Promise<Annotation[]> {
   if (keys.length === 0) return [];
 
-  const stmt = annotationsByKeyQuery.prepared(db);
   const batches = await Promise.all(
-    keys.map((key) => stmt.all({ libraryID, key })),
+    keys.map((key) =>
+      annotationsByKeyQuery.prepared(db).all({ libraryID, key }),
+    ),
   );
   return batches.flat().map(toAnnotation);
 }

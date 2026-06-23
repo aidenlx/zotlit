@@ -24,20 +24,15 @@ const attachmentFindOptions = {
   },
 } satisfies FindManyOptions<"itemAttachments">;
 
-const attachmentsByParentQuery = defineQuery<{
-  parentItemID: number;
-  libraryID: number;
-}>()((db, { placeholder }) =>
-  db.query.itemAttachments.findMany({
-    where: {
-      parentItemID: placeholder("parentItemID"),
-      item_itemID: {
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+const attachmentsByParentQuery = defineQuery<{ parentItemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemAttachments.findMany({
+      where: {
+        parentItemID: placeholder("parentItemID"),
+        item_itemID: { deletedItem: false },
       },
-    },
-    ...attachmentFindOptions,
-  }),
+      ...attachmentFindOptions,
+    }),
 );
 
 const attachmentByKeyQuery = defineQuery<{
@@ -75,11 +70,12 @@ function toAttachment(row: AttachmentRow): Attachment {
 export function getAttachmentsByParents(
   db: NodeDatabaseClient,
   parentItemIDs: readonly number[],
-  libraryID: number,
 ): Attachment[] {
-  const stmt = attachmentsByParentQuery.prepared(db);
   return parentItemIDs.flatMap((parentItemID) =>
-    stmt.all({ parentItemID, libraryID }).map(toAttachment),
+    attachmentsByParentQuery
+      .prepared(db)
+      .all({ parentItemID })
+      .map(toAttachment),
   );
 }
 
@@ -95,11 +91,11 @@ export function getAttachmentByKey(
 export async function getAttachmentsByParentsAsync(
   db: SQLocalDatabaseClient,
   parentItemIDs: readonly number[],
-  libraryID: number,
 ): Promise<Attachment[]> {
-  const stmt = attachmentsByParentQuery.prepared(db);
   const batches = await Promise.all(
-    parentItemIDs.map((parentItemID) => stmt.all({ parentItemID, libraryID })),
+    parentItemIDs.map((parentItemID) =>
+      attachmentsByParentQuery.prepared(db).all({ parentItemID }),
+    ),
   );
   return batches.flatMap((rows) => rows.map(toAttachment));
 }

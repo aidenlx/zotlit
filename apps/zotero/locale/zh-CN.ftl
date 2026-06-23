@@ -20,8 +20,16 @@ zotlit-prefs-log-level-fatal =
     .label = Fatal
 
 zotlit-menu-item-open =
-    .label = 打开文献笔记
+    .label = 在 Obsidian 中打开笔记
 zotlit-menu-item-update =
-    .label = 更新文献笔记
+    .label = 在 Obsidian 中更新笔记
 zotlit-menu-reader-annot-merge = 合并标注
 zotlit-menu-reader-page-open = 在 Obsidian 中打开笔记
+
+zotlit-batch-update-server-needed-title = 无法在 Obsidian 中更新笔记
+zotlit-batch-update-server-needed-message = 所选条目过多，无法通过链接发送。请在 Obsidian 设置中启用 ZotLit 服务器，或减少所选条目后重试。
+zotlit-batch-update-sending-title = 正在请求 Obsidian 更新笔记…
+zotlit-batch-update-failed-title = 无法连接到 Obsidian
+zotlit-batch-update-failed-message = 请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。
+zotlit-batch-update-sent-title = 请在 Obsidian 中继续
+zotlit-batch-update-sent-message = 已请求 Obsidian 更新 { $count } 条笔记。请切换到 Obsidian 继续。

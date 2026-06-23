@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@zotlit/shared": "workspace:*",
+    "arkregex": "catalog:",
     "eta": "catalog:",
     "valibot": "catalog:"
   },

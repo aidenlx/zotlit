@@ -2,6 +2,13 @@
 // Source of truth: locale/*.ftl
 
 export type FluentMessageId =
+  | "zotlit-batch-update-failed-message"
+  | "zotlit-batch-update-failed-title"
+  | "zotlit-batch-update-sending-title"
+  | "zotlit-batch-update-sent-message"
+  | "zotlit-batch-update-sent-title"
+  | "zotlit-batch-update-server-needed-message"
+  | "zotlit-batch-update-server-needed-title"
   | "zotlit-menu-item-open"
   | "zotlit-menu-item-update"
   | "zotlit-menu-reader-annot-merge"

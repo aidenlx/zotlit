@@ -105,7 +105,7 @@ class AttachmentImportBatch implements AttachmentImport {
 
   async flush(): Promise<AttachmentCopyResult> {
     const result = await copyAttachments(this.#items);
-    logger.info("Imported attachments", {
+    logger.debug("Imported attachments", {
       copied: result.copied,
       skipped: result.skipped,
       missing: result.missing,

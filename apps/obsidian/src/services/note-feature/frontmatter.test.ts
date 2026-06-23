@@ -1,15 +1,28 @@
 import { describe, expect, it } from "vitest";
 
 import { type NoteTemplateContext } from "@zotlit/db";
+import {
+  compileFrontmatterFields,
+  type FrontmatterField,
+} from "@zotlit/templates/frontmatter";
 
 import {
   FIELD_ATTACHMENTS,
   FIELD_CITEKEY,
   FIELD_ZOTERO_KEY,
+  RESERVED_KEYS,
 } from "@/lib/constants";
 
 import { DEFAULT_FRONTMATTER_FIELDS } from "./defaults";
-import { applyManagedFrontmatter, compileFrontmatter } from "./frontmatter";
+import { applyManagedFrontmatter } from "./frontmatter";
+
+/** Mirror the production compile (TemplateService): drop reserved keys, then
+ *  compile — applyManagedFrontmatter only ever receives pre-filtered fields. */
+function compileFrontmatter(fields: readonly FrontmatterField[]) {
+  return compileFrontmatterFields(
+    fields.filter((field) => !RESERVED_KEYS.has(field.key)),
+  );
+}
 
 function makeContext(
   overrides: Partial<NoteTemplateContext> = {},

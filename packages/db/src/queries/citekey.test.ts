@@ -1,29 +1,25 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { relations } from "@drizzle/relations";
+import * as schema from "@drizzle/schema";
+import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createClient, type NodeDatabaseClient } from "@/client/node";
+import { type NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 
 import { getItemIDByCitekey } from "./citekey";
 
-let tempDir: string;
-let dbPath: string;
+let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
 
-beforeEach(async () => {
-  tempDir = join(tmpdir(), `zotlit-db-citekey-${randomUUID()}`);
-  await mkdir(tempDir, { recursive: true });
-  dbPath = join(tempDir, "zotero.sqlite");
-  seedFixture(dbPath);
-  db = createClient(dbPath);
+beforeEach(() => {
+  sqlite = new DatabaseSync(":memory:");
+  seedFixture(sqlite);
+  db = drizzle({ client: sqlite, schema, relations });
 });
 
-afterEach(async () => {
-  await rm(tempDir, { recursive: true, force: true });
+afterEach(() => {
+  sqlite.close();
 });
 
 describe("getItemIDByCitekey", () => {
@@ -57,8 +53,7 @@ describe("getItemIDByCitekey", () => {
   });
 });
 
-function seedFixture(path: string): void {
-  const sqlite = new DatabaseSync(path);
+function seedFixture(sqlite: DatabaseSync): void {
   sqlite.exec(`
     create table libraries (
       libraryID integer primary key,
@@ -154,5 +149,4 @@ function seedFixture(path: string): void {
         (9, 11, 104),
         (8, 10, 105);
   `);
-  sqlite.close();
 }

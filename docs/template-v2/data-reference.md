@@ -280,7 +280,9 @@ of the relation graph.
 
 ## Filename template
 
-The filename template is a setting string (not a separate file). It has access to item fields on `zt`. The following fields are not available in filename templates: `backlink`, `annotations`, `attachments`, `authors`, `authorsShort`.
+The filename template is a setting string (not a separate file). To keep filename resolution to a single-item query, `zt` here is the **item's own fields only** -- the same core item data described under [Item fields](#item-fields), plus `creators` and `tags`. The richer fields assembled for the note body are **not** available in filename templates: `backlink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`. Use `zt.creators[0].family` instead of `zt.authorsShort` for an author-based name.
+
+`zt.notePath()` and `zt.noteLink()` exist but return an empty string in a filename template (a note has no path until it is named).
 
 Default: `<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>`
 

@@ -9,6 +9,14 @@ export function notifyEnabled(): boolean {
 }
 
 /**
+ * The configured Obsidian listener base URL from the `notify-url` pref.
+ */
+export function notifyUrl(): string | undefined {
+  const url = (prefs.get<string>("extensions.zotlit.notify-url") ?? "").trim();
+  return url.length > 0 ? url : undefined;
+}
+
+/**
  * Sorted item ids of a reader's current annotation selection (drops unresolved
  * keys). The authoritative set lives in the reader iframe as annotation
  * **keys**; map them back to item ids for the wire protocol.

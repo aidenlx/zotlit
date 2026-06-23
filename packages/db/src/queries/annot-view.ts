@@ -77,45 +77,40 @@ export function getAnnotViewAttachments(
     .map(toAnnotViewAttachment);
 }
 
-const annotViewAnnotationsQuery = defineQuery<{
-  parentItemID: number;
-  libraryID: number;
-}>()((db, { placeholder }) =>
-  db.query.itemAnnotations.findMany({
-    where: {
-      parentItemID: placeholder("parentItemID"),
-      item: {
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+const annotViewAnnotationsQuery = defineQuery<{ parentItemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        parentItemID: placeholder("parentItemID"),
+        item: { deletedItem: false },
       },
-    },
-    columns: {
-      itemID: true,
-      type: true,
-      text: true,
-      comment: true,
-      color: true,
-      pageLabel: true,
-    },
-    with: {
-      item: {
-        columns: { key: true },
-        with: {
-          itemTags: {
-            columns: {},
-            with: {
-              tag: { columns: { tagID: true, name: true } },
+      columns: {
+        itemID: true,
+        type: true,
+        text: true,
+        comment: true,
+        color: true,
+        pageLabel: true,
+      },
+      with: {
+        item: {
+          columns: { key: true },
+          with: {
+            itemTags: {
+              columns: {},
+              with: {
+                tag: { columns: { tagID: true, name: true } },
+              },
             },
           },
         },
+        parentAttachment: {
+          columns: {},
+          with: { item_itemID: { columns: { key: true } } },
+        },
       },
-      parentAttachment: {
-        columns: {},
-        with: { item_itemID: { columns: { key: true } } },
-      },
-    },
-    orderBy: { sortIndex: "asc" },
-  }),
+      orderBy: { sortIndex: "asc" },
+    }),
 );
 
 type AnnotationRow = QueryRow<typeof annotViewAnnotationsQuery>;
@@ -137,10 +132,9 @@ function toAnnotViewItem(row: AnnotationRow): AnnotViewItem {
 export function getAnnotViewAnnotations(
   db: NodeDatabaseClient,
   attachmentItemID: number,
-  libraryID: number,
 ): AnnotViewItem[] {
   return annotViewAnnotationsQuery
     .prepared(db)
-    .all({ parentItemID: attachmentItemID, libraryID })
+    .all({ parentItemID: attachmentItemID })
     .map(toAnnotViewItem);
 }

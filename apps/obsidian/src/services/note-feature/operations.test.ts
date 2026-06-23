@@ -11,12 +11,14 @@ import {
   type Item,
 } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
+import { filenameSuffix } from "@zotlit/templates";
 import { type ItemFields } from "@zotlit/zotero-types";
 
 import { type SettingsService } from "@/services/settings/service";
 import { type TemplateService } from "@/services/template/service";
 
-import { NoteFeatures } from "./service";
+import { type NoteFeatureContext } from "./context";
+import { createNote } from "./operations";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
@@ -30,7 +32,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   };
 });
 
-describe("NoteFeatures", () => {
+describe("createNote", () => {
   it("resolves note helpers by item key, citekey, then filename fallback", async () => {
     const root = makeItem({
       itemID: 1,
@@ -74,7 +76,7 @@ describe("NoteFeatures", () => {
     const existingByItemKey = makeFile("Notes/Existing by item.md");
     const existingByCitekey = makeFile("Notes/Existing by citekey.md");
     const app = makeApp();
-    const service = new NoteFeatures({
+    const ctx: NoteFeatureContext = {
       app: app as unknown as App,
       template: makeTemplate() as unknown as TemplateService,
       db: { client: {}, state: "ready", ready: Promise.resolve() } as any,
@@ -93,9 +95,9 @@ describe("NoteFeatures", () => {
           flush: vi.fn(async () => ({ copied: 0, skipped: 0 })),
         })),
       } as any,
-    });
+    };
 
-    const file = await service.create(root);
+    const file = await createNote(ctx, root);
 
     expect(file.path).toBe("Literature/Root.md");
     expect(app.vault.contentByPath.get("Literature/Root.md")).toContain(
@@ -129,10 +131,81 @@ describe("NoteFeatures", () => {
       },
     ]);
   });
+
+  it("forces a suffix and retries when create races a colliding sibling", async () => {
+    const item = makeItem({
+      itemID: 1,
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: null,
+    });
+
+    vi.mocked(getAttachmentsByParents).mockReturnValue([]);
+    vi.mocked(getRelatedKeysByItemID).mockReturnValue([]);
+    vi.mocked(getItemsByKey).mockReturnValue([]);
+    vi.mocked(getTagsByItemIDs).mockReturnValue([]);
+
+    const literature = new TFolder();
+    literature.path = "Literature";
+    const root = new TFolder();
+    root.path = "/";
+
+    // A sibling already holds the base path on disk, but the path cache never
+    // reflects it — the cache-lag race the suffix retry recovers from. Detection
+    // rides on `create`'s rejection alone, not on a cache re-check.
+    const disk = new Set(["Literature/Root.md"]);
+    const create = vi.fn(async (path: string) => {
+      if (disk.has(path)) throw new Error("File already exists.");
+      disk.add(path);
+      return makeFile(path);
+    });
+
+    const template = {
+      frontmatterFields: [],
+      renderFilename: (data: { title: string | null; key: string }) =>
+        `${data.title ?? data.key}${filenameSuffix()}`,
+      render: () => "body",
+    };
+
+    const ctx: NoteFeatureContext = {
+      app: {
+        vault: {
+          getAbstractFileByPath: (path: string) =>
+            path === "Literature" ? literature : null,
+          getRoot: () => root,
+          createFolder: vi.fn(),
+          create,
+        },
+        fileManager: { generateMarkdownLink: () => "" },
+      } as unknown as App,
+      template: template as unknown as TemplateService,
+      db: { client: {}, state: "ready", ready: Promise.resolve() } as any,
+      noteIndex: {
+        ready: Promise.resolve(),
+        getNotesByItemKey: () => [],
+        getNotesByCitekey: () => [],
+      } as any,
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null } as any,
+      settings: makeSettings() as unknown as SettingsService,
+      attachmentImport: {
+        prepare: vi.fn(async () => ({
+          resolveEmbed: () => "",
+          flush: vi.fn(async () => ({ copied: 0, skipped: 0 })),
+        })),
+      } as any,
+    };
+
+    const file = await createNote(ctx, item);
+
+    expect(file.path).toMatch(/^Literature\/Root_[\w-]{6}\.md$/);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
 });
 
 function makeTemplate() {
   return {
+    frontmatterFields: [],
     renderFilename(data: { title: string | null; key: string }): string {
       return data.title ?? data.key;
     },
@@ -253,6 +326,7 @@ function makeItem(
     creators: [],
     primaryCreatorType: "author",
     customFields: new Map(),
+    groupID: null,
     fields: {
       itemType: "journalArticle",
       title: input.title,

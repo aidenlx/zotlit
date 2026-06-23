@@ -1,27 +1,24 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { relations } from "@drizzle/relations";
+import * as schema from "@drizzle/schema";
+import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createClient, type NodeDatabaseClient } from "@/client/node";
+import { type NodeDatabaseClient } from "@/client/node";
 
 import { getRelatedKeysByItemID } from "./item-relations";
 
-let tempDir: string;
+let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
 
-beforeEach(async () => {
-  tempDir = join(tmpdir(), `zotlit-db-item-relations-${randomUUID()}`);
-  await mkdir(tempDir, { recursive: true });
-  const dbPath = join(tempDir, "zotero.sqlite");
-  seedFixture(dbPath);
-  db = createClient(dbPath);
+beforeEach(() => {
+  sqlite = new DatabaseSync(":memory:");
+  seedFixture(sqlite);
+  db = drizzle({ client: sqlite, schema, relations });
 });
 
-afterEach(async () => {
-  await rm(tempDir, { recursive: true, force: true });
+afterEach(() => {
+  sqlite.close();
 });
 
 describe("getRelatedKeysByItemID", () => {
@@ -54,8 +51,7 @@ describe("getRelatedKeysByItemID", () => {
   });
 });
 
-function seedFixture(path: string): void {
-  const sqlite = new DatabaseSync(path);
+function seedFixture(sqlite: DatabaseSync): void {
   sqlite.exec(`
     create table relationPredicates (
       predicateID integer primary key,
@@ -81,5 +77,4 @@ function seedFixture(path: string): void {
         (4, 1, 'http://zotero.org/users/12345/collections/COLLECTN'),
         (5, 1, 'http://zotero.org/users/12345/items/ITEM3REL');
   `);
-  sqlite.close();
 }

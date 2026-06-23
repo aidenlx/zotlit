@@ -24,6 +24,7 @@ function makeItem(
     creators: [],
     primaryCreatorType: "author",
     customFields: new Map(),
+    groupID: null,
     ...base,
     fields: fields as ItemFields,
   };
