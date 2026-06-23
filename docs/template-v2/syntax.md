@@ -89,6 +89,46 @@ How `bq()` works:
 4. Collapses consecutive bare `>` lines into one.
 5. Outputs the result.
 
+## The `suffix()` filename helper
+
+The `suffix()` helper is for the **filename template** only. It appends a short random string to keep new literature notes from overwriting existing files, but **only when the generated name actually collides** with a note already in the vault. When the name is free, it renders nothing:
+
+```eta
+<%= zt.citationKey ?? zt.title ?? zt.key %><%= suffix() %>
+```
+
+- First note named `Smith2020` -> `Smith2020.md` (no suffix).
+- Second note that would render `Smith2020` -> `Smith2020_a1b2c3.md` (random string appended with an underscore separator).
+
+### Signature
+
+```
+suffix(length = 6, prepend = "_", append = "")
+```
+
+- `length` -- number of random characters to generate. Default `6`. The string is generated with [nanoid](https://github.com/ai/nanoid) (alphanumeric only — `_` and `-` are reserved for affixes), so 6 gives ample headroom against repeat collisions.
+- `prepend` -- literal text inserted **before** the random string. Default `"_"`, producing `Name_a1b2c3`.
+- `append` -- literal text inserted **after** the random string. Default `""`.
+
+The affixes appear only when the random string does -- on a collision. When the name is free, the whole thing (affixes included) renders nothing.
+
+```eta
+<%= zt.title %><%= suffix(10) %>           <%/* Title_a1b2c3d4e5 */%>
+<%= zt.title %><%= suffix(6, " (", ")") %> <%/* Title (a1b2c3) */%>
+<%= zt.citationKey %><%= suffix(4, "-") %> <%/* Smith2020-a1b2 */%>
+```
+
+How it works: at render time `suffix()` does not yet know whether the name collides, so it emits a placeholder marker carrying the length and affixes. After rendering, ZotLit resolves the final path:
+
+1. Strip the marker and check whether that base name is free. If so, use it as-is -- the suffix never appears.
+2. On a collision, fill the marker with `prepend` + a fresh random string + `append`, and retry, repeating a few times until a free name is found.
+
+Notes:
+
+- `length` must be an integer between 1 and 64, and the affixes must not contain `:` or `%`; otherwise rendering throws.
+- Place `suffix()` where you want the suffix to land (typically at the end).
+- The helper is meaningful only in the filename template. Used elsewhere, its marker degrades to harmless literal text rather than affecting note content.
+
 ## autoTrim
 
 ZotLit's `autoTrim` defaults to `[false, false]` -- no trimming before or after tags. This means:
@@ -150,4 +190,4 @@ Canonical template names and their vault files:
 | `cite2` | `zotlit-cite2.eta.md` | Secondary citation format |
 | `filename` | _(setting string)_ | Filename for new literature notes |
 
-The `filename` template is configured as a setting string (`template.filename`), not as a separate file.
+The `filename` template is configured as a setting string (`template.filename`), not as a separate file. Its `zt` is limited to the item's own fields -- see [Filename template](data-reference.md#filename-template) for what is and isn't available.

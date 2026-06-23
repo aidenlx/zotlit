@@ -2,13 +2,13 @@ import {
   type NotifyEvent,
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
+  SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
 import { logger as appLogger } from "@/lib/logger";
-import { prefs } from "@/prefs";
 
-import { notifyEnabled } from "./shared";
-import { currentSource } from "./source";
+import { notifyEnabled, notifyUrl } from "./shared";
+import { sourceDebugDirs, sourceId } from "./source";
 
 const logger = appLogger.getChild(["notify", "send"]);
 
@@ -17,20 +17,23 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
   ? Omit<T, K>
   : never;
 
-/** A {@link NotifyEvent} as built by producers, before {@link createSender} stamps `sourceId`. */
-export type NotifyEventInput = DistributiveOmit<NotifyEvent, "sourceId">;
+/** A {@link NotifyEvent} as built by producers, before {@link createSender} stamps the debug dirs. */
+export type NotifyEventInput = DistributiveOmit<
+  NotifyEvent,
+  "profilePath" | "dataPath"
+>;
 
 /**
- * POST a {@link NotifyEvent} to every configured Obsidian listener.
+ * POST a {@link NotifyEvent} to the configured Obsidian listener.
  *
- * The event's source identity is stamped here (see {@link currentSource}) so
- * the listener can discard events from a Zotero install it isn't reading.
+ * The source identity travels in the {@link SOURCE_ID_HEADER} header (see
+ * {@link sourceId}) so the listener can discard events from a Zotero install it
+ * isn't reading.
  *
  * Gated on the `notify` pref (read at send time, so toggling it off stops
- * pushes immediately). `notify-url` is a `;`-separated list of base URLs;
- * each receives the same JSON body at `POST {base}/notify`. Broadcast errors
- * are logged, never thrown — a notification failing must not break the Zotero
- * event that triggered it.
+ * pushes immediately). `notify-url` is the listener base URL for
+ * `POST {base}/notify`. Errors are logged, never thrown — a notification
+ * failing must not break the Zotero event that triggered it.
  */
 export type Send = (event: NotifyEventInput) => Promise<void>;
 
@@ -38,41 +41,31 @@ export function createSender(): Send {
   return async function send(event) {
     if (!notifyEnabled()) return;
 
-    const raw = prefs.get<string>("extensions.zotlit.notify-url") ?? "";
-    const targets = raw
-      .split(";")
-      .map((url) => url.trim())
-      .filter((url) => url.length > 0);
-    if (targets.length === 0) return;
+    const base = notifyUrl();
+    if (!base) return;
 
-    logger.info("dispatching notify event", {
-      event: event.event,
-      targets: targets.length,
-    });
+    logger.info("dispatching notify event", { event: event.event, base });
     const body = JSON.stringify({
       ...event,
-      ...currentSource(),
+      ...sourceDebugDirs(),
     } satisfies NotifyEvent);
-    await Promise.all(
-      targets.map(async (base) => {
-        try {
-          await fetch(new URL("/notify", base), {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
-            },
-            body,
-          });
-          logger.debug("notified target", { event: event.event, base });
-        } catch (error) {
-          logger.warn("failed to notify target", {
-            event: event.event,
-            base,
-            error,
-          });
-        }
-      }),
-    );
+    try {
+      await fetch(new URL("/notify", base), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+          [SOURCE_ID_HEADER]: sourceId(),
+        },
+        body,
+      });
+      logger.debug("notified listener", { event: event.event, base });
+    } catch (error) {
+      logger.warn("failed to notify listener", {
+        event: event.event,
+        base,
+        error,
+      });
+    }
   };
 }

@@ -25,7 +25,7 @@ afterEach(() => {
 
 describe("getAnnotationsByParent", () => {
   it("returns visible annotations sorted by sortIndex", () => {
-    const result = getAnnotationsByParent(db, 9058, USER_LIBRARY_ID);
+    const result = getAnnotationsByParent(db, 9058);
 
     expect(result).toHaveLength(6);
     expect(result.map((annotation) => annotation.key)).toEqual([
@@ -52,7 +52,7 @@ describe("getAnnotationsByParent", () => {
   });
 
   it("narrows fixture PDF positions", () => {
-    const result = getAnnotationsByParent(db, 9058, USER_LIBRARY_ID);
+    const result = getAnnotationsByParent(db, 9058);
     const kinds = Object.fromEntries(
       result.map((annotation) => [
         annotation.key,

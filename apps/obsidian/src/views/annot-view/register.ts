@@ -6,7 +6,7 @@ import { type AttachmentImportService } from "@/services/attachment-import/servi
 import { type DatabaseService } from "@/services/database/service";
 import { type ItemLookup } from "@/services/item-lookup/service";
 import { type LiveUpdateService } from "@/services/live-update/service";
-import { type NoteFeatures } from "@/services/note-feature/service";
+import { type NoteFeatureContext } from "@/services/note-feature";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -22,7 +22,7 @@ export interface AnnotViewRegistrationDeps {
   db: DatabaseService;
   liveUpdate: LiveUpdateService;
   zoteroPref: ZoteroPrefService;
-  noteFeatures: NoteFeatures;
+  noteFeatures: NoteFeatureContext;
   attachmentImport: AttachmentImportService;
   itemLookup: ItemLookup;
   settings: SettingsService;

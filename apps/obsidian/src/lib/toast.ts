@@ -24,10 +24,6 @@ export function cancellableLoading(
   });
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
 interface ToastPromiseOptions<T> {
   loading?: string | DocumentFragment;
   success?:

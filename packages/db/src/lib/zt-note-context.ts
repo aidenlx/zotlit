@@ -89,6 +89,20 @@ export interface NoteContextInput {
 }
 
 /**
+ * The minimal `zt` root for the **note-filename** template: an item's own
+ * {@link TemplateItemData} and nothing else. Unlike {@link buildNoteContext}
+ * this resolves no attachments, annotations, related items, or app-layer
+ * resolvers — `notePath()` / `noteLink()` return `""` — so a filename query
+ * stays a single-item read. Pure: the caller passes the item's tags in.
+ */
+export function buildFilenameContext(input: {
+  item: Item;
+  tags: readonly ItemTag[];
+}): TemplateItemData {
+  return itemToTemplateData(input.item, input.tags);
+}
+
+/**
  * Assemble the {@link NoteTemplateContext} from raw DB rows plus the runtime
  * resolvers the query layer deliberately omits. Pure: all I/O (DB fetch, path
  * resolution) is done by the caller and passed in.

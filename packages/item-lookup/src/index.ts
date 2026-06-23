@@ -1,6 +1,7 @@
 export {
   buildIndex,
   cleanQuery,
+  createIndexBuilder,
   DEFAULT_SCORING,
   searchIndex,
   type BuildIndexOptions,
@@ -8,6 +9,7 @@ export {
   type SearchField,
   type SearchHit,
   type SearchIndex,
+  type SearchIndexBuilder,
   type SearchIndexOptions,
   type SearchMatches,
 } from "./engine";

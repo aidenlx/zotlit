@@ -5,8 +5,6 @@ export {
   type Library,
 } from "./queries/libraries";
 export {
-  getItemDisplayInfoByID,
-  getItemRefByID,
   getItemsByID,
   getItemsByIDAsync,
   getItemsByKey,
@@ -16,9 +14,15 @@ export {
   type BaseItem,
   type Creator,
   type Item,
-  type ItemDisplayInfo,
-  type ItemRef,
 } from "./queries/items";
+export {
+  getItemDisplayInfoByID,
+  getItemDisplayRefByID,
+  getItemRefByID,
+  type ItemDisplayInfo,
+  type ItemDisplayRef,
+  type ItemRef,
+} from "./queries/item-ref";
 export {
   formatIndexedKey,
   isIndexedKey,
@@ -76,10 +80,14 @@ export {
   type UnknownPath,
 } from "./lib/zt-attach";
 export {
+  getIndexedItemIDsByLibrary,
+  getIndexedItemsByID,
   getIndexedItemsByLibrary,
   getIndexedItemsByLibraryAsync,
+  getIndexSignature,
   type IndexedCreator,
   type IndexedItem,
+  type IndexSignature,
 } from "./queries/index-items";
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";
 export {
@@ -130,6 +138,7 @@ export {
   type ZoteroRef,
 } from "./lib/zt-note-mark";
 export {
+  buildFilenameContext,
   buildNoteContext,
   type NoteContextInput,
   type NoteTemplateContext,

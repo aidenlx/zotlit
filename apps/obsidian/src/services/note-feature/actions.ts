@@ -13,10 +13,11 @@ import {
   itemKeyFromFrontmatter,
 } from "@/services/note-index/service";
 
-import { type NoteFeatures } from "./service";
+import { type NoteFeatureContext } from "./context";
+import { overwriteNote, updateNote } from "./operations";
 
 interface NoteFeatureActionDeps {
-  noteFeatures: NoteFeatures;
+  noteFeatures: NoteFeatureContext;
 }
 
 export function addNoteFeatureActions(
@@ -28,7 +29,7 @@ export function addNoteFeatureActions(
     name: m.command_update_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
       return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        void toast.promise(deps.noteFeatures.update(file, itemKey), {
+        void toast.promise(updateNote(deps.noteFeatures, file, itemKey), {
           loading: m.notice_updating_note(),
           success: (result) =>
             result.bodyUpdated
@@ -55,7 +56,7 @@ export function addNoteFeatureActions(
           plugin.app,
         ).then(async (yes) => {
           if (!yes) return;
-          await toast.promise(deps.noteFeatures.overwrite(file, itemKey), {
+          await toast.promise(overwriteNote(deps.noteFeatures, file, itemKey), {
             loading: m.notice_overwriting_note(),
             success: m.notice_overwrote_note(),
             error: m.notice_overwrite_note_failed(),

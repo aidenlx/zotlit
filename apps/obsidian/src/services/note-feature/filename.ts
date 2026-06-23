@@ -1,3 +1,12 @@
+import { customAlphabet } from "nanoid";
+
+/** Alphanumeric only, `_` and `-` reserved. */
+const suffixNanoid = customAlphabet(
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+);
+
+import { hasSuffixMarker, replaceSuffixMarkers } from "@zotlit/templates";
+
 import * as m from "@/paraglide/messages";
 
 /**
@@ -53,4 +62,44 @@ export function resolveNoteRelPath(rendered: string): string {
     .map((segment) => normalizeFilename(segment))
     .filter((segment) => segment !== "");
   return [...folders, filename].join("/");
+}
+
+/** @see {@link resolveAvailableRelPath} */
+const MAX_SUFFIX_ATTEMPTS = 5;
+
+/**
+ * The returned path has no `.md` extension. On a collision, each `suffix()`
+ * marker is filled with a random alphanumeric id; without a marker the
+ * rendered path is returned as-is regardless of collisions.
+ *
+ * @param exists the caller folds in the folder prefix + `.md` extension the
+ *   vault check expects.
+ * @param forceSuffix always fill the marker, even when the base name is free —
+ *   a marker-free `rendered` still returns the base name.
+ * @throws {@link EmptyFilenameError} when the rendered filename is empty.
+ * @throws when no free name is found within {@link MAX_SUFFIX_ATTEMPTS}.
+ */
+export function resolveAvailableRelPath(
+  rendered: string,
+  exists: (rel: string) => boolean,
+  forceSuffix = false,
+): string {
+  const baseRel = resolveNoteRelPath(replaceSuffixMarkers(rendered, () => ""));
+  if (!hasSuffixMarker(rendered) || (!forceSuffix && !exists(baseRel))) {
+    return baseRel;
+  }
+
+  for (let attempt = 0; attempt < MAX_SUFFIX_ATTEMPTS; attempt++) {
+    const candidate = resolveNoteRelPath(
+      replaceSuffixMarkers(
+        rendered,
+        ({ length, prepend, append }) =>
+          `${prepend}${suffixNanoid(length)}${append}`,
+      ),
+    );
+    if (!exists(candidate)) return candidate;
+  }
+  throw new Error(
+    `Could not find an available filename for "${baseRel}" after ${MAX_SUFFIX_ATTEMPTS} suffix attempts`,
+  );
 }

@@ -8,15 +8,27 @@ export {
   type ItemUpdate,
   itemUpdateSchema,
 } from "./notify";
-export { djb2a, normalizeFileUri, sourceIdFromUris } from "./source-id";
 export {
+  djb2a,
+  normalizeFileUri,
+  SOURCE_ID_HEADER,
+  sourceIdFromUris,
+} from "./source-id";
+export {
+  batchProtocolActionId,
+  type BatchUpdateRequest,
+  batchUpdateRequestSchema,
+  buildBatchProtocolUrl,
   buildProtocolUrl,
   getProtocolUrlVersion,
+  parseProtocolBatchQuery,
   parseProtocolQuery,
   PROTOCOL_NAMESPACE,
   type ProtocolAction,
   protocolActionId,
   protocolActions,
+  type ProtocolBatchQuery,
+  protocolBatchQuerySchema,
   protocolSourceMatches,
   type ProtocolQuery,
   protocolQuerySchema,

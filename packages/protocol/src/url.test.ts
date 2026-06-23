@@ -1,7 +1,11 @@
+import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
 import {
+  batchUpdateRequestSchema,
+  buildBatchProtocolUrl,
   buildProtocolUrl,
+  parseProtocolBatchQuery,
   parseProtocolQuery,
   protocolActions,
   protocolSourceMatches,
@@ -30,6 +34,56 @@ describe("zotlit obsidian protocol", () => {
       item: 42,
       sourceId: SOURCE,
     });
+  });
+});
+
+describe("zotlit update-many protocol", () => {
+  it("builds + round-trips a batch link", () => {
+    const url = buildBatchProtocolUrl([1, 2, 3], SOURCE);
+    expect(url).toBe(
+      `obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
+    );
+    expect(parseProtocolBatchQuery(decode(url))).toEqual({
+      items: [1, 2, 3],
+      sourceId: SOURCE,
+    });
+  });
+
+  it("tolerates a trailing comma and dedupes ids", () => {
+    expect(
+      parseProtocolBatchQuery({ items: "1,2,2,3,", "source-id": SOURCE }),
+    ).toEqual({ items: [1, 2, 3], sourceId: SOURCE });
+  });
+
+  it("rejects an empty item list", () => {
+    expect(() =>
+      parseProtocolBatchQuery({ items: "", "source-id": SOURCE }),
+    ).toThrow();
+    expect(() =>
+      parseProtocolBatchQuery({ items: ",", "source-id": SOURCE }),
+    ).toThrow();
+  });
+
+  it("rejects a non-numeric id", () => {
+    expect(() =>
+      parseProtocolBatchQuery({ items: "1,x,3", "source-id": SOURCE }),
+    ).toThrow();
+  });
+});
+
+describe("batchUpdateRequestSchema (HTTP body)", () => {
+  it("dedupes ids, matching the URL path", () => {
+    expect(v.parse(batchUpdateRequestSchema, { items: [1, 2, 2, 3] })).toEqual({
+      items: [1, 2, 3],
+    });
+  });
+
+  it("rejects an empty item list", () => {
+    expect(() => v.parse(batchUpdateRequestSchema, { items: [] })).toThrow();
+  });
+
+  it("rejects non-integer ids", () => {
+    expect(() => v.parse(batchUpdateRequestSchema, { items: [1.5] })).toThrow();
   });
 });
 

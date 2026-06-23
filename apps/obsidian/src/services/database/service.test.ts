@@ -265,6 +265,177 @@ describe("DatabaseService", () => {
       "Reflink clones are unavailable on this volume. ZotLit is reading the immutable Zotero database.",
     );
   });
+
+  it("defers refresh while a read lease is held and swaps once after release", async () => {
+    const client1 = fakeClient();
+    const client2 = fakeClient();
+    prepareMock
+      .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+    createClientMock.mockReturnValueOnce(client1).mockReturnValueOnce(client2);
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+
+    const lease = await service.acquireRead();
+    expect(lease.client).toBe(client1);
+
+    const refreshDone = service.refresh();
+    await Promise.resolve();
+    expect(prepareMock).toHaveBeenCalledTimes(1);
+    expect(service.client).toBe(client1);
+    expect(lease.client).toBe(client1);
+
+    lease[Symbol.dispose]();
+    await refreshDone;
+
+    expect(prepareMock).toHaveBeenCalledTimes(2);
+    expect(service.client).toBe(client2);
+    // The pinned lease stays on the snapshot it captured.
+    expect(lease.client).toBe(client1);
+  });
+
+  it("defers refresh until the last of overlapping leases releases", async () => {
+    prepareMock
+      .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+    createClientMock
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient());
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+
+    const leaseA = await service.acquireRead();
+    const leaseB = await service.acquireRead();
+
+    const refreshDone = service.refresh();
+    leaseA[Symbol.dispose]();
+    await Promise.resolve();
+    expect(prepareMock).toHaveBeenCalledTimes(1);
+
+    leaseB[Symbol.dispose]();
+    await refreshDone;
+    expect(prepareMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves a deferred refresh() after the post-drain swap", async () => {
+    const client2 = fakeClient();
+    prepareMock
+      .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+    createClientMock
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(client2);
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+
+    const lease = await service.acquireRead();
+    let resolved = false;
+    const refreshDone = service.refresh().then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    lease[Symbol.dispose]();
+    await refreshDone;
+    expect(resolved).toBe(true);
+    expect(service.client).toBe(client2);
+  });
+
+  it("ignores lease release after the service is disposed", async () => {
+    prepareMock.mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"));
+    createClientMock.mockReturnValueOnce(fakeClient());
+
+    const service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+    const lease = await service.acquireRead();
+    // Owe a refresh (via a passive trigger) so a stray release would otherwise
+    // schedule it; no dangling refresh() promise, since teardown never resolves it.
+    service.notifyExternalChange();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(prepareMock).toHaveBeenCalledTimes(1);
+
+    await service[Symbol.asyncDispose]();
+    prepareMock.mockClear();
+
+    expect(() => lease[Symbol.dispose]()).not.toThrow();
+    await Promise.resolve();
+    expect(prepareMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects acquireRead when the service is degraded", async () => {
+    prepareMock.mockRejectedValueOnce(new Error("missing"));
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+    expect(service.state).toBe("degraded");
+
+    await expect(service.acquireRead()).rejects.toThrow(DatabaseError);
+  });
+
+  it("awaits ready before pinning the lease client", async () => {
+    const startup = Promise.withResolvers<PreparedRead>();
+    const client = fakeClient();
+    prepareMock.mockImplementationOnce(() => startup.promise);
+    createClientMock.mockReturnValueOnce(client);
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    const leasePromise = service.acquireRead();
+    startup.resolve(prepared("/clone/one.sqlite", "copy"));
+
+    const lease = await leasePromise;
+    expect(lease.client).toBe(client);
+    lease[Symbol.dispose]();
+  });
+
+  it("pins the post-swap client when a refresh is in flight at acquire", async () => {
+    const refreshRead = Promise.withResolvers<PreparedRead>();
+    const client1 = fakeClient();
+    const client2 = fakeClient();
+    prepareMock
+      .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+      .mockImplementationOnce(() => refreshRead.promise);
+    createClientMock.mockReturnValueOnce(client1).mockReturnValueOnce(client2);
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+
+    const refreshDone = service.refresh();
+    await waitForCallCount(prepareMock, 2);
+
+    const leasePromise = service.acquireRead();
+    refreshRead.resolve(prepared("/clone/two.sqlite", "copy"));
+
+    const lease = await leasePromise;
+    await refreshDone;
+    expect(lease.client).toBe(client2);
+    lease[Symbol.dispose]();
+  });
+
+  it("collapses watcher events during a lease into one post-drain refresh", async () => {
+    prepareMock
+      .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+    createClientMock
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient());
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+
+    const lease = await service.acquireRead();
+    service.notifyExternalChange();
+    service.notifyExternalChange();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(prepareMock).toHaveBeenCalledTimes(1);
+
+    lease[Symbol.dispose]();
+    await waitForCallCount(prepareMock, 2);
+    expect(prepareMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 type Deps = {

@@ -1,9 +1,7 @@
 import { type NoteTemplateContext } from "@zotlit/db";
 import {
-  compileFrontmatterFields,
   evalFrontmatterFields,
   type CompiledFrontmatterField,
-  type FrontmatterField,
 } from "@zotlit/templates/frontmatter";
 import {
   type FrontmatterMergeConflictHandler,
@@ -14,20 +12,7 @@ import {
   FIELD_ATTACHMENTS,
   FIELD_CITEKEY,
   FIELD_ZOTERO_KEY,
-  RESERVED_KEYS,
 } from "@/lib/constants";
-
-/**
- * Compile the user fields once for repeated note builds, dropping reserved keys
- * the system owns so user and system keys stay disjoint.
- */
-export function compileFrontmatter(
-  fields: readonly FrontmatterField[],
-): CompiledFrontmatterField[] {
-  return compileFrontmatterFields(
-    fields.filter((field) => !RESERVED_KEYS.has(field.key)),
-  );
-}
 
 export interface ApplyManagedFrontmatterOptions {
   compiled: readonly CompiledFrontmatterField[];

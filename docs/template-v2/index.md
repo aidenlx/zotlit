@@ -14,7 +14,7 @@ ZotLit v2 replaces the v1 template engine, data model, and frontmatter system. T
 
 ## Documentation
 
-- [Template Syntax](syntax.md) -- Eta syntax, `zt.*` prefix, `include()`, `bq()` helper, autoTrim, managed region
+- [Template Syntax](syntax.md) -- Eta syntax, `zt.*` prefix, `include()`, `bq()` and `suffix()` helpers, autoTrim, managed region
 - [Data Reference](data-reference.md) -- Complete property reference for every template type
 - [Frontmatter](frontmatter.md) -- JS expression system, system fields, user fields, merge behavior
 - [Default Templates](defaults.md) -- Side-by-side v1 vs v2 defaults with explanations

@@ -10,6 +10,7 @@ import { Temporal } from "@zotlit/shared/temporal";
 
 import { basename } from "./basename";
 import { type AutoTrim } from "./constants";
+import { filenameSuffix } from "./filename-suffix";
 import { replaceHelper } from "./replace-helper";
 
 export interface TemplateEngineOptions {
@@ -33,6 +34,7 @@ export class TemplateEngine extends Eta {
 
   readonly bqHelper = formatBlockquote;
   readonly basenameHelper = basename;
+  readonly suffixHelper = filenameSuffix;
 
   constructor({
     autoTrim = [false, false],
@@ -46,7 +48,7 @@ export class TemplateEngine extends Eta {
       autoFilter: true,
       filterFunction: filterUndefinedNull,
       functionHeader:
-        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper;",
+        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper;",
       plugins: [includeDataPlugin],
     });
 
@@ -141,6 +143,11 @@ export class TemplateEngine extends Eta {
 }
 
 export { basename } from "./basename";
+export {
+  filenameSuffix,
+  hasSuffixMarker,
+  replaceSuffixMarkers,
+} from "./filename-suffix";
 
 function pointToSyntaxError(
   source: string,

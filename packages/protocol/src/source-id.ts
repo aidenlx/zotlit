@@ -13,6 +13,14 @@
  * serializers for ordinary paths.
  */
 
+/**
+ * HTTP header carrying the sender's {@link sourceIdFromUris source id} on
+ * `POST /notify` and `PATCH /literature-notes`. Checked once at the transport
+ * edge so the listener can discard pushes from a Zotero install it isn't
+ * configured to read.
+ */
+export const SOURCE_ID_HEADER = "X-Zotlit-Source-Id";
+
 /** @see https://github.com/sindresorhus/djb2a/blob/main/index.js */
 const DJB2A_SEED = 5381;
 

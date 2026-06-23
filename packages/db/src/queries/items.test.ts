@@ -1,35 +1,26 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { relations } from "@drizzle/relations";
+import * as schema from "@drizzle/schema";
+import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createClient, type NodeDatabaseClient } from "@/client/node";
+import { type NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseItemLanguage } from "@/lib/zt-lang";
 
-import {
-  getItemRefByID,
-  getItemsByID,
-  getItemsByKey,
-  getItemsByLibrary,
-} from "./items";
+import { getItemsByID, getItemsByKey, getItemsByLibrary } from "./items";
 
-let tempDir: string;
-let dbPath: string;
+let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
 
-beforeEach(async () => {
-  tempDir = join(tmpdir(), `zotlit-db-items-${randomUUID()}`);
-  await mkdir(tempDir, { recursive: true });
-  dbPath = join(tempDir, "zotero.sqlite");
-  seedFixture(dbPath);
-  db = createClient(dbPath);
+beforeEach(() => {
+  sqlite = new DatabaseSync(":memory:");
+  seedFixture(sqlite);
+  db = drizzle({ client: sqlite, schema, relations });
 });
 
-afterEach(async () => {
-  await rm(tempDir, { recursive: true, force: true });
+afterEach(() => {
+  sqlite.close();
 });
 
 describe("getItemsByLibrary", () => {
@@ -237,11 +228,13 @@ describe("getItemsByLibrary", () => {
 });
 
 describe("getItemsByID", () => {
-  it("hydrates only requested regular items from the requested library", () => {
-    const result = getItemsByID(db, USER_LIBRARY_ID, [1, 6, 2, 3, 7]);
+  it("hydrates requested regular items across libraries, excluding deleted and child types", () => {
+    const result = getItemsByID(db, [1, 6, 2, 3, 7]);
     const byID = new Map(result.map((item) => [item.itemID, item]));
 
-    expect([...byID.keys()].sort((a, b) => a - b)).toEqual([1, 6]);
+    // Item 7 lives in a group library; with no caller-supplied scope it is
+    // included alongside the user-library items in a single batch.
+    expect([...byID.keys()].sort((a, b) => a - b)).toEqual([1, 6, 7]);
     expect(byID.get(1)).toMatchObject({
       key: "USER1",
       libraryID: USER_LIBRARY_ID,
@@ -252,13 +245,30 @@ describe("getItemsByID", () => {
       libraryID: USER_LIBRARY_ID,
       fields: { itemType: "book" },
     });
-    expect(byID.has(2)).toBe(false);
-    expect(byID.has(3)).toBe(false);
-    expect(byID.has(7)).toBe(false);
+    expect(byID.has(2)).toBe(false); // deleted
+    expect(byID.has(3)).toBe(false); // attachment (child) item type
+  });
+
+  it("resolves each row's groupID from its own library within one batch", () => {
+    const byID = new Map(
+      getItemsByID(db, [1, 7]).map((item) => [item.itemID, item]),
+    );
+
+    // User-library item: bare key, no group suffix.
+    expect(byID.get(1)).toMatchObject({
+      libraryID: USER_LIBRARY_ID,
+      indexedKey: "USER1",
+    });
+    // Group-library item in the same call: key + 'g' + groupID, proving the
+    // per-library memo does not smear one library's group across all rows.
+    expect(byID.get(7)).toMatchObject({
+      libraryID: 2,
+      indexedKey: "GRP1g17",
+    });
   });
 
   it("returns an empty array for empty input", () => {
-    expect(getItemsByID(db, USER_LIBRARY_ID, [])).toEqual([]);
+    expect(getItemsByID(db, [])).toEqual([]);
   });
 });
 
@@ -298,38 +308,7 @@ describe("getItemsByKey", () => {
   });
 });
 
-describe("getItemRefByID", () => {
-  it("resolves a user-library item to its key and library, no scope needed", () => {
-    expect(getItemRefByID(db, 1)).toEqual({
-      itemID: 1,
-      key: "USER1",
-      libraryID: USER_LIBRARY_ID,
-      groupID: null,
-      indexedKey: "USER1",
-    });
-  });
-
-  it("attaches the group id and indexed key for a group-library item", () => {
-    expect(getItemRefByID(db, 7)).toEqual({
-      itemID: 7,
-      key: "GRP1",
-      libraryID: 2,
-      groupID: 17,
-      indexedKey: "GRP1g17",
-    });
-  });
-
-  it("returns null for a deleted item", () => {
-    expect(getItemRefByID(db, 2)).toBeNull();
-  });
-
-  it("returns null for an unknown item id", () => {
-    expect(getItemRefByID(db, 9999)).toBeNull();
-  });
-});
-
-function seedFixture(path: string): void {
-  const sqlite = new DatabaseSync(path);
+function seedFixture(sqlite: DatabaseSync): void {
   sqlite.exec(`
     create table libraries (
       libraryID integer primary key,
@@ -498,5 +477,4 @@ function seedFixture(path: string): void {
         (1, 1, 1), (1, 2, 0),
         (5, 1, 1), (5, 2, 0);
   `);
-  sqlite.close();
 }

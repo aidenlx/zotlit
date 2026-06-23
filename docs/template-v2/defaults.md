@@ -184,7 +184,7 @@ Not a file -- configured as a setting string.
 ### v2 default
 
 ```
-<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>
+<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
 ```
 
 Changes:
@@ -192,3 +192,4 @@ Changes:
 - `it` -> `zt`.
 - `it.citekey` -> `zt.citationKey` (canonical name; `zt.citekey` also works).
 - The `.md` extension is no longer included -- code appends it automatically.
+- `<%= suffix() %>` appends a short random string **only when the generated name collides** with an existing note, keeping filenames unique without altering the common case. See [`suffix()`](syntax.md#the-suffix-filename-helper).

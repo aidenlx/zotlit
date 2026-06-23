@@ -34,6 +34,8 @@
     "fflate": "^0.8.2",
     "hono": "^4.12.25",
     "monkey-around": "catalog:",
+    "nanoid": "^5.1.14",
+    "p-limit": "^7.3.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-textarea-autosize": "^8.5.9",

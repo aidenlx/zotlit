@@ -110,7 +110,7 @@ describe("getAnnotViewAttachments", () => {
 
 describe("getAnnotViewAnnotations", () => {
   it("returns visible annotations with embedded tags", () => {
-    const result = getAnnotViewAnnotations(db, 200, 1);
+    const result = getAnnotViewAnnotations(db, 200);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
@@ -127,7 +127,7 @@ describe("getAnnotViewAnnotations", () => {
   });
 
   it("excludes trashed annotations", () => {
-    const result = getAnnotViewAnnotations(db, 200, 1);
+    const result = getAnnotViewAnnotations(db, 200);
     expect(result.some((a) => a.key === "ANN00002")).toBe(false);
   });
 });

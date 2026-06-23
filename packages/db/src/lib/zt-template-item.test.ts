@@ -21,6 +21,7 @@ function makeItem(
     creators: [],
     primaryCreatorType: null,
     customFields: new Map(),
+    groupID: null,
     ...base,
     fields: fields as ItemFields,
   };

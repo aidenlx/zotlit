@@ -12,6 +12,7 @@ import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
+import { renderCitation } from "@/services/note-feature";
 
 import { type CitationSuggestDeps } from "./register";
 
@@ -87,7 +88,8 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       return;
     }
 
-    const rendered = this.#deps.noteFeatures.renderCitation(
+    const rendered = renderCitation(
+      this.#deps.noteFeatures,
       [{ citationKey }],
       this.#secondary,
     );

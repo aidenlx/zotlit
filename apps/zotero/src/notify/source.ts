@@ -2,12 +2,11 @@ import { sourceIdFromUris } from "@zotlit/protocol";
 
 import { logger } from "@/lib/logger";
 
-/** The identity stamped on every outgoing notify event. */
-export interface Source {
-  sourceId: string;
-  /** Raw `Zotero.Profile.dir`, included only when debug logging is on. */
+/** Raw dirs merged into the notify body, only when debug logging is on. */
+export interface DebugDirs {
+  /** Raw `Zotero.Profile.dir`. */
   profilePath?: string;
-  /** Raw `Zotero.DataDirectory.dir`, included only when debug logging is on. */
+  /** Raw `Zotero.DataDirectory.dir`. */
   dataPath?: string;
 }
 
@@ -43,13 +42,18 @@ function resolve(): Cached {
   return cached;
 }
 
+/** The source id sent in the {@link SOURCE_ID_HEADER} header on every push. */
+export function sourceId(): string {
+  return resolve().sourceId;
+}
+
 /**
- * The {@link Source} to stamp on every event: the source id plus, when debug
- * logging is on, the raw profile/data dirs so the listener can log which
- * install a discarded event came from.
+ * Raw profile/data dirs to merge into the notify body, present only when debug
+ * logging is on so the listener can log which install a discarded event came
+ * from. Empty otherwise.
  */
-export function currentSource(): Source {
-  const { profileDir, dataDir, sourceId } = resolve();
-  if (!logger.isEnabledFor("debug")) return { sourceId };
-  return { sourceId, profilePath: profileDir, dataPath: dataDir };
+export function sourceDebugDirs(): DebugDirs {
+  if (!logger.isEnabledFor("debug")) return {};
+  const { profileDir, dataDir } = resolve();
+  return { profilePath: profileDir, dataPath: dataDir };
 }

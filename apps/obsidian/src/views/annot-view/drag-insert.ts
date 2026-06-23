@@ -5,7 +5,10 @@ import { type AnnotViewItem } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 import { type AttachmentImport } from "@/services/attachment-import/service";
-import { type NoteFeatures } from "@/services/note-feature/service";
+import {
+  renderAnnotation,
+  type NoteFeatureContext,
+} from "@/services/note-feature";
 
 const logger = getLogger(["views", "annot-view"]);
 
@@ -14,7 +17,7 @@ const SOURCE_TAG = "zotlit-annot-drag";
 
 export interface DragInsertDeps {
   workspace: Workspace;
-  noteFeatures: NoteFeatures;
+  noteFeatures: NoteFeatureContext;
   /** Active literature note's indexed item key, or `null` when none. */
   getIndexedKey: () => string | null;
   /** Pre-prepared attachment-import handle for the active note. */
@@ -40,11 +43,10 @@ export function createDragInsertHandler(deps: DragInsertDeps) {
 
     const rendered =
       indexedKey && handle
-        ? deps.noteFeatures.renderAnnotationForDrag(
-            indexedKey,
-            annot.key,
-            handle,
-          )
+        ? renderAnnotation(deps.noteFeatures, indexedKey, {
+            annotationKey: annot.key,
+            attachmentImport: handle,
+          })
         : null;
 
     evt.dataTransfer.dropEffect = "copy";

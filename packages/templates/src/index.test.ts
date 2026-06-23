@@ -222,6 +222,14 @@ describe("TemplateEngine", () => {
       ),
     ).toBe("Smith2024 / Smith2024.md");
   });
+
+  it("injects suffix into Eta templates as a deferred marker", () => {
+    const engine = new TemplateEngine();
+
+    expect(
+      engine.renderString("<%= zt.key %><%= suffix(8) %>", { key: "k" }),
+    ).toBe("k%zt-suffix:8:_:%");
+  });
 });
 
 describe("basename", () => {

@@ -7,7 +7,7 @@ import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
-import { NoteFeatures } from "./note-feature/service";
+import { type NoteFeatureContext } from "./note-feature";
 import { NoteIndex } from "./note-index/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
@@ -71,7 +71,7 @@ export function buildServices(
           getChsSegmenter: () => getChsSegmenter(plugin.app),
         }),
     })
-    .use({
+    .useValue({
       noteFeatures: ({
         template,
         db,
@@ -79,16 +79,15 @@ export function buildServices(
         zoteroPref,
         settings,
         attachmentImport,
-      }) =>
-        new NoteFeatures({
-          app: plugin.app,
-          template,
-          db,
-          noteIndex,
-          zoteroPref,
-          settings,
-          attachmentImport,
-        }),
+      }): NoteFeatureContext => ({
+        app: plugin.app,
+        template,
+        db,
+        noteIndex,
+        zoteroPref,
+        settings,
+        attachmentImport,
+      }),
     })
     .use({
       citekeyClick: ({ noteIndex, noteFeatures, db, settings }) =>

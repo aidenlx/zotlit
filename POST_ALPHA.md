@@ -43,11 +43,23 @@ Stage-4 parser support ships; wire the import flow to construct `NoteEmbeddedIma
 
 | Feature | v1 source | Notes |
 | --- | --- | --- |
-| Protocol batch actions | `note-feature/protocol/service.ts` | Batch `update-many` / `export-many` over the existing `{open,update}` wire contract (`packages/protocol/src/url.ts`). v1 `export` (always create fresh) is **dropped** — use `update` for in-place refresh. Stage 9 note import extends the same single-item pattern (Zotero menu → protocol → Obsidian orchestrator). |
-| Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; not yet ported (see §2.1) |
+| Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; not yet ported (see §2.2) |
 | Companion release | — | First public release cut and Obsidian community-plugin listing. Release pipeline ships (`pnpm release`, `.github/workflows/{ci,release}.yml`, Zotero update manifests on `zotero-release`) — see `CONTRIBUTING.md` and `docs/CI_SETUP.md`. |
 
-### 2.1 Topic-import (v1 reference)
+### 2.1 Protocol batch update (shipped)
+
+Initial land `55c7d60`; polish through `b7d2de4`. v1 source: `note-feature/protocol/service.ts` → v2 `services/note-feature/batch-update.ts` + `views/batch-update-modal.ts`.
+
+- **Transport** — `obsidian://zotlit/update-many?items=<id,…>&source-id=<hash>`. Zotero **Update** on a multi-selection sends one link; when the URL exceeds 2000 chars it falls back to `PATCH /literature-notes` on the first `notify-url` target (Zotero progress window reports send outcome).
+- **Orchestrator** — `runBatchUpdate` batch-updates/creates literature notes through the per-item `NoteFeatures` path (no batch DB query). Classifies ids into update / create / not-found; branches on actionable count: 0 → notice, 1 → single-item handler, ≥2 → modal.
+- **Modal UX** — loading phase runs chunked classification behind a determinate bar (cancel stays responsive on large batches); confirm checklist; run phase with per-item progress, live failure panel, keep-open warning, and outcome summary.
+- **Consistency** — `DatabaseService.acquireRead()` pins the client across classify/run; batch create uses `suffix()` for collision-free filenames.
+- **HTTP path** — `LiveUpdateService` acks 204 immediately and defers the `update-many` emit past the response flush.
+- **Dropped** — v1 `export-many` (always-create); use update for in-place refresh.
+
+Stage 9 note import extends the same single-item pattern (Zotero menu → protocol → Obsidian orchestrator).
+
+### 2.2 Topic-import (v1 reference)
 
 A "subscribe a note to a Zotero tag" workflow: attach a `#zt-topic/<name>` tag to a note, flip the status-bar toggle, and every item subsequently **added** in Zotero auto-generates a Markdown note tagged with that topic.
 

@@ -1,11 +1,14 @@
 import { serve, type ServerType } from "@hono/node-server";
 import { vValidator } from "@hono/valibot-validator";
+import { type Context, type Next } from "hono";
 import { Hono } from "hono/tiny";
 
 import {
+  batchUpdateRequestSchema,
   type NotifyEvent,
   notifyEventSchema,
   PROTOCOL_VERSION_HEADER,
+  SOURCE_ID_HEADER,
   type ReaderActive,
   type ReaderAnnotSelect,
   type ItemUpdate,
@@ -47,6 +50,12 @@ export interface ReaderTarget {
 
 export interface LiveUpdateEvents {
   "item/update": (event: ItemUpdate) => void;
+  /**
+   * A batch literature-note update requested over `PATCH /literature-notes` —
+   * the companion's fallback when the id list is too long for an `obsidian://`
+   * URL. Carries the raw item ids; the subscriber owns resolution and the modal.
+   */
+  "update-many": (event: { items: number[] }) => void;
   /**
    * Aggregated reader state: fired whenever the companion reports a reader
    * switch or a selection change, carrying the new {@link ReaderTarget}.
@@ -203,9 +212,9 @@ export class LiveUpdateService extends Service<void> {
 
   #startServer(): void {
     const app = new Hono();
-    app.post(
-      "/notify",
-      async (c, next) => {
+    app
+      /** Reject a request whose `X-Zotlit-Protocol-Version` header is incompatible. */
+      .use(async (c: Context, next: Next): Promise<Response | void> => {
         if (
           rejectIncompatibleProtocol(
             c.req.header(PROTOCOL_VERSION_HEADER),
@@ -216,34 +225,63 @@ export class LiveUpdateService extends Service<void> {
           return c.body(null, 204);
         }
         await next();
-      },
-      vValidator("json", notifyEventSchema, (result, c) => {
-        if (result.success) return;
-        logger.warn("Received notify event failed validation", {
-          issues: result.issues,
-        });
-        return c.json(result, 400);
-      }),
-      (c) => {
-        const event = c.req.valid("json");
+      })
+      /** Discard a request whose `X-Zotlit-Source-Id` isn't the configured install. */
+      .use(async (c: Context, next: Next): Promise<Response | void> => {
         const expected = this.#zoteroPref.sourceId;
-        if (expected === null || event.sourceId !== expected) {
-          logger.warn("Discarded notify event: source id mismatch", {
-            event: event.event,
+        const received = c.req.header(SOURCE_ID_HEADER);
+        if (expected === null || received !== expected) {
+          logger.warn("Discarded request: source id mismatch", {
             expected,
-            received: event.sourceId,
-            ...senderDirs(event),
+            received,
           });
           return c.body(null, 204);
         }
-        logger.debug("Received notify event", {
-          event: event.event,
-          ...senderDirs(event),
-        });
-        this.#dispatch(event);
-        return c.body(null, 204);
-      },
-    );
+        await next();
+      })
+      .post(
+        "/notify",
+        vValidator("json", notifyEventSchema, (result, c) => {
+          if (result.success) return;
+          logger.warn("Received notify event failed validation", {
+            issues: result.issues,
+          });
+          return c.json(result, 400);
+        }),
+        (c) => {
+          const event = c.req.valid("json");
+          logger.debug("Received notify event", {
+            event: event.event,
+            ...senderDirs(event),
+          });
+          this.#dispatch(event);
+          return c.body(null, 204);
+        },
+      )
+      // Fire-and-forget: the batch modal is interactive and long-running, so ack
+      // 204 immediately and let the subscriber drive it; never await the batch.
+      .patch(
+        "/literature-notes",
+        vValidator("json", batchUpdateRequestSchema, (result, c) => {
+          if (result.success) return;
+          logger.warn("Received literature-notes update failed validation", {
+            issues: result.issues,
+          });
+          return c.json(result, 400);
+        }),
+        (c) => {
+          const body = c.req.valid("json");
+          logger.debug("Received literature-notes update", {
+            items: body.items.length,
+          });
+          // decouple from the event loop to avoid handler
+          // from blocking the main thread and let response finish first.
+          void sleep(0).then(() => {
+            this.#emitter.emit("update-many", { items: body.items });
+          });
+          return c.body(null, 204);
+        },
+      );
 
     const server = serve(
       { fetch: app.fetch, port: this.#port, hostname: this.#hostname },

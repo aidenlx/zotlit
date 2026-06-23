@@ -51,6 +51,8 @@ For these fields:
 
 Default to a single-row `col = placeholder("col")` query and loop in the consumer (`.prepared`, cached). Use dynamic `col IN (...)` via `.prepare` (uncached) only when the per-row query is heavy enough that N round trips dominate.
 
+`.prepared(db)` is cache-keyed on `(query, db)` and returns the same statement on every call — call it inline at the use site, don't hoist it into a `const stmt` binding.
+
 ```ts
 // Do — prepared once, reused per key
 const q = defineQuery<{ libraryID: number; key: string }>()(
@@ -59,8 +61,7 @@ const q = defineQuery<{ libraryID: number; key: string }>()(
       where: { libraryID: placeholder("libraryID"), key: placeholder("key") },
     }),
 );
-const stmt = q.prepared(db);
-return keys.flatMap((key) => stmt.all({ libraryID, key }));
+return keys.flatMap((key) => q.prepared(db).all({ libraryID, key }));
 
 // Don't — fresh statement per distinct key set
 const q = defineQuery<{ libraryID: number }>()(

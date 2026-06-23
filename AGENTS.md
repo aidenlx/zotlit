@@ -84,6 +84,10 @@ Minimum code that solves the problem. Nothing speculative.
 - If you write 200 lines and it could be 50, rewrite it.
 - When reviewing designs or code, call out unnecessary abstraction and suggest the smallest maintainable alternative. Ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
+### Function parameters
+
+Functions and methods take at most 3 parameters. Additional inputs belong in one options object — typed inline or as a named type.
+
 ### Surgical Changes
 
 Touch only what you must. Clean up only your own mess.
