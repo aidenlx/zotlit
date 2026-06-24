@@ -217,6 +217,7 @@ What this means:
 | `it.comment` | `zt.comment` | |
 | `it.color` | `zt.colorHex` | Renamed |
 | `it.tags` | `zt.tags` | Now tag objects (with `tag.name`, `type`), not strings |
+| `it.collections` | `zt.collections` | Now collection objects (`key`, `name`, `path`); `path` is root->leaf; the `it.collection` singular alias is removed (see [Collections differences](#collections-it-collections-zt-collections)) |
 | `it.authors` | `zt.authors` | Now an array of creator objects, not formatted strings |
 | `it.authorsShort` | `zt.authorsShort` | Same semantics |
 | -- | `zt.colorName` | New: palette name |
@@ -229,6 +230,28 @@ What this means:
 | `it.date` | `zt.date` | Was year-only string; now a parsed `ItemDate` object (see [Date format](data-reference.md#date-format)). `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
 | `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant` at second precision (Zotero stores no sub-second component). Render as local date in `<%= %>` tags. Available on both items and annotations. |
 | -- | `zt.primaryCreatorType` | New: primary creator role for this item type |
+
+### Collections (`it.collections` -> `zt.collections`)
+
+v1 exposed each collection as `{ id, path, key, name, libraryID }` with a `path` that auto-rendered as `"A > B > C"`. v2 trims and reshapes this:
+
+| Aspect | v1 (`it.collections`) | v2 (`zt.collections`) |
+|--------|----------------------|----------------------|
+| Per-collection fields | `{ id, path, key, name, libraryID }` | `{ key, name, path }` -- `id` / `libraryID` dropped |
+| `path` order | leaf -> root | **root -> leaf** (`path[0]` is the top ancestor, last is the collection) |
+| `path` rendering | a `CollectionPath` array subclass that auto-rendered `"A > B > C"` | a plain `readonly string[]` -- bare `c.path` no longer auto-renders; use `c.path.join(" > ")` |
+| Singular alias | `it.collection` (deprecated) | removed -- use the `zt.collections` array |
+| Object coercion | coerced to `name` | unchanged -- still coerces to `name` |
+| Trashed collections | not special-cased | excluded; a live collection under a trashed parent truncates its path at the first live ancestor |
+| Ordering | SQL/rowid order | sorted by `name` |
+
+```eta
+<%# Collections coerce to their name in string contexts %>
+<%= zt.collections.join(", ") %>
+
+<%# Render each collection's full hierarchy %>
+<%= zt.collections.map(c => c.path.join(" > ")).join("; ") %>
+```
 
 ## Common patterns
 

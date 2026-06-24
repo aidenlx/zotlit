@@ -42,7 +42,7 @@ describe("itemToTemplateData", () => {
       date: "2024-06-00 June 2024",
     });
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.key).toBe("ABC12345");
     expect(result.itemType).toBe("journalArticle");
@@ -70,7 +70,7 @@ describe("itemToTemplateData", () => {
       blogTitle: "Tech Blog",
     });
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.containerTitle).toBe("Tech Blog");
     expect(result.publicationTitle).toBe("Tech Blog");
@@ -82,7 +82,7 @@ describe("itemToTemplateData", () => {
       label: "Sony Music",
     });
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.publisher).toBe("Sony Music");
   });
@@ -108,7 +108,7 @@ describe("itemToTemplateData", () => {
       },
     );
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.creators).toEqual<readonly TemplateCreator[]>([
       {
@@ -143,7 +143,7 @@ describe("itemToTemplateData", () => {
       },
     );
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.creators[0]).toEqual<TemplateCreator>({
       family: "",
@@ -160,14 +160,14 @@ describe("itemToTemplateData", () => {
       { customFields: new Map([["myCustomField", "custom value"]]) },
     );
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.myCustomField).toBe("custom value");
   });
 
   it("returns null for missing common fields", () => {
     const item = makeItem({ itemType: "book" });
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.title).toBeNull();
     expect(result.abstract).toBeNull();
@@ -183,7 +183,7 @@ describe("itemToTemplateData", () => {
       publicationTitle: "Science",
     });
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.abstract).toBe("Test abstract");
     expect(result.abstractNote).toBe("Test abstract");
@@ -197,9 +197,28 @@ describe("itemToTemplateData", () => {
       citationKey: "smith2024",
     });
 
-    const result = itemToTemplateData(item);
+    const result = itemToTemplateData({ item });
 
     expect(result.citationKey).toBe("smith2024");
     expect(result.citekey).toBe("smith2024");
+  });
+
+  it("defaults tags and collections to empty arrays", () => {
+    const result = itemToTemplateData({ item: makeItem({ itemType: "book" }) });
+
+    expect(result.tags).toEqual([]);
+    expect(result.collections).toEqual([]);
+  });
+
+  it("passes collections through unchanged", () => {
+    const collections = [
+      { key: "COLL0001", name: "Reading", path: ["Research", "Reading"] },
+    ];
+    const result = itemToTemplateData({
+      item: makeItem({ itemType: "book" }),
+      collections,
+    });
+
+    expect(result.collections).toBe(collections);
   });
 });

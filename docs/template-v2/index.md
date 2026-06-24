@@ -7,6 +7,7 @@ ZotLit v2 replaces the v1 template engine, data model, and frontmatter system. T
 - **Data root**: The template variable changed from `it` to `zt`. All field access is now `zt.title`, `zt.creators`, etc.
 - **Field naming**: Zotero canonical names with two CSL-inspired renames (`abstractNote` -> `abstract`, `publicationTitle` -> `containerTitle`). All fields are flat on `zt.*`.
 - **Creator shape**: A flat `creators` array with `{family, given, literal, role, fullName}` replaces v1's role-keyed Proxy wrappers. Creators coerce to `fullName` in string contexts.
+- **Collection shape**: `zt.collections` is a flat array of `{key, name, path}` sorted by name. `path` is root->leaf as a plain array (use `c.path.join(" > ")`); the v1 `it.collection` singular alias and the auto-rendering `CollectionPath` subclass are gone.
 - **Frontmatter**: JS expression evaluation replaces the v1 `zt-field` template. Users configure fields with a key, expression, and merge strategy instead of editing a template.
 - **Annotation updates**: A managed-region overwrite (`%%zt-managed%%`) replaces v1's block-ID-based incremental diffing.
 - **Removed templates**: `zt-field` and `zt-colored` are gone. `zt-annots` is renamed to `zt-content`.

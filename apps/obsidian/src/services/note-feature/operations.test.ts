@@ -29,6 +29,16 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     getItemsByKey: vi.fn(() => []),
     getRelatedKeysByItemID: vi.fn(() => []),
     getTagsByItemIDs: vi.fn(() => []),
+    // The mock DB client can't run real queries; stub the cache to resolve no
+    // collections so the note-feature flow under test stays DB-free.
+    CollectionCache: class {
+      byItemIDs() {
+        return new Map();
+      }
+      byItemIDsAsync() {
+        return Promise.resolve(new Map());
+      }
+    },
   };
 });
 

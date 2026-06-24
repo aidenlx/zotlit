@@ -20,13 +20,14 @@ User fields are configured in Settings > Templates > Frontmatter.
 - **Expression**: A JavaScript expression that produces the value.
 - **Merge strategy**: How ZotLit handles that property when refreshing an existing note.
 
-Each `expr` is a JavaScript expression evaluated with the full note context available as `zt`. All item fields and properties like `authors`, `authorsShort`, `backlink`, `annotations`, and `attachments` are accessible:
+Each `expr` is a JavaScript expression evaluated with the full note context available as `zt`. All item fields and properties like `authors`, `authorsShort`, `backlink`, `annotations`, `attachments`, and `collections` are accessible:
 
 ```
 zt.title                                         -> "My Paper Title"
 zt.authors.map(c => c.fullName)                   -> ["Jane Smith", "Bob Jones"]
 zt.DOI                                           -> "10.1234/example"
 zt.tags.map(t => t.tag.name)                     -> ["methodology", "review"]
+zt.collections.map(c => c.name)                   -> ["Reading", "Research"]
 zt.date?.year                                    -> 2023
 ```
 

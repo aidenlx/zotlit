@@ -45,6 +45,7 @@ Common fields:
 | `zt.extra` | `string \| null` | Extra field | all templates |
 | `zt.dateAdded` | `Temporal.Instant` | When the item was added to Zotero. Renders as the local date (e.g. `"2026-06-21"`) in `<%= %>` tags. | all templates |
 | `zt.dateModified` | `Temporal.Instant` | When the item was last modified. Renders as the local date (e.g. `"2026-06-21"`) in `<%= %>` tags. | all templates |
+| `zt.collections` | `array` | Zotero collections this item belongs to, sorted by name (see [Collections](#collections)) | note, content, frontmatter, filename |
 | `zt.backlink` | `string` | Zotero deep link (`zotero://select/...`) | note, content, frontmatter |
 | `zt.annotations` | `array` | All annotations across all attachments (see [Annotation template](#annotation-template-zotlit-annotationetamd)) | note, content, frontmatter |
 | `zt.attachments` | `array` | All attachments for this item (see [Attachment shape](#attachment-shape)) | note, content, frontmatter |
@@ -182,6 +183,22 @@ Each tag has:
 
 Tags coerce to `tag.name` in string contexts (e.g. `<%= t %>` or `` `${t}` ``), so `zt.tags.join(", ")` works without `.map()`.
 
+### Collections
+
+`zt.collections` is an array of the Zotero collections the item belongs to -- the folders/groups in Zotero's left sidebar -- sorted by name. Trashed collections are excluded. Only top-level items carry collections; child items (attachments, annotations) never do.
+
+Each collection has:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `key` | `string` | Zotero collection key |
+| `name` | `string` | Collection name |
+| `path` | `readonly string[]` | Ancestor chain from top-level root to this collection: `path[0]` is the top-level ancestor, the last element is this collection itself |
+
+Collections coerce to `name` in string contexts (e.g. `<%= c %>` or `` `${c}` ``), so `zt.collections.join(", ")` works without `.map()`.
+
+`path` is a plain array -- render the hierarchy with `c.path.join(" > ")` (e.g. `"Research > Reading"`). A live collection still nested under a trashed parent roots its path at the first non-trashed ancestor.
+
 ### Creators
 
 `zt.creators` is an array of all creators for the item. Each entry:
@@ -283,10 +300,12 @@ of the relation graph.
 
 ## Filename template
 
-The filename template is a setting string (not a separate file). To keep filename resolution to a single-item query, `zt` here is the **item's own fields only** -- the same core item data described under [Item fields](#item-fields), plus `creators` and `tags`. The richer fields assembled for the note body are **not** available in filename templates: `backlink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`. Use `zt.creators[0].family` instead of `zt.authorsShort` for an author-based name.
+The filename template is a setting string (not a separate file). To keep filename resolution to a single-item query, `zt` here is the **item's own fields only** -- the same core item data described under [Item fields](#item-fields), plus `creators`, `tags`, and `collections`. The richer fields assembled for the note body are **not** available in filename templates: `backlink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`. Use `zt.creators[0].family` instead of `zt.authorsShort` for an author-based name.
 
 `zt.notePath()` and `zt.noteLink()` exist but return an empty string in a filename template (a note has no path until it is named).
 
 Default: `<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>`
+
+To file notes into a folder per collection, join a collection's `path` with `/`: `<%= zt.collections[0]?.path.join("/") ?? "" %>/<%= zt.title ?? zt.key %>`.
 
 The `.md` extension is appended automatically -- do not include it in the template.
