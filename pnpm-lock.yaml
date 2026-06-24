@@ -12,6 +12,12 @@ catalogs:
     '@logtape/logtape':
       specifier: ^2.0.7
       version: 2.1.0
+    '@std/async':
+      specifier: jsr:1.4.0
+      version: 1.4.0
+    '@std/collections':
+      specifier: jsr:1.2.0
+      version: 1.2.0
     '@tailwindcss/vite':
       specifier: ^4.3.0
       version: 4.3.0
@@ -121,10 +127,10 @@ importers:
         specifier: ^0.6.1
         version: 0.6.1(hono@4.12.25)(valibot@1.4.0)
       '@std/async':
-        specifier: jsr:1.4.0
+        specifier: 'catalog:'
         version: '@jsr/std__async@1.4.0'
       '@std/collections':
-        specifier: jsr:1.2.0
+        specifier: 'catalog:'
         version: '@jsr/std__collections@1.2.0'
       '@std/ini':
         specifier: jsr:0.225.2
@@ -351,8 +357,8 @@ importers:
         specifier: 'catalog:'
         version: 2.1.0
       '@std/async':
-        specifier: jsr:^1.3.0
-        version: '@jsr/std__async@1.3.0'
+        specifier: 'catalog:'
+        version: '@jsr/std__async@1.4.0'
       '@zotlit/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -429,6 +435,9 @@ importers:
       '@logtape/logtape':
         specifier: 'catalog:'
         version: 2.1.0
+      '@std/collections':
+        specifier: 'catalog:'
+        version: '@jsr/std__collections@1.2.0'
       '@zotlit/shared':
         specifier: workspace:*
         version: link:../shared
@@ -1020,17 +1029,11 @@ packages:
   '@jsr/std__assert@1.0.19':
     resolution: {integrity: sha512-pEj6RPkGbqlgRmyKwATp4cUs6+ijxtdrv3bq8v1d2I2CEcMEyPaO8cVKro61wGRDH4cNg8Zx6haztvK/9m7gkA==, tarball: https://npm.jsr.io/~/11/@jsr/std__assert/1.0.19.tgz}
 
-  '@jsr/std__async@1.3.0':
-    resolution: {integrity: sha512-wi9lF+oZAtpvYWs4PKVF1U0ePNuRme37B7xsY0LRX0GnnuvRWxMZeNEeE2lD+kouj/NlMR2RsPEvFPQ/MvHGqQ==, tarball: https://npm.jsr.io/~/11/@jsr/std__async/1.3.0.tgz}
-
   '@jsr/std__async@1.4.0':
     resolution: {integrity: sha512-epQ5wsMrnAxeVtzmO9VviX14siVOSvF2o5dAm9qa6ajdWnWrrQ/oup7/Z2ctAOaxSOJbDWrfhgsenzHsODAogw==, tarball: https://npm.jsr.io/~/11/@jsr/std__async/1.4.0.tgz}
 
   '@jsr/std__collections@1.2.0':
     resolution: {integrity: sha512-R58weKPNZ3sFOo9pRAhasq0m0aIVEJau4/bid0VFWp9hoQZ07qpa1vtDLFWNrQK96ZJS0ql6IuOHVrXXsHOE/w==, tarball: https://npm.jsr.io/~/11/@jsr/std__collections/1.2.0.tgz}
-
-  '@jsr/std__data-structures@1.0.11':
-    resolution: {integrity: sha512-SeQ3rBVo+sj8e8XVfW3eTMJY3ygY69HW2H29j73tFJ5kHjnTMOURWX4PMiN1AOBcnNPm+l2UcQMmh6FDegUrnQ==, tarball: https://npm.jsr.io/~/11/@jsr/std__data-structures/1.0.11.tgz}
 
   '@jsr/std__data-structures@1.1.0':
     resolution: {integrity: sha512-V/Lrzz3ZBT2ps09SbUuQKIDQ0Ac7qTTloCFNNF7r2MNoIzdz3xsW9+Vd+ZzgXFKdm46+XqBmkv0lpW/HzgRQfg==, tarball: https://npm.jsr.io/~/11/@jsr/std__data-structures/1.1.0.tgz}
@@ -4358,19 +4361,11 @@ snapshots:
     dependencies:
       '@jsr/std__internal': 1.0.13
 
-  '@jsr/std__async@1.3.0':
-    dependencies:
-      '@jsr/std__data-structures': 1.0.11
-
   '@jsr/std__async@1.4.0':
     dependencies:
       '@jsr/std__data-structures': 1.1.0
 
   '@jsr/std__collections@1.2.0': {}
-
-  '@jsr/std__data-structures@1.0.11':
-    dependencies:
-      '@jsr/std__assert': 1.0.19
 
   '@jsr/std__data-structures@1.1.0':
     dependencies:

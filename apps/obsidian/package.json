@@ -19,8 +19,8 @@
   "dependencies": {
     "@hono/node-server": "^2.0.4",
     "@hono/valibot-validator": "^0.6.1",
-    "@std/async": "jsr:1.4.0",
-    "@std/collections": "jsr:1.2.0",
+    "@std/async": "catalog:",
+    "@std/collections": "catalog:",
     "@std/ini": "jsr:0.225.2",
     "@zotlit/db": "workspace:*",
     "@zotlit/item-lookup": "workspace:*",

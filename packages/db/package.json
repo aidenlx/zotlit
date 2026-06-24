@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@logtape/logtape": "catalog:",
+    "@std/collections": "catalog:",
     "@zotlit/shared": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",

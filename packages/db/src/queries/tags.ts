@@ -1,3 +1,5 @@
+import { distinct } from "@std/collections";
+
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { defineToString } from "@/lib/to-string";
@@ -92,8 +94,4 @@ export async function getTagsByItemIDsAsync(
   return batches.flatMap((rows) =>
     rows.map((row) => toItemTag(row, tagsByID)).toSorted(byTagName),
   );
-}
-
-function distinct<T>(array: readonly T[]): T[] {
-  return [...new Set(array)];
 }
