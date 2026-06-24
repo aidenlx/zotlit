@@ -12,6 +12,8 @@ allowBuilds:
 catalog:
   "@inlang/paraglide-js": ^2.15.1
   "@logtape/logtape": ^2.0.7
+  "@std/collections": jsr:1.2.0
+  "@std/async": jsr:1.4.0
   "@tailwindcss/vite": ^4.3.0
   "@types/node": ^25.5.0
   "@types/react": ^19.2.0

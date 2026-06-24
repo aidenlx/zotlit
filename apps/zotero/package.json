@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@logtape/logtape": "catalog:",
-    "@std/async": "jsr:^1.3.0",
+    "@std/async": "catalog:",
     "@zotlit/protocol": "workspace:*",
     "@zotlit/shared": "workspace:*",
     "core-js": "^3.39.0",
