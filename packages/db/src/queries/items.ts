@@ -210,14 +210,19 @@ export async function getItemsByLibraryAsync(
  * Fetch items by global item id. Item ids are unique across libraries, so the
  * batch may span libraries; each row's `groupID`/`indexedKey` resolves from its
  * own `libraryID`.
+ *
+ * @param opts.memo caller-owned `libraryID → groupID` cache. Pass a shared memo
+ *   to resolve each library once across many single-id calls (e.g. a batch that
+ *   loads items one at a time); omit to scope the cache to this call.
  */
 export function getItemsByID(
   db: NodeDatabaseClient,
   itemIDs: readonly number[],
+  opts?: { memo?: GroupIDMemo },
 ): Item[] {
   if (itemIDs.length === 0) return [];
 
-  const memo: GroupIDMemo = new Map();
+  const memo = opts?.memo ?? new Map();
   return itemIDs.flatMap((itemID) =>
     itemByIdQuery
       .prepared(db)

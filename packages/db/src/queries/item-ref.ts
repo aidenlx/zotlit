@@ -3,7 +3,7 @@ import { type CreatorFieldMode } from "@/lib/zt-creator";
 import { parseItemDate } from "@/lib/zt-date";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary } from "./_groups";
+import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
 import { defineQuery } from "./_shared";
 import { type Item } from "./items";
 
@@ -79,15 +79,21 @@ const itemDisplayRefByIdQuery = defineQuery<{ itemID: number }>()(
  * lightweight query — enough to classify a batch (indexed key → existing note)
  * and label each row, without the heavy `getItemsByID` relational load.
  *
+ * @param opts.memo caller-owned `libraryID → groupID` cache. Pass a shared memo
+ *   to resolve each library once across the per-id calls of a batch classify
+ *   loop; omit to scope the cache to this call.
  * @returns the {@link ItemDisplayRef}, or `null` when no live item has that id.
  */
 export function getItemDisplayRefByID(
   db: NodeDatabaseClient,
   itemID: number,
+  opts?: { memo?: GroupIDMemo },
 ): ItemDisplayRef | null {
   const row = itemDisplayRefByIdQuery.prepared(db).get({ itemID });
   if (!row) return null;
-  const groupID = groupIDForLibrary(db, row.libraryID);
+  const groupID = opts?.memo
+    ? resolveGroupID(db, row.libraryID, opts.memo)
+    : groupIDForLibrary(db, row.libraryID);
   const title =
     row.itemData.find((d) => d.fieldsCombined?.fieldName === "title")
       ?.itemDataValue?.value ?? null;
