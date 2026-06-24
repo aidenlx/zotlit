@@ -6,6 +6,7 @@ import {
   getItemDisplayRefByID,
   getItemRefByID,
   getItemsByID,
+  type GroupIDMemo,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
@@ -36,6 +37,13 @@ type BatchAction =
 interface NotFoundEntry {
   itemID: number;
   label: string;
+}
+
+/** Lease-scoped state shared across a run's per-action item loads. */
+interface RunContext {
+  client: NodeDatabaseClient;
+  settings: Readonly<Settings>;
+  groupIdMemo: GroupIDMemo;
 }
 
 /** Ids classified per yield, keeping each synchronous slice short enough that
@@ -127,13 +135,15 @@ async function classifyActions(
   // refresh cannot swap it out between `await sleep(0)` yields.
   using lease = await deps.db.acquireRead();
   const client = lease.client;
+  // Resolve each library's groupID once for the whole classify loop, not per id.
+  const groupIdMemo: GroupIDMemo = new Map();
   const actions: BatchAction[] = [];
   const notFound: NotFoundEntry[] = [];
   let classified = 0;
   for (const ids of chunk(itemIDs, CLASSIFY_CHUNK_SIZE)) {
     controls.signal.throwIfAborted();
     for (const itemID of ids) {
-      const ref = getItemDisplayRefByID(client, itemID);
+      const ref = getItemDisplayRefByID(client, itemID, { memo: groupIdMemo });
       if (!ref) {
         notFound.push({
           itemID,
@@ -189,7 +199,12 @@ async function executeBatchActions(
   // it mid-batch (torn snapshot). Acquired after the ready awaits above, which
   // touch settings/index/templates, not the DB.
   using lease = await deps.db.acquireRead();
-  const run = { client: lease.client, settings };
+  // Resolve each library's groupID once across all per-action item loads.
+  const run: RunContext = {
+    client: lease.client,
+    settings,
+    groupIdMemo: new Map(),
+  };
 
   // Each task loads its own full item (deferred from the lightweight
   // classification) right before writing, so the heavy relational read is spread
@@ -265,10 +280,12 @@ async function executeBatchActions(
 async function runAction(
   deps: SingleUpdateDeps,
   action: BatchAction,
-  run: { client: NodeDatabaseClient; settings: Readonly<Settings> },
+  run: RunContext,
 ): Promise<void> {
   const ctx = deps.noteFeatures;
-  const [item] = getItemsByID(run.client, [action.itemID]);
+  const [item] = getItemsByID(run.client, [action.itemID], {
+    memo: run.groupIdMemo,
+  });
   if (!item)
     throw new Error(m.batch_update_unknown_item({ id: action.itemID }));
 

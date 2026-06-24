@@ -4,6 +4,7 @@ export {
   getLibraryByGroupID,
   type Library,
 } from "./queries/libraries";
+export { type GroupIDMemo } from "./queries/_groups";
 export {
   getItemsByID,
   getItemsByIDAsync,
