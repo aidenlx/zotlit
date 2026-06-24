@@ -82,6 +82,7 @@ function seedFixture(sqlite: DatabaseSync): void {
     create table items (
       itemID integer primary key,
       itemTypeID integer not null,
+      dateAdded text not null,
       dateModified text not null,
       libraryID integer not null,
       key text not null
@@ -119,14 +120,14 @@ function seedFixture(sqlite: DatabaseSync): void {
     insert into fieldsCombined (fieldID, fieldName, custom)
       values (10, 'title', 0), (11, 'citationKey', 0);
 
-    insert into items (itemID, itemTypeID, dateModified, libraryID, key)
+    insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
-        (1, 1, '2024-02-01 00:00:00', 1, 'USER1'),
-        (2, 1, '2024-03-01 00:00:00', 1, 'DELETED'),
-        (6, 1, '2024-07-01 00:00:00', 1, 'USER2'),
-        (7, 1, '2025-01-01 00:00:00', 2, 'GRP1'),
-        (8, 1, '2024-08-01 00:00:00', 1, 'USER3'),
-        (9, 1, '2025-02-01 00:00:00', 2, 'GRP2');
+        (1, 1, '2024-01-01 00:00:00', '2024-02-01 00:00:00', 1, 'USER1'),
+        (2, 1, '2024-01-01 00:00:00', '2024-03-01 00:00:00', 1, 'DELETED'),
+        (6, 1, '2024-01-01 00:00:00', '2024-07-01 00:00:00', 1, 'USER2'),
+        (7, 1, '2024-01-01 00:00:00', '2025-01-01 00:00:00', 2, 'GRP1'),
+        (8, 1, '2024-01-01 00:00:00', '2024-08-01 00:00:00', 1, 'USER3'),
+        (9, 1, '2024-01-01 00:00:00', '2025-02-01 00:00:00', 2, 'GRP2');
 
     insert into deletedItems (itemID, dateDeleted)
       values (2, '2024-03-02 00:00:00');

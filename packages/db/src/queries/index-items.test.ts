@@ -115,6 +115,7 @@ function seedFixture(sqlite: DatabaseSync): void {
     create table items (
       itemID integer primary key,
       itemTypeID integer not null,
+      dateAdded text not null,
       dateModified text not null,
       libraryID integer not null,
       key text not null
@@ -191,15 +192,15 @@ function seedFixture(sqlite: DatabaseSync): void {
     insert into baseFieldMappingsCombined (itemTypeID, baseFieldID, fieldID)
       values (5, 13, 20);
 
-    insert into items (itemID, itemTypeID, dateModified, libraryID, key)
+    insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
-        (1, 1, '2024-02-01 00:00:00', 1, 'ARTICLE'),
-        (2, 5, '2024-06-01 00:00:00', 1, 'BOOKSEC'),
-        (3, 1, '2024-03-01 00:00:00', 1, 'DELETED'),
-        (4, 2, '2024-04-01 00:00:00', 1, 'ATTACH'),
-        (5, 3, '2024-05-01 00:00:00', 1, 'NOTE'),
-        (6, 4, '2024-06-02 00:00:00', 1, 'ANNOT'),
-        (7, 1, '2025-01-01 00:00:00', 1, 'NEWEST');
+        (1, 1, '2024-01-01 00:00:00', '2024-02-01 00:00:00', 1, 'ARTICLE'),
+        (2, 5, '2024-01-01 00:00:00', '2024-06-01 00:00:00', 1, 'BOOKSEC'),
+        (3, 1, '2024-01-01 00:00:00', '2024-03-01 00:00:00', 1, 'DELETED'),
+        (4, 2, '2024-01-01 00:00:00', '2024-04-01 00:00:00', 1, 'ATTACH'),
+        (5, 3, '2024-01-01 00:00:00', '2024-05-01 00:00:00', 1, 'NOTE'),
+        (6, 4, '2024-01-01 00:00:00', '2024-06-02 00:00:00', 1, 'ANNOT'),
+        (7, 1, '2024-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'NEWEST');
 
     insert into deletedItems (itemID, dateDeleted)
       values (3, '2024-03-02 00:00:00');

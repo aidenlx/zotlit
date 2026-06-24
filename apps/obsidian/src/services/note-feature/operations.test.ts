@@ -322,6 +322,7 @@ function makeItem(
     libraryID: input.libraryID ?? 1,
     key: input.key,
     indexedKey: input.indexedKey,
+    dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
     creators: [],
     primaryCreatorType: "author",

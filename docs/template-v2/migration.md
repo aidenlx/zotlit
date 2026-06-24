@@ -227,8 +227,7 @@ What this means:
 | -- | `zt.indexedKey` | New: indexed key |
 | -- | `zt.itemType` | New: Zotero item type |
 | `it.date` | `zt.date` | Was year-only string; now a parsed `ItemDate` object (see [Date format](data-reference.md#date-format)). `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
-| `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` (annotation only) | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant`. Render as local date in `<%= %>` tags. |
-| -- | `zt.dateModified` (item) | New: item modification timestamp (`Temporal.Instant`) |
+| `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant` at second precision (Zotero stores no sub-second component). Render as local date in `<%= %>` tags. Available on both items and annotations. |
 | -- | `zt.primaryCreatorType` | New: primary creator role for this item type |
 
 ## Common patterns

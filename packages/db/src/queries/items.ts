@@ -33,6 +33,8 @@ export interface BaseItem {
   key: string;
   /** `key` or `key + 'g' + groupID`, precomputed for NoteIndex lookup. */
   indexedKey: string;
+  /** UTC instant from Zotero's `dateAdded` text column. */
+  dateAdded: Temporal.Instant;
   /** UTC instant from Zotero's `dateModified` text column. */
   dateModified: Temporal.Instant;
   creators: Creator[];
@@ -61,6 +63,7 @@ const itemFindOptions = {
     itemID: true,
     libraryID: true,
     key: true,
+    dateAdded: true,
     dateModified: true,
   },
   with: {
@@ -172,6 +175,7 @@ function toItem(row: ItemRow, groupID: number | null): Item {
     key: row.key,
     indexedKey: formatIndexedKey(row.key, groupID),
     groupID,
+    dateAdded: row.dateAdded,
     dateModified: row.dateModified,
     creators,
     primaryCreatorType,
