@@ -60,6 +60,9 @@ export function makeItem(options: ItemFixtureOptions): Item {
     libraryID: options.libraryID ?? 1,
     key: options.key,
     indexedKey: options.key,
+    dateAdded: Temporal.Instant.from(
+      options.dateModified ?? "1970-01-01T00:00:00Z",
+    ),
     dateModified: Temporal.Instant.from(
       options.dateModified ?? "1970-01-01T00:00:00Z",
     ),

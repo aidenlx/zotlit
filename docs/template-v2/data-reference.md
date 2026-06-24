@@ -43,6 +43,7 @@ Common fields:
 | `zt.language` | `string \| null` | Language | all templates |
 | `zt.shortTitle` | `string \| null` | Short title | all templates |
 | `zt.extra` | `string \| null` | Extra field | all templates |
+| `zt.dateAdded` | `Temporal.Instant` | When the item was added to Zotero. Renders as the local date (e.g. `"2026-06-21"`) in `<%= %>` tags. | all templates |
 | `zt.dateModified` | `Temporal.Instant` | When the item was last modified. Renders as the local date (e.g. `"2026-06-21"`) in `<%= %>` tags. | all templates |
 | `zt.backlink` | `string` | Zotero deep link (`zotero://select/...`) | note, content, frontmatter |
 | `zt.annotations` | `array` | All annotations across all attachments (see [Annotation template](#annotation-template-zotlit-annotationetamd)) | note, content, frontmatter |
@@ -51,13 +52,15 @@ Common fields:
 | `zt.authorsShort` | `string` | Formatted short author string (e.g. `"Smith et al."`) | note, content, frontmatter |
 | `zt.relatedItems` | `array` | Items from Zotero's "Related" panel, sorted by title (see [Related items shape](#related-items-shape)) | note, content, frontmatter |
 
+> **Note:** Timestamp fields (`zt.dateAdded` and `zt.dateModified`, on both items and annotations) are `Temporal.Instant` values at **second precision** -- Zotero stores them as UTC `"YYYY-MM-DD HH:MM:SS"` strings with no sub-second component, so any rendered or computed time is accurate only to the second.
+
 Item-type-specific fields (e.g. `zt.reportNumber`, `zt.thesisType`, `zt.conferenceName`) are also available by their Zotero canonical name. Type-specific aliases (e.g. `blogTitle` for `publicationTitle`, `studio` for `publisher`) are normalized to their canonical form -- both names work. These have "all templates" availability.
 
 The full alias map covers all Zotero field aliases -- both the canonical name and any type-specific alias work.
 
 ### Example: Journal article fields
 
-When `zt.itemType` is `"journalArticle"`, the following fields are available (in addition to built-in fields like `key`, `libraryID`, `indexedKey`, `dateModified`, `creators`, `tags`, etc.):
+When `zt.itemType` is `"journalArticle"`, the following fields are available (in addition to built-in fields like `key`, `libraryID`, `indexedKey`, `dateAdded`, `dateModified`, `creators`, `tags`, etc.):
 
 | Property | Type | Description |
 |----------|------|-------------|

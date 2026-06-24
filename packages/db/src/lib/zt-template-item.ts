@@ -32,6 +32,7 @@ export interface TemplateItemData {
   libraryID: number;
   indexedKey: string;
   itemType: string;
+  dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
 
   creators: readonly TemplateCreator[];
@@ -98,6 +99,7 @@ export function itemToTemplateData(
     libraryID: item.libraryID,
     indexedKey: item.indexedKey,
     itemType: item.fields.itemType,
+    dateAdded: item.dateAdded,
     dateModified: item.dateModified,
     creators,
     primaryCreatorType: item.primaryCreatorType,
