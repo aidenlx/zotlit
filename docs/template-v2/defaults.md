@@ -25,7 +25,7 @@ The main template that renders the full literature note body.
 ```eta
 # <%= zt.title %>
 
-[Zotero](<%= zt.backlink %>) <%= zt.attachments.map(a => a.fileLink).filter(Boolean).join(" ") %>
+[Zotero](<%= zt.backlink %>) <%= zt.attachments.map(a => a.fileLink()).filter(Boolean).join(" ") %>
 
 <%~ include("content", zt) %>
 ```
@@ -33,7 +33,7 @@ The main template that renders the full literature note body.
 Changes:
 
 - `it` -> `zt` prefix.
-- `it.fileLink` (single attachment) -> `zt.attachments.map(...)` (all attachments, joined).
+- `it.fileLink` (single attachment) -> `zt.attachments.map(a => a.fileLink())` (all attachments; `fileLink` is now a [link helper](syntax.md#link-helpers) you call).
 - `it.annotations` passed to `include("annots", ...)` -> `include("content", zt)` passes the **full** context. The content template can access any `zt.*` property, not just annotations.
 - The `include("content", zt)` output is automatically wrapped with `%%zt-managed%%` markers.
 
@@ -88,7 +88,7 @@ In v1, blockquote formatting was handled separately.
 <% bq(() => { %>
 [!note] Page <%= zt.pageLabel %>
 
-<%= zt.imgEmbed %><%= zt.text %>
+<%= embed(zt.imgLink) %><%= zt.text %>
 <% if (zt.comment) { %>
 
 <%= zt.comment %>
@@ -99,7 +99,7 @@ In v1, blockquote formatting was handled separately.
 Changes:
 
 - `it` -> `zt`.
-- `it.imgEmbed` -> `zt.imgEmbed` (image embed string, `null` for non-image annotations; auto-filter converts `null` to `""`).
+- `it.imgEmbed` -> `embed(zt.imgLink)`. `zt.imgLink` is now a [link helper](syntax.md#link-helpers) (or `null` for non-image annotations); the [`embed()`](syntax.md#the-embed-helper) helper prefixes `!` for the embed and collapses to `""` when there is no image.
 - `it.text` -> `zt.text` (annotation text).
 - The `bq()` helper wraps the entire annotation in a blockquote, handling `>` prefixing automatically. In v1, the blockquote context was managed by the caller/framework.
 - Additional properties available in v2: `zt.backlink`, `zt.parentItem`, `zt.parentAttachment`, `zt.tags`, `zt.colorHex`, `zt.colorName`, `zt.type`, `zt.dateAdded`, `zt.dateModified`.

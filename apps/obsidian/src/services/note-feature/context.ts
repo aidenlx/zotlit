@@ -21,11 +21,13 @@ import {
   type TemplateItemData,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
-import { resolveAnnotCachePath } from "@zotlit/db/path";
+import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import { hasSuffixMarker } from "@zotlit/templates";
 
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
+import { createNoteTurndown } from "@/lib/turndown";
+import { commentToMarkdown } from "@/lib/turndown/comment";
 import {
   type AttachmentImport,
   type AttachmentImportService,
@@ -65,7 +67,7 @@ interface BuildFullContextOptions {
   itemCollections: readonly TemplateCollection[];
   /** Shared per-batch memo resolving related items' collection paths. */
   collectionCache: CollectionCache;
-  attachmentImport: Pick<AttachmentImport, "resolveEmbed">;
+  attachmentImport: Pick<AttachmentImport, "resolveLink">;
   settings: Readonly<Settings> | null;
   sourcePath: string;
   targetAnnotationKey?: string;
@@ -135,7 +137,7 @@ export function resolveNotePath(
  * client; throws {@link DatabaseError} if the database is not ready.
  *
  * When `targetAnnotationKey` is set, only that annotation's image excerpt is
- * resolved through `attachmentImport`; every other annotation's `imgEmbed` is
+ * resolved through `attachmentImport`; every other annotation's `imgLink` is
  * `null`.
  */
 export function buildFullContext(
@@ -193,6 +195,9 @@ export function buildFullContext(
   const dataDir = ctx.zoteroPref.dataDir;
   const baseAttachmentPath = ctx.zoteroPref.baseAttachmentPath;
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
+  // One Turndown instance, built on first use and reused across every
+  // annotation comment in this batch (skipped entirely when none are read).
+  let commentTurndown: ReturnType<typeof createNoteTurndown> | null = null;
 
   return buildNoteContext({
     item,
@@ -202,23 +207,29 @@ export function buildFullContext(
     collectionsByItemID,
     relatedItems,
     authorsShort: creatorSummary,
-    fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),
+    filePath: (a) => attachmentAbsPath(a, { dataDir, baseAttachmentPath }),
+    fileLink: (a, page) =>
+      attachmentFileLink(a, { dataDir, baseAttachmentPath }, page),
+    commentToMarkdown: (html) => {
+      commentTurndown ??= createNoteTurndown(TurndownService);
+      return commentToMarkdown(commentTurndown, html);
+    },
     ...noteResolvers(ctx, options.settings, options.sourcePath),
-    imgEmbed: (annotation) => {
+    annotationImageLink: (annotation) => {
+      const cachePath = resolveAnnotCachePath(annotation, { dataDir, groupID });
+      if (cachePath == null) return null;
+      // resolveLink queues the import copy; gate it to the target annotation so
+      // a batch render imports only the requested excerpt.
       if (
         options.targetAnnotationKey != null &&
         annotation.key !== options.targetAnnotationKey
       ) {
         return null;
       }
-      const cachePath = resolveAnnotCachePath(annotation, { dataDir, groupID });
-      return (
-        cachePath &&
-        options.attachmentImport.resolveEmbed(
-          cachePath,
-          `${annotation.key}.png`,
-        )
-      );
+      return options.attachmentImport.resolveLink({
+        sourcePath: cachePath,
+        vaultName: `${annotation.key}.png`,
+      });
     },
   });
 }
@@ -276,13 +287,13 @@ function noteResolvers(
         return "";
       }
     },
-    noteLink: (item, alias) => {
+    noteLink: (item, alias, subpath) => {
       try {
         const target = resolveTarget(item);
         return ctx.app.fileManager.generateMarkdownLink(
           target.file,
           sourcePath,
-          undefined,
+          subpath,
           alias,
         );
       } catch (error) {

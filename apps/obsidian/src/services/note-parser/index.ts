@@ -17,6 +17,7 @@ import {
   type NoteAnnotation,
 } from "@/lib/turndown/parse";
 import * as m from "@/paraglide/messages";
+import { type AttachmentImport } from "@/services/attachment-import/service";
 
 const logger = getLogger("note-parser");
 
@@ -33,7 +34,7 @@ export interface NoteEmbeddedImageDeps {
   client: NodeDatabaseClient;
   libraryID: number;
   pathContext: AttachmentPathContext;
-  resolveEmbed: (sourcePath: string, vaultName: string) => string;
+  resolveLink: AttachmentImport["resolveLink"];
 }
 
 /**
@@ -121,7 +122,11 @@ function resolveEmbeddedImage(
       parsed.kind === "storage"
         ? parsed.filename
         : basenameFromPath(sourcePath);
-    return deps.resolveEmbed(sourcePath, `${attachment.key}-${filename}`);
+    const link = deps.resolveLink({
+      sourcePath,
+      vaultName: `${attachment.key}-${filename}`,
+    });
+    return `!${link()}`;
   };
 }
 

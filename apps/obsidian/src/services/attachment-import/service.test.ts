@@ -50,7 +50,7 @@ beforeEach(() => {
 });
 
 describe("AttachmentImportService", () => {
-  it("returns file URI embeds when import is disabled", async () => {
+  it("returns a file URI link when import is disabled", async () => {
     const service = new AttachmentImportService({
       app: makeApp(),
       settings: makeSettings({
@@ -62,13 +62,16 @@ describe("AttachmentImportService", () => {
     const batch = await service.prepare("Notes/A.md");
 
     expect(
-      batch.resolveEmbed("/zotero/cache/library/ANNOT.png", "ANNOT.png"),
-    ).toBe("![](file:///zotero/cache/library/ANNOT.png)");
+      batch.resolveLink({
+        sourcePath: "/zotero/cache/library/ANNOT.png",
+        vaultName: "ANNOT.png",
+      })(),
+    ).toBe("[ANNOT.png](file:///zotero/cache/library/ANNOT.png)");
     await expect(batch.flush()).resolves.toEqual({ copied: 0, skipped: 0 });
     expect(copyAttachments).toHaveBeenCalledWith([]);
   });
 
-  it("precomputes vault embeds and flushes queued copies", async () => {
+  it("precomputes vault links and flushes queued copies", async () => {
     const app = makeApp();
     const service = new AttachmentImportService({
       app,
@@ -81,8 +84,11 @@ describe("AttachmentImportService", () => {
     const batch = await service.prepare("Notes/A.md");
 
     expect(
-      batch.resolveEmbed("/zotero/storage/IMG/image.png", "IMG-image.png"),
-    ).toBe("![[IMG-image.png]]");
+      batch.resolveLink({
+        sourcePath: "/zotero/storage/IMG/image.png",
+        vaultName: "IMG-image.png",
+      })(),
+    ).toBe("[[IMG-image.png]]");
     await expect(batch.flush()).resolves.toEqual({ copied: 1, skipped: 0 });
     expect(copyAttachments).toHaveBeenCalledWith([
       {

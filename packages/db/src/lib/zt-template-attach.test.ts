@@ -73,11 +73,12 @@ describe("attachmentToTemplateData", () => {
     expect(result.linkMode).toBe("unknown");
   });
 
-  it("omits the runtime fileLink field", () => {
+  it("omits the runtime filePath and fileLink fields", () => {
     const result = attachmentToTemplateData(
       makeAttachment({ path: "storage:a.pdf", linkMode: 0 }),
     );
 
+    expect("filePath" in result).toBe(false);
     expect("fileLink" in result).toBe(false);
   });
 });

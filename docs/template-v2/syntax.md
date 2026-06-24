@@ -89,6 +89,56 @@ How `bq()` works:
 4. Collapses consecutive bare `>` lines into one.
 5. Outputs the result.
 
+## Link helpers
+
+Every link on the `zt` context is a **function**, not a precomputed string. Call it to render the link, and pass overrides to change the display text or jump to a sub-location:
+
+```
+linkHelper(alias?, subpath?)
+```
+
+- `alias` -- the link's display text. Omit it to use the default (the filename / note title). This default matters for Markdown links: Obsidian falls back to the filename only for wikilinks, so a Markdown link with no display text renders as a bare `[](…)`. The helpers fill the text in for you, so links are never blank.
+- `subpath` -- a `#`-fragment appended to the target, e.g. `"#heading"`, `"#^block"`, or `"#page=3"`.
+
+The link helpers:
+
+| Helper | Where | Default text | Default subpath |
+|--------|-------|--------------|-----------------|
+| `zt.noteLink()` | item (note, related items) | note title | none |
+| `a.fileLink()` | each `zt.attachments[]` entry | attachment filename | none |
+| `zt.fileLink()` | annotation | attachment filename | `#page=N` (the annotation's page) |
+| `zt.imgLink()` | annotation | excerpt-image filename | none |
+
+```eta
+<%# default text, no override %>
+<%= zt.attachments[0].fileLink() %>
+
+<%# custom display text %>
+<%= zt.attachments[0].fileLink("Open the PDF") %>
+
+<%# link to a heading inside the note %>
+<%= zt.noteLink("See notes", "#Summary") %>
+```
+
+`zt.fileLink()` (annotation) and `zt.imgLink()` return `""` / `null` when the file or excerpt image is unresolvable, so guard or `.filter(Boolean)` as needed. `zt.imgLink` is `null` for annotation types with no cached image (everything but `image` and `ink`).
+
+## The `embed()` helper
+
+`embed()` turns a link helper into a Markdown embed by prefixing `!`, and collapses cleanly to `""` when the link is absent -- so you don't have to write the `zt.imgLink ? "!" + zt.imgLink() : ""` guard yourself:
+
+```eta
+<%= embed(zt.imgLink) %>
+```
+
+It forwards `alias` / `subpath` to the underlying helper, and accepts any link helper (or `null`):
+
+```
+embed(link, alias?, subpath?)
+```
+
+- `link` is absent (`null` / `undefined`) or renders empty -> `embed` outputs `""`.
+- otherwise -> `!` + the rendered link (e.g. `![[ANNOT.png]]` or `![alt](file://…)`).
+
 ## The `suffix()` filename helper
 
 The `suffix()` helper is for the **filename template** only. It appends a short random string to keep new literature notes from overwriting existing files, but **only when the generated name actually collides** with a note already in the vault. When the name is free, it renders nothing:

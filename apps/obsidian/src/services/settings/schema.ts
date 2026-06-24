@@ -11,7 +11,7 @@ import {
 import {
   DEFAULT_FRONTMATTER_FIELDS,
   DEFAULT_NOTE_FILENAME,
-} from "@/services/note-feature/defaults";
+} from "@/services/template/defaults";
 
 /**
  * JSON-safe values a setting may take. Recursive so structured settings (e.g.

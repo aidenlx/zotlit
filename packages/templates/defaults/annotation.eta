@@ -1,7 +1,7 @@
 <% bq(() => { %>
 [!note] Page <%= zt.pageLabel %>
 
-<%= zt.imgEmbed %><%= zt.text %>
+<%= embed(zt.imgLink) %><%= zt.text %>
 <% if (zt.comment) { %>
 
 <%= zt.comment %>

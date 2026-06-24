@@ -72,13 +72,33 @@ describe("attachmentAbsPath", () => {
 });
 
 describe("attachmentFileLink", () => {
-  it("builds a file link labelled with the basename", () => {
+  it("builds a file link labelled with the basename by default", () => {
     expect(
       attachmentFileLink(
         makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
         ctx,
-      ),
+      )(),
     ).toBe("[paper.pdf](file:///data/storage/ATCH1234/paper.pdf)");
+  });
+
+  it("overrides the display text and subpath when given", () => {
+    const link = attachmentFileLink(
+      makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
+      ctx,
+      3,
+    );
+    // default anchors to the page
+    expect(link()).toBe(
+      "[paper.pdf](file:///data/storage/ATCH1234/paper.pdf#page=3)",
+    );
+    // alias override keeps the default page anchor
+    expect(link("The PDF")).toBe(
+      "[The PDF](file:///data/storage/ATCH1234/paper.pdf#page=3)",
+    );
+    // subpath override replaces the page anchor
+    expect(link("The PDF", "#section")).toBe(
+      "[The PDF](file:///data/storage/ATCH1234/paper.pdf#section)",
+    );
   });
 
   it("returns empty string for an unresolvable attachment", () => {
@@ -86,7 +106,7 @@ describe("attachmentFileLink", () => {
       attachmentFileLink(
         makeAttachment({ path: "https://example.com", linkMode: 3 }),
         ctx,
-      ),
+      )(),
     ).toBe("");
   });
 });

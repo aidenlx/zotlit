@@ -98,7 +98,7 @@ describe("buildNoteContext", () => {
       },
     );
     const attachment = makeAttachment({});
-    const annotation = makeAnnotation({});
+    const annotation = makeAnnotation({ comment: "<i>raw</i>" });
     const itemTagRecord = { tagID: 1, name: "zt" };
     const annotTagRecord = { tagID: 2, name: "claim" };
 
@@ -113,10 +113,15 @@ describe("buildNoteContext", () => {
       collectionsByItemID: new Map(),
       relatedItems: [],
       authorsShort: () => "Smith et al.",
-      fileLink: () => "[paper.pdf](file:///x/paper.pdf)",
+      filePath: () => "/x/paper.pdf",
+      fileLink: (_attachment, page) => () =>
+        page == null
+          ? "[paper.pdf](file:///x/paper.pdf)"
+          : `[paper.pdf](file:///x/paper.pdf#page=${page})`,
+      commentToMarkdown: (html) => `md(${html})`,
       notePath: () => "",
       noteLink: () => "",
-      imgEmbed: (annotation) => `![[${annotation.key}.png]]`,
+      annotationImageLink: (annotation) => () => `[[${annotation.key}.png]]`,
     });
 
     expect(ctx.backlink).toBe("zotero://select/library/items/ITEM2345");
@@ -127,7 +132,7 @@ describe("buildNoteContext", () => {
     expect(ctx.authorsShort).toBe("Smith et al.");
 
     expect(ctx.attachments).toHaveLength(1);
-    expect(ctx.attachments[0]!.fileLink).toBe(
+    expect(ctx.attachments[0]!.fileLink()).toBe(
       "[paper.pdf](file:///x/paper.pdf)",
     );
 
@@ -136,12 +141,52 @@ describe("buildNoteContext", () => {
     expect(annot.backlink).toBe(
       "zotero://open/library/items/ATCH0001?annotation=ANNO0001&page=5",
     );
-    expect(annot.imgEmbed).toBe("![[ANNO0001.png]]");
+    expect(annot.imgLink?.()).toBe("[[ANNO0001.png]]");
+    // prefix `!` to embed the excerpt image
+    expect(`!${annot.imgLink?.()}`).toBe("![[ANNO0001.png]]");
+    // raw HTML from the mapper; `comment` lazily converts it via commentToMarkdown
+    expect(annot.commentHtml).toBe("<i>raw</i>");
+    expect(annot.comment).toBe("md(<i>raw</i>)");
+    // page derived from position.pageIndex (0) + 1; fileLink anchors to it
+    expect(annot.page).toBe(1);
+    expect(annot.fileLink()).toBe("[paper.pdf](file:///x/paper.pdf#page=1)");
+    expect(ctx.attachments[0]!.filePath).toBe("/x/paper.pdf");
     expect(annot.tags[0]?.tag).toBe(annotTagRecord);
     expect(annot.parentAttachment).toBe(ctx.attachments[0]);
     expect(annot.parentItem.citationKey).toBe("smith2024");
 
     expect(ctx.authors.map((a) => a.family)).toEqual(["Smith"]);
+  });
+
+  it("derives a null page and unanchored fileLink for positions without a pageIndex", () => {
+    const attachment = makeAttachment({ contentType: "application/epub+zip" });
+    // EPUB / snapshot positions carry no `pageIndex`.
+    const annotation = makeAnnotation({
+      position: { type: "FragmentSelector", value: "epubcfi(/6/4!/4)" },
+    });
+
+    const ctx = buildNoteContext({
+      item: makeItem({ itemType: "book" }),
+      attachments: [attachment],
+      annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: (_attachment, page) => () =>
+        page == null
+          ? "[book.epub](file:///x/book.epub)"
+          : `[book.epub](file:///x/book.epub#page=${page})`,
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+
+    const annot = ctx.annotations[0]!;
+    expect(annot.page).toBeNull();
+    expect(annot.fileLink()).toBe("[book.epub](file:///x/book.epub)");
   });
 
   it("passes the resolver's image embed through, including null", () => {
@@ -159,15 +204,24 @@ describe("buildNoteContext", () => {
       collectionsByItemID: new Map(),
       relatedItems: [],
       authorsShort: () => "",
-      fileLink: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
       notePath: () => "",
       noteLink: () => "",
-      imgEmbed: (annotation) =>
-        annotation.key === "WITHIMG1" ? `![[${annotation.key}.png]]` : null,
+      annotationImageLink: (annotation) =>
+        annotation.key === "WITHIMG1"
+          ? () => `[[${annotation.key}.png]]`
+          : null,
     });
 
-    expect(ctx.annotations.map((a) => a.imgEmbed)).toEqual([
-      "![[WITHIMG1.png]]",
+    // `null` when there is no cached image; otherwise a link helper. Prefix `!`
+    // to the rendered link for an embed.
+    expect(
+      ctx.annotations.map((a) => (a.imgLink ? `!${a.imgLink()}` : null)),
+    ).toEqual(["![[WITHIMG1.png]]", null]);
+    expect(ctx.annotations.map((a) => a.imgLink?.() ?? null)).toEqual([
+      "[[WITHIMG1.png]]",
       null,
     ]);
   });
@@ -184,10 +238,12 @@ describe("buildNoteContext", () => {
       collectionsByItemID: new Map(),
       relatedItems: [],
       authorsShort: () => "",
-      fileLink: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
       notePath: () => "",
       noteLink: () => "",
-      imgEmbed: () => "",
+      annotationImageLink: () => null,
     });
     expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM2345");
   });
@@ -235,10 +291,12 @@ describe("buildNoteContext", () => {
       collectionsByItemID: new Map(),
       relatedItems: related,
       authorsShort: (item) => `short:${item.key}`,
-      fileLink: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
       notePath: () => "",
       noteLink: () => "",
-      imgEmbed: () => "",
+      annotationImageLink: () => null,
     });
 
     expect(ctx.relatedItems.map((r) => r.title)).toEqual([
@@ -279,7 +337,9 @@ describe("buildNoteContext", () => {
       collectionsByItemID: new Map(),
       relatedItems: [related],
       authorsShort: () => "",
-      fileLink: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
       notePath: (item) => {
         calls.push(`path:${item.indexedKey}`);
         return `notes/${item.indexedKey}.md`;
@@ -290,13 +350,13 @@ describe("buildNoteContext", () => {
           ? `[[${item.indexedKey}|${alias}]]`
           : `[[${item.indexedKey}]]`;
       },
-      imgEmbed: () => "",
+      annotationImageLink: () => null,
     });
 
     expect(calls).toEqual([]);
-    expect(ctx.notePath()).toBe("notes/MAIN2345.md");
+    expect(ctx.notePath).toBe("notes/MAIN2345.md");
     expect(ctx.noteLink("Main")).toBe("[[MAIN2345|Main]]");
-    expect(ctx.relatedItems[0]!.notePath()).toBe("notes/REL12345.md");
+    expect(ctx.relatedItems[0]!.notePath).toBe("notes/REL12345.md");
     expect(ctx.relatedItems[0]!.noteLink()).toBe("[[REL12345]]");
     expect(calls).toEqual([
       "path:MAIN2345",

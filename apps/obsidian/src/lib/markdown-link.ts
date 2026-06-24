@@ -1,4 +1,22 @@
+import { pathToFileURL } from "node:url";
 import { TFile } from "obsidian";
+
+import { type TemplateLink } from "@zotlit/db";
+
+/**
+ * Build a {@link TemplateLink} to an absolute on-disk path as a `file://` URL.
+ * Rendered with no override it shows `defaultAlias` and `defaultSubpath`; pass
+ * `alias` / `subpath` to override either.
+ */
+export function fileUrlLink(
+  absPath: string,
+  defaultAlias: string,
+  defaultSubpath = "",
+): TemplateLink {
+  const href = pathToFileURL(absPath).href;
+  return (alias = defaultAlias, subpath = defaultSubpath) =>
+    `[${alias}](${href}${subpath})`;
+}
 
 /**
  * Builds a shaped {@link TFile} stand-in so {@link FileManager.generateMarkdownLink}

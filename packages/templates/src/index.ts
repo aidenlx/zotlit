@@ -10,6 +10,7 @@ import { Temporal } from "@zotlit/shared/temporal";
 
 import { basename } from "./basename";
 import { type AutoTrim } from "./constants";
+import { embed } from "./embed";
 import { filenameSuffix } from "./filename-suffix";
 import { replaceHelper } from "./replace-helper";
 
@@ -35,6 +36,7 @@ export class TemplateEngine extends Eta {
   readonly bqHelper = formatBlockquote;
   readonly basenameHelper = basename;
   readonly suffixHelper = filenameSuffix;
+  readonly embedHelper = embed;
 
   constructor({
     autoTrim = [false, false],
@@ -48,7 +50,7 @@ export class TemplateEngine extends Eta {
       autoFilter: true,
       filterFunction: filterUndefinedNull,
       functionHeader:
-        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper;",
+        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper;",
       plugins: [includeDataPlugin],
     });
 
@@ -143,6 +145,7 @@ export class TemplateEngine extends Eta {
 }
 
 export { basename } from "./basename";
+export { embed } from "./embed";
 export {
   filenameSuffix,
   hasSuffixMarker,

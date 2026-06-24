@@ -10,7 +10,7 @@ These fields are always written by ZotLit and cannot be overridden by user confi
 |-------|--------|-------------|
 | `zotero-key` | `zt.indexedKey` | The indexed item key (e.g. `"ABC12345"` or `"ABC12345g12345"` for group libraries) |
 | `citekey` | `zt.citationKey` | The citation key. Only written when the item has a citation key. |
-| `zt-attachments` | attachment scope | Attachment keys for attachment-scoped updates. Missing or empty means all attachments. |
+| `zotero-atchs` | attachment scope | Attachment keys for attachment-scoped updates. Missing or empty means all attachments. |
 
 ## User-configurable fields
 
@@ -27,7 +27,7 @@ zt.title                                         -> "My Paper Title"
 zt.authors.map(c => c.fullName)                   -> ["Jane Smith", "Bob Jones"]
 zt.DOI                                           -> "10.1234/example"
 zt.tags.map(t => t.tag.name)                     -> ["methodology", "review"]
-zt.collections.map(c => c.name)                   -> ["Reading", "Research"]
+zt.collections.map(c => c.path.join('/'))                   -> ["Project/Reading", "Research"]
 zt.date?.year                                    -> 2023
 ```
 
@@ -41,7 +41,7 @@ Out of the box, ZotLit configures these user fields:
 |-----|------------|----------------|
 | `title` | `zt.title` | Replace |
 | `related` | `zt.relatedItems.map((item) => item.noteLink()).filter(Boolean)` | Replace |
-| `collections` | `zt.collections.map((c) => c.name)` | Replace |
+| `collections` | `zt.collections.map((c) => c.path.join('/'))` | Replace |
 
 The default `related` field mirrors Zotero's Related panel. Manage related-item links in Zotero; ZotLit refreshes this field from Zotero data.
 
@@ -53,7 +53,7 @@ The following keys are reserved and cannot be used in user field configuration:
 
 - `zotero-key` (system-managed)
 - `citekey` (system-managed)
-- `zt-attachments` (system-managed)
+- `zotero-atchs` (system-managed)
 
 Attempting to use a reserved key is rejected at configuration time.
 
@@ -73,7 +73,7 @@ Expression syntax errors are detected when you save the setting. Runtime errors 
 
 When you run "Update literature note", ZotLit updates only the frontmatter keys it manages:
 
-1. **System fields** (`zotero-key`, `citekey`, `zt-attachments`) are refreshed from ZotLit.
+1. **System fields** (`zotero-key`, `citekey`, `zotero-atchs`) are refreshed from ZotLit.
 2. **User-configured fields** are re-evaluated and then applied using their merge strategy.
 3. **Unmanaged keys** (any frontmatter key not in the managed set -- e.g. `aliases`, `tags`, `cssclasses`) are preserved. The update never touches keys it does not own.
 
@@ -111,9 +111,9 @@ This approach had several problems:
 
 v2 separates these: expressions produce **values**, merge strategies decide how those values update existing notes, and serialization is handled automatically. Users never write YAML directly.
 
-## `zt-attachments` field
+## `zotero-atchs` field
 
-The `zt-attachments` frontmatter key is managed by ZotLit:
+The `zotero-atchs` frontmatter key is managed by ZotLit:
 
 - **Missing or empty** -> all attachments are included when updating.
 - **Present with keys** -> scoped to those specific attachments.

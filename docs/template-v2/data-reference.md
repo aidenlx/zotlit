@@ -52,6 +52,8 @@ Common fields:
 | `zt.authors` | `array` | Primary authors for this item (filtered from creators by the item's primary creator role). Creators coerce to `fullName` in string contexts. | note, content, frontmatter |
 | `zt.authorsShort` | `string` | Formatted short author string (e.g. `"Smith et al."`) | note, content, frontmatter |
 | `zt.relatedItems` | `array` | Items from Zotero's "Related" panel, sorted by title (see [Related items shape](#related-items-shape)) | note, content, frontmatter |
+| `zt.notePath` | `string` | Full vault-relative literature note path (including `.md`); `""` in filename templates | note, content, frontmatter, filename |
+| `zt.noteLink()` | `function` | [Link helper](syntax.md#link-helpers) to this item's literature note -- call it, passing `alias` / `subpath` to override the display text or append a `#`-fragment; `""` in filename templates | note, content, frontmatter, filename |
 
 > **Note:** Timestamp fields (`zt.dateAdded` and `zt.dateModified`, on both items and annotations) are `Temporal.Instant` values at **second precision** -- Zotero stores them as UTC `"YYYY-MM-DD HH:MM:SS"` strings with no sub-second component, so any rendered or computed time is accurate only to the second.
 
@@ -235,19 +237,24 @@ Receives a single annotation as `zt`.
 | `zt.libraryID` | `number` | Library ID |
 | `zt.type` | `string` | `"highlight"`, `"note"`, `"image"`, `"ink"`, `"underline"`, `"text"` |
 | `zt.text` | `string \| null` | Annotation text / highlighted text |
-| `zt.comment` | `string \| null` | User comment on the annotation |
+| `zt.comment` | `string \| null` | User comment, converted to Markdown; `null` when there is no comment |
+| `zt.commentHtml` | `string \| null` | Raw comment HTML as stored by Zotero (only `<i>`/`<b>`/`<sub>`/`<sup>` tags plus line breaks); `null` when there is no comment |
 | `zt.colorHex` | `string \| null` | Hex color (e.g. `"#ffd400"`) |
 | `zt.colorName` | `string \| null` | Palette name: `"yellow"`, `"red"`, `"green"`, `"blue"`, `"purple"`, `"magenta"`, `"orange"`, `"gray"` |
-| `zt.pageLabel` | `string \| null` | Page label (e.g. `"42"`, `"iv"`) |
+| `zt.pageLabel` | `string \| null` | Page label as shown in the document (e.g. `"42"`, `"iv"`) |
+| `zt.page` | `number \| null` | 1-based page number from the PDF position (`pageIndex + 1`); `null` for EPUB/snapshot annotations. Ignores the document's own page labelling -- use `zt.pageLabel` for that. |
 | `zt.tags` | `array` | Tags on this annotation (same shape as item tags) |
 | `zt.authorName` | `string \| null` | Author of the annotation |
 | `zt.isExternal` | `boolean` | Whether the annotation is external |
 | `zt.dateAdded` | `Temporal.Instant` | When the annotation was created. Renders as the local date in `<%= %>` tags. |
 | `zt.dateModified` | `Temporal.Instant` | When the annotation was last modified. Renders as the local date in `<%= %>` tags. |
-| `zt.imgEmbed` | `string \| null` | Image embed string (e.g. `"![[image.png]]"`); `null` for non-image annotations |
+| `zt.imgLink` | `function \| null` | [Link helper](syntax.md#link-helpers) for the excerpt image -- call it (`zt.imgLink()`) and prefix `!` for an embed, or use [`embed(zt.imgLink)`](syntax.md#the-embed-helper). With "copy image to vault" disabled it links the cached image's `file://` URI; with it enabled it links the in-vault copy, formatted per your wikilink preference. `null` for annotations without a cached excerpt image (everything but `image` and `ink`) |
+| `zt.fileLink` | `function` | [Link helper](syntax.md#link-helpers) to the parent attachment file -- call it (`zt.fileLink()`), default-anchored to this annotation's `page` (`#page=N`). Renders `""` when the file is unresolvable |
 | `zt.backlink` | `string` | Zotero deep link to this annotation (`zotero://open/...?annotation=KEY`) |
 | `zt.parentItem` | object | The parent literature item (has all the same item fields as the note template) |
 | `zt.parentAttachment` | object | The parent attachment (see [Attachment shape](#attachment-shape) below) |
+
+> v1's raw image accessors `it.imgPath` (absolute path) and `it.imgUrl` (`file://` URL) are not exposed in v2. Use `zt.imgLink()` (call it; prefix `!` or wrap in `embed()` for an embed), which already resolves the path.
 
 ## Citation templates (`zotlit-cite.eta.md`, `zotlit-cite2.eta.md`)
 
@@ -269,7 +276,8 @@ Used in `zt.attachments` and `zt.parentAttachment`:
 | `filename` | `string \| null` | Resolved filename from the attachment path; `null` for URL/unknown links |
 | `contentType` | `string \| null` | MIME type (e.g. `"application/pdf"`) |
 | `linkMode` | `string` | `"imported_file"`, `"imported_url"`, `"linked_file"`, `"linked_url"`, `"embedded_image"`, or `"unknown"` |
-| `fileLink` | `string` | Resolved file link (vault-relative Markdown link or `file://` URI) |
+| `filePath` | `string \| null` | Absolute on-disk path to the attachment file; `null` for URL links, an unset linked-file base directory, or an unparseable path |
+| `fileLink` | `function` | [Link helper](syntax.md#link-helpers) to the attachment file -- call it (`a.fileLink()`), passing `alias` / `subpath` to override the display text or append a `#`-fragment. Renders `""` when unresolvable |
 
 ## Related items shape
 
@@ -302,7 +310,7 @@ of the relation graph.
 
 The filename template is a setting string (not a separate file). To keep filename resolution to a single-item query, `zt` here is the **item's own fields only** -- the same core item data described under [Item fields](#item-fields), plus `creators`, `tags`, and `collections`. The richer fields assembled for the note body are **not** available in filename templates: `backlink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`. Use `zt.creators[0].family` instead of `zt.authorsShort` for an author-based name.
 
-`zt.notePath()` and `zt.noteLink()` exist but return an empty string in a filename template (a note has no path until it is named).
+`zt.notePath` and `zt.noteLink()` exist but return an empty string in a filename template (a note has no path until it is named).
 
 Default: `<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>`
 
