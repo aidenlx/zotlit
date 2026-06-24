@@ -31,6 +31,7 @@ function makeContext(
     indexedKey: "ABC12345",
     citationKey: "smith2024",
     title: "A Study",
+    collections: [],
     ...overrides,
   } as NoteTemplateContext;
 }

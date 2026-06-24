@@ -10,4 +10,9 @@ export const DEFAULT_FRONTMATTER_FIELDS = Object.freeze([
     expr: "zt.relatedItems.map((item) => item.noteLink()).filter(Boolean)",
     merge: "replace",
   }),
+  Object.freeze({
+    key: "collections",
+    expr: "zt.collections.map((c) => c.name)",
+    merge: "replace",
+  }),
 ]) satisfies readonly FrontmatterField[];

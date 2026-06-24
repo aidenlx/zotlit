@@ -41,8 +41,11 @@ Out of the box, ZotLit configures these user fields:
 |-----|------------|----------------|
 | `title` | `zt.title` | Replace |
 | `related` | `zt.relatedItems.map((item) => item.noteLink()).filter(Boolean)` | Replace |
+| `collections` | `zt.collections.map((c) => c.name)` | Replace |
 
 The default `related` field mirrors Zotero's Related panel. Manage related-item links in Zotero; ZotLit refreshes this field from Zotero data.
+
+The default `collections` field lists the names of the Zotero collections the item belongs to. Manage collection membership in Zotero; ZotLit refreshes this field from Zotero data.
 
 ### Reserved keys
 
