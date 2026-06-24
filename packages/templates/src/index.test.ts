@@ -34,12 +34,31 @@ describe("TemplateEngine", () => {
 
     const rendered = engine.render("content", {
       annotations: [
-        { pageLabel: "4", imgEmbed: "", text: "Highlighted text", comment: "" },
+        {
+          pageLabel: "4",
+          imgLink: null,
+          text: "Highlighted text",
+          comment: "",
+        },
       ],
     });
 
     expect(rendered).toContain("Page 4");
     expect(rendered).toContain("Highlighted text");
+  });
+
+  it("embeds the excerpt image via the embed helper when imgLink is present", () => {
+    const engine = new TemplateEngine();
+    engine.define("annotation", annotation);
+
+    const rendered = engine.render("annotation", {
+      pageLabel: "5",
+      imgLink: () => "[[ANNOT.png]]",
+      text: "with image",
+      comment: "",
+    });
+
+    expect(rendered).toContain("> ![[ANNOT.png]]with image");
   });
 
   it("keeps multi-line annotation text and comment inside the callout", () => {
@@ -48,7 +67,7 @@ describe("TemplateEngine", () => {
 
     const rendered = engine.render("annotation", {
       pageLabel: "5",
-      imgEmbed: "",
+      imgLink: null,
       text: "first line\nsecond line",
       comment: "comment A\ncomment B",
     });
@@ -73,7 +92,7 @@ describe("TemplateEngine", () => {
 
     const rendered = engine.render("annotation", {
       pageLabel: "5",
-      imgEmbed: "",
+      imgLink: null,
       text: "only text",
       comment: "",
     });

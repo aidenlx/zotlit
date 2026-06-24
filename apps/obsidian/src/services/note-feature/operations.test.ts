@@ -101,7 +101,7 @@ describe("createNote", () => {
       settings: makeSettings() as unknown as SettingsService,
       attachmentImport: {
         prepare: vi.fn(async () => ({
-          resolveEmbed: () => "",
+          resolveLink: () => () => "",
           flush: vi.fn(async () => ({ copied: 0, skipped: 0 })),
         })),
       } as any,
@@ -200,7 +200,7 @@ describe("createNote", () => {
       settings: makeSettings() as unknown as SettingsService,
       attachmentImport: {
         prepare: vi.fn(async () => ({
-          resolveEmbed: () => "",
+          resolveLink: () => () => "",
           flush: vi.fn(async () => ({ copied: 0, skipped: 0 })),
         })),
       } as any,
@@ -225,18 +225,18 @@ function makeTemplate() {
         title: string | null;
         relatedItems: readonly {
           title: string | null;
-          notePath(): string;
+          notePath: string;
           noteLink(alias?: string): string;
         }[];
-        notePath(): string;
+        notePath: string;
         noteLink(alias?: string): string;
       },
     ): string {
       return [
-        `root:${data.notePath()}|${data.noteLink("Root alias")}`,
+        `root:${data.notePath}|${data.noteLink("Root alias")}`,
         ...data.relatedItems.map(
           (item) =>
-            `${item.title}:${item.notePath()}|${item.noteLink(item.title ?? undefined)}`,
+            `${item.title}:${item.notePath}|${item.noteLink(item.title ?? undefined)}`,
         ),
       ].join("\n");
     },

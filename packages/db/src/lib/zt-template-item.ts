@@ -20,7 +20,7 @@ export interface TemplateCreator {
 }
 
 /**
- * Core item data in the v2 template vocabulary. Exposed as `zt` in templates.
+ * Core item data in the v2 template vocabulary, without app-layer resolvers.
  *
  * All Zotero fields are direct properties — `zt.title`, `zt.DOI`,
  * `zt.numPages`, etc. Item-type-specific aliases (e.g. `blogTitle`, `studio`)
@@ -28,7 +28,7 @@ export interface TemplateCreator {
  * - `abstractNote` → `abstract`
  * - `publicationTitle` → `containerTitle`
  */
-export interface TemplateItemData {
+export interface TemplateItemBaseData {
   key: string;
   libraryID: number;
   indexedKey: string;
@@ -64,29 +64,43 @@ export interface TemplateItemData {
 
   /** Additional Zotero fields beyond the explicitly typed ones above. */
   [field: string]: unknown;
-
-  /** Full vault-relative literature note path, including `.md`. */
-  notePath(): string;
-  /** Obsidian Markdown link to this item's literature note. */
-  noteLink(alias?: string): string;
 }
+
+/** {@link TemplateItemBaseData} plus the app-layer resolvers. Exposed as `zt` in templates. */
+export interface TemplateItemData extends TemplateItemBaseData {
+  /** Full vault-relative literature note path, including `.md`. */
+  get notePath(): string;
+  /** Obsidian Markdown link to this item's literature note. See {@link TemplateLink}. */
+  noteLink: TemplateLink;
+}
+
+/**
+ * A lazy Markdown-link helper exposed on the template context. Called with no
+ * args it renders the default link with its display text already filled in (so
+ * Markdown links are never blank); pass `alias` to override the display text and
+ * `subpath` to append a `#`-fragment (heading / block / `page=N`). Returns `""`
+ * when the target is unresolvable.
+ */
+export type TemplateLink = (alias?: string, subpath?: string) => string;
 
 export interface TemplateItemResolvers {
   notePath: (item: TemplateItemData) => string;
-  noteLink: (item: TemplateItemData, alias?: string) => string;
+  noteLink: (
+    item: TemplateItemData,
+    alias?: string,
+    subpath?: string,
+  ) => string;
 }
 
 export function itemToTemplateData({
   item,
   tags = [],
   collections = [],
-  resolvers = EMPTY_TEMPLATE_ITEM_RESOLVERS,
 }: {
   item: Item;
   tags?: readonly ItemTag[];
   collections?: readonly TemplateCollection[];
-  resolvers?: TemplateItemResolvers;
-}): TemplateItemData {
+}): TemplateItemBaseData {
   const allFields: Record<string, string> = {};
 
   for (const [key, val] of Object.entries(item.fields)) {
@@ -135,19 +149,8 @@ export function itemToTemplateData({
     edition: allFields.edition ?? null,
     language: allFields.language ?? null,
     extra: allFields.extra ?? null,
-    notePath() {
-      return resolvers.notePath(this);
-    },
-    noteLink(alias?: string) {
-      return resolvers.noteLink(this, alias);
-    },
   };
 }
-
-const EMPTY_TEMPLATE_ITEM_RESOLVERS: TemplateItemResolvers = {
-  notePath: () => "",
-  noteLink: () => "",
-};
 
 function toTemplateCreator(c: Creator): TemplateCreator {
   if (c.fieldMode === 1) {

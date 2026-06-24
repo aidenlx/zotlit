@@ -1,5 +1,6 @@
-import { pathToFileURL } from "node:url";
 import { FileSystemAdapter, normalizePath, type App } from "obsidian";
+
+import { type TemplateLink } from "@zotlit/db";
 
 import {
   copyAttachments,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/copy-attachments";
 import { ensureAttachmentFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
-import { syntheticFile } from "@/lib/markdown-link";
+import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { Service } from "@/services/service-base";
 import { type SettingsService } from "@/services/settings/service";
 
@@ -19,8 +20,22 @@ export interface AttachmentImportServiceDeps {
   settings: SettingsService;
 }
 
+export interface ResolveLinkOptions {
+  /** Absolute on-disk path of the source image to link or copy in. */
+  sourcePath: string;
+  /** Desired in-vault filename for the imported copy; also the default link display text. */
+  vaultName: string;
+}
+
 export interface AttachmentImport {
-  resolveEmbed(sourcePath: string, vaultName: string): string;
+  /**
+   * Queue the attachment copy (when import is enabled) and return its
+   * {@link TemplateLink} helper — a `file://` link to the source when import is
+   * disabled, or a vault link to the queued in-vault copy otherwise. Prefix the
+   * rendered link with `!` for an embed. The copy is queued once, here; the
+   * returned helper only formats.
+   */
+  resolveLink(opts: ResolveLinkOptions): TemplateLink;
   flush(): Promise<AttachmentCopyResult>;
 }
 
@@ -83,9 +98,9 @@ class AttachmentImportBatch implements AttachmentImport {
     this.#importEnabled = options.importEnabled;
   }
 
-  resolveEmbed(sourcePath: string, vaultName: string): string {
+  resolveLink({ sourcePath, vaultName }: ResolveLinkOptions): TemplateLink {
     if (!this.#importEnabled || this.#folderPath === null) {
-      return `![](${pathToFileURL(sourcePath).href})`;
+      return fileUrlLink(sourcePath, vaultName);
     }
 
     const vaultPath = normalizePath(
@@ -97,10 +112,17 @@ class AttachmentImportBatch implements AttachmentImport {
       source: sourcePath,
       dest: this.#absoluteVaultPath(vaultPath),
     });
-    return `!${this.#app.fileManager.generateMarkdownLink(
-      syntheticFile(vaultPath),
-      this.#notePath,
-    )}`;
+    const file = syntheticFile(vaultPath);
+    // generateMarkdownLink fills the default display text from the filename per
+    // the vault's wikilink / Markdown preference, so the default link is never
+    // blank.
+    return (alias, subpath) =>
+      this.#app.fileManager.generateMarkdownLink(
+        file,
+        this.#notePath,
+        subpath,
+        alias,
+      );
   }
 
   async flush(): Promise<AttachmentCopyResult> {

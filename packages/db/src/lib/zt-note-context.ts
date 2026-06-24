@@ -16,8 +16,10 @@ import {
 import {
   itemToTemplateData,
   type TemplateCreator,
+  type TemplateItemBaseData,
   type TemplateItemData,
   type TemplateItemResolvers,
+  type TemplateLink,
 } from "./zt-template-item";
 import { annotationOpenUri, itemSelectUri } from "./zt-uri";
 
@@ -81,24 +83,40 @@ export interface NoteContextInput {
   relatedItems: readonly Item[];
   /** Short author summary (e.g. `"Smith et al."`) for any item. */
   authorsShort: (item: Item) => string;
-  /** Resolve an attachment to its vault link; `""` when unresolvable. */
-  fileLink: (attachment: Attachment) => string;
+  /** Resolve an attachment to its absolute on-disk path; `null` when unresolvable. */
+  filePath: (attachment: Attachment) => string | null;
+  /**
+   * Build an attachment's file-link helper. Pass a 1-based `page` to default the
+   * helper's subpath to `#page=N` (annotation-level links anchor to their page);
+   * the helper returns `""` when the file is unresolvable.
+   */
+  fileLink: (attachment: Attachment, page?: number | null) => TemplateLink;
   /** Resolve an item to its full vault-relative literature note path. */
   notePath: (item: TemplateItemData) => string;
   /** Resolve an item to its Obsidian Markdown literature-note link. */
-  noteLink: (item: TemplateItemData, alias?: string) => string;
+  noteLink: (
+    item: TemplateItemData,
+    alias?: string,
+    subpath?: string,
+  ) => string;
   /**
-   * Resolve an annotation's image-excerpt embed, or `null` when the annotation
-   * type has no cached image.
+   * Build an annotation's excerpt-image link helper, or `null` when the
+   * annotation type has no cached image. Prefix `!` to the rendered link for an
+   * embed.
    */
-  imgEmbed: (annotation: Annotation) => string | null;
+  annotationImageLink: (annotation: Annotation) => TemplateLink | null;
+  /**
+   * Convert an annotation's raw comment HTML to Markdown. Called lazily, only
+   * when a template reads `zt.comment`, so the conversion is skipped otherwise.
+   */
+  commentToMarkdown: (html: string) => string;
 }
 
 /**
  * The minimal `zt` root for the **note-filename** template: an item's own
  * {@link TemplateItemData} and nothing else. Unlike {@link buildNoteContext}
  * this resolves no attachments, annotations, related items, or app-layer
- * resolvers — `notePath()` / `noteLink()` return `""` — so a filename query
+ * resolvers — `notePath` / `noteLink()` return `""` — so a filename query
  * stays a single-item read. Pure: the caller passes the item's tags and
  * collections in.
  */
@@ -107,11 +125,15 @@ export function buildFilenameContext(input: {
   tags: readonly ItemTag[];
   collections: readonly TemplateCollection[];
 }): TemplateItemData {
-  return itemToTemplateData({
-    item: input.item,
-    tags: input.tags,
-    collections: input.collections,
-  });
+  return {
+    ...itemToTemplateData({
+      item: input.item,
+      tags: input.tags,
+      collections: input.collections,
+    }),
+    notePath: "",
+    noteLink: () => "",
+  };
 }
 
 /**
@@ -125,37 +147,54 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     notePath: input.notePath,
     noteLink: input.noteLink,
   };
-  const itemData = itemToTemplateData({
+  const baseData = itemToTemplateData({
     item,
     tags: input.tagsByItemID.get(item.itemID) ?? [],
     collections: input.collectionsByItemID.get(item.itemID) ?? [],
-    resolvers: noteResolvers,
   });
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
 
   const attachments: TemplateAttachment[] = input.attachments.map((a) => ({
     ...attachmentToTemplateData(a),
+    filePath: input.filePath(a),
     fileLink: input.fileLink(a),
   }));
 
   const annotations: TemplateAnnotation[] = [];
+  // `result` is referenced inside annotation objects (`parentItem`) and inside
+  // lazy getters; it is only read after this function returns.
+  let result: NoteTemplateContext;
+
   input.attachments.forEach((attachment, i) => {
     const parentAttachment = attachments[i]!;
     const annots = input.annotationsByAttachment.get(attachment.itemID) ?? [];
     for (const annot of annots) {
+      const data = annotationToTemplateData(
+        annot,
+        input.tagsByItemID.get(annot.itemID) ?? [],
+      );
+      let comment: string | null | undefined;
       annotations.push({
-        ...annotationToTemplateData(
-          annot,
-          input.tagsByItemID.get(annot.itemID) ?? [],
-        ),
-        imgEmbed: input.imgEmbed(annot),
+        ...data,
+        imgLink: input.annotationImageLink(annot),
+        get comment() {
+          if (comment === undefined) {
+            comment = data.commentHtml
+              ? input.commentToMarkdown(data.commentHtml)
+              : null;
+          }
+          return comment;
+        },
+        fileLink: input.fileLink(attachment, data.page),
         backlink: annotationOpenUri({
           attachmentKey: attachment.key,
           annotationKey: annot.key,
           pageLabel: annot.pageLabel,
           groupID,
         }),
-        parentItem: itemData,
+        get parentItem() {
+          return result;
+        },
         parentAttachment,
       });
     }
@@ -173,19 +212,26 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     )
     .sort(byTitle);
 
-  return {
-    ...itemData,
+  result = {
+    ...baseData,
+    get notePath() {
+      return noteResolvers.notePath(result);
+    },
+    noteLink(alias?: string, subpath?: string) {
+      return noteResolvers.noteLink(result, alias, subpath);
+    },
     backlink: itemSelectUri(item.key, groupID),
     annotations,
     attachments,
-    authors: selectPrimaryAuthors(itemData),
+    authors: selectPrimaryAuthors(baseData),
     authorsShort: input.authorsShort(item),
     relatedItems,
   };
+  return result;
 }
 
 /** Creators filtered to the item's primary creator type; all when none. */
-function selectPrimaryAuthors(data: TemplateItemData): TemplateCreator[] {
+function selectPrimaryAuthors(data: TemplateItemBaseData): TemplateCreator[] {
   return data.primaryCreatorType
     ? data.creators.filter((c) => c.role === data.primaryCreatorType)
     : [...data.creators];
@@ -204,19 +250,21 @@ function buildRelatedItem({
   authorsShort: string;
   noteResolvers: TemplateItemResolvers;
 }): TemplateRelatedItem {
-  const itemData = itemToTemplateData({
-    item,
-    tags,
-    collections,
-    resolvers: noteResolvers,
-  });
+  const baseData = itemToTemplateData({ item, tags, collections });
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
-  return {
-    ...itemData,
+  const result: TemplateRelatedItem = {
+    ...baseData,
+    get notePath() {
+      return noteResolvers.notePath(result);
+    },
+    noteLink(alias?: string, subpath?: string) {
+      return noteResolvers.noteLink(result, alias, subpath);
+    },
     backlink: itemSelectUri(item.key, groupID),
-    authors: selectPrimaryAuthors(itemData),
+    authors: selectPrimaryAuthors(baseData),
     authorsShort,
   };
+  return result;
 }
 
 /**

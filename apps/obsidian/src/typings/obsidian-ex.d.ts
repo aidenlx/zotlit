@@ -1,5 +1,10 @@
 import "obsidian";
 
+declare global {
+  /** Obsidian bundles turndown and exposes its constructor as a runtime global. */
+  const TurndownService: typeof import("turndown").default;
+}
+
 declare module "obsidian" {
   interface MetadataCache {
     initialized: boolean;

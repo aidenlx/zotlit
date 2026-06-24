@@ -101,7 +101,9 @@ export {
 export {
   itemToTemplateData,
   type TemplateCreator,
+  type TemplateItemBaseData,
   type TemplateItemData,
+  type TemplateLink,
 } from "./lib/zt-template-item";
 export {
   attachmentToTemplateData,

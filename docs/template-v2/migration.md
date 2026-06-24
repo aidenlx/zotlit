@@ -41,7 +41,7 @@ Most field names stayed the same. The changes:
 | `it.publicationTitle` | `zt.containerTitle` | `zt.publicationTitle` also works |
 | `it.color` | `zt.colorHex` | Hex color string |
 | -- | `zt.colorName` | New: palette name (`"yellow"`, `"red"`, etc.) |
-| `it.imgExcerpt` | `zt.imgEmbed` | Renamed; now `string \| null` (auto-filter handles null) |
+| `it.imgExcerpt` | `embed(zt.imgLink)` | `zt.imgLink` is now a [link helper](syntax.md#link-helpers) (or `null`); `embed()` adds the `!` embed prefix |
 | `it.textExcerpt` | `zt.text` | Renamed |
 
 All other Zotero field names (`title`, `DOI`, `url`, `volume`, `issue`, `pages`, `publisher`, etc.) are unchanged.
@@ -59,7 +59,7 @@ The annotation template structure changed to use the `bq()` blockquote helper:
 <% bq(() => { %>
 [!note] Page <%= zt.pageLabel %>
 
-<%= zt.imgEmbed %><%= zt.text %>
+<%= embed(zt.imgLink) %><%= zt.text %>
 <% if (zt.comment) { %>
 
 <%= zt.comment %>
@@ -71,6 +71,13 @@ The `bq()` helper:
 - Wraps all content in a Markdown blockquote (`> ` prefix per line).
 - Handles empty lines and collapsing.
 - Must be used with `<% %>` execute tags, not `<%~ %>` raw tags.
+
+The v1 annotation helpers all carry over (mostly just the `it` -> `zt` switch):
+
+- `zt.page` -- 1-based PDF page number (`it.page`); use `zt.pageLabel` for the document's own page label.
+- `zt.comment` -- the comment converted to Markdown. This is now the default (it was v1's `it.commentMd`); `zt.commentHtml` exposes the raw HTML Zotero stores (v1's `it.comment`). Zotero annotation comments are plain text with only `<i>` / `<b>` / `<sub>` / `<sup>` formatting and line breaks, so the Markdown is a faithful round-trip.
+- `zt.imgLink()` -- a [link helper](syntax.md#link-helpers) for the excerpt image (`it.imgLink`); call it, and prefix `!` (or use `embed(zt.imgLink)`) for the embed form. With "copy image to vault" off it links the cached image's `file://` URI; with it on it links the in-vault copy. v1's `it.imgPath` (raw path) and `it.imgUrl` (`file://` URL) are **not** carried over -- use `zt.imgLink()`. It is `null` for non-image annotations.
+- `zt.fileLink()` -- a [link helper](syntax.md#link-helpers) to the attachment, default-deep-linked to the annotation's page (`#page=N`), restoring v1's annotation-level `it.fileLink`. Pass `alias` / `subpath` to override the display text or anchor.
 
 ## Step 5: Update the content (annots) template
 
@@ -116,13 +123,15 @@ v2 wraps items in an object:
 
 v1 selected one attachment and exposed it as `it.fileLink` (a single string).
 
-v2 includes all attachments as an array:
+v2 includes all attachments as an array, and `fileLink` is now a [link helper](syntax.md#link-helpers) -- call it:
 
 ```eta
-<%= zt.attachments.map(a => a.fileLink).filter(Boolean).join(" ") %>
+<%= zt.attachments.map(a => a.fileLink()).filter(Boolean).join(" ") %>
 ```
 
-Each attachment object has: `key`, `filename`, `contentType`, `linkMode`, `fileLink`.
+Each attachment object has: `key`, `filename`, `contentType`, `linkMode`, `filePath`, `fileLink`.
+
+`filePath` is the absolute on-disk path (restores v1's `it.filePath`); it is `null` for URL links and unresolvable paths. `fileLink()` renders the Markdown link to that file (pass `alias` / `subpath` to override the display text or anchor); it renders `""` when unresolvable.
 
 ## Step 8: Update creator access
 
@@ -186,6 +195,8 @@ If you customized `zt-field.eta.md`:
 
 You no longer need to worry about YAML escaping -- `stringifyYaml()` handles it.
 
+ZotLit auto-manages three reserved frontmatter keys you cannot target from a user field: `zotero-key`, `citekey`, and `zotero-atchs` (the attachment scope). `zotero-atchs` keeps v1's key name, so upgraded notes are not re-keyed. See [System-managed fields](frontmatter.md#system-managed-fields) for details.
+
 Use **Replace** for fields that should follow Zotero on every update. Use **Append arrays** for array fields where manual additions should remain. Use **Keep existing** when ZotLit should fill a field once and then leave your edits alone.
 
 ## Step 11: Understand the managed region
@@ -201,6 +212,11 @@ What this means:
 
 ## Quick reference: v1 -> v2 property map
 
+Grouped by the context the property lives in. `--` in the v1 column marks a
+property that is new in v2.
+
+### Item fields (note / content / frontmatter root)
+
 | v1 (`it.*`) | v2 (`zt.*`) | Notes |
 |-------------|-------------|-------|
 | `it.title` | `zt.title` | |
@@ -208,28 +224,50 @@ What this means:
 | `it.abstractNote` | `zt.abstract` / `zt.abstractNote` | CSL alias |
 | `it.publicationTitle` | `zt.containerTitle` / `zt.publicationTitle` | CSL alias |
 | `it.DOI` | `zt.DOI` | |
-| `it.backlink` | `zt.backlink` | |
-| `it.fileLink` | `zt.attachments[0].fileLink` | Now per-attachment |
-| `it.annotations` | `zt.annotations` | Array of annotation objects |
-| `it.textExcerpt` | `zt.text` | Renamed |
-| `it.imgExcerpt` | `zt.imgEmbed` | Renamed; `null` for non-image annotations |
-| `it.pageLabel` | `zt.pageLabel` | |
-| `it.comment` | `zt.comment` | |
-| `it.color` | `zt.colorHex` | Renamed |
+| `it.backlink` | `zt.backlink` | Zotero `select` deep link to the item |
 | `it.tags` | `zt.tags` | Now tag objects (with `tag.name`, `type`), not strings |
 | `it.collections` | `zt.collections` | Now collection objects (`key`, `name`, `path`); `path` is root->leaf; the `it.collection` singular alias is removed (see [Collections differences](#collections-it-collections-zt-collections)) |
 | `it.authors` | `zt.authors` | Now an array of creator objects, not formatted strings |
 | `it.authorsShort` | `zt.authorsShort` | Same semantics |
+| `it.annotations` | `zt.annotations` | Array of annotation objects |
+| `it.date` | `zt.date` | Was year-only string; now a parsed `ItemDate` object (see [Date format](data-reference.md#date-format)). `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
+| `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant` at second precision (Zotero stores no sub-second component). Render as local date in `<%= %>` tags. Available on both items and annotations. |
+| -- | `zt.key` | New: item key |
+| -- | `zt.indexedKey` | New: indexed key |
+| -- | `zt.itemType` | New: Zotero item type |
+| -- | `zt.primaryCreatorType` | New: primary creator role for this item type |
+| -- | `zt.relatedItems` | New: Zotero "Related" panel items |
+| `it.notePath` | `zt.notePath` | Same; `""` in filename templates |
+| `it.noteLink` | `zt.noteLink()` | Now a [link helper](syntax.md#link-helpers) -- call it; gains `subpath` param |
+
+### Attachment fields (`zt.attachments[]`, `zt.parentAttachment`)
+
+| v1 (`it.*`) | v2 (`zt.*`) | Notes |
+|-------------|-------------|-------|
+| `it.fileLink` | `zt.attachments[0].fileLink()` | Now a per-attachment [link helper](syntax.md#link-helpers) -- call it; not a single item-level string |
+| `it.filePath` | `zt.attachments[0].filePath` | Absolute on-disk path; `null` when unresolvable |
+| -- | `.key` / `.filename` / `.contentType` / `.linkMode` | New: per-attachment metadata |
+
+### Annotation fields (`zt.annotations[]`, annotation-template root)
+
+| v1 (`it.*`) | v2 (`zt.*`) | Notes |
+|-------------|-------------|-------|
+| `it.textExcerpt` | `zt.text` | Renamed |
+| `it.comment` | `zt.commentHtml` | Raw comment HTML (only `<i>`/`<b>`/`<sub>`/`<sup>`) |
+| `it.commentMd` | `zt.comment` | Comment converted to Markdown — now the default `zt.comment` |
+| `it.imgExcerpt` | `embed(zt.imgLink)` | `zt.imgLink` is a [link helper](syntax.md#link-helpers) (or `null`); `embed()` adds the `!` embed prefix |
+| `it.imgLink` | `zt.imgLink()` | Excerpt-image link helper -- call it; prefix `!` for an embed |
+| `it.imgPath` | _(removed)_ | No v2 equivalent -- the resolved image is in `zt.imgLink()` |
+| `it.imgUrl` | _(removed)_ | No v2 equivalent -- the resolved image is in `zt.imgLink()` |
+| `it.pageLabel` | `zt.pageLabel` | Document's own page label |
+| `it.page` | `zt.page` | 1-based PDF page number (`pageIndex + 1`) |
+| `it.color` | `zt.colorHex` | Renamed |
+| `it.fileLink` | `zt.fileLink()` | Attachment [link helper](syntax.md#link-helpers) -- call it; default-deep-linked to the annotation's page (`#page=N`) |
+| `it.backlink` | `zt.backlink` | Zotero `open` deep link to the annotation |
 | -- | `zt.colorName` | New: palette name |
 | -- | `zt.type` | New: annotation type |
 | -- | `zt.parentItem` | New: parent item data |
 | -- | `zt.parentAttachment` | New: parent attachment data |
-| -- | `zt.key` | New: item key |
-| -- | `zt.indexedKey` | New: indexed key |
-| -- | `zt.itemType` | New: Zotero item type |
-| `it.date` | `zt.date` | Was year-only string; now a parsed `ItemDate` object (see [Date format](data-reference.md#date-format)). `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
-| `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant` at second precision (Zotero stores no sub-second component). Render as local date in `<%= %>` tags. Available on both items and annotations. |
-| -- | `zt.primaryCreatorType` | New: primary creator role for this item type |
 
 ### Collections (`it.collections` -> `zt.collections`)
 
@@ -252,6 +290,15 @@ v1 exposed each collection as `{ id, path, key, name, libraryID }` with a `path`
 <%# Render each collection's full hierarchy %>
 <%= zt.collections.map(c => c.path.join(" > ")).join("; ") %>
 ```
+
+## Deferred to a later release
+
+A couple of v1 template features have no v2 equivalent yet. They are planned for a post-alpha release (Zotero note import), not removed by design:
+
+- **Child notes (`it.notes`)** -- v1 exposed an item's attached Zotero child notes as normalized Markdown. There is no `zt.notes` in v2 yet; child-note exposure lands with the post-alpha note-import stage.
+- **Imported-note path (`it.importNote` / the `zt-import` folder)** -- v1 wrote imported Zotero notes to `<literature-folder>/zt-import/<name>`. v2 reworks note import (HTML is parsed and embedded) and has no `zt-import` output path yet; this also lands with the post-alpha note-import stage.
+
+If your v1 templates relied on these, keep the v1 versions for reference until the note-import stage ships.
 
 ## Common patterns
 
@@ -306,7 +353,7 @@ v1 exposed each collection as `{ id, path, key, name, libraryID }` with a `path`
 ```eta
 <%# List all PDFs %>
 <% for (const a of zt.attachments.filter(a => a.contentType === "application/pdf")) { %>
-- <%= a.fileLink %>
+- <%= a.fileLink() %>
 <% } %>
 ```
 

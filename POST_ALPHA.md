@@ -111,16 +111,16 @@ Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annota
 
 **Alpha (shipped):**
 
-- **All attachments by default** — create, update, and overwrite always include every attachment; no selection UI; `zt-attachments` is never read.
+- **All attachments by default** — create, update, and overwrite always include every attachment; no selection UI; `zotero-atchs` is never read.
 - **`zt.annotations`** — flat list across all attachments; each annotation carries `parentAttachment` so templates can group/filter by source.
 - **`zt.attachments`** — top-level `TemplateAttachment[]` on the note context.
-- **`zt-attachments` is scope input, not managed output** — excluded from the managed frontmatter set (union/append-only merge does not apply).
+- **`zotero-atchs` is scope input, not managed output** — excluded from the managed frontmatter set (union/append-only merge does not apply).
 
 **Post-alpha (land together):**
 
-- **`zt-attachments` scoping** — missing or empty → all attachments at update time (including newly added ones). Present with keys → scoped to those specific attachments. Read/write wiring lands with the selection UI below.
-- **v1 backward compat** — `zt-attachments` values that are numeric strings (v1 item IDs) are resolved to attachments by ID, then migrated to string keys on first update. Stale v1 values left unread in alpha remain as harmless unmanaged metadata until then.
-- **Attachment selection UI** — v1 reference: `atch-suggest.ts` (`cacheAttachmentSelect`, `chooseAnnotAtch`). Port as whitelist + blacklist that writes `zt-attachments`; deferred from alpha.
+- **`zotero-atchs` scoping** — missing or empty → all attachments at update time (including newly added ones). Present with keys → scoped to those specific attachments. Read/write wiring lands with the selection UI below.
+- **v1 backward compat** — `zotero-atchs` values that are numeric strings (v1 item IDs) are resolved to attachments by ID, then migrated to string keys on first update. Stale v1 values left unread in alpha remain as harmless unmanaged metadata until then.
+- **Attachment selection UI** — v1 reference: `atch-suggest.ts` (`cacheAttachmentSelect`, `chooseAnnotAtch`). Port as whitelist + blacklist that writes `zotero-atchs`; deferred from alpha.
 
 ## 7. PDF outline parser
 

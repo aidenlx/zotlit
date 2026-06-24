@@ -1,6 +1,7 @@
 export const FIELD_ZOTERO_KEY = "zotero-key";
 export const FIELD_CITEKEY = "citekey";
-export const FIELD_ATTACHMENTS = "zt-attachments";
+/** v1-compatible key (v1: `zotero-atchs`); kept so upgraded notes are not re-keyed. */
+export const FIELD_ATTACHMENTS = "zotero-atchs";
 
 /**
  * Frontmatter keys owned by the system; user expressions cannot target them.

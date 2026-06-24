@@ -12,8 +12,8 @@ import {
   FIELD_ZOTERO_KEY,
   RESERVED_KEYS,
 } from "@/lib/constants";
+import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
-import { DEFAULT_FRONTMATTER_FIELDS } from "./defaults";
 import { applyManagedFrontmatter } from "./frontmatter";
 
 /** Mirror the production compile (TemplateService): drop reserved keys, then
@@ -74,7 +74,7 @@ describe("applyManagedFrontmatter", () => {
     });
   });
 
-  it("writes zt-attachments only when a non-empty scope is given", () => {
+  it("writes the attachment-scope key only when a non-empty scope is given", () => {
     const scoped: Record<string, unknown> = {};
     applyManagedFrontmatter(scoped, makeContext(), {
       compiled: compileFrontmatter([]),

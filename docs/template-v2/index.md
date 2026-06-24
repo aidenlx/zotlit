@@ -11,11 +11,11 @@ ZotLit v2 replaces the v1 template engine, data model, and frontmatter system. T
 - **Frontmatter**: JS expression evaluation replaces the v1 `zt-field` template. Users configure fields with a key, expression, and merge strategy instead of editing a template.
 - **Annotation updates**: A managed-region overwrite (`%%zt-managed%%`) replaces v1's block-ID-based incremental diffing.
 - **Removed templates**: `zt-field` and `zt-colored` are gone. `zt-annots` is renamed to `zt-content`.
-- **Removed helpers**: Template data is plain objects with simple properties.
+- **Removed helpers**: Template data is plain objects with simple properties. The only callable members are the link helpers (`noteLink()`, `fileLink()`, `imgLink()`) and the global `bq()` / `suffix()` / `embed()` helpers.
 
 ## Documentation
 
-- [Template Syntax](syntax.md) -- Eta syntax, `zt.*` prefix, `include()`, `bq()` and `suffix()` helpers, autoTrim, managed region
+- [Template Syntax](syntax.md) -- Eta syntax, `zt.*` prefix, `include()`, link helpers, `bq()` / `suffix()` / `embed()` helpers, autoTrim, managed region
 - [Data Reference](data-reference.md) -- Complete property reference for every template type
 - [Frontmatter](frontmatter.md) -- JS expression system, system fields, user fields, merge behavior
 - [Default Templates](defaults.md) -- Side-by-side v1 vs v2 defaults with explanations

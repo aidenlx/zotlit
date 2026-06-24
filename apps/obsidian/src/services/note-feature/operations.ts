@@ -307,7 +307,7 @@ export function renderAnnotation(
   indexedKey: string,
   options: {
     annotationKey: string;
-    attachmentImport: Pick<AttachmentImport, "resolveEmbed">;
+    attachmentImport: Pick<AttachmentImport, "resolveLink">;
   },
 ): string | null {
   if (ctx.db.state !== "ready") return null;
@@ -341,7 +341,7 @@ async function contextForIndexedKey(
   ctx: NoteFeatureContext,
   indexedKey: string,
   options: {
-    attachmentImport: Pick<AttachmentImport, "resolveEmbed">;
+    attachmentImport: Pick<AttachmentImport, "resolveLink">;
     sourcePath: string;
   },
 ): Promise<NoteTemplateContext> {

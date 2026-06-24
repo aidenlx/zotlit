@@ -4,6 +4,7 @@ import {
   type Attachment,
   type AttachmentPath,
 } from "./zt-attach";
+import { type TemplateLink } from "./zt-template-item";
 
 /**
  * Attachment data in the v2 template vocabulary. Exposed on `zt.attachments`
@@ -19,17 +20,26 @@ export interface TemplateAttachment {
    * or unrecognized.
    */
   linkMode: string;
-  /** Vault-relative link, computed at the app layer. */
-  fileLink: string;
+  /** Absolute on-disk path to the attachment file; `null` for URL links, an unset base directory, or an unparseable path. Computed at the app layer. */
+  filePath: string | null;
+  /**
+   * Markdown link to the on-disk attachment file. Call it to render —
+   * `<%= a.fileLink() %>` — passing `alias` to override the display text
+   * (defaults to the filename) and `subpath` to append a `#`-fragment. `""`
+   * when the file is unresolvable. See {@link TemplateLink}. Computed at the
+   * app layer.
+   */
+  fileLink: TemplateLink;
 }
 
 /**
- * Map a DB {@link Attachment} to its template shape. `fileLink` is omitted —
- * it depends on vault/storage resolution held by the Obsidian-side service.
+ * Map a DB {@link Attachment} to its template shape. `filePath` / `fileLink`
+ * are omitted — they depend on vault/storage resolution held by the
+ * Obsidian-side service.
  */
 export function attachmentToTemplateData(
   attachment: Attachment,
-): Omit<TemplateAttachment, "fileLink"> {
+): Omit<TemplateAttachment, "filePath" | "fileLink"> {
   return {
     key: attachment.key,
     filename: attachmentFilename(
