@@ -4,6 +4,7 @@ import { FIELD_ALIASES } from "@zotlit/zotero-types";
 import { type Creator, type Item } from "@/queries/items";
 
 import { defineToString } from "./to-string";
+import { type TemplateCollection } from "./zt-collection";
 import { parseItemDate, type ItemDate } from "./zt-date";
 import { type ItemTag } from "./zt-tag";
 
@@ -38,6 +39,7 @@ export interface TemplateItemData {
   creators: readonly TemplateCreator[];
   primaryCreatorType: string | null;
   tags: readonly ItemTag[];
+  collections: readonly TemplateCollection[];
 
   title: string | null;
   abstract: string | null;
@@ -74,11 +76,17 @@ export interface TemplateItemResolvers {
   noteLink: (item: TemplateItemData, alias?: string) => string;
 }
 
-export function itemToTemplateData(
-  item: Item,
-  tags: readonly ItemTag[] = [],
-  resolvers: TemplateItemResolvers = EMPTY_TEMPLATE_ITEM_RESOLVERS,
-): TemplateItemData {
+export function itemToTemplateData({
+  item,
+  tags = [],
+  collections = [],
+  resolvers = EMPTY_TEMPLATE_ITEM_RESOLVERS,
+}: {
+  item: Item;
+  tags?: readonly ItemTag[];
+  collections?: readonly TemplateCollection[];
+  resolvers?: TemplateItemResolvers;
+}): TemplateItemData {
   const allFields: Record<string, string> = {};
 
   for (const [key, val] of Object.entries(item.fields)) {
@@ -104,6 +112,7 @@ export function itemToTemplateData(
     creators,
     primaryCreatorType: item.primaryCreatorType,
     tags,
+    collections,
 
     title: allFields.title ?? null,
     // CSL-inspired aliases: the canonical source field stays accessible via the

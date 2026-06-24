@@ -2,10 +2,12 @@ import { dirname } from "node:path/posix";
 import { stringifyYaml, type TFile } from "obsidian";
 
 import {
+  CollectionCache,
   getItemsByKey,
   type Item,
   type ItemTag,
   type NoteTemplateContext,
+  type TemplateCollection,
 } from "@zotlit/db";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
@@ -18,6 +20,7 @@ import { type Settings } from "@/services/settings/schema";
 
 import {
   buildFullContext,
+  fetchItemCollections,
   fetchItemTags,
   resolveIndexedKeyLibrary,
   resolveNotePath,
@@ -63,17 +66,34 @@ function isFileExistsError(error: unknown): boolean {
 export async function createNote(
   ctx: NoteFeatureContext,
   item: Item,
+  options: { collectionCache?: CollectionCache } = {},
 ): Promise<TFile> {
+  const collectionCache = options.collectionCache ?? new CollectionCache();
   const [settings] = await Promise.all([
     ctx.settings.loaded,
     ctx.noteIndex.ready,
   ]);
   const itemTags = fetchItemTags(ctx.db.client, item);
-  let { path, canSuffix } = resolveNotePath(ctx, item, { itemTags, settings });
+  const itemCollections = fetchItemCollections(
+    collectionCache,
+    ctx.db.client,
+    item,
+  );
+  let { path, canSuffix } = resolveNotePath(ctx, item, {
+    itemTags,
+    itemCollections,
+    settings,
+  });
 
   for (let attempt = 0; ; attempt++) {
     try {
-      return await writeNewNote(ctx, item, { itemTags, path, settings });
+      return await writeNewNote(ctx, item, {
+        itemTags,
+        itemCollections,
+        collectionCache,
+        path,
+        settings,
+      });
     } catch (error) {
       if (
         !isFileExistsError(error) ||
@@ -89,6 +109,7 @@ export async function createNote(
       });
       ({ path, canSuffix } = resolveNotePath(ctx, item, {
         itemTags,
+        itemCollections,
         settings,
         forceSuffix: true,
       }));
@@ -107,11 +128,14 @@ export async function writeNewNote(
   item: Item,
   options: {
     itemTags: readonly ItemTag[];
+    itemCollections: readonly TemplateCollection[];
+    collectionCache: CollectionCache;
     path: string;
     settings: Readonly<Settings>;
   },
 ): Promise<TFile> {
-  const { itemTags, path, settings } = options;
+  const { itemTags, itemCollections, collectionCache, path, settings } =
+    options;
   const dir = dirname(path);
   if (dir !== "." && dir !== "/") {
     await ensureFolder(ctx.app, dir);
@@ -120,6 +144,8 @@ export async function writeNewNote(
   const attachmentImport = await ctx.attachmentImport.prepare(path);
   const context = buildFullContext(ctx, item, {
     itemTags,
+    itemCollections,
+    collectionCache,
     attachmentImport,
     settings,
     sourcePath: path,
@@ -168,12 +194,16 @@ export async function writeNoteUpdate(
   options: {
     item: Item;
     itemTags: readonly ItemTag[];
+    itemCollections: readonly TemplateCollection[];
+    collectionCache: CollectionCache;
     settings: Readonly<Settings>;
   },
 ): Promise<UpdateResult> {
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   const context = buildFullContext(ctx, options.item, {
     itemTags: options.itemTags,
+    itemCollections: options.itemCollections,
+    collectionCache: options.collectionCache,
     attachmentImport,
     settings: options.settings,
     sourcePath: file.path,
@@ -287,9 +317,17 @@ export function renderAnnotation(
   if (!item) return null;
 
   const { annotationKey, attachmentImport } = options;
+  const collectionCache = new CollectionCache();
   const itemTags = fetchItemTags(ctx.db.client, item);
+  const itemCollections = fetchItemCollections(
+    collectionCache,
+    ctx.db.client,
+    item,
+  );
   const context = buildFullContext(ctx, item, {
     itemTags,
+    itemCollections,
+    collectionCache,
     attachmentImport,
     settings: ctx.settings.current,
     sourcePath: "",
@@ -319,9 +357,13 @@ async function contextForIndexedKey(
 
   const [item] = getItemsByKey(client, parsed.libraryID, [parsed.key]);
   if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
+  const collectionCache = new CollectionCache();
   const itemTags = fetchItemTags(client, item);
+  const itemCollections = fetchItemCollections(collectionCache, client, item);
   return buildFullContext(ctx, item, {
     itemTags,
+    itemCollections,
+    collectionCache,
     attachmentImport: options.attachmentImport,
     settings,
     sourcePath: options.sourcePath,

@@ -14,8 +14,10 @@ import {
   type Annotation,
   type Item,
   type ItemTag,
+  type CollectionCache,
   type NoteContextInput,
   type NoteTemplateContext,
+  type TemplateCollection,
   type TemplateItemData,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -59,6 +61,10 @@ export interface NoteFeatureContext {
 interface BuildFullContextOptions {
   /** The item's own tags, fetched once by the caller (see {@link fetchItemTags}). */
   itemTags: readonly ItemTag[];
+  /** The item's own collections, fetched once by the caller (see {@link fetchItemCollections}). */
+  itemCollections: readonly TemplateCollection[];
+  /** Shared per-batch memo resolving related items' collection paths. */
+  collectionCache: CollectionCache;
   attachmentImport: Pick<AttachmentImport, "resolveEmbed">;
   settings: Readonly<Settings> | null;
   sourcePath: string;
@@ -78,6 +84,17 @@ export function fetchItemTags(
   return getTagsByItemIDs(client, [item.itemID]);
 }
 
+export function fetchItemCollections(
+  cache: CollectionCache,
+  client: NodeDatabaseClient,
+  item: Pick<Item, "itemID" | "libraryID">,
+): TemplateCollection[] {
+  return (
+    cache.byItemIDs(client, item.libraryID, [item.itemID]).get(item.itemID) ??
+    []
+  );
+}
+
 /**
  * No DB reads — `itemTags` are passed in. `canSuffix` in the return tells the
  * caller whether a retry with `forceSuffix` can disambiguate a collision.
@@ -89,12 +106,17 @@ export function resolveNotePath(
   item: Item,
   options: {
     itemTags: readonly ItemTag[];
+    itemCollections: readonly TemplateCollection[];
     settings: Readonly<Settings>;
     forceSuffix?: boolean;
   },
 ): { path: string; canSuffix: boolean } {
   const folderSetting = options.settings["note.literature-folder"];
-  const data = buildFilenameContext({ item, tags: options.itemTags });
+  const data = buildFilenameContext({
+    item,
+    tags: options.itemTags,
+    collections: options.itemCollections,
+  });
   const rendered = ctx.template.renderFilename(data).trim();
   const rel = resolveRenderedRelPath(folderSetting, rendered, {
     exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null,
@@ -153,6 +175,21 @@ export function buildFullContext(
     }
   }
 
+  // Collections resolve for the main item + related items only — annotations
+  // are never collection members. Related items share the item's library.
+  const collectionsByItemID = new Map<number, readonly TemplateCollection[]>([
+    [item.itemID, options.itemCollections],
+  ]);
+  if (relatedItemIDs.length > 0) {
+    for (const [id, collections] of options.collectionCache.byItemIDs(
+      client,
+      libraryID,
+      relatedItemIDs,
+    )) {
+      collectionsByItemID.set(id, collections);
+    }
+  }
+
   const dataDir = ctx.zoteroPref.dataDir;
   const baseAttachmentPath = ctx.zoteroPref.baseAttachmentPath;
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
@@ -162,6 +199,7 @@ export function buildFullContext(
     attachments,
     annotationsByAttachment,
     tagsByItemID,
+    collectionsByItemID,
     relatedItems,
     authorsShort: creatorSummary,
     fileLink: (a) => attachmentFileLink(a, { dataDir, baseAttachmentPath }),

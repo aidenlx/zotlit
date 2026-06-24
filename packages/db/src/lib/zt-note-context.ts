@@ -2,6 +2,7 @@ import { type Item } from "@/queries/items";
 
 import { type Annotation } from "./zt-annot";
 import { type Attachment } from "./zt-attach";
+import { type TemplateCollection } from "./zt-collection";
 import { parseIndexedKey } from "./zt-key";
 import { type ItemTag } from "./zt-tag";
 import {
@@ -68,6 +69,11 @@ export interface NoteContextInput {
   /** Tag applications keyed by Zotero itemID. */
   tagsByItemID: ReadonlyMap<number, readonly ItemTag[]>;
   /**
+   * Resolved collections keyed by Zotero itemID, for the main item and related
+   * items only — annotations are never collection members, so they are absent.
+   */
+  collectionsByItemID: ReadonlyMap<number, readonly TemplateCollection[]>;
+  /**
    * Items related to {@link item} via Zotero's "Related" panel, already
    * resolved (trashed / unresolvable relations omitted). Each is mapped to a
    * {@link TemplateRelatedItem} and title-sorted.
@@ -93,13 +99,19 @@ export interface NoteContextInput {
  * {@link TemplateItemData} and nothing else. Unlike {@link buildNoteContext}
  * this resolves no attachments, annotations, related items, or app-layer
  * resolvers — `notePath()` / `noteLink()` return `""` — so a filename query
- * stays a single-item read. Pure: the caller passes the item's tags in.
+ * stays a single-item read. Pure: the caller passes the item's tags and
+ * collections in.
  */
 export function buildFilenameContext(input: {
   item: Item;
   tags: readonly ItemTag[];
+  collections: readonly TemplateCollection[];
 }): TemplateItemData {
-  return itemToTemplateData(input.item, input.tags);
+  return itemToTemplateData({
+    item: input.item,
+    tags: input.tags,
+    collections: input.collections,
+  });
 }
 
 /**
@@ -109,12 +121,16 @@ export function buildFilenameContext(input: {
  */
 export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
   const { item } = input;
-  const itemTags = input.tagsByItemID.get(item.itemID) ?? [];
   const noteResolvers: TemplateItemResolvers = {
     notePath: input.notePath,
     noteLink: input.noteLink,
   };
-  const itemData = itemToTemplateData(item, itemTags, noteResolvers);
+  const itemData = itemToTemplateData({
+    item,
+    tags: input.tagsByItemID.get(item.itemID) ?? [],
+    collections: input.collectionsByItemID.get(item.itemID) ?? [],
+    resolvers: noteResolvers,
+  });
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
 
   const attachments: TemplateAttachment[] = input.attachments.map((a) => ({
@@ -150,6 +166,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
       buildRelatedItem({
         item: related,
         tags: input.tagsByItemID.get(related.itemID) ?? [],
+        collections: input.collectionsByItemID.get(related.itemID) ?? [],
         authorsShort: input.authorsShort(related),
         noteResolvers,
       }),
@@ -177,15 +194,22 @@ function selectPrimaryAuthors(data: TemplateItemData): TemplateCreator[] {
 function buildRelatedItem({
   item,
   tags,
+  collections,
   authorsShort,
   noteResolvers,
 }: {
   item: Item;
   tags: readonly ItemTag[];
+  collections: readonly TemplateCollection[];
   authorsShort: string;
   noteResolvers: TemplateItemResolvers;
 }): TemplateRelatedItem {
-  const itemData = itemToTemplateData(item, tags, noteResolvers);
+  const itemData = itemToTemplateData({
+    item,
+    tags,
+    collections,
+    resolvers: noteResolvers,
+  });
   const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
   return {
     ...itemData,

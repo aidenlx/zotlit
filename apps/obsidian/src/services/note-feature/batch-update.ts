@@ -3,6 +3,7 @@ import { type TFile } from "obsidian";
 import pLimit from "p-limit";
 
 import {
+  CollectionCache,
   getItemDisplayRefByID,
   getItemRefByID,
   getItemsByID,
@@ -24,7 +25,7 @@ import {
   type BatchUpdateRunResult,
 } from "@/views/batch-update-modal";
 
-import { fetchItemTags } from "./context";
+import { fetchItemCollections, fetchItemTags } from "./context";
 import { createNote, writeNoteUpdate } from "./operations";
 import { type SingleUpdateDeps, updateNote } from "./single-update";
 
@@ -44,6 +45,8 @@ interface RunContext {
   client: NodeDatabaseClient;
   settings: Readonly<Settings>;
   groupIdMemo: GroupIDMemo;
+  /** Spans the whole batch so per-library collection nodes load once. */
+  collectionCache: CollectionCache;
 }
 
 /** Ids classified per yield, keeping each synchronous slice short enough that
@@ -204,6 +207,7 @@ async function executeBatchActions(
     client: lease.client,
     settings,
     groupIdMemo: new Map(),
+    collectionCache: new CollectionCache(),
   };
 
   // Each task loads its own full item (deferred from the lightweight
@@ -291,14 +295,21 @@ async function runAction(
 
   if (action.kind === "update") {
     const itemTags = fetchItemTags(run.client, item);
+    const itemCollections = fetchItemCollections(
+      run.collectionCache,
+      run.client,
+      item,
+    );
     await writeNoteUpdate(ctx, action.file, {
       item,
       itemTags,
+      itemCollections,
+      collectionCache: run.collectionCache,
       settings: run.settings,
     });
     return;
   }
-  await createNote(ctx, item);
+  await createNote(ctx, item, { collectionCache: run.collectionCache });
 }
 
 function itemLabel(title: string | null, itemID: number): string {
