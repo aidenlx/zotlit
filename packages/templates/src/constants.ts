@@ -11,6 +11,13 @@ export const autoTrimSchema = v.union([
   v.literal("slurp"),
 ]);
 
+export const DEFAULT_AUTO_TRIM: Readonly<
+  Record<"leading" | "trailing", AutoTrim>
+> = {
+  leading: false,
+  trailing: "nl",
+};
+
 export type AutoTrim = v.InferOutput<typeof autoTrimSchema>;
 
 export const frontmatterMergeStrategySchema = v.picklist([

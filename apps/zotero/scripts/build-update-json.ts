@@ -181,7 +181,7 @@ function isErrno(err: unknown, code: string): boolean {
  * and touched channel describe exactly what this run just wrote.
  */
 async function renderHostNotes(rewritten: string[]): Promise<string> {
-  const eta = new Eta({ autoEscape: false, autoTrim: false });
+  const eta = new Eta();
   const template = await readFile(
     join(scriptDir, "release-host-notes.eta"),
     "utf-8",
