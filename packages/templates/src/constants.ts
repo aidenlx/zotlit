@@ -15,7 +15,7 @@ export const DEFAULT_AUTO_TRIM: Readonly<
   Record<"leading" | "trailing", AutoTrim>
 > = {
   leading: false,
-  trailing: "nl",
+  trailing: false,
 };
 
 export type AutoTrim = v.InferOutput<typeof autoTrimSchema>;
