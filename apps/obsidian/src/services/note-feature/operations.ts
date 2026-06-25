@@ -330,8 +330,8 @@ export function renderCitation(
  * view's drag-insert. Synchronous (so it can populate `dataTransfer` during
  * `dragstart`): requires a ready database and a pre-prepared `attachmentImport`
  * handle whose `flush()` the caller runs on drop. Only the dragged annotation's
- * image is recorded for import. Returns `null` when the item or annotation can't
- * be resolved.
+ * template is rendered, so only its excerpt image is queued for import. Returns
+ * `null` when the item or annotation can't be resolved.
  */
 export function renderAnnotation(
   ctx: NoteFeatureContext,
@@ -362,7 +362,6 @@ export function renderAnnotation(
     attachmentImport,
     settings: ctx.settings.current,
     sourcePath: "",
-    targetAnnotationKey: annotationKey,
   });
   const annot = context.annotations.find((a) => a.key === annotationKey);
   return annot ? ctx.template.render("annotation", annot) : null;
