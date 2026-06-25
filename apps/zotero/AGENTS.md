@@ -43,6 +43,7 @@ Hand-prefix every Zotero pref key with `extensions.zotlit.` in `addon/prefs.js`,
 - Author messages in `locale/{locale}.ftl` (flat, primary `en-US`).
 - Reference XUL strings via `data-l10n-id="…"` in `addon/**/*.xhtml`.
 - In TS, format via `formatValue(id, args)`; register menus via `registerMenu(...)`. utils in src/lib/l10n.ts.
+- For dynamic menu args (e.g. `$count` plural selection in an `onShowing`), pass a JSON **string**: `context.setL10nArgs(JSON.stringify(args))`. Zotero assigns the value straight to `dataset.l10nArgs` without serializing, so an object becomes `"[object Object]"` and silently disables Fluent selection. The upstream `object`-only type is widened to accept a string in `src/types/zotero.d.ts`.
 - `src/types/fluent.ts` (`FluentMessageId`) is codegen — commit it, don't edit it.
 
 ## Preferences

@@ -26,6 +26,18 @@ declare global {
         ): void;
       }
     }
+
+    namespace MenuManager {
+      interface BaseMenuContext {
+        // The dynamic `setL10nArgs` writes its value straight to
+        // `dataset.l10nArgs` with no `JSON.stringify` (unlike the static
+        // `l10nArgs` menu field), so callers must pass an already-serialized
+        // JSON string — an object stringifies to "[object Object]" and breaks
+        // Fluent `$arg` selection. Adds a string overload to the `object` one.
+        // https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/pluginAPI/menuManager.js
+        setL10nArgs(l10nArgs: string): void;
+      }
+    }
   }
 
   interface Window {
