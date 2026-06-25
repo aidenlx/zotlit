@@ -9,7 +9,7 @@ import {
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { basename } from "./basename";
-import { type AutoTrim } from "./constants";
+import { DEFAULT_AUTO_TRIM, type AutoTrim } from "./constants";
 import { embed } from "./embed";
 import { filenameSuffix } from "./filename-suffix";
 import { replaceHelper } from "./replace-helper";
@@ -39,7 +39,7 @@ export class TemplateEngine extends Eta {
   readonly embedHelper = embed;
 
   constructor({
-    autoTrim = [false, false],
+    autoTrim = [DEFAULT_AUTO_TRIM.leading, DEFAULT_AUTO_TRIM.trailing],
     transformRender,
   }: TemplateEngineOptions = {}) {
     super({
