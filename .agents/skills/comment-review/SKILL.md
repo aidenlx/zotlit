@@ -25,8 +25,6 @@ them into a review workflow.
 
 | Find in added lines | Fix |
 |---|---|
-| `{@link Sym}` grammatically woven into prose | Replace with `` `Sym` `` |
-| `({@link Sym})` parenthetical | Remove parenthetical; add `@see Sym` tag at block end |
 | "Returns X" / "Returns `Y` when …" in prose | Convert to `@returns` tag |
 | "Defaults to X" in prose | Convert to `@default X` tag |
 | JSDoc that only restates the name, type, or implementation | Drop it |
@@ -48,9 +46,6 @@ Only fix lines **introduced in this diff**. If a pre-existing unchanged line has
 ## Output format
 
 ```
-packages/db/src/lib/zt-collection.ts:13   {@link name} → `name`
-packages/db/src/lib/zt-collection.ts:56   {@link TemplateCollection}s → `TemplateCollection` objects
-packages/db/src/lib/zt-collection.ts:60   parenthetical {@link} → @see tag
 packages/db/src/lib/zt-collection.ts:159  prose "Returns…" → @returns tag
 apps/obsidian/src/services/note-feature/context.ts:87  dropped restatement on fetchItemCollections
 ```
