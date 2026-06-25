@@ -4,6 +4,7 @@ import * as v from "valibot";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import {
   autoTrimSchema,
+  DEFAULT_AUTO_TRIM,
   frontmatterFieldSchema,
   type AutoTrim,
 } from "@zotlit/templates/constants";
@@ -110,8 +111,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "template.folder": "templates",
   "template.filename": DEFAULT_NOTE_FILENAME,
   "template.auto-pair-eta": false,
-  "template.auto-trim-leading": false,
-  "template.auto-trim-trailing": false,
+  "template.auto-trim-leading": DEFAULT_AUTO_TRIM.leading,
+  "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,
   "zotero.auto-refresh": true,
   "zotero.read-mode": "auto",
   "zotero.profile-dir": null,
