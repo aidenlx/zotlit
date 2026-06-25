@@ -1,11 +1,19 @@
 import { dirname } from "node:path/posix";
 import { normalizePath, TFile, TFolder, type App } from "obsidian";
 
-export async function ensureAttachmentFolder(
+/**
+ * Resolve the in-vault attachment folder path without touching the filesystem.
+ * Folder creation is deferred to import time (see {@link ensureFolder}), so a
+ * note that embeds no images never leaves an empty folder behind.
+ *
+ * @returns the normalized folder path, or `"/"` for the vault root (which needs
+ * no creation).
+ */
+export async function resolveAttachmentFolderPath(
   app: App,
   folderPath: string | null,
   sourcePath?: string,
-): Promise<TFolder> {
+): Promise<string> {
   let path: string;
   // Empty (settings-tab "use default") is treated the same as null.
   if (!folderPath) {
@@ -19,10 +27,8 @@ export async function ensureAttachmentFolder(
     path = normalizePath(folderPath);
   }
 
-  if (path === "." || path === "" || path === "/") {
-    return app.vault.getRoot();
-  }
-  return ensureFolder(app, path);
+  if (path === "." || path === "" || path === "/") return "/";
+  return path;
 }
 
 export async function ensureFolder(

@@ -7,7 +7,7 @@ import {
   type AttachmentCopyItem,
   type AttachmentCopyResult,
 } from "@/lib/copy-attachments";
-import { ensureAttachmentFolder } from "@/lib/ensure-folder";
+import { ensureFolder, resolveAttachmentFolderPath } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { Service } from "@/services/service-base";
@@ -54,8 +54,8 @@ export class AttachmentImportService extends Service<void> {
   async prepare(notePath: string): Promise<AttachmentImport> {
     const settings = await this.#settings.loaded;
     const importEnabled = settings["attachment.import"];
-    const folder = importEnabled
-      ? await ensureAttachmentFolder(
+    const folderPath = importEnabled
+      ? await resolveAttachmentFolderPath(
           this.#app,
           settings["attachment.folder-path"],
           notePath,
@@ -65,13 +65,13 @@ export class AttachmentImportService extends Service<void> {
     logger.debug("Prepared attachment import", {
       notePath,
       importEnabled,
-      folderPath: folder?.path ?? null,
+      folderPath,
     });
 
     return new AttachmentImportBatch({
       app: this.#app,
       notePath,
-      folderPath: folder?.path ?? null,
+      folderPath,
       importEnabled,
     });
   }
@@ -133,6 +133,15 @@ class AttachmentImportBatch implements AttachmentImport {
   }
 
   async flush(): Promise<AttachmentCopyResult> {
+    // Create the folder only now that a copy is actually queued; copyAttachments
+    // writes straight to dest and never makes the parent.
+    if (
+      this.#items.length > 0 &&
+      this.#folderPath &&
+      this.#folderPath !== "/"
+    ) {
+      await ensureFolder(this.#app, this.#folderPath);
+    }
     const result = await copyAttachments(this.#items);
     logger.debug("Imported attachments", {
       copied: result.copied,
