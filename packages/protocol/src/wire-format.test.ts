@@ -68,6 +68,7 @@ describe("wire format", () => {
         "literatureNotes": {
           "body": [
             "items",
+            "scope",
           ],
           "method": "PATCH",
           "sourceHeader": "X-Zotlit-Source-Id",
@@ -114,6 +115,7 @@ describe("wire format", () => {
           ],
           "params": [
             "item",
+            "scope",
             "source-id",
           ],
         },

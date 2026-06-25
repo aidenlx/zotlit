@@ -6,6 +6,7 @@ import {
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
   SOURCE_ID_HEADER,
+  type UpdateScope,
 } from "@zotlit/protocol";
 
 import { formatValue } from "@/lib/l10n";
@@ -32,9 +33,13 @@ const URL_LENGTH_CAP = 2000;
 export function openInObsidian(
   action: ProtocolAction,
   item: Zotero.Item,
+  scope?: UpdateScope,
 ): void {
-  const url = buildProtocolUrl(action, item.id, sourceId());
-  logger.info("opening obsidian", { action, itemID: item.id, url });
+  const url = buildProtocolUrl(action, item.id, {
+    sourceId: sourceId(),
+    scope,
+  });
+  logger.info("opening obsidian", { action, itemID: item.id, scope, url });
   Zotero.launchURL(url);
 }
 
@@ -46,14 +51,16 @@ export function openInObsidian(
  */
 export async function updateManyInObsidian(
   items: readonly Zotero.Item[],
+  scope?: UpdateScope,
 ): Promise<void> {
   const itemIDs = items.map((item) => item.id);
-  const url = buildBatchProtocolUrl(itemIDs, sourceId());
+  const url = buildBatchProtocolUrl(itemIDs, { sourceId: sourceId(), scope });
 
   if (url.length <= URL_LENGTH_CAP) {
     logger.info("opening obsidian (batch link)", {
       count: itemIDs.length,
       length: url.length,
+      scope,
     });
     Zotero.launchURL(url);
     return;
@@ -62,11 +69,15 @@ export async function updateManyInObsidian(
   logger.info("batch link over cap, patching listener", {
     count: itemIDs.length,
     length: url.length,
+    scope,
   });
-  await sendBatchUpdate(itemIDs);
+  await sendBatchUpdate(itemIDs, scope);
 }
 
-async function sendBatchUpdate(items: number[]): Promise<void> {
+async function sendBatchUpdate(
+  items: number[],
+  scope?: UpdateScope,
+): Promise<void> {
   const base = notifyUrl();
   if (!base) {
     logger.warn("no notify URL for batch update fallback");
@@ -90,7 +101,7 @@ async function sendBatchUpdate(items: number[]): Promise<void> {
         [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
         [SOURCE_ID_HEADER]: sourceId(),
       },
-      body: JSON.stringify({ items } satisfies BatchUpdateRequest),
+      body: JSON.stringify({ items, scope } satisfies BatchUpdateRequest),
     });
     if (!response.ok) {
       throw new Error(`PATCH /literature-notes failed: ${response.status}`);

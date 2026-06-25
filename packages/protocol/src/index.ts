@@ -32,6 +32,7 @@ export {
   protocolSourceMatches,
   type ProtocolQuery,
   protocolQuerySchema,
+  type UpdateScope,
 } from "./url";
 export {
   checkProtocolVersion,

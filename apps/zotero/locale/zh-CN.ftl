@@ -23,6 +23,8 @@ zotlit-menu-item-open =
     .label = 在 Obsidian 中打开笔记
 zotlit-menu-item-update =
     .label = 在 Obsidian 中更新笔记
+zotlit-menu-item-update-metadata =
+    .label = 在 Obsidian 中更新笔记元数据
 zotlit-menu-reader-annot-merge = 合并标注
 zotlit-menu-reader-page-open = 在 Obsidian 中打开笔记
 

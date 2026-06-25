@@ -14,7 +14,8 @@ import {
 } from "@/services/note-index/service";
 
 import { type NoteFeatureContext } from "./context";
-import { overwriteNote, updateNote } from "./operations";
+import { overwriteNote, updateNote, type UpdateScope } from "./operations";
+import { updateNoteToast } from "./single-update";
 
 interface NoteFeatureActionDeps {
   noteFeatures: NoteFeatureContext;
@@ -24,21 +25,15 @@ export function addNoteFeatureActions(
   plugin: Pick<Plugin, "addCommand"> & { app: Plugin["app"] },
   deps: NoteFeatureActionDeps,
 ): void {
-  plugin.addCommand({
+  addUpdateCommand(plugin, deps, {
     id: "update-note",
     name: m.command_update_note_name(),
-    editorCheckCallback(checking, _editor, ctx) {
-      return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        void toast.promise(updateNote(deps.noteFeatures, file, itemKey), {
-          loading: m.notice_updating_note(),
-          success: (result) =>
-            result.bodyUpdated
-              ? m.notice_updated_note()
-              : m.notice_updated_note_no_region(),
-          error: m.notice_update_note_failed(),
-        });
-      });
-    },
+    scope: "full",
+  });
+  addUpdateCommand(plugin, deps, {
+    id: "update-note-metadata",
+    name: m.command_update_note_metadata_name(),
+    scope: "metadata",
   });
 
   plugin.addCommand({
@@ -62,6 +57,30 @@ export function addNoteFeatureActions(
             error: m.notice_overwrite_note_failed(),
           });
         });
+      });
+    },
+  });
+}
+
+/** Register an editor command that updates the active literature note at the
+ *  given {@link UpdateScope}. */
+function addUpdateCommand(
+  plugin: Pick<Plugin, "addCommand"> & { app: Plugin["app"] },
+  deps: NoteFeatureActionDeps,
+  command: { id: string; name: string; scope: UpdateScope },
+): void {
+  plugin.addCommand({
+    id: command.id,
+    name: command.name,
+    editorCheckCallback(checking, _editor, ctx) {
+      return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
+        void toast.promise(
+          updateNote(deps.noteFeatures, file, {
+            indexedKey: itemKey,
+            scope: command.scope,
+          }),
+          updateNoteToast(command.scope),
+        );
       });
     },
   });
