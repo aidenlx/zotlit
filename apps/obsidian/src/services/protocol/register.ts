@@ -63,7 +63,7 @@ export function registerProtocolHandlers(
   // runs the same interactive flow as the `update-many` protocol link.
   stack.defer(
     deps.liveUpdate.on("update-many", (event) => {
-      void runBatchUpdate(deps, event.items);
+      void runBatchUpdate(deps, event.items, event.scope);
     }),
   );
 
@@ -123,7 +123,7 @@ async function handleProtocol(
       await openNote(deps, ref);
       break;
     case "update":
-      await updateNote(deps, ref);
+      await updateNote(deps, ref, query.scope);
       break;
   }
 }
@@ -166,7 +166,7 @@ async function handleBatchProtocol(
     return;
   }
 
-  await runBatchUpdate(deps, query.items);
+  await runBatchUpdate(deps, query.items, query.scope);
 }
 
 /** Open existing literature note, or create one if none exists. */

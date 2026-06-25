@@ -25,7 +25,7 @@ function decode(url: string): Record<string, string> {
 
 describe("zotlit obsidian protocol", () => {
   it.each(protocolActions)("builds + round-trips %s", (action) => {
-    const url = buildProtocolUrl(action, 42, SOURCE);
+    const url = buildProtocolUrl(action, 42, { sourceId: SOURCE });
     expect(url).toBe(
       `obsidian://zotlit/${action}?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
     );
@@ -33,26 +33,97 @@ describe("zotlit obsidian protocol", () => {
     expect(parseProtocolQuery(decode(url))).toEqual({
       item: 42,
       sourceId: SOURCE,
+      scope: "full",
     });
+  });
+
+  it("builds + round-trips a metadata-scoped update link", () => {
+    const url = buildProtocolUrl("update", 42, {
+      sourceId: SOURCE,
+      scope: "metadata",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}&scope=metadata`,
+    );
+    expect(parseProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      sourceId: SOURCE,
+      scope: "metadata",
+    });
+  });
+
+  it("omits scope from the link when it is the full default", () => {
+    expect(
+      buildProtocolUrl("update", 42, { sourceId: SOURCE, scope: "full" }),
+    ).toBe(
+      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
+    );
+  });
+
+  it("defaults scope to full and parses an explicit metadata scope", () => {
+    expect(parseProtocolQuery({ item: "42", "source-id": SOURCE })).toEqual({
+      item: 42,
+      sourceId: SOURCE,
+      scope: "full",
+    });
+    expect(
+      parseProtocolQuery({
+        item: "42",
+        "source-id": SOURCE,
+        scope: "metadata",
+      }),
+    ).toEqual({ item: 42, sourceId: SOURCE, scope: "metadata" });
+  });
+
+  it("rejects an unknown scope", () => {
+    expect(() =>
+      parseProtocolQuery({ item: "42", "source-id": SOURCE, scope: "body" }),
+    ).toThrow();
   });
 });
 
 describe("zotlit update-many protocol", () => {
   it("builds + round-trips a batch link", () => {
-    const url = buildBatchProtocolUrl([1, 2, 3], SOURCE);
+    const url = buildBatchProtocolUrl([1, 2, 3], { sourceId: SOURCE });
     expect(url).toBe(
       `obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
     );
     expect(parseProtocolBatchQuery(decode(url))).toEqual({
       items: [1, 2, 3],
       sourceId: SOURCE,
+      scope: "full",
+    });
+  });
+
+  it("builds + round-trips a metadata-scoped batch link", () => {
+    const url = buildBatchProtocolUrl([1, 2, 3], {
+      sourceId: SOURCE,
+      scope: "metadata",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=${SOURCE}&v=${PROTOCOL_VERSION}&scope=metadata`,
+    );
+    expect(parseProtocolBatchQuery(decode(url))).toEqual({
+      items: [1, 2, 3],
+      sourceId: SOURCE,
+      scope: "metadata",
     });
   });
 
   it("tolerates a trailing comma and dedupes ids", () => {
     expect(
       parseProtocolBatchQuery({ items: "1,2,2,3,", "source-id": SOURCE }),
-    ).toEqual({ items: [1, 2, 3], sourceId: SOURCE });
+    ).toEqual({ items: [1, 2, 3], sourceId: SOURCE, scope: "full" });
+  });
+
+  it("parses an explicit metadata scope", () => {
+    expect(
+      parseProtocolBatchQuery({
+        items: "1,2,3",
+        "source-id": SOURCE,
+        scope: "metadata",
+      }),
+    ).toEqual({ items: [1, 2, 3], sourceId: SOURCE, scope: "metadata" });
   });
 
   it("rejects an empty item list", () => {
@@ -75,7 +146,14 @@ describe("batchUpdateRequestSchema (HTTP body)", () => {
   it("dedupes ids, matching the URL path", () => {
     expect(v.parse(batchUpdateRequestSchema, { items: [1, 2, 2, 3] })).toEqual({
       items: [1, 2, 3],
+      scope: "full",
     });
+  });
+
+  it("parses an explicit metadata scope", () => {
+    expect(
+      v.parse(batchUpdateRequestSchema, { items: [1], scope: "metadata" }),
+    ).toEqual({ items: [1], scope: "metadata" });
   });
 
   it("rejects an empty item list", () => {

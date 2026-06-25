@@ -11,6 +11,7 @@ export type FluentMessageId =
   | "zotlit-batch-update-server-needed-title"
   | "zotlit-menu-item-open"
   | "zotlit-menu-item-update"
+  | "zotlit-menu-item-update-metadata"
   | "zotlit-menu-reader-annot-merge"
   | "zotlit-menu-reader-page-open"
   | "zotlit-prefs-log-level-debug"
