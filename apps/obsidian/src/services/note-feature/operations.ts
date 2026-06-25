@@ -9,6 +9,7 @@ import {
   type NoteTemplateContext,
   type TemplateCollection,
 } from "@zotlit/db";
+import { type UpdateScope } from "@zotlit/protocol";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import { ensureFolder } from "@/lib/ensure-folder";
@@ -36,6 +37,16 @@ export interface UpdateResult {
   bodyUpdated: boolean;
   duplicateRegionCount: number;
 }
+
+// `UpdateScope` is the wire enum obsidian decodes; re-export it so note-feature
+// consumers keep a stable import path without redeclaring the union.
+export type { UpdateScope };
+
+/** Result for an update that intentionally leaves the body region untouched. */
+const NO_BODY_UPDATE: UpdateResult = {
+  bodyUpdated: false,
+  duplicateRegionCount: 0,
+};
 
 /**
  * Concurrent/batch creation can land a sibling between resolve and write. Each
@@ -164,8 +175,9 @@ export async function writeNewNote(
 export async function updateNote(
   ctx: NoteFeatureContext,
   file: TFile,
-  indexedKey: string,
+  options: { indexedKey: string; scope?: UpdateScope },
 ): Promise<UpdateResult> {
+  const { indexedKey, scope = "full" } = options;
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   const context = await contextForIndexedKey(ctx, indexedKey, {
     attachmentImport,
@@ -175,6 +187,7 @@ export async function updateNote(
     context,
     attachmentImport,
     itemKey: indexedKey,
+    scope,
   });
 }
 
@@ -197,6 +210,7 @@ export async function writeNoteUpdate(
     itemCollections: readonly TemplateCollection[];
     collectionCache: CollectionCache;
     settings: Readonly<Settings>;
+    scope?: UpdateScope;
   },
 ): Promise<UpdateResult> {
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
@@ -212,11 +226,13 @@ export async function writeNoteUpdate(
     context,
     attachmentImport,
     itemKey: options.item.indexedKey,
+    scope: options.scope ?? "full",
   });
 }
 
-/** Refresh frontmatter, then replace the managed body region in place. Shared
- *  by {@link updateNote} and {@link writeNoteUpdate}; the caller supplies the
+/** Compose a managed update from its steps: always refresh frontmatter, and for
+ *  the `full` scope also replace the managed body region. Shared by
+ *  {@link updateNote} and {@link writeNoteUpdate}; the caller supplies the
  *  already-built context and its prepared `attachmentImport`. */
 async function applyManagedUpdate(
   ctx: NoteFeatureContext,
@@ -225,13 +241,34 @@ async function applyManagedUpdate(
     context: NoteTemplateContext;
     attachmentImport: Pick<AttachmentImport, "flush">;
     itemKey: string;
+    scope: UpdateScope;
   },
 ): Promise<UpdateResult> {
-  const { context, attachmentImport, itemKey } = input;
+  const { context, attachmentImport, itemKey, scope } = input;
   await refreshFrontmatter(ctx, file, context);
+  const result =
+    scope === "full"
+      ? await replaceManagedBody(ctx, file, context)
+      : NO_BODY_UPDATE;
+  await attachmentImport.flush();
 
-  // The engine's transformRender wraps the "content" template in markers, so
-  // render("content") returns the managed region already wrapped.
+  logger.debug("Updated literature note", {
+    path: file.path,
+    itemKey,
+    scope,
+    bodyUpdated: result.bodyUpdated,
+  });
+  return result;
+}
+
+/** Replace the managed body region in place, re-rendering the `content`
+ *  template. The engine's transformRender wraps `content` in the managed-region
+ *  markers, so the render is already wrapped. */
+async function replaceManagedBody(
+  ctx: NoteFeatureContext,
+  file: TFile,
+  context: NoteTemplateContext,
+): Promise<UpdateResult> {
   const region = ctx.template.render("content", context);
   let replaced = false;
   let duplicateCount = 0;
@@ -241,7 +278,6 @@ async function applyManagedUpdate(
     duplicateCount = result.duplicateCount;
     return result.content;
   });
-  await attachmentImport.flush();
 
   if (duplicateCount > 0) {
     logger.warn("Literature note has duplicate managed regions", {
@@ -249,11 +285,6 @@ async function applyManagedUpdate(
       count: duplicateCount + 1,
     });
   }
-  logger.debug("Updated literature note", {
-    path: file.path,
-    itemKey,
-    bodyUpdated: replaced,
-  });
   return { bodyUpdated: replaced, duplicateRegionCount: duplicateCount };
 }
 

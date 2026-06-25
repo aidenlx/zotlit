@@ -41,13 +41,30 @@ const itemID = v.pipe(v.string(), v.regex(/^\d+$/u), v.transform(Number));
 /** 8-char hex id from {@link sourceIdFromUris}. */
 const sourceIdValue = v.pipe(v.string(), v.regex(/^[0-9a-f]{8}$/u));
 
+/**
+ * How much of a managed note an `update` / `update-many` touches. Absent on the
+ * wire means `full` (refresh frontmatter and the managed body region);
+ * `metadata` refreshes managed frontmatter only.
+ */
+export type UpdateScope = "full" | "metadata";
+
+const updateScopeValue = v.optional(
+  v.picklist(["full", "metadata"] satisfies UpdateScope[]),
+  "full",
+);
+
 /** Query payload for `zotlit/{open,update}` protocol handlers. */
 export const protocolQuerySchema = v.pipe(
   v.object({
     item: itemID,
     "source-id": sourceIdValue,
+    scope: updateScopeValue,
   }),
-  v.transform(({ item, "source-id": sourceId }) => ({ item, sourceId })),
+  v.transform(({ item, "source-id": sourceId, scope }) => ({
+    item,
+    sourceId,
+    scope,
+  })),
 );
 
 /** Decoded, validated query for a literature-note action. */
@@ -66,19 +83,29 @@ export function protocolSourceMatches(
 
 /**
  * Build an `obsidian://zotlit/<action>?item=<id>&source-id=<hash>` link for
- * `Zotero.launchURL`.
+ * `Zotero.launchURL`. A non-default {@link UpdateScope} adds `&scope=<scope>`.
  */
 export function buildProtocolUrl(
   action: ProtocolAction,
   item: number,
-  sourceId: string,
+  options: { sourceId: string; scope?: UpdateScope },
 ): string {
   const params = new URLSearchParams({
     item: String(item),
-    "source-id": sourceId,
+    "source-id": options.sourceId,
     [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
   });
+  appendScope(params, options.scope);
   return `obsidian://${protocolActionId(action)}?${params}`;
+}
+
+/** Append `scope` only when it diverges from the `full` default so the common
+ *  link stays stable. */
+function appendScope(
+  params: URLSearchParams,
+  scope: UpdateScope | undefined,
+): void {
+  if (scope && scope !== "full") params.set("scope", scope);
 }
 
 /**
@@ -98,8 +125,13 @@ export const protocolBatchQuerySchema = v.pipe(
   v.object({
     items: batchItems,
     "source-id": sourceIdValue,
+    scope: updateScopeValue,
   }),
-  v.transform(({ items, "source-id": sourceId }) => ({ items, sourceId })),
+  v.transform(({ items, "source-id": sourceId, scope }) => ({
+    items,
+    sourceId,
+    scope,
+  })),
 );
 
 /** Decoded, validated query for the batch literature-note action. */
@@ -131,23 +163,28 @@ export const batchUpdateRequestSchema = v.object({
     v.transform((ids) => [...new Set(ids)]),
     v.minLength(1),
   ),
+  scope: updateScopeValue,
 });
 
-export type BatchUpdateRequest = v.InferOutput<typeof batchUpdateRequestSchema>;
+/** Producer-facing request body. Defaulted fields (`scope`) are optional to
+ *  send; the server fills them on parse. */
+export type BatchUpdateRequest = v.InferInput<typeof batchUpdateRequestSchema>;
 
 /**
  * Build an `obsidian://zotlit/update-many?items=<id,id,…>&source-id=<hash>` link
- * for `Zotero.launchURL` (symmetry with {@link buildProtocolUrl}).
+ * for `Zotero.launchURL` (symmetry with {@link buildProtocolUrl}). A non-default
+ * {@link UpdateScope} adds `&scope=<scope>`.
  */
 export function buildBatchProtocolUrl(
   items: readonly number[],
-  sourceId: string,
+  options: { sourceId: string; scope?: UpdateScope },
 ): string {
   const params = new URLSearchParams({
     items: items.join(","),
-    "source-id": sourceId,
+    "source-id": options.sourceId,
     [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
   });
+  appendScope(params, options.scope);
   return `obsidian://${batchProtocolActionId}?${params}`;
 }
 

@@ -10,6 +10,8 @@ import { EmptyFilenameError } from "@/services/note-feature/filename";
 import {
   createNote,
   updateNote as applyNoteUpdate,
+  type UpdateResult,
+  type UpdateScope,
 } from "@/services/note-feature/operations";
 import {
   itemKeyFromFrontmatter,
@@ -30,10 +32,14 @@ export interface SingleUpdateDeps {
   noteIndex: NoteIndex;
 }
 
-/** Update the existing literature note, or create + open one if none exists. */
+/**
+ * Update the existing literature note, or create + open one if none exists.
+ * `scope` controls how much an existing note is refreshed (see {@link UpdateScope}).
+ */
 export async function updateNote(
   deps: SingleUpdateDeps,
   ref: ItemRef,
+  scope: UpdateScope = "full",
 ): Promise<void> {
   const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
 
@@ -47,14 +53,36 @@ export async function updateNote(
   );
   if (!itemKey) return;
 
-  void toast.promise(applyNoteUpdate(deps.noteFeatures, file, itemKey), {
+  void toast.promise(
+    applyNoteUpdate(deps.noteFeatures, file, { indexedKey: itemKey, scope }),
+    updateNoteToast(scope),
+  );
+}
+
+/** Toast copy for a single-note update, framed by `scope`. A `metadata` update
+ *  never touches the body, so it reports as "metadata updated" rather than the
+ *  full update's region-aware messages. */
+export function updateNoteToast(scope: UpdateScope): {
+  loading: string;
+  success: (result: UpdateResult) => string;
+  error: string;
+} {
+  const error = m.notice_update_note_failed();
+  if (scope === "metadata") {
+    return {
+      loading: m.notice_updating_note_metadata(),
+      success: () => m.notice_updated_note_metadata(),
+      error,
+    };
+  }
+  return {
     loading: m.notice_updating_note(),
     success: (result) =>
       result.bodyUpdated
         ? m.notice_updated_note()
         : m.notice_updated_note_no_region(),
-    error: m.notice_update_note_failed(),
-  });
+    error,
+  };
 }
 
 /** Lazily resolve the full Item and create + open a new literature note. */

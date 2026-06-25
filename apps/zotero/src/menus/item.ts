@@ -1,4 +1,4 @@
-import { type ProtocolAction } from "@zotlit/protocol";
+import { type ProtocolAction, type UpdateScope } from "@zotlit/protocol";
 
 import { registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
@@ -30,22 +30,23 @@ function onShowing(action: ProtocolAction) {
   };
 }
 
-function onCommand(action: ProtocolAction) {
+function onCommand(action: ProtocolAction, scope?: UpdateScope) {
   return (_event: Event, context: LibraryMenuContext): void => {
     const items = regularItems(context);
     if (items.length === 0) {
       logger.debug("library-item menu invoked with no regular items", {
         action,
+        scope,
       });
       return;
     }
     // Update routes a multi-selection through one batch action; open stays a
     // per-item loop.
     if (action === "update" && items.length > 1) {
-      void updateManyInObsidian(items);
+      void updateManyInObsidian(items, scope);
       return;
     }
-    for (const item of items) openInObsidian(action, item);
+    for (const item of items) openInObsidian(action, item, scope);
   };
 }
 
@@ -67,6 +68,12 @@ export function registerItemMenu(pluginID: string): Disposable {
         l10nID: "zotlit-menu-item-update",
         onShowing: onShowing("update"),
         onCommand: onCommand("update"),
+      },
+      {
+        menuType: "menuitem",
+        l10nID: "zotlit-menu-item-update-metadata",
+        onShowing: onShowing("update"),
+        onCommand: onCommand("update", "metadata"),
       },
     ],
   });

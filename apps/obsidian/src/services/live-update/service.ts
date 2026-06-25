@@ -12,6 +12,7 @@ import {
   type ReaderActive,
   type ReaderAnnotSelect,
   type ItemUpdate,
+  type UpdateScope,
 } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -55,7 +56,7 @@ export interface LiveUpdateEvents {
    * the companion's fallback when the id list is too long for an `obsidian://`
    * URL. Carries the raw item ids; the subscriber owns resolution and the modal.
    */
-  "update-many": (event: { items: number[] }) => void;
+  "update-many": (event: { items: number[]; scope: UpdateScope }) => void;
   /**
    * Aggregated reader state: fired whenever the companion reports a reader
    * switch or a selection change, carrying the new {@link ReaderTarget}.
@@ -273,11 +274,15 @@ export class LiveUpdateService extends Service<void> {
           const body = c.req.valid("json");
           logger.debug("Received literature-notes update", {
             items: body.items.length,
+            scope: body.scope,
           });
           // decouple from the event loop to avoid handler
           // from blocking the main thread and let response finish first.
           void sleep(0).then(() => {
-            this.#emitter.emit("update-many", { items: body.items });
+            this.#emitter.emit("update-many", {
+              items: body.items,
+              scope: body.scope,
+            });
           });
           return c.body(null, 204);
         },

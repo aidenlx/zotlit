@@ -26,7 +26,7 @@ import {
 } from "@/views/batch-update-modal";
 
 import { fetchItemCollections, fetchItemTags } from "./context";
-import { createNote, writeNoteUpdate } from "./operations";
+import { createNote, type UpdateScope, writeNoteUpdate } from "./operations";
 import { type SingleUpdateDeps, updateNote } from "./single-update";
 
 const logger = getLogger("batch-update");
@@ -47,6 +47,8 @@ interface RunContext {
   groupIdMemo: GroupIDMemo;
   /** Spans the whole batch so per-library collection nodes load once. */
   collectionCache: CollectionCache;
+  /** How much of each existing note an update refreshes. */
+  scope: UpdateScope;
 }
 
 /** Ids classified per yield, keeping each synchronous slice short enough that
@@ -69,6 +71,7 @@ const CLASSIFY_CHUNK_SIZE = 50;
 export async function runBatchUpdate(
   deps: SingleUpdateDeps,
   itemIDs: readonly number[],
+  scope: UpdateScope = "full",
 ): Promise<void> {
   if (deps.db.state !== "ready") {
     logger.warn("Batch update: database not ready", { count: itemIDs.length });
@@ -92,7 +95,7 @@ export async function runBatchUpdate(
       new BaseNotice(m.notice_protocol_item_not_found());
       return;
     }
-    await updateNote(deps, ref);
+    await updateNote(deps, ref, scope);
     return;
   }
 
@@ -114,7 +117,8 @@ export async function runBatchUpdate(
         notFound: classified.notFound,
       };
     },
-    onRun: (controls) => executeBatchActions(deps, actions, controls),
+    onRun: (controls) =>
+      executeBatchActions(deps, { actions, scope }, controls),
   }).open();
 }
 
@@ -181,9 +185,10 @@ async function classifyActions(
 
 async function executeBatchActions(
   deps: SingleUpdateDeps,
-  actions: readonly BatchAction[],
+  plan: { actions: readonly BatchAction[]; scope: UpdateScope },
   controls: BatchUpdateRunControls,
 ): Promise<BatchUpdateRunResult> {
+  const { actions, scope } = plan;
   // Gate the run once: writeNoteUpdate assumes a ready note index + compiled
   // templates (it skips the per-call awaits updateNote does), and createNote
   // renders through the template service. db readiness is guaranteed by
@@ -208,6 +213,7 @@ async function executeBatchActions(
     settings,
     groupIdMemo: new Map(),
     collectionCache: new CollectionCache(),
+    scope,
   };
 
   // Each task loads its own full item (deferred from the lightweight
@@ -306,6 +312,7 @@ async function runAction(
       itemCollections,
       collectionCache: run.collectionCache,
       settings: run.settings,
+      scope: run.scope,
     });
     return;
   }

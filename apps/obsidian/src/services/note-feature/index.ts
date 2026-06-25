@@ -12,4 +12,5 @@ export {
   updateNote,
   writeNewNote,
   type UpdateResult,
+  type UpdateScope,
 } from "./operations";

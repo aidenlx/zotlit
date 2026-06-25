@@ -29,6 +29,11 @@ zotlit-menu-item-update =
         [one] Update note in Obsidian
        *[other] Update notes in Obsidian
     }
+zotlit-menu-item-update-metadata =
+    .label = { $count ->
+        [one] Update note metadata in Obsidian
+       *[other] Update notes metadata in Obsidian
+    }
 zotlit-menu-reader-annot-merge = Merge Annotations
 zotlit-menu-reader-page-open = Open Note in Obsidian
 
