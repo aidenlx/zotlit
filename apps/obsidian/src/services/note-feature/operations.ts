@@ -15,6 +15,7 @@ import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 import { ensureFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { isFileExistsError } from "@/lib/vault-errors";
 import * as m from "@/paraglide/messages";
 import { type AttachmentImport } from "@/services/attachment-import/service";
 import { type Settings } from "@/services/settings/schema";
@@ -54,15 +55,6 @@ const NO_BODY_UPDATE: UpdateResult = {
  * the bound just stops an unbounded loop.
  */
 const MAX_CREATE_RETRIES = 5;
-
-/**
- * Whether `error` is Obsidian's `vault.create` rejection for an already-taken
- * path. The message is the only signal — the rejection carries no error code,
- * and the vault path cache can lag the colliding file, so it is unreliable.
- */
-function isFileExistsError(error: unknown): boolean {
-  return Error.isError(error) && error.message === "File already exists.";
-}
 
 /**
  * `vault.create` is the atomic uniqueness gate: on a collision, the name is
