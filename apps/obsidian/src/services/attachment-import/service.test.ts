@@ -118,6 +118,31 @@ describe("AttachmentImportService", () => {
     expect(copyAttachments).toHaveBeenCalledWith([]);
   });
 
+  it("creates the attachment folder lazily, only when a copy is queued", async () => {
+    const app = makeApp();
+    const service = new AttachmentImportService({
+      app,
+      settings: makeSettings({
+        "attachment.import": true,
+        "attachment.folder-path": "NewFolder",
+      }) as any,
+    });
+
+    const batch = await service.prepare("Notes/A.md");
+    // Resolving a link or flushing with nothing embedded must not create a folder.
+    const link = batch.resolveLink({
+      sourcePath: "/zotero/storage/IMG/image.png",
+      vaultName: "IMG-image.png",
+    });
+    await batch.flush();
+    expect(app.vault.createFolder).not.toHaveBeenCalled();
+
+    // Render the link, then flush: now the folder is created, once.
+    link();
+    await batch.flush();
+    expect(app.vault.createFolder).toHaveBeenCalledExactlyOnceWith("NewFolder");
+  });
+
   it("queues a copy once across repeated link renders", async () => {
     const service = new AttachmentImportService({
       app: makeApp(),
