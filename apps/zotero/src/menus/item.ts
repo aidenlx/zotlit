@@ -15,7 +15,9 @@ function regularItems(context: LibraryMenuContext): Zotero.Item[] {
   return (context.items ?? []).filter((item) => item.isRegularItem());
 }
 
-/** `count` feeds the `$count` plural selector in the `update` label's Fluent message. */
+/** `count` feeds the `$count` plural selector in the `update` label's Fluent
+ *  message. `setL10nArgs` needs a JSON string, not an object (see the type
+ *  augmentation in `types/zotero.d.ts`). */
 function onShowing(action: ProtocolAction) {
   return (_event: Event, context: LibraryMenuContext): void => {
     const count = regularItems(context).length;
@@ -24,7 +26,7 @@ function onShowing(action: ProtocolAction) {
       return;
     }
     context.setVisible(count >= 1);
-    context.setL10nArgs({ count });
+    context.setL10nArgs(JSON.stringify({ count }));
   };
 }
 
