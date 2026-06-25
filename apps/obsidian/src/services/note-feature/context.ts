@@ -70,7 +70,6 @@ interface BuildFullContextOptions {
   attachmentImport: Pick<AttachmentImport, "resolveLink">;
   settings: Readonly<Settings> | null;
   sourcePath: string;
-  targetAnnotationKey?: string;
 }
 
 interface NoteTarget {
@@ -136,9 +135,9 @@ export function resolveNotePath(
  * related-item tags are queried here. Synchronous DB reads via the active
  * client; throws {@link DatabaseError} if the database is not ready.
  *
- * When `targetAnnotationKey` is set, only that annotation's image excerpt is
- * resolved through `attachmentImport`; every other annotation's `imgLink` is
- * `null`.
+ * Each annotation's `imgLink` queues its excerpt copy lazily, on first render
+ * through `attachmentImport`, so an excerpt the template never embeds imports
+ * nothing.
  */
 export function buildFullContext(
   ctx: NoteFeatureContext,
@@ -218,14 +217,6 @@ export function buildFullContext(
     annotationImageLink: (annotation) => {
       const cachePath = resolveAnnotCachePath(annotation, { dataDir, groupID });
       if (cachePath == null) return null;
-      // resolveLink queues the import copy; gate it to the target annotation so
-      // a batch render imports only the requested excerpt.
-      if (
-        options.targetAnnotationKey != null &&
-        annotation.key !== options.targetAnnotationKey
-      ) {
-        return null;
-      }
       return options.attachmentImport.resolveLink({
         sourcePath: cachePath,
         vaultName: `${annotation.key}.png`,

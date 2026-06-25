@@ -29,11 +29,11 @@ export interface ResolveLinkOptions {
 
 export interface AttachmentImport {
   /**
-   * Queue the attachment copy (when import is enabled) and return its
-   * {@link TemplateLink} helper — a `file://` link to the source when import is
-   * disabled, or a vault link to the queued in-vault copy otherwise. Prefix the
-   * rendered link with `!` for an embed. The copy is queued once, here; the
-   * returned helper only formats.
+   * Return a {@link TemplateLink} helper — a `file://` link to the source when
+   * import is disabled, or a vault link to the in-vault copy otherwise. Prefix
+   * the rendered link with `!` for an embed. With import enabled the copy is
+   * queued lazily, once, on the helper's first invocation, so an excerpt whose
+   * link is never rendered imports nothing.
    */
   resolveLink(opts: ResolveLinkOptions): TemplateLink;
   flush(): Promise<AttachmentCopyResult>;
@@ -108,21 +108,28 @@ class AttachmentImportBatch implements AttachmentImport {
         ? vaultName
         : `${this.#folderPath}/${vaultName}`,
     );
-    this.#items.push({
-      source: sourcePath,
-      dest: this.#absoluteVaultPath(vaultPath),
-    });
     const file = syntheticFile(vaultPath);
+    // Queue the copy on first render of this link, not at resolve time, so an
+    // excerpt the template never embeds imports nothing.
+    let queued = false;
     // generateMarkdownLink fills the default display text from the filename per
     // the vault's wikilink / Markdown preference, so the default link is never
     // blank.
-    return (alias, subpath) =>
-      this.#app.fileManager.generateMarkdownLink(
+    return (alias, subpath) => {
+      if (!queued) {
+        queued = true;
+        this.#items.push({
+          source: sourcePath,
+          dest: this.#absoluteVaultPath(vaultPath),
+        });
+      }
+      return this.#app.fileManager.generateMarkdownLink(
         file,
         this.#notePath,
         subpath,
         alias,
       );
+    };
   }
 
   async flush(): Promise<AttachmentCopyResult> {

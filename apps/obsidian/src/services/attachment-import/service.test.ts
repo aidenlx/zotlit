@@ -97,4 +97,50 @@ describe("AttachmentImportService", () => {
       },
     ]);
   });
+
+  it("queues nothing until the link is rendered", async () => {
+    const service = new AttachmentImportService({
+      app: makeApp(),
+      settings: makeSettings({
+        "attachment.import": true,
+        "attachment.folder-path": "Attachments",
+      }) as any,
+    });
+
+    const batch = await service.prepare("Notes/A.md");
+
+    // Resolve the link but never invoke it — the excerpt is never embedded.
+    batch.resolveLink({
+      sourcePath: "/zotero/storage/IMG/image.png",
+      vaultName: "IMG-image.png",
+    });
+    await expect(batch.flush()).resolves.toEqual({ copied: 0, skipped: 0 });
+    expect(copyAttachments).toHaveBeenCalledWith([]);
+  });
+
+  it("queues a copy once across repeated link renders", async () => {
+    const service = new AttachmentImportService({
+      app: makeApp(),
+      settings: makeSettings({
+        "attachment.import": true,
+        "attachment.folder-path": "Attachments",
+      }) as any,
+    });
+
+    const batch = await service.prepare("Notes/A.md");
+
+    const link = batch.resolveLink({
+      sourcePath: "/zotero/storage/IMG/image.png",
+      vaultName: "IMG-image.png",
+    });
+    link();
+    link();
+    await expect(batch.flush()).resolves.toEqual({ copied: 1, skipped: 0 });
+    expect(copyAttachments).toHaveBeenCalledWith([
+      {
+        source: "/zotero/storage/IMG/image.png",
+        dest: "/vault/Attachments/IMG-image.png",
+      },
+    ]);
+  });
 });
