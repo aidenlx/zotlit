@@ -1,0 +1,14 @@
+<% if (zt.notes.length) { %>
+## Notes
+
+<% for (const note of zt.notes) { -%>
+- <%~ note.noteLink() %>
+<% } %>
+<% } %>
+<% if (zt.annotations.length) { %>
+## Annotations
+
+<% for (const annotation of zt.annotations) { %>
+<%~ include("annotation", annotation) %>
+<% } %>
+<% } %>
