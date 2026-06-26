@@ -1,4 +1,5 @@
 {
   "__VERSION__": 1,
-  "server.enabled": true
+  "server.enabled": true,
+  "note.import-annotations-as-template": true
 }
