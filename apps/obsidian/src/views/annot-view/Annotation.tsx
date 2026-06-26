@@ -7,6 +7,7 @@ import {
 } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
+import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import * as m from "@/paraglide/messages";
 
@@ -81,11 +82,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
       <ExcerptBlock annot={annot} collapsed={collapsed} color={color} />
 
-      {annot.comment && (
-        <div className="zt:warp-break-words zt:overflow-x-auto zt:px-2 zt:py-1 zt:whitespace-pre-wrap zt:text-muted-foreground zt:select-text">
-          {annot.comment}
-        </div>
-      )}
+      {annot.comment && <Comment html={annot.comment} />}
 
       {annot.tags.length > 0 && (
         <div className="zt:flex zt:flex-wrap zt:gap-1 zt:px-2 zt:py-1">
@@ -97,6 +94,16 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
         </div>
       )}
     </div>
+  );
+}
+
+function Comment({ html }: { html: string }) {
+  const ref = useSanitizedHtml<HTMLDivElement>(html);
+  return (
+    <div
+      ref={ref}
+      className="zt:warp-break-words zt:overflow-x-auto zt:px-2 zt:py-1 zt:whitespace-pre-wrap zt:text-muted-foreground zt:select-text"
+    />
   );
 }
 
