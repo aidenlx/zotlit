@@ -82,10 +82,6 @@ export interface ZotLitSettingsV0 {
   imgExcerptPath: string;
 }
 
-/** v1's embedded default note-filename template, in the legacy `it.*` vocabulary. */
-const V1_DEFAULT_FILENAME =
-  "<%= it.citekey ?? it.DOI ?? it.title ?? it.key %>.md";
-
 /**
  * Convert a v0 (pre-`__VERSION__`) ZotLit `data.json` into v1's flat
  * dotted-key shape. Returns sparse overrides — only non-default keys present
@@ -107,21 +103,11 @@ export function migrateLegacyV0(raw: unknown): Partial<Settings> {
   const logLevel = mapLogLevel(v0.logLevel);
   if (logLevel !== undefined) out["log.level"] = logLevel;
 
-  if (isPlainObject(v0.template)) {
-    if (typeof v0.template.folder === "string") {
-      out["template.folder"] = v0.template.folder;
-    }
-    const templates = v0.template.templates;
-    if (
-      isPlainObject(templates) &&
-      typeof templates.filename === "string" &&
-      templates.filename !== V1_DEFAULT_FILENAME
-    ) {
-      // The v1 default used the `it.*` vocabulary, which the v2 default replaces
-      // with `zt.*`. Drop the exact v1 default so the v2 default applies; carry
-      // over any customized value untouched (a v1→v2 compat layer is deferred).
-      out["template.filename"] = templates.filename;
-    }
+  // v1 template strings use the `it.*` vocabulary; v2's upstream eta engine
+  // uses `zt.*`. There's no compat layer, so `template.filename` (and any
+  // other embedded template source) is never migrated — the v2 default applies.
+  if (isPlainObject(v0.template) && typeof v0.template.folder === "string") {
+    out["template.folder"] = v0.template.folder;
   }
 
   if (Array.isArray(v0.autoTrim) && v0.autoTrim.length === 2) {
