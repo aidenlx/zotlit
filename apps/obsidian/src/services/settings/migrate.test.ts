@@ -46,7 +46,6 @@ describe("migrateLegacyV0", () => {
       "server.port": 9099,
       "server.hostname": "localhost",
       "template.folder": "Templates",
-      "template.filename": "<%= it.title %>.md",
       "template.auto-pair-eta": true,
       "template.auto-trim-leading": "nl",
       "template.auto-trim-trailing": "slurp",
@@ -92,7 +91,7 @@ describe("migrateLegacyV0", () => {
   });
 
   describe("nested template handling", () => {
-    it("extracts template.folder and template.templates.filename independently", () => {
+    it("extracts template.folder; never migrates the embedded filename template", () => {
       expect(
         migrateLegacyV0({ template: { folder: "T", templates: {} } }),
       ).toEqual({
@@ -104,7 +103,6 @@ describe("migrateLegacyV0", () => {
         }),
       ).toEqual({
         "template.folder": "",
-        "template.filename": "F",
       });
     });
 
@@ -114,15 +112,10 @@ describe("migrateLegacyV0", () => {
       expect(migrateLegacyV0({ template: ["a", "b"] })).toEqual({});
     });
 
-    it("drops only the bad parts of a partially-shaped template", () => {
+    it("drops folder when it is not a string, regardless of templates shape", () => {
       expect(
         migrateLegacyV0({ template: { folder: 5, templates: "nope" } }),
       ).toEqual({});
-      expect(
-        migrateLegacyV0({
-          template: { folder: "T", templates: { filename: 5 } },
-        }),
-      ).toEqual({ "template.folder": "T" });
     });
   });
 
