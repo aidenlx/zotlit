@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "release": "node scripts/release.ts",
-    "build": "turbo run build",
+    "build": "turbo run build --output-logs=full",
     "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run //#lint:repo",

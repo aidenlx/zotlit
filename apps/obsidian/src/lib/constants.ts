@@ -1,7 +1,31 @@
+import { Temporal } from "@zotlit/shared/temporal";
+
 export const FIELD_ZOTERO_KEY = "zotero-key";
 export const FIELD_CITEKEY = "citekey";
 /** v1-compatible key (v1: `zotero-atchs`); kept so upgraded notes are not re-keyed. */
 export const FIELD_ATTACHMENTS = "zotero-atchs";
+/**
+ * Identity of an imported Zotero note. Disjoint from {@link FIELD_ZOTERO_KEY}
+ * so imported notes never register as literature notes.
+ */
+export const FIELD_ZOTERO_NOTE_KEY = "zotero-note-key";
+/**
+ * Serialize a `Temporal.Instant` as an ISO 8601 string at second resolution.
+ * @param options.utc Output UTC (`…Z`); otherwise local datetime with offset
+ *   (e.g. `2024-01-01T18:00:00+08:00`).
+ * @default { utc: false }
+ */
+export function stringifyInstant(
+  instant: Temporal.Instant,
+  options?: { utc: boolean },
+): string {
+  if (options?.utc) {
+    return instant.toString({ smallestUnit: "second" });
+  }
+  return instant
+    .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+    .toString({ smallestUnit: "second", timeZoneName: "never" });
+}
 
 /**
  * Frontmatter keys owned by the system; user expressions cannot target them.
@@ -12,6 +36,7 @@ export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   FIELD_ZOTERO_KEY,
   FIELD_CITEKEY,
   FIELD_ATTACHMENTS,
+  FIELD_ZOTERO_NOTE_KEY,
 ]);
 
 export const ZOTERO_DB_FILENAME = "zotero.sqlite";

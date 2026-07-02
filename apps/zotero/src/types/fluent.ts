@@ -2,6 +2,9 @@
 // Source of truth: locale/*.ftl
 
 export type FluentMessageId =
+  | "zotlit-batch-import-sending-title"
+  | "zotlit-batch-import-sent-message"
+  | "zotlit-batch-import-sent-title"
   | "zotlit-batch-update-failed-message"
   | "zotlit-batch-update-failed-title"
   | "zotlit-batch-update-sending-title"
@@ -9,11 +12,14 @@ export type FluentMessageId =
   | "zotlit-batch-update-sent-title"
   | "zotlit-batch-update-server-needed-message"
   | "zotlit-batch-update-server-needed-title"
+  | "zotlit-menu-item-import-child-notes"
+  | "zotlit-menu-item-import-notes"
   | "zotlit-menu-item-open"
   | "zotlit-menu-item-update"
   | "zotlit-menu-item-update-metadata"
   | "zotlit-menu-reader-annot-merge"
   | "zotlit-menu-reader-page-open"
+  | "zotlit-menu-submenu"
   | "zotlit-prefs-log-level-debug"
   | "zotlit-prefs-log-level-error"
   | "zotlit-prefs-log-level-fatal"

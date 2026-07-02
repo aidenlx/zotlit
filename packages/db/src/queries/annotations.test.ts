@@ -123,6 +123,10 @@ function seed(sqlite: DatabaseSync): void {
       itemID integer primary key,
       dateDeleted text not null
     );
+    create table groups (
+      groupID integer primary key,
+      libraryID integer not null
+    );
 
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values

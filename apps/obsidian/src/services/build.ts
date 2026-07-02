@@ -8,6 +8,8 @@ import { ItemLookup } from "./item-lookup/service";
 import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
 import { type NoteFeatureContext } from "./note-feature";
+import { type NoteImportContext } from "./note-import/batch-import";
+import { NoteImportService } from "./note-import/service";
 import { NoteIndex } from "./note-index/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
@@ -64,6 +66,16 @@ export function buildServices(
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
+      noteImport: ({ noteIndex, template, zoteroPref, attachmentImport }) =>
+        new NoteImportService({
+          app: plugin.app,
+          noteIndex,
+          template,
+          zoteroPref,
+          attachmentImport,
+        }),
+    })
+    .use({
       itemLookup: ({ db, settings }) =>
         new ItemLookup({
           db,
@@ -79,6 +91,7 @@ export function buildServices(
         zoteroPref,
         settings,
         attachmentImport,
+        noteImport,
       }): NoteFeatureContext => ({
         app: plugin.app,
         template,
@@ -87,6 +100,22 @@ export function buildServices(
         zoteroPref,
         settings,
         attachmentImport,
+        noteImport,
+      }),
+    })
+    .useValue({
+      noteImportCtx: ({
+        db,
+        settings,
+        noteImport,
+        noteIndex,
+        noteFeatures,
+      }): NoteImportContext => ({
+        db,
+        settings,
+        noteImport,
+        noteIndex,
+        noteFeatures,
       }),
     })
     .use({

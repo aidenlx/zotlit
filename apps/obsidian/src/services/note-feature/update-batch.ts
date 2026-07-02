@@ -1,6 +1,4 @@
-import { chunk } from "@std/collections/chunk";
 import { type TFile } from "obsidian";
-import pLimit from "p-limit";
 
 import {
   CollectionCache,
@@ -11,23 +9,22 @@ import {
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import { AbortError } from "@/lib/abort-error";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
-import { formatErrorMessage } from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type Settings } from "@/services/settings/schema";
 import {
-  BatchUpdateModal,
-  type BatchUpdateClassifyControls,
-  type BatchUpdateFailure,
-  type BatchUpdateRunControls,
-  type BatchUpdateRunResult,
-} from "@/views/batch-update-modal";
+  BatchModal,
+  type BatchClassifyControls,
+  type BatchRunControls,
+  type BatchRunResult,
+  classifyChunked,
+  executeBatchRun,
+  FlatManifest,
+} from "@/views/batch-modal";
 
 import { fetchItemCollections, fetchItemTags } from "./context";
 import { createNote, type UpdateScope, writeNoteUpdate } from "./operations";
-import { type SingleUpdateDeps, updateNote } from "./single-update";
+import { type SingleUpdateDeps, updateNote } from "./update-single";
 
 const logger = getLogger("batch-update");
 
@@ -51,75 +48,101 @@ interface RunContext {
   scope: UpdateScope;
 }
 
-/** Ids classified per yield, keeping each synchronous slice short enough that
- * the loading bar paints and Cancel stays responsive between chunks. */
-const CLASSIFY_CHUNK_SIZE = 50;
+export type BatchUpdateResult =
+  | { outcome: "db-unavailable" }
+  | { outcome: "empty-selection" }
+  | { outcome: "not-found" }
+  | { outcome: "single-update" }
+  | { outcome: "batch-modal" };
 
 /**
  * Batch-update or create literature notes for `itemIDs`. Owns the
  * database-ready gate, then branches on how many ids the caller asked for:
  *
- * - `0` — nothing to do; show an "item not found" notice.
- * - `1` — route to the single-item {@link updateNote} handler (toast + open),
- *   the nicer single-note UX with no modal.
- * - `≥2` — open the {@link BatchUpdateModal}; classification runs inside it as a
+ * - `0` — nothing to do.
+ * - `1` — route to the single-item {@link updateNote} handler (toast + open).
+ * - `≥2` — open the {@link BatchModal}; classification runs inside it as a
  *   chunked loading phase (see {@link classifyActions}), then confirm → run.
  *
- * Source-id gating happens at the transport edge (URL / HTTP handler) before
- * this is called, so the runner never sees a `sourceId`.
+ * Returns a discriminated result so the caller can map outcomes to UI feedback
+ * (notice / toast) without coupling the logic to presentation.
  */
 export async function runBatchUpdate(
   deps: SingleUpdateDeps,
   itemIDs: readonly number[],
   scope: UpdateScope = "full",
-): Promise<void> {
+): Promise<BatchUpdateResult> {
   if (deps.db.state !== "ready") {
     logger.warn("Batch update: database not ready", { count: itemIDs.length });
-    new BaseNotice(m.batch_update_db_unavailable());
-    return;
+    return { outcome: "db-unavailable" };
   }
 
   const [firstID, ...restIDs] = itemIDs;
   if (firstID === undefined) {
-    new BaseNotice(m.notice_protocol_item_not_found());
-    return;
+    return { outcome: "empty-selection" };
   }
+
+  await deps.noteIndex.whenIndexed();
   if (restIDs.length === 0) {
     // Single id: hand the lightweight ref to updateNote, which owns the full
-    // item load on the create path — no need to hydrate it here. The lease is
-    // held purely as a refresh gate; updateNote and its helpers re-read
-    // deps.db.client, which is safe because no swap can start while it's held.
-    using _lease = await deps.db.acquireRead();
-    const ref = getItemRefByID(deps.db.client, firstID);
+    // item load on the create path — no need to hydrate it here. The lease pins
+    // the client for this ref load; the downstream updateNote re-acquires its
+    // own lease and threads that client through its write + flush.
+    using lease = await deps.db.acquireRead();
+    const ref = getItemRefByID(lease.client, firstID);
     if (!ref) {
-      new BaseNotice(m.notice_protocol_item_not_found());
-      return;
+      return { outcome: "not-found" };
     }
     await updateNote(deps, ref, scope);
-    return;
+    return { outcome: "single-update" };
   }
 
   // ≥2 ids: classification is the only synchronous DB work heavy enough to
   // freeze the UI, so it runs inside the modal's loading phase where the bar
   // can paint between chunks; `actions` is captured here for the run callback.
   let actions: BatchAction[] = [];
-  new BatchUpdateModal(deps.app, {
+  new BatchModal(deps.app, {
+    text: {
+      title: m.batch_update_title(),
+      loadingLabel: m.batch_update_loading_label(),
+      loadFailed: m.batch_update_load_failed(),
+      runFailed: m.batch_update_run_failed(),
+      progressLabel: m.batch_update_progress_label(),
+      confirmIntro: ({ actionable, notFound }) =>
+        actionable === 0
+          ? m.batch_update_confirm_none({ count: notFound })
+          : m.batch_update_confirm_intro({ count: actionable }),
+      confirmButton: m.batch_update_confirm_button(),
+      runSummary: (result, state) =>
+        state.aborted
+          ? m.batch_update_aborted(result)
+          : state.cancelled
+            ? m.batch_update_summary_cancelled(result)
+            : m.batch_update_summary(result),
+    },
     total: itemIDs.length,
     onClassify: async (controls) => {
       const classified = await classifyActions(deps, itemIDs, controls);
       actions = classified.actions;
-      return {
+      return new FlatManifest({
         tasks: actions.map(({ itemID, label, kind }) => ({
           id: itemID,
           label,
           kind,
         })),
         notFound: classified.notFound,
-      };
+        groups: [
+          { kind: "update", header: m.batch_update_group_update },
+          { kind: "create", header: m.batch_update_group_create },
+        ],
+        notFoundHeader: m.batch_update_group_not_found,
+        abortedHeader: m.batch_update_group_aborted,
+      });
     },
     onRun: (controls) =>
       executeBatchActions(deps, { actions, scope }, controls),
   }).open();
+  return { outcome: "batch-modal" };
 }
 
 /**
@@ -130,26 +153,23 @@ export async function runBatchUpdate(
  * is the one UI-freeze risk in the flow, since `better-sqlite3` is synchronous
  * and a large batch would otherwise block paint and Cancel.
  *
- * @throws when {@link BatchUpdateClassifyControls.signal} aborts (cancel /
+ * @throws when {@link BatchClassifyControls.signal} aborts (cancel /
  *   dismiss) or a query fails; the modal turns that into a close / notice.
  */
 async function classifyActions(
   deps: SingleUpdateDeps,
   itemIDs: readonly number[],
-  controls: BatchUpdateClassifyControls,
+  controls: BatchClassifyControls,
 ): Promise<{ actions: BatchAction[]; notFound: NotFoundEntry[] }> {
   // Pin the client for the chunked loop's whole async lifetime so a concurrent
   // refresh cannot swap it out between `await sleep(0)` yields.
   using lease = await deps.db.acquireRead();
   const client = lease.client;
-  // Resolve each library's groupID once for the whole classify loop, not per id.
   const groupIdMemo: GroupIDMemo = new Map();
   const actions: BatchAction[] = [];
   const notFound: NotFoundEntry[] = [];
-  let classified = 0;
-  for (const ids of chunk(itemIDs, CLASSIFY_CHUNK_SIZE)) {
-    controls.signal.throwIfAborted();
-    for (const itemID of ids) {
+  await classifyChunked(itemIDs, controls, (slice) => {
+    for (const itemID of slice) {
       const ref = getItemDisplayRefByID(client, itemID, { memo: groupIdMemo });
       if (!ref) {
         notFound.push({
@@ -166,10 +186,7 @@ async function classifyActions(
         actions.push({ itemID, label, kind: "create" });
       }
     }
-    classified += ids.length;
-    controls.onProgress(classified);
-    await sleep(0);
-  }
+  });
 
   logger.info("Batch update classified", () => {
     const { update = [], create = [] } = Object.groupBy(actions, (t) => t.kind);
@@ -186,28 +203,20 @@ async function classifyActions(
 async function executeBatchActions(
   deps: SingleUpdateDeps,
   plan: { actions: readonly BatchAction[]; scope: UpdateScope },
-  controls: BatchUpdateRunControls,
-): Promise<BatchUpdateRunResult> {
+  controls: BatchRunControls,
+): Promise<BatchRunResult> {
   const { actions, scope } = plan;
-  // Gate the run once: writeNoteUpdate assumes a ready note index + compiled
-  // templates (it skips the per-call awaits updateNote does), and createNote
-  // renders through the template service. db readiness is guaranteed by
-  // runBatchUpdate's `db.state === "ready"` check.
   const [settings] = await Promise.all([
     deps.settings.loaded,
-    deps.noteIndex.ready,
     deps.noteFeatures.template.ready,
   ]);
-  const total = actions.length;
   let created = 0;
   let updated = 0;
-  const failures: BatchUpdateFailure[] = [];
 
   // Pin the client for the whole write loop so a concurrent refresh cannot swap
   // it mid-batch (torn snapshot). Acquired after the ready awaits above, which
   // touch settings/index/templates, not the DB.
   using lease = await deps.db.acquireRead();
-  // Resolve each library's groupID once across all per-action item loads.
   const run: RunContext = {
     client: lease.client,
     settings,
@@ -216,67 +225,34 @@ async function executeBatchActions(
     scope,
   };
 
-  // Each task loads its own full item (deferred from the lightweight
-  // classification) right before writing, so the heavy relational read is spread
-  // across the async write loop instead of one up-front block. The cap bounds
-  // how many run at once.
-  const limit = pLimit(32);
-  const settled = await Promise.allSettled(
-    actions.map((action) =>
-      limit(async () => {
-        controls.signal.throwIfAborted();
-        try {
-          await runAction(deps, action, run);
-          controls.onItemSettled({ id: action.itemID, status: "done" });
-        } catch (error) {
-          if (!AbortError.test(error)) {
-            controls.onItemSettled({
-              id: action.itemID,
-              status: "failed",
-              failure: {
-                label: action.label,
-                message: formatErrorMessage(error),
-              },
-            });
-          }
-          throw error;
-        }
-      }),
-    ),
-  );
-
-  for (const [i, result] of settled.entries()) {
-    const action = actions[i]!;
-    if (result.status === "fulfilled") {
-      if (action.kind === "create") created += 1;
+  const { failed, cancelled } = await executeBatchRun({
+    tasks: actions.map((a) => ({ ...a, id: a.itemID })),
+    controls,
+    concurrency: 32,
+    run: async (task) => {
+      await runAction(deps, task, run);
+      if (task.kind === "create") created += 1;
       else updated += 1;
-      continue;
-    }
-    if (AbortError.test(result.reason)) continue;
-    logger.warn("Batch update item failed", {
-      itemID: action.itemID,
-      error: result.reason,
-    });
-    failures.push({
-      label: action.label,
-      message: formatErrorMessage(result.reason),
-    });
-  }
+      return "done";
+    },
+    onTaskFailed: (task, error) => {
+      logger.warn("Batch update item failed", {
+        itemID: task.itemID,
+        error,
+      });
+    },
+  });
 
-  const failed = failures.length;
-  const cancelled =
-    controls.signal.aborted && created + updated + failed < total;
+  const total = actions.length;
   logger.info("Batch update finished", {
     created,
     updated,
     failed,
     cancelled,
-    // Every settled result lands in exactly one bucket; the rest were aborted
-    // (queued work cancelled before running).
     aborted: total - created - updated - failed,
     total,
   });
-  return { created, updated, failed, cancelled, failures };
+  return { created, updated, skipped: 0, failed, cancelled };
 }
 
 /**
@@ -307,16 +283,21 @@ async function runAction(
       item,
     );
     await writeNoteUpdate(ctx, action.file, {
+      client: run.client,
       item,
       itemTags,
       itemCollections,
       collectionCache: run.collectionCache,
       settings: run.settings,
       scope: run.scope,
+      groupIdMemo: run.groupIdMemo,
     });
     return;
   }
-  await createNote(ctx, item, { collectionCache: run.collectionCache });
+  await createNote(ctx, item, {
+    collectionCache: run.collectionCache,
+    groupIdMemo: run.groupIdMemo,
+  });
 }
 
 function itemLabel(title: string | null, itemID: number): string {

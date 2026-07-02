@@ -11,6 +11,7 @@ function attachment(overrides: Partial<Attachment>): Attachment {
   return {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
+    groupID: null,
     key: "ATTACH1",
     parentItemID: 2,
     path: null,

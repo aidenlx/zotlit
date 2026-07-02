@@ -291,14 +291,29 @@ v1 exposed each collection as `{ id, path, key, name, libraryID }` with a `path`
 <%= zt.collections.map(c => c.path.join(" > ")).join("; ") %>
 ```
 
-## Deferred to a later release
+## Child notes (`it.notes` -> `zt.notes`)
 
-A couple of v1 template features have no v2 equivalent yet. They are planned for a post-alpha release (Zotero note import), not removed by design:
+v1 exposed child notes as normalized Markdown on `it.notes`. v2 replaces this with `zt.notes` -- an array of link-only entries that import the child note as a separate Markdown file and link to it. See [Notes shape](data-reference.md#notes-shape) for the full property reference.
 
-- **Child notes (`it.notes`)** -- v1 exposed an item's attached Zotero child notes as normalized Markdown. There is no `zt.notes` in v2 yet; child-note exposure lands with the post-alpha note-import stage.
-- **Imported-note path (`it.importNote` / the `zt-import` folder)** -- v1 wrote imported Zotero notes to `<literature-folder>/zt-import/<name>`. v2 reworks note import (HTML is parsed and embedded) and has no `zt-import` output path yet; this also lands with the post-alpha note-import stage.
+| v1 | v2 |
+|----|-----|
+| `it.notes` (array of `{title, content}`) | `zt.notes` (array of `{key, title, noteLink()}`) |
+| Note content inlined as Markdown | Note content written to a separate file; `noteLink()` links to it |
+| `it.importNote` / `zt-import` folder | Import folder configurable in settings (`note.import-folder`, default `"zotero_notes"`) |
 
-If your v1 templates relied on these, keep the v1 versions for reference until the note-import stage ships.
+The default content template renders a "Notes" section with bulleted links:
+
+```eta
+<% if (zt.notes.length) { %>
+## Notes
+
+<% for (const note of zt.notes) { -%>
+- <%~ note.noteLink() %>
+<% } %>
+<% } %>
+```
+
+`zt.notes` is available in frontmatter expressions: `zt.notes.map(n => n.noteLink())` produces a YAML array of links. Calling `noteLink()` in a frontmatter expression triggers import, so the files are created even when notes only appear in frontmatter.
 
 ## Common patterns
 

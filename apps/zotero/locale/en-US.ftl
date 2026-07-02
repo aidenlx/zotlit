@@ -24,6 +24,8 @@ zotlit-prefs-log-level-fatal =
 
 zotlit-menu-item-open =
     .label = Open note in Obsidian
+zotlit-menu-submenu =
+    .label = ZotLit
 zotlit-menu-item-update =
     .label = { $count ->
         [one] Update note in Obsidian
@@ -33,6 +35,16 @@ zotlit-menu-item-update-metadata =
     .label = { $count ->
         [one] Update note metadata in Obsidian
        *[other] Update notes metadata in Obsidian
+    }
+zotlit-menu-item-import-child-notes =
+    .label = { $count ->
+        [one] Import child notes
+       *[other] Import child notes
+    }
+zotlit-menu-item-import-notes =
+    .label = { $count ->
+        [one] Import note to Obsidian
+       *[other] Import notes to Obsidian
     }
 zotlit-menu-reader-annot-merge = Merge Annotations
 zotlit-menu-reader-page-open = Open Note in Obsidian
@@ -46,4 +58,11 @@ zotlit-batch-update-sent-title = Continue in Obsidian
 zotlit-batch-update-sent-message = { $count ->
         [one] Asked Obsidian to update 1 note. Switch to Obsidian to continue.
        *[other] Asked Obsidian to update { $count } notes. Switch to Obsidian to continue.
+    }
+
+zotlit-batch-import-sending-title = Asking Obsidian to import notes…
+zotlit-batch-import-sent-title = Continue in Obsidian
+zotlit-batch-import-sent-message = { $count ->
+        [one] Asked Obsidian to import 1 note. Switch to Obsidian to continue.
+       *[other] Asked Obsidian to import { $count } notes. Switch to Obsidian to continue.
     }
