@@ -20,6 +20,7 @@ import {
   LOG_LEVEL_KEY,
   loggingPageItems,
 } from "./logging";
+import { noteImportPageItems } from "./note-import";
 import { defaultPlaceholder } from "./placeholder";
 import {
   AUTO_TRIM_KEYS,
@@ -160,6 +161,12 @@ export class ZotLitSettingTab extends PluginSettingTab {
         name: m.settings_page_templates(),
         desc: m.settings_page_templates_desc(),
         items: templatesPageItems(ctx),
+      },
+      {
+        type: "page",
+        name: m.settings_page_note_import(),
+        desc: m.settings_page_note_import_desc(),
+        items: noteImportPageItems(ctx),
       },
       {
         type: "page",

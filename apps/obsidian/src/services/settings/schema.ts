@@ -70,6 +70,8 @@ export const schema = v.object({
 
   "note.literature-folder": v.string(),
   "note.frontmatter-fields": frontmatterFieldsSchema,
+  "note.import-folder": v.string(),
+  "note.import-annotations-as-template": v.boolean(),
 
   "server.enabled": v.boolean(),
   "server.port": serverPort,
@@ -105,6 +107,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.show-citekey-in-suggester": false,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
+  "note.import-folder": "zotero_notes",
+  "note.import-annotations-as-template": false,
   "server.enabled": false,
   "server.port": 9091,
   "server.hostname": "127.0.0.1",

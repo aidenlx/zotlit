@@ -17,11 +17,12 @@ import {
   EMPTY_CONTRIBUTIONS,
   fileContributions,
   itemKeyFromFrontmatter,
+  noteKeyFromFrontmatter,
   type ContribDiff,
   type FileContributions,
 } from "./parse";
 
-export { itemKeyFromFrontmatter };
+export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 
 const logger = getLogger("note-index");
 
@@ -50,7 +51,9 @@ export class NoteIndex extends Service<void> {
 
   readonly #notesByItemKey = new Map<string, Set<TFile>>();
   readonly #notesByCitekey = new Map<string, Set<TFile>>();
+  readonly #notesByNoteKey = new Map<string, Set<TFile>>();
   readonly #contribByFile = new Map<TFile, FileContributions>();
+  #scanned = false;
 
   ready: Promise<void>;
 
@@ -68,6 +71,11 @@ export class NoteIndex extends Service<void> {
     return sortNotes(this.#notesByCitekey.get(citekey));
   }
 
+  /** Imported-note files carrying `zotero-note-key`; disjoint from lit notes. */
+  getImportedNoteByNoteKey(noteKey: string): TFile[] {
+    return sortNotes(this.#notesByNoteKey.get(noteKey));
+  }
+
   on<K extends keyof NoteIndexEvents>(
     event: K,
     cb: NoteIndexEvents[K],
@@ -80,6 +88,20 @@ export class NoteIndex extends Service<void> {
     cb: NoteIndexEvents[K],
   ): () => void {
     return this.#emitter.once(event, cb);
+  }
+
+  /**
+   * Resolves once a full scan has populated the index. Stronger than
+   * {@link ready}, which only marks listener registration: when `metadataCache`
+   * wasn't initialized at construction, the first scan runs later on its
+   * "resolved" event, so `ready` can settle with an empty index. Read
+   * create-vs-existing decisions off this — a pre-scan read returns empty and
+   * mints a duplicate instead of opening/overwriting the existing note.
+   */
+  async whenIndexed(): Promise<void> {
+    await this.ready;
+    if (this.#scanned) return;
+    await new Promise<void>((resolve) => this.once("rebuilt", () => resolve()));
   }
 
   async #load(): Promise<void> {
@@ -145,6 +167,7 @@ export class NoteIndex extends Service<void> {
       this.#insertContributions(file, contributions);
     }
 
+    this.#scanned = true;
     logger.debug("Note index rebuilt", { count: this.#contribByFile.size });
     this.#emitter.emit("rebuilt");
   }
@@ -163,6 +186,13 @@ export class NoteIndex extends Service<void> {
     if (diff.citekey.add) {
       addIndexedFile(this.#notesByCitekey, diff.citekey.add, file);
     }
+
+    if (diff.noteKey.remove) {
+      removeIndexedFile(this.#notesByNoteKey, diff.noteKey.remove, file);
+    }
+    if (diff.noteKey.add) {
+      addIndexedFile(this.#notesByNoteKey, diff.noteKey.add, file);
+    }
   }
 
   #insertContributions(file: TFile, contributions: FileContributions): void {
@@ -174,12 +204,16 @@ export class NoteIndex extends Service<void> {
     if (contributions.citekey) {
       addIndexedFile(this.#notesByCitekey, contributions.citekey, file);
     }
+    if (contributions.noteKey) {
+      addIndexedFile(this.#notesByNoteKey, contributions.noteKey, file);
+    }
     this.#contribByFile.set(file, contributions);
   }
 
   #clear(): void {
     this.#notesByItemKey.clear();
     this.#notesByCitekey.clear();
+    this.#notesByNoteKey.clear();
     this.#contribByFile.clear();
   }
 }
@@ -221,7 +255,11 @@ function ensureSet<T>(index: Map<string, Set<T>>, key: string): Set<T> {
 }
 
 function hasContributions(contributions: FileContributions): boolean {
-  return contributions.itemKey !== null || contributions.citekey !== null;
+  return (
+    contributions.itemKey !== null ||
+    contributions.citekey !== null ||
+    contributions.noteKey !== null
+  );
 }
 
 function isMarkdownFile(file: TAbstractFile): file is TFile {

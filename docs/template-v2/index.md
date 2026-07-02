@@ -18,5 +18,6 @@ ZotLit v2 replaces the v1 template engine, data model, and frontmatter system. T
 - [Template Syntax](syntax.md) -- Eta syntax, `zt.*` prefix, `include()`, link helpers, `bq()` / `suffix()` / `embed()` helpers, autoTrim, managed region
 - [Data Reference](data-reference.md) -- Complete property reference for every template type
 - [Frontmatter](frontmatter.md) -- JS expression system, system fields, user fields, merge behavior
+- [Note Import](note-import.md) -- How child Zotero notes are imported as Markdown files (create-only, lazy, link-driven)
 - [Default Templates](defaults.md) -- Side-by-side v1 vs v2 defaults with explanations
 - [Migration Guide](migration.md) -- Step-by-step guide for migrating custom v1 templates

@@ -146,6 +146,42 @@ export function parseCitationData(encoded: string | null): CitationInfo | null {
   return { citationItems: data.citationItems.map(toCitationItem) };
 }
 
+/**
+ * One entry of a note container's `data-citation-items`: a cited item's
+ * identifying {@link uris} plus its CSL-JSON {@link itemData}. Only the Better
+ * BibTeX `citation-key` is read here; the rest of `itemData` is dropped until
+ * `9.2-CSL` widens this schema to carry full CSL data.
+ */
+const EmbeddedCitationItemSchema = v.object({
+  uris: v.array(v.string()),
+  itemData: v.optional(v.object({ "citation-key": v.optional(v.string()) })),
+});
+
+/**
+ * Decode a note container's `data-citation-items` attribute into a
+ * `Map<uri, citationKey>`. Zotero hoists each cited item's CSL-JSON onto the
+ * container; every URI of an entry maps to that entry's citation key, so a
+ * citation mark resolves by any of its `uris`. This is the snapshot citekey
+ * source for cites the live DB can't resolve (e.g. cross-library). Returns an
+ * empty map when the attribute is absent or malformed, so one bad payload can't
+ * abort a note import.
+ */
+export function parseEmbeddedCitationItems(
+  encoded: string | null,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  const data = parseDataAttribute(v.array(EmbeddedCitationItemSchema), encoded);
+  if (!data) return map;
+  for (const entry of data) {
+    const citationKey = entry.itemData?.["citation-key"];
+    if (!citationKey) continue;
+    for (const uri of entry.uris) {
+      if (!map.has(uri)) map.set(uri, citationKey);
+    }
+  }
+  return map;
+}
+
 /** Parse a `data-annotation` payload, or `null` when absent or malformed. */
 export function parseAnnotationData(
   encoded: string | null,

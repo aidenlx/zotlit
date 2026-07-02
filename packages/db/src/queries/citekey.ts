@@ -49,3 +49,49 @@ export async function getItemIDByCitekeyAsync(
     .all({ libraryID, citekey });
   return row?.itemID ?? null;
 }
+
+const citekeyByItemKeyQuery = defineQuery<{
+  libraryID: number;
+  key: string;
+}>()((db, { placeholder }) =>
+  db.query.itemData.findMany({
+    where: {
+      fieldsCombined: { fieldName: CITEKEY_FIELD },
+      item: {
+        key: placeholder("key"),
+        libraryID: placeholder("libraryID"),
+        deletedItem: false,
+      },
+    },
+    columns: {},
+    with: { itemDataValue: { columns: { value: true } } },
+    limit: 1,
+  }),
+);
+
+/**
+ * Resolve the Better BibTeX citation key of the live item with `key` within
+ * `libraryID`, or `null` when no live item matches or it has no citation key.
+ * The forward mirror of {@link getItemIDByCitekey}.
+ */
+export function getCitekeyByItemKey(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  key: string,
+): string | null {
+  return (
+    citekeyByItemKeyQuery.prepared(db).all({ libraryID, key })[0]?.itemDataValue
+      ?.value ?? null
+  );
+}
+
+export async function getCitekeyByItemKeyAsync(
+  db: SQLocalDatabaseClient,
+  libraryID: number,
+  key: string,
+): Promise<string | null> {
+  const [row] = await citekeyByItemKeyQuery
+    .prepared(db)
+    .all({ libraryID, key });
+  return row?.itemDataValue?.value ?? null;
+}

@@ -188,8 +188,8 @@ export class AnnotationView extends ItemView {
       onUnlinkItem: () => this.#setFollowMode("note"),
       onDragStart: createDragInsertHandler({
         workspace: this.#deps.app.workspace,
+        db: this.#deps.db,
         noteFeatures: this.#deps.noteFeatures,
-        getIndexedKey: () => this.#itemKey,
         getImportHandle: () => this.#importHandle,
         onSettled: () => {
           const activeFile = this.#deps.app.workspace.getActiveFile();
@@ -292,8 +292,7 @@ export class AnnotationView extends ItemView {
     }).then((hit) => {
       if (!hit) return;
       const { item } = hit;
-      const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
-      this.#setLinkedItem(item, groupID, item.indexedKey);
+      this.#setLinkedItem(item);
       this.#reload();
     });
   }
@@ -317,13 +316,13 @@ export class AnnotationView extends ItemView {
         this.#store.setState({ followMode: "note" });
         return;
       }
-      this.#setLinkedItem(item, parsed.groupID, indexedKey);
+      this.#setLinkedItem(item);
     } catch {
       this.#store.setState({ followMode: "note" });
     }
   }
 
-  #setLinkedItem(item: Item, groupID: number | null, indexedKey: string): void {
+  #setLinkedItem(item: Item): void {
     this.#store.setState({
       followMode: "linked",
       linked: {
@@ -331,8 +330,8 @@ export class AnnotationView extends ItemView {
           itemID: item.itemID,
           key: item.key,
           libraryID: item.libraryID,
-          groupID,
-          indexedKey,
+          groupID: item.groupID,
+          indexedKey: item.indexedKey,
         },
         displayLabel: formatDisplayLabel(
           {

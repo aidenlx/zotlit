@@ -30,6 +30,7 @@ export interface TemplateCreator {
  */
 export interface TemplateItemBaseData {
   key: string;
+  groupID: number | null;
   libraryID: number;
   indexedKey: string;
   itemType: string;
@@ -39,7 +40,6 @@ export interface TemplateItemBaseData {
   creators: readonly TemplateCreator[];
   primaryCreatorType: string | null;
   tags: readonly ItemTag[];
-  collections: readonly TemplateCollection[];
 
   title: string | null;
   abstract: string | null;
@@ -68,38 +68,49 @@ export interface TemplateItemBaseData {
 
 /** {@link TemplateItemBaseData} plus the app-layer resolvers. Exposed as `zt` in templates. */
 export interface TemplateItemData extends TemplateItemBaseData {
-  /** Full vault-relative literature note path, including `.md`. */
-  get notePath(): string;
-  /** Obsidian Markdown link to this item's literature note. See {@link TemplateLink}. */
-  noteLink: TemplateLink;
+  /** Full vault-relative literature note path, including `.md`. `null` when unresolvable. */
+  get notePath(): string | null;
+  /** Obsidian Markdown link to this item's literature note. See {@link FallibleTemplateLink}. */
+  noteLink: FallibleTemplateLink;
+  collections: readonly TemplateCollection[];
+}
+
+export interface TemplateFilenameItemData extends TemplateItemBaseData {
+  collections: readonly TemplateCollection[];
 }
 
 /**
  * A lazy Markdown-link helper exposed on the template context. Called with no
  * args it renders the default link with its display text already filled in (so
  * Markdown links are never blank); pass `alias` to override the display text and
- * `subpath` to append a `#`-fragment (heading / block / `page=N`). Returns `""`
- * when the target is unresolvable.
+ * `subpath` to append a `#`-fragment (heading / block / `page=N`).
  */
 export type TemplateLink = (alias?: string, subpath?: string) => string;
 
+/**
+ * Like {@link TemplateLink} but `null` when the target is unresolvable
+ * (path collision, recursive resolution, template error).
+ */
+export type FallibleTemplateLink = (
+  alias?: string,
+  subpath?: string,
+) => string | null;
+
 export interface TemplateItemResolvers {
-  notePath: (item: TemplateItemData) => string;
+  notePath: (item: TemplateItemData) => string | null;
   noteLink: (
     item: TemplateItemData,
     alias?: string,
     subpath?: string,
-  ) => string;
+  ) => string | null;
 }
 
-export function itemToTemplateData({
+export function itemToTemplateBaseData({
   item,
-  tags = [],
-  collections = [],
+  tags,
 }: {
   item: Item;
-  tags?: readonly ItemTag[];
-  collections?: readonly TemplateCollection[];
+  tags: readonly ItemTag[];
 }): TemplateItemBaseData {
   const allFields: Record<string, string> = {};
 
@@ -118,6 +129,7 @@ export function itemToTemplateData({
   return {
     ...allFields,
     key: item.key,
+    groupID: item.groupID,
     libraryID: item.libraryID,
     indexedKey: item.indexedKey,
     itemType: item.fields.itemType,
@@ -126,7 +138,6 @@ export function itemToTemplateData({
     creators,
     primaryCreatorType: item.primaryCreatorType,
     tags,
-    collections,
 
     title: allFields.title ?? null,
     // CSL-inspired aliases: the canonical source field stays accessible via the
@@ -183,3 +194,11 @@ function toTemplateCreator(c: Creator): TemplateCreator {
     },
   );
 }
+
+/**
+ * Parent literature item as seen from the standalone `annotation` template. The
+ * annot-view drag-insert resolves the item's tags but omits collection rows
+ * entirely — `collections` lives only on {@link TemplateItemData}. Read them
+ * through the full `note` template (`zt.collections`).
+ */
+export type TemplateParentItemData = TemplateItemBaseData;

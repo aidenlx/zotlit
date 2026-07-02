@@ -33,6 +33,7 @@ describe("TemplateEngine", () => {
     engine.define("content", content);
 
     const rendered = engine.render("content", {
+      notes: [],
       annotations: [
         {
           pageLabel: "4",
@@ -45,6 +46,21 @@ describe("TemplateEngine", () => {
 
     expect(rendered).toContain("Page 4");
     expect(rendered).toContain("Highlighted text");
+  });
+
+  it("renders a tight notes link list under a heading", () => {
+    const engine = new TemplateEngine();
+    engine.define("annotation", annotation);
+    engine.define("content", content);
+
+    const rendered = engine.render("content", {
+      notes: [{ noteLink: () => "[[a|A]]" }, { noteLink: () => "[[b|B]]" }],
+      annotations: [],
+    });
+
+    expect(rendered).toContain("## Notes");
+    expect(rendered).toContain("- [[a|A]]\n- [[b|B]]");
+    expect(rendered).not.toContain("## Annotations");
   });
 
   it("embeds the excerpt image via the embed helper when imgLink is present", () => {
@@ -146,6 +162,7 @@ describe("TemplateEngine", () => {
     backlink: "zotero://select/items/1",
     attachments: [],
     annotations: [],
+    notes: [],
   };
 
   it("wraps content includes in managed-region markers via transformRender", () => {
@@ -164,7 +181,7 @@ describe("TemplateEngine", () => {
     engine.define("annotation", annotation);
     engine.define("content", content);
 
-    expect(engine.render("content", { annotations: [] })).toBe(
+    expect(engine.render("content", { annotations: [], notes: [] })).toBe(
       `${MARKER_START}\n\n${MARKER_END}`,
     );
   });

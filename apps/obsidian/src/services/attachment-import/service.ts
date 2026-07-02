@@ -7,7 +7,11 @@ import {
   type AttachmentCopyItem,
   type AttachmentCopyResult,
 } from "@/lib/copy-attachments";
-import { ensureFolder, resolveAttachmentFolderPath } from "@/lib/ensure-folder";
+import {
+  ensureFolder,
+  normalizeFolderPath,
+  resolveAttachmentFolderPath,
+} from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { Service } from "@/services/service-base";
@@ -94,7 +98,7 @@ class AttachmentImportBatch implements AttachmentImport {
   constructor(options: AttachmentImportBatchOptions) {
     this.#app = options.app;
     this.#notePath = options.notePath;
-    this.#folderPath = options.folderPath;
+    this.#folderPath = normalizeFolderPath(options.folderPath);
     this.#importEnabled = options.importEnabled;
   }
 
@@ -104,9 +108,7 @@ class AttachmentImportBatch implements AttachmentImport {
     }
 
     const vaultPath = normalizePath(
-      this.#folderPath === "/" || this.#folderPath === ""
-        ? vaultName
-        : `${this.#folderPath}/${vaultName}`,
+      this.#folderPath === "/" ? vaultName : `${this.#folderPath}/${vaultName}`,
     );
     const file = syntheticFile(vaultPath);
     // Queue the copy on first render of this link, not at resolve time, so an
@@ -135,11 +137,7 @@ class AttachmentImportBatch implements AttachmentImport {
   async flush(): Promise<AttachmentCopyResult> {
     // Create the folder only now that a copy is actually queued; copyAttachments
     // writes straight to dest and never makes the parent.
-    if (
-      this.#items.length > 0 &&
-      this.#folderPath &&
-      this.#folderPath !== "/"
-    ) {
+    if (this.#items.length > 0 && this.#folderPath) {
       await ensureFolder(this.#app, this.#folderPath);
     }
     const result = await copyAttachments(this.#items);

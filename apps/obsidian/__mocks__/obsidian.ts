@@ -15,27 +15,27 @@ import {
   type EditorSuggestContext,
 } from "obsidian";
 
-/**
- * Captured `Notice` invocations. Tests can read this to assert the
- * user-facing message and clear it between cases.
- */
-export const noticesLog: { message: string | DocumentFragment }[] = [];
+// Obsidian exposes `sleep` as a runtime global; classify loops await it to yield
+// between chunks. Provide it for tests that exercise that code path.
+globalThis.sleep ??= (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Minimal element stub covering the `addClasses` / `querySelector` surface
+ * `BaseNotice` touches in its constructor. */
+const noticeElStub = {
+  addClasses: (_classes: string[]) => {},
+  querySelector: (_selector: string): HTMLElement | null => null,
+} as unknown as HTMLElement;
 
 export class Notice {
-  noticeEl: HTMLElement = {} as HTMLElement;
-  containerEl: HTMLElement = {} as HTMLElement;
-  messageEl: HTMLElement = {} as HTMLElement;
-  constructor(message: string | DocumentFragment, _duration?: number) {
-    noticesLog.push({ message });
-  }
+  noticeEl: HTMLElement = noticeElStub;
+  containerEl: HTMLElement = noticeElStub;
+  messageEl: HTMLElement = noticeElStub;
+  constructor(_message: string | DocumentFragment, _duration?: number) {}
   setMessage(_message: string | DocumentFragment): this {
     return this;
   }
   hide(): void {}
-}
-
-export function resetMockNotices(): void {
-  noticesLog.length = 0;
 }
 
 export const editorInfoField = {};

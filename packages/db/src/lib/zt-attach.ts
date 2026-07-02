@@ -33,6 +33,7 @@ export function linkModeToName(linkMode: LinkMode): LinkModeName | "unknown" {
 export interface Attachment {
   itemID: number;
   libraryID: number;
+  groupID: number | null;
   key: string;
   parentItemID: number;
   /**

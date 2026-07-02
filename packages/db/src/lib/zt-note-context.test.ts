@@ -13,7 +13,7 @@ import { type ItemTag, type Tag } from "./zt-tag";
 
 function makeItem(
   fields: { itemType: string } & Record<string, string | null>,
-  base?: Partial<BaseItem>,
+  base?: Partial<BaseItem> & Pick<Partial<Item>, "groupID">,
 ): Item {
   return {
     itemID: 1,
@@ -35,6 +35,7 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
   return {
     itemID: 10,
     libraryID: USER_LIBRARY_ID,
+    groupID: null,
     key: "ATCH0001",
     parentItemID: 1,
     path: "storage:paper.pdf",
@@ -51,6 +52,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     itemID: 100,
     key: "ANNO0001",
     libraryID: USER_LIBRARY_ID,
+    groupID: null,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     type: 1,
@@ -230,7 +232,7 @@ describe("buildNoteContext", () => {
     const ctx = buildNoteContext({
       item: makeItem(
         { itemType: "book" },
-        { key: "ITEM2345", indexedKey: "ITEM2345g99" },
+        { key: "ITEM2345", indexedKey: "ITEM2345g99", groupID: 99 },
       ),
       attachments: [],
       annotationsByAttachment: new Map(),
@@ -278,7 +280,7 @@ describe("buildNoteContext", () => {
       ),
       makeItem(
         { itemType: "journalArticle", title: "Alpha" },
-        { itemID: 4, key: "RELA2345", indexedKey: "RELA2345g99" },
+        { itemID: 4, key: "RELA2345", indexedKey: "RELA2345g99", groupID: 99 },
       ),
     ];
 
@@ -364,5 +366,64 @@ describe("buildNoteContext", () => {
       "path:REL12345",
       "link:REL12345:",
     ]);
+  });
+
+  it("maps child notes through resolveChildNote into the notes list", () => {
+    const childNote = {
+      itemID: 200,
+      libraryID: USER_LIBRARY_ID,
+      groupID: null,
+      parentItemID: 1,
+      key: "NOTE1234",
+      indexedKey: "NOTE1234",
+      title: "Methods",
+      dateModified: Temporal.Instant.from("2024-01-02T00:00:00Z"),
+    };
+
+    const ctx = buildNoteContext({
+      item: makeItem({ itemType: "journalArticle" }),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      childNotes: [childNote],
+      resolveChildNote: (note) => ({
+        key: note.key,
+        title: note.title,
+        noteLink: (alias) => `[[${note.key}|${alias ?? note.title}]]`,
+      }),
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+
+    expect(ctx.notes).toHaveLength(1);
+    expect(ctx.notes[0]!.key).toBe("NOTE1234");
+    expect(ctx.notes[0]!.noteLink()).toBe("[[NOTE1234|Methods]]");
+  });
+
+  it("leaves notes empty when no resolveChildNote is given", () => {
+    const ctx = buildNoteContext({
+      item: makeItem({ itemType: "journalArticle" }),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+
+    expect(ctx.notes).toEqual([]);
   });
 });

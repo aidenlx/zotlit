@@ -4,7 +4,11 @@ import { annotationTypeToName, type Annotation } from "./zt-annot";
 import { annotationColorToName, type AnnotationColorName } from "./zt-color";
 import { type ItemTag } from "./zt-tag";
 import { type TemplateAttachment } from "./zt-template-attach";
-import { type TemplateItemData, type TemplateLink } from "./zt-template-item";
+import {
+  type TemplateLink,
+  type TemplateParentItemData,
+} from "./zt-template-item";
+import { annotationOpenUri } from "./zt-uri";
 
 /**
  * Annotation data in the v2 template vocabulary. Exposed on `zt.annotations`
@@ -14,7 +18,7 @@ import { type TemplateItemData, type TemplateLink } from "./zt-template-item";
  * `position`) — `parentAttachment.key` carries the parent reference, and the
  * position survives only as the derived 1-based {@link TemplateAnnotation.page}.
  */
-export interface TemplateAnnotation {
+export interface TemplateAnnotationBaseData {
   key: string;
   libraryID: number;
   /** Annotation type: `"highlight"`, `"note"`, `"image"`, `"ink"`, etc. */
@@ -42,7 +46,9 @@ export interface TemplateAnnotation {
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
   tags: readonly ItemTag[];
+}
 
+export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   /**
    * Markdown link to the excerpt image, or `null` for annotation types with no
    * cached excerpt image (everything but `image` and `ink`). Call it to render
@@ -66,7 +72,7 @@ export interface TemplateAnnotation {
   backlink: string;
 
   /** Parent literature item; shared across annotations from the same item. */
-  parentItem: TemplateItemData;
+  parentItem: TemplateParentItemData;
   /** Source attachment; shared across annotations from the same attachment. */
   parentAttachment: TemplateAttachment;
 }
@@ -76,18 +82,10 @@ export interface TemplateAnnotation {
  * (`imgLink`, `comment`, `fileLink`, `backlink`) and parent references are
  * omitted — they are filled by the Obsidian-side note-create flow.
  */
-export function annotationToTemplateData(
+function annotationToTemplateBaseData(
   annotation: Annotation,
   tags: readonly ItemTag[],
-): Omit<
-  TemplateAnnotation,
-  | "imgLink"
-  | "comment"
-  | "fileLink"
-  | "backlink"
-  | "parentItem"
-  | "parentAttachment"
-> {
+): TemplateAnnotationBaseData {
   const pageIndex = annotation.position.pageIndex;
   return {
     key: annotation.key,
@@ -104,5 +102,69 @@ export function annotationToTemplateData(
     dateAdded: annotation.dateAdded,
     dateModified: annotation.dateModified,
     tags,
+  };
+}
+
+export interface AnnotationTemplateDataInput {
+  annotation: Annotation;
+  tags: readonly ItemTag[];
+  getParentAttachment(this: void): TemplateAttachment;
+  getParentItem(this: void): TemplateParentItemData;
+  /**
+   * Convert an annotation's raw comment HTML to Markdown. Called lazily, only
+   * when a template reads `zt.comment`, so the conversion is skipped otherwise.
+   */
+  commentToMarkdown: (html: string) => string;
+  /**
+   * Build an annotation's excerpt-image link helper, or `null` when the
+   * annotation type has no cached image. Prefix `!` to the rendered link for an
+   * embed.
+   */
+  annotationImageLink: (annotation: Annotation) => TemplateLink | null;
+  /**
+   * Build an attachment's file-link helper. Pass a 1-based `page` to default the
+   * helper's subpath to `#page=N` (annotation-level links anchor to their page);
+   * the helper returns `""` when the file is unresolvable.
+   */
+  fileLink: (page?: number | null) => TemplateLink;
+}
+
+export function annotationToTemplateData({
+  annotation,
+  tags,
+  getParentAttachment,
+  getParentItem,
+  annotationImageLink,
+  commentToMarkdown,
+  fileLink,
+}: AnnotationTemplateDataInput): TemplateAnnotation {
+  let comment: string | null | undefined;
+  const baseData = annotationToTemplateBaseData(annotation, tags);
+  return {
+    ...baseData,
+    get backlink() {
+      return annotationOpenUri({
+        attachmentKey: getParentAttachment().key,
+        annotationKey: annotation.key,
+        pageLabel: annotation.pageLabel,
+        groupID: getParentItem().groupID,
+      });
+    },
+    imgLink: annotationImageLink(annotation),
+    get comment() {
+      if (comment === undefined) {
+        comment = baseData.commentHtml
+          ? commentToMarkdown(baseData.commentHtml)
+          : null;
+      }
+      return comment ?? null;
+    },
+    fileLink: fileLink(baseData.page),
+    get parentItem() {
+      return getParentItem();
+    },
+    get parentAttachment() {
+      return getParentAttachment();
+    },
   };
 }

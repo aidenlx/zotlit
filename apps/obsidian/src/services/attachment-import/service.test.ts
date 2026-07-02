@@ -135,11 +135,13 @@ describe("AttachmentImportService", () => {
       vaultName: "IMG-image.png",
     });
     await batch.flush();
+    // oxlint-disable-next-line typescript/unbound-method
     expect(app.vault.createFolder).not.toHaveBeenCalled();
 
     // Render the link, then flush: now the folder is created, once.
     link();
     await batch.flush();
+    // oxlint-disable-next-line typescript/unbound-method
     expect(app.vault.createFolder).toHaveBeenCalledExactlyOnceWith("NewFolder");
   });
 

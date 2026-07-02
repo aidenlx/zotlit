@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import {
+  FIELD_CITEKEY,
+  FIELD_ZOTERO_KEY,
+  FIELD_ZOTERO_NOTE_KEY,
+} from "@/lib/constants";
 
 import { diffContributions, fileContributions } from "./parse";
 
@@ -81,6 +85,37 @@ describe("note-index parse", () => {
       empty: false,
       itemKey: { remove: ITEM_A, add: ITEM_B },
       citekey: { remove: "doe2024", add: "roe2025" },
+    });
+  });
+
+  it("extracts an imported note key disjoint from the item key", () => {
+    expect(
+      fileContributions({
+        frontmatter: { [FIELD_ZOTERO_NOTE_KEY]: ITEM_A },
+      }),
+    ).toMatchObject({
+      itemKey: null,
+      citekey: null,
+      noteKey: ITEM_A,
+    });
+    expect(
+      fileContributions({
+        frontmatter: { [FIELD_ZOTERO_NOTE_KEY]: "INVALID" },
+      }).noteKey,
+    ).toBeNull();
+  });
+
+  it("reports noteKey add/remove changes", () => {
+    const prev = fileContributions({
+      frontmatter: { [FIELD_ZOTERO_NOTE_KEY]: ITEM_A },
+    });
+    const next = fileContributions({
+      frontmatter: { [FIELD_ZOTERO_NOTE_KEY]: ITEM_B },
+    });
+
+    expect(diffContributions(prev, next)).toMatchObject({
+      empty: false,
+      noteKey: { remove: ITEM_A, add: ITEM_B },
     });
   });
 });
