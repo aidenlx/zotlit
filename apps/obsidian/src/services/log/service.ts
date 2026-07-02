@@ -27,6 +27,7 @@ import {
   getConsoleSink,
   reset as resetLogtape,
 } from "@logtape/logtape";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { type Plugin } from "obsidian";
 
 import { devToolsFormatter } from "@zotlit/shared/log-formatter";
@@ -165,6 +166,7 @@ export class LoggingService extends Service<void> {
 
     await configure({
       reset: true,
+      contextLocalStorage: new AsyncLocalStorage(),
       sinks,
       loggers: [
         {

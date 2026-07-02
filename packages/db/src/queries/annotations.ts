@@ -2,6 +2,12 @@ import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { type Annotation } from "@/lib/zt-annot";
 
+import {
+  groupIDForLibrary,
+  groupsQuery,
+  resolveGroupID,
+  type GroupIDMemo,
+} from "./_groups";
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
 const annotationFindOptions = {
@@ -49,16 +55,26 @@ const annotationsByKeyQuery = defineQuery<{
   }),
 );
 
+const annotationByItemIdQuery = defineQuery<{ itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemAnnotations.findMany({
+      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
+      ...annotationFindOptions,
+    }),
+);
+
 type AnnotationRow = QueryRow<typeof annotationsByParentQuery>;
 
 export function getAnnotationsByParent(
   db: NodeDatabaseClient,
   parentItemID: number,
+  opts?: { memo?: GroupIDMemo },
 ): Annotation[] {
+  const memo = opts?.memo ?? new Map();
   return annotationsByParentQuery
     .prepared(db)
     .all({ parentItemID })
-    .map(toAnnotation);
+    .map((r) => toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo)));
 }
 
 export async function getAnnotationsByParentAsync(
@@ -68,7 +84,12 @@ export async function getAnnotationsByParentAsync(
   const rows = await annotationsByParentQuery
     .prepared(db)
     .all({ parentItemID });
-  return rows.map(toAnnotation);
+  if (rows.length === 0) return [];
+  const [group] = await groupsQuery
+    .prepared(db)
+    .all({ libraryID: rows[0]!.item.libraryID });
+  const groupId = group?.groupID ?? null;
+  return rows.map((r) => toAnnotation(r, groupId));
 }
 
 export function getAnnotationsByKey(
@@ -78,11 +99,26 @@ export function getAnnotationsByKey(
 ): Annotation[] {
   if (keys.length === 0) return [];
 
+  const groupId = groupIDForLibrary(db, libraryID);
   return keys.flatMap((key) =>
     annotationsByKeyQuery
       .prepared(db)
       .all({ libraryID, key })
-      .map(toAnnotation),
+      .map((r) => toAnnotation(r, groupId)),
+  );
+}
+
+export function getAnnotationsByItemId(
+  db: NodeDatabaseClient,
+  itemIDs: number[],
+  opts?: { memo?: GroupIDMemo },
+): Annotation[] {
+  const memo = opts?.memo ?? new Map();
+  return itemIDs.flatMap((itemID) =>
+    annotationByItemIdQuery
+      .prepared(db)
+      .all({ itemID })
+      .map((r) => toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo))),
   );
 }
 
@@ -93,19 +129,24 @@ export async function getAnnotationsByKeyAsync(
 ): Promise<Annotation[]> {
   if (keys.length === 0) return [];
 
-  const batches = await Promise.all(
-    keys.map((key) =>
-      annotationsByKeyQuery.prepared(db).all({ libraryID, key }),
+  const [batches, [group]] = await Promise.all([
+    Promise.all(
+      keys.map((key) =>
+        annotationsByKeyQuery.prepared(db).all({ libraryID, key }),
+      ),
     ),
-  );
-  return batches.flat().map(toAnnotation);
+    groupsQuery.prepared(db).all({ libraryID }),
+  ]);
+  const groupId = group?.groupID ?? null;
+  return batches.flat().map((row) => toAnnotation(row, groupId));
 }
 
-function toAnnotation(row: AnnotationRow): Annotation {
+function toAnnotation(row: AnnotationRow, groupID: number | null): Annotation {
   return {
     itemID: row.itemID,
     key: row.item.key,
     libraryID: row.item.libraryID,
+    groupID,
     dateAdded: row.item.dateAdded,
     dateModified: row.item.dateModified,
     type: row.type,

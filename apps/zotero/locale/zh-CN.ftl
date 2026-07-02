@@ -21,10 +21,16 @@ zotlit-prefs-log-level-fatal =
 
 zotlit-menu-item-open =
     .label = 在 Obsidian 中打开笔记
+zotlit-menu-submenu =
+    .label = ZotLit
 zotlit-menu-item-update =
     .label = 在 Obsidian 中更新笔记
 zotlit-menu-item-update-metadata =
     .label = 在 Obsidian 中更新笔记元数据
+zotlit-menu-item-import-child-notes =
+    .label = 导入子笔记
+zotlit-menu-item-import-notes =
+    .label = 导入笔记到 Obsidian
 zotlit-menu-reader-annot-merge = 合并标注
 zotlit-menu-reader-page-open = 在 Obsidian 中打开笔记
 
@@ -35,3 +41,7 @@ zotlit-batch-update-failed-title = 无法连接到 Obsidian
 zotlit-batch-update-failed-message = 请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。
 zotlit-batch-update-sent-title = 请在 Obsidian 中继续
 zotlit-batch-update-sent-message = 已请求 Obsidian 更新 { $count } 条笔记。请切换到 Obsidian 继续。
+
+zotlit-batch-import-sending-title = 正在请求 Obsidian 导入笔记…
+zotlit-batch-import-sent-title = 请在 Obsidian 中继续
+zotlit-batch-import-sent-message = 已请求 Obsidian 导入 { $count } 条笔记。请切换到 Obsidian 继续。

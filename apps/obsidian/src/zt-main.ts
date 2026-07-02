@@ -83,7 +83,10 @@ export default class ZotLitPlugin extends Plugin {
     );
 
     addDatabaseActions(this, { db: services.db });
-    addNoteFeatureActions(this, { noteFeatures: services.noteFeatures });
+    addNoteFeatureActions(this, {
+      noteFeatures: services.noteFeatures,
+      noteImportCtx: services.noteImportCtx,
+    });
     registerCitationSuggest(this, {
       app: this.app,
       lookup: services.itemLookup,
@@ -106,6 +109,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         noteFeatures: services.noteFeatures,
         noteIndex: services.noteIndex,
+        noteImport: services.noteImport,
         liveUpdate: services.liveUpdate,
       }),
     );

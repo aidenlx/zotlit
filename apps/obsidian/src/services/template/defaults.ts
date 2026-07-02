@@ -22,7 +22,7 @@ export const DEFAULT_FRONTMATTER_FIELDS = freezeAll([
   { key: "title", expr: "zt.title", merge: "replace" },
   {
     key: "related",
-    expr: "zt.relatedItems.map((item) => item.noteLink()).filter(Boolean)",
+    expr: "zt.relatedItems.map((i) => i.noteLink() ?? `zt-error:${i.indexedKey}`)",
     merge: "replace",
   },
   {

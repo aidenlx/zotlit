@@ -52,8 +52,9 @@ Common fields:
 | `zt.authors` | `array` | Primary authors for this item (filtered from creators by the item's primary creator role). Creators coerce to `fullName` in string contexts. | note, content, frontmatter |
 | `zt.authorsShort` | `string` | Formatted short author string (e.g. `"Smith et al."`) | note, content, frontmatter |
 | `zt.relatedItems` | `array` | Items from Zotero's "Related" panel, sorted by title (see [Related items shape](#related-items-shape)) | note, content, frontmatter |
-| `zt.notePath` | `string` | Full vault-relative literature note path (including `.md`); `""` in filename templates | note, content, frontmatter, filename |
-| `zt.noteLink()` | `function` | [Link helper](syntax.md#link-helpers) to this item's literature note -- call it, passing `alias` / `subpath` to override the display text or append a `#`-fragment; `""` in filename templates | note, content, frontmatter, filename |
+| `zt.notes` | `array` | Imported child notes from Zotero (see [Notes shape](#notes-shape)) | note, content, frontmatter |
+| `zt.notePath` | `string \| null` | Full vault-relative literature note path (including `.md`); `null` when unresolvable (path collision, recursive resolution, template error) | note, content, frontmatter, filename |
+| `zt.noteLink()` | `function` | [Link helper](syntax.md#link-helpers) to this item's literature note -- call it, passing `alias` / `subpath` to override the display text or append a `#`-fragment; returns `null` when unresolvable (path collision, recursive resolution, template error) | note, content, frontmatter, filename |
 
 > **Note:** Timestamp fields (`zt.dateAdded` and `zt.dateModified`, on both items and annotations) are `Temporal.Instant` values at **second precision** -- Zotero stores them as UTC `"YYYY-MM-DD HH:MM:SS"` strings with no sub-second component, so any rendered or computed time is accurate only to the second.
 
@@ -251,7 +252,7 @@ Receives a single annotation as `zt`.
 | `zt.imgLink` | `function \| null` | [Link helper](syntax.md#link-helpers) for the excerpt image -- call it (`zt.imgLink()`) and prefix `!` for an embed, or use [`embed(zt.imgLink)`](syntax.md#the-embed-helper). With "copy image to vault" disabled it links the cached image's `file://` URI; with it enabled it links the in-vault copy, formatted per your wikilink preference. `null` for annotations without a cached excerpt image (everything but `image` and `ink`) |
 | `zt.fileLink` | `function` | [Link helper](syntax.md#link-helpers) to the parent attachment file -- call it (`zt.fileLink()`), default-anchored to this annotation's `page` (`#page=N`). Renders `""` when the file is unresolvable |
 | `zt.backlink` | `string` | Zotero deep link to this annotation (`zotero://open/...?annotation=KEY`) |
-| `zt.parentItem` | object | The parent literature item (has all the same item fields as the note template) |
+| `zt.parentItem` | object | The parent literature item (has all the same item fields as the note template). **Exception:** `zt.parentItem.collections` is always empty here — the drag-insert doesn't resolve the parent item's collections. Use the note template if you need them. |
 | `zt.parentAttachment` | object | The parent attachment (see [Attachment shape](#attachment-shape) below) |
 
 > v1's raw image accessors `it.imgPath` (absolute path) and `it.imgUrl` (`file://` URL) are not exposed in v2. Use `zt.imgLink()` (call it; prefix `!` or wrap in `embed()` for an embed), which already resolves the path.
@@ -306,11 +307,35 @@ of the relation graph.
 <% } %>
 ```
 
+## Notes shape
+
+Used in `zt.notes` (note, content, and frontmatter templates). Lists the Zotero item's child notes. Each entry is a link-only shape -- the note's HTML body is not available in the template context.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `key` | `string` | Bare Zotero item key of the child note |
+| `title` | `string \| null` | The note's title |
+| `noteLink` | `function` | [Link helper](syntax.md#link-helpers) to the imported child-note file in the vault. Calling `noteLink()` lazily queues the child note for import -- if the link is never rendered, no file is created |
+
+Child notes are imported as flat Markdown files (HTML parsed to Markdown, with frontmatter) on the first render that calls `noteLink()`. Already-imported notes (matched by identity key) link to the existing file without re-importing. Notes are never implicitly updated -- import is create-only.
+
+```eta
+<% if (zt.notes.length) { %>
+## Notes
+
+<% for (const note of zt.notes) { -%>
+- <%~ note.noteLink() %>
+<% } %>
+<% } %>
+```
+
+To expose child-note links in frontmatter, add a field with expression `zt.notes.map(n => n.noteLink())`. Calling `noteLink()` in a frontmatter expression triggers the import queue, so the child-note files are created even when notes only appear in frontmatter.
+
 ## Filename template
 
 The filename template is a setting string (not a separate file). To keep filename resolution to a single-item query, `zt` here is the **item's own fields only** -- the same core item data described under [Item fields](#item-fields), plus `creators`, `tags`, and `collections`. The richer fields assembled for the note body are **not** available in filename templates: `backlink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`. Use `zt.creators[0].family` instead of `zt.authorsShort` for an author-based name.
 
-`zt.notePath` and `zt.noteLink()` exist but return an empty string in a filename template (a note has no path until it is named).
+`zt.notePath` and `zt.noteLink()` are not available in filename templates (a note has no path until it is named).
 
 Default: `<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>`
 

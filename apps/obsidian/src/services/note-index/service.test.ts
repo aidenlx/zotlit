@@ -181,6 +181,33 @@ describe("NoteIndex", () => {
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
+  it("whenIndexed resolves immediately once the initial scan has run", async () => {
+    const { service } = await makeHarness(
+      { "paper.md": cache({ itemKey: ITEM_A }) },
+      { initialized: true },
+    );
+
+    await expect(service.whenIndexed()).resolves.toBeUndefined();
+  });
+
+  it("whenIndexed waits for the first scan when metadata is uninitialized", async () => {
+    const { metadataCache, service } = await makeHarness(
+      { "paper.md": cache({ itemKey: ITEM_A }) },
+      { initialized: false },
+    );
+
+    let settled = false;
+    const gate = service.whenIndexed().then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(settled).toBe(false);
+
+    metadataCache.resolve();
+    await gate;
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+  });
+
   it("builds indices on resolved and emits rebuilt once", async () => {
     const { metadataCache, service } = await makeHarness({
       "Notes/a.md": cache({

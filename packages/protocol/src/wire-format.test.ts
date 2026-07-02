@@ -5,6 +5,9 @@ import { notifyEventSchema } from "./notify";
 import { SOURCE_ID_HEADER } from "./source-id";
 import {
   batchUpdateRequestSchema,
+  importManyProtocolQuerySchema,
+  importNotesRequestSchema,
+  importProtocolQuerySchema,
   protocolActions,
   protocolQuerySchema,
 } from "./url";
@@ -19,14 +22,17 @@ type VariantOption = ObjectSchema & {
     event: { literal: string };
   };
 };
-type ProtocolQuerySchema = typeof protocolQuerySchema & {
+type PipedObjectSchema = {
   pipe: readonly [
-    ObjectSchema & {
-      entries: Record<string, unknown>;
-    },
+    ObjectSchema & { entries: Record<string, unknown> },
     ...unknown[],
   ];
 };
+
+/** Extract sorted raw-entry keys from a `v.pipe(v.object(…), v.transform(…))` schema. */
+function pipedObjectKeys(schema: unknown): string[] {
+  return Object.keys((schema as PipedObjectSchema).pipe[0].entries).sort();
+}
 
 function notifyWireSurface(): unknown {
   return notifyEventSchema.options.map((option) => {
@@ -39,18 +45,33 @@ function notifyWireSurface(): unknown {
 }
 
 function protocolUrlWireSurface(): unknown {
-  const querySchema = protocolQuerySchema as ProtocolQuerySchema;
   return {
     actions: protocolActions,
-    params: Object.keys(querySchema.pipe[0].entries).sort(),
+    params: pipedObjectKeys(protocolQuerySchema),
   };
+}
+
+function importNoteUrlWireSurface(): unknown {
+  return { params: pipedObjectKeys(importProtocolQuerySchema) };
+}
+
+function importNotesUrlWireSurface(): unknown {
+  return { params: pipedObjectKeys(importManyProtocolQuerySchema) };
 }
 
 function literatureNotesWireSurface(): unknown {
   const schema = batchUpdateRequestSchema as ObjectSchema;
   return {
-    method: "PATCH",
-    // The batch is gated by the source-id header, not a body field.
+    method: "PUT",
+    sourceHeader: SOURCE_ID_HEADER,
+    body: Object.keys(schema.entries).sort(),
+  };
+}
+
+function zoteroNotesWireSurface(): unknown {
+  const schema = importNotesRequestSchema as ObjectSchema;
+  return {
+    method: "PUT",
     sourceHeader: SOURCE_ID_HEADER,
     body: Object.keys(schema.entries).sort(),
   };
@@ -62,15 +83,32 @@ describe("wire format", () => {
       version: PROTOCOL_VERSION,
       notify: notifyWireSurface(),
       url: protocolUrlWireSurface(),
+      importNoteUrl: importNoteUrlWireSurface(),
+      importNotesUrl: importNotesUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
+      zoteroNotes: zoteroNotesWireSurface(),
     }).toMatchInlineSnapshot(`
       {
+        "importNoteUrl": {
+          "params": [
+            "item",
+            "mode",
+            "source-id",
+          ],
+        },
+        "importNotesUrl": {
+          "params": [
+            "items",
+            "mode",
+            "source-id",
+          ],
+        },
         "literatureNotes": {
           "body": [
             "items",
             "scope",
           ],
-          "method": "PATCH",
+          "method": "PUT",
           "sourceHeader": "X-Zotlit-Source-Id",
         },
         "notify": [
@@ -119,7 +157,15 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "version": 2,
+        "version": 3,
+        "zoteroNotes": {
+          "body": [
+            "items",
+            "mode",
+          ],
+          "method": "PUT",
+          "sourceHeader": "X-Zotlit-Source-Id",
+        },
       }
     `);
   });

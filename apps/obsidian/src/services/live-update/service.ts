@@ -5,6 +5,8 @@ import { Hono } from "hono/tiny";
 
 import {
   batchUpdateRequestSchema,
+  importNotesRequestSchema,
+  type ImportMode,
   type NotifyEvent,
   notifyEventSchema,
   PROTOCOL_VERSION_HEADER,
@@ -52,11 +54,16 @@ export interface ReaderTarget {
 export interface LiveUpdateEvents {
   "item/update": (event: ItemUpdate) => void;
   /**
-   * A batch literature-note update requested over `PATCH /literature-notes` —
+   * A batch literature-note update requested over `PUT /literature-notes` —
    * the companion's fallback when the id list is too long for an `obsidian://`
    * URL. Carries the raw item ids; the subscriber owns resolution and the modal.
    */
   "update-many": (event: { items: number[]; scope: UpdateScope }) => void;
+  /**
+   * A batch note-import requested over `PUT /zotero-notes` — the companion's
+   * fallback when the id list is too long for an `obsidian://` URL.
+   */
+  "import-notes": (event: { items: number[]; mode: ImportMode }) => void;
   /**
    * Aggregated reader state: fired whenever the companion reports a reader
    * switch or a selection change, carrying the new {@link ReaderTarget}.
@@ -261,7 +268,7 @@ export class LiveUpdateService extends Service<void> {
       )
       // Fire-and-forget: the batch modal is interactive and long-running, so ack
       // 204 immediately and let the subscriber drive it; never await the batch.
-      .patch(
+      .put(
         "/literature-notes",
         vValidator("json", batchUpdateRequestSchema, (result, c) => {
           if (result.success) return;
@@ -276,12 +283,36 @@ export class LiveUpdateService extends Service<void> {
             items: body.items.length,
             scope: body.scope,
           });
-          // decouple from the event loop to avoid handler
-          // from blocking the main thread and let response finish first.
+          // Decouple from the event loop to avoid the handler from blocking
+          // the main thread and let the response finish first.
           void sleep(0).then(() => {
             this.#emitter.emit("update-many", {
               items: body.items,
               scope: body.scope,
+            });
+          });
+          return c.body(null, 204);
+        },
+      )
+      .put(
+        "/zotero-notes",
+        vValidator("json", importNotesRequestSchema, (result, c) => {
+          if (result.success) return;
+          logger.warn("Received zotero-notes import failed validation", {
+            issues: result.issues,
+          });
+          return c.json(result, 400);
+        }),
+        (c) => {
+          const body = c.req.valid("json");
+          logger.debug("Received zotero-notes import", {
+            items: body.items.length,
+            mode: body.mode,
+          });
+          void sleep(0).then(() => {
+            this.#emitter.emit("import-notes", {
+              items: body.items,
+              mode: body.mode,
             });
           });
           return c.body(null, 204);

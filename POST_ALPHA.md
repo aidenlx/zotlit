@@ -4,19 +4,18 @@ Extracted from `[MIGRATION.md](./MIGRATION.md)` after alpha (Stages 0–8) shipp
 
 ## 1. Zotero note import (Stage 9)
 
-The first post-alpha stage. Wires the Stage-4 `NoteParser` into a Zotero-initiated import flow with citation resolution, embedded-image resolution, and customizable output.
+Stages 9.0–9.3 shipped. **9.2-CSL** (CSL normalization for the cite-template) and **9.4** (Better Notes) remain.
 
-### 1.1 Import flow
+### 1.1 Import flow (shipped)
 
 - **Trigger from Zotero, not Obsidian UI.** No command-palette import command, modal, or in-vault note picker. The companion initiates import the same way open/update do today: Zotero context menus → `obsidian://zotlit/…` → Obsidian protocol handler → orchestrator (v1: `note-feature/note-import/index.ts`). Extend the existing library-item menus and/or add child-note menus; a dedicated protocol action is fine if import needs its own verb, but the entry point stays on the Zotero side.
-- Alpha-quality output is the fixed Stage-4 format: Zotero note HTML → Obsidian Markdown with inline annotation marks.
-- Make import output customizable. Zotero Better Notes enhances native Zotero notes (not a separate source type), so compatibility belongs in this importer: fixed parser as baseline, extension points for Better Notes' enhanced HTML and user-controlled Markdown output.
+- Output is the fixed Stage-4 format: Zotero note HTML → Obsidian Markdown with inline annotation marks. Annotation paragraphs can optionally render through `annotation.eta` (opt-in setting, default OFF).
 
-### 1.2 Embedded image resolution
+### 1.2 Embedded image resolution (shipped)
 
 Stage-4 parser support ships; wire the import flow to construct `NoteEmbeddedImageDeps` (`db.client`, `libraryID`, `AttachmentPathContext`, prepared `AttachmentImportService` handle) and pass it into `parseNote`.
 
-### 1.3 Citation resolution
+### 1.3 Citation resolution (shipped)
 
 - `citation` rule ships as pass-through in Stage 4; resolving it belongs here because the citekey chain only feeds `template.render("cite", …)`.
 - Parsers already shipped (`parseCitation` → `@zotlit/db` `parseCitationData` / `parseItemUri`); only orchestrator wiring is new.
@@ -35,9 +34,13 @@ Stage-4 parser support ships; wire the import flow to construct `NoteEmbeddedIma
 
 ### 1.4 Open items
 
+**9.2-CSL** — `locator`, `suppress-author`, and CSL normalization share one cite-contract widening pass and are bundled:
+
 - `locator` (`citationItem.locator`, e.g. `"62"`) is parsed but unconsumed — Pandoc wants `[@key, p. 62]`; render-stage decision.
 - `suppress-author` (Pandoc `-@key`) is a parser gap: re-add `properties` to `CitationSchema` in `zt-note-mark.ts`.
 - Cite-template vocabulary (CSL-JSON field names recommended); normalizing the DB leg to CSL needs an `itemToCSLJSON`-equivalent.
+
+**9.4 — Better Notes.** Zotero Better Notes enhances native Zotero notes (not a separate source type), so compatibility belongs in this importer: fixed parser as baseline, extension points for Better Notes' enhanced HTML and user-controlled Markdown output. Requires a dedicated design pass — depends on the concrete parser extension surface from 9.0–9.3.
 
 ## 2. Companion-dependent features
 
@@ -74,6 +77,9 @@ v1 lives in `app/obsidian/src/note-feature/topic-import/` (~267 lines, an `@ophi
 ## 3. Annot view follow-ups
 
 - **Annotation merging** — v1's `mergeAnnots` / `mergeTags`. Combine annotations from multiple attachments or deduplicate across updates. The Zotero-side reader annotation context-menu item ("Merge Annotations") is scaffolded but commented out in `apps/zotero/src/menus/reader-annotation.ts` (FTL `zotlit-menu-reader-annot-merge` retained); re-enable it here when the feature returns.
+- **Citation with locator from annotation** — two related surfaces:
+  - **Annotation template rendering** — an opt-in render mode that emits `[@citekey, p. N]` (or equivalent cite-template output) using the annotation's `pageLabel` as the locator, so the rendered callout/row already carries a page-pinned citation. Depends on `locator` support landing in §1.4 (9.2-CSL).
+  - **Copy citekey with locator** — a context-menu / action on an annotation item in the annot view that copies a ready-to-paste `[@citekey, p. N]` string to the clipboard, for manual insertion into any note.
 
 ## 4. Template service follow-ups
 

@@ -1,6 +1,10 @@
 import {
   type BatchUpdateRequest,
   buildBatchProtocolUrl,
+  buildImportManyProtocolUrl,
+  buildImportProtocolUrl,
+  type ImportMode,
+  type ImportNotesRequest,
   buildProtocolUrl,
   type ProtocolAction,
   PROTOCOL_VERSION,
@@ -45,7 +49,7 @@ export function openInObsidian(
 
 /**
  * Batch-update many literature items in one action. Sends a single
- * `update-many` link when it fits in {@link URL_LENGTH_CAP}; otherwise PATCHes
+ * `update-many` link when it fits in {@link URL_LENGTH_CAP}; otherwise PUTs
  * the id list to the configured Obsidian listener. If no listener is reachable,
  * shows a hint pointing at the server setting.
  */
@@ -66,7 +70,7 @@ export async function updateManyInObsidian(
     return;
   }
 
-  logger.info("batch link over cap, patching listener", {
+  logger.info("batch link over cap, putting listener", {
     count: itemIDs.length,
     length: url.length,
     scope,
@@ -95,7 +99,7 @@ async function sendBatchUpdate(
 
   try {
     const response = await fetch(new URL("/literature-notes", base), {
-      method: "PATCH",
+      method: "PUT",
       headers: {
         "Content-Type": "application/json",
         [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
@@ -104,7 +108,7 @@ async function sendBatchUpdate(
       body: JSON.stringify({ items, scope } satisfies BatchUpdateRequest),
     });
     if (!response.ok) {
-      throw new Error(`PATCH /literature-notes failed: ${response.status}`);
+      throw new Error(`PUT /literature-notes failed: ${response.status}`);
     }
     logger.info("sent batch update", { base, count: items.length });
     await settleProgress(progress, {
@@ -122,7 +126,7 @@ async function sendBatchUpdate(
 }
 
 /**
- * The background PATCH never surfaces the Obsidian window, so the user never
+ * The background PUT never surfaces the Obsidian window, so the user never
  * sees the import prompt waiting there. Updating the headline and description
  * on the in-flight progress window reports the outcome — "continue in Obsidian"
  * on success, the failure hint otherwise — and auto-dismisses after a moment.
@@ -154,6 +158,98 @@ async function showServerHint(): Promise<void> {
     formatValue("zotlit-batch-update-server-needed-message"),
   ]);
   Zotero.alert(Zotero.getMainWindow(), title ?? "", message ?? "");
+}
+
+/**
+ * Import a single note item in Obsidian via its
+ * `obsidian://zotlit/import-note?item=<id>&mode=<mode>&source-id=<hash>` link.
+ */
+export function importInObsidian(itemID: number, mode: ImportMode): void {
+  const url = buildImportProtocolUrl(itemID, { sourceId: sourceId(), mode });
+  logger.info("opening obsidian (import link)", { itemID, mode, url });
+  Zotero.launchURL(url);
+}
+
+/**
+ * Batch-import note items in Obsidian. Sends a single `import-notes` link when
+ * it fits in {@link URL_LENGTH_CAP}; otherwise PUTs the body to the Obsidian
+ * listener at `PUT /zotero-notes`.
+ */
+export async function importManyInObsidian(
+  itemIDs: readonly number[],
+  mode: ImportMode,
+): Promise<void> {
+  const url = buildImportManyProtocolUrl(itemIDs, {
+    sourceId: sourceId(),
+    mode,
+  });
+
+  if (url.length <= URL_LENGTH_CAP) {
+    logger.info("opening obsidian (import link)", {
+      count: itemIDs.length,
+      length: url.length,
+      mode,
+    });
+    Zotero.launchURL(url);
+    return;
+  }
+
+  logger.info("import link over cap, putting listener", {
+    count: itemIDs.length,
+    length: url.length,
+    mode,
+  });
+  await sendBatchImport(itemIDs, mode);
+}
+
+async function sendBatchImport(
+  items: readonly number[],
+  mode: ImportMode,
+): Promise<void> {
+  const base = notifyUrl();
+  if (!base) {
+    logger.warn("no notify URL for batch import fallback");
+    await showServerHint();
+    return;
+  }
+
+  const progress = new Zotero.ProgressWindow({
+    window: Zotero.getMainWindow(),
+  });
+  progress.changeHeadline(
+    (await formatValue("zotlit-batch-import-sending-title")) ?? "",
+  );
+  progress.show();
+
+  try {
+    const response = await fetch(new URL("/zotero-notes", base), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+        [SOURCE_ID_HEADER]: sourceId(),
+      },
+      body: JSON.stringify({
+        items: [...items],
+        mode,
+      } satisfies ImportNotesRequest),
+    });
+    if (!response.ok) {
+      throw new Error(`PUT /zotero-notes failed: ${response.status}`);
+    }
+    logger.info("sent batch import", { base, count: items.length, mode });
+    await settleProgress(progress, {
+      titleId: "zotlit-batch-import-sent-title",
+      messageId: "zotlit-batch-import-sent-message",
+      messageArgs: { count: items.length },
+    });
+  } catch (error) {
+    logger.warn("failed to send batch import", { base, error });
+    await settleProgress(progress, {
+      titleId: "zotlit-batch-update-failed-title",
+      messageId: "zotlit-batch-update-failed-message",
+    });
+  }
 }
 
 /**

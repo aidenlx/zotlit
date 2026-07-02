@@ -46,6 +46,7 @@ Only fix lines **introduced in this diff**. If a pre-existing unchanged line has
 ## Output format
 
 ```
+packages/db/src/lib/zt-collection.ts:60   parenthetical {@link} → @see tag
 packages/db/src/lib/zt-collection.ts:159  prose "Returns…" → @returns tag
 apps/obsidian/src/services/note-feature/context.ts:87  dropped restatement on fetchItemCollections
 ```

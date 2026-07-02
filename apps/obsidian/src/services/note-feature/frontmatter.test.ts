@@ -98,9 +98,9 @@ describe("applyManagedFrontmatter", () => {
       fm,
       makeContext({
         relatedItems: [
-          { noteLink: () => "[[Related A]]" },
-          { noteLink: () => "" },
-          { noteLink: () => "[[Related B]]" },
+          { indexedKey: "A1", noteLink: () => "[[Related A]]" },
+          { indexedKey: "B2", noteLink: () => null },
+          { indexedKey: "C3", noteLink: () => "[[Related B]]" },
         ],
       } as Partial<NoteTemplateContext>),
       {
@@ -108,7 +108,11 @@ describe("applyManagedFrontmatter", () => {
       },
     );
 
-    expect(fm.related).toEqual(["[[Related A]]", "[[Related B]]"]);
+    expect(fm.related).toEqual([
+      "[[Related A]]",
+      "zt-error:B2",
+      "[[Related B]]",
+    ]);
   });
 
   it("replaces default related links from Zotero data", () => {

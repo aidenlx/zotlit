@@ -4,10 +4,10 @@
     "transit": {
       "dependsOn": ["^transit"]
     },
-    "paraglide:compile": {},
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "outputLogs": "errors-only"
     },
     "dev": {
       "cache": false,

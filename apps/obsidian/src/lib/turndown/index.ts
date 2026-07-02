@@ -3,6 +3,26 @@ import type TurndownService from "turndown";
 import { addObsidianRules, obsidianTurndownOptions } from "./obsidian-base";
 
 /**
+ * Attribute on the prepass sentinel `<div>` that carries an annotation
+ * paragraph's pre-rendered callout Markdown (URI-encoded). The note-import
+ * prepass replaces a qualifying `<p>` with such a sentinel; the
+ * `annotationCallout` rule emits the decoded attribute verbatim rather than the
+ * node's `textContent`, which Turndown's whitespace collapsing would mangle.
+ * URI-encoding keeps the payload a single whitespace- and quote-free token.
+ */
+export const ANNOTATION_CALLOUT_ATTR = "data-zt-callout";
+
+/** Encode callout Markdown into the sentinel attribute value. */
+export function encodeCalloutAttr(markdown: string): string {
+  return encodeURIComponent(markdown);
+}
+
+/** Decode the sentinel attribute back to callout Markdown. */
+export function decodeCalloutAttr(encoded: string): string {
+  return decodeURIComponent(encoded);
+}
+
+/**
  * Add the rules for Zotero note HTML quirks that Obsidian's base config does
  * not cover, would silently corrupt, or would drop:
  *
@@ -21,8 +41,9 @@ import { addObsidianRules, obsidianTurndownOptions } from "./obsidian-base";
  *   attachment image and the image-excerpt annotation (`data-annotation` set).
  *   Keep the tag (and its key) so the shared Stage 9 import resolves it to a
  *   real embed.
- * - `span.citation[data-citation]` — Zotero's citation mark. Kept as raw HTML so
- *   a later resolution stage can read the URL-encoded payload.
+ * - `span.citation[data-citation]` — Zotero's citation mark. Passes through as
+ *   raw HTML by default; `createNoteTurndown`'s `citation` option lets the
+ *   orchestrator inject the in-rule resolver that renders the user's cite syntax.
  * - `span[data-annotation]` (highlight / underline excerpt) — passes through as
  *   raw HTML by default; `createNoteTurndown`'s `annotationExcerpt` option lets
  *   the orchestrator inject the resolved highlight/underline rendering.
@@ -106,8 +127,8 @@ function addZoteroRules(
       node.nodeName === "SPAN" &&
       node.classList.contains("citation") &&
       node.hasAttribute("data-citation"),
-    // TBD: resolve to the user's citation syntax; pass the span through for now
-    replacement: (_content, node) => (node as Element).outerHTML,
+    replacement:
+      options.citation ?? ((_content, node) => (node as Element).outerHTML),
   });
 
   td.addRule("annotationExcerpt", {
@@ -116,6 +137,18 @@ function addZoteroRules(
     replacement:
       options.annotationExcerpt ??
       ((_content, node) => (node as Element).outerHTML),
+  });
+
+  // The note-import prepass replaces a qualifying annotation `<p>` with this
+  // sentinel; emit its pre-rendered callout Markdown as a block, decoded from
+  // the attribute (collapse-proof) rather than the node's text.
+  td.addRule("annotationCallout", {
+    filter: (node) =>
+      node.nodeName === "DIV" && node.hasAttribute(ANNOTATION_CALLOUT_ATTR),
+    replacement: (_content, node) =>
+      `\n\n${decodeCalloutAttr(
+        (node as Element).getAttribute(ANNOTATION_CALLOUT_ATTR) ?? "",
+      )}\n\n`,
   });
 }
 
@@ -131,6 +164,12 @@ export interface NoteTurndownOptions {
    * Defaults to raw-HTML passthrough so standalone conversion keeps the key.
    */
   embeddedImage?: TurndownService.ReplacementFunction;
+  /**
+   * Replacement for Zotero citation marks (`span.citation[data-citation]`).
+   * Defaults to raw-HTML passthrough so standalone conversion keeps the payload.
+   * `parseNote` injects the resolver that renders the user's cite syntax.
+   */
+  citation?: TurndownService.ReplacementFunction;
 }
 
 /**

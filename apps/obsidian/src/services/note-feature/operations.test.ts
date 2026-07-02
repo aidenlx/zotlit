@@ -26,6 +26,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     ...actual,
     getAnnotationsByParent: vi.fn(() => []),
     getAttachmentsByParents: vi.fn(() => []),
+    getChildNotes: vi.fn(() => []),
     getItemsByKey: vi.fn(() => []),
     getRelatedKeysByItemID: vi.fn(() => []),
     getTagsByItemIDs: vi.fn(() => []),
@@ -89,7 +90,7 @@ describe("createNote", () => {
     const ctx: NoteFeatureContext = {
       app: app as unknown as App,
       template: makeTemplate() as unknown as TemplateService,
-      db: { client: {}, state: "ready", ready: Promise.resolve() } as any,
+      db: makeDb(),
       noteIndex: {
         ready: Promise.resolve(),
         getNotesByItemKey: (key: string) =>
@@ -103,6 +104,16 @@ describe("createNote", () => {
         prepare: vi.fn(async () => ({
           resolveLink: () => () => "",
           flush: vi.fn(async () => ({ copied: 0, skipped: 0 })),
+        })),
+      } as any,
+      noteImport: {
+        prepare: vi.fn(async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: vi.fn(async () => ({ created: 0, skipped: 0 })),
         })),
       } as any,
     };
@@ -190,7 +201,7 @@ describe("createNote", () => {
         fileManager: { generateMarkdownLink: () => "" },
       } as unknown as App,
       template: template as unknown as TemplateService,
-      db: { client: {}, state: "ready", ready: Promise.resolve() } as any,
+      db: makeDb(),
       noteIndex: {
         ready: Promise.resolve(),
         getNotesByItemKey: () => [],
@@ -202,6 +213,16 @@ describe("createNote", () => {
         prepare: vi.fn(async () => ({
           resolveLink: () => () => "",
           flush: vi.fn(async () => ({ copied: 0, skipped: 0 })),
+        })),
+      } as any,
+      noteImport: {
+        prepare: vi.fn(async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: vi.fn(async () => ({ created: 0, skipped: 0 })),
         })),
       } as any,
     };
@@ -241,6 +262,15 @@ function makeTemplate() {
       ].join("\n");
     },
   };
+}
+
+function makeDb() {
+  return {
+    client: {},
+    state: "ready",
+    ready: Promise.resolve(),
+    acquireRead: async () => ({ client: {}, [Symbol.dispose]() {} }),
+  } as any;
 }
 
 function makeSettings() {

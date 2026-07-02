@@ -5,7 +5,7 @@ import { filenameSuffix } from "@zotlit/templates";
 import {
   EmptyFilenameError,
   normalizeFilename,
-  resolveAvailableRelPath,
+  resolveFreeNotePath,
   resolveNoteRelPath,
 } from "./filename";
 
@@ -57,19 +57,19 @@ describe("resolveNoteRelPath", () => {
   });
 });
 
-describe("resolveAvailableRelPath", () => {
+describe("resolveFreeNotePath", () => {
   const existsIn =
     (paths: Iterable<string>) =>
     (rel: string): boolean =>
       new Set(paths).has(rel);
 
   it("returns the base name when there is no suffix marker", () => {
-    const rel = resolveAvailableRelPath("smith2020", existsIn(["smith2020"]));
+    const rel = resolveFreeNotePath("smith2020", existsIn(["smith2020"]));
     expect(rel).toBe("smith2020");
   });
 
   it("drops the marker when the base name is free", () => {
-    const rel = resolveAvailableRelPath(
+    const rel = resolveFreeNotePath(
       `smith2020${filenameSuffix()}`,
       existsIn([]),
     );
@@ -77,7 +77,7 @@ describe("resolveAvailableRelPath", () => {
   });
 
   it("appends a random suffix when the base name collides", () => {
-    const rel = resolveAvailableRelPath(
+    const rel = resolveFreeNotePath(
       `smith2020${filenameSuffix(6)}`,
       existsIn(["smith2020"]),
     );
@@ -85,7 +85,7 @@ describe("resolveAvailableRelPath", () => {
   });
 
   it("forces a suffix even when the base name is free", () => {
-    const rel = resolveAvailableRelPath(
+    const rel = resolveFreeNotePath(
       `smith2020${filenameSuffix(6)}`,
       existsIn([]),
       true,
@@ -94,7 +94,7 @@ describe("resolveAvailableRelPath", () => {
   });
 
   it("returns the base name under forceSuffix when there is no marker", () => {
-    const rel = resolveAvailableRelPath("smith2020", existsIn([]), true);
+    const rel = resolveFreeNotePath("smith2020", existsIn([]), true);
     expect(rel).toBe("smith2020");
   });
 
@@ -104,17 +104,14 @@ describe("resolveAvailableRelPath", () => {
       .mockReturnValueOnce(true) // base collides
       .mockReturnValueOnce(true) // first suffix collides
       .mockReturnValue(false); // second suffix is free
-    const rel = resolveAvailableRelPath(
-      `smith2020${filenameSuffix(6)}`,
-      exists,
-    );
+    const rel = resolveFreeNotePath(`smith2020${filenameSuffix(6)}`, exists);
     expect(rel).toMatch(/^smith2020_[A-Za-z0-9]{6}$/);
     expect(exists).toHaveBeenCalledTimes(3);
   });
 
   it("throws rather than returning a colliding path when every attempt collides", () => {
     expect(() =>
-      resolveAvailableRelPath(`smith2020${filenameSuffix(6)}`, () => true),
+      resolveFreeNotePath(`smith2020${filenameSuffix(6)}`, () => true),
     ).toThrow(/Could not find an available filename/);
   });
 });
