@@ -105,6 +105,7 @@ The link helpers:
 | Helper | Where | Default text | Default subpath |
 |--------|-------|--------------|-----------------|
 | `zt.noteLink()` | item (note, related items) | note title | none |
+| `note.noteLink()` | each `zt.notes[]` entry | child-note title | none |
 | `a.fileLink()` | each `zt.attachments[]` entry | attachment filename | none |
 | `zt.fileLink()` | annotation | attachment filename | `#page=N` (the annotation's page) |
 | `zt.imgLink()` | annotation | excerpt-image filename | none |
@@ -120,7 +121,7 @@ The link helpers:
 <%= zt.noteLink("See notes", "#Summary") %>
 ```
 
-`zt.fileLink()` (annotation) and `zt.imgLink()` return `""` / `null` when the file or excerpt image is unresolvable, so guard or `.filter(Boolean)` as needed. `zt.imgLink` is `null` for annotation types with no cached image (everything but `image` and `ink`).
+`zt.noteLink()` (on items and related items) returns `null` when the literature note path is unresolvable (path collision, recursive filename resolution, or template error). Use `?? fallback` to surface the error or `.filter(Boolean)` to drop it. `zt.fileLink()` (annotation) and `zt.imgLink()` return `""` / `null` when the file or excerpt image is unresolvable, so guard or `.filter(Boolean)` as needed. `zt.imgLink` is `null` for annotation types with no cached image (everything but `image` and `ink`). `note.noteLink()` (child notes) always returns a string -- it creates a synthetic path if the note has not been imported yet.
 
 ## The `embed()` helper
 

@@ -156,9 +156,7 @@ export class ServiceContainer<TServices extends object = {}> {
     const services = this.#services as Record<string, Service<any>>;
     services[key] = this.#stack.use(service);
 
-    return this as unknown as ServiceContainer<
-      TServices & RegisteredServices<TEntry>
-    >;
+    return this as ServiceContainer<TServices & RegisteredServices<TEntry>>;
   }
 
   /**
@@ -175,9 +173,7 @@ export class ServiceContainer<TServices extends object = {}> {
     const { key, value } = this.#invokeFactory(entry);
     (this.#services as Record<string, object>)[key] = value;
 
-    return this as unknown as ServiceContainer<
-      TServices & RegisteredValues<TEntry>
-    >;
+    return this as ServiceContainer<TServices & RegisteredValues<TEntry>>;
   }
 
   /** Validate a single-key registration entry and run its factory, wrapping a

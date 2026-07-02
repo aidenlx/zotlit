@@ -2,11 +2,10 @@
 import TurndownService from "turndown";
 import { describe, expect, it } from "vitest";
 
-import { commentToMarkdown } from "./comment";
-import { createNoteTurndown } from "./index";
+import { commentToMarkdown, createCommentTurndown } from "./comment";
 
 const md = (html: string): string =>
-  commentToMarkdown(createNoteTurndown(TurndownService), html);
+  commentToMarkdown(createCommentTurndown(TurndownService), html);
 
 describe("commentToMarkdown", () => {
   it("converts the four supported inline tags", () => {

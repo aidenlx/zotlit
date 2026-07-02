@@ -2,6 +2,12 @@ import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 import { type Attachment } from "@/lib/zt-attach";
 
+import {
+  groupIDForLibrary,
+  resolveGroupID,
+  resolveGroupIDAsync,
+  type GroupIDMemo,
+} from "./_groups";
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
 const attachmentFindOptions = {
@@ -51,11 +57,23 @@ const attachmentByKeyQuery = defineQuery<{
   }),
 );
 
+const attachmentByItemIdQuery = defineQuery<{ itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemAttachments.findMany({
+      where: {
+        itemID: placeholder("itemID"),
+        item_itemID: { deletedItem: false },
+      },
+      ...attachmentFindOptions,
+    }),
+);
+
 type AttachmentRow = QueryRow<typeof attachmentsByParentQuery>;
 
-function toAttachment(row: AttachmentRow): Attachment {
+function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
   return {
     itemID: row.itemID,
+    groupID,
     libraryID: row.item_itemID.libraryID,
     key: row.item_itemID.key,
     parentItemID: row.parentItemID ?? 0,
@@ -70,12 +88,16 @@ function toAttachment(row: AttachmentRow): Attachment {
 export function getAttachmentsByParents(
   db: NodeDatabaseClient,
   parentItemIDs: readonly number[],
+  opts?: { memo?: GroupIDMemo },
 ): Attachment[] {
+  const memo = opts?.memo ?? new Map();
   return parentItemIDs.flatMap((parentItemID) =>
     attachmentsByParentQuery
       .prepared(db)
       .all({ parentItemID })
-      .map(toAttachment),
+      .map((row) =>
+        toAttachment(row, resolveGroupID(db, row.item_itemID.libraryID, memo)),
+      ),
   );
 }
 
@@ -85,7 +107,19 @@ export function getAttachmentByKey(
   libraryID: number,
 ): Attachment | null {
   const row = attachmentByKeyQuery.prepared(db).all({ libraryID, key })[0];
-  return row ? toAttachment(row) : null;
+  if (!row) return null;
+  return toAttachment(row, groupIDForLibrary(db, libraryID));
+}
+
+export function getAttachmentByItemId(
+  db: NodeDatabaseClient,
+  itemID: number,
+  opts?: { memo?: GroupIDMemo },
+): Attachment | null {
+  const row = attachmentByItemIdQuery.prepared(db).all({ itemID })[0];
+  if (!row) return null;
+  const memo = opts?.memo ?? new Map();
+  return toAttachment(row, resolveGroupID(db, row.item_itemID.libraryID, memo));
 }
 
 export async function getAttachmentsByParentsAsync(
@@ -97,5 +131,14 @@ export async function getAttachmentsByParentsAsync(
       attachmentsByParentQuery.prepared(db).all({ parentItemID }),
     ),
   );
-  return batches.flatMap((rows) => rows.map(toAttachment));
+  const rows = batches.flat();
+  const memo: GroupIDMemo = new Map();
+  await Promise.all(
+    [...new Set(rows.map((r) => r.item_itemID.libraryID))].map((libraryID) =>
+      resolveGroupIDAsync(db, libraryID, memo),
+    ),
+  );
+  return rows.map((row) =>
+    toAttachment(row, memo.get(row.item_itemID.libraryID) ?? null),
+  );
 }

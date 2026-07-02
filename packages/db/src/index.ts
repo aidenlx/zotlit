@@ -38,16 +38,34 @@ export {
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
+  getAnnotationsByItemId,
   getAnnotationsByKeyAsync,
   getAnnotationsByParent,
   getAnnotationsByParentAsync,
 } from "./queries/annotations";
 export {
   getAttachmentByKey,
+  getAttachmentByItemId,
   getAttachmentsByParents,
   getAttachmentsByParentsAsync,
 } from "./queries/attachments";
-export { getItemIDByCitekey, getItemIDByCitekeyAsync } from "./queries/citekey";
+export {
+  getChildNotes,
+  getChildNotesAsync,
+  getChildNotesByParentIDs,
+  getNoteByItemID,
+  getNoteByKey,
+  getNoteByKeyAsync,
+  getNoteRefsByItemIDs,
+  type ChildNote,
+  type Note,
+} from "./queries/notes";
+export {
+  getCitekeyByItemKey,
+  getCitekeyByItemKeyAsync,
+  getItemIDByCitekey,
+  getItemIDByCitekeyAsync,
+} from "./queries/citekey";
 export { getTagsByItemIDs, getTagsByItemIDsAsync } from "./queries/tags";
 export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
 export {
@@ -99,11 +117,13 @@ export {
   type AnnotationTypeName,
 } from "./lib/zt-annot";
 export {
-  itemToTemplateData,
+  itemToTemplateBaseData,
   type TemplateCreator,
   type TemplateItemBaseData,
   type TemplateItemData,
+  type FallibleTemplateLink,
   type TemplateLink,
+  type TemplateParentItemData,
 } from "./lib/zt-template-item";
 export {
   attachmentToTemplateData,
@@ -111,6 +131,7 @@ export {
 } from "./lib/zt-template-attach";
 export {
   annotationToTemplateData,
+  type AnnotationTemplateDataInput,
   type TemplateAnnotation,
 } from "./lib/zt-template-annot";
 export {
@@ -135,6 +156,7 @@ export {
 export {
   parseAnnotationData,
   parseCitationData,
+  parseEmbeddedCitationItems,
   parseItemUri,
   type AnnotationInfo,
   type CitationInfo,
@@ -146,6 +168,7 @@ export {
   buildNoteContext,
   type NoteContextInput,
   type NoteTemplateContext,
+  type TemplateNoteLink,
   type TemplateRelatedItem,
 } from "./lib/zt-note-context";
 export { getRelatedKeysByItemID } from "./queries/item-relations";

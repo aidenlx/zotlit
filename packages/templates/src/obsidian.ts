@@ -36,6 +36,11 @@ export interface ManagedRegionReplacement {
   duplicateCount: number;
 }
 
+/** Whether `content` holds at least one `%%zt-managed%%` region. */
+export function hasManagedRegion(content: string): boolean {
+  return MANAGED_REGION.test(content);
+}
+
 /**
  * Replace the first `%%zt-managed%%` region in `content` with `region`.
  *

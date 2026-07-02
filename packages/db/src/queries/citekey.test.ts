@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 
-import { getItemIDByCitekey } from "./citekey";
+import { getCitekeyByItemKey, getItemIDByCitekey } from "./citekey";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -50,6 +50,33 @@ describe("getItemIDByCitekey", () => {
     expect(
       getItemIDByCitekey(db, USER_LIBRARY_ID, "title-collision"),
     ).toBeNull();
+  });
+});
+
+describe("getCitekeyByItemKey", () => {
+  it("resolves the citation key of a live item by its Zotero key", () => {
+    expect(getCitekeyByItemKey(db, USER_LIBRARY_ID, "USER1")).toBe(
+      "doe2024alpha",
+    );
+  });
+
+  it("returns null when the item carries no citation key", () => {
+    // Item 8 (USER3) has only a `title` field, no citationKey.
+    expect(getCitekeyByItemKey(db, USER_LIBRARY_ID, "USER3")).toBeNull();
+  });
+
+  it("returns null when no item has the key", () => {
+    expect(getCitekeyByItemKey(db, USER_LIBRARY_ID, "NOPE")).toBeNull();
+  });
+
+  it("ignores deleted items", () => {
+    expect(getCitekeyByItemKey(db, USER_LIBRARY_ID, "DELETED")).toBeNull();
+  });
+
+  it("scopes the lookup to the requested library", () => {
+    expect(getCitekeyByItemKey(db, 2, "GRP1")).toBe("shared2024");
+    // The same key does not exist in the user library.
+    expect(getCitekeyByItemKey(db, USER_LIBRARY_ID, "GRP1")).toBeNull();
   });
 });
 

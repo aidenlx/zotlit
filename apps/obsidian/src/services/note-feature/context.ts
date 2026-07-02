@@ -1,39 +1,58 @@
-import { normalizePath, type App, type TFile } from "obsidian";
+import { distinct } from "@std/collections";
+import { type App, type TFile } from "obsidian";
 
 import {
+  annotationToTemplateData,
+  attachmentToTemplateData,
   buildFilenameContext,
   buildNoteContext,
   getAnnotationsByParent,
+  getAttachmentByItemId,
   getAttachmentsByParents,
+  getChildNotes,
+  getItemsByID,
   getItemsByKey,
   getLibraryByGroupID,
   getRelatedKeysByItemID,
   getTagsByItemIDs,
+  itemToTemplateBaseData,
   parseIndexedKey,
   USER_LIBRARY_ID,
   type Annotation,
+  type Attachment,
+  type GroupIDMemo,
   type Item,
   type ItemTag,
   type CollectionCache,
   type NoteContextInput,
   type NoteTemplateContext,
+  type TemplateAnnotation,
+  type TemplateAttachment,
   type TemplateCollection,
   type TemplateItemData,
+  type TemplateParentItemData,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import { hasSuffixMarker } from "@zotlit/templates";
 
+import { normalizeFolderPath } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
-import { createNoteTurndown } from "@/lib/turndown";
-import { commentToMarkdown } from "@/lib/turndown/comment";
+import {
+  commentToMarkdown,
+  createCommentTurndown,
+} from "@/lib/turndown/comment";
 import {
   type AttachmentImport,
   type AttachmentImportService,
 } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
+import {
+  type NoteImport,
+  type NoteImportService,
+} from "@/services/note-import/service";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
@@ -41,7 +60,7 @@ import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { attachmentFileLink } from "./file-link";
-import { resolveAvailableRelPath } from "./filename";
+import { resolveFreeNotePath } from "./filename";
 
 const logger = getLogger("note-feature");
 
@@ -53,14 +72,20 @@ const logger = getLogger("note-feature");
 export interface NoteFeatureContext {
   app: App;
   template: TemplateService;
-  db: DatabaseService;
+  /**
+   * Lease-only database access: the sync `client`/`state` accessors are omitted
+   * so callers must pin a snapshot via `acquireRead()` and thread its client.
+   */
+  db: Pick<DatabaseService, "acquireRead" | "ready">;
   noteIndex: NoteIndex;
   zoteroPref: ZoteroPrefService;
   settings: SettingsService;
   attachmentImport: AttachmentImportService;
+  noteImport: NoteImportService;
 }
 
 interface BuildFullContextOptions {
+  client: NodeDatabaseClient;
   /** The item's own tags, fetched once by the caller (see {@link fetchItemTags}). */
   itemTags: readonly ItemTag[];
   /** The item's own collections, fetched once by the caller (see {@link fetchItemCollections}). */
@@ -68,8 +93,20 @@ interface BuildFullContextOptions {
   /** Shared per-batch memo resolving related items' collection paths. */
   collectionCache: CollectionCache;
   attachmentImport: Pick<AttachmentImport, "resolveLink">;
+  /** Resolves `zt.notes` and queues child-note imports. */
+  noteImport: Pick<NoteImport, "resolveChildNote">;
   settings: Readonly<Settings> | null;
   sourcePath: string;
+  /** Shared `libraryID → groupID` cache; pass from a batch to resolve each library once. */
+  groupIdMemo?: GroupIDMemo;
+}
+
+/** The annotation-drag context's reads: attachments + their annotations. */
+interface AnnotationReads {
+  attachments: Attachment[];
+  annotationsByAttachment: Map<number, Annotation[]>;
+  /** Flat itemIDs of every annotation, for a single tag fetch. */
+  annotationIDs: number[];
 }
 
 interface NoteTarget {
@@ -132,32 +169,24 @@ export function resolveNotePath(
 /**
  * Build the full {@link NoteTemplateContext} for `item`. `itemTags` are passed
  * in (so the item's tags are fetched once by the caller); only annotation and
- * related-item tags are queried here. Synchronous DB reads via the active
- * client; throws {@link DatabaseError} if the database is not ready.
+ * related-item tags are queried here. Synchronous DB reads via the caller-
+ * supplied `options.client`, which the caller pins for the call's duration.
  *
  * Each annotation's `imgLink` queues its excerpt copy lazily, on first render
  * through `attachmentImport`, so an excerpt the template never embeds imports
  * nothing.
  */
 export function buildFullContext(
-  ctx: NoteFeatureContext,
+  ctx: Omit<NoteFeatureContext, "db">,
   item: Item,
   options: BuildFullContextOptions,
 ): NoteTemplateContext {
-  const client = ctx.db.client;
+  const client = options.client;
   const libraryID = item.libraryID;
 
-  const attachments = getAttachmentsByParents(client, [item.itemID]);
-  const annotationsByAttachment = new Map<number, Annotation[]>();
-  for (const attachment of attachments) {
-    annotationsByAttachment.set(
-      attachment.itemID,
-      getAnnotationsByParent(client, attachment.itemID),
-    );
-  }
-  const annotationIDs = [...annotationsByAttachment.values()].flatMap(
-    (annotations) => annotations.map((annotation) => annotation.itemID),
-  );
+  const memo = options.groupIdMemo;
+  const { attachments, annotationsByAttachment, annotationIDs } =
+    fetchAnnotations(client, item.itemID, { memo });
 
   const relatedItems = getItemsByKey(
     client,
@@ -166,15 +195,10 @@ export function buildFullContext(
   );
   const relatedItemIDs = relatedItems.map((related) => related.itemID);
 
+  // The item's own tags arrive pre-fetched on `options`; query only the rest.
   const extraIDs = [...annotationIDs, ...relatedItemIDs];
-  const tagsByItemID = new Map<number, ItemTag[]>();
+  const tagsByItemID = groupTagsByItemIDs(client, extraIDs);
   tagsByItemID.set(item.itemID, [...options.itemTags]);
-  for (const id of extraIDs) tagsByItemID.set(id, []);
-  if (extraIDs.length > 0) {
-    for (const itemTag of getTagsByItemIDs(client, extraIDs)) {
-      tagsByItemID.get(itemTag.itemID)?.push(itemTag);
-    }
-  }
 
   // Collections resolve for the main item + related items only — annotations
   // are never collection members. Related items share the item's library.
@@ -191,12 +215,9 @@ export function buildFullContext(
     }
   }
 
-  const dataDir = ctx.zoteroPref.dataDir;
-  const baseAttachmentPath = ctx.zoteroPref.baseAttachmentPath;
-  const groupID = parseIndexedKey(item.indexedKey)?.groupID ?? null;
-  // One Turndown instance, built on first use and reused across every
-  // annotation comment in this batch (skipped entirely when none are read).
-  let commentTurndown: ReturnType<typeof createNoteTurndown> | null = null;
+  // `zt.notes` lists eagerly; the import work it triggers stays lazy (queued on
+  // the link's first render).
+  const childNotes = getChildNotes(client, item.itemID, { memo });
 
   return buildNoteContext({
     item,
@@ -205,24 +226,147 @@ export function buildFullContext(
     tagsByItemID,
     collectionsByItemID,
     relatedItems,
-    authorsShort: creatorSummary,
+    childNotes,
+    resolveChildNote: (note) => options.noteImport.resolveChildNote(note),
+    ...buildContextResolvers(ctx, item, options),
+  });
+}
+
+interface ContextResolversOptions {
+  attachmentImport: Pick<AttachmentImport, "resolveLink">;
+  settings: Readonly<Settings> | null;
+  sourcePath: string;
+}
+
+/**
+ * Resolvers for attachment file paths and annotation rendering (comment
+ * conversion, excerpt images). Shared by both the full note context
+ * ({@link buildContextResolvers}) and the single-annotation drag path
+ * ({@link renderAnnotation}).
+ */
+function buildAnnotationResolvers(
+  ctx: Pick<NoteFeatureContext, "zoteroPref">,
+  options: { attachmentImport: Pick<AttachmentImport, "resolveLink"> },
+): Pick<
+  NoteContextInput,
+  "commentToMarkdown" | "annotationImageLink" | "filePath" | "fileLink"
+> {
+  const dataDir = ctx.zoteroPref.dataDir;
+  const baseAttachmentPath = ctx.zoteroPref.baseAttachmentPath;
+  const { attachmentImport } = options;
+  let commentTurndown: ReturnType<typeof createCommentTurndown> | null = null;
+
+  return {
     filePath: (a) => attachmentAbsPath(a, { dataDir, baseAttachmentPath }),
     fileLink: (a, page) =>
       attachmentFileLink(a, { dataDir, baseAttachmentPath }, page),
     commentToMarkdown: (html) => {
-      commentTurndown ??= createNoteTurndown(TurndownService);
+      commentTurndown ??= createCommentTurndown(TurndownService);
       return commentToMarkdown(commentTurndown, html);
     },
-    ...noteResolvers(ctx, options.settings, options.sourcePath),
     annotationImageLink: (annotation) => {
-      const cachePath = resolveAnnotCachePath(annotation, { dataDir, groupID });
+      const cachePath = resolveAnnotCachePath(annotation, {
+        dataDir,
+        groupID: annotation.groupID,
+      });
       if (cachePath == null) return null;
-      return options.attachmentImport.resolveLink({
+      return attachmentImport.resolveLink({
         sourcePath: cachePath,
         vaultName: `${annotation.key}.png`,
       });
     },
+  };
+}
+
+/** Read an item's attachments and their annotations in display order. */
+function fetchAnnotations(
+  client: NodeDatabaseClient,
+  itemID: number,
+  opts?: { memo?: GroupIDMemo },
+): AnnotationReads {
+  const attachments = getAttachmentsByParents(client, [itemID], opts);
+  const annotationsByAttachment = new Map<number, Annotation[]>();
+  for (const attachment of attachments) {
+    annotationsByAttachment.set(
+      attachment.itemID,
+      getAnnotationsByParent(client, attachment.itemID, opts),
+    );
+  }
+  const annotationIDs = [...annotationsByAttachment.values()].flatMap(
+    (annotations) => annotations.map((annotation) => annotation.itemID),
+  );
+  return { attachments, annotationsByAttachment, annotationIDs };
+}
+
+/** Query the tags of `ids` and bucket them into a map keyed by item ID. */
+function groupTagsByItemIDs(
+  client: NodeDatabaseClient,
+  ids: number[],
+): Map<number, ItemTag[]> {
+  return Map.groupBy(getTagsByItemIDs(client, ids), (tag) => tag.itemID);
+}
+
+/**
+ * The resolver bundle for {@link buildFullContext}: annotation resolvers plus
+ * author summary and literature-note path/link.
+ */
+function buildContextResolvers(
+  ctx: Omit<NoteFeatureContext, "db">,
+  item: Item,
+  options: ContextResolversOptions,
+): Pick<
+  NoteContextInput,
+  | "authorsShort"
+  | "filePath"
+  | "fileLink"
+  | "commentToMarkdown"
+  | "notePath"
+  | "noteLink"
+  | "annotationImageLink"
+> {
+  const annotResolvers = buildAnnotationResolvers(ctx, {
+    attachmentImport: options.attachmentImport,
   });
+
+  const resolvingFallback = new Set<string>();
+  const resolveTarget = (item: TemplateItemData): NoteTarget =>
+    resolveNoteTarget(ctx, item, {
+      settings: options.settings,
+      resolvingFallback,
+    });
+
+  return {
+    ...annotResolvers,
+    authorsShort: creatorSummary,
+    notePath: (item) => {
+      try {
+        return resolveTarget(item).path;
+      } catch (error) {
+        logger.error("Failed to resolve literature note path", {
+          itemKey: item.indexedKey,
+          error,
+        });
+        return null;
+      }
+    },
+    noteLink: (item, alias, subpath) => {
+      try {
+        const target = resolveTarget(item);
+        return ctx.app.fileManager.generateMarkdownLink(
+          target.file,
+          options.sourcePath,
+          subpath,
+          alias,
+        );
+      } catch (error) {
+        logger.error("Failed to resolve literature note link", {
+          itemKey: item.indexedKey,
+          error,
+        });
+        return null;
+      }
+    },
+  };
 }
 
 /** Resolve the active library for an `indexedKey`, or `null` when unresolvable. */
@@ -241,8 +385,8 @@ export function resolveIndexedKeyLibrary(
 
 /** Join a rendered relative note path under the literature-note folder. */
 export function literatureNotePath(folderSetting: string, rel: string): string {
-  const folder = normalizePath(folderSetting);
-  return folder === "" || folder === "/" ? `${rel}.md` : `${folder}/${rel}.md`;
+  const folder = normalizeFolderPath(folderSetting);
+  return folder === "/" ? `${rel}.md` : `${folder}/${rel}.md`;
 }
 
 function resolveRenderedRelPath(
@@ -250,56 +394,20 @@ function resolveRenderedRelPath(
   rendered: string,
   options: { exists: (path: string) => boolean; forceSuffix?: boolean },
 ): string {
-  return resolveAvailableRelPath(
+  return resolveFreeNotePath(
     rendered,
     (rel) => options.exists(literatureNotePath(folderSetting, rel)),
     options.forceSuffix,
   );
 }
 
-function noteResolvers(
-  ctx: NoteFeatureContext,
-  settings: Readonly<Settings> | null,
-  sourcePath: string,
-): Pick<NoteContextInput, "notePath" | "noteLink"> {
-  const resolvingFallback = new Set<string>();
-  const resolveTarget = (item: TemplateItemData): NoteTarget =>
-    resolveNoteTarget(ctx, item, { settings, resolvingFallback });
-
-  return {
-    notePath: (item) => {
-      try {
-        return resolveTarget(item).path;
-      } catch (error) {
-        logger.warn("Failed to resolve literature note path", {
-          itemKey: item.indexedKey,
-          error,
-        });
-        return "";
-      }
-    },
-    noteLink: (item, alias, subpath) => {
-      try {
-        const target = resolveTarget(item);
-        return ctx.app.fileManager.generateMarkdownLink(
-          target.file,
-          sourcePath,
-          subpath,
-          alias,
-        );
-      } catch (error) {
-        logger.warn("Failed to resolve literature note link", {
-          itemKey: item.indexedKey,
-          error,
-        });
-        return "";
-      }
-    },
-  };
-}
+type NoteResolversContext = Pick<
+  NoteFeatureContext,
+  "noteIndex" | "template" | "app"
+>;
 
 function resolveNoteTarget(
-  ctx: NoteFeatureContext,
+  ctx: NoteResolversContext,
   item: TemplateItemData,
   options: {
     settings: Readonly<Settings> | null;
@@ -346,4 +454,92 @@ function resolveNoteTarget(
   } finally {
     resolvingFallback.delete(item.indexedKey);
   }
+}
+
+/** A parent PDF's reusable template shape, built once per attachment and shared
+ *  by every annotation off it. */
+interface ParentBundle {
+  attachment: Attachment;
+  tplAttachment: TemplateAttachment;
+  parentItem: TemplateParentItemData;
+}
+
+/**
+ * Map already-resolved {@link Annotation}s to their {@link TemplateAnnotation}s,
+ * keyed by annotation key. Annotations sharing a parent PDF read its attachment
+ * row, parent item, and tags once: distinct parents are batched, and each
+ * parent's template bundle is reused across its annotations. An annotation whose
+ * attachment or parent item is unresolvable is absent from the result.
+ *
+ * Shared by the drag-insert path ({@link renderAnnotation}, one annotation by
+ * item id) and note import's annotation-template prepass (many, by key).
+ */
+export function buildAnnotationsTemplateData(
+  ctx: Omit<NoteFeatureContext, "db">,
+  options: {
+    client: NodeDatabaseClient;
+    annotations: readonly Annotation[];
+    attachmentImport: Pick<AttachmentImport, "resolveLink">;
+    groupIdMemo?: GroupIDMemo;
+  },
+): Map<string, TemplateAnnotation> {
+  const { client, annotations, attachmentImport, groupIdMemo } = options;
+  const result = new Map<string, TemplateAnnotation>();
+  if (annotations.length === 0) return result;
+
+  const memo = { memo: groupIdMemo };
+  const resolvers = buildAnnotationResolvers(ctx, { attachmentImport });
+
+  const attachments: Attachment[] = [];
+  for (const itemID of distinct(annotations.map((a) => a.parentItemID))) {
+    const attachment = getAttachmentByItemId(client, itemID, memo);
+    if (attachment) attachments.push(attachment);
+  }
+
+  const parentIDs = distinct(attachments.map((a) => a.parentItemID));
+  const parentItemsByID = new Map(
+    getItemsByID(client, parentIDs, memo).map((item) => [item.itemID, item]),
+  );
+
+  const tagsByItemID = groupTagsByItemIDs(client, [
+    ...annotations.map((a) => a.itemID),
+    ...parentIDs,
+  ]);
+
+  // Keyed by attachment itemID — equal to each annotation's `parentItemID`.
+  const bundleByAttachment = new Map<number, ParentBundle>();
+  for (const attachment of attachments) {
+    const parentItemData = parentItemsByID.get(attachment.parentItemID);
+    if (!parentItemData) continue;
+    bundleByAttachment.set(attachment.itemID, {
+      attachment,
+      parentItem: itemToTemplateBaseData({
+        item: parentItemData,
+        tags: tagsByItemID.get(parentItemData.itemID) ?? [],
+      }),
+      tplAttachment: {
+        ...attachmentToTemplateData(attachment),
+        filePath: resolvers.filePath(attachment),
+        fileLink: resolvers.fileLink(attachment),
+      },
+    });
+  }
+
+  for (const annotation of annotations) {
+    const bundle = bundleByAttachment.get(annotation.parentItemID);
+    if (!bundle) continue;
+    result.set(
+      annotation.key,
+      annotationToTemplateData({
+        annotation,
+        tags: tagsByItemID.get(annotation.itemID) ?? [],
+        getParentAttachment: () => bundle.tplAttachment,
+        getParentItem: () => bundle.parentItem,
+        commentToMarkdown: resolvers.commentToMarkdown,
+        annotationImageLink: resolvers.annotationImageLink,
+        fileLink: (page) => resolvers.fileLink(bundle.attachment, page),
+      }),
+    );
+  }
+  return result;
 }

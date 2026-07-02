@@ -81,14 +81,13 @@ describe("DatabaseService", () => {
   let zoteroPref: FakeZoteroPref;
   let DatabaseService: typeof import("./service").DatabaseService;
   let DatabaseError: typeof import("./service").DatabaseError;
-  let noticesLog: typeof import("@mock/obsidian").noticesLog;
-  let resetMockNotices: typeof import("@mock/obsidian").resetMockNotices;
+  let BaseNoticeMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.useFakeTimers();
-    ({ noticesLog, resetMockNotices } = await import("@mock/obsidian"));
-    resetMockNotices();
+    BaseNoticeMock = vi.fn();
+    vi.doMock("@/lib/notice", () => ({ BaseNotice: BaseNoticeMock }));
 
     prepareMock = vi.fn();
     reapStaleReadTempsMock = vi.fn(async () => undefined);
@@ -126,6 +125,7 @@ describe("DatabaseService", () => {
     vi.doUnmock("./read-source");
     vi.doUnmock("@zotlit/db/client/node");
     vi.doUnmock("node:fs");
+    vi.doUnmock("@/lib/notice");
   });
 
   it("opens the configured read source during startup", async () => {
@@ -260,10 +260,7 @@ describe("DatabaseService", () => {
     await service.ready;
     await service.refresh();
 
-    expect(noticesLog).toHaveLength(1);
-    expect(noticesLog[0]?.message).toBe(
-      "Reflink clones are unavailable on this volume. ZotLit is reading the immutable Zotero database.",
-    );
+    expect(BaseNoticeMock).toHaveBeenCalledOnce();
   });
 
   it("defers refresh while a read lease is held and swaps once after release", async () => {

@@ -151,7 +151,7 @@ export function parseProtocolBatchQuery(
 }
 
 /**
- * Body for `PATCH {host}/literature-notes` — the HTTP fallback the companion
+ * Body for `PUT {host}/literature-notes` — the HTTP fallback the companion
  * uses when a batch is too large to fit in an `obsidian://` URL. `items` carries
  * the same invariants as the URL path (integer ids, deduped, non-empty) so both
  * transports validate identically. The batch is gated by the
@@ -169,6 +169,143 @@ export const batchUpdateRequestSchema = v.object({
 /** Producer-facing request body. Defaulted fields (`scope`) are optional to
  *  send; the server fills them on parse. */
 export type BatchUpdateRequest = v.InferInput<typeof batchUpdateRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// Note-import protocol family
+// ---------------------------------------------------------------------------
+
+/** How note-keys are gathered from the selected items. */
+export type ImportMode = "note" | "child";
+
+const importModeValue = v.picklist(["note", "child"] satisfies ImportMode[]);
+
+/**
+ * Single-item note-import action. Kept out of {@link protocolActions} (different
+ * query shape with `mode`).
+ */
+const PROTOCOL_IMPORT_ACTION = "import-note";
+
+/** Batch note-import action. */
+const PROTOCOL_IMPORT_MANY_ACTION = "import-notes";
+
+/** Full Obsidian action string for a single-note import. */
+export const importProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_IMPORT_ACTION}` as const;
+
+/** Full Obsidian action string for the batch import handler. */
+export const importManyProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_IMPORT_MANY_ACTION}` as const;
+
+/** Query payload for `zotlit/import-note`. */
+export const importProtocolQuerySchema = v.pipe(
+  v.object({
+    item: itemID,
+    mode: importModeValue,
+    "source-id": sourceIdValue,
+  }),
+  v.transform(({ item, mode, "source-id": sourceId }) => ({
+    item,
+    mode,
+    sourceId,
+  })),
+);
+
+/** Decoded, validated query for a single-note import action. */
+export type ImportProtocolQuery = v.InferOutput<
+  typeof importProtocolQuerySchema
+>;
+
+/** Query payload for `zotlit/import-notes`. */
+export const importManyProtocolQuerySchema = v.pipe(
+  v.object({
+    items: batchItems,
+    mode: importModeValue,
+    "source-id": sourceIdValue,
+  }),
+  v.transform(({ items, mode, "source-id": sourceId }) => ({
+    items,
+    mode,
+    sourceId,
+  })),
+);
+
+/** Decoded, validated query for a batch note-import action. */
+export type ImportManyProtocolQuery = v.InferOutput<
+  typeof importManyProtocolQuerySchema
+>;
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/import-note` link.
+ *
+ * @throws {v.ValiError} when required fields are missing or malformed
+ */
+export function parseImportProtocolQuery(
+  data: Record<string, unknown>,
+): ImportProtocolQuery {
+  return v.parse(importProtocolQuerySchema, data);
+}
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/import-notes` link.
+ *
+ * @throws {v.ValiError} when `items` is empty/malformed or `source-id` is absent
+ */
+export function parseImportManyProtocolQuery(
+  data: Record<string, unknown>,
+): ImportManyProtocolQuery {
+  return v.parse(importManyProtocolQuerySchema, data);
+}
+
+/**
+ * Body for `PUT {host}/zotero-notes` — the HTTP fallback the companion uses
+ * when a batch import is too large to fit in an `obsidian://` URL. Same
+ * invariants on `items` as the URL transport. Gated by {@link SOURCE_ID_HEADER}.
+ */
+export const importNotesRequestSchema = v.object({
+  items: v.pipe(
+    v.array(v.pipe(v.number(), v.integer())),
+    v.transform((ids) => [...new Set(ids)]),
+    v.minLength(1),
+  ),
+  mode: importModeValue,
+});
+
+/** Producer-facing request body for note import. */
+export type ImportNotesRequest = v.InferInput<typeof importNotesRequestSchema>;
+
+/**
+ * Build an `obsidian://zotlit/import-note?item=<id>&mode=<mode>&source-id=<hash>`
+ * link for `Zotero.launchURL`.
+ */
+export function buildImportProtocolUrl(
+  item: number,
+  options: { sourceId: string; mode: ImportMode },
+): string {
+  const params = new URLSearchParams({
+    item: String(item),
+    mode: options.mode,
+    "source-id": options.sourceId,
+    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
+  });
+  return `obsidian://${importProtocolActionId}?${params}`;
+}
+
+/**
+ * Build an `obsidian://zotlit/import-notes?items=<csv>&mode=<mode>&source-id=<hash>`
+ * link for `Zotero.launchURL`.
+ */
+export function buildImportManyProtocolUrl(
+  items: readonly number[],
+  options: { sourceId: string; mode: ImportMode },
+): string {
+  const params = new URLSearchParams({
+    items: items.join(","),
+    mode: options.mode,
+    "source-id": options.sourceId,
+    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
+  });
+  return `obsidian://${importManyProtocolActionId}?${params}`;
+}
 
 /**
  * Build an `obsidian://zotlit/update-many?items=<id,id,…>&source-id=<hash>` link

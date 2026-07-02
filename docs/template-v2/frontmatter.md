@@ -40,10 +40,10 @@ Out of the box, ZotLit configures these user fields:
 | Key | Expression | Merge strategy |
 |-----|------------|----------------|
 | `title` | `zt.title` | Replace |
-| `related` | `zt.relatedItems.map((item) => item.noteLink()).filter(Boolean)` | Replace |
+| `related` | `` zt.relatedItems.map((i) => i.noteLink() ?? `zt-error:${i.indexedKey}`) `` | Replace |
 | `collections` | `zt.collections.map((c) => c.path.join('/'))` | Replace |
 
-The default `related` field mirrors Zotero's Related panel. Manage related-item links in Zotero; ZotLit refreshes this field from Zotero data.
+The default `related` field mirrors Zotero's Related panel. When a related item's literature note link cannot be resolved (path collision, recursive filename resolution, or template error), the entry renders as `zt-error:<indexedKey>` so the failure is visible in frontmatter rather than silently dropped. Manage related-item links in Zotero; ZotLit refreshes this field from Zotero data.
 
 The default `collections` field lists the names of the Zotero collections the item belongs to. Manage collection membership in Zotero; ZotLit refreshes this field from Zotero data.
 

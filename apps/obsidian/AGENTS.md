@@ -87,6 +87,8 @@ Run the full task via turbo (see root AGENTS.md → Commands). For tight iterati
 Extend the mock when a service starts touching new `obsidian` exports; add the
 new symbol and keep the surface minimal.
 
+`function sleep(ms: number): Promise<void>` is an Obsidian global (see `packages/obsidian-api/obsidian.d.ts`); it doesn't exist in Node. If module need to work in tests, use `delay` from `@std/async` instead.
+
 ## Extended Obsidian APIs
 
 When the plugin uses private Obsidian runtime APIs that are missing from

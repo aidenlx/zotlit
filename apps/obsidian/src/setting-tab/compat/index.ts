@@ -4,6 +4,7 @@ import { databaseSection } from "./database";
 import { generalSection } from "./general";
 import { liveUpdatesSection } from "./live-updates";
 import { loggingSection } from "./logging";
+import { noteImportSection } from "./note-import";
 import { templatesSection } from "./templates";
 
 export { type CompatContext } from "./context";
@@ -23,6 +24,7 @@ export function renderCompatSettings(
   generalSection(containerEl, ctx);
   databaseSection(containerEl, ctx);
   templatesSection(containerEl, ctx);
+  noteImportSection(containerEl, ctx);
   attachmentsSection(containerEl, ctx);
   liveUpdatesSection(containerEl, ctx);
   loggingSection(containerEl, ctx);

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseAnnotationData,
   parseCitationData,
+  parseEmbeddedCitationItems,
   parseItemUri,
 } from "./zt-note-mark";
 
@@ -88,6 +89,46 @@ describe("parseCitationData", () => {
 
   it("returns null when the shape fails validation", () => {
     expect(parseCitationData(encode({ properties: {} }))).toBeNull();
+  });
+});
+
+describe("parseEmbeddedCitationItems", () => {
+  it("maps every URI of an entry to its citation key", () => {
+    const encoded = encode([
+      {
+        uris: [`${LOCAL_USER}/KX67D9YM`, `${LOCAL_USER}/ALT0KEY0`],
+        itemData: {
+          id: `${LOCAL_USER}/KX67D9YM`,
+          "citation-key": "Hensher2011",
+        },
+      },
+      {
+        uris: [`${LOCAL_USER}/4FQVQ6ZQ`],
+        itemData: { id: `${LOCAL_USER}/4FQVQ6ZQ`, "citation-key": "Kang2013" },
+      },
+    ]);
+    expect(parseEmbeddedCitationItems(encoded)).toEqual(
+      new Map([
+        [`${LOCAL_USER}/KX67D9YM`, "Hensher2011"],
+        [`${LOCAL_USER}/ALT0KEY0`, "Hensher2011"],
+        [`${LOCAL_USER}/4FQVQ6ZQ`, "Kang2013"],
+      ]),
+    );
+  });
+
+  it("skips entries whose itemData has no citation-key", () => {
+    const encoded = encode([
+      { uris: [`${LOCAL_USER}/KX67D9YM`], itemData: { id: "x", type: "book" } },
+    ]);
+    expect(parseEmbeddedCitationItems(encoded).size).toBe(0);
+  });
+
+  it("returns an empty map for an absent or malformed attribute", () => {
+    expect(parseEmbeddedCitationItems(null).size).toBe(0);
+    expect(parseEmbeddedCitationItems("%7Bnot json").size).toBe(0);
+    expect(parseEmbeddedCitationItems(encode({ not: "an array" })).size).toBe(
+      0,
+    );
   });
 });
 

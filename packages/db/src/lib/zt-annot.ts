@@ -23,6 +23,7 @@ export type AnnotationType = keyof typeof ANNOT_TYPE;
 export type AnnotationTypeName = (typeof ANNOT_TYPE)[AnnotationType];
 
 export interface Annotation {
+  groupID: number | null;
   itemID: number;
   key: string;
   libraryID: number;

@@ -114,9 +114,13 @@ describe("zt-excerpt-note.html fixture", () => {
       parseAnnotation,
     );
     expect(annots.map((a) => a?.annotationKey)).toEqual([
-      "C2DF35H3",
-      "7SUQ86WL",
+      "JDJKX3N6",
+      "V78IHLM9",
+      "KMV38EI6",
       "DBKE89L9",
+      "AFUVIG9Z",
+      "XRZMBHKK",
+      "NPUZ9NKS",
     ]);
     expect(annots.every((a) => a?.attachment?.key === "T2P8T29G")).toBe(true);
     expect(annots.every((a) => a?.citationItem?.ref?.key === "KX67D9YM")).toBe(
@@ -126,7 +130,11 @@ describe("zt-excerpt-note.html fixture", () => {
     expect(annots.map((a) => a?.imageAttachmentKey)).toEqual([
       undefined,
       undefined,
-      "DUPB2GWX",
+      undefined,
+      "7TTPMKWK",
+      undefined,
+      undefined,
+      undefined,
     ]);
   });
 

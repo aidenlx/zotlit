@@ -1,0 +1,691 @@
+// @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import TurndownService from "turndown";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { getAttachmentByKey, getCitekeyByItemKey } from "@zotlit/db";
+
+import { type ResolveLinkOptions } from "@/services/attachment-import/service";
+
+import { parseNote, type ParseNoteDeps } from "./note-parser";
+
+// Keep the real DOM-free parsers; only the DB-backed legs are stubbed per test.
+vi.mock("@zotlit/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@zotlit/db")>();
+  return {
+    ...actual,
+    getCitekeyByItemKey: vi.fn(),
+    getAttachmentByKey: vi.fn(),
+  };
+});
+
+const ITEMS = "http://zotero.org/users/local/BOtEiq6p/items";
+const ATTACHMENT = `${ITEMS}/T2P8T29G`;
+
+/** Render cited items as `[@key; @key]`, dropping the unresolved ones. */
+const renderCite = (items: readonly { citationKey: string | null }[]) =>
+  `[${items
+    .filter((c) => c.citationKey)
+    .map((c) => `@${c.citationKey}`)
+    .join("; ")}]`;
+
+/** A resolveLink stub echoing the requested vault name as a wikilink embed body. */
+const echoResolveLink = vi.fn(
+  (opts: ResolveLinkOptions) => () => `[[${opts.vaultName}]]`,
+);
+
+/** Full {@link ParseNoteDeps} for the resolving path; `client` is unused by the stubs. */
+const deps: ParseNoteDeps = {
+  client: {} as never,
+  libraryID: 1,
+  renderCite,
+  pathContext: { dataDir: "/data", baseAttachmentPath: null },
+  resolveLink: echoResolveLink,
+};
+
+/** A storage-mode (linkMode 4) attachment row; the common case for note images. */
+function storageAttachment(key: string, filename = "img.png") {
+  return { key, path: `storage:${filename}`, linkMode: 4 };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+/**
+ * Mirror the real batch renderer: map each key to its render, omitting only
+ * unresolved keys (`null`). Blank callouts stay in the map — the prepass drops
+ * them — so a `() => "  "` stub exercises that guard.
+ */
+const batchRender = (fn: (key: string) => string | null) =>
+  vi.fn((keys: readonly string[]) => {
+    const out = new Map<string, string>();
+    for (const key of keys) {
+      const callout = fn(key);
+      if (callout !== null) out.set(key, callout);
+    }
+    return out;
+  });
+
+/**
+ * Wrap body HTML in the schema container `parseNote` gates on, optionally
+ * hoisting `citationItems` onto the container's `data-citation-items`.
+ */
+function note(body: string, version = 10, citationItems?: unknown): string {
+  const attr =
+    citationItems === undefined
+      ? ""
+      : ` data-citation-items="${encodeURIComponent(JSON.stringify(citationItems))}"`;
+  return `<div data-schema-version="${version}"${attr}>${body}</div>`;
+}
+
+/** A `span.citation` mark carrying the URL-encoded `data-citation` payload. */
+function cite(payload: Record<string, unknown>, text = "(citation)"): string {
+  const attr = encodeURIComponent(JSON.stringify(payload));
+  return `<span class="citation" data-citation="${attr}">${text}</span>`;
+}
+
+/** A `data-annotation` excerpt span carrying the URL-encoded payload. */
+function annot(
+  className: string,
+  payload: Record<string, unknown>,
+  text: string,
+): string {
+  const attr = encodeURIComponent(JSON.stringify(payload));
+  return `<span class="${className}" data-annotation="${attr}">${text}</span>`;
+}
+
+describe("schema gate", () => {
+  it("returns the legacy callout for a pre-v6 note", () => {
+    const md = parseNote(TurndownService, note("<p>x</p>", 5));
+    expect(md).toContain("[!warning]");
+    expect(md).toContain("schema version 5");
+  });
+
+  it("returns an empty string for empty input", () => {
+    expect(parseNote(TurndownService, "")).toBe("");
+  });
+
+  it("returns an empty string when no schema container is present", () => {
+    expect(parseNote(TurndownService, "<p>plain note</p>")).toBe("");
+  });
+
+  it("sees through the zotero-note znv1 storage wrapper", () => {
+    const md = parseNote(
+      TurndownService,
+      `<div class="zotero-note znv1">${note("<p>hello</p>")}</div>`,
+    );
+    expect(md).toBe("hello");
+  });
+});
+
+describe("blank lines", () => {
+  it("preserves intentional blank lines instead of collapsing them", () => {
+    const md = parseNote(TurndownService, note("<p>a</p><hr><hr><p>b</p>"));
+    // Two horizontal rules between paragraphs survive as raw Turndown output.
+    expect(md).toBe("a\n\n---\n\n---\n\nb");
+  });
+});
+
+describe("highlight annotation", () => {
+  const md = parseNote(
+    TurndownService,
+    note(
+      annot(
+        "highlight",
+        {
+          attachmentURI: ATTACHMENT,
+          annotationKey: "C2DF35H3",
+          color: "#e56eee",
+          pageLabel: "62",
+        },
+        "might aid in our understanding",
+      ),
+    ),
+  );
+
+  it("wraps the excerpt in a linked, colored <mark>", () => {
+    expect(md).toBe(
+      '[<mark class="zotlit-hl" data-color="magenta" ' +
+        'style="background-color: var(--zotlit-hl-magenta, #e56eee);">' +
+        "might aid in our understanding</mark>]" +
+        "(zotero://open/library/items/T2P8T29G?annotation=C2DF35H3&page=62)",
+    );
+  });
+});
+
+describe("underline annotation", () => {
+  it("wraps the excerpt in a linked, colored <u>", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "underline",
+          {
+            attachmentURI: ATTACHMENT,
+            annotationKey: "7SUQ86WL",
+            color: "#ffd400",
+            pageLabel: "62",
+          },
+          "reference alternative as valu",
+        ),
+      ),
+    );
+    expect(md).toBe(
+      '[<u class="zotlit-ul" data-color="yellow" ' +
+        'style="text-decoration-color: var(--zotlit-ul-yellow, #ffd400);">' +
+        "reference alternative as valu</u>]" +
+        "(zotero://open/library/items/T2P8T29G?annotation=7SUQ86WL&page=62)",
+    );
+  });
+});
+
+describe("annotation edge cases", () => {
+  it("preserves user-edited span text (not the DB annotation text)", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "highlight",
+          { attachmentURI: ATTACHMENT, annotationKey: "K", color: "#ffd400" },
+          "edited by the user",
+        ),
+      ),
+    );
+    expect(md).toContain(">edited by the user</mark>");
+  });
+
+  it("emits a plain mark without a link when the attachment URI is malformed", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "highlight",
+          {
+            attachmentURI: "not-a-zotero-uri",
+            annotationKey: "K",
+            color: "#ffd400",
+          },
+          "no link",
+        ),
+      ),
+    );
+    expect(md).toBe(
+      '<mark class="zotlit-hl" data-color="yellow" ' +
+        'style="background-color: var(--zotlit-hl-yellow, #ffd400);">no link</mark>',
+    );
+  });
+
+  it("falls back to inline hex for an unmapped color", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "highlight",
+          { attachmentURI: ATTACHMENT, annotationKey: "K", color: "#123456" },
+          "odd color",
+        ),
+      ),
+    );
+    expect(md).toContain(
+      '<mark class="zotlit-hl" style="background-color: #123456;">',
+    );
+    expect(md).not.toContain("data-color");
+    expect(md).not.toContain("var(");
+  });
+
+  it("builds a group-library backlink for a group attachment", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "highlight",
+          {
+            attachmentURI: "http://zotero.org/groups/9/items/T2P8T29G",
+            annotationKey: "K",
+            color: "#ffd400",
+          },
+          "group excerpt",
+        ),
+      ),
+    );
+    expect(md).toContain(
+      "(zotero://open/groups/9/items/T2P8T29G?annotation=K)",
+    );
+  });
+
+  it("omits the page hint when the payload has no pageLabel", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "highlight",
+          { attachmentURI: ATTACHMENT, annotationKey: "K", color: "#ffd400" },
+          "no page",
+        ),
+      ),
+    );
+    expect(md).toContain("items/T2P8T29G?annotation=K)");
+    expect(md).not.toContain("page=");
+  });
+});
+
+describe("embedded image resolution", () => {
+  const img = (key: string) =>
+    `<p><img data-attachment-key="${key}" alt=""></p>`;
+
+  it("resolves a storage image to a vault embed via resolveLink", () => {
+    vi.mocked(getAttachmentByKey).mockReturnValue(
+      storageAttachment("U5WTYIJK", "diagram.png") as never,
+    );
+    const md = parseNote(TurndownService, note(img("U5WTYIJK")), deps);
+    expect(md).toBe("![[U5WTYIJK-diagram.png]]");
+    expect(echoResolveLink).toHaveBeenCalledWith({
+      sourcePath: "/data/storage/U5WTYIJK/diagram.png",
+      vaultName: "U5WTYIJK-diagram.png",
+    });
+  });
+
+  it("resolves an image-excerpt embed to a bare embed (no annotation branch)", () => {
+    vi.mocked(getAttachmentByKey).mockReturnValue(
+      storageAttachment("DUPB2GWX") as never,
+    );
+    const md = parseNote(
+      TurndownService,
+      note(
+        '<img data-attachment-key="DUPB2GWX" ' +
+          'data-annotation="%7B%22annotationKey%22%3A%22DBKE89L9%22%7D">',
+      ),
+      deps,
+    );
+    expect(md).toBe("![[DUPB2GWX-img.png]]");
+  });
+
+  it("passes a missing attachment through as raw HTML", () => {
+    vi.mocked(getAttachmentByKey).mockReturnValue(null);
+    const md = parseNote(TurndownService, note(img("GONE1234")), deps);
+    expect(md).toContain('data-attachment-key="GONE1234"');
+    expect(md.startsWith("<img")).toBe(true);
+    expect(echoResolveLink).not.toHaveBeenCalled();
+  });
+
+  it("passes a path-unresolved attachment through as raw HTML", () => {
+    // linkMode 3 (linked_url) has no filesystem path, so attachmentAbsPath is null.
+    vi.mocked(getAttachmentByKey).mockReturnValue({
+      key: "URL12345",
+      path: "http://example.com/a.png",
+      linkMode: 3,
+    } as never);
+    const md = parseNote(TurndownService, note(img("URL12345")), deps);
+    expect(md).toContain('data-attachment-key="URL12345"');
+    expect(echoResolveLink).not.toHaveBeenCalled();
+  });
+
+  it("keeps the image raw when no deps are supplied", () => {
+    const md = parseNote(TurndownService, note(img("U5WTYIJK")));
+    expect(md.startsWith("<img")).toBe(true);
+    expect(getAttachmentByKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("annotation template mode", () => {
+  /** Declines for the `GONE` key (DB miss); otherwise renders a callout. */
+  const render = batchRender((key) =>
+    key === "GONE" ? null : `> [!note]\n>\n> callout ${key}`,
+  );
+  const withRender = (): ParseNoteDeps => ({
+    ...deps,
+    renderAnnotationParagraph: render,
+  });
+
+  const citation = cite({
+    citationItems: [{ uris: [`${ITEMS}/KX67D9YM`] }],
+    properties: {},
+  });
+
+  /** A clean highlight/underline insertion `<p>`: excerpt, citation, comment. */
+  const spanPara = (className: string, key: string) =>
+    `<p>${annot(
+      className,
+      { attachmentURI: ATTACHMENT, annotationKey: key, color: "#ffd400" },
+      "excerpt",
+    )} ${citation} trailing comment</p>`;
+
+  it("subsumes a highlight paragraph into the rendered callout", () => {
+    const md = parseNote(
+      TurndownService,
+      note(spanPara("highlight", "K1")),
+      withRender(),
+    );
+    // The multi-line callout survives the sentinel round-trip intact.
+    expect(md).toBe("> [!note]\n>\n> callout K1");
+    expect(render).toHaveBeenCalledExactlyOnceWith(["K1"]);
+  });
+
+  it("subsumes an underline paragraph too", () => {
+    const md = parseNote(
+      TurndownService,
+      note(spanPara("underline", "K2")),
+      withRender(),
+    );
+    expect(md).toBe("> [!note]\n>\n> callout K2");
+  });
+
+  it("subsumes an image excerpt without resolving its storage attachment", () => {
+    vi.mocked(getAttachmentByKey).mockReturnValue(
+      storageAttachment("IMG1") as never,
+    );
+    const imgAnnot = encodeURIComponent(
+      JSON.stringify({ attachmentURI: ATTACHMENT, annotationKey: "K3" }),
+    );
+    const body = `<p><img data-attachment-key="IMG1" data-annotation="${imgAnnot}"><br>${citation} caption</p>`;
+    const md = parseNote(TurndownService, note(body), withRender());
+    expect(md).toBe("> [!note]\n>\n> callout K3");
+    // The inner <img> is removed before the embed rule runs — no orphan copy.
+    expect(getAttachmentByKey).not.toHaveBeenCalled();
+  });
+
+  it("falls back to an inline mark when the renderer declines", () => {
+    const md = parseNote(
+      TurndownService,
+      note(spanPara("highlight", "GONE")),
+      withRender(),
+    );
+    expect(md).toContain('<mark class="zotlit-hl"');
+    expect(md).not.toContain("[!note]");
+  });
+
+  it("falls back to an inline mark when the renderer omits the key (blank render)", () => {
+    const md = parseNote(TurndownService, note(spanPara("highlight", "K1")), {
+      ...deps,
+      renderAnnotationParagraph: batchRender(() => "   \n"),
+    });
+    expect(md).toContain('<mark class="zotlit-hl"');
+    expect(md).not.toContain("[!note]");
+  });
+
+  it("bails to inline when prose precedes the excerpt", () => {
+    const body = `<p>this is the one to exclude ${annot(
+      "highlight",
+      { attachmentURI: ATTACHMENT, annotationKey: "K5", color: "#ffd400" },
+      "excerpt",
+    )} ${citation}</p>`;
+    const md = parseNote(TurndownService, note(body), withRender());
+    expect(render).not.toHaveBeenCalled();
+    expect(md).toContain("this is the one to exclude");
+    expect(md).toContain("<mark");
+  });
+
+  it("subsumes despite trailing prose after the citation", () => {
+    // Zotero serializes the annotation comment into this slot; under
+    // DB-as-truth the snapshot text is discarded for the rendered callout.
+    const body = `<p>${annot(
+      "underline",
+      { attachmentURI: ATTACHMENT, annotationKey: "K6", color: "#ffd400" },
+      "excerpt",
+    )} ${citation} hand-typed trailing note</p>`;
+    const md = parseNote(TurndownService, note(body), withRender());
+    expect(md).toBe("> [!note]\n>\n> callout K6");
+  });
+
+  it("bails to inline when an extra element joins the paragraph", () => {
+    const body = `<p>${annot(
+      "highlight",
+      { attachmentURI: ATTACHMENT, annotationKey: "K4", color: "#ffd400" },
+      "excerpt",
+    )} <em>hand-written aside</em></p>`;
+    const md = parseNote(TurndownService, note(body), withRender());
+    expect(render).not.toHaveBeenCalled();
+    expect(md).toContain("<mark");
+    expect(md).toContain("_hand-written aside_");
+  });
+
+  it("leaves an annotation paragraph nested in a list inline, preserving structure", () => {
+    // Only "Add to note" top-level paragraphs are subsumed; a `<p>` a user
+    // moved into a list is restructured prose, so the block callout would
+    // detach and break the list. It falls through to the inline excerpt rule.
+    const body = `<ul><li>${spanPara("highlight", "K7")}</li></ul>`;
+    const md = parseNote(TurndownService, note(body), withRender());
+    expect(render).not.toHaveBeenCalled();
+    expect(md).toContain("<mark");
+    expect(md).not.toContain("[!note]");
+    expect(md).toMatch(/^- /m);
+  });
+
+  it("ignores a citation-only paragraph", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue("Hensher2011");
+    const md = parseNote(
+      TurndownService,
+      note(`<p>${citation} plain note text</p>`),
+      withRender(),
+    );
+    expect(render).not.toHaveBeenCalled();
+    expect(md).toContain("[@Hensher2011]");
+    expect(md).toContain("plain note text");
+  });
+});
+
+describe("citation resolution", () => {
+  /** A single-item citation mark referencing `KX67D9YM`. */
+  const oneCite = cite({
+    citationItems: [{ uris: [`${ITEMS}/KX67D9YM`] }],
+    properties: {},
+  });
+
+  it("resolves a cited item to its live DB citation key, emitted verbatim", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue("Hensher2011");
+    const md = parseNote(TurndownService, note(oneCite), deps);
+    expect(md).toContain("[@Hensher2011]");
+    // The cite syntax is emitted unescaped — no `\[` from Turndown.
+    expect(md).not.toContain("\\[");
+  });
+
+  it("falls back to the embedded snapshot map when the DB misses", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    const md = parseNote(
+      TurndownService,
+      note(oneCite, 10, [
+        {
+          uris: [`${ITEMS}/KX67D9YM`],
+          itemData: { id: `${ITEMS}/KX67D9YM`, "citation-key": "Embedded2020" },
+        },
+      ]),
+      deps,
+    );
+    expect(md).toContain("[@Embedded2020]");
+  });
+
+  it("emits a visible sentinel when the DB and embedded map both miss", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    const md = parseNote(TurndownService, note(oneCite), deps);
+    expect(md).toContain("[@KX67D9YM?]");
+  });
+
+  it("leaves an unresolvable (no-ref) citation as raw-HTML passthrough", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    const md = parseNote(
+      TurndownService,
+      note(cite({ citationItems: [{ uris: ["not-a-uri"] }], properties: {} })),
+      deps,
+    );
+    expect(md).toContain("data-citation");
+    expect(md).not.toContain("[@");
+  });
+
+  it("renders a multi-item mark through one joined cite render", () => {
+    vi.mocked(getCitekeyByItemKey).mockImplementation((_db, _lib, key) =>
+      key === "KX67D9YM" ? "Hensher2011" : null,
+    );
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            { uris: [`${ITEMS}/KX67D9YM`] },
+            { uris: [`${ITEMS}/4FQVQ6ZQ`] },
+          ],
+          properties: {},
+        }),
+        10,
+        [
+          {
+            uris: [`${ITEMS}/4FQVQ6ZQ`],
+            itemData: { id: `${ITEMS}/4FQVQ6ZQ`, "citation-key": "Kang2013" },
+          },
+        ],
+      ),
+      deps,
+    );
+    expect(md).toContain("[@Hensher2011; @Kang2013]");
+  });
+
+  it("still resolves via embedded and sentinel when the DB is degraded", () => {
+    // A degraded DB makes the DB leg miss uniformly; embedded + sentinel run.
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            { uris: [`${ITEMS}/KX67D9YM`] },
+            { uris: [`${ITEMS}/NOEMBED0`] },
+          ],
+          properties: {},
+        }),
+        10,
+        [
+          {
+            uris: [`${ITEMS}/KX67D9YM`],
+            itemData: {
+              id: `${ITEMS}/KX67D9YM`,
+              "citation-key": "Embedded2020",
+            },
+          },
+        ],
+      ),
+      deps,
+    );
+    expect(md).toContain("[@Embedded2020; @NOEMBED0?]");
+  });
+
+  it("trims the rendered cite so it stays inline (cite.eta's trailing \\n)", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue("Hensher2011");
+    const md = parseNote(TurndownService, note(`x ${oneCite} y`), {
+      ...deps,
+      renderCite: (items) => `${renderCite(items)}\n`,
+    });
+    expect(md).toBe("x [@Hensher2011] y");
+  });
+
+  it("leaves citation marks raw when no deps are supplied", () => {
+    const md = parseNote(TurndownService, note(oneCite));
+    expect(md).toContain("data-citation");
+    expect(md).not.toContain("[@");
+  });
+});
+
+/**
+ * End-to-end conversion of the real Zotero note fixtures with every resolver
+ * wired, exercising image rendering and annotation extraction together.
+ */
+describe("fixtures (resolving)", () => {
+  function fixture(name: string): string {
+    return readFileSync(
+      join(import.meta.dirname, "../../lib/turndown/__fixtures__", name),
+      "utf8",
+    );
+  }
+
+  it("renders images, citations, and formatting in zt-note-example.html", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    vi.mocked(getAttachmentByKey).mockImplementation(
+      (_db, key) => storageAttachment(key) as never,
+    );
+    const md = parseNote(
+      TurndownService,
+      fixture("zt-note-example.html"),
+      deps,
+    );
+
+    // The plain embedded image resolves to a vault embed.
+    expect(md).toContain("![[U5WTYIJK-img.png]]");
+    expect(md).not.toContain("<img");
+    // The multi-item citation resolves through the embedded snapshot map.
+    expect(md).toContain("[@Kang2013; @Hensher2011]");
+    expect(md).not.toContain("data-citation");
+    // Non-DB formatting is untouched by the resolving path.
+    expect(md).toContain("$e^{i\\pi}+1=0$");
+    expect(md).toContain("$$\\frac{a_1}{b_2}$$");
+  });
+
+  it("extracts annotations and image excerpts in zt-excerpt-note.html", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    vi.mocked(getAttachmentByKey).mockImplementation(
+      (_db, key) => storageAttachment(key) as never,
+    );
+    // No annotation-template renderer → inline marks / bare embed (default).
+    const md = parseNote(
+      TurndownService,
+      fixture("zt-excerpt-note.html"),
+      deps,
+    );
+
+    // Highlight excerpts → linked, colored <mark>.
+    expect(md).toContain('<mark class="zotlit-hl" data-color="red"');
+    expect(md).toContain("annotation=JDJKX3N6&page=62)");
+    expect(md).toContain("annotation=KMV38EI6&page=62)");
+    // Underline excerpt → linked, colored <u>.
+    expect(md).toContain('<u class="zotlit-ul" data-color="yellow"');
+    expect(md).toContain("annotation=V78IHLM9&page=62)");
+    // Image-excerpt embed → bare vault embed (no template renderer supplied).
+    expect(md).toContain("![[7TTPMKWK-img.png]]");
+    expect(md).not.toContain("<img");
+    // Citations resolve via the embedded snapshot map.
+    expect(md).toContain("[@Hensher2011]");
+    expect(md).not.toContain("data-citation");
+  });
+
+  it("renders every annotation paragraph via the template when enabled", () => {
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    vi.mocked(getAttachmentByKey).mockImplementation(
+      (_db, key) => storageAttachment(key) as never,
+    );
+    const renderAnnotationParagraph = batchRender(
+      (key) => `> [!note] Page 62\n>\n> excerpt ${key}`,
+    );
+    const md = parseNote(TurndownService, fixture("zt-excerpt-note.html"), {
+      ...deps,
+      renderAnnotationParagraph,
+    });
+
+    // Every clean insertion paragraph is subsumed, keyed by its annotation key
+    // and in document order: highlight, underline, highlight, image, then the
+    // two trailing-comment underlines. `AFUVIG9Z` is absent — its leading prose
+    // ("this is the one to exclude") makes it user-edited, so the gate bails.
+    const subsumed = [
+      "JDJKX3N6",
+      "V78IHLM9",
+      "KMV38EI6",
+      "DBKE89L9",
+      "XRZMBHKK",
+      "NPUZ9NKS",
+    ];
+    // One batched call carrying every found key in document order; the gated
+    // `AFUVIG9Z` (user-edited prose) is excluded from the batch.
+    expect(renderAnnotationParagraph).toHaveBeenCalledExactlyOnceWith(subsumed);
+    expect(renderAnnotationParagraph.mock.calls[0]![0]).not.toContain(
+      "AFUVIG9Z",
+    );
+    for (const key of subsumed) {
+      expect(md).toContain(`> [!note] Page 62\n>\n> excerpt ${key}`);
+    }
+    // The excluded paragraph keeps its prose and falls back to an inline mark.
+    expect(md).toContain("this is the one to exclude");
+    expect(md).toContain("annotation=AFUVIG9Z&page=62)");
+    // The image excerpt's storage attachment is never resolved — its <img> is
+    // removed before the embed rule runs (no orphan copy).
+    expect(md).not.toContain("![[7TTPMKWK");
+    expect(getAttachmentByKey).not.toHaveBeenCalled();
+  });
+});

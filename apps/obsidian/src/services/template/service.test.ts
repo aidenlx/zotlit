@@ -210,6 +210,7 @@ describe("TemplateService", () => {
         backlink: "zotero://select/items/1",
         attachments: [],
         annotations: [],
+        notes: [],
       }),
     ).toContain("# Paper");
   });
@@ -242,6 +243,7 @@ describe("TemplateService", () => {
         backlink: "zotero://select/items/1",
         attachments: [],
         annotations: [],
+        notes: [],
       }),
     ).toThrow();
     expect(service.compileErrors.get("content")).toBeDefined();
@@ -381,6 +383,7 @@ describe("TemplateService", () => {
         backlink: "zotero://select/items/1",
         attachments: [],
         annotations: [],
+        notes: [],
       }),
     ).toContain("# Paper");
   });

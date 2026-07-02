@@ -261,6 +261,7 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.itemNotes.itemID,
       to: r.items.itemID,
       alias: "itemNotes_itemID_items_itemID",
+      optional: false,
     }),
     parentItem: r.one.items({
       from: r.itemNotes.parentItemID,

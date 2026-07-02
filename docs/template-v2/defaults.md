@@ -54,8 +54,19 @@ v1 received `it` as a raw array of annotations.
 ### v2 (`zotlit-content.eta.md`)
 
 ```eta
+<% if (zt.notes.length) { %>
+## Notes
+
+<% for (const note of zt.notes) { -%>
+- <%~ note.noteLink() %>
+<% } %>
+<% } %>
+<% if (zt.annotations.length) { %>
+## Annotations
+
 <% for (const annotation of zt.annotations) { %>
 <%~ include("annotation", annotation) %>
+<% } %>
 <% } %>
 ```
 
@@ -63,6 +74,7 @@ Changes:
 
 - `it` (raw array) -> `zt.annotations` (array accessed from the full context object).
 - Has access to all the same fields as the note template, so you can reference `zt.backlink`, `zt.tags`, `zt.attachments`, etc. inside the managed region.
+- Renders imported child notes as a linked list before annotations (see [Notes shape](data-reference.md#notes-shape)).
 
 ## Annotation template
 
