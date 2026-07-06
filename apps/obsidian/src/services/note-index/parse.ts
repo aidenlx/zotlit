@@ -1,10 +1,12 @@
 import { type CachedMetadata } from "obsidian";
 
 import { isIndexedKey } from "@zotlit/db";
+import { Temporal } from "@zotlit/shared/temporal";
 
 import {
   FIELD_CITEKEY,
   FIELD_ZOTERO_KEY,
+  FIELD_ZOTERO_LASTMOD,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
 
@@ -79,4 +81,30 @@ export function diffContributions(
 function citekeyFromFrontmatter(cache: CachedMetadata): string | null {
   const value = cache.frontmatter?.[FIELD_CITEKEY];
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+/**
+ * Handles ISO strings with offset/Z suffix (parsed directly), offset-less
+ * local datetimes (assumed local timezone), and YAML 1.1 `Date` objects.
+ */
+export function lastmodFromFrontmatter(
+  cache: CachedMetadata | null | undefined,
+): Temporal.Instant | null {
+  const value = cache?.frontmatter?.[FIELD_ZOTERO_LASTMOD];
+  if (value == null) return null;
+  if (value instanceof Date) {
+    return Temporal.Instant.fromEpochMilliseconds(value.getTime());
+  }
+  if (typeof value !== "string") return null;
+  try {
+    return Temporal.Instant.from(value);
+  } catch {
+    try {
+      return Temporal.PlainDateTime.from(value)
+        .toZonedDateTime(Temporal.Now.timeZoneId())
+        .toInstant();
+    } catch {
+      return null;
+    }
+  }
 }
