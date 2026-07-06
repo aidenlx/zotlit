@@ -248,7 +248,7 @@ Run `/paraglide-i18n` skill for related task
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues (`aidenlx/zotlit`) via the `gh` CLI; external PRs are not treated as a triage surface. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked as local markdown files under `.scratch/<feature-slug>/`; there is no external PR triage surface. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
