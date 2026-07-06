@@ -183,17 +183,29 @@ describe("Zotero note formats", () => {
     expect(convert("E=mc<sup>2</sup>")).toBe("E=mc<sup>2</sup>");
   });
 
-  it("colored text span keeps its inline color", () => {
+  it("colored text span resolves its palette name and CSS variable", () => {
     const md = convert('<span style="color: rgb(255, 32, 32);">text</span>');
-    expect(md).toBe('<span style="color: rgb(255, 32, 32);">text</span>');
+    expect(md).toBe(
+      '<span class="zotlit-color" data-color="red" ' +
+        'style="color: var(--zotlit-color-red, rgb(255, 32, 32));">text</span>',
+    );
   });
 
-  it("highlight span becomes a colored <mark>", () => {
+  it("text color outside the palette keeps its inline color", () => {
+    const md = convert('<span style="color: rgb(1, 2, 3);">text</span>');
+    expect(md).toBe(
+      '<span class="zotlit-color" style="color: rgb(1, 2, 3);">text</span>',
+    );
+  });
+
+  it("highlight span becomes a colored <mark> with its palette name", () => {
     const md = convert(
       '<span style="background-color: rgba(255, 212, 0, 0.5);">Highlight</span>',
     );
     expect(md).toBe(
-      '<mark style="background-color: rgba(255, 212, 0, 0.5);">Highlight</mark>',
+      '<mark class="zotlit-hl" data-color="yellow" ' +
+        'style="background-color: var(--zotlit-hl-yellow, rgba(255, 212, 0, 0.5));">' +
+        "Highlight</mark>",
     );
   });
 

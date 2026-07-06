@@ -5,11 +5,9 @@ import { getItemsByID, type ItemRef } from "@zotlit/db";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
-import { type NoteFeatureContext } from "@/services/note-feature/context";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import {
-  createNote,
-  updateNote as applyNoteUpdate,
+  type NoteFeature,
   type UpdateResult,
   type UpdateScope,
 } from "@/services/note-feature/operations";
@@ -28,7 +26,7 @@ export interface SingleUpdateDeps {
   app: App;
   db: DatabaseService;
   settings: SettingsService;
-  noteFeatures: NoteFeatureContext;
+  noteFeature: NoteFeature;
   noteIndex: NoteIndex;
 }
 
@@ -54,7 +52,7 @@ export async function updateNote(
   if (!itemKey) return;
 
   void toast.promise(
-    applyNoteUpdate(deps.noteFeatures, file, { indexedKey: itemKey, scope }),
+    deps.noteFeature.updateNote(file, { indexedKey: itemKey, scope }),
     updateNoteToast(scope),
   );
 }
@@ -94,7 +92,7 @@ export async function createAndOpen(
   if (!item) return;
 
   try {
-    const file = await toast.promise(createNote(deps.noteFeatures, item), {
+    const file = await toast.promise(deps.noteFeature.createNote(item), {
       loading: m.notice_creating_note(),
       success: m.notice_created_note(),
       error: (_msg, e) =>

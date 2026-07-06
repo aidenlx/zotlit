@@ -15,7 +15,7 @@
 
 /**
  * HTTP header carrying the sender's {@link sourceIdFromUris source id} on
- * `POST /notify` and `PATCH /literature-notes`. Checked once at the transport
+ * `POST /notify` and `PUT /literature-notes`. Checked once at the transport
  * edge so the listener can discard pushes from a Zotero install it isn't
  * configured to read.
  */

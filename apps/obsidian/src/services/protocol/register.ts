@@ -34,17 +34,15 @@ import {
   type SingleUpdateDeps,
   updateNote,
 } from "@/services/note-feature/update-single";
-import {
-  batchImportToast,
-  runBatchImport,
-  type NoteImportContext,
-} from "@/services/note-import/batch-import";
+import { type BatchImport } from "@/services/note-import/batch-import";
+import { batchImportToast } from "@/services/note-import/batch-import-notices";
 import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 const logger = getLogger("protocol");
 
-export interface ProtocolDeps extends SingleUpdateDeps, NoteImportContext {
+export interface ProtocolDeps extends SingleUpdateDeps {
+  batchImport: Pick<BatchImport, "runBatchImport">;
   zoteroPref: ZoteroPrefService;
   liveUpdate: LiveUpdateService;
 }
@@ -94,7 +92,7 @@ export function registerProtocolHandlers(
   stack.defer(
     deps.liveUpdate.on("import-notes", (event) => {
       void toast.promise(
-        runBatchImport(deps, event.mode, event.items),
+        deps.batchImport.runBatchImport(event.mode, event.items),
         batchImportToast(),
       );
     }),
@@ -266,7 +264,7 @@ async function handleImportProtocol(
   }
 
   await toast.promise(
-    runBatchImport(deps, query.mode, [query.item]),
+    deps.batchImport.runBatchImport(query.mode, [query.item]),
     batchImportToast(),
   );
 }
@@ -305,7 +303,7 @@ async function handleImportManyProtocol(
   }
 
   await toast.promise(
-    runBatchImport(deps, query.mode, query.items),
+    deps.batchImport.runBatchImport(query.mode, query.items),
     batchImportToast(),
   );
 }

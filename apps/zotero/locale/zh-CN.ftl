@@ -42,6 +42,11 @@ zotlit-batch-update-failed-message = 请确认 Obsidian 正在运行且已启用
 zotlit-batch-update-sent-title = 请在 Obsidian 中继续
 zotlit-batch-update-sent-message = 已请求 Obsidian 更新 { $count } 条笔记。请切换到 Obsidian 继续。
 
+zotlit-protocol-incompatible-title = 需要更新
+zotlit-protocol-incompatible-message = ZotLit Obsidian 插件版本不兼容。请将 Zotero 和 Obsidian 插件都更新到匹配的版本后重试。
+
 zotlit-batch-import-sending-title = 正在请求 Obsidian 导入笔记…
+zotlit-batch-import-failed-title = 无法连接到 Obsidian
+zotlit-batch-import-failed-message = 请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。
 zotlit-batch-import-sent-title = 请在 Obsidian 中继续
 zotlit-batch-import-sent-message = 已请求 Obsidian 导入 { $count } 条笔记。请切换到 Obsidian 继续。

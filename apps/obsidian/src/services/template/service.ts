@@ -91,6 +91,12 @@ export class TemplateService extends Service<void> {
     return this.#compileErrors;
   }
 
+  /** Synchronous readiness check for callers that can't await {@link ready} —
+   *  e.g. `dragstart` and `selectSuggestion` handlers. */
+  get loaded(): boolean {
+    return this.#loaded;
+  }
+
   /** The note-filename expression's compile error, or `null` when it is valid. */
   get filenameError(): string | null {
     return this.#filenameError;

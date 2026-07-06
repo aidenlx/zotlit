@@ -2,18 +2,10 @@ export {
   type NotifyEvent,
   notifyEventSchema,
   type ReaderActive,
-  readerActiveSchema,
   type ReaderAnnotSelect,
-  readerAnnotSelectSchema,
   type ItemUpdate,
-  itemUpdateSchema,
 } from "./notify";
-export {
-  djb2a,
-  normalizeFileUri,
-  SOURCE_ID_HEADER,
-  sourceIdFromUris,
-} from "./source-id";
+export { SOURCE_ID_HEADER, sourceIdFromUris } from "./source-id";
 export {
   batchProtocolActionId,
   type BatchUpdateRequest,
@@ -25,33 +17,26 @@ export {
   getProtocolUrlVersion,
   importManyProtocolActionId,
   type ImportManyProtocolQuery,
-  importManyProtocolQuerySchema,
   type ImportMode,
   importNotesRequestSchema,
   type ImportNotesRequest,
   importProtocolActionId,
   type ImportProtocolQuery,
-  importProtocolQuerySchema,
   parseImportManyProtocolQuery,
   parseImportProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
-  PROTOCOL_NAMESPACE,
   type ProtocolAction,
   protocolActionId,
   protocolActions,
   type ProtocolBatchQuery,
-  protocolBatchQuerySchema,
   protocolSourceMatches,
   type ProtocolQuery,
-  protocolQuerySchema,
   type UpdateScope,
 } from "./url";
 export {
   checkProtocolVersion,
-  parseProtocolVersion,
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
-  PROTOCOL_VERSION_PARAM,
   type ProtocolVersionCheck,
 } from "./version";

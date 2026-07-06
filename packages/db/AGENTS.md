@@ -22,6 +22,12 @@ Prefer, in order:
 
 Wrap queries with `defineQuery(...)` from `src/queries/_shared.ts` and prefer prepared statements with placeholders (`sql.placeholder("name")`). See the `defineQuery` / `DefinedQuery` JSDoc for cached (`.prepared`) vs one-shot (`.prepare`) variants and when to fall back to the bare call.
 
+### Sync vs async variants
+
+Query functions default to the sync `NodeDatabaseClient` (the Obsidian app runs `node:sqlite` on the main thread). The `defineQuery` statement also runs on the web `SQLocalDatabaseClient` (`apps/website`, sqlite-wasm), but that path is `await`-only, so it needs a separate `…Async` twin taking `SQLocalDatabaseClient`.
+
+Add an `…Async` twin only when a web-client consumer actually needs that query — do not add async variants up front for sync/async parity. Mirror the queries-per-feature rule: the twin lands with its first `apps/website` (or other SQLocal) consumer, not before.
+
 ### Zotero integer domains
 
 Zotero stores several enum-like domains as raw integers, such as
@@ -97,9 +103,13 @@ Language name lookup is caller-provided via `createLanguageLookup()` — this pa
 
 ## Template data (`zt` variables)
 
-`src/lib/zt-template-item.ts`, `zt-template-annot.ts`, and `zt-template-attach.ts` define the template-facing interfaces (`TemplateItemData`, `TemplateAnnotation`, `TemplateAttachment`) and pure mappers from DB rows to those shapes. These are the `zt.*` properties users access in Eta templates.
+`src/lib/context/` holds every `zt.*`-shaping module — pure mappers and the DB-fetching orchestrators that assemble them — separate from the raw per-entity mappers (`zt-annot.ts`, `zt-attach.ts`, `zt-collection.ts`, `zt-tag.ts`, etc.) that stay flat in `src/lib/`.
 
-`src/lib/zt-note-context.ts` assembles the above into `NoteTemplateContext` — the `zt` root for the `note` template — combining item data with attachments, annotations, related items, and app-layer resolvers (backlinks, file links, image embeds) passed in by the caller. Pure: all I/O is done by the caller via `NoteContextInput`.
+`zt-template-item.ts`, `zt-template-annot.ts`, and `zt-template-attach.ts` define the template-facing interfaces (`TemplateItemData`, `TemplateAnnotation`, `TemplateAttachment`) and pure mappers from DB rows to those shapes. These are the `zt.*` properties users access in Eta templates.
+
+`zt-template-note.ts` assembles the above into `NoteTemplateContext` — the `zt` root for the `note` template — combining item data with attachments, annotations, related items, and resolvers passed in by the caller. Pure and package-private (not exported from `index.ts`).
+
+`note-context.ts` is the public seam: `fetchNoteContext`/`fetchAnnotationsTemplateData` do the DB fetching (queries, tag/collection caching via `TagMemo`/`CollectionCache`) and call the pure builder above. Callers pass only genuinely app-side resolvers (vault paths, note-index lookups, template rendering) via `NoteResolvers`/`AnnotationResolvers`.
 
 ## Logging
 

@@ -2,20 +2,16 @@ import { type App, ConfirmationModal } from "obsidian";
 
 import * as m from "@/paraglide/messages";
 
+export interface ConfirmOptions {
+  title: string;
+  content?: string;
+  action: string;
+  cancel?: string;
+  destructive?: boolean;
+}
+
 export function confirm(
-  {
-    action,
-    cancel,
-    title,
-    content,
-    destructive,
-  }: {
-    title: string;
-    content?: string;
-    action: string;
-    cancel?: string;
-    destructive?: boolean;
-  },
+  { action, cancel, title, content, destructive }: ConfirmOptions,
   app: App,
 ): Promise<boolean> {
   const { resolve, promise } = Promise.withResolvers<boolean>();
