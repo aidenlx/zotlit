@@ -1,62 +1,112 @@
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
-import { normalizePath, type App, type TFile } from "obsidian";
-import pLimit, { type LimitFunction } from "p-limit";
+import {
+  normalizePath,
+  stringifyYaml,
+  type FileManager,
+  type TFile,
+  type Vault,
+} from "obsidian";
+import pLimit from "p-limit";
 
 import {
+  getAnnotationsByKey,
   getNoteByKey,
   type ChildNote,
+  type GroupIDMemo,
   type Note,
+  type TagMemo,
   type TemplateNoteLink,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import { normalizeFolderPath } from "@/lib/ensure-folder";
+import { renderAnnotations } from "@/lib/annotation-render";
+import { FIELD_ZOTERO_NOTE_KEY, stringifyInstant } from "@/lib/constants";
+import {
+  ensureFolder,
+  joinFolderPath,
+  normalizeFolderPath,
+} from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
-import { type AttachmentImportService } from "@/services/attachment-import/service";
+import { isFileExistsError } from "@/lib/vault-errors";
+import {
+  type AttachmentImport,
+  type AttachmentImportService,
+} from "@/services/attachment-import/service";
+import {
+  MAX_SEGMENT_BYTES,
+  normalizeFilename,
+  randomFilenameId,
+  truncateToByteLimit,
+} from "@/services/note-feature/filename";
 import { type NoteIndex } from "@/services/note-index/service";
-import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { type RenderAnnotationParagraph, type RenderCite } from "./note-parser";
-import {
-  ensureImportFolder,
-  mintImportPath,
-  writeImportedNoteFile,
-  type WriteOutcome,
-} from "./note-writer";
-
-export { NoteImportMintError } from "./note-writer";
-export type { RenderAnnotationParagraph } from "./note-parser";
-export type { WriteOutcome } from "./note-writer";
+import { parseNote, type NoteParserDeps } from "./note-parser";
 
 const logger = getLogger(["note-import", "service"]);
 
 /** Bounds concurrent `vault.create` writes across all batches. */
 const WRITE_CONCURRENCY = 16;
 
-export interface NoteImportServiceDeps {
-  app: App;
-  noteIndex: NoteIndex;
-  template: TemplateService;
-  zoteroPref: ZoteroPrefService;
-  attachmentImport: AttachmentImportService;
+const SUFFIX_LENGTH = 6;
+/** 255 − "_" (1) − SUFFIX_LENGTH (6) − ".md" (3) = 245 */
+const MAX_IMPORT_BASE_BYTES = MAX_SEGMENT_BYTES - 1 - SUFFIX_LENGTH - 3;
+
+export type WriteOutcome = "created" | "overwritten" | "skipped";
+
+type WriteMode =
+  | { action: "create"; path: string }
+  | { action: "overwrite"; file: TFile };
+
+/** Shared per-run inputs threaded to every write in a `prepare`/`importNote` call. */
+interface RunContext {
+  client: NodeDatabaseClient;
+  settings: Readonly<Settings>;
+  groupIdMemo?: GroupIDMemo;
+  tagMemo?: TagMemo;
+  attachmentFolderCache: Map<string, string>;
+}
+
+interface QueuedImport {
+  note: ChildNote;
+  path: string;
+}
+
+/** The vault + fileManager surface the import writer touches. */
+export type ImportVaultApp = {
+  vault: Pick<
+    Vault,
+    | "getFileByPath"
+    | "getRoot"
+    | "getAbstractFileByPath"
+    | "createFolder"
+    | "create"
+    | "process"
+  >;
+  fileManager: Pick<FileManager, "generateMarkdownLink">;
+};
+
+interface NoteImporterDeps {
+  app: ImportVaultApp;
+  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">;
+  template: Pick<TemplateService, "render">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  attachmentImport: Pick<AttachmentImportService, "prepare">;
 }
 
 export interface PrepareNoteImportOptions {
   client: NodeDatabaseClient;
   /** The literature note's vault path; the link source for `noteLink`. */
   sourcePath: string;
-  /** Parent lit-note's group library id; scopes the identity key. */
-  groupID: number | null;
-  /** Parent lit-note's library id; a child note shares it. */
-  libraryID: number;
-  /** Annotation-template renderer; omitted leaves annotations as inline marks. */
-  renderAnnotationParagraph?: RenderAnnotationParagraph;
   /** Caller-held settings snapshot (import folder and related note-import prefs). */
   settings: Readonly<Settings>;
+  /** Shared across a run so group-library lookups memoize. */
+  groupIdMemo?: GroupIDMemo;
+  /** Shared across a run so parent-item/annotation tag lookups memoize. */
+  tagMemo?: TagMemo;
 }
 
 export interface NoteImport {
@@ -70,239 +120,361 @@ export interface NoteImport {
   flush(): Promise<{ created: number; skipped: number; failed: number }>;
 }
 
-export interface ImportNoteOptions {
+interface ImportNoteOptions {
   client: NodeDatabaseClient;
   settings: Readonly<Settings>;
-  renderAnnotationParagraph?: RenderAnnotationParagraph;
+  groupIdMemo?: GroupIDMemo;
+  tagMemo?: TagMemo;
+  attachmentFolderCache?: Map<string, string>;
   /** Explicit overwrite target; omitted resolves by imported-note index. */
   targetFile?: TFile;
-  /**
-   * Pre-resolved import folder.
-   */
-  folder: string;
 }
 
-export class NoteImportService extends Service<void> {
-  readonly #app;
-  readonly #noteIndex;
-  readonly #zoteroPref;
-  readonly #attachmentImport;
-  readonly #renderCite: RenderCite;
-  readonly #limit: LimitFunction = pLimit(WRITE_CONCURRENCY);
-
-  ready: Promise<void> = Promise.resolve();
-
-  constructor(deps: NoteImportServiceDeps) {
-    super();
-    this.#app = deps.app;
-    this.#noteIndex = deps.noteIndex;
-    this.#zoteroPref = deps.zoteroPref;
-    this.#attachmentImport = deps.attachmentImport;
-    this.#renderCite = (items) => deps.template.render("cite", { items });
-  }
-
-  async prepare(options: PrepareNoteImportOptions): Promise<NoteImport> {
-    const settings = options.settings;
-    const importFolder = normalizePath(settings["note.import-folder"]);
-    logger.debug("Prepared note import", {
-      sourcePath: options.sourcePath,
-      importFolder,
-    });
-    return new NoteImportBatch({
-      app: this.#app,
-      noteIndex: this.#noteIndex,
-      zoteroPref: this.#zoteroPref,
-      attachmentImport: this.#attachmentImport,
-      limit: this.#limit,
-      renderCite: this.#renderCite,
-      importFolder,
-      ...options,
-    });
-  }
-
-  /** Ensure the import folder exists, returning its normalized path. Batch
-   * callers resolve once, then pass the result via {@link ImportNoteOptions.folder}. */
-  async ensureImportFolder(settings: Readonly<Settings>): Promise<string> {
-    return ensureImportFolder(this.#app, settings["note.import-folder"]);
-  }
-
+/**
+ * Stateless note-import surface: lazy child-note batching via `prepare` and
+ * explicit single-note writes via `importNote`. Deps are captured once; a
+ * shared `pLimit` bounds concurrent vault writes across all callers.
+ */
+export interface NoteImporter {
+  prepare(options: PrepareNoteImportOptions): Promise<NoteImport>;
   /**
    * Explicitly import a single note (create or overwrite). Used by the batch
    * runner and the single "Update imported note" command. Wraps the write in
    * the shared concurrency limiter and locates an existing file via the note
-   * index.
+   * index; the import folder is minted and ensured only on the create branch.
    */
-  async importNote(
-    note: Note,
-    options: ImportNoteOptions,
-  ): Promise<WriteOutcome> {
-    return this.#limit(async () => {
-      const existing =
-        (options.targetFile
-          ? this.#app.vault.getFileByPath(options.targetFile.path)
-          : null) ??
-        this.#noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
+  importNote(note: Note, options: ImportNoteOptions): Promise<WriteOutcome>;
+}
 
-      const mode = existing
-        ? ({ action: "overwrite", file: existing } as const)
-        : ({
-            action: "create",
-            path: mintImportPath(this.#app, options.folder, note),
-          } as const);
+/** Per-factory state shared across all calls. */
+type Ctx = NoteImporterDeps & {
+  limit: ReturnType<typeof pLimit>;
+  /**
+   * Note key -> minted import path, recorded synchronously the moment a path
+   * is minted (before the write lands). `ctx.noteIndex` is populated from
+   * Obsidian's `metadataCache` 'changed' event, which fires asynchronously
+   * after `vault.create` resolves; a second `resolveChildNote` for the same
+   * note key (e.g. a double-triggered "Update in Obsidian") can otherwise run
+   * before that event lands and mint a second, distinct path for one Zotero
+   * note. Scoped to the whole factory instance (not a per-`prepare()` local)
+   * so it spans the separate `prepare()` calls each trigger creates. Entries
+   * are never evicted — once a note lands in the index the `existing` branch
+   * short-circuits before this map is even consulted, so a stale entry is
+   * inert, and note keys are bounded by the vault's imported notes.
+   */
+  pendingMints: Map<string, string>;
+};
 
-      return writeImportedNoteFile(
-        {
-          app: this.#app,
-          client: options.client,
-          zoteroPref: this.#zoteroPref,
-          attachmentImport: this.#attachmentImport,
-          renderCite: this.#renderCite,
-          renderAnnotationParagraph: options.renderAnnotationParagraph,
-        },
-        note,
-        mode,
-      );
+export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
+  const ctx: Ctx = {
+    ...deps,
+    limit: pLimit(WRITE_CONCURRENCY),
+    pendingMints: new Map(),
+  };
+  return {
+    prepare: (options) => prepareImport(ctx, options),
+    importNote: (note, options) => doImportNote(ctx, note, options),
+  };
+}
+
+async function prepareImport(
+  ctx: Ctx,
+  options: PrepareNoteImportOptions,
+): Promise<NoteImport> {
+  const { settings, sourcePath } = options;
+  const importFolder = normalizeFolderPath(
+    normalizePath(settings["note.import-folder"]),
+  );
+  const run: RunContext = {
+    client: options.client,
+    settings,
+    groupIdMemo: options.groupIdMemo,
+    tagMemo: options.tagMemo,
+    attachmentFolderCache: new Map(),
+  };
+  const queue: QueuedImport[] = [];
+  logger.debug("Prepared note import", { sourcePath, importFolder });
+  return {
+    resolveChildNote: (note) =>
+      resolveChildNote(ctx, note, { sourcePath, importFolder, queue }),
+    flush: () => flushQueue(ctx, queue, { importFolder, run }),
+  };
+}
+
+async function doImportNote(
+  ctx: Ctx,
+  note: Note,
+  options: ImportNoteOptions,
+): Promise<WriteOutcome> {
+  return ctx.limit(async () => {
+    const existing =
+      (options.targetFile
+        ? ctx.app.vault.getFileByPath(options.targetFile.path)
+        : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
+
+    const run: RunContext = {
+      client: options.client,
+      settings: options.settings,
+      groupIdMemo: options.groupIdMemo,
+      tagMemo: options.tagMemo,
+      attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
+    };
+
+    if (existing) {
+      return writeNote(ctx, note, {
+        mode: { action: "overwrite", file: existing },
+        run,
+      });
+    }
+    const folder = await ensureImportFolder(
+      ctx.app,
+      options.settings["note.import-folder"],
+    );
+    return writeNote(ctx, note, {
+      mode: { action: "create", path: mintImportPath(ctx.app, folder, note) },
+      run,
+    });
+  });
+}
+
+function resolveChildNote(
+  ctx: Ctx,
+  note: ChildNote,
+  scope: { sourcePath: string; importFolder: string; queue: QueuedImport[] },
+): TemplateNoteLink {
+  const existing = ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
+  if (existing) {
+    return buildNoteLink(ctx.app, note, {
+      target: existing,
+      sourcePath: scope.sourcePath,
     });
   }
-}
 
-interface NoteImportBatchOptions extends PrepareNoteImportOptions {
-  app: App;
-  noteIndex: NoteIndex;
-  zoteroPref: ZoteroPrefService;
-  attachmentImport: AttachmentImportService;
-  limit: LimitFunction;
-  renderCite: RenderCite;
-  importFolder: string;
-}
+  // Reuse a path already minted for this note key (this run or an earlier,
+  // not-yet-indexed one) instead of minting a second one — see `pendingMints`.
+  const pending = ctx.pendingMints.get(note.indexedKey);
+  const path = pending ?? mintImportPath(ctx.app, scope.importFolder, note);
+  if (!pending) ctx.pendingMints.set(note.indexedKey, path);
 
-interface QueuedImport {
-  note: ChildNote;
-  path: string;
-}
-
-class NoteImportBatch implements NoteImport {
-  readonly #app;
-  readonly #noteIndex;
-  readonly #zoteroPref;
-  readonly #attachmentImport;
-  readonly #client;
-  readonly #sourcePath;
-  readonly #importFolder;
-  readonly #limit;
-  readonly #renderCite: RenderCite;
-  readonly #renderAnnotationParagraph?: RenderAnnotationParagraph;
-  readonly #queue: QueuedImport[] = [];
-
-  constructor(options: NoteImportBatchOptions) {
-    this.#app = options.app;
-    this.#noteIndex = options.noteIndex;
-    this.#zoteroPref = options.zoteroPref;
-    this.#attachmentImport = options.attachmentImport;
-    this.#client = options.client;
-    this.#sourcePath = options.sourcePath;
-    this.#importFolder = normalizeFolderPath(options.importFolder);
-    this.#limit = options.limit;
-    this.#renderCite = options.renderCite;
-    this.#renderAnnotationParagraph = options.renderAnnotationParagraph;
-  }
-
-  resolveChildNote(note: ChildNote): TemplateNoteLink {
-    const existing = this.#noteIndex.getImportedNoteByNoteKey(
-      note.indexedKey,
-    )[0];
-    if (existing) {
-      return this.#noteLink(note, existing);
-    }
-
-    const path = mintImportPath(this.#app, this.#importFolder, note);
-    let queued = false;
-    return this.#noteLink(note, syntheticFile(path), () => {
+  let queued = false;
+  return buildNoteLink(ctx.app, note, {
+    target: syntheticFile(path),
+    sourcePath: scope.sourcePath,
+    onFirstRender: () => {
       if (!queued) {
         queued = true;
-        this.#queue.push({ note, path });
+        scope.queue.push({ note, path });
       }
+    },
+  });
+}
+
+/**
+ * A {@link TemplateNoteLink} whose `noteLink` links `target` from the lit note,
+ * defaulting the alias to the live note title so a retitled Zotero note updates
+ * the link text without renaming the file. `onFirstRender` (the minted path)
+ * queues the import on first render — an unrendered link imports nothing.
+ */
+function buildNoteLink(
+  app: ImportVaultApp,
+  note: ChildNote,
+  options: { target: TFile; sourcePath: string; onFirstRender?: () => void },
+): TemplateNoteLink {
+  return {
+    key: note.key,
+    title: note.title,
+    noteLink: (alias, subpath) => {
+      options.onFirstRender?.();
+      return app.fileManager.generateMarkdownLink(
+        options.target,
+        options.sourcePath,
+        subpath,
+        alias ?? note.title ?? undefined,
+      );
+    },
+  };
+}
+
+async function flushQueue(
+  ctx: Ctx,
+  queue: QueuedImport[],
+  options: { importFolder: string; run: RunContext },
+): Promise<{ created: number; skipped: number; failed: number }> {
+  if (queue.length === 0) return { created: 0, skipped: 0, failed: 0 };
+  await ensureImportFolder(ctx.app, options.importFolder);
+
+  const results = await Promise.allSettled(
+    queue.map((entry) =>
+      ctx.limit(async () => {
+        const noteData = getNoteByKey(options.run.client, entry.note.key, {
+          libraryID: entry.note.libraryID,
+          memo: options.run.groupIdMemo,
+        });
+        if (!noteData) {
+          logger.warn("Imported note vanished before flush; skipped", {
+            noteKey: entry.note.indexedKey,
+          });
+          return "skipped" as WriteOutcome;
+        }
+        return writeNote(ctx, noteData, {
+          mode: { action: "create", path: entry.path },
+          run: options.run,
+        });
+      }),
+    ),
+  );
+
+  let created = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const [index, result] of results.entries()) {
+    if (result.status === "rejected") {
+      failed += 1;
+      logger.error("Failed to import note; siblings unaffected", {
+        noteKey: queue[index]!.note.indexedKey,
+        error: result.reason,
+      });
+    } else if (result.value === "created") {
+      created += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+  logger.debug("Imported notes", { created, skipped, failed });
+  return { created, skipped, failed };
+}
+
+/**
+ * Write (create or overwrite) a single imported-note file from a fully-fetched
+ * {@link Note}. Steps: prepare attachment batch → parse note HTML (building the
+ * cite + gated annotation-template renderers here) → build frontmatter → write
+ * (create or `vault.process` overwrite) → flush attachment copies.
+ */
+async function writeNote(
+  ctx: Ctx,
+  note: Note,
+  { mode, run }: { mode: WriteMode; run: RunContext },
+): Promise<WriteOutcome> {
+  const path = mode.action === "create" ? mode.path : mode.file.path;
+
+  let body = "";
+  let attachmentBatch: AttachmentImport | undefined;
+  if (note.note) {
+    const batch = await ctx.attachmentImport.prepare(path, {
+      folderCache: run.attachmentFolderCache,
+    });
+    attachmentBatch = batch;
+    const resolveLink: NoteParserDeps["resolveLink"] = (opts) =>
+      batch.resolveLink(opts);
+    const renderAnnotationParagraph = run.settings[
+      "note.import-annotations-as-template"
+    ]
+      ? (keys: readonly string[]) =>
+          renderAnnotations(
+            run.client,
+            getAnnotationsByKey(run.client, keys, note.libraryID),
+            {
+              template: ctx.template,
+              zoteroPref: ctx.zoteroPref,
+              resolveLink,
+              groupIdMemo: run.groupIdMemo,
+              tagMemo: run.tagMemo,
+            },
+          )
+      : undefined;
+    body = parseNote(TurndownService, note.note, {
+      client: run.client,
+      libraryID: note.libraryID,
+      renderCite: (items) => ctx.template.render("cite", { items }),
+      pathContext: {
+        dataDir: ctx.zoteroPref.dataDir,
+        baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
+      },
+      resolveLink,
+      renderAnnotationParagraph,
     });
   }
 
-  /**
-   * A {@link TemplateNoteLink} whose `noteLink` links `target` from the lit note,
-   * defaulting the alias to the live note title so a retitled Zotero note updates
-   * the link text without renaming the file. `onFirstRender` (the minted path)
-   * queues the import on first render — an unrendered link imports nothing.
-   */
-  #noteLink(
-    note: ChildNote,
-    target: TFile,
-    onFirstRender?: () => void,
-  ): TemplateNoteLink {
-    return {
-      key: note.key,
-      title: note.title,
-      noteLink: (alias, subpath) => {
-        onFirstRender?.();
-        return this.#app.fileManager.generateMarkdownLink(
-          target,
-          this.#sourcePath,
-          subpath,
-          alias ?? note.title ?? undefined,
-        );
-      },
-    };
-  }
+  const frontmatter = {
+    date: stringifyInstant(note.dateAdded),
+    [FIELD_ZOTERO_NOTE_KEY]: note.indexedKey,
+  };
+  const content = `---\n${stringifyYaml(frontmatter)}---\n${body}`;
 
-  async flush(): Promise<{ created: number; skipped: number; failed: number }> {
-    if (this.#queue.length === 0) return { created: 0, skipped: 0, failed: 0 };
-    await ensureImportFolder(this.#app, this.#importFolder);
-
-    const results = await Promise.allSettled(
-      this.#queue.map((entry) => this.#limit(() => this.#writeOne(entry))),
-    );
-
-    let created = 0;
-    let skipped = 0;
-    let failed = 0;
-    for (const [index, result] of results.entries()) {
-      if (result.status === "rejected") {
-        failed += 1;
-        logger.error("Failed to import note; siblings unaffected", {
-          noteKey: this.#queue[index]!.note.indexedKey,
-          error: result.reason,
-        });
-      } else if (result.value === "created") {
-        created += 1;
-      } else {
-        skipped += 1;
+  let outcome: WriteOutcome;
+  if (mode.action === "create") {
+    try {
+      await ctx.app.vault.create(mode.path, content);
+      outcome = "created";
+    } catch (error) {
+      if (isFileExistsError(error)) {
+        logger.warn("Imported note already exists; skipped", { path });
+        return "skipped";
       }
+      throw error;
     }
-    logger.debug("Imported notes", { created, skipped, failed });
-    return { created, skipped, failed };
+  } else {
+    await ctx.app.vault.process(mode.file, () => content);
+    outcome = "overwritten";
   }
 
-  async #writeOne(entry: QueuedImport): Promise<WriteOutcome> {
-    const noteData = getNoteByKey(
-      this.#client,
-      entry.note.key,
-      entry.note.libraryID,
-    );
-    if (!noteData) {
-      logger.warn("Imported note vanished before flush; skipped", {
-        noteKey: entry.note.indexedKey,
-      });
-      return "skipped";
-    }
+  if (attachmentBatch) {
+    const copied = await attachmentBatch.flush();
+    logger.debug("Imported note attachments", {
+      path,
+      copied: copied.copied,
+      skipped: copied.skipped,
+      missing: copied.missing,
+    });
+  }
+  return outcome;
+}
 
-    return writeImportedNoteFile(
-      {
-        app: this.#app,
-        client: this.#client,
-        zoteroPref: this.#zoteroPref,
-        attachmentImport: this.#attachmentImport,
-        renderCite: this.#renderCite,
-        renderAnnotationParagraph: this.#renderAnnotationParagraph,
-      },
-      noteData,
-      { action: "create", path: entry.path },
-    );
+/**
+ * Mint a unique import path for a new imported note file. The path includes a
+ * random suffix to guarantee uniqueness; collisions throw
+ * {@link NoteImportMintError}.
+ */
+function mintImportPath(
+  app: ImportVaultApp,
+  importFolder: string,
+  note: Pick<Note, "title" | "indexedKey">,
+): string {
+  const folder = normalizeFolderPath(importFolder);
+  const normalized = normalizeFilename(note.title ?? "");
+  const base =
+    normalized === ""
+      ? `zotero_note_${note.indexedKey}`
+      : truncateToByteLimit(normalized, MAX_IMPORT_BASE_BYTES);
+  const name = `${base}_${randomFilenameId(SUFFIX_LENGTH)}.md`;
+  const path = joinFolderPath(folder, name);
+  if (app.vault.getAbstractFileByPath(path) !== null) {
+    throw new NoteImportMintError(path);
+  }
+  return path;
+}
+
+/**
+ * Ensure the import folder exists in the vault.
+ *
+ * @param importFolderSetting - raw setting value (normalized internally).
+ */
+async function ensureImportFolder(
+  app: ImportVaultApp,
+  importFolderSetting: string,
+): Promise<string> {
+  const folder = normalizeFolderPath(normalizePath(importFolderSetting));
+  await ensureFolder(app, folder);
+  return folder;
+}
+
+/**
+ * Thrown when a minted import path collides with an existing vault file. The
+ * 6-char suffix makes this near-impossible, so it is a hard error (no retry).
+ */
+export class NoteImportMintError extends Error {
+  constructor(path: string) {
+    super(`Imported note path collided with an existing file: ${path}`);
+    this.name = "NoteImportMintError";
   }
 }

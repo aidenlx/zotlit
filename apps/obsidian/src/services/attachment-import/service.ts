@@ -1,3 +1,4 @@
+import { dirname } from "node:path/posix";
 import { FileSystemAdapter, normalizePath, type App } from "obsidian";
 
 import { type TemplateLink } from "@zotlit/db";
@@ -9,6 +10,7 @@ import {
 } from "@/lib/copy-attachments";
 import {
   ensureFolder,
+  joinFolderPath,
   normalizeFolderPath,
   resolveAttachmentFolderPath,
 } from "@/lib/ensure-folder";
@@ -55,16 +57,34 @@ export class AttachmentImportService extends Service<void> {
     this.#settings = deps.settings;
   }
 
-  async prepare(notePath: string): Promise<AttachmentImport> {
+  /**
+   * @param opts.folderCache - Keyed by `dirname(notePath)`; every note in the
+   *   same folder resolves to the same attachment folder, so a run-scoped
+   *   cache lets a batch import skip the repeated `resolveAttachmentFolderPath`
+   *   probe (async when the setting is the default "use note folder").
+   */
+  async prepare(
+    notePath: string,
+    opts?: { folderCache?: Map<string, string> },
+  ): Promise<AttachmentImport> {
     const settings = await this.#settings.loaded;
     const importEnabled = settings["attachment.import"];
-    const folderPath = importEnabled
-      ? await resolveAttachmentFolderPath(
+    let folderPath: string | null = null;
+    if (importEnabled) {
+      const cache = opts?.folderCache;
+      const cacheKey = dirname(notePath);
+      const cached = cache?.get(cacheKey);
+      if (cached !== undefined) {
+        folderPath = cached;
+      } else {
+        folderPath = await resolveAttachmentFolderPath(
           this.#app,
           settings["attachment.folder-path"],
           notePath,
-        )
-      : null;
+        );
+        cache?.set(cacheKey, folderPath);
+      }
+    }
 
     logger.debug("Prepared attachment import", {
       notePath,
@@ -108,7 +128,7 @@ class AttachmentImportBatch implements AttachmentImport {
     }
 
     const vaultPath = normalizePath(
-      this.#folderPath === "/" ? vaultName : `${this.#folderPath}/${vaultName}`,
+      joinFolderPath(this.#folderPath, vaultName),
     );
     const file = syntheticFile(vaultPath);
     // Queue the copy on first render of this link, not at resolve time, so an

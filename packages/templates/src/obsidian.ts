@@ -36,27 +36,27 @@ export interface ManagedRegionReplacement {
   duplicateCount: number;
 }
 
-/** Whether `content` holds at least one `%%zt-managed%%` region. */
-export function hasManagedRegion(content: string): boolean {
-  return MANAGED_REGION.test(content);
-}
-
 /**
- * Replace the first `%%zt-managed%%` region in `content` with `region`.
+ * Replace the first `%%zt-managed%%` region in `content` with `region()`.
  *
- * Uses a function replacer so `$` sequences in `region` (e.g. `$$…$$` display
- * math, `$&`, `$'`) are inserted verbatim instead of being interpreted as
- * `String.prototype.replace` substitution patterns.
+ * `region` is invoked at most once, and only when a managed region is
+ * present, so callers can defer expensive rendering (and any side effects
+ * it triggers) until it's known to be needed.
+ *
+ * Uses a function replacer so `$` sequences in the rendered region (e.g.
+ * `$$…$$` display math, `$&`, `$'`) are inserted verbatim instead of being
+ * interpreted as `String.prototype.replace` substitution patterns.
  */
 export function replaceManagedRegion(
   content: string,
-  region: string,
+  region: () => string,
 ): ManagedRegionReplacement {
   const matches = content.match(MANAGED_REGION_GLOBAL) ?? [];
   const duplicateCount = Math.max(0, matches.length - 1);
   if (matches.length === 0) return { content, replaced: false, duplicateCount };
+  const rendered = region();
   return {
-    content: content.replace(MANAGED_REGION, () => region),
+    content: content.replace(MANAGED_REGION, () => rendered),
     replaced: true,
     duplicateCount,
   };

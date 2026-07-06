@@ -12,7 +12,6 @@ import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
-import { renderCitation } from "@/services/note-feature";
 
 import { type CitationSuggestDeps } from "./register";
 
@@ -88,11 +87,14 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       return;
     }
 
-    const rendered = renderCitation(
-      this.#deps.noteFeatures,
+    const rendered = this.#deps.noteFeature.renderCitation(
       [{ citationKey }],
       this.#secondary,
     );
+    if (rendered === null) {
+      new BaseNotice(m.notice_template_not_ready());
+      return;
+    }
     context.editor.replaceRange(rendered, context.start, context.end);
     context.editor.setCursor(
       context.editor.offsetToPos(

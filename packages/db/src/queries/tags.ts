@@ -1,7 +1,6 @@
 import { distinct } from "@std/collections";
 
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 import { defineToString } from "@/lib/to-string";
 import { type ItemTag, type Tag } from "@/lib/zt-tag";
 
@@ -73,25 +72,48 @@ export function getTagsByItemIDs(
   );
 }
 
-export async function getTagsByItemIDsAsync(
-  db: SQLocalDatabaseClient,
+/**
+ * Per-batch memo of an item's tag applications, keyed by itemID. Hold one across
+ * a batch (like a `GroupIDMemo`) so repeat lookups for the same itemID skip the
+ * query; discard per single op.
+ */
+export type TagMemo = Map<number, readonly ItemTag[]>;
+
+/** Resolve one item's tags, memoized per itemID within `memo`. */
+export function resolveItemTags(
+  db: NodeDatabaseClient,
+  itemID: number,
+  memo: TagMemo,
+): readonly ItemTag[] {
+  return resolveItemTagsByIDs(db, [itemID], memo).get(itemID) ?? [];
+}
+
+/** Resolve each item's tags keyed by itemID, filling `memo`. */
+export function resolveItemTagsByIDs(
+  db: NodeDatabaseClient,
   itemIDs: readonly number[],
-): Promise<ItemTag[]> {
-  const batches = await Promise.all(
-    itemIDs.map((itemID) => itemTagsByItemQuery.prepared(db).all({ itemID })),
-  );
-  const rows = batches.flat();
-  const tagRows = await Promise.all(
-    distinct(rows.map((row) => row.tagID)).map((tagID) =>
-      tagByIdQuery.prepared(db).all({ tagID }),
-    ),
-  );
-  const tagsByID = new Map(
-    tagRows.flatMap(([row]): [number, Tag][] =>
-      row ? [[row.tagID, toTag(row)]] : [],
-    ),
-  );
-  return batches.flatMap((rows) =>
-    rows.map((row) => toItemTag(row, tagsByID)).toSorted(byTagName),
-  );
+  memo: TagMemo,
+): ReadonlyMap<number, readonly ItemTag[]> {
+  const result = new Map<number, readonly ItemTag[]>();
+  const missing: number[] = [];
+  for (const itemID of itemIDs) {
+    const cached = memo.get(itemID);
+    if (cached) {
+      result.set(itemID, cached);
+    } else {
+      missing.push(itemID);
+    }
+  }
+  if (missing.length > 0) {
+    const tagsByItemID = Map.groupBy(
+      getTagsByItemIDs(db, missing),
+      (tag) => tag.itemID,
+    );
+    for (const itemID of missing) {
+      const tags = tagsByItemID.get(itemID) ?? [];
+      memo.set(itemID, tags);
+      result.set(itemID, tags);
+    }
+  }
+  return result;
 }

@@ -53,7 +53,7 @@ Stage-4 parser support ships; wire the import flow to construct `NoteEmbeddedIma
 
 Initial land `55c7d60`; polish through `b7d2de4`. v1 source: `note-feature/protocol/service.ts` → v2 `services/note-feature/batch-update.ts` + `views/batch-update-modal.ts`.
 
-- **Transport** — `obsidian://zotlit/update-many?items=<id,…>&source-id=<hash>`. Zotero **Update** on a multi-selection sends one link; when the URL exceeds 2000 chars it falls back to `PATCH /literature-notes` on the first `notify-url` target (Zotero progress window reports send outcome).
+- **Transport** — `obsidian://zotlit/update-many?items=<id,…>&source-id=<hash>`. Zotero **Update** on a multi-selection sends one link; when the URL exceeds 2000 chars it falls back to `PUT /literature-notes` on the first `notify-url` target (Zotero progress window reports send outcome).
 - **Orchestrator** — `runBatchUpdate` batch-updates/creates literature notes through the per-item `NoteFeatures` path (no batch DB query). Classifies ids into update / create / not-found; branches on actionable count: 0 → notice, 1 → single-item handler, ≥2 → modal.
 - **Modal UX** — loading phase runs chunked classification behind a determinate bar (cancel stays responsive on large batches); confirm checklist; run phase with per-item progress, live failure panel, keep-open warning, and outcome summary.
 - **Consistency** — `DatabaseService.acquireRead()` pins the client across classify/run; batch create uses `suffix()` for collision-free filenames.

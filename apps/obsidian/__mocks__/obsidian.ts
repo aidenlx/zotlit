@@ -13,6 +13,8 @@ import {
   type Command,
   type Debouncer,
   type EditorSuggestContext,
+  type Instruction,
+  type Modifier,
 } from "obsidian";
 
 // Obsidian exposes `sleep` as a runtime global; classify loops await it to yield
@@ -107,6 +109,29 @@ export abstract class EditorSuggest<T> {
   abstract renderSuggestion(value: T, el: HTMLElement): void;
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
+
+export abstract class SuggestModal<T> {
+  limit = 0;
+  emptyStateText = "";
+  readonly app: App;
+
+  constructor(app: App) {
+    this.app = app;
+  }
+
+  setPlaceholder(_placeholder: string): void {}
+  setInstructions(_instructions: Instruction[]): void {}
+
+  abstract getSuggestions(query: string): T[] | Promise<T[]>;
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract onChooseSuggestion(item: T, evt: MouseEvent | KeyboardEvent): void;
+}
+
+export const Keymap = {
+  isModifier(_evt: MouseEvent | KeyboardEvent, _modifier: Modifier): boolean {
+    return false;
+  },
+};
 
 /**
  * Lightweight stand-in for the subset of `Plugin.addCommand` tests touch.

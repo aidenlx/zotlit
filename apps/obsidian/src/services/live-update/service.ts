@@ -230,7 +230,7 @@ export class LiveUpdateService extends Service<void> {
             { transport: "http" },
           )
         ) {
-          return c.body(null, 204);
+          return c.body(null, 426);
         }
         await next();
       })

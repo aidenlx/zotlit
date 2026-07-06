@@ -4,7 +4,11 @@ import { join } from "node:path";
 import TurndownService from "turndown";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getAttachmentByKey, getCitekeyByItemKey } from "@zotlit/db";
+import {
+  getAttachmentByKey,
+  getCitekeyByItemKey,
+  getLibraryByGroupID,
+} from "@zotlit/db";
 
 import { type ResolveLinkOptions } from "@/services/attachment-import/service";
 
@@ -17,6 +21,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     ...actual,
     getCitekeyByItemKey: vi.fn(),
     getAttachmentByKey: vi.fn(),
+    getLibraryByGroupID: vi.fn(),
   };
 });
 
@@ -98,23 +103,24 @@ function annot(
 
 describe("schema gate", () => {
   it("returns the legacy callout for a pre-v6 note", () => {
-    const md = parseNote(TurndownService, note("<p>x</p>", 5));
+    const md = parseNote(TurndownService, note("<p>x</p>", 5), deps);
     expect(md).toContain("[!warning]");
     expect(md).toContain("schema version 5");
   });
 
   it("returns an empty string for empty input", () => {
-    expect(parseNote(TurndownService, "")).toBe("");
+    expect(parseNote(TurndownService, "", deps)).toBe("");
   });
 
   it("returns an empty string when no schema container is present", () => {
-    expect(parseNote(TurndownService, "<p>plain note</p>")).toBe("");
+    expect(parseNote(TurndownService, "<p>plain note</p>", deps)).toBe("");
   });
 
   it("sees through the zotero-note znv1 storage wrapper", () => {
     const md = parseNote(
       TurndownService,
       `<div class="zotero-note znv1">${note("<p>hello</p>")}</div>`,
+      deps,
     );
     expect(md).toBe("hello");
   });
@@ -122,9 +128,25 @@ describe("schema gate", () => {
 
 describe("blank lines", () => {
   it("preserves intentional blank lines instead of collapsing them", () => {
-    const md = parseNote(TurndownService, note("<p>a</p><hr><hr><p>b</p>"));
+    const md = parseNote(
+      TurndownService,
+      note("<p>a</p><hr><hr><p>b</p>"),
+      deps,
+    );
     // Two horizontal rules between paragraphs survive as raw Turndown output.
     expect(md).toBe("a\n\n---\n\n---\n\nb");
+  });
+
+  it("keeps a fenced code block's internal blank lines in the note body", () => {
+    // The callout-scoped blank-run collapse (subsumeAnnotationParagraphs)
+    // must not leak into the note body: a fenced block's textContent is
+    // copied verbatim by the fence rule, untouched by this parser.
+    const md = parseNote(
+      TurndownService,
+      note("<pre><code>line1\n\n\n\nline2</code></pre>"),
+      deps,
+    );
+    expect(md).toBe("```\nline1\n\n\n\nline2\n```");
   });
 });
 
@@ -143,6 +165,7 @@ describe("highlight annotation", () => {
         "might aid in our understanding",
       ),
     ),
+    deps,
   );
 
   it("wraps the excerpt in a linked, colored <mark>", () => {
@@ -171,6 +194,7 @@ describe("underline annotation", () => {
           "reference alternative as valu",
         ),
       ),
+      deps,
     );
     expect(md).toBe(
       '[<u class="zotlit-ul" data-color="yellow" ' +
@@ -192,6 +216,7 @@ describe("annotation edge cases", () => {
           "edited by the user",
         ),
       ),
+      deps,
     );
     expect(md).toContain(">edited by the user</mark>");
   });
@@ -210,6 +235,7 @@ describe("annotation edge cases", () => {
           "no link",
         ),
       ),
+      deps,
     );
     expect(md).toBe(
       '<mark class="zotlit-hl" data-color="yellow" ' +
@@ -227,6 +253,7 @@ describe("annotation edge cases", () => {
           "odd color",
         ),
       ),
+      deps,
     );
     expect(md).toContain(
       '<mark class="zotlit-hl" style="background-color: #123456;">',
@@ -249,6 +276,7 @@ describe("annotation edge cases", () => {
           "group excerpt",
         ),
       ),
+      deps,
     );
     expect(md).toContain(
       "(zotero://open/groups/9/items/T2P8T29G?annotation=K)",
@@ -265,6 +293,7 @@ describe("annotation edge cases", () => {
           "no page",
         ),
       ),
+      deps,
     );
     expect(md).toContain("items/T2P8T29G?annotation=K)");
     expect(md).not.toContain("page=");
@@ -320,12 +349,6 @@ describe("embedded image resolution", () => {
     const md = parseNote(TurndownService, note(img("URL12345")), deps);
     expect(md).toContain('data-attachment-key="URL12345"');
     expect(echoResolveLink).not.toHaveBeenCalled();
-  });
-
-  it("keeps the image raw when no deps are supplied", () => {
-    const md = parseNote(TurndownService, note(img("U5WTYIJK")));
-    expect(md.startsWith("<img")).toBe(true);
-    expect(getAttachmentByKey).not.toHaveBeenCalled();
   });
 });
 
@@ -464,6 +487,33 @@ describe("annotation template mode", () => {
     expect(md).toContain("[@Hensher2011]");
     expect(md).toContain("plain note text");
   });
+
+  it("collapses a blank-line run inside a custom template's callout and trims its edges", () => {
+    // A custom `annotation` template that doesn't wrap its output in bq()
+    // (autoTrim is [false, false]) can emit internal or trailing blank runs;
+    // subsumeAnnotationParagraphs normalizes those before they're sealed into
+    // the sentinel attribute, since Turndown only caps newlines *between*
+    // blocks, never inside one rule's returned string.
+    const md = parseNote(TurndownService, note(spanPara("highlight", "K8")), {
+      ...deps,
+      renderAnnotationParagraph: batchRender((key) =>
+        key === "K8"
+          ? "> [!note]\n>\n> line one\n\n\n\n> line two\n\n\n"
+          : null,
+      ),
+    });
+    expect(md).toBe("> [!note]\n>\n> line one\n\n> line two");
+    expect(md).not.toMatch(/\n{3,}/);
+  });
+
+  it("leaves a callout without excess blank lines unchanged", () => {
+    const md = parseNote(
+      TurndownService,
+      note(spanPara("highlight", "K1")),
+      withRender(),
+    );
+    expect(md).toBe("> [!note]\n>\n> callout K1");
+  });
 });
 
 describe("citation resolution", () => {
@@ -569,6 +619,58 @@ describe("citation resolution", () => {
     expect(md).toContain("[@Embedded2020; @NOEMBED0?]");
   });
 
+  it("resolves a group-library citation via the group's own libraryID, not the note's", () => {
+    // deps.libraryID is 1 (the note's personal library); the ref points at
+    // group 9, which lives in libraryID 7.
+    vi.mocked(getLibraryByGroupID).mockReturnValue({
+      libraryID: 7,
+      type: "group",
+      groupID: 9,
+      name: "Team Group",
+    });
+    vi.mocked(getCitekeyByItemKey).mockImplementation((_db, libraryID, key) =>
+      libraryID === 7 && key === "GRP1TEM" ? "GroupCite2020" : null,
+    );
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            { uris: [`http://zotero.org/groups/9/items/GRP1TEM`] },
+          ],
+          properties: {},
+        }),
+      ),
+      deps,
+    );
+    expect(getLibraryByGroupID).toHaveBeenCalledWith(deps.client, 9);
+    expect(getCitekeyByItemKey).toHaveBeenCalledWith(deps.client, 7, "GRP1TEM");
+    expect(md).toContain("[@GroupCite2020]");
+  });
+
+  it("falls back to the note's libraryID when the group can't be resolved", () => {
+    vi.mocked(getLibraryByGroupID).mockReturnValue(null);
+    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            { uris: [`http://zotero.org/groups/9/items/GRP1TEM`] },
+          ],
+          properties: {},
+        }),
+      ),
+      deps,
+    );
+    expect(getCitekeyByItemKey).toHaveBeenCalledWith(
+      deps.client,
+      deps.libraryID,
+      "GRP1TEM",
+    );
+    expect(md).toContain("[@GRP1TEM?]");
+  });
+
   it("trims the rendered cite so it stays inline (cite.eta's trailing \\n)", () => {
     vi.mocked(getCitekeyByItemKey).mockReturnValue("Hensher2011");
     const md = parseNote(TurndownService, note(`x ${oneCite} y`), {
@@ -576,12 +678,6 @@ describe("citation resolution", () => {
       renderCite: (items) => `${renderCite(items)}\n`,
     });
     expect(md).toBe("x [@Hensher2011] y");
-  });
-
-  it("leaves citation marks raw when no deps are supplied", () => {
-    const md = parseNote(TurndownService, note(oneCite));
-    expect(md).toContain("data-citation");
-    expect(md).not.toContain("[@");
   });
 });
 

@@ -9,13 +9,14 @@ import {
   getNoteByItemID,
   getNoteByKey,
   getNoteRefsByItemIDs,
+  getTrashedNoteItemIDs,
   USER_LIBRARY_ID,
   type ChildNote,
   type Note,
 } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { confirm } from "@/lib/confirm";
 import { defaults, type Settings } from "@/services/settings/schema";
 import {
   type BatchClassifyControls,
@@ -23,20 +24,15 @@ import {
   type BatchRunControls,
 } from "@/views/batch-modal";
 
-import {
-  batchImportNotice,
-  childImportToast,
-  reimportNoteByKey,
-  runBatchImport,
-  runChildImportByKey,
-  type NoteImportContext,
-} from "./batch-import";
+import { createBatchImport, type NoteImportDeps } from "./batch-import";
+import { batchImportNotice, childImportToast } from "./batch-import-notices";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
     getNoteRefsByItemIDs: vi.fn(),
+    getTrashedNoteItemIDs: vi.fn(),
     getChildNotesByParentIDs: vi.fn(),
     getItemDisplayRefByID: vi.fn(),
     getNoteByItemID: vi.fn(),
@@ -45,10 +41,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/confirm", () => ({ confirm: vi.fn() }));
-
-/** Captured options of every {@link BatchModal} the runner opened. */
+/** Captured options of every batch modal the runner opened via its view port. */
 const openedModals: BatchModalOptions[] = [];
+/** Stub for the view port's overwrite confirm; controlled per overwrite test. */
+const confirmMock = vi.fn();
 
 vi.mock("@/views/batch-modal", async () => {
   const run = await vi.importActual<typeof import("@/views/batch-modal/run")>(
@@ -60,16 +56,7 @@ vi.mock("@/views/batch-modal", async () => {
   class HierarchyManifest {
     constructor(readonly options: unknown) {}
   }
-  class BatchModal {
-    constructor(
-      _app: unknown,
-      readonly options: BatchModalOptions,
-    ) {
-      openedModals.push(options);
-    }
-    open(): void {}
-  }
-  return { ...run, BatchModal, FlatManifest, HierarchyManifest };
+  return { ...run, FlatManifest, HierarchyManifest };
 });
 
 function classifyControls(): BatchClassifyControls {
@@ -143,54 +130,60 @@ function makeFile(path: string): TFile {
 function makeDeps(
   settings: Partial<Settings>,
   options: {
-    dbState?: string;
+    dbState?: "loading" | "ready" | "degraded";
     importNoteResult?: "created" | "overwritten" | "skipped";
     templateReady?: Promise<void>;
     existing?: TFile[];
   } = {},
 ): {
-  deps: NoteImportContext;
+  deps: NoteImportDeps;
   importNote: ReturnType<typeof vi.fn>;
 } {
-  const client = {};
+  const client = createClient(":memory:");
   const importNote = vi.fn(
     async () => options.importNoteResult ?? ("created" as const),
   );
-  const deps = {
+  const deps: NoteImportDeps = {
     db: {
       state: options.dbState ?? "ready",
       client,
       acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
     },
     settings: { loaded: Promise.resolve({ ...defaults, ...settings }) },
-    noteImport: { importNote, ensureImportFolder: vi.fn(async () => "/") },
+    noteImport: { importNote },
     noteIndex: {
       whenIndexed: async () => {},
       getImportedNoteByNoteKey: () => options.existing ?? [],
     },
-    noteFeatures: {
-      app: {},
-      template: { ready: options.templateReady ?? Promise.resolve() },
+    view: {
+      openBatchModal: (opts) => {
+        openedModals.push(opts);
+      },
+      confirm: confirmMock,
     },
-  } as unknown as NoteImportContext;
+    template: { ready: options.templateReady ?? Promise.resolve() },
+  };
   return { deps, importNote };
 }
 
 beforeEach(() => {
   openedModals.length = 0;
   vi.mocked(getNoteRefsByItemIDs).mockReset();
+  vi.mocked(getTrashedNoteItemIDs).mockReset().mockReturnValue(new Set());
   vi.mocked(getChildNotesByParentIDs).mockReset();
   vi.mocked(getItemDisplayRefByID).mockReset();
   vi.mocked(getNoteByItemID).mockReset();
   vi.mocked(getItemsByKey).mockReset();
   vi.mocked(getNoteByKey).mockReset();
-  vi.mocked(confirm).mockReset();
+  confirmMock.mockReset();
 });
 
 describe("runBatchImport routing", () => {
   it("returns db-unavailable when the database is closed", async () => {
-    const { deps, importNote } = makeDeps({}, { dbState: "closed" });
-    await expect(runBatchImport(deps, "note", [50])).resolves.toEqual({
+    const { deps, importNote } = makeDeps({}, { dbState: "loading" });
+    await expect(
+      createBatchImport(deps).runBatchImport("note", [50]),
+    ).resolves.toEqual({
       outcome: "db-unavailable",
     });
     expect(importNote).not.toHaveBeenCalled();
@@ -199,7 +192,9 @@ describe("runBatchImport routing", () => {
 
   it("returns empty-selection for no ids", async () => {
     const { deps } = makeDeps({});
-    await expect(runBatchImport(deps, "note", [])).resolves.toEqual({
+    await expect(
+      createBatchImport(deps).runBatchImport("note", []),
+    ).resolves.toEqual({
       outcome: "empty-selection",
     });
   });
@@ -208,7 +203,10 @@ describe("runBatchImport routing", () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
     const { deps, importNote } = makeDeps({});
 
-    const result = await runBatchImport(deps, "note", [50, 51]);
+    const result = await createBatchImport(deps).runBatchImport(
+      "note",
+      [50, 51],
+    );
 
     expect(result).toEqual({ outcome: "batch-modal" });
     expect(openedModals).toHaveLength(1);
@@ -227,7 +225,7 @@ describe("runBatchImport routing", () => {
     });
     const { deps } = makeDeps({});
 
-    const result = await runBatchImport(deps, "child", [1]);
+    const result = await createBatchImport(deps).runBatchImport("child", [1]);
 
     expect(result).toEqual({ outcome: "batch-modal" });
     expect(openedModals).toHaveLength(1);
@@ -238,16 +236,15 @@ describe("single note import (mode=note, 1 id)", () => {
   it("imports and reports the created title without a modal", async () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
     vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
-    const { deps, importNote } = makeDeps({
-      "note.import-annotations-as-template": true,
-    });
+    const { deps, importNote } = makeDeps({});
 
-    const result = await runBatchImport(deps, "note", [50]);
+    const result = await createBatchImport(deps).runBatchImport("note", [50]);
 
     expect(openedModals).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(1);
+    // The shared group memo is threaded so a run memoizes group-library lookups.
     expect(importNote.mock.calls[0]![1]).toMatchObject({
-      renderAnnotationParagraph: expect.any(Function),
+      groupIdMemo: expect.any(Map),
     });
     expect(result).toEqual({
       outcome: "single",
@@ -257,25 +254,11 @@ describe("single note import (mode=note, 1 id)", () => {
     expect(batchImportNotice(result)).toBe("Imported Note 50.");
   });
 
-  it("leaves the renderer undefined when the setting is off", async () => {
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
-    const { deps, importNote } = makeDeps({
-      "note.import-annotations-as-template": false,
-    });
-
-    await runBatchImport(deps, "note", [50]);
-
-    expect(
-      importNote.mock.calls[0]![1].renderAnnotationParagraph,
-    ).toBeUndefined();
-  });
-
   it("reports not-found when the single id does not resolve", async () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([]);
     const { deps, importNote } = makeDeps({});
 
-    const result = await runBatchImport(deps, "note", [99]);
+    const result = await createBatchImport(deps).runBatchImport("note", [99]);
 
     expect(result).toEqual({ outcome: "not-found", count: 1 });
     expect(importNote).not.toHaveBeenCalled();
@@ -284,16 +267,16 @@ describe("single note import (mode=note, 1 id)", () => {
   it("confirms before overwriting an existing imported note", async () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
     vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
-    vi.mocked(confirm).mockResolvedValue(true);
+    confirmMock.mockResolvedValue(true);
     const target = makeFile("Imported/Note 50.md");
     const { deps, importNote } = makeDeps(
       {},
       { existing: [target], importNoteResult: "overwritten" },
     );
 
-    const result = await runBatchImport(deps, "note", [50]);
+    const result = await createBatchImport(deps).runBatchImport("note", [50]);
 
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile: target });
     expect(result).toEqual({
       outcome: "single",
@@ -305,13 +288,13 @@ describe("single note import (mode=note, 1 id)", () => {
 
   it("cancels when the overwrite confirm is declined", async () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    vi.mocked(confirm).mockResolvedValue(false);
+    confirmMock.mockResolvedValue(false);
     const { deps, importNote } = makeDeps(
       {},
       { existing: [makeFile("Imported/Note 50.md")] },
     );
 
-    const result = await runBatchImport(deps, "note", [50]);
+    const result = await createBatchImport(deps).runBatchImport("note", [50]);
 
     expect(result).toEqual({ outcome: "cancelled" });
     expect(importNote).not.toHaveBeenCalled();
@@ -327,7 +310,7 @@ describe("single note import (mode=note, 1 id)", () => {
       { templateReady: templateReady.promise },
     );
 
-    const pending = runBatchImport(deps, "note", [50]);
+    const pending = createBatchImport(deps).runBatchImport("note", [50]);
     await Promise.resolve();
     await Promise.resolve();
 
@@ -339,23 +322,22 @@ describe("single note import (mode=note, 1 id)", () => {
 });
 
 describe("note-mode modal classify + run", () => {
-  it("threads a renderer to every imported note", async () => {
+  it("threads the shared group memo to every imported note", async () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
     vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
       makeNote(itemID),
     );
-    const { deps, importNote } = makeDeps({
-      "note.import-annotations-as-template": true,
-    });
+    const { deps, importNote } = makeDeps({});
 
-    await runBatchImport(deps, "note", [50, 51]);
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
     await driveLastModal();
 
     expect(importNote).toHaveBeenCalledTimes(2);
+    // Both writes share one memo instance, so group-library lookups memoize.
+    const memo = importNote.mock.calls[0]![1].groupIdMemo;
+    expect(memo).toBeInstanceOf(Map);
     for (const call of importNote.mock.calls) {
-      expect(call[1]).toMatchObject({
-        renderAnnotationParagraph: expect.any(Function),
-      });
+      expect(call[1].groupIdMemo).toBe(memo);
     }
   });
 
@@ -364,7 +346,7 @@ describe("note-mode modal classify + run", () => {
     vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
     const { deps, importNote } = makeDeps({});
 
-    await runBatchImport(deps, "note", [50, 50]);
+    await createBatchImport(deps).runBatchImport("note", [50, 50]);
     const { manifest } = await driveLastModal();
 
     expect(vi.mocked(getNoteRefsByItemIDs).mock.calls[0]![1]).toEqual([50]);
@@ -377,10 +359,30 @@ describe("note-mode modal classify + run", () => {
     vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
     const { deps, importNote } = makeDeps({});
 
-    await runBatchImport(deps, "note", [50, 99]);
+    await createBatchImport(deps).runBatchImport("note", [50, 99]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.notFound).toHaveLength(1);
+    expect(manifest.options.tasks).toHaveLength(1);
+    expect(importNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels a trashed note distinctly from a genuine non-note id", async () => {
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
+    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
+    // 60 is a note that's in Zotero's trash; 99 isn't a note at all.
+    vi.mocked(getTrashedNoteItemIDs).mockReturnValue(new Set([60]));
+    const { deps, importNote } = makeDeps({});
+
+    await createBatchImport(deps).runBatchImport("note", [50, 60, 99]);
+    const { manifest } = await driveLastModal();
+
+    expect(manifest.options.notFound).toEqual(
+      expect.arrayContaining([
+        { itemID: 60, label: "Item 60 (in trash)" },
+        { itemID: 99, label: "Item 99 (not a note)" },
+      ]),
+    );
     expect(manifest.options.tasks).toHaveLength(1);
     expect(importNote).toHaveBeenCalledTimes(1);
   });
@@ -394,7 +396,7 @@ describe("note-mode modal classify + run", () => {
       { existing: [target], importNoteResult: "overwritten" },
     );
 
-    await runBatchImport(deps, "note", [50, 51]);
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
@@ -406,7 +408,7 @@ describe("note-mode modal classify + run", () => {
     vi.mocked(getNoteByItemID).mockReturnValue(null);
     const { deps, importNote } = makeDeps({});
 
-    await runBatchImport(deps, "note", [50, 51]);
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
     const { onItemSettled } = await driveLastModal();
 
     expect(importNote).not.toHaveBeenCalled();
@@ -433,7 +435,7 @@ describe("child-mode modal classify", () => {
     );
     const { deps, importNote } = makeDeps({});
 
-    await runBatchImport(deps, "child", [1]);
+    await createBatchImport(deps).runBatchImport("child", [1]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.parents).toHaveLength(1);
@@ -448,7 +450,7 @@ describe("child-mode modal classify", () => {
     vi.mocked(getChildNotesByParentIDs).mockReturnValue([]);
     const { deps, importNote } = makeDeps({});
 
-    await runBatchImport(deps, "child", [1]);
+    await createBatchImport(deps).runBatchImport("child", [1]);
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.parents).toHaveLength(0);
@@ -458,10 +460,12 @@ describe("child-mode modal classify", () => {
 
 describe("runChildImportByKey", () => {
   it("reports database unavailable instead of not found", async () => {
-    const { deps } = makeDeps({}, { dbState: "closed" });
+    const { deps } = makeDeps({}, { dbState: "loading" });
 
     await expect(
-      runChildImportByKey(deps, formatIndexedKey("ABCD2345", null)),
+      createBatchImport(deps).runChildImportByKey(
+        formatIndexedKey("ABCD2345", null),
+      ),
     ).resolves.toEqual({ outcome: "db-unavailable" });
   });
 
@@ -470,7 +474,9 @@ describe("runChildImportByKey", () => {
     const { deps } = makeDeps({});
 
     await expect(
-      runChildImportByKey(deps, formatIndexedKey("MISSING1", null)),
+      createBatchImport(deps).runChildImportByKey(
+        formatIndexedKey("MISSING1", null),
+      ),
     ).resolves.toBeNull();
   });
 
@@ -483,8 +489,7 @@ describe("runChildImportByKey", () => {
     vi.mocked(getNoteByItemID).mockReturnValue(makeNote(50));
     const { deps, importNote } = makeDeps({});
 
-    const result = await runChildImportByKey(
-      deps,
+    const result = await createBatchImport(deps).runChildImportByKey(
       formatIndexedKey("ABCD2345", null),
     );
 
@@ -500,7 +505,9 @@ describe("runChildImportByKey", () => {
     const { deps } = makeDeps({});
 
     await expect(
-      runChildImportByKey(deps, formatIndexedKey("ABCD2345", null)),
+      createBatchImport(deps).runChildImportByKey(
+        formatIndexedKey("ABCD2345", null),
+      ),
     ).rejects.toThrow("sqlite read failed");
   });
 
@@ -514,11 +521,10 @@ describe("runChildImportByKey", () => {
 
 describe("reimportNoteByKey", () => {
   it("reports database unavailable instead of not found", async () => {
-    const { deps } = makeDeps({}, { dbState: "closed" });
+    const { deps } = makeDeps({}, { dbState: "loading" });
 
     await expect(
-      reimportNoteByKey(
-        deps,
+      createBatchImport(deps).reimportNoteByKey(
         formatIndexedKey("ABCD2345", null),
         makeFile("Imported/Clicked.md"),
       ),
@@ -530,8 +536,7 @@ describe("reimportNoteByKey", () => {
     const { deps } = makeDeps({});
 
     await expect(
-      reimportNoteByKey(
-        deps,
+      createBatchImport(deps).reimportNoteByKey(
         formatIndexedKey("GONE1234", null),
         makeFile("Imported/Clicked.md"),
       ),
@@ -548,7 +553,7 @@ describe("reimportNoteByKey", () => {
     );
 
     await expect(
-      reimportNoteByKey(deps, note.indexedKey, targetFile),
+      createBatchImport(deps).reimportNoteByKey(note.indexedKey, targetFile),
     ).resolves.toEqual({ outcome: "overwritten" });
 
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile });
@@ -560,7 +565,10 @@ describe("reimportNoteByKey", () => {
     const { deps } = makeDeps({}, { importNoteResult: "skipped" });
 
     await expect(
-      reimportNoteByKey(deps, note.indexedKey, makeFile("Imported/Clicked.md")),
+      createBatchImport(deps).reimportNoteByKey(
+        note.indexedKey,
+        makeFile("Imported/Clicked.md"),
+      ),
     ).resolves.toEqual({ outcome: "skipped" });
   });
 });

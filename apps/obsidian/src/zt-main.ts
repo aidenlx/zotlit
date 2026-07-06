@@ -84,20 +84,21 @@ export default class ZotLitPlugin extends Plugin {
 
     addDatabaseActions(this, { db: services.db });
     addNoteFeatureActions(this, {
-      noteFeatures: services.noteFeatures,
-      noteImportCtx: services.noteImportCtx,
+      app: this.app,
+      noteFeature: services.noteFeature,
+      batchImport: services.batchImport,
     });
     registerCitationSuggest(this, {
       app: this.app,
       lookup: services.itemLookup,
-      noteFeatures: services.noteFeatures,
+      noteFeature: services.noteFeature,
       settings: services.settings,
     });
     registerQuickSwitch(this, {
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
-      noteFeatures: services.noteFeatures,
+      noteFeature: services.noteFeature,
       settings: services.settings,
     });
 
@@ -107,9 +108,9 @@ export default class ZotLitPlugin extends Plugin {
         settings: services.settings,
         db: services.db,
         zoteroPref: services.zoteroPref,
-        noteFeatures: services.noteFeatures,
+        noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
-        noteImport: services.noteImport,
+        batchImport: services.batchImport,
         liveUpdate: services.liveUpdate,
       }),
     );
@@ -119,7 +120,7 @@ export default class ZotLitPlugin extends Plugin {
       db: services.db,
       liveUpdate: services.liveUpdate,
       zoteroPref: services.zoteroPref,
-      noteFeatures: services.noteFeatures,
+      noteFeature: services.noteFeature,
       attachmentImport: services.attachmentImport,
       itemLookup: services.itemLookup,
       settings: services.settings,

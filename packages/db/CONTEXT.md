@@ -1,0 +1,55 @@
+# Zotero Data Model
+
+The Zotero library's entity hierarchy, identification scheme, and annotation/attachment domain as modeled by `@zotlit/db`. Types mirror Zotero's SQLite schema through Drizzle ORM.
+
+## Language
+
+### Hierarchy
+
+**Item**:
+A top-level Zotero library entry — journal article, book, thesis, conference paper, etc. In Zotero's schema, attachments, annotations, and notes are also items; in ZotLit, **Item** always means a regular (top-level) library entry, excluding child types (Attachment, Annotation, Child Note).
+_Avoid_: document, record, entry, regular item
+
+**Attachment**:
+A file or URL linked to an Item — typically a PDF, EPUB, or web snapshot. Each Attachment has a Link Mode governing how its file is stored or referenced.
+_Avoid_: file, PDF
+
+**Annotation**:
+A mark within an Attachment's content — a highlight, underline, note, image region, ink stroke, or text selection. Carries text, comment, color, page label, sort index, and position.
+_Avoid_: highlight (too narrow), mark (that term is used for the HTML representation in notes)
+
+**Child Note** _(Zotero)_:
+A rich-text HTML note attached to an Item. Distinguished from a Standalone Note (no parent Item). The HTML body follows Zotero's note schema (currently v6). The Obsidian-side output of importing a Child Note is an Imported Note.
+_Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (still ambiguous)
+
+**Standalone Note** _(Zotero)_:
+A rich-text HTML note with no parent Item. Same schema as a Child Note, but top-level in the library. Only reachable via explicit import (not auto-materialized as a side effect of Literature Note operations).
+
+**Library**:
+A Zotero library — either the user's personal library or a group library. Each Library has a `libraryID` (DB primary key); group libraries additionally carry a `groupID`.
+
+**Collection**:
+A user-organized folder within a Library. Collections form a tree; an Item can belong to multiple Collections. Resolved to ancestor paths (root → leaf) for template rendering.
+_Avoid_: folder, category, tag
+
+### Identification
+
+**Key**:
+Zotero's 8-character alphanumeric identifier for any item, unique within a Library.
+_Avoid_: id, itemID (the integer DB primary key — not exposed to users)
+
+**Indexed Key**:
+A disambiguated Key string used as the canonical cross-library identity: bare `key` for the personal library, `key + "g" + groupID` for group libraries. Stored in literature-note frontmatter as `zotero-key`.
+_Avoid_: item key, scoped key
+
+**Citation Key**:
+A human-readable identifier for an Item (e.g., `smith2024`). Stored in Zotero's native `citationKey` field — originally a Better BibTeX feature, now an official Zotero field. The frontmatter field name `citekey` is a legacy abbreviation from before Zotero adopted the field.
+_Avoid_: BBT key, BibTeX key, citekey (legacy; use Citation Key in prose)
+
+### Attachment storage
+
+**Link Mode**:
+How an Attachment's file is stored: `imported_file` (copied into Zotero's storage), `linked_file` (absolute or base-relative path on disk), `imported_url` / `linked_url` (web snapshots), or `embedded_image` (inline image in a Child Note).
+
+**Attachment Path**:
+The resolved absolute filesystem path to an Attachment's file, computed from its Link Mode, Zotero's data directory, and the optional base attachment path preference.

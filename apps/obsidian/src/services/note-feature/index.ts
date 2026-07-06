@@ -1,16 +1,7 @@
+export { type NoteFeatureDeps } from "./context";
 export {
-  buildFullContext,
-  fetchItemTags,
-  resolveNotePath,
-  type NoteFeatureContext,
-} from "./context";
-export {
-  createNote,
-  overwriteNote,
-  renderAnnotation,
-  renderCitation,
-  updateNote,
-  writeNewNote,
+  createNoteFeature,
+  type NoteFeature,
   type UpdateResult,
   type UpdateScope,
 } from "./operations";

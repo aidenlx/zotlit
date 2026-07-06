@@ -9,24 +9,21 @@ import {
   getNoteByItemID,
   getNoteByKey,
   getNoteRefsByItemIDs,
+  getTrashedNoteItemIDs,
+  resolveIndexedKeyLibrary,
   type ChildNote,
   type GroupIDMemo,
+  type TagMemo,
 } from "@zotlit/db";
 import { type ImportMode } from "@zotlit/protocol";
 
-import { confirm } from "@/lib/confirm";
 import { getLogger } from "@/lib/log";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
-import {
-  resolveIndexedKeyLibrary,
-  type NoteFeatureContext,
-} from "@/services/note-feature/context";
-import { buildAnnotationParagraphsRenderer } from "@/services/note-feature/operations";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
+import { type TemplateService } from "@/services/template/service";
 import {
-  BatchModal,
   type BatchClassifyControls,
   type BatchRunControls,
   type BatchRunResult,
@@ -38,7 +35,9 @@ import {
   type HierarchyParent,
 } from "@/views/batch-modal";
 
-import { type NoteImportService, type WriteOutcome } from "./service";
+import { importRunSummary } from "./batch-import-notices";
+import { type NoteImporter, type WriteOutcome } from "./service";
+import { type NoteImportView } from "./view";
 
 const logger = getLogger("batch-import");
 
@@ -46,12 +45,44 @@ const logger = getLogger("batch-import");
  * abort the queued remainder between items. */
 const IMPORT_CONCURRENCY = 16;
 
-export interface NoteImportContext {
-  db: DatabaseService;
-  settings: SettingsService;
-  noteImport: NoteImportService;
-  noteIndex: NoteIndex;
-  noteFeatures: NoteFeatureContext;
+export interface NoteImportDeps {
+  /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
+  view: NoteImportView;
+  db: Pick<DatabaseService, "state" | "client" | "acquireRead">;
+  settings: Pick<SettingsService, "loaded">;
+  noteImport: Pick<NoteImporter, "importNote">;
+  noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
+  /** Only template readiness is gated here; rendering lives in `noteImport`. */
+  template: Pick<TemplateService, "ready">;
+}
+
+/**
+ * The note-import command surface: the interactive batch/single/child import
+ * routing bound to one dependency set. Built once (see {@link createBatchImport})
+ * so consumers hold this seam instead of the full dependency context.
+ */
+export interface BatchImport {
+  /** @see {@link runBatchImport} */
+  runBatchImport(
+    mode: ImportMode,
+    itemIDs: readonly number[],
+  ): Promise<BatchImportResult>;
+  /** @see {@link runChildImportByKey} */
+  runChildImportByKey(indexedKey: string): Promise<BatchImportResult | null>;
+  /** @see {@link reimportNoteByKey} */
+  reimportNoteByKey(
+    noteKey: string,
+    targetFile: TFile,
+  ): Promise<ReimportResult>;
+}
+
+export function createBatchImport(deps: NoteImportDeps): BatchImport {
+  return {
+    runBatchImport: (mode, itemIDs) => runBatchImport(deps, mode, itemIDs),
+    runChildImportByKey: (indexedKey) => runChildImportByKey(deps, indexedKey),
+    reimportNoteByKey: (noteKey, targetFile) =>
+      reimportNoteByKey(deps, noteKey, targetFile),
+  };
 }
 
 type ImportAction =
@@ -91,8 +122,8 @@ export type BatchImportResult =
  * Returns a preflight {@link BatchImportResult}; modal/single paths surface their
  * own feedback, so the caller only notices the early-exit outcomes.
  */
-export async function runBatchImport(
-  deps: NoteImportContext,
+async function runBatchImport(
+  deps: NoteImportDeps,
   mode: ImportMode,
   itemIDs: readonly number[],
 ): Promise<BatchImportResult> {
@@ -123,7 +154,10 @@ function noteLabel(note: ChildNote): string {
 }
 
 /** Classify a single note ref into a create/overwrite action against the index. */
-function toAction(noteIndex: NoteIndex, note: ChildNote): ImportAction {
+function toAction(
+  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">,
+  note: ChildNote,
+): ImportAction {
   const label = noteLabel(note);
   const existing = noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
   if (existing) return { note, label, kind: "overwrite", file: existing };
@@ -139,13 +173,13 @@ function actionToTask(action: ImportAction): FlatTask {
 // ---------------------------------------------------------------------------
 
 function openNoteImportModal(
-  deps: NoteImportContext,
+  deps: NoteImportDeps,
   itemIDs: readonly number[],
 ): void {
   const ids = distinct(itemIDs);
   let actions: ImportAction[] = [];
   let notFoundCount = 0;
-  new BatchModal(deps.noteFeatures.app, {
+  deps.view.openBatchModal({
     text: {
       title: m.batch_import_title(),
       loadingLabel: m.batch_import_loading_label(),
@@ -177,7 +211,7 @@ function openNoteImportModal(
       });
     },
     onRun: (controls) => executeImportRun(deps, actions, controls),
-  }).open();
+  });
 }
 
 /**
@@ -188,7 +222,7 @@ function openNoteImportModal(
  * @throws when {@link BatchClassifyControls.signal} aborts.
  */
 async function classifyNoteImport(
-  deps: NoteImportContext,
+  deps: NoteImportDeps,
   itemIDs: readonly number[],
   controls: BatchClassifyControls,
 ): Promise<{ actions: ImportAction[]; notFound: NotFoundEntry[] }> {
@@ -201,13 +235,16 @@ async function classifyNoteImport(
     const refs = getNoteRefsByItemIDs(client, slice, { memo });
     const resolved = new Set(refs.map((ref) => ref.itemID));
     for (const ref of refs) actions.push(toAction(deps.noteIndex, ref));
-    for (const id of slice) {
-      if (!resolved.has(id)) {
-        notFound.push({
-          itemID: id,
-          label: m.batch_import_item_not_note({ id }),
-        });
-      }
+    // Distinguish a trashed note (recoverable) from a genuine non-note id.
+    const unresolved = slice.filter((id) => !resolved.has(id));
+    const trashed = getTrashedNoteItemIDs(client, unresolved);
+    for (const id of unresolved) {
+      notFound.push({
+        itemID: id,
+        label: trashed.has(id)
+          ? m.batch_import_item_trashed({ id })
+          : m.batch_import_item_not_note({ id }),
+      });
     }
   });
   logClassified("note", actions, {
@@ -222,12 +259,12 @@ async function classifyNoteImport(
 // ---------------------------------------------------------------------------
 
 function openChildImportModal(
-  deps: NoteImportContext,
+  deps: NoteImportDeps,
   parentItemIDs: readonly number[],
 ): void {
   const ids = distinct(parentItemIDs);
   let actions: ImportAction[] = [];
-  new BatchModal(deps.noteFeatures.app, {
+  deps.view.openBatchModal({
     text: {
       title: m.batch_import_child_title(),
       loadingLabel: m.batch_import_loading_label(),
@@ -258,7 +295,7 @@ function openChildImportModal(
       });
     },
     onRun: (controls) => executeImportRun(deps, actions, controls),
-  }).open();
+  });
 }
 
 interface ChildGroup {
@@ -274,7 +311,7 @@ interface ChildGroup {
  * @throws when {@link BatchClassifyControls.signal} aborts.
  */
 async function classifyChildImport(
-  deps: NoteImportContext,
+  deps: NoteImportDeps,
   parentItemIDs: readonly number[],
   controls: BatchClassifyControls,
 ): Promise<ChildGroup[]> {
@@ -308,7 +345,7 @@ async function classifyChildImport(
 // ---------------------------------------------------------------------------
 
 async function importSingleNote(
-  deps: NoteImportContext,
+  deps: NoteImportDeps,
   itemID: number,
 ): Promise<BatchImportResult> {
   let ref: ChildNote | undefined;
@@ -321,15 +358,12 @@ async function importSingleNote(
   const title = noteLabel(ref);
   const existing = deps.noteIndex.getImportedNoteByNoteKey(ref.indexedKey)[0];
   if (existing) {
-    const yes = await confirm(
-      {
-        title: m.modal_import_overwrite_title(),
-        content: m.modal_import_overwrite_desc({ title }),
-        action: m.modal_import_overwrite_confirm(),
-        destructive: true,
-      },
-      deps.noteFeatures.app,
-    );
+    const yes = await deps.view.confirm({
+      title: m.modal_import_overwrite_title(),
+      content: m.modal_import_overwrite_desc({ title }),
+      action: m.modal_import_overwrite_confirm(),
+      destructive: true,
+    });
     if (!yes) return { outcome: "cancelled" };
   }
 
@@ -339,33 +373,22 @@ async function importSingleNote(
 
 /** Load a note's full body under a fresh lease and write its mirror. */
 async function importOne(
-  deps: NoteImportContext,
+  deps: NoteImportDeps,
   ref: ChildNote,
   targetFile: TFile | undefined,
 ): Promise<WriteOutcome> {
   const [settings] = await Promise.all([
     deps.settings.loaded,
-    deps.noteFeatures.template.ready,
+    deps.template.ready,
   ]);
   using lease = await deps.db.acquireRead();
   const memo: GroupIDMemo = new Map();
   const note = getNoteByItemID(lease.client, ref.itemID, { memo });
   if (!note) return "skipped";
-  const renderAnnotationParagraph = buildAnnotationParagraphsRenderer(
-    deps.noteFeatures,
-    {
-      client: lease.client,
-      libraryID: note.libraryID,
-      settings,
-      groupIdMemo: memo,
-    },
-  );
-  const folder = await deps.noteImport.ensureImportFolder(settings);
   return deps.noteImport.importNote(note, {
     client: lease.client,
     settings,
-    renderAnnotationParagraph,
-    folder,
+    groupIdMemo: memo,
     ...(targetFile ? { targetFile } : {}),
   });
 }
@@ -382,18 +405,19 @@ async function importOne(
  * finish.
  */
 async function executeImportRun(
-  deps: NoteImportContext,
+  deps: NoteImportDeps,
   actions: readonly ImportAction[],
   controls: BatchRunControls,
 ): Promise<BatchRunResult> {
   const [settings] = await Promise.all([
     deps.settings.loaded,
-    deps.noteFeatures.template.ready,
+    deps.template.ready,
   ]);
   using lease = await deps.db.acquireRead();
   const client = lease.client;
   const memo: GroupIDMemo = new Map();
-  const folder = await deps.noteImport.ensureImportFolder(settings);
+  const tagMemo: TagMemo = new Map();
+  const attachmentFolderCache = new Map<string, string>();
   let created = 0;
   let updated = 0;
   let skipped = 0;
@@ -411,15 +435,12 @@ async function executeImportRun(
         skipped += 1;
         return "skipped";
       }
-      const renderAnnotationParagraph = buildAnnotationParagraphsRenderer(
-        deps.noteFeatures,
-        { client, libraryID: note.libraryID, settings, groupIdMemo: memo },
-      );
       const outcome = await deps.noteImport.importNote(note, {
         client,
         settings,
-        renderAnnotationParagraph,
-        folder,
+        groupIdMemo: memo,
+        tagMemo,
+        attachmentFolderCache,
         ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
       });
       if (outcome === "created") created += 1;
@@ -447,36 +468,6 @@ async function executeImportRun(
   return { created, updated, skipped, failed, cancelled };
 }
 
-/** Build the run-summary copy; `notFound` is captured from classification. */
-function importRunSummary(
-  notFound: () => number,
-): (
-  result: BatchRunResult,
-  state: { cancelled: boolean; aborted: boolean },
-) => string {
-  return (result, state) => {
-    const { created, updated, skipped, failed } = result;
-    if (state.aborted) {
-      return m.batch_import_aborted({ created, updated, skipped, failed });
-    }
-    if (state.cancelled) {
-      return m.batch_import_summary_cancelled({
-        created,
-        updated,
-        skipped,
-        failed,
-      });
-    }
-    return m.batch_import_summary({
-      created,
-      updated,
-      skipped,
-      failed,
-      notFound: notFound(),
-    });
-  };
-}
-
 function logClassified(
   mode: ImportMode,
   actions: readonly ImportAction[],
@@ -502,8 +493,8 @@ function logClassified(
  * run a `"child"` batch import. Returns a database-unavailable outcome when
  * the database is closed, or `null` when the key doesn't resolve to a live item.
  */
-export async function runChildImportByKey(
-  deps: NoteImportContext,
+async function runChildImportByKey(
+  deps: NoteImportDeps,
   indexedKey: string,
 ): Promise<BatchImportResult | null> {
   if (deps.db.state !== "ready") {
@@ -528,8 +519,8 @@ export type ReimportResult =
  * Re-import a single note identified by its `indexedKey`. Resolves the note
  * from the database, then writes/overwrites the imported mirror file.
  */
-export async function reimportNoteByKey(
-  deps: NoteImportContext,
+async function reimportNoteByKey(
+  deps: NoteImportDeps,
   noteKey: string,
   targetFile: TFile,
 ): Promise<ReimportResult> {
@@ -538,80 +529,25 @@ export async function reimportNoteByKey(
     return { outcome: "db-unavailable" };
   }
 
-  await Promise.all([
-    deps.noteIndex.whenIndexed(),
-    deps.noteFeatures.template.ready,
-  ]);
+  await Promise.all([deps.noteIndex.whenIndexed(), deps.template.ready]);
 
   using lease = await deps.db.acquireRead();
+  const groupIdMemo: GroupIDMemo = new Map();
   const resolved = resolveIndexedKeyLibrary(lease.client, noteKey);
   const note = resolved
-    ? getNoteByKey(lease.client, resolved.key, resolved.libraryID)
+    ? getNoteByKey(lease.client, resolved.key, {
+        libraryID: resolved.libraryID,
+        memo: groupIdMemo,
+      })
     : null;
   if (!note) return { outcome: "not-found" };
 
-  const groupIdMemo: GroupIDMemo = new Map();
   const settings = await deps.settings.loaded;
-  const renderAnnotationParagraph = buildAnnotationParagraphsRenderer(
-    deps.noteFeatures,
-    { client: lease.client, libraryID: note.libraryID, settings, groupIdMemo },
-  );
-  const folder = await deps.noteImport.ensureImportFolder(settings);
-
   const writeOutcome = await deps.noteImport.importNote(note, {
     client: lease.client,
     settings,
-    renderAnnotationParagraph,
-    folder,
+    groupIdMemo,
     targetFile,
   });
   return { outcome: writeOutcome };
-}
-
-export function childImportToast(): {
-  success: (result: BatchImportResult | null) => string | undefined;
-  error: string;
-} {
-  return {
-    success: (result) =>
-      result ? batchImportNotice(result) : m.notice_protocol_item_not_found(),
-    error: m.batch_import_failed(),
-  };
-}
-
-export function batchImportToast(): {
-  success: (result: BatchImportResult) => string | undefined;
-  error: string;
-} {
-  return {
-    success: batchImportNotice,
-    error: m.batch_import_failed(),
-  };
-}
-
-/** Map preflight import outcomes to a notice; modal/cancelled paths are silent. */
-export function batchImportNotice(
-  result: BatchImportResult,
-): string | undefined {
-  switch (result.outcome) {
-    case "db-unavailable":
-      return m.batch_update_db_unavailable();
-    case "empty-selection":
-      return m.notice_protocol_item_not_found();
-    case "not-found":
-      return m.batch_import_not_found({ count: result.count });
-    case "single":
-      if (result.write === "created") {
-        return m.notice_imported_note({ title: result.title });
-      }
-      if (result.write === "overwritten") {
-        return m.notice_updated_imported_note({ title: result.title });
-      }
-      return m.notice_reimport_note_skipped();
-    case "batch-modal":
-    case "cancelled":
-      return undefined;
-    default:
-      return undefined;
-  }
 }

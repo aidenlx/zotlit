@@ -11,25 +11,23 @@ import { confirm } from "@/lib/confirm";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import {
-  childImportToast,
-  reimportNoteByKey,
-  runChildImportByKey,
-  type NoteImportContext,
+  type BatchImport,
   type ReimportResult,
 } from "@/services/note-import/batch-import";
+import { childImportToast } from "@/services/note-import/batch-import-notices";
 import {
   isLiteratureNote,
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
 
-import { type NoteFeatureContext } from "./context";
-import { overwriteNote, updateNote, type UpdateScope } from "./operations";
+import { type NoteFeature, type UpdateScope } from "./operations";
 import { updateNoteToast } from "./update-single";
 
 interface NoteFeatureActionDeps {
-  noteFeatures: NoteFeatureContext;
-  noteImportCtx: NoteImportContext;
+  app: App;
+  noteFeature: NoteFeature;
+  batchImport: Pick<BatchImport, "runChildImportByKey" | "reimportNoteByKey">;
 }
 
 export function addNoteFeatureActions(
@@ -52,7 +50,7 @@ export function addNoteFeatureActions(
     name: m.command_overwrite_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
       return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        void handleOverwriteNote(deps, file, { app: plugin.app, itemKey });
+        void handleOverwriteNote(deps, file, itemKey);
       });
     },
   });
@@ -127,7 +125,7 @@ function buildFileMenu(
         .setTitle(m.command_overwrite_note_name())
         .setIcon("file-x")
         .onClick(() => {
-          void handleOverwriteNote(deps, file, { app, itemKey });
+          void handleOverwriteNote(deps, file, itemKey);
         }),
     );
     menu.addItem((item) =>
@@ -164,12 +162,12 @@ async function reimportNote(
       action: m.modal_reimport_note_confirm(),
       destructive: true,
     },
-    deps.noteFeatures.app,
+    deps.app,
   );
   if (!yes) return;
 
   await toast.promise(
-    reimportNoteByKey(deps.noteImportCtx, noteKey, file),
+    deps.batchImport.reimportNoteByKey(noteKey, file),
     reimportNoteToast(),
   );
 }
@@ -228,7 +226,7 @@ function handleUpdateNote(
   opts: { itemKey: string; scope: UpdateScope },
 ): Promise<void> {
   return toast.promise(
-    updateNote(deps.noteFeatures, file, {
+    deps.noteFeature.updateNote(file, {
       indexedKey: opts.itemKey,
       scope: opts.scope,
     }),
@@ -239,7 +237,7 @@ function handleUpdateNote(
 async function handleOverwriteNote(
   deps: NoteFeatureActionDeps,
   file: TFile,
-  opts: { app: App; itemKey: string },
+  itemKey: string,
 ): Promise<void> {
   const yes = await confirm(
     {
@@ -248,10 +246,10 @@ async function handleOverwriteNote(
       action: m.modal_overwrite_note_confirm(),
       destructive: true,
     },
-    opts.app,
+    deps.app,
   );
   if (!yes) return;
-  await toast.promise(overwriteNote(deps.noteFeatures, file, opts.itemKey), {
+  await toast.promise(deps.noteFeature.overwriteNote(file, itemKey), {
     loading: m.notice_overwriting_note(),
     success: m.notice_overwrote_note(),
     error: m.notice_overwrite_note_failed(),
@@ -263,7 +261,7 @@ function handleChildImport(
   itemKey: string,
 ): Promise<void> {
   return toast.promise(
-    runChildImportByKey(deps.noteImportCtx, itemKey),
+    deps.batchImport.runChildImportByKey(itemKey),
     childImportToast(),
   );
 }
