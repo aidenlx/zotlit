@@ -10,7 +10,6 @@ import {
   groupIDForLibrary,
   groupsQuery,
   resolveGroupID,
-  resolveGroupIDAsync,
   type GroupIDMemo,
 } from "./_groups";
 import {
@@ -231,26 +230,6 @@ export function getItemsByID(
   );
 }
 
-export async function getItemsByIDAsync(
-  db: SQLocalDatabaseClient,
-  itemIDs: readonly number[],
-): Promise<Item[]> {
-  if (itemIDs.length === 0) return [];
-
-  const batches = await Promise.all(
-    itemIDs.map((itemID) => itemByIdQuery.prepared(db).all({ itemID })),
-  );
-  const rows = batches.flat();
-
-  const memo: GroupIDMemo = new Map();
-  await Promise.all(
-    [...new Set(rows.map((r) => r.libraryID))].map((libraryID) =>
-      resolveGroupIDAsync(db, libraryID, memo),
-    ),
-  );
-  return rows.map((r) => toItem(r, memo.get(r.libraryID) ?? null));
-}
-
 export function getItemsByKey(
   db: NodeDatabaseClient,
   libraryID: number,
@@ -265,21 +244,4 @@ export function getItemsByKey(
       .all({ libraryID, key })
       .map((r) => toItem(r, groupId)),
   );
-}
-
-export async function getItemsByKeyAsync(
-  db: SQLocalDatabaseClient,
-  libraryID: number,
-  keys: readonly string[],
-): Promise<Item[]> {
-  if (keys.length === 0) return [];
-
-  const [batches, [group]] = await Promise.all([
-    Promise.all(
-      keys.map((key) => itemByKeyQuery.prepared(db).all({ libraryID, key })),
-    ),
-    groupsQuery.prepared(db).all({ libraryID }),
-  ]);
-  const groupId = group?.groupID ?? null;
-  return batches.flat().map((r) => toItem(r, groupId));
 }

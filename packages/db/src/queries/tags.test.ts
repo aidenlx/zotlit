@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type NodeDatabaseClient } from "@/client/node";
 import { tagTypeToName } from "@/lib/zt-tag";
 
-import { getTagsByItemIDs } from "./tags";
+import {
+  getTagsByItemIDs,
+  resolveItemTags,
+  resolveItemTagsByIDs,
+  type TagMemo,
+} from "./tags";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -82,6 +87,42 @@ describe("getTagsByItemIDs", () => {
     );
 
     expect(item2Alpha?.tag).toBe(item1Alpha?.tag);
+  });
+});
+
+describe("TagMemo", () => {
+  it("resolves an item's tags via resolveItemTags and resolveItemTagsByIDs", () => {
+    const memo: TagMemo = new Map();
+
+    expect(resolveItemTags(db, 1, memo).map((t) => t.tag.name)).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    expect(
+      [...resolveItemTagsByIDs(db, [1, 2], memo).entries()].map(
+        ([itemID, tags]) => [itemID, tags.map((t) => t.tag.name)],
+      ),
+    ).toEqual([
+      [1, ["alpha", "beta"]],
+      [2, ["alpha", "gamma"]],
+    ]);
+  });
+
+  it("memoizes per itemID: a repeat call skips the query", () => {
+    const memo: TagMemo = new Map();
+    expect(resolveItemTags(db, 1, memo).map((t) => t.tag.name)).toEqual([
+      "alpha",
+      "beta",
+    ]);
+
+    // Mutating the underlying rows must not affect a repeat call for the same
+    // itemID — proof the second call reused the first's result.
+    sqlite.exec("delete from itemTags where itemID = 1");
+
+    expect(resolveItemTags(db, 1, memo).map((t) => t.tag.name)).toEqual([
+      "alpha",
+      "beta",
+    ]);
   });
 });
 

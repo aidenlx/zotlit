@@ -1,5 +1,4 @@
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 
 import { defineQuery } from "./_shared";
 
@@ -39,17 +38,6 @@ export function getItemIDByCitekey(
   );
 }
 
-export async function getItemIDByCitekeyAsync(
-  db: SQLocalDatabaseClient,
-  libraryID: number,
-  citekey: string,
-): Promise<number | null> {
-  const [row] = await itemIDByCitekeyQuery
-    .prepared(db)
-    .all({ libraryID, citekey });
-  return row?.itemID ?? null;
-}
-
 const citekeyByItemKeyQuery = defineQuery<{
   libraryID: number;
   key: string;
@@ -83,15 +71,4 @@ export function getCitekeyByItemKey(
     citekeyByItemKeyQuery.prepared(db).all({ libraryID, key })[0]?.itemDataValue
       ?.value ?? null
   );
-}
-
-export async function getCitekeyByItemKeyAsync(
-  db: SQLocalDatabaseClient,
-  libraryID: number,
-  key: string,
-): Promise<string | null> {
-  const [row] = await citekeyByItemKeyQuery
-    .prepared(db)
-    .all({ libraryID, key });
-  return row?.itemDataValue?.value ?? null;
 }

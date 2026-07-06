@@ -2,6 +2,8 @@
 // Source of truth: locale/*.ftl
 
 export type FluentMessageId =
+  | "zotlit-batch-import-failed-message"
+  | "zotlit-batch-import-failed-title"
   | "zotlit-batch-import-sending-title"
   | "zotlit-batch-import-sent-message"
   | "zotlit-batch-import-sent-title"
@@ -31,4 +33,6 @@ export type FluentMessageId =
   | "zotlit-prefs-notify-enable"
   | "zotlit-prefs-notify-section"
   | "zotlit-prefs-notify-url"
-  | "zotlit-prefs-pane-label";
+  | "zotlit-prefs-pane-label"
+  | "zotlit-protocol-incompatible-message"
+  | "zotlit-protocol-incompatible-title";

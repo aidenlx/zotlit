@@ -1,5 +1,8 @@
 import type TurndownService from "turndown";
 
+import { highlightColorToName, textColorToName } from "@zotlit/db";
+
+import { renderColorMark } from "./color-mark";
 import { addObsidianRules, obsidianTurndownOptions } from "./obsidian-base";
 
 /**
@@ -18,7 +21,7 @@ export function encodeCalloutAttr(markdown: string): string {
 }
 
 /** Decode the sentinel attribute back to callout Markdown. */
-export function decodeCalloutAttr(encoded: string): string {
+function decodeCalloutAttr(encoded: string): string {
   return decodeURIComponent(encoded);
 }
 
@@ -35,8 +38,10 @@ export function decodeCalloutAttr(encoded: string): string {
  *   span, not `<s>`/`<del>`, so the base strikethrough rule never sees it.
  * - `<sub>` / `<sup>` / `<u>` — kept as HTML; Obsidian renders these inline and
  *   Markdown has no equivalent.
- * - colored / highlighted spans — Zotero's text-color and highlight marks carry
- *   the color inline; preserve it as `<span style>` / `<mark style>`.
+ * - colored / highlighted spans — Zotero's note-editor text-color and highlight
+ *   marks carry the color inline; render them through {@link renderColorMark} to
+ *   a `<span>` / `<mark>` carrying the palette name (`data-color`) and a
+ *   theme-overridable CSS variable, matching the annotation-excerpt marks.
  * - `img[data-attachment-key]` — a Zotero embed with no `src`, both the plain
  *   attachment image and the image-excerpt annotation (`data-annotation` set).
  *   Keep the tag (and its key) so the shared Stage 9 import resolves it to a
@@ -109,8 +114,14 @@ function addZoteroRules(
     replacement: (content, node) => {
       const { color, backgroundColor } = (node as HTMLElement).style;
       return backgroundColor
-        ? `<mark style="background-color: ${backgroundColor};">${content}</mark>`
-        : `<span style="color: ${color};">${content}</span>`;
+        ? renderColorMark("highlight", content, {
+            raw: backgroundColor,
+            name: highlightColorToName(backgroundColor),
+          })
+        : renderColorMark("text", content, {
+            raw: color,
+            name: textColorToName(color),
+          });
     },
   });
 
@@ -152,7 +163,7 @@ function addZoteroRules(
   });
 }
 
-export interface NoteTurndownOptions {
+interface NoteTurndownOptions {
   /**
    * Replacement for the highlight/underline excerpt span (`span[data-annotation]`).
    * Defaults to raw-HTML passthrough — the standalone converter keeps the payload

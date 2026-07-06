@@ -7,9 +7,7 @@ export {
 export { type GroupIDMemo } from "./queries/_groups";
 export {
   getItemsByID,
-  getItemsByIDAsync,
   getItemsByKey,
-  getItemsByKeyAsync,
   getItemsByLibrary,
   getItemsByLibraryAsync,
   type BaseItem,
@@ -20,53 +18,43 @@ export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,
   getItemRefByID,
-  type ItemDisplayInfo,
-  type ItemDisplayRef,
   type ItemRef,
 } from "./queries/item-ref";
 export {
   formatIndexedKey,
   isIndexedKey,
   parseIndexedKey,
-  type ParsedIndexedKey,
+  resolveIndexedKeyLibrary,
 } from "./lib/zt-key";
-export {
-  annotationOpenUri,
-  itemSelectUri,
-  type AnnotationOpenUriOptions,
-} from "./lib/zt-uri";
+export { annotationOpenUri } from "./lib/zt-uri";
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
   getAnnotationsByItemId,
-  getAnnotationsByKeyAsync,
   getAnnotationsByParent,
-  getAnnotationsByParentAsync,
 } from "./queries/annotations";
 export {
   getAttachmentByKey,
   getAttachmentByItemId,
   getAttachmentsByParents,
-  getAttachmentsByParentsAsync,
 } from "./queries/attachments";
 export {
   getChildNotes,
-  getChildNotesAsync,
   getChildNotesByParentIDs,
   getNoteByItemID,
   getNoteByKey,
-  getNoteByKeyAsync,
   getNoteRefsByItemIDs,
+  getTrashedNoteItemIDs,
   type ChildNote,
   type Note,
 } from "./queries/notes";
+export { getCitekeyByItemKey, getItemIDByCitekey } from "./queries/citekey";
 export {
-  getCitekeyByItemKey,
-  getCitekeyByItemKeyAsync,
-  getItemIDByCitekey,
-  getItemIDByCitekeyAsync,
-} from "./queries/citekey";
-export { getTagsByItemIDs, getTagsByItemIDsAsync } from "./queries/tags";
+  getTagsByItemIDs,
+  resolveItemTags,
+  resolveItemTagsByIDs,
+  type TagMemo,
+} from "./queries/tags";
 export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
 export {
   getAnnotViewAnnotations,
@@ -74,36 +62,11 @@ export {
   type AnnotViewAttachment,
   type AnnotViewItem,
 } from "./queries/annot-view";
-export {
-  creatorFieldModeToName,
-  type CreatorFieldMode,
-  type CreatorFieldModeName,
-} from "./lib/zt-creator";
-export {
-  tagTypeToName,
-  type ItemTag,
-  type Tag,
-  type TagType,
-  type TagTypeName,
-} from "./lib/zt-tag";
-export {
-  linkModeToName,
-  parseAttachmentPath,
-  type Attachment,
-  type AttachmentPath,
-  type LinkedAbsolutePath,
-  type LinkedBasePath,
-  type LinkedUrlPath,
-  type LinkMode,
-  type LinkModeName,
-  type StoragePath,
-  type UnknownPath,
-} from "./lib/zt-attach";
+export { type ItemTag } from "./lib/zt-tag";
+export { type Attachment } from "./lib/zt-attach";
 export {
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
-  getIndexedItemsByLibrary,
-  getIndexedItemsByLibraryAsync,
   getIndexSignature,
   type IndexedCreator,
   type IndexedItem,
@@ -114,41 +77,29 @@ export {
   annotationTypeToName,
   type Annotation,
   type AnnotationType,
-  type AnnotationTypeName,
 } from "./lib/zt-annot";
 export {
   itemToTemplateBaseData,
-  type TemplateCreator,
-  type TemplateItemBaseData,
   type TemplateItemData,
-  type FallibleTemplateLink,
+  type TemplateItemResolvers,
   type TemplateLink,
   type TemplateParentItemData,
-} from "./lib/zt-template-item";
+} from "./lib/context/zt-template-item";
 export {
   attachmentToTemplateData,
   type TemplateAttachment,
-} from "./lib/zt-template-attach";
+} from "./lib/context/zt-template-attach";
 export {
   annotationToTemplateData,
-  type AnnotationTemplateDataInput,
   type TemplateAnnotation,
-} from "./lib/zt-template-annot";
-export {
-  parseAnnotationPosition,
-  type AnnotationPosition,
-} from "./lib/zt-annot-pos";
+} from "./lib/context/zt-template-annot";
 export {
   annotationColorToName,
   highlightColorToName,
   textColorToName,
-  type AnnotationColorName,
-  type NoteHighlightColorName,
-  type NoteTextColorName,
 } from "./lib/zt-color";
 export {
   createLanguageLookup,
-  formatItemLanguage,
   parseItemLanguage,
   type ItemLanguage,
   type LanguageNameLookup,
@@ -157,7 +108,6 @@ export {
   parseAnnotationData,
   parseCitationData,
   parseEmbeddedCitationItems,
-  parseItemUri,
   type AnnotationInfo,
   type CitationInfo,
   type CitationItem,
@@ -165,10 +115,13 @@ export {
 } from "./lib/zt-note-mark";
 export {
   buildFilenameContext,
-  buildNoteContext,
-  type NoteContextInput,
   type NoteTemplateContext,
   type TemplateNoteLink,
-  type TemplateRelatedItem,
-} from "./lib/zt-note-context";
+} from "./lib/context/zt-template-note";
+export {
+  fetchAnnotationsTemplateData,
+  fetchNoteContext,
+  type AnnotationResolvers,
+  type NoteResolvers,
+} from "./lib/context/note-context";
 export { getRelatedKeysByItemID } from "./queries/item-relations";

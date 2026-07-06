@@ -1,5 +1,4 @@
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 import { type QueryRow } from "@/queries/_shared";
 import {
   collectionIDsByItemQuery,
@@ -54,7 +53,7 @@ const byName = (a: TemplateCollection, b: TemplateCollection): number =>
 
 /**
  * Per-batch memo for resolving an item's collections into `TemplateCollection` objects.
- * Owns three things so the cost stays cheap across a batch:
+ * Owns four things so the cost stays cheap across a batch:
  *
  * 1. A lazy per-library bulk load of every non-trashed collection node,
  *    cached so each library loads once.
@@ -62,6 +61,8 @@ const byName = (a: TemplateCollection, b: TemplateCollection): number =>
  *    shared ancestor's path is built once.
  * 3. The in-memory ancestor walk, which truncates at the first parent absent
  *    from the node set (a live collection under a trashed parent roots there).
+ * 4. An itemID-level result cache, so a repeat `byItemIDs` call for the same
+ *    itemID within this instance's lifetime skips the membership query too.
  *
  * Hold one instance across a batch (like a `GroupIDMemo`); discard per single op.
  * @see collectionNodesByLibraryQuery
@@ -72,6 +73,7 @@ export class CollectionCache {
     ReadonlyMap<number, CollectionNode>
   >();
   readonly #resolved = new Map<number, TemplateCollection>();
+  readonly #byItem = new Map<number, TemplateCollection[]>();
 
   /** Resolve each item's collections, sorted by name within each item. */
   byItemIDs(
@@ -82,27 +84,16 @@ export class CollectionCache {
     const nodes = this.#nodes(db, libraryID);
     const result = new Map<number, TemplateCollection[]>();
     for (const itemID of itemIDs) {
+      const cached = this.#byItem.get(itemID);
+      if (cached) {
+        result.set(itemID, cached);
+        continue;
+      }
       const rows = collectionIDsByItemQuery.prepared(db).all({ itemID });
-      result.set(itemID, this.#resolveItem(rows, nodes));
+      const collections = this.#resolveItem(rows, nodes);
+      this.#byItem.set(itemID, collections);
+      result.set(itemID, collections);
     }
-    return result;
-  }
-
-  async byItemIDsAsync(
-    db: SQLocalDatabaseClient,
-    libraryID: number,
-    itemIDs: readonly number[],
-  ): Promise<Map<number, TemplateCollection[]>> {
-    const nodes = await this.#nodesAsync(db, libraryID);
-    const batches = await Promise.all(
-      itemIDs.map((itemID) =>
-        collectionIDsByItemQuery.prepared(db).all({ itemID }),
-      ),
-    );
-    const result = new Map<number, TemplateCollection[]>();
-    itemIDs.forEach((itemID, i) => {
-      result.set(itemID, this.#resolveItem(batches[i]!, nodes));
-    });
     return result;
   }
 
@@ -127,19 +118,6 @@ export class CollectionCache {
       this.#storeNodes(
         libraryID,
         collectionNodesByLibraryQuery.prepared(db).all({ libraryID }),
-      )
-    );
-  }
-
-  async #nodesAsync(
-    db: SQLocalDatabaseClient,
-    libraryID: number,
-  ): Promise<ReadonlyMap<number, CollectionNode>> {
-    return (
-      this.#nodesByLibrary.get(libraryID) ??
-      this.#storeNodes(
-        libraryID,
-        await collectionNodesByLibraryQuery.prepared(db).all({ libraryID }),
       )
     );
   }

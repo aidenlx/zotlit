@@ -1,13 +1,7 @@
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 import { type Attachment } from "@/lib/zt-attach";
 
-import {
-  groupIDForLibrary,
-  resolveGroupID,
-  resolveGroupIDAsync,
-  type GroupIDMemo,
-} from "./_groups";
+import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
 const attachmentFindOptions = {
@@ -120,25 +114,4 @@ export function getAttachmentByItemId(
   if (!row) return null;
   const memo = opts?.memo ?? new Map();
   return toAttachment(row, resolveGroupID(db, row.item_itemID.libraryID, memo));
-}
-
-export async function getAttachmentsByParentsAsync(
-  db: SQLocalDatabaseClient,
-  parentItemIDs: readonly number[],
-): Promise<Attachment[]> {
-  const batches = await Promise.all(
-    parentItemIDs.map((parentItemID) =>
-      attachmentsByParentQuery.prepared(db).all({ parentItemID }),
-    ),
-  );
-  const rows = batches.flat();
-  const memo: GroupIDMemo = new Map();
-  await Promise.all(
-    [...new Set(rows.map((r) => r.item_itemID.libraryID))].map((libraryID) =>
-      resolveGroupIDAsync(db, libraryID, memo),
-    ),
-  );
-  return rows.map((row) =>
-    toAttachment(row, memo.get(row.item_itemID.libraryID) ?? null),
-  );
 }

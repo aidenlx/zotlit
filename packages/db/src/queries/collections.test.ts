@@ -93,6 +93,28 @@ describe("CollectionCache.byItemIDs", () => {
         ?.map((c) => c.name),
     ).toEqual(["Standalone"]);
   });
+
+  it("memoizes per itemID: a repeat call skips the membership query", () => {
+    const cache = new CollectionCache();
+    expect(
+      cache
+        .byItemIDs(db, 1, [1])
+        .get(1)
+        ?.map((c) => c.name),
+    ).toEqual(["Deep", "Reading", "Research"]);
+
+    // Mutating the underlying membership row must not affect a repeat call
+    // for the same itemID — proof the second call reused the first's result
+    // instead of re-querying.
+    sqlite.exec("delete from collectionItems where itemID = 1");
+
+    expect(
+      cache
+        .byItemIDs(db, 1, [1])
+        .get(1)
+        ?.map((c) => c.name),
+    ).toEqual(["Deep", "Reading", "Research"]);
+  });
 });
 
 function seed(sqlite: DatabaseSync): void {

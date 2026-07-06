@@ -24,7 +24,7 @@ import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
-import { createNote, type NoteFeatureContext } from "@/services/note-feature";
+import { type NoteFeature } from "@/services/note-feature";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -40,7 +40,7 @@ const CREATE_MARKER = "zotero";
 export interface CitekeyClickDeps {
   app: App;
   noteIndex: NoteIndex;
-  noteFeatures: NoteFeatureContext;
+  noteFeature: NoteFeature;
   db: DatabaseService;
   settings: SettingsService;
 }
@@ -55,7 +55,7 @@ export interface CitekeyClickDeps {
 export class CitekeyClick extends Service<void> {
   readonly #app;
   readonly #noteIndex;
-  readonly #noteFeatures;
+  readonly #noteFeature;
   readonly #db;
   readonly #settings;
 
@@ -69,7 +69,7 @@ export class CitekeyClick extends Service<void> {
     super();
     this.#app = deps.app;
     this.#noteIndex = deps.noteIndex;
-    this.#noteFeatures = deps.noteFeatures;
+    this.#noteFeature = deps.noteFeature;
     this.#db = deps.db;
     this.#settings = deps.settings;
     this.ready = this.#load();
@@ -173,7 +173,7 @@ export class CitekeyClick extends Service<void> {
 
     let file: TFile;
     try {
-      file = await toast.promise(createNote(this.#noteFeatures, item), {
+      file = await toast.promise(this.#noteFeature.createNote(item), {
         loading: m.notice_creating_note(),
         success: m.notice_created_note(),
         error: (_msg, e) =>

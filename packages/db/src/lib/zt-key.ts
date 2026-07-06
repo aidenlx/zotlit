@@ -1,5 +1,10 @@
 import { regex } from "arkregex";
 
+import { type NodeDatabaseClient } from "@/client/node";
+import { getLibraryByGroupID } from "@/queries/libraries";
+
+import { USER_LIBRARY_ID } from "./constants";
+
 /**
  * A Zotero item key (8 base-32 chars), optionally suffixed with `g<groupID>` to
  * form an "indexed key" that disambiguates same-key items across libraries.
@@ -38,4 +43,18 @@ export function parseIndexedKey(indexedKey: string): ParsedIndexedKey | null {
 /** Whether `value` is a well-formed Zotero item key or indexed key. */
 export function isIndexedKey(value: string): boolean {
   return PATTERN_INDEXED_KEY.test(value);
+}
+
+/** Resolve the active library for an `indexedKey`, or `null` when unresolvable. */
+export function resolveIndexedKeyLibrary(
+  client: NodeDatabaseClient,
+  indexedKey: string,
+): { key: string; libraryID: number } | null {
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed) return null;
+  const { key, groupID } = parsed;
+  if (groupID == null) return { key, libraryID: USER_LIBRARY_ID };
+  const library = getLibraryByGroupID(client, groupID);
+  if (!library) return null;
+  return { key, libraryID: library.libraryID };
 }

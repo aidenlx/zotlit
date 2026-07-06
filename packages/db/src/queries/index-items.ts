@@ -4,7 +4,6 @@ import { and, count, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { type Temporal } from "@zotlit/shared/temporal";
 
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 import { type CreatorFieldMode } from "@/lib/zt-creator";
 import { formatIndexedKey } from "@/lib/zt-key";
 
@@ -82,10 +81,7 @@ interface FieldMapping {
   aliasByTypeAndField: ReadonlyMap<string, IndexedFieldName>;
 }
 
-const mappingByClient = new WeakMap<
-  NodeDatabaseClient | SQLocalDatabaseClient,
-  FieldMapping
->();
+const mappingByClient = new WeakMap<NodeDatabaseClient, FieldMapping>();
 
 /**
  * Shared `columns` + `with` projection for the indexed-item queries (by library
@@ -184,20 +180,6 @@ export function getIndexedItemsByLibrary(
     .all({ libraryID });
   const groupID = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
   return rows.map((row) => toIndexedItem(row, groupID, mapping));
-}
-
-export async function getIndexedItemsByLibraryAsync(
-  db: SQLocalDatabaseClient,
-  libraryID: number,
-): Promise<IndexedItem[]> {
-  const mapping = await getMappingAsync(db);
-  const [rows, [group]] = await Promise.all([
-    indexedItemsQuery
-      .prepared(db, { indexedFieldIDs: mapping.indexedFieldIDs })
-      .all({ libraryID }),
-    groupsQuery.prepared(db).all({ libraryID }),
-  ]);
-  return rows.map((row) => toIndexedItem(row, group?.groupID ?? null, mapping));
 }
 
 /**
@@ -303,20 +285,6 @@ function getMappingSync(db: NodeDatabaseClient): FieldMapping {
   if (cached) return cached;
   const canonicalRows = canonicalFieldsQuery.prepared(db).all();
   const aliasRows = aliasFieldsQuery.prepared(db).all();
-  const mapping = buildMapping(canonicalRows, aliasRows);
-  mappingByClient.set(db, mapping);
-  return mapping;
-}
-
-async function getMappingAsync(
-  db: SQLocalDatabaseClient,
-): Promise<FieldMapping> {
-  const cached = mappingByClient.get(db);
-  if (cached) return cached;
-  const [canonicalRows, aliasRows] = await Promise.all([
-    canonicalFieldsQuery.prepared(db).all(),
-    aliasFieldsQuery.prepared(db).all(),
-  ]);
   const mapping = buildMapping(canonicalRows, aliasRows);
   mappingByClient.set(db, mapping);
   return mapping;
