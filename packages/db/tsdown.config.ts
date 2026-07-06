@@ -6,6 +6,7 @@ export default defineConfig({
       index: "./src/index.ts",
       "client/*": "./src/client/*.ts",
       path: "./src/lib/zt-path.ts",
+      "test-utils": "./src/test-utils.ts",
     },
   ],
   tsconfig: "./tsconfig.lib.json",

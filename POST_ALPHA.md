@@ -4,7 +4,7 @@ Extracted from `[MIGRATION.md](./MIGRATION.md)` after alpha (Stages 0–8) shipp
 
 ## 1. Zotero note import (Stage 9)
 
-Stages 9.0–9.3 shipped. **9.2-CSL** (CSL normalization for the cite-template) and **9.4** (Better Notes) remain.
+Stages 9.0–9.3 and **9.2-CSL** shipped. **9.4** (Better Notes) remains.
 
 ### 1.1 Import flow (shipped)
 
@@ -34,11 +34,7 @@ Stage-4 parser support ships; wire the import flow to construct `NoteEmbeddedIma
 
 ### 1.4 Open items
 
-**9.2-CSL** — `locator`, `suppress-author`, and CSL normalization share one cite-contract widening pass and are bundled:
-
-- `locator` (`citationItem.locator`, e.g. `"62"`) is parsed but unconsumed — Pandoc wants `[@key, p. 62]`; render-stage decision.
-- `suppress-author` (Pandoc `-@key`) is a parser gap: re-add `properties` to `CitationSchema` in `zt-note-mark.ts`.
-- Cite-template vocabulary (CSL-JSON field names recommended); normalizing the DB leg to CSL needs an `itemToCSLJSON`-equivalent.
+**9.2-CSL** (shipped) — cite-contract widening, locator/suppress-author rendering, CSL→zt reverse mapping, annotation citations, and docs correction. Record: `.scratch/csl/PRD.md` and ADR 0003.
 
 **9.4 — Better Notes.** Zotero Better Notes enhances native Zotero notes (not a separate source type), so compatibility belongs in this importer: fixed parser as baseline, extension points for Better Notes' enhanced HTML and user-controlled Markdown output. Requires a dedicated design pass — depends on the concrete parser extension surface from 9.0–9.3.
 
@@ -77,9 +73,7 @@ v1 lives in `app/obsidian/src/note-feature/topic-import/` (~267 lines, an `@ophi
 ## 3. Annot view follow-ups
 
 - **Annotation merging** — v1's `mergeAnnots` / `mergeTags`. Combine annotations from multiple attachments or deduplicate across updates. The Zotero-side reader annotation context-menu item ("Merge Annotations") is scaffolded but commented out in `apps/zotero/src/menus/reader-annotation.ts` (FTL `zotlit-menu-reader-annot-merge` retained); re-enable it here when the feature returns.
-- **Citation with locator from annotation** — two related surfaces:
-  - **Annotation template rendering** — an opt-in render mode that emits `[@citekey, p. N]` (or equivalent cite-template output) using the annotation's `pageLabel` as the locator, so the rendered callout/row already carries a page-pinned citation. Depends on `locator` support landing in §1.4 (9.2-CSL).
-  - **Copy citekey with locator** — a context-menu / action on an annotation item in the annot view that copies a ready-to-paste `[@citekey, p. N]` string to the clipboard, for manual insertion into any note.
+- **Citation with locator from annotation** (shipped in 9.2-CSL) — annotation template `zt.citation` field and annot-view "Copy citation" context-menu action. Record: `.scratch/csl/PRD.md`.
 
 ## 4. Template service follow-ups
 

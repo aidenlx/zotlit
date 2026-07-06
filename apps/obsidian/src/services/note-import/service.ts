@@ -9,6 +9,7 @@ import {
 import pLimit from "p-limit";
 
 import {
+  citekeysToCiteTemplateData,
   getAnnotationsByKey,
   getNoteByKey,
   type ChildNote,
@@ -385,7 +386,8 @@ async function writeNote(
     body = parseNote(TurndownService, note.note, {
       client: run.client,
       libraryID: note.libraryID,
-      renderCite: (items) => ctx.template.render("cite", { items }),
+      renderCite: (items) =>
+        ctx.template.render("cite", citekeysToCiteTemplateData(items)),
       pathContext: {
         dataDir: ctx.zoteroPref.dataDir,
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,

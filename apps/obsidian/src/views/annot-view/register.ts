@@ -22,7 +22,10 @@ export interface AnnotViewRegistrationDeps {
   db: DatabaseService;
   liveUpdate: LiveUpdateService;
   zoteroPref: ZoteroPrefService;
-  noteFeature: Pick<NoteFeature, "renderAnnotation">;
+  noteFeature: Pick<
+    NoteFeature,
+    "renderAnnotation" | "renderAnnotationCitation"
+  >;
   attachmentImport: AttachmentImportService;
   itemLookup: ItemLookup;
   settings: SettingsService;

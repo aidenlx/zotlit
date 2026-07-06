@@ -106,12 +106,14 @@ const YEAR_RE = regex("\\b[12]\\d{3}\\b");
  */
 export function parseItemDate(raw: string | null | undefined): ItemDate | null {
   const date = parseItemDateInner(raw);
-  return (
-    date &&
-    defineToString(date, function () {
-      return formatItemDate(this);
-    })
-  );
+  return date && withToString(date);
+}
+
+/** Attaches the {@link formatItemDate} rendering as the date's `toString`. */
+export function withToString(date: ItemDate): ItemDate {
+  return defineToString(date, function () {
+    return formatItemDate(this);
+  });
 }
 
 function parseItemDateInner(raw: string | null | undefined): ItemDate | null {
@@ -158,7 +160,7 @@ export function formatItemDate(date: ItemDate | null | undefined): string {
   }
 }
 
-function textDate(text: string, raw: string): ItemDateText {
+export function textDate(text: string, raw: string): ItemDateText {
   const match = YEAR_RE.exec(text);
   return {
     kind: "text",
@@ -171,11 +173,11 @@ function textDate(text: string, raw: string): ItemDateText {
   };
 }
 
-function yearOnly(year: number, raw: string): ItemDateYear {
+export function yearOnly(year: number, raw: string): ItemDateYear {
   return { kind: "year", value: null, year, month: null, day: null, raw };
 }
 
-function tryDate(
+export function tryDate(
   parts: { year: number; month: number; day: number },
   raw: string,
 ): ItemDateYMD | null {
@@ -194,7 +196,7 @@ function tryDate(
   }
 }
 
-function tryYearMonth(
+export function tryYearMonth(
   parts: { year: number; month: number },
   raw: string,
 ): ItemDateYearMonth | null {

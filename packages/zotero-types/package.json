@@ -8,13 +8,15 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./dist/fields.mjs",
+    ".": "./dist/index.mjs",
+    "./csl": "./dist/csl.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
     "generate:fields": "node scripts/generate-fields.ts && oxlint --fix && oxfmt",
+    "generate:csl": "node scripts/generate-csl.ts && oxlint --fix && oxfmt",
     "typecheck": "tsgo --noEmit -p tsconfig.lib.json && tsgo --noEmit -p tsconfig.node.json",
     "lint": "oxlint"
   },

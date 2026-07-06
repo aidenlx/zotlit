@@ -5,11 +5,17 @@ import TurndownService from "turndown";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  citekeysToCiteTemplateData,
+  fetchAnnotationsTemplateData,
   getAttachmentByKey,
-  getCitekeyByItemKey,
+  getItemsByKey,
   getLibraryByGroupID,
 } from "@zotlit/db";
+import { makeItem } from "@zotlit/db/test-utils";
+import { TemplateEngine } from "@zotlit/templates";
+import defaultCite from "@zotlit/templates/defaults/cite?raw";
 
+import { renderAnnotations } from "@/lib/annotation-render";
 import { type ResolveLinkOptions } from "@/services/attachment-import/service";
 
 import { parseNote, type ParseNoteDeps } from "./note-parser";
@@ -19,20 +25,57 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    getCitekeyByItemKey: vi.fn(),
+    getItemsByKey: vi.fn(),
     getAttachmentByKey: vi.fn(),
     getLibraryByGroupID: vi.fn(),
+    fetchAnnotationsTemplateData: vi.fn(),
   };
 });
+
+/**
+ * Mock `getItemsByKey` to return a live DB row for each `key -> citationKey`
+ * entry within `libraryID`, mirroring how `resolveCitekey` now reads the
+ * citekey off the already-fetched item instead of a second query.
+ */
+function mockDbCitekeys(entries: Record<string, string | null>, libraryID = 1) {
+  vi.mocked(getItemsByKey).mockImplementation((_db, lib, keys) =>
+    lib === libraryID
+      ? keys
+          .filter((key) => key in entries)
+          .map((key) =>
+            makeItem(
+              { itemType: "journalArticle", citationKey: entries[key]! },
+              { key, indexedKey: key, libraryID: lib },
+            ),
+          )
+      : [],
+  );
+}
 
 const ITEMS = "http://zotero.org/users/local/BOtEiq6p/items";
 const ATTACHMENT = `${ITEMS}/T2P8T29G`;
 
-/** Render cited items as `[@key; @key]`, dropping the unresolved ones. */
-const renderCite = (items: readonly { citationKey: string | null }[]) =>
+/**
+ * Render cited items as `[@key; @key]`, dropping the unresolved ones. Mirrors
+ * the default `cite` template's citation-prop rendering (9.2-CSL #02):
+ * `-@key` when suppressed, `, <labelShort> <locator>` when a locator is
+ * present. Locator/labelShort/suppressAuthor are optional so this stub still
+ * matches every citekey-only test unchanged.
+ */
+const renderCite = (
+  items: readonly {
+    citationKey: string | null;
+    locator?: string | null;
+    labelShort?: string;
+    suppressAuthor?: boolean;
+  }[],
+) =>
   `[${items
     .filter((c) => c.citationKey)
-    .map((c) => `@${c.citationKey}`)
+    .map((c) => {
+      const key = `${c.suppressAuthor ? "-" : ""}@${c.citationKey}`;
+      return c.locator ? `${key}, ${c.labelShort ?? "p."} ${c.locator}` : key;
+    })
     .join("; ")}]`;
 
 /** A resolveLink stub echoing the requested vault name as a wikilink embed body. */
@@ -55,7 +98,7 @@ function storageAttachment(key: string, filename = "img.png") {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 /**
@@ -477,7 +520,7 @@ describe("annotation template mode", () => {
   });
 
   it("ignores a citation-only paragraph", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue("Hensher2011");
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
     const md = parseNote(
       TurndownService,
       note(`<p>${citation} plain note text</p>`),
@@ -514,6 +557,44 @@ describe("annotation template mode", () => {
     );
     expect(md).toBe("> [!note]\n>\n> callout K1");
   });
+
+  it("carries zt.citation onto a subsumed annotation paragraph via the real render path (9.2-CSL #05)", () => {
+    // The import leg wires `renderAnnotationParagraph` to `renderAnnotations`,
+    // whose annotation-template data must expose `zt.citation` — the parent
+    // item rendered through the `cite` template with the annotation's page
+    // label as locator. A custom template referencing it should surface the
+    // same `[@citekey, p. N]` the annot-view drag-insert produces.
+    const engine = new TemplateEngine();
+    engine.define("cite", defaultCite);
+    engine.define("annotation", "> [!note]\n>\n> <%= zt.citation %>");
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([
+        [
+          "K1",
+          {
+            key: "K1",
+            pageLabel: "62",
+            parentItem: { citationKey: "Hensher2011", citekey: "Hensher2011" },
+          } as never,
+        ],
+      ]),
+    );
+    const renderAnnotationParagraph = (keys: readonly string[]) =>
+      renderAnnotations(
+        deps.client as never,
+        keys.map((key) => ({ key }) as never),
+        {
+          template: engine as never,
+          zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
+          resolveLink: echoResolveLink,
+        },
+      );
+    const md = parseNote(TurndownService, note(spanPara("highlight", "K1")), {
+      ...deps,
+      renderAnnotationParagraph,
+    });
+    expect(md).toContain("[@Hensher2011, p. 62]");
+  });
 });
 
 describe("citation resolution", () => {
@@ -524,7 +605,7 @@ describe("citation resolution", () => {
   });
 
   it("resolves a cited item to its live DB citation key, emitted verbatim", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue("Hensher2011");
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
     const md = parseNote(TurndownService, note(oneCite), deps);
     expect(md).toContain("[@Hensher2011]");
     // The cite syntax is emitted unescaped — no `\[` from Turndown.
@@ -532,7 +613,6 @@ describe("citation resolution", () => {
   });
 
   it("falls back to the embedded snapshot map when the DB misses", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     const md = parseNote(
       TurndownService,
       note(oneCite, 10, [
@@ -547,13 +627,11 @@ describe("citation resolution", () => {
   });
 
   it("emits a visible sentinel when the DB and embedded map both miss", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     const md = parseNote(TurndownService, note(oneCite), deps);
     expect(md).toContain("[@KX67D9YM?]");
   });
 
   it("leaves an unresolvable (no-ref) citation as raw-HTML passthrough", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     const md = parseNote(
       TurndownService,
       note(cite({ citationItems: [{ uris: ["not-a-uri"] }], properties: {} })),
@@ -564,9 +642,7 @@ describe("citation resolution", () => {
   });
 
   it("renders a multi-item mark through one joined cite render", () => {
-    vi.mocked(getCitekeyByItemKey).mockImplementation((_db, _lib, key) =>
-      key === "KX67D9YM" ? "Hensher2011" : null,
-    );
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
     const md = parseNote(
       TurndownService,
       note(
@@ -592,7 +668,6 @@ describe("citation resolution", () => {
 
   it("still resolves via embedded and sentinel when the DB is degraded", () => {
     // A degraded DB makes the DB leg miss uniformly; embedded + sentinel run.
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     const md = parseNote(
       TurndownService,
       note(
@@ -628,9 +703,7 @@ describe("citation resolution", () => {
       groupID: 9,
       name: "Team Group",
     });
-    vi.mocked(getCitekeyByItemKey).mockImplementation((_db, libraryID, key) =>
-      libraryID === 7 && key === "GRP1TEM" ? "GroupCite2020" : null,
-    );
+    mockDbCitekeys({ GRP1TEM: "GroupCite2020" }, 7);
     const md = parseNote(
       TurndownService,
       note(
@@ -644,13 +717,12 @@ describe("citation resolution", () => {
       deps,
     );
     expect(getLibraryByGroupID).toHaveBeenCalledWith(deps.client, 9);
-    expect(getCitekeyByItemKey).toHaveBeenCalledWith(deps.client, 7, "GRP1TEM");
+    expect(getItemsByKey).toHaveBeenCalledWith(deps.client, 7, ["GRP1TEM"]);
     expect(md).toContain("[@GroupCite2020]");
   });
 
   it("falls back to the note's libraryID when the group can't be resolved", () => {
     vi.mocked(getLibraryByGroupID).mockReturnValue(null);
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     const md = parseNote(
       TurndownService,
       note(
@@ -663,21 +735,284 @@ describe("citation resolution", () => {
       ),
       deps,
     );
-    expect(getCitekeyByItemKey).toHaveBeenCalledWith(
-      deps.client,
-      deps.libraryID,
+    expect(getItemsByKey).toHaveBeenCalledWith(deps.client, deps.libraryID, [
       "GRP1TEM",
-    );
+    ]);
     expect(md).toContain("[@GRP1TEM?]");
   });
 
   it("trims the rendered cite so it stays inline (cite.eta's trailing \\n)", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue("Hensher2011");
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
     const md = parseNote(TurndownService, note(`x ${oneCite} y`), {
       ...deps,
       renderCite: (items) => `${renderCite(items)}\n`,
     });
     expect(md).toBe("x [@Hensher2011] y");
+  });
+
+  it("threads a page locator through to the rendered citation (9.2-CSL #02)", () => {
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [{ uris: [`${ITEMS}/KX67D9YM`], locator: "62" }],
+          properties: {},
+        }),
+      ),
+      deps,
+    );
+    expect(md).toContain("[@Hensher2011, p. 62]");
+  });
+
+  it("renders a non-page label with its Pandoc abbreviation", () => {
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            {
+              uris: [`${ITEMS}/KX67D9YM`],
+              locator: "3",
+              label: "chapter",
+            },
+          ],
+          properties: {},
+        }),
+      ),
+      deps,
+    );
+    expect(md).toContain("[@Hensher2011, chap. 3]");
+  });
+
+  it("threads locator/label/suppress-author through the production renderCite glue (citekeysToCiteTemplateData + the real cite.eta)", () => {
+    // Exercises the actual service.ts wiring (renderCite → citekeysToCiteTemplateData →
+    // ctx.template.render("cite", ...)), not the hand-written `renderCite` stub used by
+    // every other test in this file.
+    const engine = new TemplateEngine();
+    engine.define("cite", defaultCite);
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            {
+              uris: [`${ITEMS}/KX67D9YM`],
+              locator: "62",
+              "suppress-author": true,
+            },
+          ],
+          properties: {},
+        }),
+      ),
+      {
+        ...deps,
+        renderCite: (items) =>
+          engine.render("cite", citekeysToCiteTemplateData(items)),
+      },
+    );
+    expect(md).toContain("[-@Hensher2011, p. 62]");
+  });
+
+  it("renders suppress-author as a Pandoc -@key prefix", () => {
+    mockDbCitekeys({ KX67D9YM: "Hensher2011" });
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            { uris: [`${ITEMS}/KX67D9YM`], "suppress-author": true },
+          ],
+          properties: {},
+        }),
+      ),
+      deps,
+    );
+    expect(md).toContain("[-@Hensher2011]");
+  });
+
+  it("composes suppress-author with the unresolved-key sentinel", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            { uris: [`${ITEMS}/KX67D9YM`], "suppress-author": true },
+          ],
+          properties: {},
+        }),
+      ),
+      deps,
+    );
+    expect(md).toContain("[-@KX67D9YM?]");
+  });
+
+  it("falls back to raw-HTML passthrough when a citation prop has the wrong type", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        cite({
+          citationItems: [
+            { uris: [`${ITEMS}/KX67D9YM`], "suppress-author": "yes" },
+          ],
+          properties: {},
+        }),
+      ),
+      deps,
+    );
+    expect(md).toContain("data-citation");
+    expect(md).not.toContain("[@");
+  });
+});
+
+describe("citation resolution — DB item data (9.2-CSL #03)", () => {
+  /** A single-item citation mark referencing `KX67D9YM`. */
+  const oneCite = cite({
+    citationItems: [{ uris: [`${ITEMS}/KX67D9YM`] }],
+    properties: {},
+  });
+
+  it("exposes the DB-resolved item's title/date to a custom author-year cite template through the production renderCite glue", () => {
+    const engine = new TemplateEngine();
+    engine.define(
+      "cite",
+      "<%= zt.citations.map(c => `${c.item.title} (${c.item.date?.year ?? 'n.d.'})`).join('; ') %>",
+    );
+    vi.mocked(getItemsByKey).mockReturnValue([
+      makeItem({
+        itemType: "journalArticle",
+        title: "Stated choice methods",
+        date: "2011",
+        citationKey: "Hensher2011",
+      }),
+    ]);
+    const md = parseNote(TurndownService, note(oneCite), {
+      ...deps,
+      renderCite: (items) =>
+        engine.render("cite", citekeysToCiteTemplateData(items)),
+    });
+    expect(md).toContain("Stated choice methods (2011)");
+  });
+
+  it("still uses the note's embedded snapshot citekey when the DB item carries none, while keeping the DB item's other data", () => {
+    const engine = new TemplateEngine();
+    engine.define(
+      "cite",
+      "<%= zt.citations.map(c => `${c.item.citekey}: ${c.item.title}`).join('; ') %>",
+    );
+    vi.mocked(getItemsByKey).mockReturnValue([
+      makeItem({
+        itemType: "journalArticle",
+        title: "Stated choice methods",
+        citationKey: null,
+      }),
+    ]);
+    const md = parseNote(
+      TurndownService,
+      note(oneCite, 10, [
+        {
+          uris: [`${ITEMS}/KX67D9YM`],
+          itemData: { id: `${ITEMS}/KX67D9YM`, "citation-key": "Embedded2020" },
+        },
+      ]),
+      {
+        ...deps,
+        renderCite: (items) =>
+          engine.render("cite", citekeysToCiteTemplateData(items)),
+      },
+    );
+    expect(md).toContain("Embedded2020: Stated choice methods");
+  });
+});
+
+describe("citation resolution — embedded item data (9.2-CSL #04)", () => {
+  /** A data-driven cite template reading item data the snapshot must supply. */
+  const dataDrivenCite =
+    "<%= zt.citations.map(c => `${c.item.citekey}: ${c.item.title} " +
+    "(${c.item.date?.year ?? 'n.d.'}) — ${c.item.containerTitle}`).join('; ') %>";
+
+  /** Full CSL-JSON `itemData` for a cited item, as Zotero embeds it. */
+  const embedded = (uri: string, over: Record<string, unknown> = {}) => ({
+    uris: [uri],
+    itemData: {
+      id: uri,
+      type: "article-journal",
+      title: "Stated choice methods",
+      "container-title": "Transport Reviews",
+      issued: { "date-parts": [[2011]] },
+      "citation-key": "Kang2013",
+      ...over,
+    },
+  });
+
+  function withDataTemplate(): ParseNoteDeps {
+    const engine = new TemplateEngine();
+    engine.define("cite", dataDrivenCite);
+    return {
+      ...deps,
+      renderCite: (items) =>
+        engine.render("cite", citekeysToCiteTemplateData(items)),
+    };
+  }
+
+  it("renders full item data from the embedded snapshot for a cross-library cite the DB can't resolve", () => {
+    // group 9 is not synced locally → getLibraryByGroupID misses; the local DB
+    // has no such item, so item data must come from the embedded snapshot.
+    vi.mocked(getLibraryByGroupID).mockReturnValue(null);
+    const uri = "http://zotero.org/groups/9/items/GRP1TEM";
+    const md = parseNote(
+      TurndownService,
+      note(cite({ citationItems: [{ uris: [uri] }], properties: {} }), 10, [
+        embedded(uri),
+      ]),
+      withDataTemplate(),
+    );
+    expect(md).toContain(
+      "Kang2013: Stated choice methods (2011) — Transport Reviews",
+    );
+  });
+
+  it("resolves full embedded item data when the DB is degraded (client not ready)", () => {
+    // getItemsByKey is unconfigured → returns undefined (the degraded-DB path);
+    // the embedded snapshot alone must carry item data plus the citekey.
+    const uri = `${ITEMS}/KX67D9YM`;
+    const md = parseNote(
+      TurndownService,
+      note(cite({ citationItems: [{ uris: [uri] }], properties: {} }), 10, [
+        embedded(uri),
+      ]),
+      withDataTemplate(),
+    );
+    expect(md).toContain(
+      "Kang2013: Stated choice methods (2011) — Transport Reviews",
+    );
+  });
+
+  it("keeps the live DB item's data over the embedded snapshot when both resolve", () => {
+    vi.mocked(getItemsByKey).mockReturnValue([
+      makeItem({
+        itemType: "journalArticle",
+        title: "Live DB title",
+        publicationTitle: "Live DB journal",
+        citationKey: "Hensher2011",
+      }),
+    ]);
+    const uri = `${ITEMS}/KX67D9YM`;
+    const md = parseNote(
+      TurndownService,
+      note(cite({ citationItems: [{ uris: [uri] }], properties: {} }), 10, [
+        embedded(uri, {
+          title: "Stale snapshot title",
+          "citation-key": "Snapshot2020",
+        }),
+      ]),
+      withDataTemplate(),
+    );
+    expect(md).toContain("Hensher2011: Live DB title");
+    expect(md).not.toContain("Stale snapshot title");
+    expect(md).not.toContain("Snapshot2020");
   });
 });
 
@@ -694,7 +1029,6 @@ describe("fixtures (resolving)", () => {
   }
 
   it("renders images, citations, and formatting in zt-note-example.html", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     vi.mocked(getAttachmentByKey).mockImplementation(
       (_db, key) => storageAttachment(key) as never,
     );
@@ -716,7 +1050,6 @@ describe("fixtures (resolving)", () => {
   });
 
   it("extracts annotations and image excerpts in zt-excerpt-note.html", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     vi.mocked(getAttachmentByKey).mockImplementation(
       (_db, key) => storageAttachment(key) as never,
     );
@@ -737,13 +1070,13 @@ describe("fixtures (resolving)", () => {
     // Image-excerpt embed → bare vault embed (no template renderer supplied).
     expect(md).toContain("![[7TTPMKWK-img.png]]");
     expect(md).not.toContain("<img");
-    // Citations resolve via the embedded snapshot map.
-    expect(md).toContain("[@Hensher2011]");
+    // Citations resolve via the embedded snapshot map, threading the
+    // fixture's page-62 locator (9.2-CSL #02).
+    expect(md).toContain("[@Hensher2011, p. 62]");
     expect(md).not.toContain("data-citation");
   });
 
   it("renders every annotation paragraph via the template when enabled", () => {
-    vi.mocked(getCitekeyByItemKey).mockReturnValue(null);
     vi.mocked(getAttachmentByKey).mockImplementation(
       (_db, key) => storageAttachment(key) as never,
     );

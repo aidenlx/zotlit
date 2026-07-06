@@ -55,7 +55,18 @@ Copying a Zotero-managed file (PDF, annotation excerpt image, note-embedded imag
 _Avoid_: image import (covers more than images)
 
 **Citation**:
-An in-text reference to a Zotero Item, rendered through the `cite` template. In editor text: an `@citekey` token. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more cited-item references, resolved through a citekey chain (DB → embedded snapshot → sentinel).
+An in-text reference to one or more Zotero Items, rendered through the `cite` template. In editor text: an `@citekey` token. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citekey through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
+
+**Embedded Item Data**:
+A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
+_Avoid_: citation map (that's the derived lookup structure)
+
+**Citation Item**:
+One cited Item within a Citation, pairing the pure item data with citation-scoped properties: Locator, locator label, suppress-author, prefix, suffix. The citation-scoped properties never live on the item itself. In the cite-template data: `zt.citations` (Citation Items) alongside `zt.items` (the same items, bare).
+_Avoid_: cite item, citation entry
+
+**Locator**:
+A pinpoint reference within a cited work (CSL locator), e.g. a page number, with an accompanying label naming its kind (`page` by default). An annotation-derived Citation uses the annotation's page label as its Locator — mirroring Zotero's own annotation citations.
 
 ### Index and identity
 
