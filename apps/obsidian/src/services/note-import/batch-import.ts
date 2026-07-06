@@ -440,11 +440,8 @@ async function executeImportRun(
   const memo: GroupIDMemo = new Map();
   const tagMemo: TagMemo = new Map();
   const attachmentFolderCache = new Map<string, string>();
-  let created = 0;
-  let updated = 0;
-  let skipped = 0;
 
-  const { failed, cancelled } = await executeBatchRun({
+  const result = await executeBatchRun({
     tasks: actions.map((a) => ({ ...a, id: a.note.itemID })),
     controls,
     concurrency: IMPORT_CONCURRENCY,
@@ -454,7 +451,6 @@ async function executeImportRun(
         logger.warn("Imported note vanished before import; skipped", {
           noteKey: task.note.indexedKey,
         });
-        skipped += 1;
         return "skipped";
       }
       const outcome = await deps.noteImport.importNote(note, {
@@ -465,10 +461,8 @@ async function executeImportRun(
         attachmentFolderCache,
         ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
       });
-      if (outcome === "created") created += 1;
-      else if (outcome === "overwritten") updated += 1;
-      else skipped += 1;
-      return "done";
+      if (outcome === "overwritten") return "updated";
+      return outcome;
     },
     onTaskFailed: (task, error) => {
       logger.warn("Batch import item failed", {
@@ -478,16 +472,11 @@ async function executeImportRun(
     },
   });
 
-  const total = actions.length;
   logger.info("Batch import finished", {
-    created,
-    updated,
-    skipped,
-    failed,
-    cancelled,
-    total,
+    ...result,
+    total: actions.length,
   });
-  return { created, updated, skipped, failed, cancelled };
+  return result;
 }
 
 function logClassified(
