@@ -1,13 +1,7 @@
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 import { type Annotation } from "@/lib/zt-annot";
 
-import {
-  groupIDForLibrary,
-  groupsQuery,
-  resolveGroupID,
-  type GroupIDMemo,
-} from "./_groups";
+import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
 const annotationFindOptions = {
@@ -77,21 +71,6 @@ export function getAnnotationsByParent(
     .map((r) => toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo)));
 }
 
-export async function getAnnotationsByParentAsync(
-  db: SQLocalDatabaseClient,
-  parentItemID: number,
-): Promise<Annotation[]> {
-  const rows = await annotationsByParentQuery
-    .prepared(db)
-    .all({ parentItemID });
-  if (rows.length === 0) return [];
-  const [group] = await groupsQuery
-    .prepared(db)
-    .all({ libraryID: rows[0]!.item.libraryID });
-  const groupId = group?.groupID ?? null;
-  return rows.map((r) => toAnnotation(r, groupId));
-}
-
 export function getAnnotationsByKey(
   db: NodeDatabaseClient,
   keys: readonly string[],
@@ -120,25 +99,6 @@ export function getAnnotationsByItemId(
       .all({ itemID })
       .map((r) => toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo))),
   );
-}
-
-export async function getAnnotationsByKeyAsync(
-  db: SQLocalDatabaseClient,
-  keys: readonly string[],
-  libraryID: number,
-): Promise<Annotation[]> {
-  if (keys.length === 0) return [];
-
-  const [batches, [group]] = await Promise.all([
-    Promise.all(
-      keys.map((key) =>
-        annotationsByKeyQuery.prepared(db).all({ libraryID, key }),
-      ),
-    ),
-    groupsQuery.prepared(db).all({ libraryID }),
-  ]);
-  const groupId = group?.groupID ?? null;
-  return batches.flat().map((row) => toAnnotation(row, groupId));
 }
 
 function toAnnotation(row: AnnotationRow, groupID: number | null): Annotation {

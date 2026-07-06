@@ -6,6 +6,7 @@ import {
   getItemRefByID,
   getItemsByID,
   type GroupIDMemo,
+  type TagMemo,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
@@ -22,8 +23,7 @@ import {
   FlatManifest,
 } from "@/views/batch-modal";
 
-import { fetchItemCollections, fetchItemTags } from "./context";
-import { createNote, type UpdateScope, writeNoteUpdate } from "./operations";
+import { type UpdateScope } from "./operations";
 import { type SingleUpdateDeps, updateNote } from "./update-single";
 
 const logger = getLogger("batch-update");
@@ -44,6 +44,8 @@ interface RunContext {
   groupIdMemo: GroupIDMemo;
   /** Spans the whole batch so per-library collection nodes load once. */
   collectionCache: CollectionCache;
+  /** Spans the whole batch so a shared item's tags load once. */
+  tagMemo: TagMemo;
   /** How much of each existing note an update refreshes. */
   scope: UpdateScope;
 }
@@ -208,7 +210,7 @@ async function executeBatchActions(
   const { actions, scope } = plan;
   const [settings] = await Promise.all([
     deps.settings.loaded,
-    deps.noteFeatures.template.ready,
+    deps.noteFeature.ready,
   ]);
   let created = 0;
   let updated = 0;
@@ -222,6 +224,7 @@ async function executeBatchActions(
     settings,
     groupIdMemo: new Map(),
     collectionCache: new CollectionCache(),
+    tagMemo: new Map(),
     scope,
   };
 
@@ -257,18 +260,18 @@ async function executeBatchActions(
 
 /**
  * Load the action's full item (deferred from classification) and write it: an
- * existing-note update reuses {@link writeNoteUpdate} with freshly-fetched tags;
- * a create routes through the self-contained {@link createNote} (resolves tags +
- * path, then writes — a filename collision surfaces as this item's own
- * `vault.create` failure). An item deleted in Zotero between classification and
- * its write throws here, surfacing as this item's failure (not aborting the run).
+ * existing-note update reuses {@link writeNoteUpdate}, sharing the batch's
+ * `tagMemo`/`collectionCache`; a create routes through the self-contained
+ * {@link createNote} (resolves tags + path, then writes — a filename collision
+ * surfaces as this item's own `vault.create` failure). An item deleted in
+ * Zotero between classification and its write throws here, surfacing as this
+ * item's failure (not aborting the run).
  */
 async function runAction(
   deps: SingleUpdateDeps,
   action: BatchAction,
   run: RunContext,
 ): Promise<void> {
-  const ctx = deps.noteFeatures;
   const [item] = getItemsByID(run.client, [action.itemID], {
     memo: run.groupIdMemo,
   });
@@ -276,17 +279,10 @@ async function runAction(
     throw new Error(m.batch_update_unknown_item({ id: action.itemID }));
 
   if (action.kind === "update") {
-    const itemTags = fetchItemTags(run.client, item);
-    const itemCollections = fetchItemCollections(
-      run.collectionCache,
-      run.client,
-      item,
-    );
-    await writeNoteUpdate(ctx, action.file, {
+    await deps.noteFeature.writeNoteUpdate(action.file, {
       client: run.client,
       item,
-      itemTags,
-      itemCollections,
+      tagMemo: run.tagMemo,
       collectionCache: run.collectionCache,
       settings: run.settings,
       scope: run.scope,
@@ -294,8 +290,9 @@ async function runAction(
     });
     return;
   }
-  await createNote(ctx, item, {
+  await deps.noteFeature.createNote(item, {
     collectionCache: run.collectionCache,
+    tagMemo: run.tagMemo,
     groupIdMemo: run.groupIdMemo,
   });
 }

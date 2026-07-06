@@ -4,7 +4,6 @@ import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
-import { renderCitation } from "@/services/note-feature";
 
 import { type CitationSuggestDeps } from "./register";
 
@@ -48,11 +47,14 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
       new BaseNotice(m.notice_no_citekey({ key: hit.item.key }));
       return;
     }
-    const rendered = renderCitation(
-      this.#deps.noteFeatures,
+    const rendered = this.#deps.noteFeature.renderCitation(
       [{ citationKey }],
       Keymap.isModifier(evt, "Shift"),
     );
+    if (rendered === null) {
+      new BaseNotice(m.notice_template_not_ready());
+      return;
+    }
     this.#editor.replaceSelection(rendered);
   }
 }

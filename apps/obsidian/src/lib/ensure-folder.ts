@@ -1,5 +1,10 @@
 import { dirname } from "node:path/posix";
-import { normalizePath, TFile, TFolder, type App } from "obsidian";
+import { normalizePath, TFile, TFolder, type App, type Vault } from "obsidian";
+
+/** The vault surface {@link ensureFolder} / {@link ensureParentFolder} touch. */
+type FolderVaultApp = {
+  vault: Pick<Vault, "getRoot" | "getAbstractFileByPath" | "createFolder">;
+};
 
 /**
  * Resolve the in-vault attachment folder path without touching the filesystem.
@@ -29,7 +34,7 @@ export async function resolveAttachmentFolderPath(
 }
 
 export async function ensureFolder(
-  app: App,
+  app: FolderVaultApp,
   folderPath: string,
 ): Promise<TFolder> {
   if (folderPath === "/") return app.vault.getRoot();
@@ -46,7 +51,7 @@ export async function ensureFolder(
  * `vault.create` does not make missing parents.
  */
 export async function ensureParentFolder(
-  app: App,
+  app: FolderVaultApp,
   filePath: string,
 ): Promise<void> {
   const dir = normalizeFolderPath(dirname(filePath));
@@ -59,4 +64,9 @@ export function normalizeFolderPath(dir: string | null): string | null {
   if (dir === null) return null;
   if (dir === "." || dir === "/" || dir === "") return "/";
   return normalizePath(dir);
+}
+
+/** Join a child name onto a normalized folder path, treating `"/"` as the vault root. */
+export function joinFolderPath(folder: string, name: string): string {
+  return folder === "/" ? name : `${folder}/${name}`;
 }

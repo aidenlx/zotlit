@@ -30,7 +30,7 @@ import {
 import { type DatabaseService } from "@/services/database/service";
 import { type ItemLookup } from "@/services/item-lookup/service";
 import { type LiveUpdateService } from "@/services/live-update/service";
-import { type NoteFeatureContext } from "@/services/note-feature";
+import { type NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -97,7 +97,7 @@ export interface AnnotViewDeps {
   db: DatabaseService;
   liveUpdate: LiveUpdateService;
   zoteroPref: ZoteroPrefService;
-  noteFeatures: NoteFeatureContext;
+  noteFeature: Pick<NoteFeature, "renderAnnotation">;
   attachmentImport: AttachmentImportService;
   itemLookup: ItemLookup;
   settings: SettingsService;
@@ -188,8 +188,7 @@ export class AnnotationView extends ItemView {
       onUnlinkItem: () => this.#setFollowMode("note"),
       onDragStart: createDragInsertHandler({
         workspace: this.#deps.app.workspace,
-        db: this.#deps.db,
-        noteFeatures: this.#deps.noteFeatures,
+        noteFeature: this.#deps.noteFeature,
         getImportHandle: () => this.#importHandle,
         onSettled: () => {
           const activeFile = this.#deps.app.workspace.getActiveFile();

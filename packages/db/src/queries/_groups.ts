@@ -2,7 +2,6 @@ import { groups } from "@drizzle/schema";
 import { eq } from "drizzle-orm";
 
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 
 import { defineQuery } from "./_shared";
 
@@ -35,19 +34,6 @@ export function resolveGroupID(
   const cached = memo.get(libraryID);
   if (cached !== undefined) return cached;
   const groupID = groupIDForLibrary(db, libraryID);
-  memo.set(libraryID, groupID);
-  return groupID;
-}
-
-export async function resolveGroupIDAsync(
-  db: SQLocalDatabaseClient,
-  libraryID: number,
-  memo: GroupIDMemo,
-): Promise<number | null> {
-  const cached = memo.get(libraryID);
-  if (cached !== undefined) return cached;
-  const [group] = await groupsQuery.prepared(db).all({ libraryID });
-  const groupID = group?.groupID ?? null;
   memo.set(libraryID, groupID);
   return groupID;
 }

@@ -1,24 +1,59 @@
-import { TFile, TFolder, type App } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { formatIndexedKey, getNoteByKey, USER_LIBRARY_ID } from "@zotlit/db";
+import {
+  formatIndexedKey,
+  getAnnotationsByKey,
+  getNoteByKey,
+  USER_LIBRARY_ID,
+} from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { renderAnnotations } from "@/lib/annotation-render";
 import { defaults, type Settings } from "@/services/settings/schema";
+import { type TemplateService } from "@/services/template/service";
 
+import { parseNote } from "./note-parser";
 import {
+  createNoteImporter,
+  type ImportVaultApp,
   NoteImportMintError,
-  NoteImportService,
+  type NoteImporter,
   type PrepareNoteImportOptions,
 } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return { ...actual, getNoteByKey: vi.fn() };
+  return { ...actual, getNoteByKey: vi.fn(), getAnnotationsByKey: vi.fn() };
 });
 
+// The service owns the annotation renderer now; stub the leaf so the test asserts
+// the wiring (resolveLink binding, library scoping) without the DB template pipeline.
+vi.mock("@/lib/annotation-render", () => ({
+  renderAnnotations: vi.fn(() => new Map<string, string>()),
+}));
+
+// `parseNote` is stubbed to echo its HTML and any annotation-callout output, so
+// the service-built `renderAnnotationParagraph` is exercised through the write.
 vi.mock("./note-parser", () => ({
-  parseNote: (_td: unknown, html: string) => `md(${html})`,
+  parseNote: vi.fn(
+    (
+      _td: unknown,
+      html: string,
+      deps: {
+        renderAnnotationParagraph?: (
+          keys: readonly string[],
+        ) => ReadonlyMap<string, string>;
+      },
+    ) => {
+      const callouts = deps.renderAnnotationParagraph
+        ? [...deps.renderAnnotationParagraph(["ANNOT1"]).values()]
+        : [];
+      return callouts.length > 0
+        ? `md(${html})\n${callouts.join("\n")}`
+        : `md(${html})`;
+    },
+  ),
 }));
 
 // `prepare` builds the shared parser from the Obsidian `TurndownService` global;
@@ -55,9 +90,10 @@ function baseNote(overrides?: { key?: string; groupID?: number | null }) {
 }
 
 interface AppStub {
-  app: App;
+  app: ImportVaultApp;
   create: ReturnType<typeof vi.fn>;
   createFolder: ReturnType<typeof vi.fn>;
+  process: ReturnType<typeof vi.fn>;
 }
 
 function makeApp(): AppStub {
@@ -67,12 +103,17 @@ function makeApp(): AppStub {
     folder.path = path;
     return folder;
   });
+  const process = vi.fn(async (_file: TFile, fn: (data: string) => string) => {
+    return fn("");
+  });
   const app = {
     vault: {
       getAbstractFileByPath: () => null,
+      getFileByPath: (path: string) => makeFile(path),
       getRoot: () => new TFolder(),
       create,
       createFolder,
+      process,
     },
     fileManager: {
       // Mirrors Obsidian's (file, sourcePath, subpath, alias) signature.
@@ -82,8 +123,8 @@ function makeApp(): AppStub {
         return `[[${file.path}|${alias ?? ""}]]`;
       },
     },
-  } as unknown as App;
-  return { app, create, createFolder };
+  };
+  return { app, create, createFolder, process };
 }
 
 /** Per-note attachment batch stub; `flush` records whether copies were committed. */
@@ -95,24 +136,23 @@ function makeAttachmentImport() {
 }
 
 function makeService(
-  app: App,
+  app: ImportVaultApp,
   options: {
     existing?: TFile[];
     attachmentImport?: ReturnType<typeof makeAttachmentImport>;
   } = {},
-): NoteImportService {
-  const noteIndex = {
-    getImportedNoteByNoteKey: () => options.existing ?? [],
-  };
-  const template = { render: vi.fn(() => "[@cite]") };
-  const zoteroPref = { dataDir: "/data", baseAttachmentPath: null };
-  return new NoteImportService({
+): NoteImporter {
+  return createNoteImporter({
     app,
-    noteIndex: noteIndex as any,
-    template: template as any,
-    zoteroPref: zoteroPref as any,
-    attachmentImport: (options.attachmentImport ??
-      makeAttachmentImport()) as any,
+    noteIndex: { getImportedNoteByNoteKey: () => options.existing ?? [] },
+    // `render` is generic (`<T>(name, data) => string`); a concrete mock can't
+    // mirror that signature, so this one stub keeps a cast.
+    template: { render: vi.fn(() => "[@cite]") } as Pick<
+      TemplateService,
+      "render"
+    >,
+    zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
+    attachmentImport: options.attachmentImport ?? makeAttachmentImport(),
   });
 }
 
@@ -125,8 +165,6 @@ function makePrepare(
   return {
     client: {} as any,
     sourcePath: "Literature/Paper.md",
-    groupID: null,
-    libraryID: 1,
     settings: {
       ...defaults,
       "note.import-folder": "Imported",
@@ -141,9 +179,11 @@ const PREPARE = makePrepare();
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getNoteByKey).mockReturnValue(makeNote());
+  vi.mocked(getAnnotationsByKey).mockReturnValue([]);
+  vi.mocked(renderAnnotations).mockReturnValue(new Map());
 });
 
-describe("NoteImportService", () => {
+describe("createNoteImporter", () => {
   it("mints a flat path, renders the title alias, and creates the mirror on flush", async () => {
     const { app, create, createFolder } = makeApp();
     const attachmentImport = makeAttachmentImport();
@@ -197,7 +237,7 @@ describe("NoteImportService", () => {
   it("scopes the identity key by groupID", async () => {
     vi.mocked(getNoteByKey).mockReturnValue(makeNote({ groupID: 42 }));
     const { app, create } = makeApp();
-    const batch = await makeService(app).prepare({ ...PREPARE, groupID: 42 });
+    const batch = await makeService(app).prepare(PREPARE);
 
     const link = batch.resolveChildNote(makeNote({ groupID: 42 }));
     link.noteLink();
@@ -284,6 +324,39 @@ describe("NoteImportService", () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
+  it("reuses the minted path across a second prepare() batch while the note index lags", async () => {
+    // Simulates a double-triggered "Update in Obsidian": the note index hasn't
+    // caught up (metadataCache 'changed' lands async after vault.create), so
+    // both batches see no existing imported note for this key.
+    const { app, create } = makeApp();
+    const service = makeService(app);
+
+    const batch1 = await service.prepare(PREPARE);
+    const link1 = batch1.resolveChildNote(makeNote());
+    const rendered1 = link1.noteLink();
+
+    const batch2 = await service.prepare(PREPARE);
+    const link2 = batch2.resolveChildNote(makeNote());
+    const rendered2 = link2.noteLink();
+
+    // Both renders resolve to the same minted path, not two distinct ones.
+    expect(rendered2).toBe(rendered1);
+
+    await batch1.flush();
+    // The second batch's write attempt lands on the same already-created
+    // path, so it hits the existing file-exists collision handling.
+    create.mockRejectedValueOnce(new Error("File already exists."));
+    await expect(batch2.flush()).resolves.toEqual({
+      created: 0,
+      skipped: 1,
+      failed: 0,
+    });
+
+    // Only one path was ever minted for the key.
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[0]![0]).toBe(create.mock.calls[1]![0]);
+  });
+
   it("throws NoteImportMintError when the minted path is already occupied", async () => {
     const { app } = makeApp();
     // Any path the mint checks reports as occupied, forcing the hard collision.
@@ -304,5 +377,83 @@ describe("NoteImportService", () => {
     expect(create.mock.calls[0]![0]).toMatch(
       /^Imported\/zotero_note_NOTE1234_[\w-]{6}\.md$/,
     );
+  });
+
+  it("renders annotations through the template when the setting is on, resolveLink bound to the note's batch", async () => {
+    vi.mocked(renderAnnotations).mockReturnValue(
+      new Map([["ANNOT1", "> [!note]\n>\n> callout"]]),
+    );
+    const { app, create } = makeApp();
+    const attachmentImport = makeAttachmentImport();
+    const batch = await makeService(app, { attachmentImport }).prepare(
+      makePrepare({
+        settings: { "note.import-annotations-as-template": true },
+      }),
+    );
+
+    batch.resolveChildNote(makeNote()).noteLink();
+    await batch.flush();
+
+    // The service scopes the annotation lookup to the note's library.
+    expect(getAnnotationsByKey).toHaveBeenCalledWith(
+      expect.anything(),
+      ["ANNOT1"],
+      USER_LIBRARY_ID,
+    );
+    // The template-rendered callout lands in the written file.
+    expect(create.mock.calls[0]![1]).toContain("> [!note]\n>\n> callout");
+
+    // The resolveLink handed to the renderer delegates to the note's batch.
+    const opts = vi.mocked(renderAnnotations).mock.calls[0]![2];
+    opts.resolveLink({ sourcePath: "/a.png", vaultName: "a.png" });
+    expect(attachmentImport.resolveLink).toHaveBeenCalledWith({
+      sourcePath: "/a.png",
+      vaultName: "a.png",
+    });
+  });
+
+  it("passes no annotation renderer to parseNote when the setting is off", async () => {
+    const { app } = makeApp();
+    const batch = await makeService(app).prepare(PREPARE);
+
+    batch.resolveChildNote(makeNote()).noteLink();
+    await batch.flush();
+
+    expect(
+      vi.mocked(parseNote).mock.calls[0]![2].renderAnnotationParagraph,
+    ).toBeUndefined();
+    expect(renderAnnotations).not.toHaveBeenCalled();
+  });
+
+  it("overwrites an existing note without creating the import folder", async () => {
+    const { app, create, createFolder, process } = makeApp();
+    const target = makeFile("Imported/Existing.md");
+    const service = makeService(app);
+
+    const outcome = await service.importNote(makeNote(), {
+      client: {} as any,
+      settings: PREPARE.settings,
+      targetFile: target,
+    });
+
+    expect(outcome).toBe("overwritten");
+    expect(process).toHaveBeenCalledOnce();
+    expect(create).not.toHaveBeenCalled();
+    // The deliberate fix: an overwrite never mints or ensures the import folder.
+    expect(createFolder).not.toHaveBeenCalled();
+  });
+
+  it("ensures the import folder on the create branch of importNote", async () => {
+    const { app, create, createFolder } = makeApp();
+    const service = makeService(app);
+
+    const outcome = await service.importNote(makeNote(), {
+      client: {} as any,
+      settings: PREPARE.settings,
+    });
+
+    expect(outcome).toBe("created");
+    expect(createFolder).toHaveBeenCalledExactlyOnceWith("Imported");
+    expect(create).toHaveBeenCalledOnce();
   });
 });

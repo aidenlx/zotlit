@@ -2,15 +2,9 @@
 import { type Temporal } from "@zotlit/shared/temporal";
 
 import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import {
-  groupIDForLibrary,
-  groupsQuery,
-  resolveGroupID,
-  type GroupIDMemo,
-} from "./_groups";
+import { resolveGroupID, type GroupIDMemo } from "./_groups";
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
 
 /** A note's identity and staleness stamp, without its HTML body. */
@@ -120,41 +114,19 @@ export function getChildNotes(
     );
 }
 
-export async function getChildNotesAsync(
-  db: SQLocalDatabaseClient,
-  parentItemID: number,
-): Promise<ChildNote[]> {
-  const rows = await childNotesQuery.prepared(db).all({ parentItemID });
-  if (rows.length === 0) return [];
-  const [group] = await groupsQuery
-    .prepared(db)
-    .all({ libraryID: rows[0]!.item.libraryID });
-  const groupId = group?.groupID ?? null;
-  return rows.map((row) => toChildNote(row, groupId));
-}
-
 export function getNoteByKey(
   db: NodeDatabaseClient,
   noteKey: string,
-  libraryID: number,
+  opts: { libraryID: number; memo?: GroupIDMemo },
 ): Note | null {
-  const row = noteByKeyQuery.prepared(db).all({ libraryID, key: noteKey })[0];
+  const row = noteByKeyQuery
+    .prepared(db)
+    .all({ libraryID: opts.libraryID, key: noteKey })[0];
   if (!row) return null;
-  return toNote(row, groupIDForLibrary(db, libraryID));
-}
-
-export async function getNoteByKeyAsync(
-  db: SQLocalDatabaseClient,
-  noteKey: string,
-  libraryID: number,
-): Promise<Note | null> {
-  const [rows, [group]] = await Promise.all([
-    noteByKeyQuery.prepared(db).all({ libraryID, key: noteKey }),
-    groupsQuery.prepared(db).all({ libraryID }),
-  ]);
-  const row = rows[0];
-  if (!row) return null;
-  return toNote(row, group?.groupID ?? null);
+  return toNote(
+    row,
+    resolveGroupID(db, opts.libraryID, opts.memo ?? new Map()),
+  );
 }
 
 // --- Queries for explicit note-import (Stage 9.3) ---
@@ -194,6 +166,32 @@ export function getNoteRefsByItemIDs(
     if (!row) return [];
     return [toChildNote(row, resolveGroupID(db, row.item.libraryID, memo))];
   });
+}
+
+const trashedNoteByItemIdQuery = defineQuery<{ itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemNotes.findMany({
+      columns: { itemID: true },
+      where: { itemID: placeholder("itemID"), item: { deletedItem: true } },
+    }),
+);
+
+/**
+ * Item ids among `itemIDs` that are notes currently in Zotero's trash. Used
+ * to tell a trashed note apart from a genuine non-note id at `mode=note`
+ * classify time — {@link getNoteRefsByItemIDs} filters trashed items out, so
+ * it alone can't distinguish the two.
+ */
+export function getTrashedNoteItemIDs(
+  db: NodeDatabaseClient,
+  itemIDs: readonly number[],
+): Set<number> {
+  return new Set(
+    itemIDs.filter(
+      (itemID) =>
+        trashedNoteByItemIdQuery.prepared(db).all({ itemID }).length > 0,
+    ),
+  );
 }
 
 /**

@@ -60,7 +60,12 @@ zotlit-batch-update-sent-message = { $count ->
        *[other] Asked Obsidian to update { $count } notes. Switch to Obsidian to continue.
     }
 
+zotlit-protocol-incompatible-title = Update required
+zotlit-protocol-incompatible-message = The ZotLit Obsidian plugin is on an incompatible version. Update both the Zotero and Obsidian plugins to matching versions and try again.
+
 zotlit-batch-import-sending-title = Asking Obsidian to import notes…
+zotlit-batch-import-failed-title = Couldn't reach Obsidian
+zotlit-batch-import-failed-message = Make sure Obsidian is running with the ZotLit server enabled, then try again.
 zotlit-batch-import-sent-title = Continue in Obsidian
 zotlit-batch-import-sent-message = { $count ->
         [one] Asked Obsidian to import 1 note. Switch to Obsidian to continue.

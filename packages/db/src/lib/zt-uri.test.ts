@@ -38,4 +38,15 @@ describe("annotationOpenUri", () => {
       }),
     ).toBe("zotero://open/groups/7/items/ATCH1234?annotation=ANNO5678");
   });
+
+  it("percent-encodes a page label exactly once so it round-trips through URL parsing", () => {
+    const pageLabel = "S. 12";
+    const uri = annotationOpenUri({
+      attachmentKey: "ATCH1234",
+      annotationKey: "ANNO5678",
+      pageLabel,
+      groupID: null,
+    });
+    expect(new URL(uri).searchParams.get("page")).toBe(pageLabel);
+  });
 });

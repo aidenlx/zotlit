@@ -47,6 +47,98 @@ export function openInObsidian(
   Zotero.launchURL(url);
 }
 
+/** l10n ids driving one {@link launchOrPut} run's progress-window copy. */
+interface ListenerMessages {
+  sendingTitleId: FluentMessageId;
+  sentTitleId: FluentMessageId;
+  sentMessageId: FluentMessageId;
+  failedTitleId: FluentMessageId;
+  failedMessageId: FluentMessageId;
+}
+
+/**
+ * Opens `url` directly when it fits {@link URL_LENGTH_CAP}; otherwise PUTs
+ * `body` to the configured Obsidian listener at `path` and reports the
+ * outcome on a {@link Zotero.ProgressWindow}. If no listener is reachable,
+ * shows a hint pointing at the server setting.
+ */
+async function launchOrPut(
+  url: string,
+  {
+    label,
+    path,
+    body,
+    count,
+    messages,
+  }: {
+    /** Noun used in log lines, e.g. `"batch update"` / `"batch import"`. */
+    label: string;
+    path: string;
+    body: unknown;
+    count: number;
+    messages: ListenerMessages;
+  },
+): Promise<void> {
+  if (url.length <= URL_LENGTH_CAP) {
+    logger.info(`opening obsidian (${label} link)`, {
+      count,
+      length: url.length,
+    });
+    Zotero.launchURL(url);
+    return;
+  }
+
+  logger.info(`${label} link over cap, putting listener`, {
+    count,
+    length: url.length,
+  });
+
+  const base = notifyUrl();
+  if (!base) {
+    logger.warn(`no notify URL for ${label} fallback`);
+    await showServerHint();
+    return;
+  }
+
+  const progress = new Zotero.ProgressWindow({
+    window: Zotero.getMainWindow(),
+  });
+  progress.changeHeadline((await formatValue(messages.sendingTitleId)) ?? "");
+  progress.show();
+
+  try {
+    const response = await fetch(new URL(path, base), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+        [SOURCE_ID_HEADER]: sourceId(),
+      },
+      body: JSON.stringify(body),
+    });
+    if (response.status === 426) {
+      logger.warn("obsidian rejected protocol version", { base });
+      await settleProtocolMismatch(progress);
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(`PUT ${path} failed: ${response.status}`);
+    }
+    logger.info(`sent ${label}`, { base, count });
+    await settleProgress(progress, {
+      titleId: messages.sentTitleId,
+      messageId: messages.sentMessageId,
+      messageArgs: { count },
+    });
+  } catch (error) {
+    logger.warn(`failed to send ${label}`, { base, error });
+    await settleProgress(progress, {
+      titleId: messages.failedTitleId,
+      messageId: messages.failedMessageId,
+    });
+  }
+}
+
 /**
  * Batch-update many literature items in one action. Sends a single
  * `update-many` link when it fits in {@link URL_LENGTH_CAP}; otherwise PUTs
@@ -60,69 +152,19 @@ export async function updateManyInObsidian(
   const itemIDs = items.map((item) => item.id);
   const url = buildBatchProtocolUrl(itemIDs, { sourceId: sourceId(), scope });
 
-  if (url.length <= URL_LENGTH_CAP) {
-    logger.info("opening obsidian (batch link)", {
-      count: itemIDs.length,
-      length: url.length,
-      scope,
-    });
-    Zotero.launchURL(url);
-    return;
-  }
-
-  logger.info("batch link over cap, putting listener", {
+  await launchOrPut(url, {
+    label: "batch update",
+    path: "/literature-notes",
+    body: { items: itemIDs, scope } satisfies BatchUpdateRequest,
     count: itemIDs.length,
-    length: url.length,
-    scope,
+    messages: {
+      sendingTitleId: "zotlit-batch-update-sending-title",
+      sentTitleId: "zotlit-batch-update-sent-title",
+      sentMessageId: "zotlit-batch-update-sent-message",
+      failedTitleId: "zotlit-batch-update-failed-title",
+      failedMessageId: "zotlit-batch-update-failed-message",
+    },
   });
-  await sendBatchUpdate(itemIDs, scope);
-}
-
-async function sendBatchUpdate(
-  items: number[],
-  scope?: UpdateScope,
-): Promise<void> {
-  const base = notifyUrl();
-  if (!base) {
-    logger.warn("no notify URL for batch update fallback");
-    await showServerHint();
-    return;
-  }
-
-  const progress = new Zotero.ProgressWindow({
-    window: Zotero.getMainWindow(),
-  });
-  progress.changeHeadline(
-    (await formatValue("zotlit-batch-update-sending-title")) ?? "",
-  );
-  progress.show();
-
-  try {
-    const response = await fetch(new URL("/literature-notes", base), {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
-        [SOURCE_ID_HEADER]: sourceId(),
-      },
-      body: JSON.stringify({ items, scope } satisfies BatchUpdateRequest),
-    });
-    if (!response.ok) {
-      throw new Error(`PUT /literature-notes failed: ${response.status}`);
-    }
-    logger.info("sent batch update", { base, count: items.length });
-    await settleProgress(progress, {
-      titleId: "zotlit-batch-update-sent-title",
-      messageId: "zotlit-batch-update-sent-message",
-      messageArgs: { count: items.length },
-    });
-  } catch (error) {
-    logger.warn("failed to send batch update", { base, error });
-    await settleProgress(progress, {
-      titleId: "zotlit-batch-update-failed-title",
-      messageId: "zotlit-batch-update-failed-message",
-    });
-  }
 }
 
 /**
@@ -150,6 +192,20 @@ async function settleProgress(
   progress.changeHeadline(title ?? "");
   progress.addDescription(message ?? "");
   progress.startCloseTimer(8000);
+}
+
+/**
+ * The Obsidian listener returns 426 when the request's protocol version is
+ * incompatible with the one it expects. This is distinct from an unreachable
+ * listener, so it gets its own copy telling the user to update the plugins.
+ */
+async function settleProtocolMismatch(
+  progress: Zotero.ProgressWindow,
+): Promise<void> {
+  await settleProgress(progress, {
+    titleId: "zotlit-protocol-incompatible-title",
+    messageId: "zotlit-protocol-incompatible-message",
+  });
 }
 
 async function showServerHint(): Promise<void> {
@@ -184,72 +240,19 @@ export async function importManyInObsidian(
     mode,
   });
 
-  if (url.length <= URL_LENGTH_CAP) {
-    logger.info("opening obsidian (import link)", {
-      count: itemIDs.length,
-      length: url.length,
-      mode,
-    });
-    Zotero.launchURL(url);
-    return;
-  }
-
-  logger.info("import link over cap, putting listener", {
+  await launchOrPut(url, {
+    label: "batch import",
+    path: "/zotero-notes",
+    body: { items: [...itemIDs], mode } satisfies ImportNotesRequest,
     count: itemIDs.length,
-    length: url.length,
-    mode,
+    messages: {
+      sendingTitleId: "zotlit-batch-import-sending-title",
+      sentTitleId: "zotlit-batch-import-sent-title",
+      sentMessageId: "zotlit-batch-import-sent-message",
+      failedTitleId: "zotlit-batch-import-failed-title",
+      failedMessageId: "zotlit-batch-import-failed-message",
+    },
   });
-  await sendBatchImport(itemIDs, mode);
-}
-
-async function sendBatchImport(
-  items: readonly number[],
-  mode: ImportMode,
-): Promise<void> {
-  const base = notifyUrl();
-  if (!base) {
-    logger.warn("no notify URL for batch import fallback");
-    await showServerHint();
-    return;
-  }
-
-  const progress = new Zotero.ProgressWindow({
-    window: Zotero.getMainWindow(),
-  });
-  progress.changeHeadline(
-    (await formatValue("zotlit-batch-import-sending-title")) ?? "",
-  );
-  progress.show();
-
-  try {
-    const response = await fetch(new URL("/zotero-notes", base), {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
-        [SOURCE_ID_HEADER]: sourceId(),
-      },
-      body: JSON.stringify({
-        items: [...items],
-        mode,
-      } satisfies ImportNotesRequest),
-    });
-    if (!response.ok) {
-      throw new Error(`PUT /zotero-notes failed: ${response.status}`);
-    }
-    logger.info("sent batch import", { base, count: items.length, mode });
-    await settleProgress(progress, {
-      titleId: "zotlit-batch-import-sent-title",
-      messageId: "zotlit-batch-import-sent-message",
-      messageArgs: { count: items.length },
-    });
-  } catch (error) {
-    logger.warn("failed to send batch import", { base, error });
-    await settleProgress(progress, {
-      titleId: "zotlit-batch-update-failed-title",
-      messageId: "zotlit-batch-update-failed-message",
-    });
-  }
 }
 
 /**

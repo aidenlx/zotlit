@@ -7,9 +7,13 @@ import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
-import { type NoteFeatureContext } from "./note-feature";
-import { type NoteImportContext } from "./note-import/batch-import";
-import { NoteImportService } from "./note-import/service";
+import { createNoteFeature, type NoteFeature } from "./note-feature";
+import {
+  createBatchImport,
+  type BatchImport,
+} from "./note-import/batch-import";
+import { createNoteImporter, type NoteImporter } from "./note-import/service";
+import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0 } from "./settings/migrate";
@@ -65,9 +69,14 @@ export function buildServices(
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
-    .use({
-      noteImport: ({ noteIndex, template, zoteroPref, attachmentImport }) =>
-        new NoteImportService({
+    .useValue({
+      noteImport: ({
+        noteIndex,
+        template,
+        zoteroPref,
+        attachmentImport,
+      }): NoteImporter =>
+        createNoteImporter({
           app: plugin.app,
           noteIndex,
           template,
@@ -84,7 +93,7 @@ export function buildServices(
         }),
     })
     .useValue({
-      noteFeatures: ({
+      noteFeature: ({
         template,
         db,
         noteIndex,
@@ -92,38 +101,41 @@ export function buildServices(
         settings,
         attachmentImport,
         noteImport,
-      }): NoteFeatureContext => ({
-        app: plugin.app,
-        template,
-        db,
-        noteIndex,
-        zoteroPref,
-        settings,
-        attachmentImport,
-        noteImport,
-      }),
+      }): NoteFeature =>
+        createNoteFeature({
+          app: plugin.app,
+          template,
+          db,
+          noteIndex,
+          zoteroPref,
+          settings,
+          attachmentImport,
+          noteImport,
+        }),
     })
     .useValue({
-      noteImportCtx: ({
+      batchImport: ({
         db,
         settings,
         noteImport,
         noteIndex,
-        noteFeatures,
-      }): NoteImportContext => ({
-        db,
-        settings,
-        noteImport,
-        noteIndex,
-        noteFeatures,
-      }),
+        template,
+      }): BatchImport =>
+        createBatchImport({
+          view: createNoteImportView(plugin.app),
+          db,
+          settings,
+          noteImport,
+          noteIndex,
+          template,
+        }),
     })
     .use({
-      citekeyClick: ({ noteIndex, noteFeatures, db, settings }) =>
+      citekeyClick: ({ noteIndex, noteFeature, db, settings }) =>
         new CitekeyClick({
           app: plugin.app,
           noteIndex,
-          noteFeatures,
+          noteFeature,
           db,
           settings,
         }),

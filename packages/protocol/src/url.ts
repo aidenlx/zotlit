@@ -90,13 +90,26 @@ export function buildProtocolUrl(
   item: number,
   options: { sourceId: string; scope?: UpdateScope },
 ): string {
-  const params = new URLSearchParams({
-    item: String(item),
-    "source-id": options.sourceId,
-    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
-  });
+  const params = protocolUrlParams({ item: String(item) }, options.sourceId);
   appendScope(params, options.scope);
   return `obsidian://${protocolActionId(action)}?${params}`;
+}
+
+/**
+ * `URLSearchParams` shared by every `obsidian://zotlit/*` link builder:
+ * action-specific params first, then the common `source-id` + protocol
+ * version trailer, preserving the wire order each builder previously
+ * inlined.
+ */
+function protocolUrlParams(
+  params: Record<string, string>,
+  sourceId: string,
+): URLSearchParams {
+  return new URLSearchParams({
+    ...params,
+    "source-id": sourceId,
+    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
+  });
 }
 
 /** Append `scope` only when it diverges from the `full` default so the common
@@ -151,6 +164,16 @@ export function parseProtocolBatchQuery(
 }
 
 /**
+ * Numeric Zotero item ids as sent in a request body: deduped, non-empty.
+ * Shared by {@link batchUpdateRequestSchema} and {@link importNotesRequestSchema}.
+ */
+const dedupedItemIDs = v.pipe(
+  v.array(v.pipe(v.number(), v.integer())),
+  v.transform((ids) => [...new Set(ids)]),
+  v.minLength(1),
+);
+
+/**
  * Body for `PUT {host}/literature-notes` — the HTTP fallback the companion
  * uses when a batch is too large to fit in an `obsidian://` URL. `items` carries
  * the same invariants as the URL path (integer ids, deduped, non-empty) so both
@@ -158,11 +181,7 @@ export function parseProtocolBatchQuery(
  * {@link SOURCE_ID_HEADER} header, as the URL is gated by its `source-id` query.
  */
 export const batchUpdateRequestSchema = v.object({
-  items: v.pipe(
-    v.array(v.pipe(v.number(), v.integer())),
-    v.transform((ids) => [...new Set(ids)]),
-    v.minLength(1),
-  ),
+  items: dedupedItemIDs,
   scope: updateScopeValue,
 });
 
@@ -262,11 +281,7 @@ export function parseImportManyProtocolQuery(
  * invariants on `items` as the URL transport. Gated by {@link SOURCE_ID_HEADER}.
  */
 export const importNotesRequestSchema = v.object({
-  items: v.pipe(
-    v.array(v.pipe(v.number(), v.integer())),
-    v.transform((ids) => [...new Set(ids)]),
-    v.minLength(1),
-  ),
+  items: dedupedItemIDs,
   mode: importModeValue,
 });
 
@@ -281,12 +296,10 @@ export function buildImportProtocolUrl(
   item: number,
   options: { sourceId: string; mode: ImportMode },
 ): string {
-  const params = new URLSearchParams({
-    item: String(item),
-    mode: options.mode,
-    "source-id": options.sourceId,
-    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
-  });
+  const params = protocolUrlParams(
+    { item: String(item), mode: options.mode },
+    options.sourceId,
+  );
   return `obsidian://${importProtocolActionId}?${params}`;
 }
 
@@ -298,12 +311,10 @@ export function buildImportManyProtocolUrl(
   items: readonly number[],
   options: { sourceId: string; mode: ImportMode },
 ): string {
-  const params = new URLSearchParams({
-    items: items.join(","),
-    mode: options.mode,
-    "source-id": options.sourceId,
-    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
-  });
+  const params = protocolUrlParams(
+    { items: items.join(","), mode: options.mode },
+    options.sourceId,
+  );
   return `obsidian://${importManyProtocolActionId}?${params}`;
 }
 
@@ -316,11 +327,10 @@ export function buildBatchProtocolUrl(
   items: readonly number[],
   options: { sourceId: string; scope?: UpdateScope },
 ): string {
-  const params = new URLSearchParams({
-    items: items.join(","),
-    "source-id": options.sourceId,
-    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
-  });
+  const params = protocolUrlParams(
+    { items: items.join(",") },
+    options.sourceId,
+  );
   appendScope(params, options.scope);
   return `obsidian://${batchProtocolActionId}?${params}`;
 }

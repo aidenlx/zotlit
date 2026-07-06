@@ -86,7 +86,7 @@ Minimum code that solves the problem. Nothing speculative.
 
 ### Function parameters
 
-Functions and methods take at most 3 parameters. Additional inputs belong in one options object — typed inline or as a named type.
+At most 3 positional parameters. Positional slots go to required, stable, obvious-from-value arguments (primary operand first). Bundle the rest into one options object — typed inline or as a named type.
 
 ### Surgical Changes
 
@@ -243,3 +243,17 @@ Run `/paraglide-i18n` skill for related task
 - Use ripgrep (`rg`) in shell calls — a global hook denies `grep`/`egrep`/`fgrep`.
 - **Package manager is pnpm.** Use `pnpm exec` instead of `npx`.
 - Use ECMAScript private fields and methods (`#field`, `#method`) for internal state. Avoid TypeScript `private` for service internals.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues (`aidenlx/zotlit`) via the `gh` CLI; external PRs are not treated as a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context layout — `CONTEXT-MAP.md` at the repo root points to per-workspace `CONTEXT.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`.

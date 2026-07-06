@@ -4,7 +4,6 @@ import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
-import { createNote } from "@/services/note-feature";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 
 import { type QuickSwitchDeps } from "./register";
@@ -54,7 +53,7 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
   async #create(hit: SearchHit): Promise<TFile | null> {
     try {
       const file = await toast.promise(
-        createNote(this.#deps.noteFeatures, hit.item),
+        this.#deps.noteFeature.createNote(hit.item),
         {
           loading: m.notice_creating_note(),
           success: m.notice_created_note(),
