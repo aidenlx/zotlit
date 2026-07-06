@@ -127,6 +127,7 @@ export function buildServices(
           settings,
           noteImport,
           noteIndex,
+          metadataCache: plugin.app.metadataCache,
           template,
         }),
     })

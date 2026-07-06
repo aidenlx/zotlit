@@ -28,6 +28,9 @@ export interface FlatManifestOptions {
   notFound: readonly { label: string }[];
   /** Ordered group definitions; tasks are bucketed by `kind`. */
   groups: readonly FlatGroupDef[];
+  /** Items classified as up-to-date; shown as a static informational group. */
+  upToDate?: readonly { label: string }[];
+  upToDateHeader?: (args: { count: number }) => string;
   notFoundHeader: (args: { count: number }) => string;
   /** Header for items that ran but had nothing to write (e.g. vanished note). */
   skippedHeader?: (args: { count: number }) => string;
@@ -73,12 +76,24 @@ export class FlatManifest implements BatchManifest {
         this.#rowIcons.set(task.id, icon);
       }
     }
+    this.#renderUpToDate(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,
       }),
       items: this.#options.notFound,
       icon: "minus",
+      colorCls: "zt:text-(--text-muted)",
+    });
+  }
+
+  #renderUpToDate(parent: HTMLElement): void {
+    const items = this.#options.upToDate;
+    if (!items?.length || !this.#options.upToDateHeader) return;
+    listGroup(parent, {
+      header: this.#options.upToDateHeader({ count: items.length }),
+      items,
+      icon: "check",
       colorCls: "zt:text-(--text-muted)",
     });
   }
@@ -105,6 +120,7 @@ export class FlatManifest implements BatchManifest {
         colorCls: ROW_ICON_CLASS.done,
       });
     }
+    this.#renderUpToDate(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,

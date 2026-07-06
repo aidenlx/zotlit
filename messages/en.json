@@ -93,6 +93,7 @@
   "batch_import_confirm_button": "Import notes",
   "batch_import_group_import": "Import ({count})",
   "batch_import_group_overwrite": "Overwrite ({count})",
+  "batch_import_group_up_to_date": "Up to date ({count})",
   "batch_import_summary_cancelled": "Stopped. {created} imported, {updated} updated, {skipped} skipped, {failed} failed.",
   "batch_import_aborted": "Aborted. {created} imported, {updated} updated, {skipped} skipped, {failed} failed.",
   "batch_import_child_title": "Import child notes",

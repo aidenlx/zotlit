@@ -21,7 +21,11 @@ import {
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { renderAnnotations } from "@/lib/annotation-render";
-import { FIELD_ZOTERO_NOTE_KEY, stringifyInstant } from "@/lib/constants";
+import {
+  FIELD_ZOTERO_LASTMOD,
+  FIELD_ZOTERO_NOTE_KEY,
+  stringifyInstant,
+} from "@/lib/constants";
 import {
   ensureFolder,
   joinFolderPath,
@@ -400,6 +404,7 @@ async function writeNote(
   const frontmatter = {
     date: stringifyInstant(note.dateAdded),
     [FIELD_ZOTERO_NOTE_KEY]: note.indexedKey,
+    [FIELD_ZOTERO_LASTMOD]: stringifyInstant(note.dateModified),
   };
   const content = `---\n${stringifyYaml(frontmatter)}---\n${body}`;
 

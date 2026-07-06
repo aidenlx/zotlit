@@ -17,6 +17,9 @@ export interface HierarchyParent {
 
 export interface HierarchyManifestOptions {
   parents: readonly HierarchyParent[];
+  /** Items classified as up-to-date; shown as a static informational group. */
+  upToDate?: readonly { label: string }[];
+  upToDateHeader?: (args: { count: number }) => string;
   doneHeader: (args: { count: number }) => string;
   /** Header for items that ran but had nothing to write (e.g. vanished note). */
   skippedHeader?: (args: { count: number }) => string;
@@ -73,6 +76,18 @@ export class HierarchyManifest implements BatchManifest {
         this.#rowIcons.set(child.id, icon);
       }
     }
+    this.#renderUpToDate(parent);
+  }
+
+  #renderUpToDate(parent: HTMLElement): void {
+    const items = this.#options.upToDate;
+    if (!items?.length || !this.#options.upToDateHeader) return;
+    listGroup(parent, {
+      header: this.#options.upToDateHeader({ count: items.length }),
+      items,
+      icon: "check",
+      colorCls: "zt:text-(--text-muted)",
+    });
   }
 
   setRowStatus(id: number, status: "done" | "skipped" | "failed"): void {
@@ -94,6 +109,7 @@ export class HierarchyManifest implements BatchManifest {
       icon: ROW_ICON.done,
       colorCls: ROW_ICON_CLASS.done,
     });
+    this.#renderUpToDate(parent);
     if (this.#options.skippedHeader) {
       const skipped = this.#children.filter(
         (child) => finalStatus.get(child.id) === "skipped",
