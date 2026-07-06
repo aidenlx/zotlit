@@ -10,6 +10,11 @@ export const FIELD_ATTACHMENTS = "zotero-atchs";
  */
 export const FIELD_ZOTERO_NOTE_KEY = "zotero-note-key";
 /**
+ * Source Child Note's Zotero `dateModified`, serialized via
+ * {@link stringifyInstant}. Used by batch re-import to skip unchanged notes.
+ */
+export const FIELD_ZOTERO_LASTMOD = "zotero-lastmod";
+/**
  * Serialize a `Temporal.Instant` as an ISO 8601 string at second resolution.
  * @param options.utc Output UTC (`…Z`); otherwise local datetime with offset
  *   (e.g. `2024-01-01T18:00:00+08:00`).
@@ -37,6 +42,7 @@ export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   FIELD_CITEKEY,
   FIELD_ATTACHMENTS,
   FIELD_ZOTERO_NOTE_KEY,
+  FIELD_ZOTERO_LASTMOD,
 ]);
 
 export const ZOTERO_DB_FILENAME = "zotero.sqlite";

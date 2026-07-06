@@ -11,7 +11,7 @@ An Obsidian Markdown file linked one-to-one with a Zotero Item. Identified by a 
 _Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (ambiguous with Child Note), document
 
 **Imported Note** _(Obsidian)_:
-An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
+An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
 _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 
 **Managed Region**:

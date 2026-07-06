@@ -1,6 +1,6 @@
 import { distinct } from "@std/collections";
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
-import { type TFile } from "obsidian";
+import { type MetadataCache, type TFile } from "obsidian";
 
 import {
   getChildNotesByParentIDs,
@@ -20,6 +20,7 @@ import { type ImportMode } from "@zotlit/protocol";
 import { getLogger } from "@/lib/log";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
+import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type TemplateService } from "@/services/template/service";
@@ -52,6 +53,7 @@ export interface NoteImportDeps {
   settings: Pick<SettingsService, "loaded">;
   noteImport: Pick<NoteImporter, "importNote">;
   noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
+  metadataCache: Pick<MetadataCache, "getFileCache">;
   /** Only template readiness is gated here; rendering lives in `noteImport`. */
   template: Pick<TemplateService, "ready">;
 }
@@ -87,7 +89,8 @@ export function createBatchImport(deps: NoteImportDeps): BatchImport {
 
 type ImportAction =
   | { note: ChildNote; label: string; kind: "create" }
-  | { note: ChildNote; label: string; kind: "overwrite"; file: TFile };
+  | { note: ChildNote; label: string; kind: "overwrite"; file: TFile }
+  | { note: ChildNote; label: string; kind: "up-to-date"; file: TFile };
 
 interface NotFoundEntry {
   itemID: number;
@@ -153,19 +156,32 @@ function noteLabel(note: ChildNote): string {
   return note.title?.trim() || m.batch_update_untitled({ id: note.itemID });
 }
 
-/** Classify a single note ref into a create/overwrite action against the index. */
+/** Existing file with matching `zotero-lastmod` → up-to-date; missing field → overwrite. */
 function toAction(
-  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">,
+  deps: Pick<NoteImportDeps, "noteIndex" | "metadataCache">,
   note: ChildNote,
 ): ImportAction {
   const label = noteLabel(note);
-  const existing = noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
-  if (existing) return { note, label, kind: "overwrite", file: existing };
-  return { note, label, kind: "create" };
+  const existing = deps.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
+  if (!existing) return { note, label, kind: "create" };
+
+  const stored = lastmodFromFrontmatter(
+    deps.metadataCache.getFileCache(existing),
+  );
+  const storedSec = stored && Math.trunc(stored.epochMilliseconds / 1000);
+  const liveSec = Math.trunc(note.dateModified.epochMilliseconds / 1000);
+  if (storedSec === liveSec) {
+    return { note, label, kind: "up-to-date", file: existing };
+  }
+  return { note, label, kind: "overwrite", file: existing };
 }
 
 function actionToTask(action: ImportAction): FlatTask {
   return { id: action.note.itemID, label: action.label, kind: action.kind };
+}
+
+function needsImport(action: ImportAction): boolean {
+  return action.kind !== "up-to-date";
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +193,7 @@ function openNoteImportModal(
   itemIDs: readonly number[],
 ): void {
   const ids = distinct(itemIDs);
-  let actions: ImportAction[] = [];
+  let runnableActions: ImportAction[] = [];
   let notFoundCount = 0;
   deps.view.openBatchModal({
     text: {
@@ -196,21 +212,24 @@ function openNoteImportModal(
     total: ids.length,
     onClassify: async (controls) => {
       const classified = await classifyNoteImport(deps, ids, controls);
-      actions = classified.actions;
+      runnableActions = classified.actions.filter(needsImport);
+      const upToDate = classified.actions.filter((a) => !needsImport(a));
       notFoundCount = classified.notFound.length;
       return new FlatManifest({
-        tasks: actions.map(actionToTask),
+        tasks: runnableActions.map(actionToTask),
         notFound: classified.notFound,
         groups: [
           { kind: "create", header: m.batch_import_group_import },
           { kind: "overwrite", header: m.batch_import_group_overwrite },
         ],
+        upToDate: upToDate.map((a) => ({ label: a.label })),
+        upToDateHeader: m.batch_import_group_up_to_date,
         notFoundHeader: m.batch_update_group_not_found,
         skippedHeader: m.batch_update_group_skipped,
         abortedHeader: m.batch_update_group_aborted,
       });
     },
-    onRun: (controls) => executeImportRun(deps, actions, controls),
+    onRun: (controls) => executeImportRun(deps, runnableActions, controls),
   });
 }
 
@@ -234,8 +253,7 @@ async function classifyNoteImport(
   await classifyChunked(itemIDs, controls, (slice) => {
     const refs = getNoteRefsByItemIDs(client, slice, { memo });
     const resolved = new Set(refs.map((ref) => ref.itemID));
-    for (const ref of refs) actions.push(toAction(deps.noteIndex, ref));
-    // Distinguish a trashed note (recoverable) from a genuine non-note id.
+    for (const ref of refs) actions.push(toAction(deps, ref));
     const unresolved = slice.filter((id) => !resolved.has(id));
     const trashed = getTrashedNoteItemIDs(client, unresolved);
     for (const id of unresolved) {
@@ -263,7 +281,7 @@ function openChildImportModal(
   parentItemIDs: readonly number[],
 ): void {
   const ids = distinct(parentItemIDs);
-  let actions: ImportAction[] = [];
+  let runnableActions: ImportAction[] = [];
   deps.view.openBatchModal({
     text: {
       title: m.batch_import_child_title(),
@@ -281,20 +299,24 @@ function openChildImportModal(
     total: ids.length,
     onClassify: async (controls) => {
       const parents = await classifyChildImport(deps, ids, controls);
-      actions = parents.flatMap((parent) => parent.actions);
+      const allActions = parents.flatMap((parent) => parent.actions);
+      runnableActions = allActions.filter(needsImport);
+      const upToDateChildren = allActions.filter((a) => !needsImport(a));
       return new HierarchyManifest({
         parents: parents.map(
           (parent): HierarchyParent => ({
             label: parent.label,
-            children: parent.actions.map(actionToTask),
+            children: parent.actions.filter(needsImport).map(actionToTask),
           }),
         ),
+        upToDate: upToDateChildren.map((a) => ({ label: a.label })),
+        upToDateHeader: m.batch_import_group_up_to_date,
         doneHeader: m.batch_import_child_group_done,
         skippedHeader: m.batch_update_group_skipped,
         abortedHeader: m.batch_update_group_aborted,
       });
     },
-    onRun: (controls) => executeImportRun(deps, actions, controls),
+    onRun: (controls) => executeImportRun(deps, runnableActions, controls),
   });
 }
 
@@ -328,7 +350,7 @@ async function classifyChildImport(
         display?.title?.trim() || m.batch_update_untitled({ id: parentID });
       parents.push({
         label,
-        actions: children.map((child) => toAction(deps.noteIndex, child)),
+        actions: children.map((child) => toAction(deps, child)),
       });
     }
   });
@@ -474,15 +496,13 @@ function logClassified(
   counts: { total: number; notFound: number },
 ): void {
   logger.info("Batch import classified", () => {
-    const { create = [], overwrite = [] } = Object.groupBy(
-      actions,
-      (a) => a.kind,
-    );
+    const grouped = Object.groupBy(actions, (a) => a.kind);
     return {
       mode,
       total: counts.total,
-      create: create.length,
-      overwrite: overwrite.length,
+      create: (grouped.create ?? []).length,
+      overwrite: (grouped.overwrite ?? []).length,
+      "up-to-date": (grouped["up-to-date"] ?? []).length,
       notFound: counts.notFound,
     };
   });
