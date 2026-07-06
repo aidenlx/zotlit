@@ -1,24 +1,13 @@
 import { type relations } from "@drizzle/relations";
-import type * as schema from "@drizzle/schema";
 import { sql, type DBQueryConfig, type Placeholder } from "drizzle-orm";
 import {
-  type BaseSQLiteDatabase,
-  type SQLiteSelectBase,
-} from "drizzle-orm/sqlite-core";
-import {
-  type SQLiteRelationalQuery,
+  type SQLiteAsyncRelationalQuery,
+  type SQLiteAsyncSelectBase,
   type SQLiteSyncRelationalQuery,
-} from "drizzle-orm/sqlite-core/query-builders/query";
+} from "drizzle-orm/sqlite-core";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
-
-export type SqliteDb = BaseSQLiteDatabase<
-  "sync" | "async",
-  any,
-  typeof schema,
-  typeof relations
->;
 
 /**
  * Schema-aware shape of an RQB v2 `findMany` config bound to a specific
@@ -43,31 +32,44 @@ export const CHILD_ITEM_TYPES = ["attachment", "note", "annotation"] as const;
  * against the sync (Node) client can be re-exposed as the async (Web)
  * client's builder type.
  *
- * Handles three families:
- *   1. Bare {@link SQLiteSyncRelationalQuery} (relational `findMany`/`findFirst`
- *      on a sync session).
- *   2. {@link SQLiteRelationalQuery} of either mode.
- *   3. {@link SQLiteSelectBase} chains — both the bare form and the
+ * Handles two families:
+ *   1. Relational `findMany`/`findFirst` builders — always
+ *      {@link SQLiteSyncRelationalQuery} on a sync session, swapped to
+ *      {@link SQLiteAsyncRelationalQuery} of mode `"async"`.
+ *   2. {@link SQLiteAsyncSelectBase} chains — both the bare form and the
  *      `Omit<..., "limit" | ...>` wrappers Drizzle returns after chain ops
- *      like `.limit()` / `.orderBy()`.
+ *      like `.limit()` / `.orderBy()`. The result-kind lives in the 2nd type
+ *      param (`"sync"` on the Node client, `"async"` on the Web client).
  *
- * Specific class checks come before the `Omit` branch because
+ * The relational check comes before the `Omit` branch because
  * `T extends Omit<infer I, infer E>` matches almost any object structurally
- * (with `E = never`), which would otherwise short-circuit the RQB cases.
+ * (with `E = never`), which would otherwise short-circuit the RQB case.
  *
- * Note: `TRunResult` (5th param of `SQLiteSelectBase`) is preserved from the
- * source type. That's the node-sqlite `StatementResultingChanges` shape and
+ * Note: `TRunResult` (3rd param of `SQLiteAsyncSelectBase`) is preserved from
+ * the source type. That's the node-sqlite `StatementResultingChanges` shape and
  * is only consulted by `.run()` on INSERT/UPDATE/DELETE — fine for shared
  * SELECT queries, wrong if a dual write query is ever introduced.
  */
 type SwapKind<T, K extends "sync" | "async"> =
   T extends SQLiteSyncRelationalQuery<infer R>
     ? K extends "async"
-      ? SQLiteRelationalQuery<"async", R>
+      ? SQLiteAsyncRelationalQuery<"async", R>
       : T
-    : T extends SQLiteRelationalQuery<any, infer R>
-      ? SQLiteRelationalQuery<K, R>
-      : T extends SQLiteSelectBase<
+    : T extends SQLiteAsyncSelectBase<
+          infer A,
+          any,
+          infer C,
+          infer D,
+          infer E,
+          infer F,
+          infer G,
+          infer H,
+          infer I,
+          infer J
+        >
+      ? SQLiteAsyncSelectBase<A, K, C, D, E, F, G, H, I, J>
+      : T extends Omit<infer Inner, infer Excl>
+        ? Inner extends SQLiteAsyncSelectBase<
             infer A,
             any,
             infer C,
@@ -79,26 +81,12 @@ type SwapKind<T, K extends "sync" | "async"> =
             infer I,
             infer J
           >
-        ? SQLiteSelectBase<A, K, C, D, E, F, G, H, I, J>
-        : T extends Omit<infer Inner, infer Excl>
-          ? Inner extends SQLiteSelectBase<
-              infer A,
-              any,
-              infer C,
-              infer D,
-              infer E,
-              infer F,
-              infer G,
-              infer H,
-              infer I,
-              infer J
+          ? Omit<
+              SQLiteAsyncSelectBase<A, K, C, D, E, F, G, H, I, J>,
+              Excl & keyof any
             >
-            ? Omit<
-                SQLiteSelectBase<A, K, C, D, E, F, G, H, I, J>,
-                Excl & keyof any
-              >
-            : T
-          : T;
+          : T
+        : T;
 
 type Prepared<T> = T extends { prepare(): infer P } ? P : never;
 
