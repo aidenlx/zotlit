@@ -2,7 +2,8 @@ import { defineConfig } from "tsdown";
 
 export default defineConfig({
   entry: {
-    fields: "./src/fields.ts",
+    index: "./src/fields.ts",
+    csl: "./src/csl.ts",
   },
   tsconfig: "./tsconfig.lib.json",
   dts: { tsgo: true, enabled: true },

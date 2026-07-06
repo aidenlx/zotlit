@@ -2,12 +2,15 @@ import { withContext } from "@logtape/logtape";
 import { stringifyYaml, type TFile } from "obsidian";
 
 import {
+  citekeysToCiteTemplateData,
   CollectionCache,
+  fetchAnnotationsTemplateData,
   fetchNoteContext,
   getAnnotationsByItemId,
   getItemsByKey,
   resolveIndexedKeyLibrary,
   resolveItemTags,
+  type CiteRef,
   type GroupIDMemo,
   type Item,
   type NoteTemplateContext,
@@ -17,7 +20,11 @@ import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { type UpdateScope } from "@zotlit/protocol";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import { renderAnnotations } from "@/lib/annotation-render";
+import {
+  annotationCitation,
+  buildAnnotationResolvers,
+  renderAnnotations,
+} from "@/lib/annotation-render";
 import { ensureParentFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -112,15 +119,14 @@ export interface NoteFeature {
     options: WriteNoteUpdateOptions,
   ): Promise<UpdateResult>;
   /** @see renderCitation */
-  renderCitation(
-    items: readonly { citationKey: string | null }[],
-    secondary?: boolean,
-  ): string | null;
+  renderCitation(items: readonly CiteRef[], secondary?: boolean): string | null;
   /** @see renderAnnotation */
   renderAnnotation(
     annotationItemId: number,
     options: { attachmentImport: Pick<AttachmentImport, "resolveLink"> },
   ): string | null;
+  /** @see renderAnnotationCitation */
+  renderAnnotationCitation(annotationItemId: number): string | null;
 }
 
 /**
@@ -142,6 +148,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       renderCitation(deps, items, secondary),
     renderAnnotation: (annotationItemId, options) =>
       renderAnnotation(deps, annotationItemId, options),
+    renderAnnotationCitation: (annotationItemId) =>
+      renderAnnotationCitation(deps, annotationItemId),
   };
 }
 
@@ -460,11 +468,14 @@ async function overwriteNote(
  */
 function renderCitation(
   ctx: NoteFeatureDeps,
-  items: readonly { citationKey: string | null }[],
+  items: readonly CiteRef[],
   secondary = false,
 ): string | null {
   if (!ctx.template.loaded) return null;
-  return ctx.template.render(secondary ? "cite2" : "cite", { items });
+  return ctx.template.render(
+    secondary ? "cite2" : "cite",
+    citekeysToCiteTemplateData(items),
+  );
 }
 
 /**
@@ -495,6 +506,37 @@ function renderAnnotation(
       resolveLink: options.attachmentImport.resolveLink,
     }).get(annotation.key) ?? null
   );
+}
+
+/**
+ * Render an annotation's page-pinned citation for the annot view's "Copy
+ * citation" action: the same `cite`-template path {@link renderAnnotation}'s
+ * `zt.citation` field uses, called directly (no excerpt image import needed
+ * for a citation string, so `attachmentImport.resolveLink` is stubbed).
+ * Returns `null` when the annotation, its parent item, or the parent's
+ * citation key can't be resolved, or the database/template isn't ready.
+ */
+function renderAnnotationCitation(
+  ctx: SyncRenderDeps,
+  annotationItemId: number,
+): string | null {
+  const { db } = ctx;
+  if (db.state !== "ready") return null;
+  if (!ctx.template.loaded) return null;
+
+  const [annotation] = getAnnotationsByItemId(db.client, [annotationItemId]);
+  if (!annotation) return null;
+
+  const resolvers = buildAnnotationResolvers({
+    zoteroPref: ctx.zoteroPref,
+    attachmentImport: { resolveLink: () => () => "" },
+  });
+  const data = fetchAnnotationsTemplateData(db.client, [annotation], {
+    resolvers,
+  }).get(annotation.key);
+  if (!data) return null;
+
+  return annotationCitation(data.parentItem, data.pageLabel, ctx.template);
 }
 
 /**

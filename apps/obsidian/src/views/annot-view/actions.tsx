@@ -9,8 +9,10 @@ import {
 import { annotationOpenUri, type AnnotViewItem } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
+import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
+import { type NoteFeature } from "@/services/note-feature";
 
 export interface AnnotActions {
   onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotViewItem): void;
@@ -31,6 +33,7 @@ export interface AnnotActionDeps {
   getGroupID: () => number | null;
   getDataDir: () => string;
   refresh: () => Promise<void>;
+  noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
   onToggleFollowReader: AnnotActions["onToggleFollowReader"];
@@ -100,6 +103,25 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
           });
       });
     }
+
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_menu_copy_citation())
+        .setIcon("quote")
+        .onClick(() => {
+          const citation = deps.noteFeature.renderAnnotationCitation(
+            annot.itemID,
+          );
+          if (citation === null) {
+            new BaseNotice(m.annot_view_copy_citation_no_key());
+            return;
+          }
+          void toast.promise(navigator.clipboard.writeText(citation), {
+            success: m.annot_view_copied_citation(),
+            error: m.annot_view_copy_failed(),
+          });
+        });
+    });
 
     return menu;
   };

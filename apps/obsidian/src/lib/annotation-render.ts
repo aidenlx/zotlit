@@ -3,13 +3,16 @@
 import { basename } from "node:path";
 
 import {
+  citekeysToCiteTemplateData,
   fetchAnnotationsTemplateData,
+  narrowBaseDataToCiteItemData,
   type Annotation,
   type AnnotationResolvers,
   type Attachment,
   type GroupIDMemo,
   type TagMemo,
   type TemplateLink,
+  type TemplateParentItemData,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import {
@@ -110,7 +113,40 @@ export function renderAnnotations(
   });
   const result = new Map<string, string>();
   for (const [key, data] of dataByKey) {
+    // Lazy: only rendered when the `annotation` template reads `zt.citation`.
+    Object.defineProperty(data, "citation", {
+      enumerable: true,
+      get: () =>
+        annotationCitation(data.parentItem, data.pageLabel, options.template),
+    });
     result.set(key, options.template.render("annotation", data));
   }
   return result;
+}
+
+/**
+ * Render an annotation's page-pinned citation through the `cite` template —
+ * the parent item with the annotation's page label as locator (label
+ * `"page"`), mirroring Zotero's own annotation citations. `null` when there is
+ * no parent item or it carries no citation key. Shared by the `zt.citation`
+ * template field above and the annot-view "Copy citation" action
+ * (`renderAnnotationCitation`).
+ */
+export function annotationCitation(
+  parentItem: TemplateParentItemData | null,
+  pageLabel: string | null,
+  template: Pick<TemplateService, "render">,
+): string | null {
+  if (!parentItem?.citekey) return null;
+  return template.render(
+    "cite",
+    citekeysToCiteTemplateData([
+      {
+        citationKey: parentItem.citekey,
+        item: narrowBaseDataToCiteItemData(parentItem, parentItem.citekey),
+        label: "page",
+        locator: pageLabel,
+      },
+    ]),
+  );
 }

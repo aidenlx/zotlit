@@ -13,6 +13,7 @@
     "./client/node": "./dist/client/node.mjs",
     "./client/web": "./dist/client/web.mjs",
     "./path": "./dist/path.mjs",
+    "./test-utils": "./dist/test-utils.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
