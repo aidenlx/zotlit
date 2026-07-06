@@ -21,8 +21,8 @@ catalog:
   "@typescript/native-preview": 7.0.0-dev.20260615.1
   arkregex: ^0.0.5
   eta: 4.6.0
-  drizzle-kit: 1.0.0-rc.3
-  drizzle-orm: 1.0.0-rc.3
+  drizzle-kit: 1.0.0-rc.4
+  drizzle-orm: 1.0.0-rc.4
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0

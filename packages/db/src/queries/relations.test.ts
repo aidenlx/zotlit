@@ -1,5 +1,4 @@
 import { relations } from "@drizzle/relations";
-import * as schema from "@drizzle/schema";
 import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,7 +14,7 @@ let db: NodeDatabaseClient;
 beforeEach(() => {
   sqlite = new DatabaseSync(":memory:");
   seed(sqlite);
-  db = drizzle({ client: sqlite, schema, relations });
+  db = drizzle({ client: sqlite, relations });
 });
 
 afterEach(() => {
