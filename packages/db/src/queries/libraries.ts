@@ -32,9 +32,10 @@ const librariesQuery = defineQuery<void>()((db) =>
 
 const libraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
   (db, { placeholder }) =>
-    db.query.libraries.findFirst({
+    db.query.libraries.findMany({
       ...libraryColumns,
       where: { groups: { groupID: placeholder("groupID") } },
+      limit: 1,
     }),
 );
 
@@ -66,7 +67,7 @@ export function getLibraryByGroupID(
   db: NodeDatabaseClient,
   groupID: number,
 ): Library | null {
-  const row = libraryByGroupIDQuery.prepared(db).get({ groupID });
+  const row = libraryByGroupIDQuery.prepared(db).all({ groupID })[0];
   return row ? toLibrary(row) : null;
 }
 

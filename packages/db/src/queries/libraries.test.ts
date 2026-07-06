@@ -1,5 +1,4 @@
 import { relations } from "@drizzle/relations";
-import * as schema from "@drizzle/schema";
 import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -32,7 +31,7 @@ describe("libraries queries", () => {
     sqlite = new DatabaseSync(":memory:");
     sqlite.exec(DDL);
     sqlite.exec(SEED);
-    db = drizzle({ client: sqlite, schema, relations });
+    db = drizzle({ client: sqlite, relations });
   });
 
   afterEach(() => {

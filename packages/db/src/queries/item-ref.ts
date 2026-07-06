@@ -18,9 +18,10 @@ export type ItemRef = Pick<
 
 const itemRefByIdQuery = defineQuery<{ itemID: number }>()(
   (db, { placeholder }) =>
-    db.query.items.findFirst({
+    db.query.items.findMany({
       columns: { key: true, libraryID: true },
       where: { itemID: placeholder("itemID"), deletedItem: false },
+      limit: 1,
     }),
 );
 
@@ -35,7 +36,7 @@ export function getItemRefByID(
   db: NodeDatabaseClient,
   itemID: number,
 ): ItemRef | null {
-  const row = itemRefByIdQuery.prepared(db).get({ itemID });
+  const row = itemRefByIdQuery.prepared(db).all({ itemID })[0];
   if (!row) return null;
   const groupID = groupIDForLibrary(db, row.libraryID);
   return {
@@ -56,7 +57,7 @@ export interface ItemDisplayRef extends ItemRef {
 
 const itemDisplayRefByIdQuery = defineQuery<{ itemID: number }>()(
   (db, { placeholder }) =>
-    db.query.items.findFirst({
+    db.query.items.findMany({
       columns: { key: true, libraryID: true },
       where: { itemID: placeholder("itemID"), deletedItem: false },
       with: {
@@ -71,6 +72,7 @@ const itemDisplayRefByIdQuery = defineQuery<{ itemID: number }>()(
           },
         },
       },
+      limit: 1,
     }),
 );
 
@@ -89,7 +91,7 @@ export function getItemDisplayRefByID(
   itemID: number,
   opts?: { memo?: GroupIDMemo },
 ): ItemDisplayRef | null {
-  const row = itemDisplayRefByIdQuery.prepared(db).get({ itemID });
+  const row = itemDisplayRefByIdQuery.prepared(db).all({ itemID })[0];
   if (!row) return null;
   const groupID = opts?.memo
     ? resolveGroupID(db, row.libraryID, opts.memo)
@@ -120,7 +122,7 @@ export interface ItemDisplayInfo {
 
 const itemDisplayInfoQuery = defineQuery<{ itemID: number }>()(
   (db, { placeholder }) =>
-    db.query.items.findFirst({
+    db.query.items.findMany({
       columns: {},
       where: { itemID: placeholder("itemID"), deletedItem: false },
       with: {
@@ -148,6 +150,7 @@ const itemDisplayInfoQuery = defineQuery<{ itemID: number }>()(
           },
         },
       },
+      limit: 1,
     }),
 );
 
@@ -159,7 +162,7 @@ export function getItemDisplayInfoByID(
   db: NodeDatabaseClient,
   itemID: number,
 ): ItemDisplayInfo | null {
-  const row = itemDisplayInfoQuery.prepared(db).get({ itemID });
+  const row = itemDisplayInfoQuery.prepared(db).all({ itemID })[0];
   if (!row) return null;
 
   let title: string | null = null;
