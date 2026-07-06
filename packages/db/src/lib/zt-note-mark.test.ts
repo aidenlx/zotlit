@@ -90,6 +90,75 @@ describe("parseCitationData", () => {
   it("returns null when the shape fails validation", () => {
     expect(parseCitationData(encode({ properties: {} }))).toBeNull();
   });
+
+  it("parses label, suppress-author, prefix, and suffix on a citation item", () => {
+    const encoded = encode({
+      citationItems: [
+        {
+          uris: [`${LOCAL_USER}/KX67D9YM`],
+          locator: "3",
+          label: "chapter",
+          "suppress-author": true,
+          prefix: "see ",
+          suffix: ", note 4",
+        },
+      ],
+      properties: {},
+    });
+    expect(parseCitationData(encoded)).toEqual({
+      citationItems: [
+        {
+          uris: [`${LOCAL_USER}/KX67D9YM`],
+          ref: { libraryType: "user", groupID: null, key: "KX67D9YM" },
+          locator: "3",
+          label: "chapter",
+          suppressAuthor: true,
+          prefix: "see ",
+          suffix: ", note 4",
+        },
+      ],
+    });
+  });
+
+  it("omits label, suppress-author, prefix, and suffix when absent", () => {
+    const encoded = encode({
+      citationItems: [{ uris: [`${LOCAL_USER}/KX67D9YM`] }],
+      properties: {},
+    });
+    expect(parseCitationData(encoded)).toEqual({
+      citationItems: [
+        {
+          uris: [`${LOCAL_USER}/KX67D9YM`],
+          ref: { libraryType: "user", groupID: null, key: "KX67D9YM" },
+        },
+      ],
+    });
+  });
+
+  it("drops unknown per-item keys while accepting the widened props", () => {
+    const encoded = encode({
+      citationItems: [
+        {
+          uris: [`${LOCAL_USER}/KX67D9YM`],
+          locator: "62",
+          unknownField: "ignored",
+        },
+      ],
+      properties: {},
+    });
+    const info = parseCitationData(encoded);
+    expect(info?.citationItems[0]).not.toHaveProperty("unknownField");
+  });
+
+  it("returns null when suppress-author has the wrong type", () => {
+    const encoded = encode({
+      citationItems: [
+        { uris: [`${LOCAL_USER}/KX67D9YM`], "suppress-author": "yes" },
+      ],
+      properties: {},
+    });
+    expect(parseCitationData(encoded)).toBeNull();
+  });
 });
 
 describe("parseEmbeddedCitationItems", () => {

@@ -2,7 +2,9 @@ import { type FileManager, TFile, TFolder } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  fetchAnnotationsTemplateData,
   fetchNoteContext,
+  getAnnotationsByItemId,
   getItemsByKey,
   resolveIndexedKeyLibrary,
   type BaseItem,
@@ -13,7 +15,8 @@ import {
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { Temporal } from "@zotlit/shared/temporal";
-import { filenameSuffix } from "@zotlit/templates";
+import { filenameSuffix, TemplateEngine } from "@zotlit/templates";
+import defaultCite from "@zotlit/templates/defaults/cite?raw";
 import { type ItemFields } from "@zotlit/zotero-types";
 
 import { defaults as settingsDefaults } from "@/services/settings/schema";
@@ -42,6 +45,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     // need a real Zotero item table.
     resolveIndexedKeyLibrary: vi.fn(),
     getItemsByKey: vi.fn(),
+    // renderAnnotation's drag-insert path; stubbed per-test so the annotation
+    // template data (parent item + page label) is supplied without a real DB.
+    getAnnotationsByItemId: vi.fn(),
+    fetchAnnotationsTemplateData: vi.fn(),
   };
 });
 
@@ -569,6 +576,65 @@ describe("renderCitation", () => {
     expect(result).toBeNull();
     expect(render).not.toHaveBeenCalled();
   });
+
+  it("carries the selected item's full narrowed data through to the cite template (9.2-CSL #03)", () => {
+    // Citation-suggest passes the selected search hit's full item alongside
+    // its citationKey; a data-driven (author-year) cite template should see
+    // the item's title/date, not just a citekey-only stub.
+    const deps: SyncRenderDeps = {
+      app: makeApp(),
+      template: {
+        ready: Promise.resolve(),
+        loaded: true,
+        frontmatterFields: [],
+        renderFilename: () => "",
+        render: (_name, data) =>
+          (
+            data as { citations: { item: { title: string | null } }[] }
+          ).citations
+            .map((c) => c.item.title)
+            .join("; "),
+      },
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+        getNotesByCitekey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: {
+        prepare: async () => ({
+          resolveLink: () => () => "",
+          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
+        }),
+      },
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    };
+
+    const item = makeItem({
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Stated choice methods",
+      citationKey: "root2024",
+    });
+
+    const result = createNoteFeature(deps).renderCitation([
+      { citationKey: "root2024", item },
+    ]);
+
+    expect(result).toBe("Stated choice methods");
+  });
 });
 
 describe("renderAnnotation", () => {
@@ -617,6 +683,158 @@ describe("renderAnnotation", () => {
     });
 
     expect(result).toBeNull();
+  });
+});
+
+/** A template service backed by the real engine, with a `cite` + optional `annotation` pair. */
+function citeTemplate(
+  citeSource = defaultCite,
+  annotationSource?: string,
+): SyncRenderDeps["template"] {
+  const engine = new TemplateEngine();
+  engine.define("cite", citeSource);
+  if (annotationSource !== undefined) {
+    engine.define("annotation", annotationSource);
+  }
+  return {
+    ready: Promise.resolve(),
+    loaded: true,
+    frontmatterFields: [],
+    renderFilename: () => "",
+    render: <T extends object>(name: string, data: T): string =>
+      engine.render(name, data),
+  };
+}
+
+/** One annotation's template data with a parent item carrying `citekey`. */
+const annData = (citekey: string | null, pageLabel: string | null) =>
+  ({
+    key: "ANN1",
+    pageLabel,
+    parentItem: citekey === null ? null : { citationKey: citekey, citekey },
+  }) as never;
+
+function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
+  return {
+    app: makeApp(),
+    template,
+    db: makeDb(),
+    noteIndex: {
+      ready: Promise.resolve(),
+      whenIndexed: async () => {},
+      getNotesByItemKey: () => [],
+      getNotesByCitekey: () => [],
+    },
+    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+    settings: makeSettings(),
+    attachmentImport: {
+      prepare: async () => ({
+        resolveLink: () => () => "",
+        flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
+      }),
+    },
+    noteImport: {
+      prepare: async () => ({
+        resolveChildNote: () => ({
+          key: "",
+          title: null,
+          noteLink: () => "",
+        }),
+        flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+      }),
+    },
+  };
+}
+
+describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
+  const render = (deps: SyncRenderDeps) =>
+    createNoteFeature(deps).renderAnnotation(1, {
+      attachmentImport: { resolveLink: () => () => "" },
+    });
+
+  it("renders a page-pinned Pandoc cite from the parent item + page label", () => {
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62")]]),
+    );
+    const result = render(
+      annotDeps(citeTemplate(defaultCite, "<%= zt.citation %>")),
+    );
+    expect(result).toContain("[@Hensher2011, p. 62]");
+  });
+
+  it("routes the annotation citation through the user's cite template (locator = page label)", () => {
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62")]]),
+    );
+    const cite =
+      "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
+    const result = render(annotDeps(citeTemplate(cite, "<%= zt.citation %>")));
+    expect(result).toContain("{{Hensher2011|62}}");
+  });
+
+  it("leaves zt.citation null when the parent item has no citation key", () => {
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData(null, "62")]]),
+    );
+    const result = render(
+      annotDeps(
+        citeTemplate(defaultCite, "<%= JSON.stringify(zt.citation) %>"),
+      ),
+    );
+    expect(result).toBe("null");
+  });
+});
+
+describe("renderAnnotationCitation (9.2-CSL #06)", () => {
+  const renderCite = (deps: SyncRenderDeps): string | null =>
+    createNoteFeature(deps).renderAnnotationCitation(1);
+
+  it("produces a page-pinned Pandoc cite from the parent item + page label", () => {
+    // The copy-citation action resolves the annotation's parent through the DB
+    // and renders it via the shared annotation-citation path (page label as
+    // locator), so the string the user pastes is `[@key, p. N]`.
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62")]]),
+    );
+    expect(renderCite(annotDeps(citeTemplate()))).toContain(
+      "[@Hensher2011, p. 62]",
+    );
+  });
+
+  it("routes the copied citation through the user's cite template (locator = page label)", () => {
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62")]]),
+    );
+    const cite =
+      "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
+    expect(renderCite(annotDeps(citeTemplate(cite)))).toContain(
+      "{{Hensher2011|62}}",
+    );
+  });
+
+  it("returns null when the parent item has no citation key (so the action can notice instead of copying)", () => {
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData(null, "62")]]),
+    );
+    expect(renderCite(annotDeps(citeTemplate()))).toBeNull();
   });
 });
 

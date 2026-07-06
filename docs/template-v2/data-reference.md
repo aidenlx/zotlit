@@ -254,18 +254,103 @@ Receives a single annotation as `zt`.
 | `zt.backlink` | `string` | Zotero deep link to this annotation (`zotero://open/...?annotation=KEY`) |
 | `zt.parentItem` | `object \| null` | The parent literature item (has all the same item fields as the note template). `null` when the annotation is on a standalone attachment (a file with no parent bibliographic item) — guard with `zt.parentItem?.field`. **Exception:** `zt.parentItem.collections` is always empty here — the drag-insert doesn't resolve the parent item's collections. Use the note template if you need them. |
 | `zt.parentAttachment` | object | The parent attachment (see [Attachment shape](#attachment-shape) below) |
+| `zt.citation` | `string \| null` | A page-pinned citation for this annotation, rendered through your `cite` template from the parent item with the annotation's `pageLabel` as the Locator (label `"page"`) -- mirroring Zotero's own annotation citations. `null` when the annotation has no parent item or the parent carries no citation key. **Opt-in:** the default annotation template does not reference it -- reference `zt.citation` (a one-line edit) to include it. Computed lazily, so nothing is rendered unless the template reads it. |
 
 > v1's raw image accessors `it.imgPath` (absolute path) and `it.imgUrl` (`file://` URL) are not exposed in v2. Use `zt.imgLink()` (call it; prefix `!` or wrap in `embed()` for an embed), which already resolves the path.
 
 ## Citation templates (`zotlit-cite.eta.md`, `zotlit-cite2.eta.md`)
 
-Citation templates receive an object with an `items` array:
+Both citation templates receive the same object exposing two parallel arrays -- the **Citation Items** and, alongside them, the bare items:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `zt.items` | `array` | Array of item data objects (each with all standard item fields) |
+| `zt.citations` | `array` | The Citation Items -- each pairs the cited item's data with the citation-scoped properties (see [Citation Item](#citation-item) below) |
+| `zt.items` | `array` | The same cited items, bare -- `zt.items[i]` is `zt.citations[i].item` (see [Cited item fields](#cited-item-fields) below) |
 
-Each item has all the standard item fields, creators, tags, and aliases described above, except for `authors`, `authorsShort`, `backlink`, `annotations`, and `attachments` (which are only available in note, content, and frontmatter templates).
+The two arrays share order and identity: `zt.citations[i].item === zt.items[i]`. Use `zt.citations` when you need the locator or other citation-scoped properties; use `zt.items` when you only need the item data.
+
+### Citation Item
+
+Each entry in `zt.citations` carries the cited item plus the properties scoped to *how* it is cited (locator, suppress-author, prefix, suffix) -- these never live on the item itself:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `item` | `object` | The cited item's data (see [Cited item fields](#cited-item-fields)). **Never `null`** -- a stub with every field `null` when the reference cannot be resolved, so a template never has to null-check the item |
+| `locator` | `string \| null` | The Locator -- a pinpoint reference within the work, e.g. `"62"`; `null` when the citation has none |
+| `label` | `string \| null` | The raw CSL locator label naming the locator's kind, e.g. `"page"`, `"chapter"`; `null` when absent |
+| `labelShort` | `string` | Pandoc-style abbreviation of `label`, e.g. `"p."`, `"chap."` (see [Locator label abbreviations](#locator-label-abbreviations)). `"page"` or an absent/unrecognized label yields `"p."` |
+| `suppressAuthor` | `boolean` | Whether the author should be suppressed (author-date styles); default `false` |
+| `prefix` | `string \| null` | Text to render before the citation. Carried as data only -- the default templates do not render it |
+| `suffix` | `string \| null` | Text to render after the citation. Carried as data only -- the default templates do not render it |
+
+### Cited item fields
+
+A cited item uses the same camelCase field vocabulary as the note template, **narrowed** to the fields both citation sources -- the live Zotero item and the [Embedded Item Data](note-import.md) snapshot -- can supply. Each behaves exactly as documented under [Item fields](#item-fields) above; unset fields are `null`.
+
+| Property | Type |
+|----------|------|
+| `item.itemType` | `string \| null` |
+| `item.title` | `string \| null` |
+| `item.creators` | `array` (see [Creators](#creators)) |
+| `item.primaryCreatorType` | `string \| null` |
+| `item.date` | `ItemDate \| null` (see [Date format](#date-format)) |
+| `item.citationKey` | `string \| null` |
+| `item.citekey` | `string \| null` (alias for `citationKey`) |
+| `item.abstract` | `string \| null` |
+| `item.containerTitle` | `string \| null` |
+| `item.shortTitle` | `string \| null` |
+| `item.DOI` | `string \| null` |
+| `item.url` | `string \| null` |
+| `item.ISBN` | `string \| null` |
+| `item.ISSN` | `string \| null` |
+| `item.volume` | `string \| null` |
+| `item.issue` | `string \| null` |
+| `item.pages` | `string \| null` |
+| `item.publisher` | `string \| null` |
+| `item.place` | `string \| null` |
+| `item.edition` | `string \| null` |
+| `item.language` | `string \| null` |
+| `item.extra` | `string \| null` |
+
+The note-tier context is **not** narrowed onto a cited item -- an Embedded Item Data snapshot cannot express it. Unavailable here: `key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, and `noteLink`. When the cited item is a live Zotero item, its item-type-specific fields (e.g. `reportNumber`) are also reachable by name; a snapshot-sourced item carries only the fields above that its CSL data maps to.
+
+### Resolution and the `KEY?` sentinel
+
+When a citation is resolved during [note import](note-import.md), each cited reference resolves its item data live-DB-first: the live Zotero item, else the Embedded Item Data snapshot mapped into the zt vocabulary, else the all-`null` stub. The citekey resolves on its own chain -- the item's own citation key, else the embedded snapshot's citation key, else a visible `KEY?` sentinel (the Zotero item key with a `?` appended) so unresolved cites are greppable. Because the citekey is resolved separately, a live item with no assigned key can still render with a key supplied by the snapshot.
+
+The default templates filter on `c.item.citationKey`, so the `KEY?` sentinel survives the filter and composes with the rest of the syntax (e.g. `-@ABC123?`). If **every** cited reference in one citation resolves to no citekey at all, the original citation HTML is kept verbatim, so nothing is lost.
+
+Citation-suggest inserts (the `@`-completion flow) build the same object from live Zotero items with the citation-scoped properties at their defaults (`locator`/`label`/`prefix`/`suffix` `null`, `labelShort` `"p."`, `suppressAuthor` `false`).
+
+### Locator label abbreviations
+
+`labelShort` maps the raw CSL `label` to its Pandoc locator term. Any label absent from this table -- including `"page"` itself -- yields `"p."`, matching Pandoc's default locator term.
+
+| `label` | `labelShort` |
+|---------|--------------|
+| `book` | `bk.` |
+| `chapter` | `chap.` |
+| `column` | `col.` |
+| `figure` | `fig.` |
+| `folio` | `fol.` |
+| `issue` | `no.` |
+| `line` | `l.` |
+| `note` | `n.` |
+| `opus` | `op.` |
+| `paragraph` | `para.` |
+| `part` | `pt.` |
+| `section` | `sec.` |
+| `sub-verbo` | `sv.` |
+| `verse` | `v.` |
+| `volume` | `vol.` |
+
+The shipped default `cite` template renders Pandoc-parseable output from this data -- a suppressed author as `-@key`, a locator as `, labelShort locator`:
+
+```eta
+[<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>]
+```
+
+See [Default templates](defaults.md#citation-templates) for the full `cite` / `cite2` listings.
 
 ## Attachment shape
 

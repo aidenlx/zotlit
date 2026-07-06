@@ -43,10 +43,11 @@ describe("CitationEditorSuggest.selectSuggestion", () => {
       editor: { replaceRange } as never,
     };
 
-    suggest.selectSuggestion(makeHit("abc2024"), {} as KeyboardEvent);
+    const hit = makeHit("abc2024");
+    suggest.selectSuggestion(hit, {} as KeyboardEvent);
 
     expect(renderCitation).toHaveBeenCalledWith(
-      [{ citationKey: "abc2024" }],
+      [{ citationKey: "abc2024", item: hit.item }],
       false,
     );
     expect(replaceRange).not.toHaveBeenCalled();

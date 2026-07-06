@@ -86,6 +86,17 @@ export {
   type TemplateParentItemData,
 } from "./lib/context/zt-template-item";
 export {
+  citekeysToCiteTemplateData,
+  DEFAULT_LOCATOR_LABEL_SHORT,
+  narrowBaseDataToCiteItemData,
+  type CitationTemplateData,
+  type CitationTemplateItem,
+  type CiteRef,
+  type ResolvedCiteRef,
+  type TemplateCiteItemData,
+} from "./lib/context/zt-template-cite";
+export { cslToTemplateItem } from "./lib/context/zt-csl";
+export {
   attachmentToTemplateData,
   type TemplateAttachment,
 } from "./lib/context/zt-template-attach";
@@ -108,6 +119,7 @@ export {
   parseAnnotationData,
   parseCitationData,
   parseEmbeddedCitationItems,
+  parseEmbeddedCitationSnapshot,
   type AnnotationInfo,
   type CitationInfo,
   type CitationItem,

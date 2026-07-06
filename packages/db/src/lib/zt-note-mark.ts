@@ -35,6 +35,14 @@ export interface CitationItem {
   ref: ZoteroRef | null;
   /** Locator (page/section) the citation pins, when present. */
   locator?: string;
+  /** Raw CSL locator label (e.g. `"page"`, `"chapter"`), when present. */
+  label?: string;
+  /** Whether the author is suppressed (word-processor-style `-@key`). */
+  suppressAuthor?: boolean;
+  /** Text rendered before the citation, when present. */
+  prefix?: string;
+  /** Text rendered after the citation, when present. */
+  suffix?: string;
 }
 
 /** Parsed `data-citation` payload (one Zotero citation mark). */
@@ -89,6 +97,10 @@ export function parseItemUri(uri: string): ZoteroRef | null {
 const CitationItemSchema = v.object({
   uris: v.array(v.string()),
   locator: v.optional(v.string()),
+  label: v.optional(v.string()),
+  "suppress-author": v.optional(v.boolean()),
+  prefix: v.optional(v.string()),
+  suffix: v.optional(v.string()),
 });
 
 const CitationSchema = v.object({
@@ -136,6 +148,12 @@ function toCitationItem(
     uris: raw.uris,
     ref,
     ...(raw.locator !== undefined ? { locator: raw.locator } : {}),
+    ...(raw.label !== undefined ? { label: raw.label } : {}),
+    ...(raw["suppress-author"] !== undefined
+      ? { suppressAuthor: raw["suppress-author"] }
+      : {}),
+    ...(raw.prefix !== undefined ? { prefix: raw.prefix } : {}),
+    ...(raw.suffix !== undefined ? { suffix: raw.suffix } : {}),
   };
 }
 
@@ -148,13 +166,16 @@ export function parseCitationData(encoded: string | null): CitationInfo | null {
 
 /**
  * One entry of a note container's `data-citation-items`: a cited item's
- * identifying {@link uris} plus its CSL-JSON {@link itemData}. Only the Better
- * BibTeX `citation-key` is read here; the rest of `itemData` is dropped until
- * `9.2-CSL` widens this schema to carry full CSL data.
+ * identifying {@link uris} plus its CSL-JSON `itemData`. `itemData` is a
+ * `v.looseObject` so every CSL variable survives, not just `citation-key` —
+ * {@link parseEmbeddedCitationSnapshot} exposes the full snapshot for legs
+ * (e.g. cross-library or degraded-DB cites) that need item data beyond the key.
  */
 const EmbeddedCitationItemSchema = v.object({
   uris: v.array(v.string()),
-  itemData: v.optional(v.object({ "citation-key": v.optional(v.string()) })),
+  itemData: v.optional(
+    v.looseObject({ "citation-key": v.optional(v.string()) }),
+  ),
 });
 
 /**
@@ -177,6 +198,30 @@ export function parseEmbeddedCitationItems(
     if (!citationKey) continue;
     for (const uri of entry.uris) {
       if (!map.has(uri)) map.set(uri, citationKey);
+    }
+  }
+  return map;
+}
+
+/**
+ * Decode a note container's `data-citation-items` attribute into a
+ * `Map<uri, itemData>` of each cited item's full embedded CSL-JSON snapshot.
+ * Companion to {@link parseEmbeddedCitationItems}: the note-import cite leg
+ * reads item data (title, date, container title, …) from this snapshot when
+ * the live DB can't resolve the ref (cross-library cite, degraded DB).
+ * Entries without `itemData` are omitted; returns an empty map when the
+ * attribute is absent or malformed.
+ */
+export function parseEmbeddedCitationSnapshot(
+  encoded: string | null,
+): Map<string, Record<string, unknown>> {
+  const map = new Map<string, Record<string, unknown>>();
+  const data = parseDataAttribute(v.array(EmbeddedCitationItemSchema), encoded);
+  if (!data) return map;
+  for (const entry of data) {
+    if (!entry.itemData) continue;
+    for (const uri of entry.uris) {
+      if (!map.has(uri)) map.set(uri, entry.itemData);
     }
   }
   return map;

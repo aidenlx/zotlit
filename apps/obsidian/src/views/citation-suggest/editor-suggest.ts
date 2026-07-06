@@ -88,7 +88,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     }
 
     const rendered = this.#deps.noteFeature.renderCitation(
-      [{ citationKey }],
+      [{ citationKey, item: hit.item }],
       this.#secondary,
     );
     if (rendered === null) {
