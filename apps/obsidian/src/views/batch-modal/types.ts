@@ -39,7 +39,14 @@ export interface BatchManifest {
   ): void;
 }
 
-/** Operation-specific copy the shell renders around the manifest body. */
+/**
+ * Operation-specific copy the shell renders around the manifest body.
+ *
+ * Required fields are unique per operation (title, confirm wording, etc.).
+ * Optional fields default to shared generic strings when omitted; override
+ * them when the default wording is wrong for the operation (e.g. import
+ * modals overriding the progress warning).
+ */
 export interface BatchModalText {
   title: string;
   /** Loading-phase headline over the determinate classify bar. */
@@ -61,6 +68,27 @@ export interface BatchModalText {
     result: BatchRunResult,
     state: { cancelled: boolean; aborted: boolean },
   ) => string;
+
+  /** @default "Keep this dialog open until the operation finishes." */
+  progressWarning?: string;
+  /** @default "{done} / {total} · {pct}%" */
+  progressCount?: (args: {
+    done: number;
+    total: number;
+    pct: number;
+  }) => string;
+  /** @default "{count} failed" */
+  progressFailed?: (args: { count: number }) => string;
+  /** @default "Show details" */
+  detailsShow?: string;
+  /** @default "Hide details" */
+  detailsHide?: string;
+  /** @default "Canceling…" */
+  cancelling?: string;
+  /** @default "Failed ({count})" */
+  failedHeader?: (args: { count: number }) => string;
+  /** @default "Close" */
+  closeButton?: string;
 }
 
 export interface BatchClassifyControls {
