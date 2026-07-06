@@ -1,7 +1,7 @@
 ---
 date: 2026-05-29T21:19:02
 zotero-note-key: F26HNFPP
-zotero-note-modified: 2026-06-25T05:10:42Z
+zotero-lastmod: 2026-06-25T05:10:42Z
 ---
 [<mark class="zotlit-hl" data-color="red" style="background-color: var(--zotlit-hl-red, #ff6666);">“Interrogation of Responses to Stated Choice Experiments”</mark>](zotero://open/library/items/T2P8T29G?annotation=JDJKX3N6&page=62) [@Hensher2011] hello world testing
 

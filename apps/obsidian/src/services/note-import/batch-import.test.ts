@@ -134,6 +134,8 @@ function makeDeps(
     importNoteResult?: "created" | "overwritten" | "skipped";
     templateReady?: Promise<void>;
     existing?: TFile[];
+    /** Per-file frontmatter cache for metadataCache.getFileCache. */
+    frontmatter?: Map<TFile, Record<string, unknown>>;
   } = {},
 ): {
   deps: NoteImportDeps;
@@ -154,6 +156,12 @@ function makeDeps(
     noteIndex: {
       whenIndexed: async () => {},
       getImportedNoteByNoteKey: () => options.existing ?? [],
+    },
+    metadataCache: {
+      getFileCache: (file: TFile) => {
+        const fm = options.frontmatter?.get(file);
+        return fm ? { frontmatter: fm } : null;
+      },
     },
     view: {
       openBatchModal: (opts) => {
@@ -413,6 +421,129 @@ describe("note-mode modal classify + run", () => {
 
     expect(importNote).not.toHaveBeenCalled();
     expect(onItemSettled).toHaveBeenCalledWith({ id: 50, status: "skipped" });
+  });
+});
+
+describe("up-to-date classification", () => {
+  it("classifies a note as up-to-date when zotero-lastmod matches", async () => {
+    const ref50 = makeRef(50);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const target = makeFile("Imported/Note 50.md");
+    const { deps, importNote } = makeDeps(
+      {},
+      {
+        frontmatter: new Map([
+          [target, { "zotero-lastmod": "2024-02-03T08:30:00Z" }],
+        ]),
+      },
+    );
+    deps.noteIndex.getImportedNoteByNoteKey = (key) =>
+      key === ref50.indexedKey ? [target] : [];
+
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    const { manifest } = await driveLastModal();
+
+    expect(manifest.options.tasks).toHaveLength(1);
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "create" });
+    expect(manifest.options.upToDate).toHaveLength(1);
+    expect(manifest.options.upToDate[0]).toMatchObject({ label: "Note 50" });
+    expect(importNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies as overwrite when zotero-lastmod is missing (self-healing)", async () => {
+    const ref50 = makeRef(50);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const target = makeFile("Imported/Note 50.md");
+    const { deps, importNote } = makeDeps(
+      {},
+      { importNoteResult: "overwritten" },
+    );
+    deps.noteIndex.getImportedNoteByNoteKey = (key) =>
+      key === ref50.indexedKey ? [target] : [];
+
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    const { manifest } = await driveLastModal();
+
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
+    expect(manifest.options.upToDate).toHaveLength(0);
+    expect(importNote).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies as overwrite when zotero-lastmod is older than dateModified", async () => {
+    const ref50 = makeRef(50);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const target = makeFile("Imported/Note 50.md");
+    const { deps, importNote } = makeDeps(
+      {},
+      {
+        importNoteResult: "overwritten",
+        frontmatter: new Map([
+          [target, { "zotero-lastmod": "2024-02-03T08:29:00Z" }],
+        ]),
+      },
+    );
+    deps.noteIndex.getImportedNoteByNoteKey = (key) =>
+      key === ref50.indexedKey ? [target] : [];
+
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    const { manifest } = await driveLastModal();
+
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
+    expect(manifest.options.upToDate).toHaveLength(0);
+    expect(importNote).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies as overwrite when zotero-lastmod is newer than dateModified", async () => {
+    const ref50 = makeRef(50);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([ref50, makeRef(51)]);
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const target = makeFile("Imported/Note 50.md");
+    const { deps, importNote } = makeDeps(
+      {},
+      {
+        importNoteResult: "overwritten",
+        frontmatter: new Map([
+          [target, { "zotero-lastmod": "2024-02-03T08:31:00Z" }],
+        ]),
+      },
+    );
+    deps.noteIndex.getImportedNoteByNoteKey = (key) =>
+      key === ref50.indexedKey ? [target] : [];
+
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    const { manifest } = await driveLastModal();
+
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
+    expect(manifest.options.upToDate).toHaveLength(0);
+    expect(importNote).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies as create when no existing file exists", async () => {
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const { deps, importNote } = makeDeps({});
+
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    const { manifest } = await driveLastModal();
+
+    expect(manifest.options.tasks).toHaveLength(2);
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "create" });
+    expect(manifest.options.tasks[1]).toMatchObject({ kind: "create" });
+    expect(manifest.options.upToDate).toHaveLength(0);
+    expect(importNote).toHaveBeenCalledTimes(2);
   });
 });
 
