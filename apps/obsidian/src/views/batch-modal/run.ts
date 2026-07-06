@@ -5,7 +5,11 @@ import pLimit from "p-limit";
 import { AbortError } from "@/lib/abort-error";
 import { formatErrorMessage } from "@/lib/toast";
 
-import { type BatchClassifyControls, type BatchRunControls } from "./types";
+import {
+  type BatchClassifyControls,
+  type BatchRunControls,
+  type BatchRunResult,
+} from "./types";
 
 const CLASSIFY_CHUNK_SIZE = 50;
 
@@ -36,15 +40,14 @@ export interface BatchRunTask {
   label: string;
 }
 
-export interface BatchRunTally {
-  failed: number;
-  cancelled: boolean;
-}
+/** Write outcome returned by a task's `run` callback; field names match
+ * {@link BatchRunResult} so the scaffold can tally directly. */
+export type RunOutcome = "created" | "updated" | "skipped";
 
 /**
  * Concurrent pLimit + allSettled executor that owns the abort/settle/error
- * contract between a modal's `onRun` callback and its shell. Each task either
- * returns `"done"` or `"skipped"` (reported via
+ * contract between a modal's `onRun` callback and its shell. Each task returns
+ * a {@link RunOutcome} (tallied into {@link BatchRunResult} and reported via
  * {@link BatchRunControls.onItemSettled}) or throws (reported as `"failed"`
  * with a formatted error message). Abort errors are suppressed from the
  * failure count; cancelled tasks are those that never ran.
@@ -56,18 +59,27 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
   tasks: readonly T[];
   controls: BatchRunControls;
   concurrency: number;
-  /** @returns `"done"` or `"skipped"`; throw to fail. */
-  run: (task: T) => Promise<"done" | "skipped">;
+  run: (task: T) => Promise<RunOutcome>;
   onTaskFailed?: (task: T, error: unknown) => void;
-}): Promise<BatchRunTally> {
+}): Promise<BatchRunResult> {
   const { tasks, controls, concurrency, run, onTaskFailed } = opts;
   const limit = pLimit(concurrency);
+  const result: BatchRunResult = {
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    cancelled: false,
+  };
   const settled = await Promise.allSettled(
     tasks.map((task) =>
       limit(async () => {
         controls.signal.throwIfAborted();
         try {
-          const status = await run(task);
+          const outcome = await run(task);
+          result[outcome] += 1;
+          const status: "done" | "skipped" =
+            outcome === "skipped" ? "skipped" : "done";
           controls.onItemSettled({ id: task.id, status });
         } catch (error) {
           if (!AbortError.test(error)) {
@@ -86,17 +98,16 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
     ),
   );
 
-  let failed = 0;
   let completed = 0;
-  for (const [i, result] of settled.entries()) {
-    if (result.status === "fulfilled") {
+  for (const [i, entry] of settled.entries()) {
+    if (entry.status === "fulfilled") {
       completed += 1;
-    } else if (!AbortError.test(result.reason)) {
-      failed += 1;
+    } else if (!AbortError.test(entry.reason)) {
+      result.failed += 1;
       completed += 1;
-      onTaskFailed?.(tasks[i]!, result.reason);
+      onTaskFailed?.(tasks[i]!, entry.reason);
     }
   }
-  const cancelled = controls.signal.aborted && completed < tasks.length;
-  return { failed, cancelled };
+  result.cancelled = controls.signal.aborted && completed < tasks.length;
+  return result;
 }

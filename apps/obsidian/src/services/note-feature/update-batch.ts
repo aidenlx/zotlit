@@ -212,12 +212,7 @@ async function executeBatchActions(
     deps.settings.loaded,
     deps.noteFeature.ready,
   ]);
-  let created = 0;
-  let updated = 0;
 
-  // Pin the client for the whole write loop so a concurrent refresh cannot swap
-  // it mid-batch (torn snapshot). Acquired after the ready awaits above, which
-  // touch settings/index/templates, not the DB.
   using lease = await deps.db.acquireRead();
   const run: RunContext = {
     client: lease.client,
@@ -228,15 +223,13 @@ async function executeBatchActions(
     scope,
   };
 
-  const { failed, cancelled } = await executeBatchRun({
+  const result = await executeBatchRun({
     tasks: actions.map((a) => ({ ...a, id: a.itemID })),
     controls,
     concurrency: 32,
     run: async (task) => {
       await runAction(deps, task, run);
-      if (task.kind === "create") created += 1;
-      else updated += 1;
-      return "done";
+      return task.kind === "create" ? "created" : "updated";
     },
     onTaskFailed: (task, error) => {
       logger.warn("Batch update item failed", {
@@ -246,16 +239,11 @@ async function executeBatchActions(
     },
   });
 
-  const total = actions.length;
   logger.info("Batch update finished", {
-    created,
-    updated,
-    failed,
-    cancelled,
-    aborted: total - created - updated - failed,
-    total,
+    ...result,
+    total: actions.length,
   });
-  return { created, updated, skipped: 0, failed, cancelled };
+  return result;
 }
 
 /**
