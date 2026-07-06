@@ -131,14 +131,15 @@ v1 received `it` as a raw array of objects with a `citekey` property.
 ### v2 (`zotlit-cite.eta.md`)
 
 ```eta
-[<%= zt.items.filter(c => c.citationKey).map(c => `@${c.citationKey}`).join("; ") %>]
+[<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>]
 ```
 
 Changes:
 
-- `it` (raw array) -> `zt.items` (array inside an object). `zt` is always an object at the top level.
-- `lit.citekey` -> `c.citationKey` (canonical Zotero field name; `c.citekey` also works as an alias).
-- `!!lit.citekey` -> `c.citationKey` (truthiness check, same semantics).
+- `it` (raw array) -> `zt.citations` (array of [Citation Items](data-reference.md#citation-item) inside an object). `zt` is always an object at the top level; `zt.items` exposes the same items bare.
+- `lit.citekey` -> `c.item.citationKey` (canonical Zotero field name, now on the Citation Item's `item`; `c.item.citekey` also works as an alias).
+- `!!lit.citekey` -> `c.item.citationKey` (truthiness check, same semantics -- also lets the `KEY?` sentinel for an unresolved cite pass through).
+- Emits Pandoc-parseable output: `-@key` when `suppressAuthor` is set, and `, ${labelShort} ${locator}` when the citation carries a [Locator](data-reference.md#locator-label-abbreviations) (e.g. `[@smith2024, p. 62]`).
 
 ### v1 (`zt-cite2.eta.md`)
 
@@ -149,10 +150,10 @@ Changes:
 ### v2 (`zotlit-cite2.eta.md`)
 
 ```eta
-<%= zt.items.filter(c => c.citationKey).map(c => `@${c.citationKey}`).join("; ") %>
+<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>
 ```
 
-Same changes as `cite` -- object wrapper, canonical field name. The only difference from `cite` is the absence of surrounding `[]` brackets.
+Same changes as `cite`. The only difference from `cite` is the absence of surrounding `[]` brackets.
 
 ## Removed templates
 

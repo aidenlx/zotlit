@@ -48,7 +48,7 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
       return;
     }
     const rendered = this.#deps.noteFeature.renderCitation(
-      [{ citationKey }],
+      [{ citationKey, item: hit.item }],
       Keymap.isModifier(evt, "Shift"),
     );
     if (rendered === null) {

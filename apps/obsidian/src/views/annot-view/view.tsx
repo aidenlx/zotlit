@@ -97,7 +97,10 @@ export interface AnnotViewDeps {
   db: DatabaseService;
   liveUpdate: LiveUpdateService;
   zoteroPref: ZoteroPrefService;
-  noteFeature: Pick<NoteFeature, "renderAnnotation">;
+  noteFeature: Pick<
+    NoteFeature,
+    "renderAnnotation" | "renderAnnotationCitation"
+  >;
   attachmentImport: AttachmentImportService;
   itemLookup: ItemLookup;
   settings: SettingsService;
@@ -183,6 +186,7 @@ export class AnnotationView extends ItemView {
       getGroupID: () => this.#groupID,
       getDataDir: () => this.#deps.zoteroPref.dataDir,
       refresh: () => this.#deps.db.refresh(),
+      noteFeature: this.#deps.noteFeature,
       onToggleFollowReader: () => this.#toggleFollowReader(),
       onLinkItem: () => this.#linkItem(),
       onUnlinkItem: () => this.#setFollowMode("note"),

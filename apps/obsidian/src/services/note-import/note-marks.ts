@@ -2,6 +2,7 @@ import {
   parseAnnotationData,
   parseCitationData,
   parseEmbeddedCitationItems,
+  parseEmbeddedCitationSnapshot,
   type AnnotationInfo,
   type CitationInfo,
 } from "@zotlit/db";
@@ -75,6 +76,19 @@ export function parseEmbeddedCitations(
   container: Element,
 ): Map<string, string> {
   return parseEmbeddedCitationItems(
+    container.getAttribute("data-citation-items"),
+  );
+}
+
+/**
+ * Read a note container's `data-citation-items` into a `Map<uri, itemData>` of
+ * each cited item's full embedded CSL-JSON snapshot, for the note-import cite
+ * leg's item-data fallback when the live DB can't resolve a ref.
+ */
+export function parseEmbeddedItemSnapshots(
+  container: Element,
+): Map<string, Record<string, unknown>> {
+  return parseEmbeddedCitationSnapshot(
     container.getAttribute("data-citation-items"),
   );
 }

@@ -8,10 +8,15 @@ import {
   annotationColorToName,
   annotationOpenUri,
   attachmentToTemplateData,
+  cslToTemplateItem,
+  DEFAULT_LOCATOR_LABEL_SHORT,
   getAttachmentByKey,
-  getCitekeyByItemKey,
+  getItemsByKey,
   getLibraryByGroupID,
   type CitationItem,
+  type Item,
+  type ResolvedCiteRef,
+  type TemplateCiteItemData,
   type ZoteroRef,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -32,6 +37,7 @@ import {
   parseAnnotation,
   parseCitation,
   parseEmbeddedCitations,
+  parseEmbeddedItemSnapshots,
   parseNoteSchema,
   type NoteAnnotation,
 } from "./note-marks";
@@ -50,6 +56,12 @@ export interface NoteParserDeps {
    * citation rule.
    */
   citationMap: ReadonlyMap<string, string>;
+  /**
+   * The same snapshot's full CSL-JSON item data per cited URI — the item-data
+   * fallback when a ref's live DB row can't be resolved (cross-library cite,
+   * degraded DB). Read off the schema container by {@link parseNote}.
+   */
+  citationSnapshots: ReadonlyMap<string, Record<string, unknown>>;
   /** Render the resolved cited items through the user's `cite` template. */
   renderCite: RenderCite;
   /** Resolves `storage:` / linked attachment paths to absolute filesystem paths. */
@@ -59,16 +71,17 @@ export interface NoteParserDeps {
 }
 
 /** Render cited items through the user's `cite` template. */
-export type RenderCite = (
-  items: readonly { citationKey: string | null }[],
-) => string;
+export type RenderCite = (items: readonly ResolvedCiteRef[]) => string;
 
 /**
  * Caller-supplied subset of {@link NoteParserDeps}; `parseNote` fills
  * `citationMap`. `renderAnnotationParagraph` lives here, not on
  * {@link NoteParserDeps}: it drives the prepass, never a Turndown rule.
  */
-export type ParseNoteDeps = Omit<NoteParserDeps, "citationMap"> & {
+export type ParseNoteDeps = Omit<
+  NoteParserDeps,
+  "citationMap" | "citationSnapshots"
+> & {
   /**
    * Render this note's clean single-annotation paragraphs through the user's
    * `annotation` template in one batch. The service supplies this with the
@@ -142,6 +155,7 @@ export function parseNote(
   const td = createNoteParser(Turndown, {
     ...parserDeps,
     citationMap: parseEmbeddedCitations(schema.container),
+    citationSnapshots: parseEmbeddedItemSnapshots(schema.container),
   });
   return td.turndown(schema.container);
 }
@@ -204,36 +218,135 @@ function resolveCitation(
     const el = node as Element;
     const info = parseCitation(el);
     if (!info) return el.outerHTML;
-    const items = info.citationItems.map((item) => ({
-      citationKey: resolveCitekey(item, deps.citationMap, deps),
-    }));
+    const dbItems = fetchCitedDbItems(info.citationItems, deps);
+    const items = info.citationItems.map((item) => {
+      const dbItem = item.ref
+        ? dbItems.get(
+            dbItemMapKey(citedLibraryID(item.ref, deps), item.ref.key),
+          )
+        : undefined;
+      return {
+        citationKey: resolveCitekey(item, dbItem, deps.citationMap),
+        item: dbItem ?? resolveEmbeddedItem(item, deps.citationSnapshots),
+        locator: item.locator ?? null,
+        label: item.label ?? null,
+        labelShort: pandocLocatorLabel(item.label),
+        suppressAuthor: item.suppressAuthor ?? false,
+        prefix: item.prefix ?? null,
+        suffix: item.suffix ?? null,
+      };
+    });
     if (items.every((item) => item.citationKey === null)) return el.outerHTML;
     return deps.renderCite(items).trim();
   };
 }
 
 /**
- * Resolve one cited item to a single citekey: the live DB by its Zotero key,
- * else the note's embedded snapshot map by any of its URIs, else a visible
- * `${key}?` sentinel. `null` only when the item has no parseable key at all
- * (every URI failed to parse into a ref) and the embedded map also misses.
+ * Fetch every cited item's live DB row up front, grouped by the cited
+ * library so a mark citing items across libraries (a cross-library
+ * citation) issues one `getItemsByKey` call per library rather than one per
+ * item. Items with no parseable ref (malformed URI) are skipped — they
+ * resolve through the embedded-snapshot/sentinel path only.
+ */
+function fetchCitedDbItems(
+  citationItems: readonly CitationItem[],
+  deps: Pick<NoteParserDeps, "client" | "libraryID">,
+): ReadonlyMap<string, Item> {
+  const keysByLibrary = new Map<number, string[]>();
+  for (const { ref } of citationItems) {
+    if (!ref) continue;
+    const libraryID = citedLibraryID(ref, deps);
+    const keys = keysByLibrary.get(libraryID);
+    if (keys) keys.push(ref.key);
+    else keysByLibrary.set(libraryID, [ref.key]);
+  }
+  const items = new Map<string, Item>();
+  for (const [libraryID, keys] of keysByLibrary) {
+    const rows = getItemsByKey(deps.client, libraryID, keys) ?? [];
+    for (const item of rows) {
+      items.set(dbItemMapKey(libraryID, item.key), item);
+    }
+  }
+  return items;
+}
+
+function dbItemMapKey(libraryID: number, key: string): string {
+  return `${libraryID}:${key}`;
+}
+
+/**
+ * Pandoc-style abbreviation for a raw CSL locator label (e.g. `"chapter"` →
+ * `"chap."`). An absent or unrecognized label (custom producer, `"page"`
+ * itself) falls back to {@link DEFAULT_LOCATOR_LABEL_SHORT}, matching
+ * Pandoc's own default locator term.
+ *
+ * @see https://github.com/citation-style-language/locales/blob/master/locales-en-US.xml
+ *   (short-form locator terms; Pandoc resolves locator abbreviations against
+ *   the CSL locale, not a Pandoc-specific table)
+ */
+const PANDOC_LOCATOR_LABELS: Readonly<Record<string, string>> = {
+  book: "bk.",
+  chapter: "chap.",
+  column: "col.",
+  figure: "fig.",
+  folio: "fol.",
+  issue: "no.",
+  line: "l.",
+  note: "n.",
+  opus: "op.",
+  paragraph: "para.",
+  part: "pt.",
+  section: "sec.",
+  "sub-verbo": "s.v.",
+  verse: "v.",
+  volume: "vol.",
+};
+
+function pandocLocatorLabel(label: string | undefined): string {
+  if (label && Object.hasOwn(PANDOC_LOCATOR_LABELS, label)) {
+    return PANDOC_LOCATOR_LABELS[label]!;
+  }
+  return DEFAULT_LOCATOR_LABEL_SHORT;
+}
+
+/**
+ * Resolve one cited item to a single citekey: the already-fetched live DB row's
+ * own citation key, else the note's embedded snapshot map by any of its URIs,
+ * else a visible `${key}?` sentinel. `null` only when the item has no
+ * parseable key at all (every URI failed to parse into a ref) and the
+ * embedded map also misses.
  */
 function resolveCitekey(
   item: CitationItem,
+  dbItem: Item | undefined,
   embedded: ReadonlyMap<string, string>,
-  deps: Pick<NoteParserDeps, "client" | "libraryID">,
 ): string | null {
   const { ref } = item;
-  if (ref) {
-    const libraryID = citedLibraryID(ref, deps);
-    const fromDb = getCitekeyByItemKey(deps.client, libraryID, ref.key);
-    if (fromDb) return fromDb;
+  if (dbItem && "citationKey" in dbItem.fields && dbItem.fields.citationKey) {
+    return dbItem.fields.citationKey;
   }
   for (const uri of item.uris) {
     const fromEmbedded = embedded.get(uri);
     if (fromEmbedded) return fromEmbedded;
   }
   return ref ? `${ref.key}?` : null;
+}
+
+/**
+ * Resolve a cited item's data from the note's embedded CSL-JSON snapshot,
+ * when the live DB has no row for it (cross-library cite, degraded DB). Tried
+ * against every URI of the citation item, mirroring {@link resolveCitekey}'s
+ * embedded-map lookup.
+ */
+function resolveEmbeddedItem(
+  item: CitationItem,
+  snapshots: ReadonlyMap<string, Record<string, unknown>>,
+): TemplateCiteItemData | undefined {
+  for (const uri of item.uris) {
+    const itemData = snapshots.get(uri);
+    if (itemData) return cslToTemplateItem(itemData);
+  }
+  return undefined;
 }
 
 /**
