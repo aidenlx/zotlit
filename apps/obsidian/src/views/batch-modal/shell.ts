@@ -190,7 +190,10 @@ export class BatchModal extends Modal {
       cls: "zt:shrink-0 zt:flex zt:items-center zt:gap-2 zt:mb-2 zt:text-xs zt:text-(--text-warning)",
     });
     setIcon(warning.createSpan({ cls: ICON_CLS }), "triangle-alert");
-    warning.createSpan({ text: m.batch_update_progress_warning() });
+    warning.createSpan({
+      text:
+        this.#options.text.progressWarning ?? m.batch_update_progress_warning(),
+    });
 
     this.#renderFailedPanel(shell);
     this.#manifestOrThrow.renderList(this.#renderDisclosure(shell, false));
@@ -198,7 +201,11 @@ export class BatchModal extends Modal {
     new Setting(shell).addButton((btn) =>
       btn.setButtonText(m.modal_cancel()).onClick(() => {
         this.#runAbort?.abort();
-        btn.setButtonText(m.batch_update_cancelling()).setDisabled(true);
+        btn
+          .setButtonText(
+            this.#options.text.cancelling ?? m.batch_update_cancelling(),
+          )
+          .setDisabled(true);
       }),
     );
   }
@@ -232,7 +239,9 @@ export class BatchModal extends Modal {
     failureRow(this.#failedPanelList, failure);
     this.#failedPanel.toggle(true);
     this.#failedPanelSummary?.setText(
-      m.batch_update_group_failed({ count: this.#failures.length }),
+      (this.#options.text.failedHeader ?? m.batch_update_group_failed)({
+        count: this.#failures.length,
+      }),
     );
   }
 
@@ -274,18 +283,16 @@ export class BatchModal extends Modal {
       cls: "zt:flex-1 zt:min-h-0 zt:overflow-y-auto",
       attr: open ? { open: "" } : {},
     });
+    const showText =
+      this.#options.text.detailsShow ?? m.batch_update_details_show();
+    const hideText =
+      this.#options.text.detailsHide ?? m.batch_update_details_hide();
     const summary = details.createEl("summary", {
       cls: "zt:cursor-pointer zt:text-sm zt:text-(--text-muted) zt:py-1",
-      text: open
-        ? m.batch_update_details_hide()
-        : m.batch_update_details_show(),
+      text: open ? hideText : showText,
     });
     details.addEventListener("toggle", () => {
-      summary.setText(
-        details.open
-          ? m.batch_update_details_hide()
-          : m.batch_update_details_show(),
-      );
+      summary.setText(details.open ? hideText : showText);
     });
     return details;
   }
@@ -294,7 +301,13 @@ export class BatchModal extends Modal {
   #setBar(done: number, total: number): void {
     const pct = total === 0 ? 100 : Math.round((done / total) * 100);
     if (this.#barFill) this.#barFill.style.width = `${pct}%`;
-    this.#countEl?.setText(m.batch_update_progress_count({ done, total, pct }));
+    this.#countEl?.setText(
+      (this.#options.text.progressCount ?? m.batch_update_progress_count)({
+        done,
+        total,
+        pct,
+      }),
+    );
   }
 
   #updateProgress(): void {
@@ -305,7 +318,9 @@ export class BatchModal extends Modal {
       this.#failedEl.toggle(failed > 0);
       if (failed > 0) {
         this.#failedEl.setText(
-          m.batch_update_progress_failed({ count: failed }),
+          (this.#options.text.progressFailed ?? m.batch_update_progress_failed)(
+            { count: failed },
+          ),
         );
       }
     }
@@ -373,7 +388,9 @@ export class BatchModal extends Modal {
     if (this.#failures.length > 0) {
       const ul = section(
         details,
-        m.batch_update_group_failed({ count: this.#failures.length }),
+        (this.#options.text.failedHeader ?? m.batch_update_group_failed)({
+          count: this.#failures.length,
+        }),
         true,
       );
       for (const failure of this.#failures) failureRow(ul, failure);
@@ -382,7 +399,7 @@ export class BatchModal extends Modal {
 
     new Setting(shell).addButton((btn) =>
       btn
-        .setButtonText(m.batch_update_close())
+        .setButtonText(this.#options.text.closeButton ?? m.batch_update_close())
         .setCta()
         .onClick(() => this.close()),
     );
