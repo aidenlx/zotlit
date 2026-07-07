@@ -21,6 +21,8 @@ Any re-rendered part that calls `noteLink()` can trigger import. A metadata-only
 
 Imported notes are **created once and never updated**. If an imported file already exists for a child note, `noteLink()` links to the existing file without re-importing. Editing the Zotero note afterward does not change the imported file.
 
+Batch re-import (available from the command palette) can overwrite existing imported notes. It compares the `zotero-lastmod` frontmatter value against the live `dateModified` in Zotero and skips notes that have not changed — those appear in an "Up to date" group in the batch modal.
+
 ## Imported note structure
 
 Each imported note is a Markdown file with frontmatter:
@@ -29,6 +31,7 @@ Each imported note is a Markdown file with frontmatter:
 ---
 date: "2025-03-15T10:30:00"
 zotero-note-key: "ABC12345"
+zotero-lastmod: "2025-03-15T02:30:00Z"
 ---
 ```
 
@@ -36,6 +39,7 @@ zotero-note-key: "ABC12345"
 |---|---|
 | `date` | When the note was added to Zotero, as a local datetime |
 | `zotero-note-key` | Identity key used to match the imported file to the Zotero note |
+| `zotero-lastmod` | The source note's Zotero `dateModified` timestamp (ISO 8601 with offset). Stamped on every write. Used by batch re-import to skip notes that have not changed in Zotero |
 
 The body is the Zotero note's HTML converted to Markdown. Citations in the note are resolved through your cite template.
 
