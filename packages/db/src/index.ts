@@ -7,8 +7,8 @@ export {
 export { type GroupIDMemo } from "./queries/_groups";
 export {
   getItemsByID,
-  getItemsByKey,
   getItemsByLibrary,
+  getItemsByKey,
   getItemsByLibraryAsync,
   type BaseItem,
   type Creator,
@@ -31,15 +31,9 @@ export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
   getAnnotationsByItemId,
-  getAnnotationsByParent,
 } from "./queries/annotations";
+export { getAttachmentByKey } from "./queries/attachments";
 export {
-  getAttachmentByKey,
-  getAttachmentByItemId,
-  getAttachmentsByParents,
-} from "./queries/attachments";
-export {
-  getChildNotes,
   getChildNotesByParentIDs,
   getNoteByItemID,
   getNoteByKey,
@@ -48,13 +42,8 @@ export {
   type ChildNote,
   type Note,
 } from "./queries/notes";
-export { getCitekeyByItemKey, getItemIDByCitekey } from "./queries/citekey";
-export {
-  getTagsByItemIDs,
-  resolveItemTags,
-  resolveItemTagsByIDs,
-  type TagMemo,
-} from "./queries/tags";
+export { getItemIDByCitekey } from "./queries/citekey";
+export { resolveItemTags, type TagMemo } from "./queries/tags";
 export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
 export {
   getAnnotViewAnnotations,
@@ -79,9 +68,7 @@ export {
   type AnnotationType,
 } from "./lib/zt-annot";
 export {
-  itemToTemplateBaseData,
   type TemplateItemData,
-  type TemplateItemResolvers,
   type TemplateLink,
   type TemplateParentItemData,
 } from "./lib/context/zt-template-item";
@@ -90,20 +77,10 @@ export {
   DEFAULT_LOCATOR_LABEL_SHORT,
   narrowBaseDataToCiteItemData,
   resolveCitedItem,
-  type CitationTemplateData,
-  type CitationTemplateItem,
   type CiteRef,
   type ResolvedCiteRef,
-  type TemplateCiteItemData,
 } from "./lib/context/zt-template-cite";
-export {
-  attachmentToTemplateData,
-  type TemplateAttachment,
-} from "./lib/context/zt-template-attach";
-export {
-  annotationToTemplateData,
-  type TemplateAnnotation,
-} from "./lib/context/zt-template-annot";
+export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {
   annotationColorToName,
   highlightColorToName,
@@ -136,4 +113,3 @@ export {
   type AnnotationResolvers,
   type NoteResolvers,
 } from "./lib/context/note-context";
-export { getRelatedKeysByItemID } from "./queries/item-relations";

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { tagTypeToName } from "@/lib/zt-tag";
+import { createFixtureSchema } from "@/test-utils";
 
 import {
   getTagsByItemIDs,
@@ -126,30 +127,8 @@ describe("TagMemo", () => {
 });
 
 function seed(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table items (
-      itemID integer primary key,
-      itemTypeID integer not null,
-      dateAdded text not null,
-      dateModified text not null,
-      libraryID integer not null,
-      key text not null
-    );
-    create table tags (
-      tagID integer primary key,
-      name text not null
-    );
-    create table itemTags (
-      itemID integer not null,
-      tagID integer not null,
-      type integer not null,
-      primary key (itemID, tagID)
-    );
-    create table deletedItems (
-      itemID integer primary key,
-      dateDeleted text not null
-    );
-
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
         (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ITEM1'),

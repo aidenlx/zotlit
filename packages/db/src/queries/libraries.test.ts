@@ -4,19 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { createFixtureSchema } from "@/test-utils";
 
 import { getLibraries, getLibraryByGroupID } from "./libraries";
-
-const DDL = `
-  create table libraries (libraryID integer primary key, type text not null);
-  create table groups (
-    groupID integer primary key,
-    libraryID integer not null,
-    name text not null,
-    description text not null default '',
-    version integer not null default 0
-  );
-`;
 
 const SEED = `
   insert into libraries (libraryID, type) values (1, 'user'), (4, 'group'), (5, 'group');
@@ -29,7 +19,7 @@ describe("libraries queries", () => {
 
   beforeEach(() => {
     sqlite = new DatabaseSync(":memory:");
-    sqlite.exec(DDL);
+    createFixtureSchema(sqlite);
     sqlite.exec(SEED);
     db = drizzle({ client: sqlite, relations });
   });

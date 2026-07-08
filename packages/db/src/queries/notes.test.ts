@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { createFixtureSchema } from "@/test-utils";
 
 import { getTrashedNoteItemIDs } from "./notes";
 
@@ -39,26 +40,8 @@ describe("getTrashedNoteItemIDs", () => {
 });
 
 function seed(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table items (
-      itemID integer primary key,
-      itemTypeID integer not null,
-      dateAdded text not null,
-      dateModified text not null,
-      libraryID integer not null,
-      key text not null
-    );
-    create table itemNotes (
-      itemID integer primary key,
-      parentItemID integer,
-      note text,
-      title text
-    );
-    create table deletedItems (
-      itemID integer primary key,
-      dateDeleted text not null
-    );
-
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
         (100, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'LIVE'),
