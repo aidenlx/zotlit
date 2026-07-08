@@ -2,6 +2,7 @@
 import { type ItemDate } from "@/lib/zt-date";
 import { type Item } from "@/queries/items";
 
+import { cslToTemplateItem } from "./zt-csl";
 import {
   itemToTemplateBaseData,
   type TemplateCreator,
@@ -78,7 +79,7 @@ export interface CiteRef {
   /**
    * The cited item's data, when resolved: the live DB row, or already-narrowed
    * data from a fallback leg (e.g. the embedded CSL-JSON snapshot, via
-   * {@link cslToTemplateItem}). A citekey-only stub otherwise.
+   * {@link resolveCitedItem}). A citekey-only stub otherwise.
    */
   item?: Item | TemplateCiteItemData;
   locator?: string | null;
@@ -172,6 +173,36 @@ export function narrowBaseDataToCiteItemData(
     ...rest
   } = base;
   return { ...rest, citationKey, citekey: citationKey };
+}
+
+/**
+ * The three-tier Citation item-data policy (ADR-0003), as one named function:
+ * the live DB row wins, else the note's embedded CSL-JSON snapshot, else a
+ * citekey-only stub. The already-resolved citation key — which may originate in
+ * a different tier than the item data (e.g. an embedded-snapshot key over live
+ * DB data) — is stamped onto whichever tier supplies the data.
+ *
+ * The note-import parser leg calls this after fetching the live row and locating
+ * the embedded snapshot; other legs build their {@link CiteRef} `item` directly.
+ *
+ * @param dbItem - the cited item's live DB row, when one was found
+ * @param snapshot - the note's embedded CSL-JSON `itemData` for this ref, when present
+ * @param citationKey - the ref's already-resolved citation key
+ */
+export function resolveCitedItem(
+  dbItem: Item | undefined,
+  snapshot: Record<string, unknown> | undefined,
+  citationKey: string | null,
+): TemplateCiteItemData {
+  if (dbItem) return narrowToCiteItemData(dbItem, citationKey);
+  if (snapshot) {
+    return {
+      ...cslToTemplateItem(snapshot),
+      citationKey,
+      citekey: citationKey,
+    };
+  }
+  return stubCiteItem(citationKey);
 }
 
 function stubCiteItem(citationKey: string | null): TemplateCiteItemData {

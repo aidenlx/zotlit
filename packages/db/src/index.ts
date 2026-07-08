@@ -89,13 +89,13 @@ export {
   citekeysToCiteTemplateData,
   DEFAULT_LOCATOR_LABEL_SHORT,
   narrowBaseDataToCiteItemData,
+  resolveCitedItem,
   type CitationTemplateData,
   type CitationTemplateItem,
   type CiteRef,
   type ResolvedCiteRef,
   type TemplateCiteItemData,
 } from "./lib/context/zt-template-cite";
-export { cslToTemplateItem } from "./lib/context/zt-csl";
 export {
   attachmentToTemplateData,
   type TemplateAttachment,
