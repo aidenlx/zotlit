@@ -19,17 +19,19 @@ import { type ImportMode } from "@zotlit/protocol";
 
 import { getLogger } from "@/lib/log";
 import * as m from "@/paraglide/messages";
+import {
+  type BatchClassifyControls,
+  type BatchRunControls,
+  type BatchRunResult,
+  classifyChunked,
+  runBatchWrite,
+} from "@/services/batch-run";
 import { type DatabaseService } from "@/services/database/service";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type TemplateService } from "@/services/template/service";
 import {
-  type BatchClassifyControls,
-  type BatchRunControls,
-  type BatchRunResult,
-  classifyChunked,
-  executeBatchRun,
   FlatManifest,
   type FlatTask,
   HierarchyManifest,
@@ -435,17 +437,16 @@ async function executeImportRun(
     deps.settings.loaded,
     deps.template.ready,
   ]);
-  using lease = await deps.db.acquireRead();
-  const client = lease.client;
   const memo: GroupIDMemo = new Map();
   const tagMemo: TagMemo = new Map();
   const attachmentFolderCache = new Map<string, string>();
 
-  const result = await executeBatchRun({
+  const result = await runBatchWrite({
+    db: deps.db,
     tasks: actions.map((a) => ({ ...a, id: a.note.itemID })),
     controls,
     concurrency: IMPORT_CONCURRENCY,
-    run: async (task) => {
+    run: async (task, client) => {
       const note = getNoteByItemID(client, task.note.itemID, { memo });
       if (!note) {
         logger.warn("Imported note vanished before import; skipped", {

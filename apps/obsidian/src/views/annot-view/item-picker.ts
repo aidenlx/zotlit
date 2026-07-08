@@ -11,7 +11,7 @@ import { type SettingsService } from "@/services/settings/service";
 
 export interface ItemPickerDeps {
   app: App;
-  lookup: ItemLookup;
+  lookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
 }
 

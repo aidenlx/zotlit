@@ -1,6 +1,6 @@
 import * as m from "@/paraglide/messages";
 // Pure BatchImportResult → user-facing string mappings for notices and toasts.
-import { type BatchRunResult } from "@/views/batch-modal";
+import { type BatchRunResult } from "@/services/batch-run";
 
 import { type BatchImportResult } from "./batch-import";
 

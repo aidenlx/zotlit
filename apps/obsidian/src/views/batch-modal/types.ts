@@ -1,7 +1,19 @@
 // Contracts shared between the batch-modal shell and its pluggable bodies.
-import { type BatchFailure } from "./dom";
 
-export type { BatchFailure };
+// The classify/run contract is owned by the batch-run service (the leaf that
+// drives it); re-exported here so modal code keeps a single import surface.
+import {
+  type BatchClassifyControls,
+  type BatchRunControls,
+  type BatchRunResult,
+} from "@/services/batch-run";
+
+export type {
+  BatchClassifyControls,
+  BatchFailure,
+  BatchRunControls,
+  BatchRunResult,
+} from "@/services/batch-run";
 
 /** Counts the manifest exposes so the shell can phrase its phase copy. */
 export interface BatchCounts {
@@ -89,35 +101,6 @@ export interface BatchModalText {
   failedHeader?: (args: { count: number }) => string;
   /** @default "Close" */
   closeButton?: string;
-}
-
-export interface BatchClassifyControls {
-  /** Reports how many ids have been classified, driving the loading bar against
-   * the total passed at construction. */
-  onProgress: (classified: number) => void;
-  signal: AbortSignal;
-}
-
-export interface BatchRunControls {
-  /** Reports a single row reaching a terminal state. The shell owns the running
-   * counts and flips the row in place; aborted queued work never settles. */
-  onItemSettled: (
-    event:
-      | { id: number; status: "done" }
-      | { id: number; status: "skipped" }
-      | { id: number; status: "failed"; failure: BatchFailure },
-  ) => void;
-  signal: AbortSignal;
-}
-
-export interface BatchRunResult {
-  created: number;
-  updated: number;
-  /** Rows that settled without writing (e.g. an import whose file already
-   * existed). `0` for operations with no skip path, like batch update. */
-  skipped: number;
-  failed: number;
-  cancelled: boolean;
 }
 
 export interface BatchModalOptions {
