@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
+import { createFixtureSchema } from "@/test-utils";
 
 import { CHILD_ITEM_TYPES } from "./_shared";
 
@@ -90,46 +91,8 @@ describe("relations.ts", () => {
 });
 
 function seed(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table itemTypes (
-      itemTypeID integer primary key,
-      typeName text
-    );
-    create table libraries (
-      libraryID integer primary key,
-      type text not null
-    );
-    create table items (
-      itemID integer primary key,
-      itemTypeID integer not null,
-      dateAdded text not null,
-      dateModified text not null,
-      libraryID integer not null,
-      key text not null
-    );
-    create table itemAttachments (
-      itemID integer primary key,
-      parentItemID integer,
-      contentType text
-    );
-    create table itemAnnotations (
-      itemID integer primary key,
-      parentItemID integer not null,
-      type integer not null,
-      authorName text,
-      text text,
-      comment text,
-      color text,
-      pageLabel text,
-      sortIndex text not null,
-      position text not null,
-      isExternal integer not null
-    );
-    create table deletedItems (
-      itemID integer primary key,
-      dateDeleted text not null
-    );
-
     insert into itemTypes (itemTypeID, typeName) values
       (1, 'journalArticle'),
       (2, 'attachment'),

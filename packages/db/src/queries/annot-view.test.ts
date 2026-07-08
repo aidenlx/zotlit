@@ -4,61 +4,12 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { createFixtureSchema } from "@/test-utils";
 
 import { getAnnotViewAnnotations, getAnnotViewAttachments } from "./annot-view";
 
-const DDL = `
-  create table libraries (libraryID integer primary key, type text not null);
-  create table items (
-    itemID integer primary key,
-    itemTypeID integer not null default 0,
-    dateAdded text not null default '',
-    dateModified text not null default '',
-    clientDateModified text not null default '',
-    libraryID integer not null,
-    key text not null,
-    version integer not null default 0,
-    synced integer not null default 0
-  );
-  create table itemAttachments (
-    itemID integer primary key,
-    parentItemID integer,
-    linkMode integer,
-    contentType text,
-    charsetID integer,
-    path text,
-    syncState integer default 0,
-    storageModTime integer,
-    storageHash text,
-    lastProcessedModificationTime integer,
-    lastRead integer
-  );
-  create table itemAnnotations (
-    itemID integer primary key,
-    parentItemID integer not null,
-    type integer not null,
-    authorName text,
-    text text,
-    comment text,
-    color text,
-    pageLabel text,
-    sortIndex text not null,
-    position text not null,
-    isExternal integer not null default 0
-  );
-  create table deletedItems (
-    itemID integer primary key,
-    dateDeleted text not null default ''
-  );
-  create table tags (tagID integer primary key, name text not null);
-  create table itemTags (
-    itemID integer not null,
-    tagID integer not null,
-    type integer not null default 0,
-    primary key (itemID, tagID)
-  );
-
-  insert into libraries values (1, 'user');
+const INSERTS = `
+  insert into libraries (libraryID, type) values (1, 'user');
 
   insert into items (itemID, libraryID, key) values (100, 1, 'DOCITEM1');
 
@@ -84,7 +35,8 @@ let db: NodeDatabaseClient;
 
 beforeEach(() => {
   sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(DDL);
+  createFixtureSchema(sqlite);
+  sqlite.exec(INSERTS);
   db = drizzle({ client: sqlite, relations });
 });
 
