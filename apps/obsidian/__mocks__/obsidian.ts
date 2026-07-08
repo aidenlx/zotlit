@@ -17,8 +17,8 @@ import {
   type Modifier,
 } from "obsidian";
 
-// Obsidian exposes `sleep` as a runtime global; classify loops await it to yield
-// between chunks. Provide it for tests that exercise that code path.
+// Obsidian exposes `sleep` as a runtime global; toast durations await it.
+// Provide it for tests that exercise that code path.
 globalThis.sleep ??= (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 

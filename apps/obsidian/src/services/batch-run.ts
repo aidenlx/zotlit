@@ -1,11 +1,11 @@
 // Lease-pinned batch write runner over the concurrent classify/execute primitives.
-import { delay } from "@std/async";
 import { chunk } from "@std/collections/chunk";
 import pLimit from "p-limit";
 
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { AbortError } from "@/lib/abort-error";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { formatErrorMessage } from "@/lib/toast";
 import { type DatabaseService } from "@/services/database/service";
 
@@ -64,7 +64,7 @@ export async function classifyChunked(
     processSlice(slice);
     classified += slice.length;
     controls.onProgress(classified);
-    await delay(0);
+    await yieldToMain();
   }
 }
 

@@ -100,6 +100,8 @@ it — the service test asserts the event and mocks no UI.)
 
 `function sleep(ms: number): Promise<void>` is an Obsidian global (see `packages/obsidian-api/obsidian.d.ts`); it doesn't exist in Node. If module need to work in tests, use `delay` from `@std/async` instead.
 
+For a macrotask yield between chunks of synchronous work (not a timed wait), use `yieldToMain` from `@/lib/yield-to-main` instead of `sleep(0)`/`delay(0)`: it runs as a `MessageChannel` message task, so it isn't clamped/throttled in hidden or occluded windows the way timer-based yields are, and it works identically under Node (Vitest) with no mock needed.
+
 ## Extended Obsidian APIs
 
 When the plugin uses private Obsidian runtime APIs that are missing from

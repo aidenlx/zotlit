@@ -22,7 +22,6 @@
  * abandon any in-flight build and search hydration bound to the old library, and
  * drops the cache so the new library builds from scratch.
  */
-import { delay } from "@std/async";
 import { chunk } from "@std/collections/chunk";
 import { getLanguage } from "obsidian";
 
@@ -47,6 +46,7 @@ import {
 } from "@zotlit/item-lookup";
 
 import { getLogger } from "@/lib/log";
+import { yieldToMain } from "@/lib/yield-to-main";
 import {
   DatabaseError,
   type DatabaseService,
@@ -382,8 +382,7 @@ export class ItemLookup extends Service<void> {
         return null;
       }
       builder.add(await this.#loadItems(client, ids));
-      // Macrotask yield so the UI can paint between index chunks.
-      await delay(0);
+      await yieldToMain();
     }
     if (generation !== this.#generation) {
       logger.debug("Item index build abandoned post-chunks; library switched", {
