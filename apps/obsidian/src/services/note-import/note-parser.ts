@@ -8,15 +8,14 @@ import {
   annotationColorToName,
   annotationOpenUri,
   attachmentToTemplateData,
-  cslToTemplateItem,
   DEFAULT_LOCATOR_LABEL_SHORT,
   getAttachmentByKey,
   getItemsByKey,
   getLibraryByGroupID,
+  resolveCitedItem,
   type CitationItem,
   type Item,
   type ResolvedCiteRef,
-  type TemplateCiteItemData,
   type ZoteroRef,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -225,9 +224,14 @@ function resolveCitation(
             dbItemMapKey(citedLibraryID(item.ref, deps), item.ref.key),
           )
         : undefined;
+      const citationKey = resolveCitekey(item, dbItem, deps.citationMap);
       return {
-        citationKey: resolveCitekey(item, dbItem, deps.citationMap),
-        item: dbItem ?? resolveEmbeddedItem(item, deps.citationSnapshots),
+        citationKey,
+        item: resolveCitedItem(
+          dbItem,
+          findEmbeddedSnapshot(item, deps.citationSnapshots),
+          citationKey,
+        ),
         locator: item.locator ?? null,
         label: item.label ?? null,
         labelShort: pandocLocatorLabel(item.label),
@@ -333,18 +337,18 @@ function resolveCitekey(
 }
 
 /**
- * Resolve a cited item's data from the note's embedded CSL-JSON snapshot,
- * when the live DB has no row for it (cross-library cite, degraded DB). Tried
- * against every URI of the citation item, mirroring {@link resolveCitekey}'s
- * embedded-map lookup.
+ * The note's embedded CSL-JSON snapshot for a cited item — the item-data
+ * fallback {@link resolveCitedItem} narrows when the live DB has no row
+ * (cross-library cite, degraded DB). Tried against every URI of the citation
+ * item, mirroring {@link resolveCitekey}'s embedded-map lookup.
  */
-function resolveEmbeddedItem(
+function findEmbeddedSnapshot(
   item: CitationItem,
   snapshots: ReadonlyMap<string, Record<string, unknown>>,
-): TemplateCiteItemData | undefined {
+): Record<string, unknown> | undefined {
   for (const uri of item.uris) {
     const itemData = snapshots.get(uri);
-    if (itemData) return cslToTemplateItem(itemData);
+    if (itemData) return itemData;
   }
   return undefined;
 }

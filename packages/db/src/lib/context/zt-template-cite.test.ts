@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { makeItem } from "@/test-utils";
 
-import { citekeysToCiteTemplateData } from "./zt-template-cite";
+import {
+  citekeysToCiteTemplateData,
+  resolveCitedItem,
+} from "./zt-template-cite";
 
 describe("citekeysToCiteTemplateData", () => {
   it("wraps each citekey in a citekey-only stub item at default citation props", () => {
@@ -150,6 +153,61 @@ describe("citekeysToCiteTemplateData", () => {
         citekey: "Embedded2020",
         title: "Stated choice methods",
       });
+    });
+  });
+});
+
+describe("resolveCitedItem (three-tier Citation policy)", () => {
+  const snapshot = {
+    id: "http://zotero.org/users/local/x/items/KX67D9YM",
+    type: "article-journal",
+    title: "Embedded title",
+    "citation-key": "SnapKey",
+  };
+
+  it("tier 1 — the live DB row wins over an embedded snapshot", () => {
+    const item = makeItem({
+      itemType: "journalArticle",
+      title: "Live DB title",
+    });
+
+    const resolved = resolveCitedItem(item, snapshot, "Hensher2011");
+
+    expect(resolved).toMatchObject({
+      citationKey: "Hensher2011",
+      citekey: "Hensher2011",
+      title: "Live DB title",
+    });
+  });
+
+  it("tier 2 — the embedded snapshot resolves when no DB row, ref citekey overrides the snapshot's own", () => {
+    const resolved = resolveCitedItem(undefined, snapshot, "RefKey");
+
+    expect(resolved).toMatchObject({
+      title: "Embedded title",
+      itemType: "journalArticle",
+      citationKey: "RefKey",
+      citekey: "RefKey",
+    });
+  });
+
+  it("tier 3 — a citekey-only stub when neither DB row nor snapshot is present", () => {
+    const resolved = resolveCitedItem(undefined, undefined, "OnlyKey");
+
+    expect(resolved).toMatchObject({
+      citationKey: "OnlyKey",
+      citekey: "OnlyKey",
+      itemType: null,
+      title: null,
+      creators: [],
+      date: null,
+    });
+  });
+
+  it("carries a null citekey through the stub (unresolvable ref)", () => {
+    expect(resolveCitedItem(undefined, undefined, null)).toMatchObject({
+      citationKey: null,
+      citekey: null,
     });
   });
 });
