@@ -12,16 +12,15 @@ import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
 import * as m from "@/paraglide/messages";
-import { type Settings } from "@/services/settings/schema";
 import {
-  BatchModal,
   type BatchClassifyControls,
   type BatchRunControls,
   type BatchRunResult,
   classifyChunked,
-  executeBatchRun,
-  FlatManifest,
-} from "@/views/batch-modal";
+  runBatchWrite,
+} from "@/services/batch-run";
+import { type Settings } from "@/services/settings/schema";
+import { BatchModal, FlatManifest } from "@/views/batch-modal";
 
 import { type UpdateScope } from "./operations";
 import { type SingleUpdateDeps, updateNote } from "./update-single";
@@ -213,9 +212,9 @@ async function executeBatchActions(
     deps.noteFeature.ready,
   ]);
 
-  using lease = await deps.db.acquireRead();
-  const run: RunContext = {
-    client: lease.client,
+  // Per-run caches + scope span the whole batch; only `client` varies per call
+  // (threaded from the pinned lease), so build the invariant context once.
+  const baseContext: Omit<RunContext, "client"> = {
     settings,
     groupIdMemo: new Map(),
     collectionCache: new CollectionCache(),
@@ -223,12 +222,13 @@ async function executeBatchActions(
     scope,
   };
 
-  const result = await executeBatchRun({
+  const result = await runBatchWrite({
+    db: deps.db,
     tasks: actions.map((a) => ({ ...a, id: a.itemID })),
     controls,
     concurrency: 32,
-    run: async (task) => {
-      await runAction(deps, task, run);
+    run: async (task, client) => {
+      await runAction(deps, task, { ...baseContext, client });
       return task.kind === "create" ? "created" : "updated";
     },
     onTaskFailed: (task, error) => {

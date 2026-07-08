@@ -3,14 +3,9 @@ import { type App, Modal, Setting, setIcon } from "obsidian";
 import { BaseNotice } from "@/lib/notice";
 import { cn } from "@/lib/utils";
 import * as m from "@/paraglide/messages";
+import { type BatchFailure } from "@/services/batch-run";
 
-import {
-  type BatchFailure,
-  failureRow,
-  ICON_CLS,
-  section,
-  SECTION_SUMMARY_CLS,
-} from "./dom";
+import { failureRow, ICON_CLS, section, SECTION_SUMMARY_CLS } from "./dom";
 import {
   type BatchManifest,
   type BatchModalOptions,

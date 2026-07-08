@@ -1,15 +1,48 @@
-// Shared batch-run and classify scaffolds for modal executors.
+// Lease-pinned batch write runner over the concurrent classify/execute primitives.
+import { delay } from "@std/async";
 import { chunk } from "@std/collections/chunk";
 import pLimit from "p-limit";
 
+import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+
 import { AbortError } from "@/lib/abort-error";
 import { formatErrorMessage } from "@/lib/toast";
+import { type DatabaseService } from "@/services/database/service";
 
-import {
-  type BatchClassifyControls,
-  type BatchRunControls,
-  type BatchRunResult,
-} from "./types";
+/** A failed-item payload the run reports; rendered by the modal's failure row. */
+export interface BatchFailure {
+  label: string;
+  message: string;
+}
+
+export interface BatchClassifyControls {
+  /** Reports how many ids have been classified, driving the loading bar against
+   * the total passed at construction. */
+  onProgress: (classified: number) => void;
+  signal: AbortSignal;
+}
+
+export interface BatchRunControls {
+  /** Reports a single row reaching a terminal state. The shell owns the running
+   * counts and flips the row in place; aborted queued work never settles. */
+  onItemSettled: (
+    event:
+      | { id: number; status: "done" }
+      | { id: number; status: "skipped" }
+      | { id: number; status: "failed"; failure: BatchFailure },
+  ) => void;
+  signal: AbortSignal;
+}
+
+export interface BatchRunResult {
+  created: number;
+  updated: number;
+  /** Rows that settled without writing (e.g. an import whose file already
+   * existed). `0` for operations with no skip path, like batch update. */
+  skipped: number;
+  failed: number;
+  cancelled: boolean;
+}
 
 const CLASSIFY_CHUNK_SIZE = 50;
 
@@ -31,7 +64,7 @@ export async function classifyChunked(
     processSlice(slice);
     classified += slice.length;
     controls.onProgress(classified);
-    await sleep(0);
+    await delay(0);
   }
 }
 
@@ -109,5 +142,36 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
     }
   }
   result.cancelled = controls.signal.aborted && completed < tasks.length;
+  return result;
+}
+
+/**
+ * Run a batch of write tasks under a single database read lease held for the
+ * whole run, so every task's `run` sees one pinned client snapshot instead of a
+ * client a refresh swap could close mid-run. The lease is released on success,
+ * failure, and abort alike (scope-bound `using`). Callers create their per-run
+ * memoized fetch caches before this call and close over them in `run`; the
+ * pinned `client` is threaded to each task.
+ *
+ * @throws {@link DatabaseError} when the service is degraded (no lease acquired).
+ */
+export async function runBatchWrite<T extends BatchRunTask>(opts: {
+  db: Pick<DatabaseService, "acquireRead">;
+  tasks: readonly T[];
+  controls: BatchRunControls;
+  concurrency: number;
+  run: (task: T, client: NodeDatabaseClient) => Promise<RunOutcome>;
+  onTaskFailed?: (task: T, error: unknown) => void;
+}): Promise<BatchRunResult> {
+  using lease = await opts.db.acquireRead();
+  // Awaited inside the `using` scope so the lease stays pinned until every task
+  // settles; returning the pending promise would dispose the lease early.
+  const result = await executeBatchRun({
+    tasks: opts.tasks,
+    controls: opts.controls,
+    concurrency: opts.concurrency,
+    run: (task) => opts.run(task, lease.client),
+    onTaskFailed: opts.onTaskFailed,
+  });
   return result;
 }
