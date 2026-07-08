@@ -166,7 +166,7 @@ describe("PUT /literature-notes", () => {
     });
 
     expect(res.status).toBe(204);
-    // The handler decouples emission via delay(0); flush a tick.
+    // The handler decouples emission via yieldToMain(); flush a tick.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onUpdateMany).toHaveBeenCalledWith({
       items: [1, 2, 3],

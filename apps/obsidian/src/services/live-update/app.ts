@@ -1,6 +1,5 @@
 // Hono app for the companion-facing HTTP listener: gates + routes, no server lifecycle.
 import { vValidator } from "@hono/valibot-validator";
-import { delay } from "@std/async";
 import { type Context, type Next } from "hono";
 import { Hono } from "hono/tiny";
 
@@ -17,6 +16,7 @@ import {
 } from "@zotlit/protocol";
 
 import { getLogger } from "@/lib/log";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
 
 const logger = getLogger("live-update");
@@ -110,7 +110,7 @@ export function createLiveUpdateApp(deps: LiveUpdateAppDeps): Hono {
         });
         // Decouple from the event loop to avoid the handler from blocking
         // the main thread and let the response finish first.
-        void delay(0).then(() => {
+        void yieldToMain().then(() => {
           deps.onUpdateMany({ items: body.items, scope: body.scope });
         });
         return c.body(null, 204);
@@ -131,7 +131,7 @@ export function createLiveUpdateApp(deps: LiveUpdateAppDeps): Hono {
           items: body.items.length,
           mode: body.mode,
         });
-        void delay(0).then(() => {
+        void yieldToMain().then(() => {
           deps.onImportNotes({ items: body.items, mode: body.mode });
         });
         return c.body(null, 204);

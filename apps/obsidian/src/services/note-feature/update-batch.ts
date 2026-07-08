@@ -174,7 +174,7 @@ async function classifyActions(
   controls: BatchClassifyControls,
 ): Promise<{ actions: BatchAction[]; notFound: NotFoundEntry[] }> {
   // Pin the client for the chunked loop's whole async lifetime so a concurrent
-  // refresh cannot swap it out between `await sleep(0)` yields.
+  // refresh cannot swap it out between `yieldToMain()` yields.
   using lease = await deps.db.acquireRead();
   const client = lease.client;
   const groupIdMemo: GroupIDMemo = new Map();
