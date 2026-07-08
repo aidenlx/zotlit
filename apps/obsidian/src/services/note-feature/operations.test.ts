@@ -2,6 +2,7 @@ import { type FileManager, TFile, TFolder } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  CollectionCache,
   fetchAnnotationsTemplateData,
   fetchNoteContext,
   getAnnotationsByItemId,
@@ -17,12 +18,26 @@ import { createClient } from "@zotlit/db/client/node";
 import { Temporal } from "@zotlit/shared/temporal";
 import { filenameSuffix, TemplateEngine } from "@zotlit/templates";
 import defaultCite from "@zotlit/templates/defaults/cite?raw";
+import {
+  compileFrontmatterFields,
+  type CompiledFrontmatterField,
+} from "@zotlit/templates/frontmatter";
+import {
+  formatManagedRegion,
+  MARKER_END,
+  MARKER_START,
+} from "@zotlit/templates/obsidian";
 import { type ItemFields } from "@zotlit/zotero-types";
 
+import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 
 import { type NoteFeatureDeps, type SyncRenderDeps } from "./context";
-import { createNoteFeature } from "./operations";
+import {
+  createNoteFeature,
+  type NoteFeature,
+  type UpdateScope,
+} from "./operations";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
@@ -523,6 +538,401 @@ describe("overwriteNote", () => {
     expect(processedContent).toBe(
       "---\r\nzotero-key: ROOT1234\r\n---\r\nNew body content",
     );
+  });
+});
+
+/**
+ * A note-update harness whose `vault.process` and `fileManager.processFrontMatter`
+ * actually run their callbacks against mutable in-memory state, so a test can
+ * assert on the note's rewritten body and frontmatter after an update — the seam
+ * `updateNote` / `writeNoteUpdate` write through.
+ */
+interface UpdateHarness {
+  deps: SyncRenderDeps;
+  /** Note body after the update (byte-identical to what was written). */
+  content: () => string;
+  frontmatter: () => Record<string, unknown>;
+  /** The `content`-template render stub; assert it stays unqueued when no region exists. */
+  renderContent: ReturnType<typeof vi.fn>;
+  processMock: ReturnType<typeof vi.fn>;
+  frontmatterMock: ReturnType<typeof vi.fn>;
+}
+
+function makeUpdateHarness(options: {
+  content: string;
+  frontmatter?: Record<string, unknown>;
+  /** What `render("content", …)` returns — already region-wrapped, as the real
+   *  engine's transformRender emits. @default a fresh `NEW BODY` region */
+  renderedRegion?: string;
+  frontmatterFields?: readonly CompiledFrontmatterField[];
+}): UpdateHarness {
+  let content = options.content;
+  const fm: Record<string, unknown> = { ...options.frontmatter };
+  const renderContent = vi.fn(
+    () => options.renderedRegion ?? formatManagedRegion("NEW BODY"),
+  );
+  const processMock = vi.fn(
+    async (_file: TFile, cb: (data: string) => string) => {
+      content = cb(content);
+      return content;
+    },
+  );
+  const frontmatterMock = vi.fn(
+    async (_file: TFile, cb: (fm: Record<string, unknown>) => void) => {
+      cb(fm);
+    },
+  );
+
+  const template: SyncRenderDeps["template"] = {
+    ready: Promise.resolve(),
+    loaded: true,
+    frontmatterFields: options.frontmatterFields ?? [],
+    renderFilename: () => "",
+    render: <T extends object>(name: string, _data: T): string =>
+      name === "content" ? renderContent() : "",
+  };
+
+  const deps: SyncRenderDeps = {
+    app: {
+      vault: {
+        getAbstractFileByPath: () => null,
+        getRoot: () => new TFolder(),
+        createFolder: vi.fn(),
+        create: vi.fn(),
+        process: processMock,
+      },
+      fileManager: {
+        generateMarkdownLink: () => "",
+        processFrontMatter: frontmatterMock,
+      },
+    },
+    template,
+    db: makeDb(),
+    noteIndex: {
+      ready: Promise.resolve(),
+      whenIndexed: async () => {},
+      getNotesByItemKey: () => [],
+      getNotesByCitekey: () => [],
+    },
+    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+    settings: makeSettings(),
+    attachmentImport: {
+      prepare: async () => ({
+        resolveLink: () => () => "",
+        flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
+      }),
+    },
+    noteImport: {
+      prepare: async () => ({
+        resolveChildNote: () => ({ key: "", title: null, noteLink: () => "" }),
+        flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+      }),
+    },
+  };
+
+  return {
+    deps,
+    content: () => content,
+    frontmatter: () => fm,
+    renderContent,
+    processMock,
+    frontmatterMock,
+  };
+}
+
+/** Context the (mocked) `fetchNoteContext` hands back for an update. */
+function updateContext(
+  overrides: Partial<NoteTemplateContext> = {},
+): NoteTemplateContext {
+  return {
+    indexedKey: "ABC12345",
+    citationKey: "smith2024",
+    title: "A Study",
+    relatedItems: [],
+    ...overrides,
+  } as unknown as NoteTemplateContext;
+}
+
+/** Point the indexedKey lookup path at a resolvable item returning `context`. */
+function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
+  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
+    key: "ABC12345",
+    libraryID: 1,
+  });
+  vi.mocked(getItemsByKey).mockReturnValue([
+    makeItem({
+      key: "ABC12345",
+      indexedKey: "ABC12345",
+      title: "A Study",
+      citationKey: "smith2024",
+    }),
+  ]);
+  vi.mocked(fetchNoteContext).mockReturnValue(context);
+}
+
+describe("updateNote", () => {
+  it("preserves user content outside the managed region, replacing only the region body", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const prefix = "# My reading notes\n\nSome prose I wrote above.\n\n";
+    const suffix = "\n\n## My thoughts\n\nMore prose I wrote below.";
+    const harness = makeUpdateHarness({
+      content: `${prefix}${formatManagedRegion("OLD rendered body")}${suffix}`,
+      renderedRegion: formatManagedRegion("NEW rendered body"),
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.content()).toBe(
+      `${prefix}${formatManagedRegion("NEW rendered body")}${suffix}`,
+    );
+    expect(harness.content().startsWith(prefix)).toBe(true);
+    expect(harness.content().endsWith(suffix)).toBe(true);
+    expect(harness.content()).not.toContain("OLD rendered body");
+    expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
+  });
+
+  it("preserves CRLF user content around the region", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const prefix = "# Title\r\n\r\nUser prose.\r\n";
+    const suffix = "\r\nTrailing user prose.\r\n";
+    const harness = makeUpdateHarness({
+      content: `${prefix}${formatManagedRegion("OLD")}${suffix}`,
+      renderedRegion: formatManagedRegion("NEW"),
+    });
+
+    await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.content()).toBe(
+      `${prefix}${formatManagedRegion("NEW")}${suffix}`,
+    );
+  });
+
+  it("leaves the body untouched for scope 'metadata' while refreshing frontmatter", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
+    const harness = makeUpdateHarness({
+      content: original,
+      frontmatter: { status: "reading" },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345", scope: "metadata" },
+    );
+
+    expect(harness.content()).toBe(original);
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.renderContent).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).toHaveBeenCalledOnce();
+    expect(harness.frontmatter()).toEqual({
+      status: "reading",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_CITEKEY]: "smith2024",
+    });
+    expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+  });
+
+  it("re-evaluates managed frontmatter fields and preserves unmanaged user keys", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        status: "reading",
+        [FIELD_ZOTERO_KEY]: "STALEKEY",
+        title: "Old title",
+      },
+      frontmatterFields: compileFrontmatterFields([
+        { key: "title", expr: "zt.title", merge: "replace" },
+      ]),
+    });
+
+    await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.frontmatter()).toEqual({
+      status: "reading",
+      title: "A Study",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_CITEKEY]: "smith2024",
+    });
+  });
+
+  it("defers the content render and reports no update when the note has no managed region", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const original = "# Just user content\n\nNo managed region here.";
+    const harness = makeUpdateHarness({ content: original });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.content()).toBe(original);
+    expect(harness.renderContent).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).toHaveBeenCalledOnce();
+    expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+  });
+
+  it("leaves the note untouched when the markers are unbalanced (start only)", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const original = `before\n${MARKER_START}\nOLD\nafter`;
+    const harness = makeUpdateHarness({ content: original });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.content()).toBe(original);
+    expect(harness.renderContent).not.toHaveBeenCalled();
+    expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+  });
+
+  it("leaves the note untouched when the markers are unbalanced (end only)", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const original = `before\nOLD\n${MARKER_END}\nafter`;
+    const harness = makeUpdateHarness({ content: original });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.content()).toBe(original);
+    expect(harness.renderContent).not.toHaveBeenCalled();
+    expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+  });
+
+  it("replaces only the first of multiple managed regions and counts the rest", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const region = formatManagedRegion("OLD");
+    const harness = makeUpdateHarness({
+      content: `${region}\nmid\n${region}\nend\n${region}`,
+      renderedRegion: formatManagedRegion("NEW"),
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.content()).toBe(
+      `${formatManagedRegion("NEW")}\nmid\n${region}\nend\n${region}`,
+    );
+    expect(harness.renderContent).toHaveBeenCalledOnce();
+    expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 2 });
+  });
+
+  it("drops the citekey field when the item has no citation key", async () => {
+    const context = updateContext({ citationKey: null });
+    stubIndexedKeyUpdate(context);
+
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_CITEKEY]: "stale2020" },
+    });
+
+    await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(FIELD_CITEKEY in harness.frontmatter()).toBe(false);
+    expect(harness.frontmatter()[FIELD_ZOTERO_KEY]).toBe("ABC12345");
+  });
+
+  it("rejects without touching the file when the indexed key resolves to no item", async () => {
+    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue(null);
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+
+    await expect(
+      createNoteFeature(harness.deps).updateNote(
+        makeFile("Literature/Root.md"),
+        { indexedKey: "MISSING1" },
+      ),
+    ).rejects.toThrow("Zotero item not found: MISSING1");
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("writeNoteUpdate", () => {
+  const writeOptions = (
+    scope?: UpdateScope,
+  ): Parameters<NoteFeature["writeNoteUpdate"]>[1] => ({
+    client: makeDb().client,
+    item: makeItem({
+      key: "ABC12345",
+      indexedKey: "ABC12345",
+      title: "A Study",
+      citationKey: "smith2024",
+    }),
+    tagMemo: new Map(),
+    collectionCache: new CollectionCache(),
+    settings: { ...settingsDefaults, "note.literature-folder": "Literature" },
+    scope,
+  });
+
+  it("replaces the region and preserves user content from the already-fetched item", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+
+    const prefix = "user prefix\n\n";
+    const suffix = "\n\nuser suffix";
+    const harness = makeUpdateHarness({
+      content: `${prefix}${formatManagedRegion("OLD")}${suffix}`,
+      renderedRegion: formatManagedRegion("NEW"),
+    });
+
+    const result = await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Literature/Root.md"),
+      writeOptions(),
+    );
+
+    expect(harness.content()).toBe(
+      `${prefix}${formatManagedRegion("NEW")}${suffix}`,
+    );
+    expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
+  });
+
+  it("honors scope 'metadata' by leaving the body untouched", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+
+    const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
+    const harness = makeUpdateHarness({ content: original });
+
+    const result = await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Literature/Root.md"),
+      writeOptions("metadata"),
+    );
+
+    expect(harness.content()).toBe(original);
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).toHaveBeenCalledOnce();
+    expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
   });
 });
 

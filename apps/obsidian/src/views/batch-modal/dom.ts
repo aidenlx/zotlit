@@ -2,6 +2,7 @@
 import { setIcon } from "obsidian";
 
 import { cn } from "@/lib/utils";
+import { type BatchFailure } from "@/services/batch-run";
 
 export type RowStatus = "pending" | "done" | "skipped" | "failed";
 
@@ -102,11 +103,6 @@ export function listGroup(parent: HTMLElement, group: StaticGroup): void {
     icon.addClass(group.colorCls);
     setIcon(icon, group.icon);
   }
-}
-
-export interface BatchFailure {
-  label: string;
-  message: string;
 }
 
 /** A failed-item row: an x-icon + truncated label, with the error message on a

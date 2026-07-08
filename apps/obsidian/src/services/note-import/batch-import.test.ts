@@ -46,17 +46,16 @@ const openedModals: BatchModalOptions[] = [];
 /** Stub for the view port's overwrite confirm; controlled per overwrite test. */
 const confirmMock = vi.fn();
 
-vi.mock("@/views/batch-modal", async () => {
-  const run = await vi.importActual<typeof import("@/views/batch-modal/run")>(
-    "@/views/batch-modal/run",
-  );
+// Stub only the DOM-bound manifests so classify/run drive the real batch-run
+// mechanics (imported from @/services/batch-run, left unmocked) headlessly.
+vi.mock("@/views/batch-modal", () => {
   class FlatManifest {
     constructor(readonly options: unknown) {}
   }
   class HierarchyManifest {
     constructor(readonly options: unknown) {}
   }
-  return { ...run, FlatManifest, HierarchyManifest };
+  return { FlatManifest, HierarchyManifest };
 });
 
 function classifyControls(): BatchClassifyControls {
