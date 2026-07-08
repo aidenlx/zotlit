@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
+import { createFixtureSchema } from "@/test-utils";
 
 import { getAttachmentByKey, getAttachmentsByParents } from "./attachments";
 
@@ -90,31 +91,8 @@ describe("getAttachmentByKey", () => {
 });
 
 function seed(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table items (
-      itemID integer primary key,
-      itemTypeID integer not null,
-      dateAdded text not null,
-      dateModified text not null,
-      libraryID integer not null,
-      key text not null
-    );
-    create table itemAttachments (
-      itemID integer primary key,
-      parentItemID integer,
-      linkMode integer,
-      contentType text,
-      path text
-    );
-    create table deletedItems (
-      itemID integer primary key,
-      dateDeleted text not null
-    );
-    create table groups (
-      groupID integer primary key,
-      libraryID integer not null
-    );
-
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
         (100, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'PARA'),

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { CollectionCache } from "@/lib/zt-collection";
+import { createFixtureSchema } from "@/test-utils";
 
 import {
   collectionIDsByItemQuery,
@@ -117,37 +118,8 @@ describe("CollectionCache.byItemIDs", () => {
 });
 
 function seed(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table items (
-      itemID integer primary key,
-      itemTypeID integer not null,
-      dateAdded text not null,
-      dateModified text not null,
-      libraryID integer not null,
-      key text not null
-    );
-    create table deletedItems (
-      itemID integer primary key,
-      dateDeleted text not null
-    );
-    create table collections (
-      collectionID integer primary key,
-      collectionName text not null,
-      parentCollectionID integer,
-      libraryID integer not null,
-      key text not null
-    );
-    create table deletedCollections (
-      collectionID integer primary key,
-      dateDeleted text not null
-    );
-    create table collectionItems (
-      collectionID integer not null,
-      itemID integer not null,
-      orderIndex integer not null default 0,
-      primary key (collectionID, itemID)
-    );
-
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
         (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ITEM1'),

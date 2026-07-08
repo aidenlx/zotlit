@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
+import { createFixtureSchema } from "@/test-utils";
 
 import {
   getItemDisplayInfoByID,
@@ -151,83 +152,8 @@ describe("getItemDisplayInfoByID", () => {
 });
 
 function seedFixture(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table libraries (
-      libraryID integer primary key,
-      type text not null,
-      editable integer not null,
-      filesEditable integer not null,
-      version integer not null default 0,
-      storageVersion integer not null default 0,
-      lastSync integer not null default 0,
-      archived integer not null default 0,
-      isAdmin integer not null default 0
-    );
-    create table groups (
-      groupID integer primary key,
-      libraryID integer not null,
-      name text not null,
-      description text not null,
-      version integer not null
-    );
-    create table itemTypes (
-      itemTypeID integer primary key,
-      typeName text,
-      templateItemTypeID integer,
-      display integer
-    );
-    create table items (
-      itemID integer primary key,
-      itemTypeID integer not null,
-      dateAdded text not null,
-      dateModified text not null,
-      libraryID integer not null,
-      key text not null
-    );
-    create table deletedItems (
-      itemID integer primary key,
-      dateDeleted text not null
-    );
-    create table fieldsCombined (
-      fieldID integer primary key,
-      fieldName text not null,
-      label text,
-      fieldFormatID integer,
-      custom integer not null
-    );
-    create table itemData (
-      itemID integer,
-      fieldID integer,
-      valueID integer,
-      primary key (itemID, fieldID)
-    );
-    create table itemDataValues (
-      valueID integer primary key,
-      value text
-    );
-    create table creators (
-      creatorID integer primary key,
-      firstName text,
-      lastName text,
-      fieldMode integer
-    );
-    create table creatorTypes (
-      creatorTypeID integer primary key,
-      creatorType text
-    );
-    create table itemCreators (
-      itemID integer not null,
-      creatorID integer not null,
-      creatorTypeID integer not null,
-      orderIndex integer not null
-    );
-    create table itemTypeCreatorTypes (
-      itemTypeID integer not null,
-      creatorTypeID integer not null,
-      primaryField integer,
-      primary key (itemTypeID, creatorTypeID)
-    );
-
     insert into libraries (libraryID, type, editable, filesEditable)
       values (1, 'user', 1, 1), (2, 'group', 1, 1);
     insert into groups (groupID, libraryID, name, description, version)
