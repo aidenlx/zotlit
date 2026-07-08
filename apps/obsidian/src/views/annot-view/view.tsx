@@ -17,7 +17,6 @@ import {
   type ItemRef,
   parseIndexedKey,
   parseItemDate,
-  USER_LIBRARY_ID,
   type Library,
 } from "@zotlit/db";
 
@@ -43,6 +42,11 @@ import {
 import { AnnotView } from "./AnnotView";
 import { createDragInsertHandler } from "./drag-insert";
 import { pickItem } from "./item-picker";
+import {
+  type LoadTarget,
+  resolveLibraryID,
+  resolveLoadTarget,
+} from "./resolve-target";
 import { AnnotStoreProvider, createAnnotStore, type FollowMode } from "./store";
 
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
@@ -82,27 +86,24 @@ function formatDisplayLabel(
   return lead ? `${lead} — ${title}` : title;
 }
 
-/** A resolved item plus the attachment to prefer when first loading it. */
-interface LoadTarget {
-  indexedKey: string;
-  key: string;
-  libraryID: number;
-  groupID: number | null;
-  /** Reader-driven attachment; authoritative when set, falls back to saved/first when null. */
-  boundAttachmentID: number | null;
-}
-
+/**
+ * Every member is a structural `Pick` of the full service sized to what the view
+ * touches, so the real services satisfy it as-is and target-resolution logic can
+ * be unit-tested against plain stubs. DB reads run synchronously within one tick
+ * (no `await` boundary a refresh swap could interleave with), matching the
+ * house sync-read pattern (`protocol`, `citekey-click`).
+ */
 export interface AnnotViewDeps {
   app: App;
-  db: DatabaseService;
-  liveUpdate: LiveUpdateService;
-  zoteroPref: ZoteroPrefService;
+  db: Pick<DatabaseService, "state" | "client" | "on" | "ready" | "refresh">;
+  liveUpdate: Pick<LiveUpdateService, "available" | "readerTarget" | "on">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   noteFeature: Pick<
     NoteFeature,
     "renderAnnotation" | "renderAnnotationCitation"
   >;
-  attachmentImport: AttachmentImportService;
-  itemLookup: ItemLookup;
+  attachmentImport: Pick<AttachmentImportService, "prepare">;
+  itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
 }
 
@@ -306,7 +307,7 @@ export class AnnotationView extends ItemView {
       this.#store.setState({ followMode: "note" });
       return;
     }
-    const libraryID = this.#resolveLibraryID(parsed.groupID);
+    const libraryID = resolveLibraryID(parsed.groupID, this.#getLibraries());
     if (libraryID === null) {
       this.#store.setState({ followMode: "note" });
       return;
@@ -392,63 +393,58 @@ export class AnnotationView extends ItemView {
   }
 
   #resolveTarget(): LoadTarget | null {
-    switch (this.#followMode) {
-      case "note":
-        return this.#resolveActiveNote();
-      case "reader":
-        return this.#resolveReader();
-      case "linked": {
-        const linked = this.#store.getState().linked;
-        return linked ? { ...linked.target, boundAttachmentID: null } : null;
+    const mode = this.#followMode;
+    switch (mode) {
+      case "note": {
+        const activeFile = this.#deps.app.workspace.getActiveFile();
+        if (!activeFile) return null;
+        const cache = this.#deps.app.metadataCache.getFileCache(activeFile);
+        const indexedKey = itemKeyFromFrontmatter(cache);
+        const target = resolveLoadTarget({
+          mode,
+          indexedKey,
+          libraries: this.#getLibraries(),
+        });
+        // Warn only when a well-formed key can't map to a library; a malformed
+        // key is silent (parseIndexedKey rejects it), matching prior behavior.
+        if (indexedKey && !target) {
+          const parsed = parseIndexedKey(indexedKey);
+          if (parsed) {
+            logger.warn("Could not resolve library for group {groupID}", {
+              groupID: parsed.groupID,
+            });
+          }
+        }
+        return target;
       }
+      case "reader": {
+        const readerTarget = this.#deps.liveUpdate.readerTarget;
+        return resolveLoadTarget({
+          mode,
+          ref: readerTarget
+            ? this.#resolveReaderRef(readerTarget.itemID)
+            : null,
+          attachmentID: readerTarget?.attachmentID ?? null,
+        });
+      }
+      case "linked":
+        return resolveLoadTarget({
+          mode,
+          linkedTarget: this.#store.getState().linked?.target ?? null,
+        });
     }
   }
 
-  #resolveActiveNote(): LoadTarget | null {
-    const activeFile = this.#deps.app.workspace.getActiveFile();
-    if (!activeFile) return null;
-    const cache = this.#deps.app.metadataCache.getFileCache(activeFile);
-    const indexedKey = itemKeyFromFrontmatter(cache);
-    if (!indexedKey) return null;
-    const parsed = parseIndexedKey(indexedKey);
-    if (!parsed) return null;
-    const libraryID = this.#resolveLibraryID(parsed.groupID);
-    if (libraryID === null) {
-      logger.warn("Could not resolve library for group {groupID}", {
-        groupID: parsed.groupID,
-      });
-      return null;
-    }
-    return {
-      indexedKey,
-      key: parsed.key,
-      libraryID,
-      groupID: parsed.groupID,
-      boundAttachmentID: null,
-    };
-  }
-
-  #resolveReader(): LoadTarget | null {
-    const target = this.#deps.liveUpdate.readerTarget;
-    if (!target) return null;
-    let ref: ItemRef | null;
+  #resolveReaderRef(itemID: number): ItemRef | null {
     try {
-      ref = getItemRefByID(this.#deps.db.client, target.itemID);
+      return getItemRefByID(this.#deps.db.client, itemID);
     } catch (err) {
       logger.warn("Failed to resolve reader item {itemID}", {
-        itemID: target.itemID,
+        itemID,
         error: err,
       });
       return null;
     }
-    if (!ref) return null;
-    return {
-      indexedKey: ref.indexedKey,
-      key: ref.key,
-      libraryID: ref.libraryID,
-      groupID: ref.groupID,
-      boundAttachmentID: target.attachmentID,
-    };
   }
 
   #loadTarget(target: LoadTarget | null): void {
@@ -552,14 +548,6 @@ export class AnnotationView extends ItemView {
         return;
       }
     }
-  }
-
-  #resolveLibraryID(groupID: number | null): number | null {
-    if (groupID === null) return USER_LIBRARY_ID;
-    const libraries = this.#getLibraries();
-    if (!libraries) return null;
-    const lib = libraries.find((l) => l.groupID === groupID);
-    return lib?.libraryID ?? null;
   }
 
   #getLibraries(): Library[] | null {

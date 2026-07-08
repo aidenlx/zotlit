@@ -3,8 +3,6 @@ export { FlatManifest } from "./flat-manifest";
 export type { FlatGroupDef, FlatTask } from "./flat-manifest";
 export { HierarchyManifest } from "./hierarchy-manifest";
 export type { HierarchyParent } from "./hierarchy-manifest";
-export { classifyChunked, executeBatchRun } from "./run";
-export type { BatchRunTask, RunOutcome } from "./run";
 export type {
   BatchClassifyControls,
   BatchFailure,
