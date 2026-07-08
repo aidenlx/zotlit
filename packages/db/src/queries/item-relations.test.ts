@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { type NodeDatabaseClient } from "@/client/node";
+import { createFixtureSchema } from "@/test-utils";
 
 import { getRelatedKeysByItemID } from "./item-relations";
 
@@ -51,18 +52,8 @@ describe("getRelatedKeysByItemID", () => {
 });
 
 function seedFixture(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table relationPredicates (
-      predicateID integer primary key,
-      predicate text
-    );
-    create table itemRelations (
-      itemID integer not null,
-      predicateID integer not null,
-      object text not null,
-      primary key (itemID, predicateID, object)
-    );
-
     insert into relationPredicates (predicateID, predicate)
       values (1, 'dc:relation'), (2, 'owl:sameAs'), (3, 'dc:replaces');
 

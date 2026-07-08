@@ -11,6 +11,7 @@ import { CollectionCache } from "@/lib/zt-collection";
 import { getAnnotationsByParent } from "@/queries/annotations";
 import { getItemsByKey } from "@/queries/items";
 import { resolveItemTagsByIDs, type TagMemo } from "@/queries/tags";
+import { createFixtureSchema } from "@/test-utils";
 
 import {
   fetchAnnotationsTemplateData,
@@ -193,139 +194,8 @@ describe("fetchAnnotationsTemplateData", () => {
 });
 
 function seed(sqlite: DatabaseSync): void {
+  createFixtureSchema(sqlite);
   sqlite.exec(`
-    create table libraries (
-      libraryID integer primary key,
-      type text not null,
-      editable integer not null,
-      filesEditable integer not null
-    );
-    create table groups (
-      groupID integer primary key,
-      libraryID integer not null,
-      name text not null,
-      description text not null,
-      version integer not null
-    );
-    create table itemTypes (
-      itemTypeID integer primary key,
-      typeName text
-    );
-    create table items (
-      itemID integer primary key,
-      itemTypeID integer not null,
-      dateAdded text not null,
-      dateModified text not null,
-      libraryID integer not null,
-      key text not null
-    );
-    create table deletedItems (
-      itemID integer primary key,
-      dateDeleted text not null
-    );
-    create table fieldsCombined (
-      fieldID integer primary key,
-      fieldName text not null,
-      label text,
-      fieldFormatID integer,
-      custom integer not null
-    );
-    create table itemData (
-      itemID integer,
-      fieldID integer,
-      valueID integer,
-      primary key (itemID, fieldID)
-    );
-    create table itemDataValues (
-      valueID integer primary key,
-      value text
-    );
-    create table creators (
-      creatorID integer primary key,
-      firstName text,
-      lastName text,
-      fieldMode integer
-    );
-    create table creatorTypes (
-      creatorTypeID integer primary key,
-      creatorType text
-    );
-    create table itemCreators (
-      itemID integer not null,
-      creatorID integer not null,
-      creatorTypeID integer not null,
-      orderIndex integer not null
-    );
-    create table itemTypeCreatorTypes (
-      itemTypeID integer not null,
-      creatorTypeID integer not null,
-      primaryField integer,
-      primary key (itemTypeID, creatorTypeID)
-    );
-    create table itemAttachments (
-      itemID integer primary key,
-      parentItemID integer,
-      linkMode integer,
-      contentType text,
-      path text
-    );
-    create table itemAnnotations (
-      itemID integer primary key,
-      parentItemID integer not null,
-      type integer not null,
-      authorName text,
-      text text,
-      comment text,
-      color text,
-      pageLabel text,
-      sortIndex text not null,
-      position text not null,
-      isExternal integer not null
-    );
-    create table itemNotes (
-      itemID integer primary key,
-      parentItemID integer,
-      note text,
-      title text
-    );
-    create table tags (
-      tagID integer primary key,
-      name text not null
-    );
-    create table itemTags (
-      itemID integer not null,
-      tagID integer not null,
-      type integer not null,
-      primary key (itemID, tagID)
-    );
-    create table relationPredicates (
-      predicateID integer primary key,
-      predicate text
-    );
-    create table itemRelations (
-      itemID integer not null,
-      predicateID integer not null,
-      object text not null,
-      primary key (itemID, predicateID, object)
-    );
-    create table collections (
-      collectionID integer primary key,
-      collectionName text not null,
-      parentCollectionID integer,
-      libraryID integer not null,
-      key text not null
-    );
-    create table deletedCollections (
-      collectionID integer primary key,
-      dateDeleted text not null
-    );
-    create table collectionItems (
-      collectionID integer not null,
-      itemID integer not null,
-      orderIndex integer not null default 0,
-      primary key (collectionID, itemID)
-    );
-
     insert into libraries (libraryID, type, editable, filesEditable)
       values (1, 'user', 1, 1);
 
