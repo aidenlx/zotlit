@@ -279,6 +279,10 @@ function renderEjectableRow(
   setting.setDesc(desc);
 
   if (file) {
+    // This section only runs on Obsidian < 1.13 (the declarative path owns
+    // 1.13+), so the destructive-button styling must use `setWarning()` —
+    // `setDestructive()` is @since 1.13.0 and throws `is not a function` here,
+    // aborting the render and dropping every section below Templates.
     setting
       .addButton((btn) =>
         btn
@@ -290,7 +294,7 @@ function renderEjectableRow(
         btn
           .setIcon("rotate-ccw")
           .setTooltip(m.settings_template_reset())
-          .setDestructive()
+          .setWarning()
           .onClick(() => {
             btn.buttonEl.blur();
             void confirm(
@@ -317,7 +321,7 @@ function renderEjectableRow(
         btn
           .setIcon("trash-2")
           .setTooltip(m.settings_template_delete())
-          .setDestructive()
+          .setWarning()
           .onClick(() => {
             btn.buttonEl.blur();
             void confirm(
