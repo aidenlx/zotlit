@@ -14,6 +14,7 @@ import {
 import { makeItem } from "@zotlit/db/test-utils";
 import { TemplateEngine } from "@zotlit/templates";
 import defaultCite from "@zotlit/templates/defaults/cite?raw";
+import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import { type ResolveLinkOptions } from "@/services/attachment-import/service";
@@ -564,9 +565,9 @@ describe("annotation template mode", () => {
     // item rendered through the `cite` template with the annotation's page
     // label as locator. A custom template referencing it should surface the
     // same `[@citekey, p. N]` the annot-view drag-insert produces.
-    const engine = new TemplateEngine();
-    engine.define("cite", defaultCite);
-    engine.define("annotation", "> [!note]\n>\n> <%= zt.citation %>");
+    const facade = new TemplateFacade();
+    facade.define("cite", defaultCite, "liquid");
+    facade.define("annotation", "> [!note]\n>\n> <%= zt.citation %>", "eta");
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([
         [
@@ -584,7 +585,7 @@ describe("annotation template mode", () => {
         deps.client as never,
         keys.map((key) => ({ key }) as never),
         {
-          template: engine as never,
+          template: facade as never,
           zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
           resolveLink: echoResolveLink,
         },
@@ -786,12 +787,12 @@ describe("citation resolution", () => {
     expect(md).toContain("[@Hensher2011, chap. 3]");
   });
 
-  it("threads locator/label/suppress-author through the production renderCite glue (citekeysToCiteTemplateData + the real cite.eta)", () => {
+  it("threads locator/label/suppress-author through the production renderCite glue (citekeysToCiteTemplateData + the real default cite template)", () => {
     // Exercises the actual service.ts wiring (renderCite → citekeysToCiteTemplateData →
     // ctx.template.render("cite", ...)), not the hand-written `renderCite` stub used by
     // every other test in this file.
-    const engine = new TemplateEngine();
-    engine.define("cite", defaultCite);
+    const facade = new TemplateFacade();
+    facade.define("cite", defaultCite, "liquid");
     mockDbCitekeys({ KX67D9YM: "Hensher2011" });
     const md = parseNote(
       TurndownService,
@@ -810,7 +811,7 @@ describe("citation resolution", () => {
       {
         ...deps,
         renderCite: (items) =>
-          engine.render("cite", citekeysToCiteTemplateData(items)),
+          facade.render("cite", citekeysToCiteTemplateData(items)),
       },
     );
     expect(md).toContain("[-@Hensher2011, p. 62]");

@@ -5,6 +5,7 @@ import {
   compileFrontmatterFields,
   type FrontmatterField,
 } from "@zotlit/templates/frontmatter";
+import { createLiquidEngine } from "@zotlit/templates/liquid";
 
 import {
   FIELD_ATTACHMENTS,
@@ -17,11 +18,17 @@ import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 import { applyManagedFrontmatter } from "./frontmatter";
 
 /** Mirror the production compile (TemplateService): drop reserved keys, then
- *  compile — applyManagedFrontmatter only ever receives pre-filtered fields. */
-function compileFrontmatter(fields: readonly FrontmatterField[]) {
+ *  compile against the shared Liquid vocabulary — applyManagedFrontmatter only
+ *  ever receives pre-filtered fields. Defaults to the gate on since most
+ *  fixtures below are javascript-language, matching their pre-ticket-06 shape. */
+function compileFrontmatter(
+  fields: readonly FrontmatterField[],
+  options: { javascript?: boolean } = {},
+) {
   return compileFrontmatterFields(
     fields.filter((field) => !RESERVED_KEYS.has(field.key)),
-  );
+    { liquid: createLiquidEngine(), javascript: options.javascript ?? true },
+  ).compiled;
 }
 
 function makeContext(
@@ -41,7 +48,12 @@ describe("applyManagedFrontmatter", () => {
     const fm: Record<string, unknown> = {};
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: "title", expr: "zt.title", merge: "replace" },
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "javascript",
+        },
       ]),
     });
     expect(fm).toEqual({
@@ -63,8 +75,13 @@ describe("applyManagedFrontmatter", () => {
     const fm: Record<string, unknown> = {};
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: FIELD_ZOTERO_KEY, expr: "'x'", merge: "replace" },
-        { key: "year", expr: "2024", merge: "replace" },
+        {
+          key: FIELD_ZOTERO_KEY,
+          expr: "'x'",
+          merge: "replace",
+          language: "javascript",
+        },
+        { key: "year", expr: "2024", merge: "replace", language: "javascript" },
       ]),
     });
     expect(fm).toEqual({
@@ -92,7 +109,7 @@ describe("applyManagedFrontmatter", () => {
     expect(FIELD_ATTACHMENTS in unscoped).toBe(false);
   });
 
-  it("writes default related item note links as an array", () => {
+  it("writes default related item note links as an array, with the gate off", () => {
     const fm: Record<string, unknown> = {};
     applyManagedFrontmatter(
       fm,
@@ -104,7 +121,9 @@ describe("applyManagedFrontmatter", () => {
         ],
       } as Partial<NoteTemplateContext>),
       {
-        compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS),
+        compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS, {
+          javascript: false,
+        }),
       },
     );
 
@@ -115,7 +134,7 @@ describe("applyManagedFrontmatter", () => {
     ]);
   });
 
-  it("replaces default related links from Zotero data", () => {
+  it("replaces default related links from Zotero data, with the gate off", () => {
     const fm: Record<string, unknown> = { related: ["[[Manual]]"] };
     applyManagedFrontmatter(
       fm,
@@ -123,11 +142,98 @@ describe("applyManagedFrontmatter", () => {
         relatedItems: [{ noteLink: () => "[[Related A]]" }],
       } as Partial<NoteTemplateContext>),
       {
-        compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS),
+        compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS, {
+          javascript: false,
+        }),
       },
     );
 
     expect(fm.related).toEqual(["[[Related A]]"]);
+  });
+
+  it("writes the default title field verbatim, with the gate off", () => {
+    const fm: Record<string, unknown> = {};
+    applyManagedFrontmatter(fm, makeContext({ title: "A Study" }), {
+      compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS, {
+        javascript: false,
+      }),
+    });
+
+    expect(fm.title).toBe("A Study");
+  });
+
+  it("joins the default collections field into paths, with the gate off", () => {
+    const fm: Record<string, unknown> = {};
+    applyManagedFrontmatter(
+      fm,
+      makeContext({
+        collections: [
+          { key: "C1", name: "Sub", path: ["Top", "Sub"] },
+          { key: "C2", name: "Other", path: ["Other"] },
+        ],
+      }),
+      {
+        compiled: compileFrontmatter(DEFAULT_FRONTMATTER_FIELDS, {
+          javascript: false,
+        }),
+      },
+    );
+
+    expect(fm.collections).toEqual(["Top/Sub", "Other"]);
+  });
+
+  it("returns intact typed values (arrays, numbers) from a liquid field", () => {
+    const fm: Record<string, unknown> = {};
+    applyManagedFrontmatter(
+      fm,
+      makeContext({
+        customList: ["a", "b"],
+        customYear: 2024,
+      } as Partial<NoteTemplateContext>),
+      {
+        compiled: compileFrontmatter(
+          [
+            {
+              key: "list",
+              expr: "zt.customList",
+              merge: "replace",
+              language: "liquid",
+            },
+            {
+              key: "year",
+              expr: "zt.customYear",
+              merge: "replace",
+              language: "liquid",
+            },
+          ],
+          { javascript: false },
+        ),
+      },
+    );
+
+    expect(fm.list).toEqual(["a", "b"]);
+    expect(fm.year).toBe(2024);
+  });
+
+  it("evaluates a javascript field when the gate is on, and leaves it inert (existing key untouched) when the gate is off", () => {
+    const field = {
+      key: "computed",
+      expr: "zt.title + '!'",
+      merge: "replace",
+      language: "javascript",
+    } as const;
+
+    const fmOn: Record<string, unknown> = {};
+    applyManagedFrontmatter(fmOn, makeContext(), {
+      compiled: compileFrontmatter([field], { javascript: true }),
+    });
+    expect(fmOn.computed).toBe("A Study!");
+
+    const fmOff: Record<string, unknown> = { computed: "existing" };
+    applyManagedFrontmatter(fmOff, makeContext(), {
+      compiled: compileFrontmatter([field], { javascript: false }),
+    });
+    expect(fmOff.computed).toBe("existing");
   });
 
   it("applies user field strategies against the target", () => {
@@ -135,8 +241,18 @@ describe("applyManagedFrontmatter", () => {
 
     applyManagedFrontmatter(fm, makeContext({ title: "New" }), {
       compiled: compileFrontmatter([
-        { key: "title", expr: "zt.title", merge: "replace" },
-        { key: "aliases", expr: "['new']", merge: "append" },
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "javascript",
+        },
+        {
+          key: "aliases",
+          expr: "['new']",
+          merge: "append",
+          language: "javascript",
+        },
       ]),
     });
 
@@ -153,7 +269,12 @@ describe("applyManagedFrontmatter", () => {
 
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: "title", expr: "undefined", merge: "replace" },
+        {
+          key: "title",
+          expr: "undefined",
+          merge: "replace",
+          language: "javascript",
+        },
       ]),
     });
 
@@ -165,7 +286,12 @@ describe("applyManagedFrontmatter", () => {
 
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: "title", expr: "null", merge: "replace" },
+        {
+          key: "title",
+          expr: "null",
+          merge: "replace",
+          language: "javascript",
+        },
       ]),
     });
 
@@ -177,8 +303,18 @@ describe("applyManagedFrontmatter", () => {
 
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: "title", expr: "zt.title", merge: "keep" },
-        { key: "aliases", expr: "['generated']", merge: "keep" },
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "keep",
+          language: "javascript",
+        },
+        {
+          key: "aliases",
+          expr: "['generated']",
+          merge: "keep",
+          language: "javascript",
+        },
       ]),
     });
 
@@ -192,7 +328,12 @@ describe("applyManagedFrontmatter", () => {
 
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: "title", expr: "zt.missing.deep", merge: "keep" },
+        {
+          key: "title",
+          expr: "zt.missing.deep",
+          merge: "keep",
+          language: "javascript",
+        },
       ]),
       onError: (key) => errors.push(key),
     });
@@ -201,13 +342,45 @@ describe("applyManagedFrontmatter", () => {
     expect(errors).toEqual(["title"]);
   });
 
+  it("skips a field whose expression throws at runtime, without aborting sibling fields", () => {
+    const errors: string[] = [];
+    const fm: Record<string, unknown> = {};
+
+    applyManagedFrontmatter(fm, makeContext(), {
+      compiled: compileFrontmatter([
+        {
+          key: "broken",
+          expr: "zt.missing.deep",
+          merge: "replace",
+          language: "javascript",
+        },
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "javascript",
+        },
+      ]),
+      onError: (key) => errors.push(key),
+    });
+
+    expect(errors).toEqual(["broken"]);
+    expect(fm.title).toBe("A Study");
+    expect("broken" in fm).toBe(false);
+  });
+
   it("reports append conflicts without changing existing values", () => {
     const conflicts: string[] = [];
     const fm: Record<string, unknown> = { tags: "manual" };
 
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
-        { key: "tags", expr: "['generated']", merge: "append" },
+        {
+          key: "tags",
+          expr: "['generated']",
+          merge: "append",
+          language: "javascript",
+        },
       ]),
       onConflict: (key, detail) => conflicts.push(`${key}:${detail.reason}`),
     });

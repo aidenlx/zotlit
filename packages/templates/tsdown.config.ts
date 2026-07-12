@@ -4,6 +4,8 @@ export default defineConfig({
   entry: [
     "./src/index.ts",
     "./src/constants.ts",
+    "./src/facade.ts",
+    "./src/liquid.ts",
     "./src/obsidian.ts",
     "./src/frontmatter.ts",
     "./src/frontmatter-merge.ts",
@@ -12,7 +14,7 @@ export default defineConfig({
   dts: { tsgo: true, enabled: true },
   exports: {
     customExports(exports) {
-      exports["./defaults/*"] = "./defaults/*.eta";
+      exports["./defaults/*"] = "./defaults/*.liquid";
       return exports;
     },
   },

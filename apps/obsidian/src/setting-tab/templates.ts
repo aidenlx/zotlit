@@ -7,6 +7,8 @@ import {
   type TFile,
 } from "obsidian";
 
+import { type TemplateLanguage } from "@zotlit/templates/facade";
+
 import { confirm } from "@/lib/confirm";
 import { ensureFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
@@ -67,21 +69,32 @@ export function templatesPageItems(
     },
     {
       type: "group",
-      heading: m.settings_template_engine_heading(),
+      heading: m.settings_template_js_heading(),
       items: [
+        {
+          name: m.settings_template_js_enable_name(),
+          desc: m.settings_template_js_enable_desc(),
+          render: (setting) => renderJsTemplatesButton(setting, ctx),
+        },
         {
           name: m.settings_template_auto_pair_name(),
           desc: m.settings_template_auto_pair_desc(),
+          visible: () =>
+            ctx.plugin.services.template.javascriptTemplatesEnabled,
           control: { type: "toggle", key: "template.auto-pair-eta" },
         },
         {
           name: m.settings_template_trim_leading_name(),
           desc: m.settings_template_trim_desc(),
+          visible: () =>
+            ctx.plugin.services.template.javascriptTemplatesEnabled,
           control: trimControl("template.auto-trim-leading"),
         },
         {
           name: m.settings_template_trim_trailing_name(),
           desc: m.settings_template_trim_desc(),
+          visible: () =>
+            ctx.plugin.services.template.javascriptTemplatesEnabled,
           control: trimControl("template.auto-trim-trailing"),
         },
       ],
@@ -97,11 +110,6 @@ export function templatesPageItems(
             .onClick(() => void ejectAll(ctx)),
       ],
       items: [
-        {
-          name: m.settings_template_filename_name(),
-          desc: m.settings_template_filename_desc(),
-          render: (setting) => renderFilenameRow(setting, ctx),
-        },
         {
           type: "page",
           name: m.settings_page_frontmatter(),
@@ -139,6 +147,67 @@ function trimControl(key: AutoTrimKey): SettingControl<SettingsKey> {
 }
 
 /**
+ * Gate button for `TemplateService.javascriptTemplatesEnabled` — "Turn on" /
+ * "Turn off" by current state. Bare `render` row (not a declarative `control`)
+ * because the flag is per-device state on the service, not a `SettingsKey`.
+ */
+function renderJsTemplatesButton(
+  setting: Setting,
+  ctx: SettingTabContext,
+): void {
+  const service = ctx.plugin.services.template;
+  const enabled = service.javascriptTemplatesEnabled;
+  setting.addButton((btn) => {
+    if (enabled) {
+      btn.setButtonText(m.settings_template_js_turn_off());
+    } else {
+      btn.setButtonText(m.settings_template_js_turn_on()).setWarning();
+    }
+    btn.onClick(() => {
+      // See the blur comment in renderEjectableRow's eject button: the
+      // reconciler skips re-rendering the row containing document.activeElement.
+      btn.buttonEl.blur();
+      void applyJsTemplatesFlag(ctx, !enabled).finally(() =>
+        ctx.requestUpdate(),
+      );
+    });
+  });
+}
+
+/**
+ * Disabling applies immediately. Enabling requires confirmation first, since
+ * Eta templates then run with ZotLit's full JS access; declining leaves the
+ * gate off and the trailing `requestUpdate` re-renders the button to match.
+ */
+async function applyJsTemplatesFlag(
+  ctx: SettingTabContext,
+  enabled: boolean,
+): Promise<void> {
+  const service = ctx.plugin.services.template;
+  try {
+    if (!enabled) {
+      await service.setJavascriptTemplatesEnabled(false);
+      return;
+    }
+    const confirmed = await confirm(
+      {
+        title: m.settings_template_js_confirm_title(),
+        content: m.settings_template_js_confirm_body(),
+        action: m.settings_template_js_confirm_action(),
+        cta: true,
+      },
+      ctx.app,
+    );
+    if (confirmed) await service.setJavascriptTemplatesEnabled(true);
+  } catch (error) {
+    logger.error("Failed to change JavaScript templates flag", {
+      enabled,
+      error,
+    });
+  }
+}
+
+/**
  * One row per built-in template. A template is "ejected" when a vault file
  * exists at its path; `TemplateService` then loads it instead of the
  * embedded default. Ejected → open / reset; not ejected → eject.
@@ -149,8 +218,11 @@ function renderEjectableRow(
   name: TemplateName,
 ): void {
   const folder = currentFolder(ctx);
-  const path = templatePath(folder, name);
-  const file = ctx.app.vault.getFileByPath(path);
+  const liquidFile = ctx.app.vault.getFileByPath(templatePath(folder, name));
+  const etaFile = ctx.app.vault.getFileByPath(
+    templatePath(folder, name, "eta"),
+  );
+  const file = liquidFile ?? etaFile;
 
   const compileError = ctx.plugin.services.template.compileErrors.get(name);
   const desc = document.createDocumentFragment();
@@ -158,25 +230,79 @@ function renderEjectableRow(
   desc.append(document.createElement("br"));
   if (file) {
     const code = document.createElement("code");
-    code.textContent = path;
+    code.textContent = file.path;
     desc.append(code);
   } else {
     desc.append(m.settings_template_using_default());
+  }
+  const shadowedPath = ctx.plugin.services.template.shadowedFiles.get(name);
+  if (shadowedPath) {
+    const shadowed = document.createElement("div");
+    shadowed.className = "zt:mt-2 zt:text-(--text-warning)";
+    shadowed.textContent = m.settings_template_shadowed({
+      path: shadowedPath,
+    });
+    desc.append(shadowed);
+  }
+  const inertPath = ctx.plugin.services.template.inertEtaFiles.get(name);
+  if (inertPath) {
+    const inert = document.createElement("div");
+    inert.className = "zt:mt-2 zt:text-(--text-warning)";
+    inert.textContent = m.settings_template_inert_eta({ path: inertPath });
+    desc.append(inert);
   }
   if (compileError) {
     appendCompileError(desc, compileError, m.settings_template_compile_error());
   }
   setting.setDesc(desc);
 
+  const gate = ctx.plugin.services.template.javascriptTemplatesEnabled;
+  const showLanguage = gate || (etaFile !== null && liquidFile === null);
+  if (showLanguage) {
+    const currentLanguage: TemplateLanguage = liquidFile
+      ? "liquid"
+      : etaFile
+        ? "eta"
+        : "liquid";
+    setting.addDropdown((dropdown) => {
+      // Gate off, the row is an inert `.eta.md`: list Eta first as the current
+      // value and Liquid as the only switch target; gate on, Liquid leads as
+      // the default language.
+      dropdown
+        .addOptions(
+          gate
+            ? {
+                liquid: m.settings_template_language_liquid(),
+                eta: m.settings_template_language_eta(),
+              }
+            : {
+                eta: m.settings_template_language_eta(),
+                liquid: m.settings_template_language_liquid(),
+              },
+        )
+        .setValue(currentLanguage)
+        .onChange((value) => {
+          dropdown.selectEl.blur();
+          void switchLanguage(ctx, name, value as TemplateLanguage);
+        });
+      dropdown.selectEl.setAttr(
+        "aria-label",
+        m.settings_template_language_tooltip(),
+      );
+    });
+  }
+
   if (file) {
-    setting
-      .addButton((btn) =>
-        btn
-          .setIcon("pencil")
-          .setTooltip(m.settings_template_open())
-          .onClick(() => void openTemplate(ctx.app, file)),
-      )
-      .addButton((btn) =>
+    setting.addButton((btn) =>
+      btn
+        .setIcon("pencil")
+        .setTooltip(m.settings_template_open())
+        .onClick(() => void openTemplate(ctx.app, file)),
+    );
+    // Resetting overwrites with the Liquid default source, so it's only safe
+    // to offer when the effective file is the Liquid one.
+    if (file === liquidFile) {
+      setting.addButton((btn) =>
         btn
           .setIcon("rotate-ccw")
           .setTooltip(m.settings_template_reset())
@@ -202,34 +328,35 @@ function renderEjectableRow(
                 logger.error("Failed to reset template", { name, error: err });
               });
           }),
-      )
-      .addButton((btn) =>
-        btn
-          .setIcon("trash-2")
-          .setTooltip(m.settings_template_delete())
-          .setDestructive()
-          .onClick(() => {
-            btn.buttonEl.blur();
-            void confirm(
-              {
-                title: m.settings_template_delete_confirm_title(),
-                content: m.settings_template_delete_confirm_body({
-                  name: TEMPLATE_META[name].title(),
-                }),
-                action: m.settings_template_delete(),
-                destructive: true,
-              },
-              ctx.app,
-            )
-              .then(async (yes) => {
-                if (!yes) return;
-                await deleteAndRefresh(ctx, file, name);
-              })
-              .catch((err) => {
-                logger.error("Failed to delete template", { name, error: err });
-              });
-          }),
       );
+    }
+    setting.addButton((btn) =>
+      btn
+        .setIcon("trash-2")
+        .setTooltip(m.settings_template_delete())
+        .setDestructive()
+        .onClick(() => {
+          btn.buttonEl.blur();
+          void confirm(
+            {
+              title: m.settings_template_delete_confirm_title(),
+              content: m.settings_template_delete_confirm_body({
+                name: TEMPLATE_META[name].title(),
+              }),
+              action: m.settings_template_delete(),
+              destructive: true,
+            },
+            ctx.app,
+          )
+            .then(async (yes) => {
+              if (!yes) return;
+              await deleteAndRefresh(ctx, file, name);
+            })
+            .catch((err) => {
+              logger.error("Failed to delete template", { name, error: err });
+            });
+        }),
+    );
   } else {
     setting.addButton((btn) =>
       btn
@@ -245,6 +372,80 @@ function renderEjectableRow(
           void ejectAndRefresh(ctx, name);
         }),
     );
+  }
+}
+
+/**
+ * Toward Eta: trash the Liquid file (if any), then reveal a shadowed `.eta.md`
+ * or create and open an empty one. Toward Liquid: trash the `.eta.md` and let
+ * the name fall back to an existing Liquid file or the embedded default.
+ * Nothing converts — dispatch, Liquid-wins precedence, and the watcher pick the
+ * file change up as they would a manual edit. All removals go through
+ * Obsidian's recoverable trash.
+ */
+async function switchLanguage(
+  ctx: SettingTabContext,
+  name: TemplateName,
+  target: TemplateLanguage,
+): Promise<void> {
+  const folder = currentFolder(ctx);
+  const etaPath = templatePath(folder, name, "eta");
+  const liquidFile = ctx.app.vault.getFileByPath(templatePath(folder, name));
+  const etaFile = ctx.app.vault.getFileByPath(etaPath);
+  const service = ctx.plugin.services.template;
+  try {
+    if (target === "eta") {
+      // Gate-off invariant: never create or reveal an Eta file on a device
+      // that has not consented to JavaScript templates.
+      if (!service.javascriptTemplatesEnabled) return;
+      if (liquidFile) {
+        const yes = await confirm(
+          {
+            title: m.settings_template_switch_eta_confirm_title(),
+            content: m.settings_template_switch_eta_confirm_body({
+              name: TEMPLATE_META[name].title(),
+              path: liquidFile.path,
+            }),
+            action: m.settings_template_switch_action(),
+            destructive: true,
+          },
+          ctx.app,
+        );
+        if (!yes) return;
+        await ctx.app.fileManager.trashFile(liquidFile);
+        if (etaFile) return;
+      } else if (etaFile) {
+        return;
+      }
+      await ensureFolder(ctx.app, folder);
+      const created = await ctx.app.vault.create(etaPath, "");
+      await openTemplate(ctx.app, created);
+    } else {
+      if (!etaFile) return;
+      const yes = await confirm(
+        {
+          title: m.settings_template_switch_liquid_confirm_title(),
+          content: m.settings_template_switch_liquid_confirm_body({
+            name: TEMPLATE_META[name].title(),
+            path: etaFile.path,
+          }),
+          action: m.settings_template_switch_action(),
+          destructive: true,
+        },
+        ctx.app,
+      );
+      if (!yes) return;
+      await ctx.app.fileManager.trashFile(etaFile);
+    }
+  } catch (error) {
+    logger.error("Failed to switch template language", {
+      name,
+      target,
+      error,
+    });
+    new BaseNotice(m.notice_template_switch_failed());
+  } finally {
+    ctx.requestUpdate();
   }
 }
 
@@ -304,8 +505,13 @@ async function deleteAndRefresh(
 
 async function ejectAll(ctx: SettingTabContext): Promise<void> {
   const folder = currentFolder(ctx);
+  // A name only counts as missing when neither extension's file exists —
+  // ejecting a `.liquid.md` on top of a user's `.eta.md` override would
+  // silently shadow it.
   const missing = TEMPLATE_NAMES.filter(
-    (name) => !ctx.app.vault.getFileByPath(templatePath(folder, name)),
+    (name) =>
+      !ctx.app.vault.getFileByPath(templatePath(folder, name)) &&
+      !ctx.app.vault.getFileByPath(templatePath(folder, name, "eta")),
   );
   if (missing.length === 0) {
     new BaseNotice(m.notice_template_eject_none());
@@ -338,52 +544,6 @@ function currentFolder(ctx: SettingTabContext): string {
   return normalizeVaultPath(ctx.settings.current?.["template.folder"] ?? "");
 }
 
-function renderFilenameRow(setting: Setting, ctx: SettingTabContext): void {
-  const { template } = ctx.plugin.services;
-  const saved = ctx.settings.current?.["template.filename"] ?? "";
-  const filenameError = template.filenameError;
-
-  if (filenameError) {
-    const desc = document.createDocumentFragment();
-    desc.append(m.settings_template_filename_desc());
-    appendCompileError(
-      desc,
-      filenameError,
-      m.settings_template_compile_error(),
-    );
-    setting.setDesc(desc);
-  }
-
-  setting.addTextArea((ta) => {
-    ta.setPlaceholder(defaultPlaceholder("template.filename"));
-    ta.setValue(saved);
-    ta.inputEl.rows = 3;
-  });
-
-  setting.addExtraButton((btn) => {
-    btn
-      .setIcon("check")
-      .setTooltip(m.settings_frontmatter_save())
-      .onClick(() => {
-        const textarea = setting.controlEl.querySelector("textarea");
-        if (!textarea) return;
-
-        const value = textarea.value.trim();
-        const error = value ? template.validateSource(value) : null;
-
-        if (error) {
-          const desc = document.createDocumentFragment();
-          desc.append(m.settings_template_filename_desc());
-          appendCompileError(desc, error, m.settings_template_compile_error());
-          setting.setDesc(desc);
-          return;
-        }
-
-        ctx.settings.update({ "template.filename": value });
-      });
-  });
-}
-
 const TEMPLATE_META: Record<
   TemplateName,
   { title: () => string; desc: () => string }
@@ -407,5 +567,9 @@ const TEMPLATE_META: Record<
   cite2: {
     title: () => m.settings_template_name_cite2(),
     desc: () => m.settings_template_desc_cite2(),
+  },
+  filename: {
+    title: () => m.settings_template_name_filename(),
+    desc: () => m.settings_template_desc_filename(),
   },
 };

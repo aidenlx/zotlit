@@ -1,0 +1,98 @@
+cheznine [OBSD], 
+LZ
+ — 2026/6/11 19:16
+Will there be, or is there an official way to support user scripts in our plugins?
+
+There's a ton of plugins out there that allow for user scripts that users have come to depend on. I see popular plugins out there like Dataview and Templater support this and have Dynamic code execution errors in their scorecards. I've seen mention that these errors will prevent (new?) listings. Will this applied to grandfathered plugins at some point?
+
+What's the strategy for somehow supporting this use case, assuming users understand the risks of running custom code in their vaults? 
+ClareMacrae [OBSD],  — 2026/6/11 19:26
+I'm not from the Obsidian team, but just to share a recent experience...
+For the Tasks plugin, after a report of a "Remote Code Execution" vulnerability, made possible by the execution of user-supplied JavaScript, I was advised by the Obsidian team to turn off JS execution by default, storing the option locally (not sync-able via data.json).
+In the end, I was convinced of the value and importance of this, for various reasons - resulting in these:
+PR: fix!!: For security, JS search features now disabled by default, with setting to enable
+A breaking release (8.0.0)
+New docs page: JavaScript in Tasks Queries
+I have to say it was a very, very stressful few weeks
+first receiving the user report
+and then having to wait a while to hear back from the Obsidian team...
+and then having to implement and document the change.
+ 
+Lemons — 2026/6/11 19:29
+I am a fan of pinning the responsibility on one "standard" JS running plugin that can be used as something like a dynamic library by other plugins at run time via it's plugin API. That is what I am currently doing with my plugins JS Engine and Meta Bind. I have also been experimenting with a JS running plugin that is "secure" and sandboxes everything, but that is quite restrictive and idk if I want to take that further than an experiment
+ClareMacrae [OBSD],  — 2026/6/11 19:33
+Similarly, I was considering look at safe-eval but it's quite old now:
+https://www.npmjs.com/package/safe-eval
+Lemons — 2026/6/11 19:36
+I am using SES for my experiment:
+https://www.npmjs.com/package/ses
+superlee — 2026/6/12 11:08
+You can also do something like https://github.com/ceifa/wasmoon (which avoids the error cause child process, eval and wasm still dont seem to have the same error from the templater plugin page)
+Which would take significantly more work to get functions in the lua runtime.
+
+But from what is this exactly protecting? Syncing with bad actors and downloading files from bad actors? Cause i personally feel like if that is more the user's responsibility (if userscripts are  the main point of the plugin, unlike the tasks plugin?)
+But biased as coding regularly involves a lot of npm (post)installing and executing unknown code.
+cheznine [OBSD], 
+LZ
+ — 2026/6/18 02:16
+Related discussion:
+⁠Review request: automated "Func… 
+superlee — 2026/6/21 10:14
+Maybe in the disclosure add the ability to warn sync users cause now it only says that it can't be fully analyzed. Should maybe also be done in the readme, but disclosure is the same format for every plugin. 
+Lemons — 2026/7/5 19:26
+I did a comparison of bundle size of multiple approaches for safe JS execution here https://github.com/obsidian-tasks-group/obsidian-tasks/issues/3895#issuecomment-4885510694
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 21:22
+This is great. Please let us know when you have settled on an implementation.
+
+Some eval-like method is something we want to eventually provide via the API, likely with some permission structure (user has to give permission on first execute or every execute. Something along those lines.)
+
+We have not sufficiently explored this yet, so any feedback or caveats you encounter along the way could help us on choosing the best direction down the line.
+ [NVIM], 
+Lemons — 2026/7/5 21:34
+I am not a maintainer and what Tasks does is a decision the Tasks maintainers so Clare and Ilyas have to make. For my own plugins, I will or am already going with SES. To me it seems to be the only way to safely run JS while keeping almost all of it's features. The only vulnerabilities that a correctly set up SES leaves open are resource exhaustion attacks, which can be partially mitigated via running in a web worker. The thing that needs to most work with an SES based approach is making sure that the communication boundary to the sandboxed code is validated and safe. E.g. it would be a bad idea to just expose the entire vault api as is to the sandbox
+Though the same degree of care about the boundary probably needs to be taken with the other approaches as well.
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 21:43
+The question is also partly whether we want to put any guardrails on the actual executed code, or only on whether it gets to run in the first place.
+ [NVIM], 
+Lemons — 2026/7/5 21:55
+Sorry I have a hard time understanding what you mean. Are you saying that you are still unsure if you want to offer a sandbox via the Obsidian API and make that the only allowed way to run user JS, or if you want to forbid running user JS entirely without offering a sandbox? 
+btw I already have a plugin whose purpose is offering a safe way to run JS via SES. Maybe you want to take a look at it if you haven't already https://github.com/mProjectsCode/obsidian-safe-js-plugin
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 22:25
+I'm saying we haven't decided either way, so if one of the possible approaches has already been explored by the community, that could help inform that decision as well.
+ClareMacrae [OBSD],  — 2026/7/5 22:41
+I think that if Obsidian goes for the simpler "request permission to run" option, it will likely only be a matter of time before there is an exploit and the system has to be upgraded to put "guardrails" on the executed code.
+I also think it's terribly inefficient for multiple plugin authors to have to be doing this work, in duplicate.  Much better for it to be a core Obsidian capability.
+Since Obsidian benefits from the availability of plugins.
+ [OBSD], 
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 23:02
+While I am inclined to agree, we cannot put the genie back in the bottle in the same way plugins can. Once it is in the API, it is hard to take out without causing issues for dependent plugins, and if the initial response to enforcing the eslint ruleset is anything to go by, plugin authors are not particularly keen on refactoring plugin behavior to account for changes to underlying functionality or assumptions their plugins depend on. 
+ClareMacrae [OBSD],  — 2026/7/5 23:06
+I don't really understand. 
+I was more thinking that Obsidian could provide some kind of optional safe execution mechanism that js-executing plugins could chose to adopt, in order to eliminate the "this plugin is dangerous" red messages, however they are phrased...
+To be replaced by something like, for example,  "info: this plugin allows execution of user-supplied JavaScript code in a sandboxed environment"... 
+ [OBSD], 
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 23:08
+I meant that whatever we settle on will likely have to remain supported in perpetuity.
+ClareMacrae [OBSD],  — 2026/7/5 23:08
+I still don't see the relationship, but it doesn't matter to me.
+Really I have no preference. I'm not currently planning to spend more time in this area on Tasks. If a safer mechanism comes along, I will try and use it.
+I would much rather get back to bug fixing and releasing new features.
+ [OBSD], 
+ClareMacrae [OBSD],  — 2026/7/5 23:12
+(I expect to be working on ESLint reports for many weeks to come, at the 2 hours per week that Ilyas and I have to work together on it...) 
+ [OBSD], 
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 23:14
+Let's say we add a safe eval implementation in the API. Plugins adopt it. Later we find that the approach is sub-optimal and requires breaking changes. We have to break plugins or keep supporting the sub-optimal implementation for a long time after deprecation. This is already an issue in the API in general (see the 1.13 Settings API changes likely requiring plugins to maintain two versions or enforce 1.13+ minimum version). Combine this with the inherit risks in eval, and it becomes a very delicate decision.
+ClareMacrae [OBSD],  — 2026/7/5 23:15
+Can you not create an abstraction that plugins call, and change the implementation behind it over time, to make it safer?
+This is already an issue in the API in general (see the 1.13 Settings API changes likely requiring plugins to maintain two versions or enforce 1.13+ minimum version).
+But that was a choice that Obsidian made, to add a new mechanism and not provide backwards compatibility, thus requiring plugin developers to have to suck up the time to support two versions of code, or enforce the minimum version.
+It's hard for me to imagine that it was impossible to provide a re-implementation of the old settings mechanism, using the new settings mechanism.
+ [OBSD], 
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 23:19
+I cannot give a meaningful answer to that; I don't have access to the Obsidian codebase.
+ [OBSD], 
+saberzero1 [Quartz maintainer] [NVIM], :clipboard: — 2026/7/5 23:23
+If I recall correctly, the part that was the breaking change was integrating into settings search. I wouldn't be surprised if there are additional future plans that we don't even know about that require the new version as baseline. I have found that the Obsidian team has a very long-term vision on these things; they are in it for the long game.
+ClareMacrae [OBSD],  — 2026/7/5 23:23
+It's fine - there's no point our spending more time debating it.

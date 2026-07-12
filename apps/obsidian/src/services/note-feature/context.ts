@@ -7,7 +7,7 @@ import {
   type ItemTag,
   type NoteResolvers,
   type TemplateCollection,
-  type TemplateItemData,
+  type TemplateFilenameItemData,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { hasSuffixMarker } from "@zotlit/templates";
@@ -122,7 +122,7 @@ export function resolveNotePath(
     tags: options.itemTags,
     collections: options.itemCollections,
   });
-  const rendered = ctx.template.renderFilename(data).trim();
+  const rendered = ctx.template.renderFilename(data);
   const rel = resolveRenderedRelPath(folderSetting, rendered, {
     exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null,
     forceSuffix: options.forceSuffix,
@@ -148,7 +148,7 @@ export function buildNoteResolvers(
   },
 ): NoteResolvers {
   const resolvingFallback = new Set<string>();
-  const resolveTarget = (item: TemplateItemData): NoteTarget =>
+  const resolveTarget = (item: TemplateFilenameItemData): NoteTarget =>
     resolveNoteTarget(ctx, item, {
       settings: options.settings,
       resolvingFallback,
@@ -219,7 +219,7 @@ type NoteTargetContext = Pick<
 
 function resolveNoteTarget(
   ctx: NoteTargetContext,
-  item: TemplateItemData,
+  item: TemplateFilenameItemData,
   options: {
     settings: Readonly<Settings> | null;
     resolvingFallback: Set<string>;
@@ -248,7 +248,7 @@ function resolveNoteTarget(
     // marker to the base name (`() => false` = never apply a random suffix).
     const rel = resolveRenderedRelPath(
       folderSetting,
-      ctx.template.renderFilename(item).trim(),
+      ctx.template.renderFilename(item),
       { exists: () => false },
     );
     const path = literatureNotePath(folderSetting, rel);

@@ -9,6 +9,7 @@ import { type Attachment } from "@/lib/zt-attach";
 import { type ItemTag, type Tag } from "@/lib/zt-tag";
 import { type BaseItem, type Item } from "@/queries/items";
 
+import { type TemplateFilenameItemData } from "./zt-template-item";
 import { buildFilenameContext, buildNoteContext } from "./zt-template-note";
 
 function makeItem(
@@ -158,6 +159,64 @@ describe("buildNoteContext", () => {
     expect(annot.parentItem?.citationKey).toBe("smith2024");
 
     expect(ctx.authors.map((a) => a.family)).toEqual(["Smith"]);
+  });
+
+  it("normalizes empty-string annotation fields to null", () => {
+    const attachment = makeAttachment({});
+    const annotation = makeAnnotation({
+      text: "",
+      comment: "",
+      pageLabel: "",
+      authorName: "",
+    });
+
+    const ctx = buildNoteContext({
+      item: makeItem({ itemType: "journalArticle" }),
+      attachments: [attachment],
+      annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => null,
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+
+    const annot = ctx.annotations[0]!;
+    expect(annot.text).toBeNull();
+    expect(annot.commentHtml).toBeNull();
+    expect(annot.pageLabel).toBeNull();
+    expect(annot.authorName).toBeNull();
+    // No comment HTML means `comment` never calls commentToMarkdown.
+    expect(annot.comment).toBeNull();
+  });
+
+  it("normalizes a commentToMarkdown '' result to a null comment", () => {
+    const attachment = makeAttachment({});
+    const annotation = makeAnnotation({ comment: "<i></i>" });
+
+    const ctx = buildNoteContext({
+      item: makeItem({ itemType: "journalArticle" }),
+      attachments: [attachment],
+      annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => null,
+      commentToMarkdown: () => "",
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+
+    expect(ctx.annotations[0]!.commentHtml).toBe("<i></i>");
+    expect(ctx.annotations[0]!.comment).toBeNull();
   });
 
   it("derives a null page and unanchored fileLink for positions without a pageIndex", () => {
@@ -366,6 +425,69 @@ describe("buildNoteContext", () => {
       "path:REL12345",
       "link:REL12345:",
     ]);
+  });
+
+  // Pins the TemplateItemResolvers invariant: resolvers see the inert item-own twin, not the live context.
+  it("hands the notePath/noteLink resolvers the inert item-own twin, not the live context", () => {
+    const mainCollections = [{ key: "COLLMAIN", name: "Main", path: ["Main"] }];
+    const relatedCollections = [
+      { key: "COLLREL0", name: "Related", path: ["Related"] },
+    ];
+    const related = makeItem(
+      { itemType: "journalArticle", title: "Related", citationKey: "rel2024" },
+      { itemID: 2, key: "REL12345", indexedKey: "REL12345" },
+    );
+
+    const captured: TemplateFilenameItemData[] = [];
+    const ctx = buildNoteContext({
+      item: makeItem(
+        { itemType: "journalArticle", citationKey: "main2024" },
+        { indexedKey: "MAIN2345" },
+      ),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map([
+        [1, mainCollections],
+        [2, relatedCollections],
+      ]),
+      relatedItems: [related],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
+      notePath: (item) => {
+        captured.push(item);
+        return "";
+      },
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+
+    void ctx.notePath;
+    void ctx.relatedItems[0]!.notePath;
+
+    expect(captured).toHaveLength(2);
+    const [main, rel] = captured as [
+      TemplateFilenameItemData,
+      TemplateFilenameItemData,
+    ];
+
+    expect(Object.getOwnPropertyDescriptor(main, "notePath")?.value).toBe("");
+    expect(main.noteLink()).toBe("");
+    expect("annotations" in main).toBe(false);
+    expect("relatedItems" in main).toBe(false);
+    expect(main.indexedKey).toBe("MAIN2345");
+    expect(main.citationKey).toBe("main2024");
+    expect(main.collections).toBe(mainCollections);
+
+    expect(Object.getOwnPropertyDescriptor(rel, "notePath")?.value).toBe("");
+    expect(rel.noteLink()).toBe("");
+    expect("annotations" in rel).toBe(false);
+    expect("relatedItems" in rel).toBe(false);
+    expect(rel.indexedKey).toBe("REL12345");
+    expect(rel.citationKey).toBe("rel2024");
+    expect(rel.collections).toBe(relatedCollections);
   });
 
   it("maps child notes through resolveChildNote into the notes list", () => {

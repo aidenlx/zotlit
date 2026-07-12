@@ -5,13 +5,12 @@ import annotation from "@zotlit/templates/defaults/annotation?raw";
 import cite from "@zotlit/templates/defaults/cite?raw";
 import cite2 from "@zotlit/templates/defaults/cite2?raw";
 import content from "@zotlit/templates/defaults/content?raw";
+import filename from "@zotlit/templates/defaults/filename?raw";
 import note from "@zotlit/templates/defaults/note?raw";
+import { type TemplateLanguage } from "@zotlit/templates/facade";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { normalizeVaultPath } from "./path";
-
-export const DEFAULT_NOTE_FILENAME =
-  "<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>";
 
 function freezeAll<const T extends readonly object[]>(items: T): Readonly<T> {
   items.forEach(Object.freeze);
@@ -19,27 +18,33 @@ function freezeAll<const T extends readonly object[]>(items: T): Readonly<T> {
 }
 
 export const DEFAULT_FRONTMATTER_FIELDS = freezeAll([
-  { key: "title", expr: "zt.title", merge: "replace" },
+  { key: "title", expr: "zt.title", merge: "replace", language: "liquid" },
   {
     key: "related",
-    expr: "zt.relatedItems.map((i) => i.noteLink() ?? `zt-error:${i.indexedKey}`)",
+    expr: "zt.relatedItems | note_links",
     merge: "replace",
+    language: "liquid",
   },
   {
     key: "collections",
-    expr: 'zt.collections.map((c) => c.path.join("/"))',
+    expr: "zt.collections | collection_paths",
     merge: "replace",
+    language: "liquid",
   },
 ]) satisfies readonly FrontmatterField[];
 
-const TEMPLATE_FILE = regex("^zotlit-(?<name>[A-Za-z0-9-]+)\\.eta\\.md$");
+const TEMPLATE_FILE = regex(
+  "^zotlit-(?<name>[A-Za-z0-9-]+)\\.(?<language>liquid|eta)\\.md$",
+);
 
 /** Template whose render output is wrapped in managed-region markers. */
 export const MANAGED_CONTENT_TEMPLATE = "content" as const;
 
 export type TemplateName = (typeof TEMPLATE_NAMES)[number];
 
+/** Array order is the row order rendered in the setting tab's template-files list. */
 export const TEMPLATE_NAMES = [
+  "filename",
   "note",
   "annotation",
   MANAGED_CONTENT_TEMPLATE,
@@ -48,6 +53,7 @@ export const TEMPLATE_NAMES = [
 ] as const;
 
 export const DEFAULT_TEMPLATES: Record<TemplateName, string> = {
+  filename,
   note,
   annotation,
   content,
@@ -55,20 +61,28 @@ export const DEFAULT_TEMPLATES: Record<TemplateName, string> = {
   cite2,
 };
 
-function templateFilename(name: TemplateName): string {
-  return `zotlit-${name}.eta.md`;
+function templateFilename(name: string, language: TemplateLanguage): string {
+  return `zotlit-${name}.${language}.md`;
 }
 
-export function templatePath(folder: string, name: TemplateName): string {
-  const file = templateFilename(name);
+export function templatePath(
+  folder: string,
+  name: string,
+  language: TemplateLanguage = "liquid",
+): string {
+  const file = templateFilename(name, language);
   const normalizedFolder = normalizeVaultPath(folder);
   return normalizedFolder === "" ? file : join(normalizedFolder, file);
 }
 
-/** Extract the `<name>` from a `zotlit-<name>.eta.md` vault path; `null` if it doesn't match. */
-export function templateNameFromPath(path: string): string | null {
+/** Extract the `<name>` and `<language>` from a `zotlit-<name>.(liquid|eta).md` vault path; `null` if it doesn't match. */
+export function templateFileFromPath(
+  path: string,
+): { name: string; language: TemplateLanguage } | null {
   const filename = basename(normalizeVaultPath(path));
-  return TEMPLATE_FILE.exec(filename)?.groups.name ?? null;
+  const match = TEMPLATE_FILE.exec(filename);
+  if (!match) return null;
+  return { name: match.groups.name, language: match.groups.language };
 }
 
 export function isTemplateName(name: string): name is TemplateName {

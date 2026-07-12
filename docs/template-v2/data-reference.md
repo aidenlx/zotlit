@@ -2,7 +2,7 @@
 
 This page documents every property available on the `zt` variable for each template type. All properties are accessed as `zt.propertyName`.
 
-## Note template (`zotlit-note.eta.md`)
+## Note template (`zotlit-note.liquid.md`)
 
 The note template has access to all item fields on the `zt` variable.
 
@@ -10,7 +10,7 @@ The note template has access to all item fields on the `zt` variable.
 
 All Zotero item fields are available as flat properties on `zt`. The canonical Zotero field name is the primary accessor. Two fields have CSL-inspired renames:
 
-| v2 property | Zotero canonical | Notes |
+| Property | Zotero canonical | Notes |
 |-------------|-----------------|-------|
 | `zt.abstract` | `abstractNote` | Alias -- both `zt.abstract` and `zt.abstractNote` work |
 | `zt.containerTitle` | `publicationTitle` | Alias -- both names work |
@@ -43,18 +43,18 @@ Common fields:
 | `zt.language` | `string \| null` | Language | all templates |
 | `zt.shortTitle` | `string \| null` | Short title | all templates |
 | `zt.extra` | `string \| null` | Extra field | all templates |
-| `zt.dateAdded` | `Temporal.Instant` | When the item was added to Zotero. Renders as the local date (e.g. `"2026-06-21"`) in `<%= %>` tags. | all templates |
-| `zt.dateModified` | `Temporal.Instant` | When the item was last modified. Renders as the local date (e.g. `"2026-06-21"`) in `<%= %>` tags. | all templates |
+| `zt.dateAdded` | `Temporal.Instant` | When the item was added to Zotero. Renders as the local date (e.g. `"2026-06-21"`) in `{{ }}` output. | all templates |
+| `zt.dateModified` | `Temporal.Instant` | When the item was last modified. Renders as the local date (e.g. `"2026-06-21"`) in `{{ }}` output. | all templates |
 | `zt.collections` | `array` | Zotero collections this item belongs to, sorted by name (see [Collections](#collections)) | note, content, frontmatter, filename |
 | `zt.backlink` | `string` | Zotero deep link (`zotero://select/...`) | note, content, frontmatter |
-| `zt.annotations` | `array` | All annotations across all attachments (see [Annotation template](#annotation-template-zotlit-annotationetamd)) | note, content, frontmatter |
+| `zt.annotations` | `array` | All annotations across all attachments (see [Annotation template](#annotation-template-zotlit-annotationliquidmd)) | note, content, frontmatter |
 | `zt.attachments` | `array` | All attachments for this item (see [Attachment shape](#attachment-shape)) | note, content, frontmatter |
 | `zt.authors` | `array` | Primary authors for this item (filtered from creators by the item's primary creator role). Creators coerce to `fullName` in string contexts. | note, content, frontmatter |
 | `zt.authorsShort` | `string` | Formatted short author string (e.g. `"Smith et al."`) | note, content, frontmatter |
 | `zt.relatedItems` | `array` | Items from Zotero's "Related" panel, sorted by title (see [Related items shape](#related-items-shape)) | note, content, frontmatter |
 | `zt.notes` | `array` | Imported child notes from Zotero (see [Notes shape](#notes-shape)) | note, content, frontmatter |
 | `zt.notePath` | `string \| null` | Full vault-relative literature note path (including `.md`); `null` when unresolvable (path collision, recursive resolution, template error) | note, content, frontmatter, filename |
-| `zt.noteLink()` | `function` | [Link helper](syntax.md#link-helpers) to this item's literature note -- call it, passing `alias` / `subpath` to override the display text or append a `#`-fragment; returns `null` when unresolvable (path collision, recursive resolution, template error) | note, content, frontmatter, filename |
+| `zt.noteLink` | link property | [Link helper](syntax.md#link-helpers) to this item's literature note -- renders on plain access (`{{ zt.noteLink }}`); pass `alias` / `subpath` through the `note_link` filter to override the display text or append a `#`-fragment. Resolves to nothing when unresolvable (path collision, recursive resolution, template error) | note, content, frontmatter, filename |
 
 > **Note:** Timestamp fields (`zt.dateAdded` and `zt.dateModified`, on both items and annotations) are `Temporal.Instant` values at **second precision** -- Zotero stores them as UTC `"YYYY-MM-DD HH:MM:SS"` strings with no sub-second component, so any rendered or computed time is accurate only to the second.
 
@@ -102,24 +102,24 @@ When `zt.itemType` is `"journalArticle"`, the following fields are available (in
 
 Example template using journal article fields:
 
-```eta
-# <%= zt.title %>
+```liquid
+# {{ zt.title }}
 
-<% if (zt.authors.length) { %>
-**Authors:** <%= zt.authors.join(", ") %>
-<% } %>
-<% if (zt.containerTitle) { %>
-**Journal:** <%= zt.containerTitle %><%= zt.volume ? `, vol. ${zt.volume}` : "" %><%= zt.issue ? `(${zt.issue})` : "" %><%= zt.pages ? `, pp. ${zt.pages}` : "" %>
-<% } %>
-<% if (zt.DOI) { %>
-**DOI:** <%= zt.DOI %>
-<% } %>
-<% if (zt.abstract) { %>
+{% if zt.authors.size > 0 %}
+**Authors:** {{ zt.authors | join: ", " }}
+{% endif %}
+{% if zt.containerTitle %}
+**Journal:** {{ zt.containerTitle }}{% if zt.volume %}, vol. {{ zt.volume }}{% endif %}{% if zt.issue %}({{ zt.issue }}){% endif %}{% if zt.pages %}, pp. {{ zt.pages }}{% endif %}
+{% endif %}
+{% if zt.DOI %}
+**DOI:** {{ zt.DOI }}
+{% endif %}
+{% if zt.abstract %}
 
 ## Abstract
 
-<%= zt.abstract %>
-<% } %>
+{{ zt.abstract }}
+{% endif %}
 ```
 
 Other item types (book, thesis, report, etc.) follow the same pattern -- each has a subset of fields defined by the Zotero schema. Fields not defined for a given item type return `null`.
@@ -147,9 +147,9 @@ The four variants:
 | `"year"` | `2023` | `null` | `null` | `null` | `"2023-00-00 2023"` |
 | `"text"` | `null` | `null` | `null` | `null` | `"0000-00-00 submitted"` |
 
-**String rendering:** `<%= zt.date %>` (or `${zt.date}` in frontmatter expressions) outputs an ISO-normalized string automatically via a built-in `toString()`:
+**String rendering:** `{{ zt.date }}` outputs an ISO-normalized string automatically:
 
-| `kind` | `toString()` output | Example |
+| `kind` | Output | Example |
 |--------|-------------------|---------|
 | `"date"` | ISO date | `"2023-06-15"` |
 | `"yearMonth"` | ISO year-month | `"2023-06"` |
@@ -158,18 +158,17 @@ The four variants:
 
 Common patterns:
 
-```eta
-<%# Render as ISO (uses toString) %>
-<%= zt.date %>
+```liquid
+{{ zt.date }}
 
-<%# Get just the year (works for all kinds) %>
-<%= zt.date?.year %>
+{{ zt.date.year }}
 
-<%# Locale-formatted full date (only for date/yearMonth kinds) %>
-<%= zt.date?.value?.toLocaleString("en", { dateStyle: "long" }) %>
+{{ zt.dateAdded | date: "%B %d, %Y" }}
 ```
 
-For frontmatter, use the same accessors in your expression settings (e.g. `zt.date?.year` for a numeric year field).
+The `date` filter accepts the same [strftime-style format tokens](https://shopify.github.io/liquid/filters/date/) as standard Liquid (`%Y`, `%m`, `%d`, `%B`, `%A`, etc.) and understands every `zt.date` variant -- including `"text"` dates, which render their raw text verbatim since there is nothing to format. It also accepts `zt.dateAdded` / `zt.dateModified` (`Temporal.Instant`) directly.
+
+For frontmatter, use the same accessors in your Liquid expression fields (e.g. `zt.date.year` for a numeric year field).
 
 ### Tags
 
@@ -184,7 +183,7 @@ Each tag has:
 | `tag.name` | `string` | Tag name |
 | `type` | `0 \| 1` | `0` = manual, `1` = auto |
 
-Tags coerce to `tag.name` in string contexts (e.g. `<%= t %>` or `` `${t}` ``), so `zt.tags.join(", ")` works without `.map()`.
+Tags coerce to `tag.name` in string contexts, so `{{ zt.tags | join: ", " }}` renders the tag names directly. To reach the nested field explicitly, chain `map` twice: `{{ zt.tags | map: "tag" | map: "name" | join: ", " }}`.
 
 ### Collections
 
@@ -198,9 +197,15 @@ Each collection has:
 | `name` | `string` | Collection name |
 | `path` | `readonly string[]` | Ancestor chain from top-level root to this collection: `path[0]` is the top-level ancestor, the last element is this collection itself |
 
-Collections coerce to `name` in string contexts (e.g. `<%= c %>` or `` `${c}` ``), so `zt.collections.join(", ")` works without `.map()`.
+Collections coerce to `name` in string contexts, so `{{ zt.collections | join: ", " }}` renders collection names directly.
 
-`path` is a plain array -- render the hierarchy with `c.path.join(" > ")` (e.g. `"Research > Reading"`). A live collection still nested under a trashed parent roots its path at the first non-trashed ancestor.
+For the full ancestor path, use the `collection_paths` filter -- it maps each collection to `path` joined by a separator (`"/"` by default):
+
+```liquid
+{{ zt.collections | collection_paths: " > " | join: "; " }}
+```
+
+A live collection still nested under a trashed parent roots its path at the first non-trashed ancestor.
 
 ### Creators
 
@@ -216,19 +221,19 @@ Collections coerce to `name` in string contexts (e.g. `<%= c %>` or `` `${c}` ``
 
 For institutional creators, `literal` is set and `family`/`given` are empty strings. For personal names, `literal` is `null`.
 
-Creators coerce to `fullName` in string contexts (e.g. `<%= c %>` or `` `${c}` ``), so `c.fullName` and `"" + c` are equivalent.
+Creators coerce to `fullName` in string contexts, so `{{ zt.authors | join: ", " }}` renders full names directly.
 
 `zt.primaryCreatorType` (`string | null`) indicates which creator role is the primary type for this item type (e.g. `"author"` for journal articles, `"director"` for films).
 
 > **Tip:** Use `zt.authors` (available in note/content templates and frontmatter) to get only the primary authors, or `zt.authorsShort` for a formatted string like `"Smith et al."`.
 
-## Content template (`zotlit-content.eta.md`)
+## Content template (`zotlit-content.liquid.md`)
 
 Has access to the same fields as the note template, including `zt.backlink`, `zt.attachments`, and all other fields listed above.
 
 The default body only loops over `zt.annotations`, but the full `zt.*` is available.
 
-## Annotation template (`zotlit-annotation.eta.md`)
+## Annotation template (`zotlit-annotation.liquid.md`)
 
 Receives a single annotation as `zt`.
 
@@ -247,18 +252,32 @@ Receives a single annotation as `zt`.
 | `zt.tags` | `array` | Tags on this annotation (same shape as item tags) |
 | `zt.authorName` | `string \| null` | Author of the annotation |
 | `zt.isExternal` | `boolean` | Whether the annotation is external |
-| `zt.dateAdded` | `Temporal.Instant` | When the annotation was created. Renders as the local date in `<%= %>` tags. |
-| `zt.dateModified` | `Temporal.Instant` | When the annotation was last modified. Renders as the local date in `<%= %>` tags. |
-| `zt.imgLink` | `function \| null` | [Link helper](syntax.md#link-helpers) for the excerpt image -- call it (`zt.imgLink()`) and prefix `!` for an embed, or use [`embed(zt.imgLink)`](syntax.md#the-embed-helper). With "copy image to vault" disabled it links the cached image's `file://` URI; with it enabled it links the in-vault copy, formatted per your wikilink preference. `null` for annotations without a cached excerpt image (everything but `image` and `ink`) |
-| `zt.fileLink` | `function` | [Link helper](syntax.md#link-helpers) to the parent attachment file -- call it (`zt.fileLink()`), default-anchored to this annotation's `page` (`#page=N`). Renders `""` when the file is unresolvable |
+| `zt.dateAdded` | `Temporal.Instant` | When the annotation was created. Renders as the local date in `{{ }}` output. |
+| `zt.dateModified` | `Temporal.Instant` | When the annotation was last modified. Renders as the local date in `{{ }}` output. |
+| `zt.imgLink` | link property | [Link helper](syntax.md#link-helpers) for the excerpt image -- renders on plain access (`{{ zt.imgLink }}`); pipe through the `embed` filter for an embed (`{{ zt.imgLink \| embed }}`). With "copy image to vault" disabled it links the cached image's `file://` URI; with it enabled it links the in-vault copy, formatted per your wikilink preference. Resolves to nothing for annotations without a cached excerpt image (everything but `image` and `ink`) |
+| `zt.fileLink` | link property | [Link helper](syntax.md#link-helpers) to the parent attachment file -- renders on plain access, default-anchored to this annotation's `page` (`#page=N`). Resolves to nothing when the file is unresolvable |
 | `zt.backlink` | `string` | Zotero deep link to this annotation (`zotero://open/...?annotation=KEY`) |
-| `zt.parentItem` | `object \| null` | The parent literature item (has all the same item fields as the note template). `null` when the annotation is on a standalone attachment (a file with no parent bibliographic item) — guard with `zt.parentItem?.field`. **Exception:** `zt.parentItem.collections` is always empty here — the drag-insert doesn't resolve the parent item's collections. Use the note template if you need them. |
+| `zt.parentItem` | `object \| null` | The parent literature item (has all the same item fields as the note template). `null` when the annotation is on a standalone attachment (a file with no parent bibliographic item) — guard with `{% if zt.parentItem %}`. **Exception:** `zt.parentItem.collections` is always empty here — the drag-insert doesn't resolve the parent item's collections. Use the note template if you need them. |
 | `zt.parentAttachment` | object | The parent attachment (see [Attachment shape](#attachment-shape) below) |
 | `zt.citation` | `string \| null` | A page-pinned citation for this annotation, rendered through your `cite` template from the parent item with the annotation's `pageLabel` as the Locator (label `"page"`) -- mirroring Zotero's own annotation citations. `null` when the annotation has no parent item or the parent carries no citation key. **Opt-in:** the default annotation template does not reference it -- reference `zt.citation` (a one-line edit) to include it. Computed lazily, so nothing is rendered unless the template reads it. |
 
-> v1's raw image accessors `it.imgPath` (absolute path) and `it.imgUrl` (`file://` URL) are not exposed in v2. Use `zt.imgLink()` (call it; prefix `!` or wrap in `embed()` for an embed), which already resolves the path.
+> Raw image accessors like an absolute image path or `file://` URL are not exposed directly. Use `zt.imgLink` (plain property access; pipe through `embed` for an embed), which already resolves the path.
 
-## Citation templates (`zotlit-cite.eta.md`, `zotlit-cite2.eta.md`)
+Example:
+
+```liquid
+{% bq %}
+[!note] Page {{ zt.pageLabel }}
+
+{{ zt.imgLink | embed }}{{ zt.text }}
+{% if zt.comment %}
+
+{{ zt.comment }}
+{% endif %}
+{% endbq %}
+```
+
+## Citation templates (`zotlit-cite.liquid.md`, `zotlit-cite2.liquid.md`)
 
 Both citation templates receive the same object exposing two parallel arrays -- the **Citation Items** and, alongside them, the bare items:
 
@@ -267,7 +286,7 @@ Both citation templates receive the same object exposing two parallel arrays -- 
 | `zt.citations` | `array` | The Citation Items -- each pairs the cited item's data with the citation-scoped properties (see [Citation Item](#citation-item) below) |
 | `zt.items` | `array` | The same cited items, bare -- `zt.items[i]` is `zt.citations[i].item` (see [Cited item fields](#cited-item-fields) below) |
 
-The two arrays share order and identity: `zt.citations[i].item === zt.items[i]`. Use `zt.citations` when you need the locator or other citation-scoped properties; use `zt.items` when you only need the item data.
+The two arrays share order and identity: `zt.citations[i].item` is `zt.items[i]`. Use `zt.citations` when you need the locator or other citation-scoped properties; use `zt.items` when you only need the item data.
 
 ### Citation Item
 
@@ -340,14 +359,30 @@ Citation-suggest inserts (the `@`-completion flow) build the same object from li
 | `paragraph` | `para.` |
 | `part` | `pt.` |
 | `section` | `sec.` |
-| `sub-verbo` | `sv.` |
+| `sub-verbo` | `s.v.` |
 | `verse` | `v.` |
 | `volume` | `vol.` |
 
 The shipped default `cite` template renders Pandoc-parseable output from this data -- a suppressed author as `-@key`, a locator as `, labelShort locator`:
 
-```eta
-[<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>]
+```liquid
+[{% liquid
+  assign cites = "" | split: ","
+  for c in zt.citations
+    if c.item.citationKey
+      if c.suppressAuthor
+        assign cite = "-@" | append: c.item.citationKey
+      else
+        assign cite = "@" | append: c.item.citationKey
+      endif
+      if c.locator
+        assign cite = cite | append: ", " | append: c.labelShort | append: " " | append: c.locator
+      endif
+      assign cites = cites | push: cite
+    endif
+  endfor
+  echo cites | join: "; "
+%}]
 ```
 
 See [Default templates](defaults.md#citation-templates) for the full `cite` / `cite2` listings.
@@ -363,7 +398,12 @@ Used in `zt.attachments` and `zt.parentAttachment`:
 | `contentType` | `string \| null` | MIME type (e.g. `"application/pdf"`) |
 | `linkMode` | `string` | `"imported_file"`, `"imported_url"`, `"linked_file"`, `"linked_url"`, `"embedded_image"`, or `"unknown"` |
 | `filePath` | `string \| null` | Absolute on-disk path to the attachment file; `null` for URL links, an unset linked-file base directory, or an unparseable path |
-| `fileLink` | `function` | [Link helper](syntax.md#link-helpers) to the attachment file -- call it (`a.fileLink()`), passing `alias` / `subpath` to override the display text or append a `#`-fragment. Renders `""` when unresolvable |
+| `fileLink` | link property | [Link helper](syntax.md#link-helpers) to the attachment file -- renders on plain access (`{{ a.fileLink }}`); pass `alias` / `subpath` through the `file_link` filter to override the display text or append a `#`-fragment. Resolves to nothing when unresolvable |
+
+```liquid
+{{ a.fileLink }}
+{{ a | file_link: "Open PDF" }}
+```
 
 ## Related items shape
 
@@ -386,10 +426,10 @@ Related items are depth-1: an entry's own `annotations`, `attachments`, and
 `relatedItems` are not populated (they are absent, not empty), marking the edge
 of the relation graph.
 
-```md
-<% for (const r of zt.relatedItems) { %>
-- [<%= r.title ?? r.key %>](<%= r.backlink %>) — <%= r.authorsShort %>
-<% } %>
+```liquid
+{% for r in zt.relatedItems %}
+- [{{ r.title | default: r.key }}]({{ r.backlink }}) — {{ r.authorsShort }}
+{% endfor %}
 ```
 
 ## Notes shape
@@ -400,30 +440,56 @@ Used in `zt.notes` (note, content, and frontmatter templates). Lists the Zotero 
 |----------|------|-------------|
 | `key` | `string` | Bare Zotero item key of the child note |
 | `title` | `string \| null` | The note's title |
-| `noteLink` | `function` | [Link helper](syntax.md#link-helpers) to the imported child-note file in the vault. Calling `noteLink()` lazily queues the child note for import -- if the link is never rendered, no file is created |
+| `noteLink` | link property | [Link helper](syntax.md#link-helpers) to the imported child-note file in the vault. Rendering it lazily queues the child note for import -- if the link is never rendered, no file is created |
 
-Child notes are imported as flat Markdown files (HTML parsed to Markdown, with frontmatter) on the first render that calls `noteLink()`. Already-imported notes (matched by identity key) link to the existing file without re-importing. Notes are never implicitly updated -- import is create-only.
+Child notes are imported as flat Markdown files (HTML parsed to Markdown, with frontmatter) on the first render that touches `noteLink`. Already-imported notes (matched by identity key) link to the existing file without re-importing. Notes are never implicitly updated -- import is create-only.
 
-```eta
-<% if (zt.notes.length) { %>
+```liquid
+{% if zt.notes.size > 0 %}
 ## Notes
 
-<% for (const note of zt.notes) { -%>
-- <%~ note.noteLink() %>
-<% } %>
-<% } %>
+{% for note in zt.notes -%}
+- {{ note.noteLink }}
+{% endfor %}
+{% endif %}
 ```
 
-To expose child-note links in frontmatter, add a field with expression `zt.notes.map(n => n.noteLink())`. Calling `noteLink()` in a frontmatter expression triggers the import queue, so the child-note files are created even when notes only appear in frontmatter.
+To expose child-note links in frontmatter, add a field with a Liquid expression of `zt.notes | note_links`. The `note_links` filter maps each note to its link (falling back to a `zt-error:<indexedKey>` marker if the link can't be resolved), and touching it in a frontmatter expression triggers the import queue the same way rendering `noteLink` does, so the child-note files are created even when notes only appear in frontmatter.
 
 ## Filename template
 
-The filename template is a setting string (not a separate file). To keep filename resolution to a single-item query, `zt` here is the **item's own fields only** -- the same core item data described under [Item fields](#item-fields), plus `creators`, `tags`, and `collections`. The richer fields assembled for the note body are **not** available in filename templates: `backlink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`. Use `zt.creators[0].family` instead of `zt.authorsShort` for an author-based name.
+The filename template is a file (`zotlit-filename.liquid.md`), not a settings string. To keep filename resolution to a single-item query, `zt` here is the **item's own fields only** -- the same core item data described under [Item fields](#item-fields), plus `creators`, `tags`, and `collections`. The richer fields assembled for the note body are **not** available in filename templates: `backlink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`. Use `zt.creators[0].family` instead of `zt.authorsShort` for an author-based name.
 
-`zt.notePath` and `zt.noteLink()` are not available in filename templates (a note has no path until it is named).
+`zt.notePath` and `zt.noteLink` exist in filename templates but always render empty -- a note has no path until it is named, so referencing them yields nothing (they never resolve to a link or path here).
 
-Default: `<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %>`
+Default:
 
-To file notes into a folder per collection, join a collection's `path` with `/`: `<%= zt.collections[0]?.path.join("/") ?? "" %>/<%= zt.title ?? zt.key %>`.
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
+```
+
+The `{% suffix %}` tag emits a random placeholder that's resolved to a short disambiguating suffix only if the resulting filename collides with an existing note -- omit it and colliding filenames are left to overwrite/prompt instead.
+
+To file notes into a folder per collection, join a collection's `path` with `/`: `{{ zt.collections[0].path | join: "/" }}/{{ zt.title | default: zt.key }}`.
 
 The `.md` extension is appended automatically -- do not include it in the template.
+
+## Link helpers in Liquid
+
+Zero-arg link helpers (`noteLink`, `fileLink`, `imgLink`) auto-invoke as plain property access -- `{{ a.fileLink }}` renders the link with no filter needed. To override the display text or append a `#`-fragment, pipe the owning object through the matching filter instead of the bare property:
+
+```liquid
+{{ a | file_link: "alias", "#subpath" }}
+{{ zt | note_link: "alias" }}
+```
+
+`noteLink` on items resolves to nothing when unresolvable, and in Liquid a missing value renders as an empty string, so an unresolved link silently disappears from the output. To detect absence explicitly -- for example to render a fallback -- assign the filter's result to a variable and test it:
+
+```liquid
+{% assign link = zt | note_link %}
+{% if link %}
+  {{ link }}
+{% else %}
+  _(no note yet)_
+{% endif %}
+```

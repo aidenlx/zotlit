@@ -16,6 +16,7 @@ import {
   type NoteIndex,
 } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
+import { InertTemplateError } from "@/services/template/errors";
 
 /**
  * The slice of a protocol handler's dependencies needed to create / update a
@@ -63,9 +64,10 @@ export async function updateNote(
 export function updateNoteToast(scope: UpdateScope): {
   loading: string;
   success: (result: UpdateResult) => string;
-  error: string;
+  error: (_msg: string, e: unknown) => string;
 } {
-  const error = m.notice_update_note_failed();
+  const error = (_msg: string, e: unknown): string =>
+    e instanceof InertTemplateError ? e.message : m.notice_update_note_failed();
   if (scope === "metadata") {
     return {
       loading: m.notice_updating_note_metadata(),
@@ -96,7 +98,7 @@ export async function createAndOpen(
       loading: m.notice_creating_note(),
       success: m.notice_created_note(),
       error: (_msg, e) =>
-        e instanceof EmptyFilenameError
+        e instanceof EmptyFilenameError || e instanceof InertTemplateError
           ? e.message
           : m.notice_create_note_failed(),
       swallowError: false,

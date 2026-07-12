@@ -26,10 +26,15 @@ describe("classifyDiskData", () => {
     expect(classifyDiskData(raw)).toEqual({ kind: "v1", raw });
   });
 
-  it("classifies integer __VERSION__ > 1 as future", () => {
-    expect(classifyDiskData({ __VERSION__: 2 })).toEqual({
+  it("classifies __VERSION__ === 2 as v2", () => {
+    const raw = { __VERSION__: 2, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v2", raw });
+  });
+
+  it("classifies integer __VERSION__ > 2 as future", () => {
+    expect(classifyDiskData({ __VERSION__: 3 })).toEqual({
       kind: "future",
-      version: 2,
+      version: 3,
     });
     expect(classifyDiskData({ __VERSION__: 99 })).toEqual({
       kind: "future",

@@ -1,244 +1,282 @@
-# Template Syntax
+# Syntax
 
-ZotLit uses [Eta](https://eta.js.org/) as its template engine. Templates are `.eta.md` files stored in your vault's template folder (named `zotlit-<name>.eta.md`).
+ZotLit's default template language is [Liquid](https://shopify.github.io/liquid/). This page covers everything you need to write a template: Liquid's own syntax plus the handful of tags and filters ZotLit adds. Template files are named `zotlit-<name>.liquid.md` and live in your vault's template folder.
 
-## Syntax
+Everything a template needs is under one variable: `zt`. What's on `zt` depends on the template type — see [Data Reference](data-reference.md) for the full property list per template.
 
-Template delimiters:
+## Output and tags
 
-| Delimiter | Purpose |
-|-----------|----------------------------------------------|
-| `<% %>` | Execute JavaScript (no output) |
-| `<%= %>` | Output expression (auto-filtered) |
-| `<%~ %>` | Output raw (no filtering) |
-| `<%/* */%>` | Comment (not rendered) |
+Liquid has two kinds of markup:
 
-Per-tag whitespace control is available with `-` and `_` markers:
+| Syntax | Purpose |
+|--------|---------|
+| `{{ expression }}` | Output a value into the rendered note |
+| `{% tag %}` | Run logic that doesn't itself produce output (`if`, `for`, `assign`, …) |
 
-| Marker | Effect | Example |
-|--------|--------|---------|
-| `-` | Trim one newline | `<%- %>`, `<% -%>` |
-| `_` | Trim all whitespace | `<%_ %>`, `<% _%>` |
-
-Place the marker on the opening side (`<%-`, `<%_`) to trim before the tag, or on the closing side (`-%>`, `_%>`) to trim after it. These override the `autoTrim` setting for that tag.
-
-Other notes:
-
-- **`include()` is a function call.** Write `<%~ include("name", data) %>` to include another template.
-- **No `async`/`await` in templates.** ZotLit renders templates synchronously.
-
-## Auto-filter
-
-ZotLit enables Eta's `autoFilter` with a custom filter function: `null` and `undefined` values are silently converted to empty strings `""`. This means `<%= zt.someFieldThatIsNull %>` outputs nothing rather than the literal text `"null"` or `"undefined"`. `Temporal.Instant` values (like `zt.dateModified`) are converted to the local date string (e.g. `"2026-06-21"`). Other non-null values are coerced via their `toString()` -- this is how `<%= zt.date %>` renders ISO dates and `<%= zt.authors[0] %>` renders the creator's full name.
-
-Because of auto-filter, `<%= %>` and `<%~ %>` behave identically for non-null string values. Use `<%~ %>` for `include()` calls (which return pre-rendered strings).
-
-## The `zt` variable
-
-All template data is available under the `zt` variable (changed from v1's `it`). The `zt` prefix applies across all template types:
-
-```eta
-<%= zt.title %>
-<%= zt.creators[0].family %>
-<%= zt.citationKey %>
+```liquid
+{{ zt.title }}
+{% if zt.comment %}
+{{ zt.comment }}
+{% endif %}
 ```
 
-The EtaSuggest autocomplete in the editor inserts `zt.` automatically when you type inside `<%= %>` tags.
+Comment out template source with `{% comment %}…{% endcomment %}` — anything inside is dropped, not rendered:
 
-## `include()` and data passing
-
-Eta's `include()` function renders another template inline. In ZotLit, the data you pass to `include()` becomes the child template's `zt` variable -- it's passed directly, not merged with the parent's data.
-
-In a parent template:
-
-```eta
-<%~ include("annotation", annotation) %>
+```liquid
+{% comment %}
+TODO: decide how to render multi-author works
+{% endcomment %}
 ```
 
-The child template (`zotlit-annotation.eta.md`) receives `annotation` as its `zt` variable -- direct passthrough, not a merge.
+### Truthiness
 
-The one special-cased include is `content`: when `zotlit-note.eta.md` includes `content`, the output is automatically wrapped with managed-region markers (see below). The marker text never appears in any `.eta.md` file.
+Only `nil` (missing/`null`) and `false` are falsy in Liquid — `0`, `""`, and empty arrays are all truthy. ZotLit normalizes empty-string fields to `null` before rendering, so `{% if zt.comment %}` behaves the way you'd expect: it's false when there's no comment, true when there is one, without an extra `!= ""` check.
 
-## The `bq()` blockquote helper
+## Whitespace control
 
-For rendering Markdown blockquotes (especially Obsidian callouts) inside templates, ZotLit provides a `bq()` helper function. It captures the content block, trims it, and prefixes each line with `>`, collapsing redundant empty blockquote lines:
+By default, Liquid renders whitespace exactly as written — nothing is trimmed automatically. This keeps templates portable: what you see in the template file is what lands in the note.
 
-```eta
-<% bq(() => { %>
-[!note] Page <%= zt.pageLabel %>
+Add a `-` to a tag delimiter to trim on that side:
 
-<%= zt.text %>
-<% }) %>
+| Marker | Effect |
+|--------|--------|
+| `{%-` / `{{-` | Trim same-line indentation before the tag (never eats a bare blank line) |
+| `-%}` / `-}}` | Trim inline blanks plus exactly one following newline |
+
+```liquid
+{% for note in zt.notes -%}
+- {{ note.noteLink }}
+{% endfor %}
 ```
 
-This produces:
+The trailing `-%}` on the `for` tag eats the newline right after it, so each iteration starts cleanly on `- `. A blank line placed *after* a `-%}` still survives — the marker only ever consumes one newline, not a whole blank line.
+
+There is no vault-level whitespace setting for Liquid (unlike Eta's `autoTrim`) — trimming is explicit, per tag, which keeps templates portable across vaults.
+
+## The `{% liquid %}` statement block
+
+For multi-line logic, `{% liquid %}` lets you write one statement per line with no delimiters and no whitespace leakage — nothing is emitted except what you `echo` explicitly:
+
+```liquid
+{% liquid
+  assign cites = "" | split: ","
+  for c in zt.citations
+    if c.suppressAuthor
+      assign cite = "-@" | append: c.item.citationKey
+    else
+      assign cite = "@" | append: c.item.citationKey
+    endif
+    assign cites = cites | push: cite
+  endfor
+  echo cites | join: "; "
+%}
+```
+
+Indent freely inside the block for readability — indentation is not part of the output.
+
+## Control flow
+
+Standard Liquid control-flow tags all work:
+
+```liquid
+{% if zt.abstract %}
+> {{ zt.abstract }}
+{% elsif zt.comment %}
+> {{ zt.comment }}
+{% else %}
+> (no abstract)
+{% endif %}
+
+{% unless zt.notes.size > 0 %}
+No child notes.
+{% endunless %}
+
+{% for c in zt.creators limit: 3 offset: 1 reversed %}
+- {{ c.fullName }}
+{% endfor %}
+
+{% case zt.itemType %}
+{% when "journalArticle" %}
+Journal article
+{% when "book", "bookSection" %}
+Book
+{% else %}
+Other
+{% endcase %}
+```
+
+`for` supports `limit:`, `offset:`, and `reversed` exactly as shown. Assign and capture values for reuse:
+
+```liquid
+{% assign year = zt.dateAdded | date: "%Y" %}
+{% capture heading %}Notes from {{ year }}{% endcapture %}
+## {{ heading }}
+```
+
+## Filters
+
+Filters transform a value with `|` and take arguments after `:`. All the standard Liquid filters are available:
+
+- **Arrays**: `map`, `where`, `compact`, `join`, `sort`, `first`, `last`, `size`, `push`, `uniq`, `group_by`
+- **Strings**: `append`, `prepend`, `split`, `strip`, `upcase`, `downcase`, `replace`, `truncate`, `default`
+
+```liquid
+{{ zt.attachments | map: "fileLink" | compact | join: " " }}
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}
+{{ zt.title | truncate: 60 }}
+```
+
+The first example maps each attachment to its file link, drops any that came back `null` (no resolvable link), and joins the rest with a space — this is ZotLit's actual default `note` template line for linking attachments.
+
+## ZotLit vocabulary
+
+On top of standard Liquid, ZotLit registers a small set of tags and filters for literature-note-specific tasks.
+
+### `{% bq %}` — blockquote block
+
+Wraps its content in a Markdown blockquote by prefixing every line with `> `. It trims the captured content first, and collapses consecutive blank lines into a single bare `>` so you don't get a stack of empty quote lines:
+
+```liquid
+{% bq %}
+[!note] Page {{ zt.pageLabel }}
+
+{{ zt.imgLink | embed }}{{ zt.text }}
+{% if zt.comment %}
+
+{{ zt.comment }}
+{% endif %}
+{% endbq %}
+```
+
+renders as:
 
 ```markdown
 > [!note] Page 42
 >
-> The highlighted text here
+> ![[excerpt.png]]The highlighted passage
+>
+> My thoughts on this
 ```
 
-The `bq()` helper must be used with `<% %>` (execute) tags, never inside `<%~ %>` (raw output) tags. Opening a capture inside an interpolation tag causes Eta compilation errors.
+This is ZotLit's actual default `annotation` template — an Obsidian callout built from `{% bq %}`.
 
-How `bq()` works:
+### `embed` — Markdown embed filter
 
-1. Calls the callback, capturing all output produced within it.
-2. Trims the captured string.
-3. Splits into lines and prefixes each with `> ` (empty lines become bare `>`).
-4. Collapses consecutive bare `>` lines into one.
-5. Outputs the result.
+`embed` prefixes a link with `!` to turn it into a Markdown/Obsidian embed, and collapses to `""` when the link is null or empty — no `{% if %}` guard needed:
 
-## Link helpers
-
-Every link on the `zt` context is a **function**, not a precomputed string. Call it to render the link, and pass overrides to change the display text or jump to a sub-location:
-
-```
-linkHelper(alias?, subpath?)
+```liquid
+{{ zt.imgLink | embed }}
 ```
 
-- `alias` -- the link's display text. Omit it to use the default (the filename / note title). This default matters for Markdown links: Obsidian falls back to the filename only for wikilinks, so a Markdown link with no display text renders as a bare `[](…)`. The helpers fill the text in for you, so links are never blank.
-- `subpath` -- a `#`-fragment appended to the target, e.g. `"#heading"`, `"#^block"`, or `"#page=3"`.
+- Present link (`"[[excerpt.png]]"`) → `"![[excerpt.png]]"`
+- Absent link (`null`) → `""`
 
-The link helpers:
+### Link helpers
 
-| Helper | Where | Default text | Default subpath |
-|--------|-------|--------------|-----------------|
-| `zt.noteLink()` | item (note, related items) | note title | none |
-| `note.noteLink()` | each `zt.notes[]` entry | child-note title | none |
-| `a.fileLink()` | each `zt.attachments[]` entry | attachment filename | none |
-| `zt.fileLink()` | annotation | attachment filename | `#page=N` (the annotation's page) |
-| `zt.imgLink()` | annotation | excerpt-image filename | none |
+Link-producing properties on `zt` (`noteLink`, `fileLink`, `imgLink`) are functions under the hood, but Liquid auto-invokes function-valued properties on plain access — so **you don't call them**, you just reference the property and get the default rendering:
 
-```eta
-<%# default text, no override %>
-<%= zt.attachments[0].fileLink() %>
-
-<%# custom display text %>
-<%= zt.attachments[0].fileLink("Open the PDF") %>
-
-<%# link to a heading inside the note %>
-<%= zt.noteLink("See notes", "#Summary") %>
+```liquid
+{{ zt.noteLink }}
+{{ a.fileLink }}
 ```
 
-`zt.noteLink()` (on items and related items) returns `null` when the literature note path is unresolvable (path collision, recursive filename resolution, or template error). Use `?? fallback` to surface the error or `.filter(Boolean)` to drop it. `zt.fileLink()` (annotation) and `zt.imgLink()` return `""` / `null` when the file or excerpt image is unresolvable, so guard or `.filter(Boolean)` as needed. `zt.imgLink` is `null` for annotation types with no cached image (everything but `image` and `ink`). `note.noteLink()` (child notes) always returns a string -- it creates a synthetic path if the note has not been imported yet.
+Reach for the matching filter only when you need to override the link's display text or target a sub-location:
 
-## The `embed()` helper
+| Filter | Overrides |
+|--------|-----------|
+| `{{ obj \| file_link }}` / `{{ obj \| file_link: "alias" }}` / `{{ obj \| file_link: "alias", "#subpath" }}` | attachment link |
+| `{{ obj \| note_link }}` / `{{ obj \| note_link: "alias", "#heading" }}` | note link |
+| `{{ obj \| img_link }}` / `{{ obj \| img_link: "alt text" }}` | excerpt-image link |
 
-`embed()` turns a link helper into a Markdown embed by prefixing `!`, and collapses cleanly to `""` when the link is absent -- so you don't have to write the `zt.imgLink ? "!" + zt.imgLink() : ""` guard yourself:
-
-```eta
-<%= embed(zt.imgLink) %>
+```liquid
+{{ zt.attachments[0] | file_link: "Open the PDF" }}
+{{ zt | note_link: "See notes", "#Summary" }}
+{{ zt | img_link: "excerpt image" }}
 ```
 
-It forwards `alias` / `subpath` to the underlying helper, and accepts any link helper (or `null`):
+A link filter/property with no resolvable target renders as `""` (or `null` inside a filter pipeline, which `compact` will drop) — it never throws.
 
-```
-embed(link, alias?, subpath?)
-```
+### `{% suffix %}` — filename collision guard
 
-- `link` is absent (`null` / `undefined`) or renders empty -> `embed` outputs `""`.
-- otherwise -> `!` + the rendered link (e.g. `![[ANNOT.png]]` or `![alt](file://…)`).
+`{% suffix %}` is meaningful only in the **filename** template. It renders nothing when the generated filename is free, and appends a short random string only when it would collide with a note already in the vault:
 
-## The `suffix()` filename helper
-
-The `suffix()` helper is for the **filename template** only. It appends a short random string to keep new literature notes from overwriting existing files, but **only when the generated name actually collides** with a note already in the vault. When the name is free, it renders nothing:
-
-```eta
-<%= zt.citationKey ?? zt.title ?? zt.key %><%= suffix() %>
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
 ```
 
-- First note named `Smith2020` -> `Smith2020.md` (no suffix).
-- Second note that would render `Smith2020` -> `Smith2020_a1b2c3.md` (random string appended with an underscore separator).
+- First note named `Smith2020` → `Smith2020.md` (no suffix).
+- A second note that would also render `Smith2020` → `Smith2020_a1b2c3.md`.
 
-### Signature
+Arguments are positional — `length`, `prepend`, `append` (all optional):
 
-```
-suffix(length = 6, prepend = "_", append = "")
-```
-
-- `length` -- number of random characters to generate. Default `6`. The string is generated with [nanoid](https://github.com/ai/nanoid) (alphanumeric only — `_` and `-` are reserved for affixes), so 6 gives ample headroom against repeat collisions.
-- `prepend` -- literal text inserted **before** the random string. Default `"_"`, producing `Name_a1b2c3`.
-- `append` -- literal text inserted **after** the random string. Default `""`.
-
-The affixes appear only when the random string does -- on a collision. When the name is free, the whole thing (affixes included) renders nothing.
-
-```eta
-<%= zt.title %><%= suffix(10) %>           <%/* Title_a1b2c3d4e5 */%>
-<%= zt.title %><%= suffix(6, " (", ")") %> <%/* Title (a1b2c3) */%>
-<%= zt.citationKey %><%= suffix(4, "-") %> <%/* Smith2020-a1b2 */%>
+```liquid
+{% suffix 10 %}          {% comment %} 10-char random string, default "_" prefix {% endcomment %}
+{% suffix 6, "(", ")" %} {% comment %} Title(a1b2c3) {% endcomment %}
 ```
 
-How it works: at render time `suffix()` does not yet know whether the name collides, so it emits a placeholder marker carrying the length and affixes. After rendering, ZotLit resolves the final path:
+### `date` — date formatting filter
 
-1. Strip the marker and check whether that base name is free. If so, use it as-is -- the suffix never appears.
-2. On a collision, fill the marker with `prepend` + a fresh random string + `append`, and retry, repeating a few times until a free name is found.
+`date` accepts a strftime-style format string and understands every date shape ZotLit passes it: `Temporal.Instant`, `Temporal.PlainDate`/`PlainYearMonth`, and Zotero's multipart `ItemDate`:
 
-Notes:
-
-- `length` must be an integer between 1 and 64, and the affixes must not contain `:` or `%`; otherwise rendering throws.
-- Place `suffix()` where you want the suffix to land (typically at the end).
-- The helper is meaningful only in the filename template. Used elsewhere, its marker degrades to harmless literal text rather than affecting note content.
-
-## autoTrim
-
-ZotLit's `autoTrim` defaults to `[false, false]` -- no trimming before or after tags. This means:
-
-- A newline after `%>` is preserved in the output.
-- Leading whitespace before `<%` is preserved.
-- Template-structural blank lines appear in the rendered note.
-
-This is intentional: Markdown is whitespace-sensitive, and silently eating newlines would break formatting. Write your templates with the exact whitespace you want in the output.
-
-> **v1 note:** v1 defaulted to `[false, "nl"]`, which trimmed one trailing newline after each `%>`. If you're migrating a v1 template and the output has unexpected extra blank lines, this is likely why. You can use per-tag `-%>` markers or change the autoTrim setting.
-
-Per-template autoTrim can be configured in settings as `false`, `"nl"` (trim newlines only), or `"slurp"` (trim all whitespace). The setting is a two-element array `[before, after]` controlling the behavior on each side of a tag.
-
-## Managed region
-
-The **managed region** is a section of the literature note that ZotLit owns and re-renders on update. It is delimited by Obsidian comments:
-
-```markdown
-%%zt-managed%%
-...refreshable content...
-%%/zt-managed%%
+```liquid
+{{ zt.dateAdded | date: "%Y-%m-%d" }}
+{{ zt.date | date: "%Y-%m" }}
 ```
 
-These markers are:
+An `ItemDate` with `kind: "text"` (a date Zotero couldn't parse, e.g. `"submitted"`) has no real date to format — `date` renders its raw text unchanged regardless of the format string you pass.
 
-- **Invisible** in Obsidian's reading view (they are `%%` comments).
-- **Not indexed** by Obsidian's metadata cache.
-- **Added automatically** around the output of the `content` template -- they never appear in any `.eta.md` file.
-- **Unconditional** -- emitted even when there are zero annotations, so a note created before any highlights exist stays updatable.
+### Utility filters
 
-When you run the "Update literature note" command, ZotLit:
+- `note_links` maps an array of items to their note links, falling back to a `zt-error:<key>` marker per item if a link can't be resolved (instead of dropping the item silently):
 
-1. Re-renders the `content` template with fresh data.
-2. Replaces the content between the markers.
-3. Merges managed frontmatter keys (see [Frontmatter](frontmatter.md)).
+  ```liquid
+  {{ zt.relatedItems | note_links | join: ", " }}
+  ```
 
-Everything outside the managed region (your own notes, the H1 title, the backlink line) is preserved.
+- `collection_paths` maps an array of collections to their joined path strings, default separator `/`:
 
-## Template resolution
+  ```liquid
+  {{ zt.collections | collection_paths }}
+  {{ zt.collections | collection_paths: " > " }}
+  ```
 
-ZotLit looks for templates in this order:
+## Output coercion
 
-1. **Vault template folder** -- user-ejected `.eta.md` files in the configured template directory.
-2. **Embedded defaults** -- built-in templates bundled with the plugin.
+Whatever a `{{ }}` expression evaluates to is coerced to text before it's written into the note:
 
-The vault watcher detects creates, deletes, and renames of `.eta.md` files. Modified templates are automatically detected and reloaded.
+| Value | Rendered as |
+|-------|-------------|
+| `null` / `undefined` | `""` (empty — never the literal text `"null"`) |
+| `Temporal.Instant` | Local date string, e.g. `"2026-06-21"` |
+| Creators, `ItemDate`, and other objects | Their own `toString()` (a creator's full name, an `ItemDate`'s ISO-ish text) |
 
-## Template names
+This is why `{{ zt.dateAdded }}` prints a plain date and `{{ zt.creators[0] }}` prints a name, with no filter needed.
 
-Canonical template names and their vault files:
+## Includes: `{% render %}`
 
-| Name | Vault file | Purpose |
-|------|-----------|---------|
-| `note` | `zotlit-note.eta.md` | Full literature note body |
-| `content` | `zotlit-content.eta.md` | Managed-region content (annotations) |
-| `annotation` | `zotlit-annotation.eta.md` | Single annotation rendering |
-| `cite` | `zotlit-cite.eta.md` | Primary citation format |
-| `cite2` | `zotlit-cite2.eta.md` | Secondary citation format |
-| `filename` | _(setting string)_ | Filename for new literature notes |
+`{% render %}` composes templates by name, passing data in as the child template's `zt`:
 
-The `filename` template is configured as a setting string (`template.filename`), not as a separate file. Its `zt` is limited to the item's own fields -- see [Filename template](data-reference.md#filename-template) for what is and isn't available.
+```liquid
+{% render "content" with zt as zt %}
+{% render "annotation" with annotation as zt %}
+```
+
+`with <value> as zt` binds `<value>` to `zt` inside the rendered partial. `render` gives the partial an **isolated scope** — it only sees what you explicitly pass as `zt`, not the parent template's other variables. This is standard Liquid `render` semantics: the child template file is looked up by name (e.g. `"annotation"` resolves to `zotlit-annotation.liquid.md`), not by path.
+
+Two real defaults use this to compose:
+
+```liquid
+{% comment %} zotlit-note.liquid.md {% endcomment %}
+{% render "content" with zt as zt %}
+```
+
+```liquid
+{% comment %} zotlit-content.liquid.md {% endcomment %}
+{% for annotation in zt.annotations %}
+{% render "annotation" with annotation as zt %}
+{% endfor %}
+```
+
+## Template file naming
+
+Liquid templates are matched by filename: `zotlit-<name>.liquid.md`, stored in your vault's configured template folder. The canonical names are `note`, `content`, `annotation`, `cite`, `cite2`, and `filename` — see [Data Reference](data-reference.md) for what's available on `zt` in each.

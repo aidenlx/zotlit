@@ -16,6 +16,7 @@ export default defineConfig({
     "pnpm-lock.yaml",
     ".agents/**",
     ".claude/**",
+    ".scratch/**",
     "tests/zt-vault/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",

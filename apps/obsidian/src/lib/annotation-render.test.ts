@@ -102,12 +102,12 @@ describe("attachmentFileLink", () => {
     );
   });
 
-  it("returns empty string for an unresolvable attachment", () => {
+  it("returns null for an unresolvable attachment", () => {
     expect(
       attachmentFileLink(
         makeAttachment({ path: "https://example.com", linkMode: 3 }),
         ctx,
       )(),
-    ).toBe("");
+    ).toBeNull();
   });
 });
