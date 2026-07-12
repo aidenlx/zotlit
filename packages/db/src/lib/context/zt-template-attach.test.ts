@@ -74,6 +74,14 @@ describe("attachmentToTemplateData", () => {
     expect(result.linkMode).toBe("unknown");
   });
 
+  it("normalizes an empty-string contentType to null", () => {
+    const result = attachmentToTemplateData(
+      makeAttachment({ contentType: "" }),
+    );
+
+    expect(result.contentType).toBeNull();
+  });
+
   it("omits the runtime filePath and fileLink fields", () => {
     const result = attachmentToTemplateData(
       makeAttachment({ path: "storage:a.pdf", linkMode: 0 }),

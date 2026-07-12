@@ -8,6 +8,7 @@ export interface ConfirmOptions {
   action: string;
   cancel?: string;
   destructive?: boolean;
+  cta?: boolean;
 }
 
 export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
@@ -19,7 +20,7 @@ export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
     return Promise.resolve(window.confirm(message));
   }
 
-  const { action, cancel, title, content, destructive } = options;
+  const { action, cancel, title, content, destructive, cta } = options;
   const { resolve, promise } = Promise.withResolvers<boolean>();
   const modal = new ConfirmationModal(app);
   modal.setTitle(title);
@@ -30,6 +31,9 @@ export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
     btn.setButtonText(action).onClick(() => resolve(true));
     if (destructive) {
       btn.setDestructive();
+    }
+    if (cta) {
+      btn.setCta();
     }
   });
   modal.addCancelButton(cancel ?? m.modal_cancel());

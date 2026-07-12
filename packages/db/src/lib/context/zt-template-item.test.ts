@@ -214,4 +214,32 @@ describe("itemToTemplateBaseData", () => {
 
     expect(result.tags).toEqual([]);
   });
+
+  it("normalizes an empty-string field value to absent/null", () => {
+    const item = makeItem({
+      itemType: "journalArticle",
+      title: "A Study",
+      abstractNote: "",
+    });
+
+    const result = itemToTemplateBaseData({ item, tags: [] });
+
+    expect(result.abstract).toBeNull();
+    expect(result.abstractNote).toBeUndefined();
+    expect("abstractNote" in result).toBe(false);
+    // Unaffected fields still come through.
+    expect(result.title).toBe("A Study");
+  });
+
+  it("skips an empty-string customFields entry", () => {
+    const item = makeItem(
+      { itemType: "journalArticle" },
+      { customFields: new Map([["myCustomField", ""]]) },
+    );
+
+    const result = itemToTemplateBaseData({ item, tags: [] });
+
+    expect(result.myCustomField).toBeUndefined();
+    expect("myCustomField" in result).toBe(false);
+  });
 });

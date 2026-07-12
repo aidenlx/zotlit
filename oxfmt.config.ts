@@ -8,6 +8,7 @@ export default defineConfig({
   ...baseConfig,
   ignorePatterns: [
     ...baseConfig.ignorePatterns,
+    ".scratch/**",
     "tests/zt-vault/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",

@@ -6,9 +6,9 @@ import {
   type TemplateFunction,
 } from "eta/core";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { basename } from "./basename";
+import { formatBlockquote } from "./blockquote";
+import { coerceOutput } from "./coerce";
 import { DEFAULT_AUTO_TRIM, type AutoTrim } from "./constants";
 import { embed } from "./embed";
 import { filenameSuffix } from "./filename-suffix";
@@ -17,6 +17,15 @@ import { replaceHelper } from "./replace-helper";
 export interface TemplateEngineOptions {
   /** @default [false, false] */
   autoTrim?: readonly [AutoTrim, AutoTrim];
+  /**
+   * Wraps runtime errors as `EtaRuntimeError` (name + line + source excerpt)
+   * instead of letting the raw JS error propagate.
+   *
+   * @default false
+   * @see `TemplateFacade` in `./facade`, which enables this to label errors
+   *   with the template name.
+   */
+  debug?: boolean;
   /**
    * Post-process a named render's output, keyed by the template name passed to
    * `render()`/`include()`. Runs for both direct `render()` and includes (which
@@ -40,15 +49,17 @@ export class TemplateEngine extends Eta {
 
   constructor({
     autoTrim = [DEFAULT_AUTO_TRIM.leading, DEFAULT_AUTO_TRIM.trailing],
+    debug = false,
     transformRender,
   }: TemplateEngineOptions = {}) {
     super({
       cache: true,
       varName: "zt",
       autoTrim: [...autoTrim],
+      debug,
       autoEscape: false,
       autoFilter: true,
-      filterFunction: filterUndefinedNull,
+      filterFunction: coerceOutput,
       functionHeader:
         "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper;",
       plugins: [includeDataPlugin],
@@ -145,6 +156,7 @@ export class TemplateEngine extends Eta {
 }
 
 export { basename } from "./basename";
+export { formatBlockquote } from "./blockquote";
 export { embed } from "./embed";
 export {
   filenameSuffix,
@@ -198,30 +210,5 @@ const includeDataPlugin: EtaConfig["plugins"][number] = {
     );
   },
 };
-
-export function formatBlockquote(content: string): string {
-  const lines = content
-    .trim()
-    .split("\n")
-    .map((line) => (line.trim() === "" ? ">" : `> ${line}`));
-  return lines
-    .filter((line, i) => !(line === ">" && lines[i - 1] === ">"))
-    .join("\n");
-}
-
-function filterUndefinedNull(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (value instanceof Date) return value.toISOString();
-  if (value instanceof Temporal.Instant) {
-    return value
-      .toZonedDateTimeISO(Temporal.Now.timeZoneId())
-      .toPlainDate()
-      .toString();
-  }
-  // Coercing arbitrary values via their `toString` is this filter's job — e.g.
-  // ItemDate / creators carry a custom `toString`.
-  // oxlint-disable-next-line no-base-to-string
-  return String(value);
-}
 
 export type { TemplateFunction };

@@ -1,208 +1,107 @@
 # Default Templates
 
-This page shows each default template in both v1 and v2, with explanations of what changed and why.
+ZotLit ships with Liquid defaults for every template type. These are embedded in the plugin and used when no user-ejected file exists. To customize, eject a template via Settings > Templates, then edit the resulting `.liquid.md` file.
 
 ## Note template
 
-The main template that renders the full literature note body.
+File: `zotlit-note.liquid.md`
 
-### v1 (`zt-note.eta.md`)
+```liquid
+# {{ zt.title }}
 
-```eta
-# <%= it.title %>
+[Zotero]({{ zt.backlink }}) {{ zt.attachments | map: "fileLink" | compact | join: " " }}
 
-[Zotero](<%= it.backlink %>) <%= it.fileLink %>
-<%~ include("annots", it.annotations) %>
+{% render "content" with zt as zt %}
 ```
 
-- `it.title` -- item title.
-- `it.backlink` -- Zotero deep link.
-- `it.fileLink` -- single attachment link (v1 selects one attachment).
-- `it.annotations` -- array passed to the `annots` template.
+- Renders the item title as an H1.
+- Links to the Zotero item (deep link) and every resolvable attachment file. `map: "fileLink"` calls `fileLink` on each attachment; `compact` drops attachments that don't resolve to a link.
+- Includes the `content` template, passing the full `zt` context so it can reach notes, annotations, and any other item property.
 
-### v2 (`zotlit-note.eta.md`)
+## Content template
 
-```eta
-# <%= zt.title %>
+File: `zotlit-content.liquid.md`
 
-[Zotero](<%= zt.backlink %>) <%= zt.attachments.map(a => a.fileLink()).filter(Boolean).join(" ") %>
-
-<%~ include("content", zt) %>
-```
-
-Changes:
-
-- `it` -> `zt` prefix.
-- `it.fileLink` (single attachment) -> `zt.attachments.map(a => a.fileLink())` (all attachments; `fileLink` is now a [link helper](syntax.md#link-helpers) you call).
-- `it.annotations` passed to `include("annots", ...)` -> `include("content", zt)` passes the **full** context. The content template can access any `zt.*` property, not just annotations.
-- The `include("content", zt)` output is automatically wrapped with `%%zt-managed%%` markers.
-
-## Content template (was "annots")
-
-Renders the refreshable managed region. Renamed from `zt-annots` to `zt-content`.
-
-### v1 (`zt-annots.eta.md`)
-
-```eta
-<% for (const annotation of it) { %>
-<%~ include("annotation", annotation) %>
-<% } %>
-```
-
-v1 received `it` as a raw array of annotations.
-
-### v2 (`zotlit-content.eta.md`)
-
-```eta
-<% if (zt.notes.length) { %>
+```liquid
+{% if zt.notes.size > 0 %}
 ## Notes
 
-<% for (const note of zt.notes) { -%>
-- <%~ note.noteLink() %>
-<% } %>
-<% } %>
-<% if (zt.annotations.length) { %>
+{% for note in zt.notes -%}
+- {{ note.noteLink }}
+{% endfor %}
+{% endif %}
+{% if zt.annotations.size > 0 %}
 ## Annotations
 
-<% for (const annotation of zt.annotations) { %>
-<%~ include("annotation", annotation) %>
-<% } %>
-<% } %>
+{% for annotation in zt.annotations %}
+{% render "annotation" with annotation as zt %}
+{% endfor %}
+{% endif %}
 ```
 
-Changes:
-
-- `it` (raw array) -> `zt.annotations` (array accessed from the full context object).
-- Has access to all the same fields as the note template, so you can reference `zt.backlink`, `zt.tags`, `zt.attachments`, etc. inside the managed region.
-- Renders imported child notes as a linked list before annotations (see [Notes shape](data-reference.md#notes-shape)).
+- Renders a "Notes" section listing linked child notes. Referencing `note.noteLink` imports each note as a standalone Markdown file (see [Note Import](note-import.md)).
+- Renders an "Annotations" section, including each annotation via the `annotation` template.
+- Both sections only appear when they have content (`zt.notes.size > 0` / `zt.annotations.size > 0`).
+- This is the output that gets wrapped in the managed-region markers, so "Update literature note" re-renders it while leaving the rest of the note body untouched.
 
 ## Annotation template
 
-Renders a single annotation.
+File: `zotlit-annotation.liquid.md`
 
-### v1 (`zt-annot.eta.md`)
+```liquid
+{% bq %}
+[!note] Page {{ zt.pageLabel }}
 
-```eta
-[!note] Page <%= it.pageLabel %>
+{{ zt.imgLink | embed }}{{ zt.text }}
+{% if zt.comment %}
 
-<%= it.imgEmbed %><%= it.text %>
-<% if (it.comment) { %>
----
-<%= it.comment %>
-<% } %>
+{{ zt.comment }}
+{% endif %}
+{% endbq %}
 ```
 
-In v1, blockquote formatting was handled separately.
-
-### v2 (`zotlit-annotation.eta.md`)
-
-```eta
-<% bq(() => { %>
-[!note] Page <%= zt.pageLabel %>
-
-<%= embed(zt.imgLink) %><%= zt.text %>
-<% if (zt.comment) { %>
-
-<%= zt.comment %>
-<% } %>
-<% }) %>
-```
-
-Changes:
-
-- `it` -> `zt`.
-- `it.imgEmbed` -> `embed(zt.imgLink)`. `zt.imgLink` is now a [link helper](syntax.md#link-helpers) (or `null` for non-image annotations); the [`embed()`](syntax.md#the-embed-helper) helper prefixes `!` for the embed and collapses to `""` when there is no image.
-- `it.text` -> `zt.text` (annotation text).
-- The `bq()` helper wraps the entire annotation in a blockquote, handling `>` prefixing automatically. In v1, the blockquote context was managed by the caller/framework.
-- Additional properties available in v2: `zt.backlink`, `zt.parentItem`, `zt.parentAttachment`, `zt.tags`, `zt.colorHex`, `zt.colorName`, `zt.type`, `zt.dateAdded`, `zt.dateModified`.
+- Wraps the entire annotation in a callout blockquote via the `{% bq %}` / `{% endbq %}` block tag.
+- Shows the page label in the callout title.
+- Embeds the excerpt image before the text -- the `embed` filter prefixes `!` for the embed syntax and collapses to `""` when `zt.imgLink` is `null` (non-image annotations).
+- Appends the user comment when present.
 
 ## Citation templates
 
-Render inline citations when inserting via the citation suggester or command.
+Files: `zotlit-cite.liquid.md` / `zotlit-cite2.liquid.md`
 
-### v1 (`zt-cite.eta.md`)
-
-```eta
-[<%= it.filter(lit => !!lit.citekey).map(lit => `@${lit.citekey}`).join("; ") %>]
+```liquid
+[{% liquid
+  assign cites = "" | split: ","
+  for c in zt.citations
+    if c.item.citationKey
+      if c.suppressAuthor
+        assign cite = "-@" | append: c.item.citationKey
+      else
+        assign cite = "@" | append: c.item.citationKey
+      endif
+      if c.locator
+        assign cite = cite | append: ", " | append: c.labelShort | append: " " | append: c.locator
+      endif
+      assign cites = cites | push: cite
+    endif
+  endfor
+  echo cites | join: "; "
+%}]
 ```
 
-v1 received `it` as a raw array of objects with a `citekey` property.
-
-### v2 (`zotlit-cite.eta.md`)
-
-```eta
-[<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>]
-```
-
-Changes:
-
-- `it` (raw array) -> `zt.citations` (array of [Citation Items](data-reference.md#citation-item) inside an object). `zt` is always an object at the top level; `zt.items` exposes the same items bare.
-- `lit.citekey` -> `c.item.citationKey` (canonical Zotero field name, now on the Citation Item's `item`; `c.item.citekey` also works as an alias).
-- `!!lit.citekey` -> `c.item.citationKey` (truthiness check, same semantics -- also lets the `KEY?` sentinel for an unresolved cite pass through).
-- Emits Pandoc-parseable output: `-@key` when `suppressAuthor` is set, and `, ${labelShort} ${locator}` when the citation carries a [Locator](data-reference.md#locator-label-abbreviations) (e.g. `[@smith2024, p. 62]`).
-
-### v1 (`zt-cite2.eta.md`)
-
-```eta
-<%= it.filter(lit => !!lit.citekey).map(lit => `@${lit.citekey}`).join("; ") %>
-```
-
-### v2 (`zotlit-cite2.eta.md`)
-
-```eta
-<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>
-```
-
-Same changes as `cite`. The only difference from `cite` is the absence of surrounding `[]` brackets.
-
-## Removed templates
-
-### `zt-field`
-
-v1's `zt-field.eta.md` rendered YAML frontmatter via template:
-
-```eta
-title: "<%= it.title %>"
-citekey: "<%= it.citekey %>"
-```
-
-Replaced by the [JS expression frontmatter system](frontmatter.md). Users no longer write YAML in templates.
-
-### `zt-colored`
-
-v1's `zt-colored.eta.md` applied inline color styling to annotation text during Zotero note import:
-
-```eta
-<mark style="
-<%- if (it.color) { _%> color: <%= it.color %>; <%_ } -%>
-<%- if (it.bgColor) { _%> background-color: <%= it.bgColor %>; <%_ } -%>
-"><%= it.content %></mark>
-```
-
-Color styling is now handled automatically during note import -- no template needed. The new approach:
-
-- Works standalone (hex fallback) yet allows theme/snippet overrides via CSS variables.
-- Uses semantic HTML instead of inline styles.
+- Builds Pandoc-style citations, e.g. `[@smith2024, p. 62; -@doe2021]`.
+- Filters out citation items without a `citationKey` -- those never appear in the output.
+- Handles suppress-author citations (`-@key` instead of `@key`) and locators (`, p. 62` appended after the key, using `labelShort` for the locator label).
+- `cite` wraps the joined citations in `[]`; `cite2` is identical but omits the brackets, for inserting a citation inline within existing text.
 
 ## Filename template
 
-Not a file -- configured as a setting string.
+File: `zotlit-filename.liquid.md`
 
-### v1 default
-
-```
-<%= it.citekey ?? it.DOI ?? it.title ?? it.key %>
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
 ```
 
-### v2 default
-
-```
-<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
-```
-
-Changes:
-
-- `it` -> `zt`.
-- `it.citekey` -> `zt.citationKey` (canonical name; `zt.citekey` also works).
-- The `.md` extension is no longer included -- code appends it automatically.
-- `<%= suffix() %>` appends a short random string **only when the generated name collides** with an existing note, keeping filenames unique without altering the common case. See [`suffix()`](syntax.md#the-suffix-filename-helper).
+- Falls through in order: citation key -> DOI -> title -> item key, using `default` to skip blank values.
+- `{% suffix %}` appends a short random string, but only when the generated name collides with an existing note -- it keeps filenames unique without altering the common case.
+- The `.md` extension is appended automatically; the filename template only produces the base name.

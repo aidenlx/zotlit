@@ -1,7 +1,6 @@
 ---
 name: i18n-ui-text
 description: Obsidian house style for the wording of user-facing UI strings — command names, setting labels, button text, notices, modal copy. Use when authoring or editing the English text of a message in `messages/*.json`, naming a command, or copy-editing UI strings. Pair with `paraglide-i18n` (mechanics); this skill covers the words, not the format.
-paths: "messages/*.json"
 ---
 
 # Writing UI Text

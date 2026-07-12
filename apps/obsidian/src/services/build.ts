@@ -16,7 +16,7 @@ import { createNoteImporter, type NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { ServiceContainer } from "./service-base";
-import { migrateLegacyV0 } from "./settings/migrate";
+import { migrateLegacyV0, migrateV1ToV2 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
 import { ZoteroPrefService } from "./zotero-pref/service";
@@ -42,7 +42,11 @@ export function buildServices(
   return container
     .use({
       settings: () =>
-        new SettingsService({ plugin, migrateLegacy: migrateLegacyV0 }),
+        new SettingsService({
+          plugin,
+          migrateLegacy: migrateLegacyV0,
+          migrateV1: migrateV1ToV2,
+        }),
     })
     .use({
       log: ({ settings }) => new LoggingService({ plugin, settings }),

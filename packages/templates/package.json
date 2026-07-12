@@ -11,11 +11,13 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./constants": "./dist/constants.mjs",
+    "./facade": "./dist/facade.mjs",
     "./frontmatter": "./dist/frontmatter.mjs",
     "./frontmatter-merge": "./dist/frontmatter-merge.mjs",
+    "./liquid": "./dist/liquid.mjs",
     "./obsidian": "./dist/obsidian.mjs",
     "./package.json": "./package.json",
-    "./defaults/*": "./defaults/*.eta"
+    "./defaults/*": "./defaults/*.liquid"
   },
   "scripts": {
     "build": "tsdown",
@@ -29,6 +31,7 @@
     "@zotlit/shared": "workspace:*",
     "arkregex": "catalog:",
     "eta": "catalog:",
+    "liquidjs": "^10.27.1",
     "valibot": "catalog:"
   },
   "devDependencies": {

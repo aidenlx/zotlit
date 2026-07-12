@@ -75,6 +75,34 @@ describe("citekeysToCiteTemplateData", () => {
     });
   });
 
+  it("normalizes empty-string citation-scoped props to null", () => {
+    const { citations } = citekeysToCiteTemplateData([
+      {
+        citationKey: "smith2024",
+        locator: "",
+        label: "",
+        prefix: "",
+        suffix: "",
+      },
+    ]);
+
+    expect(citations[0]).toMatchObject({
+      locator: null,
+      label: null,
+      prefix: null,
+      suffix: null,
+    });
+  });
+
+  it("normalizes an empty-string citation key to null", () => {
+    const { items, citations } = citekeysToCiteTemplateData([
+      { citationKey: "" },
+    ]);
+
+    expect(items[0]).toMatchObject({ citationKey: null, citekey: null });
+    expect(citations[0]?.item).toBe(items[0]);
+  });
+
   it("falls back to default citation props for a ref missing them (DB-query leg)", () => {
     const { citations } = citekeysToCiteTemplateData([
       { citationKey: "doe2020" },

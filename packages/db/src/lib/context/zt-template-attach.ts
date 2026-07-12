@@ -5,7 +5,8 @@ import {
   type AttachmentPath,
 } from "@/lib/zt-attach";
 
-import { type TemplateLink } from "./zt-template-item";
+import { emptyToNull } from "./normalize";
+import { type FallibleTemplateLink } from "./zt-template-item";
 
 /**
  * Attachment data in the v2 template vocabulary. Exposed on `zt.attachments`
@@ -26,11 +27,11 @@ export interface TemplateAttachment {
   /**
    * Markdown link to the on-disk attachment file. Call it to render —
    * `<%= a.fileLink() %>` — passing `alias` to override the display text
-   * (defaults to the filename) and `subpath` to append a `#`-fragment. `""`
-   * when the file is unresolvable. See {@link TemplateLink}. Computed at the
-   * app layer.
+   * (defaults to the filename) and `subpath` to append a `#`-fragment. `null`
+   * when the file is unresolvable. See {@link FallibleTemplateLink}. Computed
+   * at the app layer.
    */
-  fileLink: TemplateLink;
+  fileLink: FallibleTemplateLink;
 }
 
 /**
@@ -46,7 +47,7 @@ export function attachmentToTemplateData(
     filename: attachmentFilename(
       parseAttachmentPath(attachment.path, attachment.linkMode),
     ),
-    contentType: attachment.contentType,
+    contentType: emptyToNull(attachment.contentType),
     linkMode:
       attachment.linkMode == null
         ? "unknown"

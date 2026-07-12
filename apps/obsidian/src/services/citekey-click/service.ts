@@ -29,6 +29,7 @@ import { EmptyFilenameError } from "@/services/note-feature/filename";
 import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { type SettingsService } from "@/services/settings/service";
+import { InertTemplateError } from "@/services/template/errors";
 
 import { citationAtOffset } from "./parse";
 
@@ -177,7 +178,7 @@ export class CitekeyClick extends Service<void> {
         loading: m.notice_creating_note(),
         success: m.notice_created_note(),
         error: (_msg, e) =>
-          e instanceof EmptyFilenameError
+          e instanceof EmptyFilenameError || e instanceof InertTemplateError
             ? e.message
             : m.notice_create_note_failed(),
         swallowError: false,

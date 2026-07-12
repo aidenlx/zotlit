@@ -16,7 +16,7 @@ v2 templates use the `.eta.md` extension and a `zotlit-` prefix. Rename your cus
 
 Removed templates (delete if present -- they have no v2 equivalent):
 
-- `zt-field.eta.md` -- replaced by the settings-based [frontmatter system](frontmatter.md)
+- `zt-field.eta.md` -- replaced by the settings-based [frontmatter system](../frontmatter.md)
 - `zt-colored.eta.md` -- handled automatically by the note parser
 
 ## Step 2: Replace `it` with `zt`
@@ -195,7 +195,7 @@ If you customized `zt-field.eta.md`:
 
 You no longer need to worry about YAML escaping -- `stringifyYaml()` handles it.
 
-ZotLit auto-manages three reserved frontmatter keys you cannot target from a user field: `zotero-key`, `citekey`, and `zotero-atchs` (the attachment scope). `zotero-atchs` keeps v1's key name, so upgraded notes are not re-keyed. See [System-managed fields](frontmatter.md#system-managed-fields) for details.
+ZotLit auto-manages three reserved frontmatter keys you cannot target from a user field: `zotero-key`, `citekey`, and `zotero-atchs` (the attachment scope). `zotero-atchs` keeps v1's key name, so upgraded notes are not re-keyed. See [System-managed fields](../frontmatter.md#system-managed-fields) for details.
 
 Use **Replace** for fields that should follow Zotero on every update. Use **Append arrays** for array fields where manual additions should remain. Use **Keep existing** when ZotLit should fill a field once and then leave your edits alone.
 
@@ -209,6 +209,215 @@ What this means:
 - The `%%zt-managed%%` ... `%%/zt-managed%%` region is re-rendered entirely on update.
 - Hand-edits **inside** the managed region are lost on update. Place custom content **outside** the region.
 - Hand-edits **outside** the region (the H1 title, backlink line, and any content you add after the managed region) are preserved.
+
+## Default templates: v1 vs v2 diffs
+
+This section shows each default template in both v1 and v2, with explanations of what changed and why.
+
+### Note template
+
+The main template that renders the full literature note body.
+
+#### v1 (`zt-note.eta.md`)
+
+```eta
+# <%= it.title %>
+
+[Zotero](<%= it.backlink %>) <%= it.fileLink %>
+<%~ include("annots", it.annotations) %>
+```
+
+- `it.title` -- item title.
+- `it.backlink` -- Zotero deep link.
+- `it.fileLink` -- single attachment link (v1 selects one attachment).
+- `it.annotations` -- array passed to the `annots` template.
+
+#### v2 (`zotlit-note.eta.md`)
+
+```eta
+# <%= zt.title %>
+
+[Zotero](<%= zt.backlink %>) <%= zt.attachments.map(a => a.fileLink()).filter(Boolean).join(" ") %>
+
+<%~ include("content", zt) %>
+```
+
+Changes:
+
+- `it` -> `zt` prefix.
+- `it.fileLink` (single attachment) -> `zt.attachments.map(a => a.fileLink())` (all attachments; `fileLink` is now a [link helper](syntax.md#link-helpers) you call).
+- `it.annotations` passed to `include("annots", ...)` -> `include("content", zt)` passes the **full** context. The content template can access any `zt.*` property, not just annotations.
+- The `include("content", zt)` output is automatically wrapped with `%%zt-managed%%` markers.
+
+### Content template (was "annots")
+
+Renders the refreshable managed region. Renamed from `zt-annots` to `zt-content`.
+
+#### v1 (`zt-annots.eta.md`)
+
+```eta
+<% for (const annotation of it) { %>
+<%~ include("annotation", annotation) %>
+<% } %>
+```
+
+v1 received `it` as a raw array of annotations.
+
+#### v2 (`zotlit-content.eta.md`)
+
+```eta
+<% if (zt.notes.length) { %>
+## Notes
+
+<% for (const note of zt.notes) { -%>
+- <%~ note.noteLink() %>
+<% } %>
+<% } %>
+<% if (zt.annotations.length) { %>
+## Annotations
+
+<% for (const annotation of zt.annotations) { %>
+<%~ include("annotation", annotation) %>
+<% } %>
+<% } %>
+```
+
+Changes:
+
+- `it` (raw array) -> `zt.annotations` (array accessed from the full context object).
+- Has access to all the same fields as the note template, so you can reference `zt.backlink`, `zt.tags`, `zt.attachments`, etc. inside the managed region.
+- Renders imported child notes as a linked list before annotations (see [Notes shape](../data-reference.md#notes-shape)).
+
+### Annotation template
+
+Renders a single annotation.
+
+#### v1 (`zt-annot.eta.md`)
+
+```eta
+[!note] Page <%= it.pageLabel %>
+
+<%= it.imgEmbed %><%= it.text %>
+<% if (it.comment) { %>
+---
+<%= it.comment %>
+<% } %>
+```
+
+In v1, blockquote formatting was handled separately.
+
+#### v2 (`zotlit-annotation.eta.md`)
+
+```eta
+<% bq(() => { %>
+[!note] Page <%= zt.pageLabel %>
+
+<%= embed(zt.imgLink) %><%= zt.text %>
+<% if (zt.comment) { %>
+
+<%= zt.comment %>
+<% } %>
+<% }) %>
+```
+
+Changes:
+
+- `it` -> `zt`.
+- `it.imgEmbed` -> `embed(zt.imgLink)`. `zt.imgLink` is now a [link helper](syntax.md#link-helpers) (or `null` for non-image annotations); the [`embed()`](syntax.md#the-embed-helper) helper prefixes `!` for the embed and collapses to `""` when there is no image.
+- `it.text` -> `zt.text` (annotation text).
+- The `bq()` helper wraps the entire annotation in a blockquote, handling `>` prefixing automatically. In v1, the blockquote context was managed by the caller/framework.
+- Additional properties available in v2: `zt.backlink`, `zt.parentItem`, `zt.parentAttachment`, `zt.tags`, `zt.colorHex`, `zt.colorName`, `zt.type`, `zt.dateAdded`, `zt.dateModified`.
+
+### Citation templates
+
+Render inline citations when inserting via the citation suggester or command.
+
+#### v1 (`zt-cite.eta.md`)
+
+```eta
+[<%= it.filter(lit => !!lit.citekey).map(lit => `@${lit.citekey}`).join("; ") %>]
+```
+
+v1 received `it` as a raw array of objects with a `citekey` property.
+
+#### v2 (`zotlit-cite.eta.md`)
+
+```eta
+[<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>]
+```
+
+Changes:
+
+- `it` (raw array) -> `zt.citations` (array of [Citation Items](../data-reference.md#citation-item) inside an object). `zt` is always an object at the top level; `zt.items` exposes the same items bare.
+- `lit.citekey` -> `c.item.citationKey` (canonical Zotero field name, now on the Citation Item's `item`; `c.item.citekey` also works as an alias).
+- `!!lit.citekey` -> `c.item.citationKey` (truthiness check, same semantics -- also lets the `KEY?` sentinel for an unresolved cite pass through).
+- Emits Pandoc-parseable output: `-@key` when `suppressAuthor` is set, and `, ${labelShort} ${locator}` when the citation carries a [Locator](../data-reference.md#locator-label-abbreviations) (e.g. `[@smith2024, p. 62]`).
+
+#### v1 (`zt-cite2.eta.md`)
+
+```eta
+<%= it.filter(lit => !!lit.citekey).map(lit => `@${lit.citekey}`).join("; ") %>
+```
+
+#### v2 (`zotlit-cite2.eta.md`)
+
+```eta
+<%= zt.citations.filter(c => c.item.citationKey).map(c => `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}${c.locator ? `, ${c.labelShort} ${c.locator}` : ""}`).join("; ") %>
+```
+
+Same changes as `cite`. The only difference from `cite` is the absence of surrounding `[]` brackets.
+
+### Removed templates
+
+#### `zt-field`
+
+v1's `zt-field.eta.md` rendered YAML frontmatter via template:
+
+```eta
+title: "<%= it.title %>"
+citekey: "<%= it.citekey %>"
+```
+
+Replaced by the [JS expression frontmatter system](../frontmatter.md). Users no longer write YAML in templates.
+
+#### `zt-colored`
+
+v1's `zt-colored.eta.md` applied inline color styling to annotation text during Zotero note import:
+
+```eta
+<mark style="
+<%- if (it.color) { _%> color: <%= it.color %>; <%_ } -%>
+<%- if (it.bgColor) { _%> background-color: <%= it.bgColor %>; <%_ } -%>
+"><%= it.content %></mark>
+```
+
+Color styling is now handled automatically during note import -- no template needed. The new approach:
+
+- Works standalone (hex fallback) yet allows theme/snippet overrides via CSS variables.
+- Uses semantic HTML instead of inline styles.
+
+### Filename template
+
+Not a file -- configured as a setting string.
+
+#### v1 default
+
+```
+<%= it.citekey ?? it.DOI ?? it.title ?? it.key %>
+```
+
+#### v2 default
+
+```
+<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
+```
+
+Changes:
+
+- `it` -> `zt`.
+- `it.citekey` -> `zt.citationKey` (canonical name; `zt.citekey` also works).
+- The `.md` extension is no longer included -- code appends it automatically.
+- `<%= suffix() %>` appends a short random string **only when the generated name collides** with an existing note, keeping filenames unique without altering the common case. See [`suffix()`](syntax.md#the-suffix-filename-helper).
 
 ## Quick reference: v1 -> v2 property map
 
@@ -226,11 +435,11 @@ property that is new in v2.
 | `it.DOI` | `zt.DOI` | |
 | `it.backlink` | `zt.backlink` | Zotero `select` deep link to the item |
 | `it.tags` | `zt.tags` | Now tag objects (with `tag.name`, `type`), not strings |
-| `it.collections` | `zt.collections` | Now collection objects (`key`, `name`, `path`); `path` is root->leaf; the `it.collection` singular alias is removed (see [Collections differences](#collections-it-collections-zt-collections)) |
+| `it.collections` | `zt.collections` | Now collection objects (`key`, `name`, `path`); `path` is root->leaf; the `it.collection` singular alias is removed (see [Collections differences](#collections-differences)) |
 | `it.authors` | `zt.authors` | Now an array of creator objects, not formatted strings |
 | `it.authorsShort` | `zt.authorsShort` | Same semantics |
 | `it.annotations` | `zt.annotations` | Array of annotation objects |
-| `it.date` | `zt.date` | Was year-only string; now a parsed `ItemDate` object (see [Date format](data-reference.md#date-format)). `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
+| `it.date` | `zt.date` | Was year-only string; now a parsed `ItemDate` object (see [Date format](../data-reference.md#date-format)). `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
 | `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant` at second precision (Zotero stores no sub-second component). Render as local date in `<%= %>` tags. Available on both items and annotations. |
 | -- | `zt.key` | New: item key |
 | -- | `zt.indexedKey` | New: indexed key |
@@ -269,7 +478,10 @@ property that is new in v2.
 | -- | `zt.parentItem` | New: parent item data |
 | -- | `zt.parentAttachment` | New: parent attachment data |
 
-### Collections (`it.collections` -> `zt.collections`)
+### Collections differences
+
+`it.collections` -> `zt.collections`
+
 
 v1 exposed each collection as `{ id, path, key, name, libraryID }` with a `path` that auto-rendered as `"A > B > C"`. v2 trims and reshapes this:
 
@@ -293,7 +505,7 @@ v1 exposed each collection as `{ id, path, key, name, libraryID }` with a `path`
 
 ## Child notes (`it.notes` -> `zt.notes`)
 
-v1 exposed child notes as normalized Markdown on `it.notes`. v2 replaces this with `zt.notes` -- an array of link-only entries that import the child note as a separate Markdown file and link to it. See [Notes shape](data-reference.md#notes-shape) for the full property reference.
+v1 exposed child notes as normalized Markdown on `it.notes`. v2 replaces this with `zt.notes` -- an array of link-only entries that import the child note as a separate Markdown file and link to it. See [Notes shape](../data-reference.md#notes-shape) for the full property reference.
 
 | v1 | v2 |
 |----|-----|
