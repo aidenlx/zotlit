@@ -9,10 +9,15 @@ import {
 } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
-import { TemplateEngine, type TemplateFunction } from "@zotlit/templates";
-import { type AutoTrim } from "@zotlit/templates/constants";
 import {
-  compileFrontmatterFields,
+  type AutoTrim,
+  type FrontmatterLanguage,
+} from "@zotlit/templates/constants";
+import {
+  TemplateFacade,
+  type TemplateLanguage,
+} from "@zotlit/templates/facade";
+import {
   type CompiledFrontmatterField,
   type FrontmatterField,
 } from "@zotlit/templates/frontmatter";
@@ -20,6 +25,7 @@ import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
+import * as m from "@/paraglide/messages";
 import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
@@ -28,15 +34,20 @@ import {
   DEFAULT_TEMPLATES,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
-  templateNameFromPath,
+  templateFileFromPath,
+  templatePath,
   TEMPLATE_NAMES,
 } from "./defaults";
 import { bracketExtension } from "./editor/bracket";
 import { EtaSuggest } from "./editor/suggest";
+import { InertTemplateError } from "./errors";
 import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
+
+/** localStorage key for the per-device JavaScript Templates consent flag. */
+const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
 
 export interface TemplateServiceEvents {
   "compile-status-changed": () => void;
@@ -52,21 +63,23 @@ export class TemplateService extends Service<void> {
   readonly #plugin;
   readonly #app;
   readonly #settings;
-  readonly #engine = new TemplateEngine({
+  readonly #facade = new TemplateFacade({
     transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
   });
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
   readonly #compileErrors = new Map<string, string>();
+  readonly #shadowed = new Map<string, string>();
+  readonly #inertEta = new Map<string, string>();
   readonly #pendingFlush = new Set<string>();
   readonly #autoPairExtensions: Extension[] = [];
 
-  #filenameError: string | null = null;
-  #filenameFn: TemplateFunction | null = null;
+  #javascriptTemplatesEnabled: boolean;
 
   /** Compiled managed-frontmatter fields, memoized by the settings array
    *  reference (which changes only when the list is mutated). */
   #lastFrontmatterFields: readonly FrontmatterField[] | null = null;
   #compiledFrontmatterFields: readonly CompiledFrontmatterField[] = [];
+  #inertFrontmatterKeys: readonly string[] = [];
 
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
   #folderGeneration = 0;
@@ -75,7 +88,6 @@ export class TemplateService extends Service<void> {
   #lastTemplateFolder = "";
   #lastAutoTrim: [AutoTrim, AutoTrim] = [false, false];
   #lastAutoPairEta = false;
-  #lastFilename = "";
 
   ready: Promise<void>;
 
@@ -84,11 +96,28 @@ export class TemplateService extends Service<void> {
     this.#plugin = options.plugin;
     this.#app = options.app;
     this.#settings = options.settings;
+    this.#javascriptTemplatesEnabled =
+      this.#app.loadLocalStorage(JS_TEMPLATES_STORAGE_KEY) === "1";
     this.ready = this.#load();
   }
 
   get compileErrors(): ReadonlyMap<string, string> {
     return this.#compileErrors;
+  }
+
+  /** Name → vault path of a shadowed `.eta.md` file whose Liquid edition currently wins. */
+  get shadowedFiles(): ReadonlyMap<string, string> {
+    return this.#shadowed;
+  }
+
+  /** Name → vault path of an `.eta.md` template file that is inert because the JavaScript Templates gate is off. */
+  get inertEtaFiles(): ReadonlyMap<string, string> {
+    return this.#inertEta;
+  }
+
+  /** Per-device consent flag gating all Eta compilation; see {@link setJavascriptTemplatesEnabled}. */
+  get javascriptTemplatesEnabled(): boolean {
+    return this.#javascriptTemplatesEnabled;
   }
 
   /** Synchronous readiness check for callers that can't await {@link ready} —
@@ -97,17 +126,24 @@ export class TemplateService extends Service<void> {
     return this.#loaded;
   }
 
-  /** The note-filename expression's compile error, or `null` when it is valid. */
-  get filenameError(): string | null {
-    return this.#filenameError;
-  }
-
   /**
    * Managed-frontmatter fields compiled from `note.frontmatter-fields`,
    * recompiled on settings change. Consumed by the note feature when writing a
    * note's frontmatter; reserved system keys are already filtered out.
+   *
+   * @throws {@link InertTemplateError} when one or more `"javascript"`-language
+   *   fields are inert because the JavaScript Templates gate is off (see
+   *   {@link javascriptTemplatesEnabled}) — consuming a partial field set
+   *   could half-apply a synced field configuration to a note.
    */
   get frontmatterFields(): readonly CompiledFrontmatterField[] {
+    if (this.#inertFrontmatterKeys.length > 0) {
+      throw new InertTemplateError(
+        m.notice_frontmatter_js_inert({
+          fields: this.#inertFrontmatterKeys.join(", "),
+        }),
+      );
+    }
     return this.#compiledFrontmatterFields;
   }
 
@@ -119,56 +155,80 @@ export class TemplateService extends Service<void> {
   }
 
   /**
-   * @throws when the named template has a recorded compile error; or `EtaError`
-   *   when the engine cannot resolve or render it — including an `include()` of
+   * @throws {@link InertTemplateError} when `name`'s winning file is an
+   *   `.eta.md` template left inert by the JavaScript Templates gate.
+   * @throws when the named template has a recorded compile error; or `TemplateError`
+   *   when the facade cannot resolve or render it — including an `include()` of
    *   a template that failed to compile (such a template is left undefined, so
    *   rendering never silently falls back to a default).
    */
   render<T extends object>(name: string, data: T): string {
     this.#requireLoaded("render");
+    const inertPath = this.#inertEta.get(name);
+    if (inertPath !== undefined) {
+      throw new InertTemplateError(
+        m.settings_template_inert_eta({ path: inertPath }),
+      );
+    }
     const compileError = this.#compileErrors.get(name);
     if (compileError !== undefined) {
       throw new Error(
         `Template '${name}' has a compile error:\n${compileError}`,
       );
     }
-    return this.#engine.render(name, data);
+    return this.#facade.render(name, data);
   }
 
   /**
-   * Render the configured note-filename expression, compiled once on settings
-   * change rather than per call.
+   * Render the `filename` Template and collapse the output to one trimmed
+   * line: line breaks and their surrounding whitespace are removed, so
+   * template-structural newlines never leak into the note name.
    *
-   * @returns the rendered name, or `""` when no filename expression is set (the
-   *   caller falls back to the item key).
-   * @throws when the filename expression has a compile error — note creation
-   *   must fail loudly rather than silently name files from a broken template.
+   * @throws {@link InertTemplateError} when the `filename` winner is an
+   *   `.eta.md` template left inert by the JavaScript Templates gate.
+   * @throws when the template has a compile error or fails to render — note
+   *   creation must fail loudly rather than silently misname files.
    */
   renderFilename<T extends object>(data: T): string {
-    this.#requireLoaded("renderFilename");
-    if (this.#filenameError !== null) {
-      throw new Error(
-        `Note filename template has a compile error:\n${this.#filenameError}`,
-      );
-    }
-    if (this.#filenameFn === null) return "";
-    return this.#engine.render(this.#filenameFn, data);
+    return toSingleLine(this.render("filename", data));
   }
 
-  /** @returns `null` when valid, or the error message when the source fails to compile. */
-  validateSource(source: string): string | null {
-    return this.#compileSource(source).error;
+  /**
+   * Compile-check a single Managed Frontmatter expression for the setting tab.
+   * A javascript expression is left unvalidated while the gate is off —
+   * validating it would compile it, and the gate-off invariant forbids any
+   * dynamic code compilation.
+   * @returns `null` when `expr` compiles, or the error message when it does not.
+   */
+  validateFrontmatterExpr(
+    expr: string,
+    language: FrontmatterLanguage,
+  ): string | null {
+    if (language === "javascript" && !this.#javascriptTemplatesEnabled) {
+      return null;
+    }
+    return this.#facade.validateFrontmatterExpr(expr, language);
   }
 
-  /** Compile `source`, returning either the compiled function or the compile-error message — never both. */
-  #compileSource(
-    source: string,
-  ): { fn: TemplateFunction; error: null } | { fn: null; error: string } {
-    try {
-      return { fn: this.#engine.compile(source), error: null };
-    } catch (error) {
-      return { fn: null, error: errorMessage(error) };
+  /**
+   * Flip the per-device JavaScript Templates gate and rebuild the current
+   * template folder so the change takes effect live, without a reload. The
+   * setting tab is the only caller — the flag is never read from or written
+   * to synced plugin settings.
+   */
+  async setJavascriptTemplatesEnabled(enabled: boolean): Promise<void> {
+    this.#requireLoaded("setJavascriptTemplatesEnabled");
+    if (enabled === this.#javascriptTemplatesEnabled) return;
+
+    this.#app.saveLocalStorage(JS_TEMPLATES_STORAGE_KEY, enabled ? "1" : null);
+    this.#javascriptTemplatesEnabled = enabled;
+    logger.info("JavaScript templates flag changed", { enabled });
+
+    if (this.#lastFrontmatterFields) {
+      this.#compileFrontmatter(this.#lastFrontmatterFields);
     }
+
+    await this.#rebuildFolder(this.#currentTemplateFolder());
   }
 
   async #load(): Promise<void> {
@@ -179,9 +239,7 @@ export class TemplateService extends Service<void> {
       snapshot["template.auto-trim-trailing"],
     ];
     this.#lastAutoPairEta = snapshot["template.auto-pair-eta"];
-    this.#lastFilename = snapshot["template.filename"];
-    this.#engine.setAutoTrim(this.#lastAutoTrim);
-    this.#compileFilename(this.#lastFilename);
+    this.#facade.setAutoTrim(this.#lastAutoTrim);
     this.#compileFrontmatter(snapshot["note.frontmatter-fields"]);
 
     await using stack = new AsyncDisposableStack();
@@ -238,7 +296,6 @@ export class TemplateService extends Service<void> {
       settings["template.auto-trim-trailing"],
     ];
     const autoPairEta = settings["template.auto-pair-eta"];
-    const filename = settings["template.filename"];
 
     const folderChanged = folder !== this.#lastTemplateFolder;
     const autoTrimChanged =
@@ -246,20 +303,18 @@ export class TemplateService extends Service<void> {
       autoTrim[1] !== this.#lastAutoTrim[1];
     const autoPairChanged = autoPairEta !== this.#lastAutoPairEta;
 
-    const filenameChanged = filename !== this.#lastFilename;
     const frontmatterFields = settings["note.frontmatter-fields"];
 
     this.#lastTemplateFolder = folder;
     this.#lastAutoTrim = autoTrim;
     this.#lastAutoPairEta = autoPairEta;
-    this.#lastFilename = filename;
 
     if (frontmatterFields !== this.#lastFrontmatterFields) {
       this.#compileFrontmatter(frontmatterFields);
     }
 
     if (autoTrimChanged) {
-      this.#engine.setAutoTrim(autoTrim);
+      this.#facade.setAutoTrim(autoTrim);
       logger.debug("Template autoTrim changed", { autoTrim });
     }
 
@@ -269,10 +324,6 @@ export class TemplateService extends Service<void> {
       });
     }
 
-    // The compiled filename fn embeds the active autoTrim, so recompile it
-    // whenever either the expression or the trim config changes.
-    if (filenameChanged || autoTrimChanged) this.#compileFilename(filename);
-
     if (autoPairChanged) this.#setAutoPairEnabled(autoPairEta, true);
   }
 
@@ -280,20 +331,22 @@ export class TemplateService extends Service<void> {
     const generation = ++this.#folderGeneration;
     this.#cancelFlush();
     this.#pendingFlush.clear();
+    this.#shadowed.clear();
+    this.#inertEta.clear();
+    this.#facade.reset();
+    this.#compileErrors.clear();
 
     const root =
       folder === ""
         ? this.#app.vault.getRoot()
         : this.#app.vault.getFolderByPath(folder);
 
-    const files: TFile[] = [];
+    const names = new Set<string>();
     if (root) {
       for (const child of root.children) {
-        if (
-          child instanceof TFile &&
-          templateNameFromPath(child.path) !== null
-        ) {
-          files.push(child);
+        if (child instanceof TFile) {
+          const parsed = templateFileFromPath(child.path);
+          if (parsed) names.add(parsed.name);
         }
       }
     } else {
@@ -302,55 +355,43 @@ export class TemplateService extends Service<void> {
       });
     }
 
-    const entries = await Promise.all(
-      files.map(async (file) => {
-        const content = await this.#app.vault.cachedRead(file);
-        return [templateNameFromPath(file.path), content] as const;
-      }),
+    for (const name of TEMPLATE_NAMES) {
+      if (!names.has(name)) this.#useDefault(name);
+    }
+
+    await Promise.all(
+      [...names].map((name) => this.#reconcileName(name, generation)),
     );
     if (generation !== this.#folderGeneration) return;
 
-    this.#loadTemplates(entries);
     this.#emitter.emit("compile-status-changed");
     logger.debug("Template folder rebuilt", {
       folder,
-      count: entries.length,
+      count: names.size,
     });
   }
 
   #onCreateOrModify(file: TAbstractFile): void {
     if (!(file instanceof TFile)) return;
-    const path = normalizeVaultPath(file.path);
-    if (!this.#isWatchedTemplatePath(path)) return;
-    this.#pendingFlush.add(path);
-    this.#scheduleFlush();
+    this.#queueTemplateName(file.path);
   }
 
   #onRename(file: TAbstractFile, oldPathRaw: string): void {
-    const oldPath = normalizeVaultPath(oldPathRaw);
-    const oldWatched = this.#isWatchedTemplatePath(oldPath);
-    const newPath = normalizeVaultPath(file.path);
-    const newWatched =
-      file instanceof TFile && this.#isWatchedTemplatePath(newPath);
-
-    if (oldWatched) {
-      this.#dropTemplatePath(oldPath);
-      // The new side, when watched, emits after its flush; otherwise emit the
-      // drop now so the setting tab reflects the revert to the package default.
-      if (!newWatched) this.#emitter.emit("compile-status-changed");
-    }
-
-    if (newWatched) {
-      this.#pendingFlush.add(newPath);
-      this.#scheduleFlush();
-    }
+    this.#queueTemplateName(oldPathRaw);
+    if (file instanceof TFile) this.#queueTemplateName(file.path);
   }
 
   #onDelete(file: TAbstractFile): void {
-    const path = normalizeVaultPath(file.path);
-    if (!this.#isWatchedTemplatePath(path)) return;
-    this.#dropTemplatePath(path);
-    this.#emitter.emit("compile-status-changed");
+    this.#queueTemplateName(file.path);
+  }
+
+  #queueTemplateName(path: string): void {
+    const normalized = normalizeVaultPath(path);
+    if (!this.#isWatchedTemplatePath(normalized)) return;
+    const parsed = templateFileFromPath(normalized);
+    if (!parsed) return;
+    this.#pendingFlush.add(parsed.name);
+    this.#scheduleFlush();
   }
 
   #scheduleFlush(): void {
@@ -363,72 +404,131 @@ export class TemplateService extends Service<void> {
 
   async #flushPending(): Promise<void> {
     const generation = this.#folderGeneration;
-    const paths = [...this.#pendingFlush];
+    const names = [...this.#pendingFlush];
     this.#pendingFlush.clear();
     await Promise.all(
-      paths.map((path) => this.#readAndStore(path, generation)),
+      names.map((name) => this.#reconcileName(name, generation)),
     );
 
     if (generation !== this.#folderGeneration) return;
 
     this.#emitter.emit("compile-status-changed");
-    logger.debug("Template flush completed", { count: paths.length });
+    logger.debug("Template flush completed", { count: names.length });
   }
 
-  async #readAndStore(path: string, generation: number): Promise<void> {
-    // Folder changes rebuild the full template set; stale reads from the old
-    // folder must not redefine or drop templates loaded by the newer rebuild.
+  /**
+   * Resolve `name` from its two candidate files — `.liquid.md` wins over
+   * `.eta.md` when both exist, and only the winner stays registered on the
+   * facade. Called for every watcher event (debounced) and for each name
+   * found while rebuilding the folder.
+   */
+  async #reconcileName(name: string, generation: number): Promise<void> {
+    // Folder changes rebuild the full template set; stale reconciles from the
+    // old folder must not redefine or drop templates loaded by a newer rebuild.
     if (generation !== this.#folderGeneration) return;
 
-    const file = this.#app.vault.getFileByPath(path);
-    if (!file || !this.#isWatchedTemplatePath(file.path)) {
-      if (generation !== this.#folderGeneration) return;
-      this.#dropTemplatePath(path);
-      return;
+    const folder = this.#currentTemplateFolder();
+    const liquidFile = this.#app.vault.getFileByPath(
+      templatePath(folder, name, "liquid"),
+    );
+    const etaFile = this.#app.vault.getFileByPath(
+      templatePath(folder, name, "eta"),
+    );
+
+    // A shadowed eta file is reported as shadowed regardless of the gate —
+    // the liquid edition wins either way, so the flag never changes its fate.
+    if (liquidFile && etaFile) {
+      if (this.#shadowed.get(name) !== etaFile.path) {
+        logger.warn("Eta template shadowed by its Liquid edition", {
+          name,
+          path: etaFile.path,
+        });
+      }
+      this.#shadowed.set(name, etaFile.path);
+    } else {
+      this.#shadowed.delete(name);
     }
 
-    const name = templateNameFromPath(path);
-    if (!name) return;
+    // Inert means the eta file would win, but the gate keeps it from compiling.
+    // Such a name is left with no compiled template at all: render/renderFilename
+    // must fail loudly with InertTemplateError rather than degrade to the
+    // embedded default.
+    if (!this.#javascriptTemplatesEnabled && !liquidFile && etaFile) {
+      if (this.#inertEta.get(name) !== etaFile.path) {
+        logger.info(
+          "Eta template inert while JavaScript templates are disabled",
+          { name, path: etaFile.path },
+        );
+      }
+      this.#inertEta.set(name, etaFile.path);
+      this.#compileErrors.delete(name);
+      this.#facade.remove(name, "liquid");
+      this.#facade.remove(name, "eta");
+      return;
+    }
+    this.#inertEta.delete(name);
+
+    const etaCandidate = this.#javascriptTemplatesEnabled ? etaFile : null;
+    const winner = liquidFile
+      ? ({ file: liquidFile, language: "liquid" } as const)
+      : etaCandidate
+        ? ({ file: etaCandidate, language: "eta" } as const)
+        : null;
+
+    if (!winner) {
+      this.#compileErrors.delete(name);
+      this.#useDefault(name);
+      return;
+    }
 
     let content: string;
     try {
-      content = await this.#app.vault.cachedRead(file);
+      content = await this.#app.vault.cachedRead(winner.file);
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
-      this.#dropTemplatePath(path);
-      logger.warn("Failed to read template file", { error, path });
+      logger.warn("Failed to read template file", {
+        error,
+        path: winner.file.path,
+      });
+      this.#useDefault(name);
       return;
     }
 
     if (generation !== this.#folderGeneration) return;
-    this.#defineTemplate(name, content);
+    this.#facade.remove(name, winner.language === "liquid" ? "eta" : "liquid");
+    this.#defineTemplate(name, content, winner.language);
   }
 
   /**
    * Compile and register a vault template, recording any compile error. A
-   * template that fails to compile is removed from the engine and never falls
+   * template that fails to compile is removed from the facade and never falls
    * back to a package default: it fails loudly through {@link render} and
    * through any template that `include()`s it, and surfaces in the setting tab.
    */
-  #defineTemplate(name: string, content: string): void {
+  #defineTemplate(
+    name: string,
+    content: string,
+    language: TemplateLanguage,
+  ): void {
     try {
-      this.#engine.define(name, content);
+      this.#facade.define(name, content, language);
       this.#compileErrors.delete(name);
     } catch (error) {
       this.#compileErrors.set(name, errorMessage(error));
       logger.warn("Failed to compile vault template", { error, name });
-      this.#engine.remove(name);
+      this.#facade.remove(name, language);
     }
   }
 
-  /** Use a canonical name's package default when no vault override exists, else remove a non-canonical one. */
+  /** Use a canonical name's package default (Liquid) when no vault override exists, else remove a non-canonical one. */
   #useDefault(name: string): void {
+    this.#facade.remove(name, "eta");
     if (!isTemplateName(name)) {
-      this.#engine.remove(name);
+      this.#facade.remove(name, "liquid");
       return;
     }
     try {
-      this.#engine.define(name, DEFAULT_TEMPLATES[name]);
+      this.#facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
       this.#compileErrors.delete(name);
     } catch (error) {
       this.#compileErrors.set(name, errorMessage(error));
@@ -436,39 +536,18 @@ export class TemplateService extends Service<void> {
         error,
         name,
       });
-      this.#engine.remove(name);
+      this.#facade.remove(name, "liquid");
     }
+  }
+
+  #currentTemplateFolder(): string {
+    return normalizeVaultPath(
+      this.#settings.current?.["template.folder"] ?? this.#lastTemplateFolder,
+    );
   }
 
   #isWatchedTemplatePath(path: string): boolean {
-    const currentFolder =
-      this.#settings.current?.["template.folder"] ?? this.#lastTemplateFolder;
-    return isWatchedTemplatePath(path, currentFolder);
-  }
-
-  #dropTemplatePath(path: string): void {
-    this.#pendingFlush.delete(path);
-    const name = templateNameFromPath(path);
-    if (!name) return;
-    this.#compileErrors.delete(name);
-    this.#useDefault(name);
-  }
-
-  /** Replace the engine's entire template set with the folder's overrides, filling any canonical name they don't cover with its package default. */
-  #loadTemplates(
-    entries: ReadonlyArray<readonly [string | null, string]>,
-  ): void {
-    this.#engine.reset();
-    this.#compileErrors.clear();
-    const provided = new Set<string>();
-    for (const [name, content] of entries) {
-      if (!name) continue;
-      provided.add(name);
-      this.#defineTemplate(name, content);
-    }
-    for (const name of TEMPLATE_NAMES) {
-      if (!provided.has(name)) this.#useDefault(name);
-    }
+    return isWatchedTemplatePath(path, this.#currentTemplateFolder());
   }
 
   #setAutoPairEnabled(enabled: boolean, updateWorkspace: boolean): void {
@@ -479,27 +558,26 @@ export class TemplateService extends Service<void> {
     if (updateWorkspace) this.#app.workspace.updateOptions();
   }
 
-  /** Compile the filename expression with the active autoTrim, holding the
-   *  function for reuse and recording any compile error. */
-  #compileFilename(filename: string): void {
-    if (filename) {
-      const { fn, error } = this.#compileSource(filename);
-      this.#filenameFn = fn;
-      this.#filenameError = error;
-    } else {
-      this.#filenameFn = null;
-      this.#filenameError = null;
-    }
-    this.#emitter.emit("compile-status-changed");
-  }
-
-  /** Compile the managed-frontmatter fields, dropping reserved keys the system
-   *  owns so user and system keys stay disjoint, and hold them for reuse. */
+  /**
+   * Compile the managed-frontmatter fields, dropping reserved keys the system
+   * owns so user and system keys stay disjoint, and hold them for reuse.
+   * `"javascript"`-language fields are skipped uncompiled while the gate is
+   * off; their keys are logged and recorded so {@link frontmatterFields}
+   * throws rather than hand back a partial set.
+   */
   #compileFrontmatter(fields: readonly FrontmatterField[]): void {
     this.#lastFrontmatterFields = fields;
-    this.#compiledFrontmatterFields = compileFrontmatterFields(
-      fields.filter((field) => !RESERVED_KEYS.has(field.key)),
+    const filtered = fields.filter((field) => !RESERVED_KEYS.has(field.key));
+    const { compiled, inertKeys } = this.#facade.compileFrontmatterFields(
+      filtered,
+      { javascript: this.#javascriptTemplatesEnabled },
     );
+    this.#compiledFrontmatterFields = compiled;
+    this.#inertFrontmatterKeys = inertKeys;
+
+    if (inertKeys.length > 0) {
+      logger.info("Skipping inert frontmatter fields", { keys: inertKeys });
+    }
   }
 
   #cancelFlush(): void {
@@ -520,11 +598,16 @@ function errorMessage(error: unknown): string {
   return Error.isError(error) ? error.message : String(error);
 }
 
-/** A watched template is a `zotlit-<name>.eta.md` file directly inside `folder` (no recursion). */
+/** Collapse rendered filename output to one trimmed line. */
+function toSingleLine(rendered: string): string {
+  return rendered.trim().replaceAll(/\s*\n\s*/g, "");
+}
+
+/** A watched template is a `zotlit-<name>.(liquid|eta).md` file directly inside `folder` (no recursion). */
 function isWatchedTemplatePath(path: string, folder: string): boolean {
   const normalized = normalizeVaultPath(path);
   return (
-    templateNameFromPath(normalized) !== null &&
+    templateFileFromPath(normalized) !== null &&
     normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
   );
 }

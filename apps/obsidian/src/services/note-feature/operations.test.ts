@@ -12,16 +12,22 @@ import {
   type Item,
   type NoteResolvers,
   type NoteTemplateContext,
+  type TemplateFilenameItemData,
   type TemplateItemData,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { Temporal } from "@zotlit/shared/temporal";
-import { filenameSuffix, TemplateEngine } from "@zotlit/templates";
+import { filenameSuffix } from "@zotlit/templates";
 import defaultCite from "@zotlit/templates/defaults/cite?raw";
+import {
+  TemplateFacade,
+  type TemplateLanguage,
+} from "@zotlit/templates/facade";
 import {
   compileFrontmatterFields,
   type CompiledFrontmatterField,
 } from "@zotlit/templates/frontmatter";
+import { createLiquidEngine } from "@zotlit/templates/liquid";
 import {
   formatManagedRegion,
   MARKER_END,
@@ -78,25 +84,32 @@ function stubNoteContext(
   relatedItems: readonly Item[],
   resolvers: NoteResolvers,
 ): NoteTemplateContext {
-  const toTemplateItem = (it: Item) => {
+  // Mirrors @zotlit/db's real wiring (see TemplateItemResolvers in
+  // zt-template-item.ts): resolvers get an inert twin with empty
+  // notePath/noteLink stubs while the outer item exposes the live members.
+  const toTemplateItem = (it: Item): TemplateItemData => {
     const fields = it.fields as unknown as Record<string, string | null>;
+    const twin = {
+      indexedKey: it.indexedKey,
+      citationKey: fields.citationKey ?? null,
+      title: fields.title ?? null,
+      notePath: "",
+      noteLink: () => "",
+    } as TemplateFilenameItemData;
     return {
       indexedKey: it.indexedKey,
       citationKey: fields.citationKey ?? null,
       title: fields.title ?? null,
+      get notePath() {
+        return resolvers.item.notePath(twin);
+      },
+      noteLink: (alias?: string, subpath?: string) =>
+        resolvers.item.noteLink(twin, alias, subpath),
     } as TemplateItemData;
   };
-  const withLinks = (tpl: TemplateItemData) => ({
-    title: tpl.title,
-    get notePath() {
-      return resolvers.item.notePath(tpl);
-    },
-    noteLink: (alias?: string, subpath?: string) =>
-      resolvers.item.noteLink(tpl, alias, subpath),
-  });
   return {
-    ...withLinks(toTemplateItem(item)),
-    relatedItems: relatedItems.map((r) => withLinks(toTemplateItem(r))),
+    ...toTemplateItem(item),
+    relatedItems: relatedItems.map(toTemplateItem),
   } as unknown as NoteTemplateContext;
 }
 
@@ -210,6 +223,105 @@ describe("createNote", () => {
         alias: "C Related",
       },
     ]);
+  });
+
+  // Pins the parity contract: both `resolveNotePath` (creation) and
+  // `resolveNoteTarget` (synthetic fallback) feed the filename template the
+  // item-own shape with inert `notePath`/`noteLink` stubs; before the fix the
+  // fallback fed the live item and `notePath`/`noteLink` rendered as `null`.
+  it("feeds the filename template the same item-own shape in creation and synthetic fallback", async () => {
+    const root = makeItem({
+      itemID: 1,
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: null,
+    });
+    // No note in the index for this item, so both `byItemKey` and `byCitekey`
+    // miss and resolution falls through to the synthetic fallback.
+    const related = makeItem({
+      itemID: 2,
+      key: "RELFALL1",
+      indexedKey: "RELFALL1",
+      title: "Related",
+      citationKey: null,
+    });
+
+    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
+      stubNoteContext(item, [related], options.resolvers),
+    );
+
+    const app = makeApp();
+    const deps: SyncRenderDeps = {
+      app,
+      template: {
+        ready: Promise.resolve(),
+        loaded: true,
+        frontmatterFields: [],
+        renderFilename<T extends object>(data: T): string {
+          const d = data as {
+            title: string | null;
+            notePath: string | null;
+            noteLink: (alias?: string, subpath?: string) => string | null;
+          };
+          return `${d.title}-${d.notePath}${d.noteLink()}`;
+        },
+        render<T extends object>(_name: string, data: T): string {
+          const ctx = data as {
+            noteLink: (alias?: string) => string | null;
+            relatedItems: readonly {
+              noteLink: (alias?: string) => string | null;
+            }[];
+          };
+          return `root:${ctx.noteLink()}\nrelated:${ctx.relatedItems[0]!.noteLink()}`;
+        },
+      },
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+        getNotesByCitekey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: {
+        prepare: async () => ({
+          resolveLink: () => () => "",
+          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
+        }),
+      },
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    };
+
+    const file = await createNoteFeature(deps).createNote(root);
+
+    // Creation path: buildFilenameContext's inert notePath/noteLink stubs
+    // render as empty strings.
+    expect(file.path).toBe("Literature/Root-.md");
+
+    // Synthetic-fallback path: the related item's filename must render with
+    // the same inert-stub shape, so its link target resolves to the same
+    // empty-render pattern instead of a `nullnull`-suffixed name.
+    expect(app.fileManager.links).toContainEqual(
+      expect.objectContaining({ path: "Literature/Related-.md" }),
+    );
+
+    // The root's own note link, rendered in the body before the file exists,
+    // also goes through the synthetic fallback (the note index is empty) —
+    // it must resolve to the same target the creation path produced.
+    expect(app.fileManager.links).toContainEqual(
+      expect.objectContaining({ path: "Literature/Root-.md" }),
+    );
   });
 
   it("forces a suffix and retries when create races a colliding sibling", async () => {
@@ -755,9 +867,17 @@ describe("updateNote", () => {
         [FIELD_ZOTERO_KEY]: "STALEKEY",
         title: "Old title",
       },
-      frontmatterFields: compileFrontmatterFields([
-        { key: "title", expr: "zt.title", merge: "replace" },
-      ]),
+      frontmatterFields: compileFrontmatterFields(
+        [
+          {
+            key: "title",
+            expr: "zt.title",
+            merge: "replace",
+            language: "liquid",
+          },
+        ],
+        { liquid: createLiquidEngine(), javascript: true },
+      ).compiled,
     });
 
     await createNoteFeature(harness.deps).updateNote(
@@ -1099,12 +1219,12 @@ describe("renderAnnotation", () => {
 /** A template service backed by the real engine, with a `cite` + optional `annotation` pair. */
 function citeTemplate(
   citeSource = defaultCite,
-  annotationSource?: string,
+  opts?: { annotation?: string; language?: TemplateLanguage },
 ): SyncRenderDeps["template"] {
-  const engine = new TemplateEngine();
-  engine.define("cite", citeSource);
-  if (annotationSource !== undefined) {
-    engine.define("annotation", annotationSource);
+  const facade = new TemplateFacade();
+  facade.define("cite", citeSource, opts?.language ?? "liquid");
+  if (opts?.annotation !== undefined) {
+    facade.define("annotation", opts.annotation, "eta");
   }
   return {
     ready: Promise.resolve(),
@@ -1112,7 +1232,7 @@ function citeTemplate(
     frontmatterFields: [],
     renderFilename: () => "",
     render: <T extends object>(name: string, data: T): string =>
-      engine.render(name, data),
+      facade.render(name, data),
   };
 }
 
@@ -1170,7 +1290,9 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
       new Map([["ANN1", annData("Hensher2011", "62")]]),
     );
     const result = render(
-      annotDeps(citeTemplate(defaultCite, "<%= zt.citation %>")),
+      annotDeps(
+        citeTemplate(defaultCite, { annotation: "<%= zt.citation %>" }),
+      ),
     );
     expect(result).toContain("[@Hensher2011, p. 62]");
   });
@@ -1184,7 +1306,14 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
     );
     const cite =
       "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
-    const result = render(annotDeps(citeTemplate(cite, "<%= zt.citation %>")));
+    const result = render(
+      annotDeps(
+        citeTemplate(cite, {
+          annotation: "<%= zt.citation %>",
+          language: "eta",
+        }),
+      ),
+    );
     expect(result).toContain("{{Hensher2011|62}}");
   });
 
@@ -1197,7 +1326,9 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
     );
     const result = render(
       annotDeps(
-        citeTemplate(defaultCite, "<%= JSON.stringify(zt.citation) %>"),
+        citeTemplate(defaultCite, {
+          annotation: "<%= JSON.stringify(zt.citation) %>",
+        }),
       ),
     );
     expect(result).toBe("null");
@@ -1232,9 +1363,9 @@ describe("renderAnnotationCitation (9.2-CSL #06)", () => {
     );
     const cite =
       "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
-    expect(renderCite(annotDeps(citeTemplate(cite)))).toContain(
-      "{{Hensher2011|62}}",
-    );
+    expect(
+      renderCite(annotDeps(citeTemplate(cite, { language: "eta" }))),
+    ).toContain("{{Hensher2011|62}}");
   });
 
   it("returns null when the parent item has no citation key (so the action can notice instead of copying)", () => {

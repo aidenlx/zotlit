@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateLegacyV0 } from "./migrate";
+import { migrateLegacyV0, migrateV1ToV2 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
   it("returns an empty object for non-plain inputs", () => {
@@ -193,6 +193,145 @@ describe("migrateLegacyV0", () => {
     ).toEqual({
       "server.port": "not-a-number",
       "note.literature-folder": 42,
+    });
+  });
+});
+
+describe("migrateV1ToV2", () => {
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV1ToV2(null)).toEqual({});
+    expect(migrateV1ToV2(undefined)).toEqual({});
+    expect(migrateV1ToV2("string")).toEqual({});
+    expect(migrateV1ToV2(42)).toEqual({});
+    expect(migrateV1ToV2([1, 2, 3])).toEqual({});
+    expect(migrateV1ToV2(new Map())).toEqual({});
+  });
+
+  it("copies other keys through untouched, including __VERSION__", () => {
+    expect(
+      migrateV1ToV2({
+        __VERSION__: 1,
+        "note.literature-folder": "/kept",
+        "server.enabled": true,
+      }),
+    ).toEqual({
+      __VERSION__: 1,
+      "note.literature-folder": "/kept",
+      "server.enabled": true,
+    });
+  });
+
+  it("passes through note.frontmatter-fields unchanged when it is absent or not an array", () => {
+    expect(migrateV1ToV2({ "note.literature-folder": "/x" })).toEqual({
+      "note.literature-folder": "/x",
+    });
+    expect(
+      migrateV1ToV2({ "note.frontmatter-fields": "not-an-array" }),
+    ).toEqual({
+      "note.frontmatter-fields": "not-an-array",
+    });
+  });
+
+  it("stamps language: javascript onto a custom field", () => {
+    expect(
+      migrateV1ToV2({
+        "note.frontmatter-fields": [
+          { key: "custom", expr: "zt.customExpr", merge: "replace" },
+        ],
+      }),
+    ).toEqual({
+      "note.frontmatter-fields": [
+        {
+          key: "custom",
+          expr: "zt.customExpr",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
+    });
+  });
+
+  it("rewrites each byte-exact v1 default JS expr to its Liquid equivalent, preserving key/merge", () => {
+    expect(
+      migrateV1ToV2({
+        "note.frontmatter-fields": [
+          { key: "title", expr: "zt.title", merge: "replace" },
+          {
+            key: "related",
+            expr: "zt.relatedItems.map((i) => i.noteLink() ?? `zt-error:${i.indexedKey}`)",
+            // user changed merge on a default field
+            merge: "append",
+          },
+          {
+            key: "collections",
+            expr: 'zt.collections.map((c) => c.path.join("/"))',
+            merge: "keep",
+          },
+        ],
+      }),
+    ).toEqual({
+      "note.frontmatter-fields": [
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "liquid",
+        },
+        {
+          key: "related",
+          expr: "zt.relatedItems | note_links",
+          merge: "append",
+          language: "liquid",
+        },
+        {
+          key: "collections",
+          expr: "zt.collections | collection_paths",
+          merge: "keep",
+          language: "liquid",
+        },
+      ],
+    });
+  });
+
+  it("leaves a near-miss default expr stamped javascript instead of guessing", () => {
+    expect(
+      migrateV1ToV2({
+        "note.frontmatter-fields": [
+          // trailing space vs the byte-exact default
+          { key: "title", expr: "zt.title ", merge: "replace" },
+          // different quotes vs the byte-exact default
+          {
+            key: "collections",
+            expr: "zt.collections.map((c) => c.path.join('/'))",
+            merge: "replace",
+          },
+        ],
+      }),
+    ).toEqual({
+      "note.frontmatter-fields": [
+        {
+          key: "title",
+          expr: "zt.title ",
+          merge: "replace",
+          language: "javascript",
+        },
+        {
+          key: "collections",
+          expr: "zt.collections.map((c) => c.path.join('/'))",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
+    });
+  });
+
+  it("passes non-plain-object array items through unchanged", () => {
+    expect(
+      migrateV1ToV2({
+        "note.frontmatter-fields": ["not-an-object", 42, null],
+      }),
+    ).toEqual({
+      "note.frontmatter-fields": ["not-an-object", 42, null],
     });
   });
 });

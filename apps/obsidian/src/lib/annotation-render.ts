@@ -9,9 +9,9 @@ import {
   type Annotation,
   type AnnotationResolvers,
   type Attachment,
+  type FallibleTemplateLink,
   type GroupIDMemo,
   type TagMemo,
-  type TemplateLink,
   type TemplateParentItemData,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -31,19 +31,19 @@ import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 /**
- * Build the {@link TemplateLink} for an attachment's on-disk file
+ * Build the {@link FallibleTemplateLink} for an attachment's on-disk file
  * (`[name](file://…)`). Rendered with no override it shows the filename and, for
  * annotation-level links, anchors to `#page=N` when `page` is a number; pass
- * `alias` / `subpath` to override either. The helper returns `""` when the path
- * cannot be resolved.
+ * `alias` / `subpath` to override either. The helper returns `null` when the
+ * path cannot be resolved.
  */
 export function attachmentFileLink(
   attachment: Attachment,
   ctx: AttachmentPathContext,
   page?: number | null,
-): TemplateLink {
+): FallibleTemplateLink {
   const abs = attachmentAbsPath(attachment, ctx);
-  if (!abs) return () => "";
+  if (!abs) return () => null;
   const filename = basename(abs) || "attachment";
   return fileUrlLink(abs, filename, page != null ? `#page=${page}` : "");
 }

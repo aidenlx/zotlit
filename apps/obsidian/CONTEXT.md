@@ -19,21 +19,27 @@ The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered 
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
-Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. Includes system fields (`zotero-key`, `citekey`) and user-configured `{key, expression}` pairs. Unmanaged keys are preserved.
+Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. Includes system fields (`zotero-key`, `citekey`) and user-configured `{key, expression, language}` entries. Each expression declares its own language — Liquid (the default) or JavaScript — and always evaluates in that language; JavaScript fields run only while JavaScript Templates is enabled on the device, and are otherwise inert — a note write that consumes the field set fails with an error naming them, existing notes untouched. Unmanaged keys are preserved.
 
 ### Templates
 
 **Template**:
-An Eta template file (`zotlit-<name>.eta.md`) in the vault's template folder, defining Markdown output. Falls back to embedded defaults when no vault file exists. Named templates:
+A template file in the vault's template folder defining Markdown output — `zotlit-<name>.liquid.md` (Liquid, the default language), or `zotlit-<name>.eta.md` when JavaScript Templates are enabled. The extension names the rendering language; when both files exist for one name, the Liquid file wins and the Eta file is flagged as shadowed. Falls back to the embedded defaults (Liquid only) when no vault file exists. A Template changes language by replacing its file with the other extension's edition — content is never converted between languages. Templates include each other by name, not by file, so one set may mix languages. Named templates:
 - `note` — full Literature Note body on **create** and **overwrite**
 - `content` — Managed Region body on **update** (the rest of the note is preserved)
 - `annotation` — single annotation rendering (drag-insert and optional Annotation Paragraph subsuming)
 - `cite` / `cite2` — primary / secondary in-text citation format
+- `filename` — a new Literature Note's filename (see Filename Template)
 
 _Avoid_: format, layout, schema
 
-**Filename Expression**:
-An Eta expression evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time).
+**JavaScript Templates**:
+The gated capability to run user-authored JavaScript during rendering — Eta template files and JavaScript-language Managed Frontmatter fields together. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates and JavaScript frontmatter fields are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored code is compiled or executed anywhere, settings validation included.
+_Avoid_: advanced templates, legacy templates, scripting, user scripts
+
+**Filename Template**:
+The `filename` Template, evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time); output is a single line.
+_Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
 ### Note content
 

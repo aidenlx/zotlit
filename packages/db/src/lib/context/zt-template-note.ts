@@ -8,6 +8,7 @@ import {
 } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
+  type FallibleTemplateLink,
   type TemplateCreator,
   type TemplateFilenameItemData,
   type TemplateItemBaseData,
@@ -88,9 +89,12 @@ export interface AnnotationResolvers {
   /**
    * Build an attachment's file-link helper. Pass a 1-based `page` to default the
    * helper's subpath to `#page=N` (annotation-level links anchor to their page);
-   * the helper returns `""` when the file is unresolvable.
+   * the helper returns `null` when the file is unresolvable.
    */
-  fileLink: (attachment: Attachment, page?: number | null) => TemplateLink;
+  fileLink: (
+    attachment: Attachment,
+    page?: number | null,
+  ) => FallibleTemplateLink;
   /**
    * Build an annotation's excerpt-image link helper, or `null` when the
    * annotation type has no cached image. Prefix `!` to the rendered link for an
@@ -148,15 +152,18 @@ export function buildFilenameContext(input: {
   tags: readonly ItemTag[];
   collections: readonly TemplateCollection[];
 }): TemplateFilenameItemData {
-  return {
-    ...itemToTemplateBaseData({
-      item: input.item,
-      tags: input.tags,
-    }),
-    notePath: "",
-    noteLink: () => "",
-    collections: input.collections,
-  };
+  return toFilenameItemData(
+    itemToTemplateBaseData({ item: input.item, tags: input.tags }),
+    input.collections,
+  );
+}
+
+/** Stub `notePath`/`noteLink` as inert empty values; see {@link TemplateFilenameItemData}. */
+function toFilenameItemData(
+  baseData: TemplateItemBaseData,
+  collections: readonly TemplateCollection[],
+): TemplateFilenameItemData {
+  return { ...baseData, notePath: "", noteLink: () => "", collections };
 }
 
 /**
@@ -183,8 +190,8 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
   }));
 
   const annotations: TemplateAnnotation[] = [];
-  // `result` is referenced inside annotation objects (`parentItem`) and inside
-  // lazy getters; it is only read after this function returns.
+  // `result` is referenced inside annotation objects (`parentItem`); it is
+  // only read after this function returns.
   let result: NoteTemplateContext;
 
   input.attachments.forEach((attachment, i) => {
@@ -219,18 +226,22 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     ? (input.childNotes ?? []).map(input.resolveChildNote)
     : [];
 
+  const collections = input.collectionsByItemID.get(item.itemID) ?? [];
+  // The inert item-own twin the resolvers receive; see TemplateItemResolvers.
+  const filenameData = toFilenameItemData(baseData, collections);
+
   result = {
     ...baseData,
     get notePath() {
-      return itemResolvers.notePath(result);
+      return itemResolvers.notePath(filenameData);
     },
     noteLink(alias?: string, subpath?: string) {
-      return itemResolvers.noteLink(result, alias, subpath);
+      return itemResolvers.noteLink(filenameData, alias, subpath);
     },
     backlink: itemSelectUri(item.key, item.groupID),
     annotations,
     attachments,
-    collections: input.collectionsByItemID.get(item.itemID) ?? [],
+    collections,
     authors: selectPrimaryAuthors(baseData),
     authorsShort: itemResolvers.authorsShort(item),
     relatedItems,
@@ -258,20 +269,20 @@ function buildRelatedItem({
   itemResolvers: TemplateItemResolvers;
 }): TemplateRelatedItem {
   const baseData = itemToTemplateBaseData({ item, tags });
-  const result: TemplateRelatedItem = {
+  const filenameData = toFilenameItemData(baseData, collections);
+  return {
     ...baseData,
     get notePath() {
-      return itemResolvers.notePath(result);
+      return itemResolvers.notePath(filenameData);
     },
     noteLink(alias?: string, subpath?: string) {
-      return itemResolvers.noteLink(result, alias, subpath);
+      return itemResolvers.noteLink(filenameData, alias, subpath);
     },
     backlink: itemSelectUri(item.key, item.groupID),
     authors: selectPrimaryAuthors(baseData),
     authorsShort: itemResolvers.authorsShort(item),
     collections,
   };
-  return result;
 }
 
 /**

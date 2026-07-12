@@ -1,6 +1,6 @@
 import { type SettingDefinitionItem } from "obsidian";
 
-import { validateFrontmatterExpr } from "@zotlit/templates/frontmatter";
+import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { confirm } from "@/lib/confirm";
 import * as m from "@/paraglide/messages";
@@ -44,7 +44,7 @@ export function frontmatterPageItems(
       onDelete: (index) => deleteField(ctx, index),
       items: fields.map((field) => ({
         name: frontmatterFieldLabel(field),
-        desc: describeField(field.expr),
+        desc: describeField(ctx, field),
         searchable: false,
         action: (_el, index) => openFieldModal(ctx, index),
       })),
@@ -52,16 +52,34 @@ export function frontmatterPageItems(
   ];
 }
 
-/** Show the expression, flagging it in red when it doesn't compile. The raw
- *  parser error is left to the edit modal, where it can be fixed. */
-function describeField(expr: string): string | DocumentFragment {
-  if (!expr || !validateFrontmatterExpr(expr)) return expr;
+/**
+ * Show the expression, flagging it in red when it doesn't compile. The raw
+ * parser error is left to the edit modal, where it can be fixed.
+ */
+function describeField(
+  ctx: SettingTabContext,
+  field: FrontmatterField,
+): string | DocumentFragment {
+  const { expr } = field;
+  const service = ctx.plugin.services.template;
+  const compileError = service.validateFrontmatterExpr(expr, field.language);
+  const inert =
+    field.language === "javascript" && !service.javascriptTemplatesEnabled;
+  if (!inert && (!expr || !compileError)) return expr;
   const desc = document.createDocumentFragment();
   desc.append(expr);
-  const note = document.createElement("div");
-  note.className = "zt:mt-2 zt:text-(--text-error)";
-  note.textContent = m.settings_frontmatter_compile_error();
-  desc.append(note);
+  if (inert) {
+    const note = document.createElement("div");
+    note.className = "zt:mt-2 zt:text-(--text-warning)";
+    note.textContent = m.settings_frontmatter_inert_js();
+    desc.append(note);
+  }
+  if (expr && compileError) {
+    const note = document.createElement("div");
+    note.className = "zt:mt-2 zt:text-(--text-error)";
+    note.textContent = m.settings_frontmatter_compile_error();
+    desc.append(note);
+  }
   return desc;
 }
 
@@ -69,8 +87,15 @@ function openFieldModal(ctx: SettingTabContext, index: number | null): void {
   const fields = ctx.settings.current?.["note.frontmatter-fields"] ?? [];
   const field = index === null ? null : (fields[index] ?? null);
   const existingKeys = fields.filter((_, i) => i !== index).map((f) => f.key);
+  const service = ctx.plugin.services.template;
 
-  openFrontmatterFieldModal(ctx.app, { field, existingKeys }).then(
+  openFrontmatterFieldModal(ctx.app, {
+    field,
+    existingKeys,
+    validateExpr: (expr, language) =>
+      service.validateFrontmatterExpr(expr, language),
+    javascriptTemplatesEnabled: service.javascriptTemplatesEnabled,
+  }).then(
     (value) => {
       const next = [...fields];
       if (index === null) next.push(value);

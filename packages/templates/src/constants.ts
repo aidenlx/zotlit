@@ -29,9 +29,20 @@ export type FrontmatterMergeStrategy = v.InferOutput<
   typeof frontmatterMergeStrategySchema
 >;
 
+/**
+ * An expression always evaluates in its declared language — the JavaScript
+ * Templates gate never reinterprets an expression, it only decides whether
+ * `"javascript"` fields run.
+ */
+export const frontmatterLanguageSchema = v.picklist(["liquid", "javascript"]);
+export type FrontmatterLanguage = v.InferOutput<
+  typeof frontmatterLanguageSchema
+>;
+
 export const frontmatterFieldSchema = v.object({
   key: v.pipe(v.string(), v.trim(), v.nonEmpty()),
   expr: v.pipe(v.string(), v.trim(), v.nonEmpty()),
   merge: frontmatterMergeStrategySchema,
+  language: frontmatterLanguageSchema,
 });
 export type FrontmatterField = v.InferOutput<typeof frontmatterFieldSchema>;

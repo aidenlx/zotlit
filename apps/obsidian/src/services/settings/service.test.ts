@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
 
+import { migrateV1ToV2 } from "./migrate";
 import { defaults } from "./schema";
 import { RESET_SETTING, SettingsService } from "./service";
 
@@ -25,6 +26,7 @@ class PluginStub {
 }
 
 const noopMigrate = (raw: unknown): unknown => raw;
+const noopMigrateV1 = (raw: unknown): unknown => raw;
 
 type MakeServiceOptions = Omit<Partial<SettingsServiceOptions>, "plugin"> & {
   plugin?: PluginStub;
@@ -38,6 +40,7 @@ function makeService(overrides: MakeServiceOptions = {}): {
   const service = new SettingsService({
     plugin,
     migrateLegacy: noopMigrate,
+    migrateV1: noopMigrateV1,
     ...overrides,
   });
   return { plugin, service };
@@ -152,7 +155,7 @@ describe("SettingsService loading", () => {
     ).not.toThrow();
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/x",
     });
   });
@@ -165,9 +168,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("valid v1 sparse object loads schema-known overrides and does not save", async () => {
+  it("valid v2 sparse object loads schema-known overrides and does not save", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/from-disk",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
@@ -180,9 +183,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v1 non-schema keys are ignored and the v1 file is not rewritten", async () => {
+  it("v2 non-schema keys are ignored and the file is not rewritten", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/ok",
       unknownKey: "noise",
     });
@@ -196,9 +199,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v1 invalid per-key values are dropped and the v1 file is not rewritten", async () => {
+  it("v2 invalid per-key values are dropped and the file is not rewritten", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/kept",
       "server.enabled": "not-a-boolean",
     });
@@ -212,33 +215,22 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v1 frontmatter fields without merge are dropped and the v1 file is not rewritten", async () => {
+  it("v2 frontmatter field missing language is dropped and other keys survive", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 1,
-      "note.frontmatter-fields": [{ key: "title", expr: "zt.title" }],
-      "note.literature-folder": "/kept",
+      __VERSION__: 2,
+      "note.frontmatter-fields": [
+        { key: "title", expr: "zt.title", merge: "replace" },
+      ],
+      "note.literature-folder": "Refs",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({ plugin });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "note.literature-folder": "/kept",
+      "note.literature-folder": "Refs",
     });
     expect(saveSpy).not.toHaveBeenCalled();
-  });
-
-  it("future __VERSION__ falls back to defaults and never saves", async () => {
-    const plugin = new PluginStub({
-      __VERSION__: 5,
-      "note.literature-folder": "/ignored",
-    });
-    const saveSpy = vi.spyOn(plugin, "saveData");
-    const { service } = makeService({ plugin });
-    await service.ready;
-    expect(service.current).toEqual(defaults);
-    expect(saveSpy).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalled();
   });
 
   it("malformed disk data falls back to defaults without saving", async () => {
@@ -272,6 +264,7 @@ describe("SettingsService loading", () => {
         new SettingsService({
           plugin,
           migrateLegacy: noopMigrate,
+          migrateV1: noopMigrateV1,
         }),
     });
     await expect(registered.services.settings.ready).rejects.toBeInstanceOf(
@@ -297,7 +290,7 @@ describe("SettingsService legacy migration", () => {
       "note.literature-folder": "/from-legacy",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/from-legacy",
     });
   });
@@ -318,12 +311,12 @@ describe("SettingsService legacy migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("falls back to defaults on migration throw and writes empty v1", async () => {
+  it("falls back to defaults on migration throw and writes empty v2", async () => {
     const plugin = new PluginStub({ legacy: "stuff" });
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({
@@ -334,7 +327,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 1 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 2 });
     expect(warnSpy).toHaveBeenCalled();
   });
 
@@ -347,7 +340,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 1 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 2 });
   });
 
   it("treats a Promise return from migrateLegacy as non-plain (no async hooks)", async () => {
@@ -362,7 +355,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 1 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 2 });
   });
 
   it("logs but stays loaded when legacy migration write fails", async () => {
@@ -381,6 +374,182 @@ describe("SettingsService legacy migration", () => {
     // Failed migration writes must not leak into pendingWrite: a subsequent
     // flush() should observe no pending work and resolve cleanly.
     await expect(service.flush()).resolves.toBeUndefined();
+  });
+});
+
+describe("SettingsService v1→v2 migration", () => {
+  it("migrates schema-known keys, drops non-schema keys, writes v2 best-effort", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.literature-folder": "/from-v1",
+      unknownKey: "noise",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.literature-folder": "/from-v1",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 2,
+      "note.literature-folder": "/from-v1",
+    });
+  });
+
+  it("drops invalid schema-known values and writes v2 without them", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.literature-folder": "/kept",
+      "server.enabled": "not-a-boolean",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.literature-folder": "/kept",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 2,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("drops frontmatter fields still missing merge after migration and writes v2 without them", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.frontmatter-fields": [{ key: "title", expr: "zt.title" }],
+      "note.literature-folder": "/kept",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.literature-folder": "/kept",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 2,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("happy path: stamps/rewrites frontmatter field language and writes v2 exactly once", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.frontmatter-fields": [
+        { key: "title", expr: "zt.title", merge: "replace" },
+        { key: "custom", expr: "zt.custom", merge: "replace" },
+      ],
+      "note.literature-folder": "/from-v1",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin, migrateV1: migrateV1ToV2 });
+    await service.ready;
+
+    const migratedFields = [
+      { key: "title", expr: "zt.title", merge: "replace", language: "liquid" },
+      {
+        key: "custom",
+        expr: "zt.custom",
+        merge: "replace",
+        language: "javascript",
+      },
+    ];
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.frontmatter-fields": migratedFields,
+      "note.literature-folder": "/from-v1",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 2,
+      "note.frontmatter-fields": migratedFields,
+      "note.literature-folder": "/from-v1",
+    });
+  });
+
+  it("a hand-edited field missing merge still fails per-key validation and drops the whole key to defaults", async () => {
+    // migrateV1ToV2 stamps `language` onto this plain object, but `merge` is
+    // still absent, so the whole `note.frontmatter-fields` array fails
+    // frontmatterFieldSchema and the key drops to its default.
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.frontmatter-fields": [{ key: "custom", expr: "zt.custom" }],
+      "note.literature-folder": "/kept",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin, migrateV1: migrateV1ToV2 });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.literature-folder": "/kept",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 2,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("falls back to defaults on migrateV1 throw and writes empty v2", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.literature-folder": "/x",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({
+      plugin,
+      migrateV1: () => {
+        throw new Error("boom");
+      },
+    });
+    await service.ready;
+    expect(service.current).toEqual(defaults);
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 2 });
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("falls back to defaults when migrateV1 returns a non-plain object", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "note.literature-folder": "/x",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({
+      plugin,
+      migrateV1: () => 42,
+    });
+    await service.ready;
+    expect(service.current).toEqual(defaults);
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 2 });
+  });
+
+  it("v2 data loads non-writing (no saveData call)", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 2,
+      "note.literature-folder": "/from-v2",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.literature-folder": "/from-v2",
+    });
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it("version 3 is future and falls back to defaults with a warning", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 3,
+      "note.literature-folder": "/ignored",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.current).toEqual(defaults);
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
   });
 });
 
@@ -449,14 +618,14 @@ describe("SettingsService mutations", () => {
     service.update({ "note.literature-folder": "/x", "server.enabled": true });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/x",
       "server.enabled": true,
     });
     service.update({ "note.literature-folder": RESET_SETTING });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "server.enabled": true,
     });
   });
@@ -469,7 +638,7 @@ describe("SettingsService mutations", () => {
     });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": defaults["note.literature-folder"],
     });
   });
@@ -505,7 +674,7 @@ describe("SettingsService mutations", () => {
     service.update({});
     expect(seen).toHaveLength(2);
     await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 1 });
+    expect(plugin.__data).toEqual({ __VERSION__: 2 });
   });
 
   it("reset() of un-overridden keys still notifies and schedules a save", async () => {
@@ -516,7 +685,7 @@ describe("SettingsService mutations", () => {
     service.reset(["note.literature-folder"]);
     expect(seen).toHaveLength(2);
     await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 1 });
+    expect(plugin.__data).toEqual({ __VERSION__: 2 });
   });
 });
 
@@ -527,7 +696,7 @@ describe("SettingsService persistence", () => {
     service.update({ "server.enabled": true });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "server.enabled": true,
     });
   });
@@ -542,7 +711,7 @@ describe("SettingsService persistence", () => {
     expect(saveSpy).not.toHaveBeenCalled();
     await service.flush();
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/c",
     });
   });
@@ -609,6 +778,7 @@ describe("SettingsService persistence", () => {
       new SettingsService({
         plugin,
         migrateLegacy: noopMigrate,
+        migrateV1: noopMigrateV1,
       }),
     );
     await service.ready;
@@ -616,7 +786,7 @@ describe("SettingsService persistence", () => {
     expect(plugin.__data).toBeNull();
     await stack.disposeAsync();
     expect(plugin.__data).toEqual({
-      __VERSION__: 1,
+      __VERSION__: 2,
       "note.literature-folder": "/on-dispose",
     });
   });

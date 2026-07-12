@@ -103,9 +103,10 @@ export function migrateLegacyV0(raw: unknown): Partial<Settings> {
   const logLevel = mapLogLevel(v0.logLevel);
   if (logLevel !== undefined) out["log.level"] = logLevel;
 
-  // v1 template strings use the `it.*` vocabulary; v2's upstream eta engine
-  // uses `zt.*`. There's no compat layer, so `template.filename` (and any
-  // other embedded template source) is never migrated — the v2 default applies.
+  // v1 embedded template sources are never migrated — they use the `it.*`
+  // vocabulary while v2's upstream eta engine uses `zt.*`, and there's no
+  // compat layer. v2 reads templates, including the `filename` Template,
+  // from vault files instead.
   if (isPlainObject(v0.template) && typeof v0.template.folder === "string") {
     out["template.folder"] = v0.template.folder;
   }
@@ -193,4 +194,56 @@ function getLegacyDefaultValue(key: string): unknown {
   if (key === "log.level") return "info";
   if (!Object.hasOwn(defaults, key)) return undefined;
   return defaults[key as keyof Settings];
+}
+
+/**
+ * v1 `note.frontmatter-fields` items had no `language` key; every field
+ * implicitly ran as JavaScript. These are the three byte-exact v1
+ * `DEFAULT_FRONTMATTER_FIELDS` exprs (`zotlit-v1`-derived JS defaults), frozen
+ * here on purpose — a near-miss expr (different quotes, whitespace, etc.) is
+ * left stamped `"javascript"` rather than guessed at.
+ */
+const V1_DEFAULT_JS_TO_V2_LIQUID: ReadonlyMap<string, string> = new Map([
+  ["zt.title", "zt.title"],
+  [
+    "zt.relatedItems.map((i) => i.noteLink() ?? `zt-error:${i.indexedKey}`)",
+    "zt.relatedItems | note_links",
+  ],
+  [
+    'zt.collections.map((c) => c.path.join("/"))',
+    "zt.collections | collection_paths",
+  ],
+]);
+
+/**
+ * Convert a v1 `data.json` (no `note.frontmatter-fields[].language`) into
+ * v2's shape, which requires `language` on every frontmatter field. Returns
+ * everything else untouched — shape-plausible transform only, letting
+ * `SettingsService`'s per-key cleanup drop anything schema-invalid.
+ *
+ * @returns the migrated object; an empty object when the input is not a
+ * plain record.
+ */
+export function migrateV1ToV2(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+
+  const out: Record<string, unknown> = { ...raw };
+  const fields = out["note.frontmatter-fields"];
+  if (Array.isArray(fields)) {
+    out["note.frontmatter-fields"] = fields.map(migrateFrontmatterFieldV1ToV2);
+  }
+  return out;
+}
+
+function migrateFrontmatterFieldV1ToV2(item: unknown): unknown {
+  if (!isPlainObject(item)) return item;
+
+  const expr = item.expr;
+  const liquidExpr =
+    typeof expr === "string" ? V1_DEFAULT_JS_TO_V2_LIQUID.get(expr) : undefined;
+
+  if (liquidExpr !== undefined) {
+    return { ...item, expr: liquidExpr, language: "liquid" };
+  }
+  return { ...item, language: "javascript" };
 }

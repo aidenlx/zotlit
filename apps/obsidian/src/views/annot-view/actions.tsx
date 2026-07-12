@@ -13,6 +13,7 @@ import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type NoteFeature } from "@/services/note-feature";
+import { InertTemplateError } from "@/services/template/errors";
 
 export interface AnnotActions {
   onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotViewItem): void;
@@ -109,9 +110,14 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
         .onClick(() => {
-          const citation = deps.noteFeature.renderAnnotationCitation(
-            annot.itemID,
-          );
+          let citation: string | null;
+          try {
+            citation = deps.noteFeature.renderAnnotationCitation(annot.itemID);
+          } catch (e) {
+            if (!(e instanceof InertTemplateError)) throw e;
+            new BaseNotice(e.message);
+            return;
+          }
           if (citation === null) {
             new BaseNotice(m.annot_view_copy_citation_no_key());
             return;

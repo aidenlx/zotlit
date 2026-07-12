@@ -12,6 +12,7 @@ import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
+import { InertTemplateError } from "@/services/template/errors";
 
 import { type CitationSuggestDeps } from "./register";
 
@@ -87,10 +88,17 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       return;
     }
 
-    const rendered = this.#deps.noteFeature.renderCitation(
-      [{ citationKey, item: hit.item }],
-      this.#secondary,
-    );
+    let rendered: string | null;
+    try {
+      rendered = this.#deps.noteFeature.renderCitation(
+        [{ citationKey, item: hit.item }],
+        this.#secondary,
+      );
+    } catch (e) {
+      if (!(e instanceof InertTemplateError)) throw e;
+      new BaseNotice(e.message);
+      return;
+    }
     if (rendered === null) {
       new BaseNotice(m.notice_template_not_ready());
       return;

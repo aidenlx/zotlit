@@ -20,6 +20,7 @@ import {
   runBatchWrite,
 } from "@/services/batch-run";
 import { type Settings } from "@/services/settings/schema";
+import { InertTemplateError } from "@/services/template/errors";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
 
 import { type UpdateScope } from "./operations";
@@ -107,7 +108,10 @@ export async function runBatchUpdate(
       title: m.batch_update_title(),
       loadingLabel: m.batch_update_loading_label(),
       loadFailed: m.batch_update_load_failed(),
-      runFailed: m.batch_update_run_failed(),
+      runFailed: (error) =>
+        error instanceof InertTemplateError
+          ? error.message
+          : m.batch_update_run_failed(),
       progressLabel: m.batch_update_progress_label(),
       confirmIntro: ({ actionable, notFound }) =>
         actionable === 0
@@ -237,6 +241,7 @@ async function executeBatchActions(
         error,
       });
     },
+    haltOn: (error) => error instanceof InertTemplateError,
   });
 
   logger.info("Batch update finished", {
