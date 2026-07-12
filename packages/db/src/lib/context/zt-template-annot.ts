@@ -8,8 +8,10 @@ import {
 import { type ItemTag } from "@/lib/zt-tag";
 import { annotationOpenUri } from "@/lib/zt-uri";
 
+import { emptyToNull } from "./normalize";
 import { type TemplateAttachment } from "./zt-template-attach";
 import {
+  type FallibleTemplateLink,
   type TemplateLink,
   type TemplateParentItemData,
 } from "./zt-template-item";
@@ -67,11 +69,11 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   comment: string | null;
   /**
    * Markdown link to the parent attachment file, deep-linked to this
-   * annotation's {@link page} (`#page=N`); `""` when the file is unresolvable.
+   * annotation's {@link page} (`#page=N`); `null` when the file is unresolvable.
    * Call it to render — pass `alias`/`subpath` to override the display text or
-   * the `#`-fragment. See {@link TemplateLink}. Computed at the app layer.
+   * the `#`-fragment. See {@link FallibleTemplateLink}. Computed at the app layer.
    */
-  fileLink: TemplateLink;
+  fileLink: FallibleTemplateLink;
   /** Zotero deep link to this annotation. Computed at the app layer. */
   backlink: string;
 
@@ -99,13 +101,13 @@ function annotationToTemplateBaseData(
     key: annotation.key,
     libraryID: annotation.libraryID,
     type: annotationTypeToName(annotation.type),
-    text: annotation.text,
-    commentHtml: annotation.comment,
+    text: emptyToNull(annotation.text),
+    commentHtml: emptyToNull(annotation.comment),
     colorHex: annotation.color,
     colorName: annotationColorToName(annotation.color),
-    pageLabel: annotation.pageLabel,
+    pageLabel: emptyToNull(annotation.pageLabel),
     page: typeof pageIndex === "number" ? pageIndex + 1 : null,
-    authorName: annotation.authorName,
+    authorName: emptyToNull(annotation.authorName),
     isExternal: annotation.isExternal,
     dateAdded: annotation.dateAdded,
     dateModified: annotation.dateModified,
@@ -132,9 +134,9 @@ export interface AnnotationTemplateDataInput {
   /**
    * Build an attachment's file-link helper. Pass a 1-based `page` to default the
    * helper's subpath to `#page=N` (annotation-level links anchor to their page);
-   * the helper returns `""` when the file is unresolvable.
+   * the helper returns `null` when the file is unresolvable.
    */
-  fileLink: (page?: number | null) => TemplateLink;
+  fileLink: (page?: number | null) => FallibleTemplateLink;
 }
 
 export function annotationToTemplateData({
@@ -162,7 +164,7 @@ export function annotationToTemplateData({
     get comment() {
       if (comment === undefined) {
         comment = baseData.commentHtml
-          ? commentToMarkdown(baseData.commentHtml)
+          ? emptyToNull(commentToMarkdown(baseData.commentHtml))
           : null;
       }
       return comment ?? null;

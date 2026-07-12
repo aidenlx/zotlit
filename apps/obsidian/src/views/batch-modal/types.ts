@@ -65,8 +65,10 @@ export interface BatchModalText {
   loadingLabel: string;
   /** Notice shown when classification fails (not on cancel/dismiss). */
   loadFailed: string;
-  /** Notice shown when the run phase throws before or during execution. */
-  runFailed: string;
+  /** Notice shown when the run phase throws before or during execution. A
+   * function receives the thrown error, letting operations surface a typed
+   * error's own message instead of generic copy. */
+  runFailed: string | ((error: unknown) => string);
   /** Run-phase headline over the determinate progress bar. */
   progressLabel: string;
   /** Confirm-phase intro line; receives the manifest's counts. */

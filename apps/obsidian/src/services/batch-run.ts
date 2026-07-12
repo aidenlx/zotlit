@@ -87,6 +87,12 @@ export type RunOutcome = "created" | "updated" | "skipped";
  *
  * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
  *   called after the task is reported as failed; use for structured logging.
+ * @param opts.haltOn Marks an error as configuration-level rather than
+ *   per-item: the first task to throw a matching error aborts the whole run
+ *   instead of reporting a failure row (and repeating the same message for
+ *   every remaining item). Tasks that haven't started yet short-circuit once
+ *   the halt is recorded; the run rejects with that error once all in-flight
+ *   tasks settle.
  */
 export async function executeBatchRun<T extends BatchRunTask>(opts: {
   tasks: readonly T[];
@@ -94,8 +100,9 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
   concurrency: number;
   run: (task: T) => Promise<RunOutcome>;
   onTaskFailed?: (task: T, error: unknown) => void;
+  haltOn?: (error: unknown) => boolean;
 }): Promise<BatchRunResult> {
-  const { tasks, controls, concurrency, run, onTaskFailed } = opts;
+  const { tasks, controls, concurrency, run, onTaskFailed, haltOn } = opts;
   const limit = pLimit(concurrency);
   const result: BatchRunResult = {
     created: 0,
@@ -104,10 +111,12 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
     failed: 0,
     cancelled: false,
   };
+  let haltError: unknown;
   const settled = await Promise.allSettled(
     tasks.map((task) =>
       limit(async () => {
         controls.signal.throwIfAborted();
+        if (haltError !== undefined) throw new AbortError("halted");
         try {
           const outcome = await run(task);
           result[outcome] += 1;
@@ -115,6 +124,10 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
             outcome === "skipped" ? "skipped" : "done";
           controls.onItemSettled({ id: task.id, status });
         } catch (error) {
+          if (haltOn?.(error)) {
+            haltError ??= error;
+            throw new AbortError("halted");
+          }
           if (!AbortError.test(error)) {
             controls.onItemSettled({
               id: task.id,
@@ -141,6 +154,7 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
       onTaskFailed?.(tasks[i]!, entry.reason);
     }
   }
+  if (haltError !== undefined) throw haltError;
   result.cancelled = controls.signal.aborted && completed < tasks.length;
   return result;
 }
@@ -162,6 +176,7 @@ export async function runBatchWrite<T extends BatchRunTask>(opts: {
   concurrency: number;
   run: (task: T, client: NodeDatabaseClient) => Promise<RunOutcome>;
   onTaskFailed?: (task: T, error: unknown) => void;
+  haltOn?: (error: unknown) => boolean;
 }): Promise<BatchRunResult> {
   using lease = await opts.db.acquireRead();
   // Awaited inside the `using` scope so the lease stays pinned until every task
@@ -172,6 +187,7 @@ export async function runBatchWrite<T extends BatchRunTask>(opts: {
     concurrency: opts.concurrency,
     run: (task) => opts.run(task, lease.client),
     onTaskFailed: opts.onTaskFailed,
+    haltOn: opts.haltOn,
   });
   return result;
 }

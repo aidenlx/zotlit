@@ -2,6 +2,7 @@
 import { type ItemDate } from "@/lib/zt-date";
 import { type Item } from "@/queries/items";
 
+import { emptyToNull } from "./normalize";
 import { cslToTemplateItem } from "./zt-csl";
 import {
   itemToTemplateBaseData,
@@ -116,8 +117,8 @@ export function citekeysToCiteTemplateData(
         ? narrowToCiteItemData(ref.item, ref.citationKey)
         : {
             ...ref.item,
-            citationKey: ref.citationKey,
-            citekey: ref.citationKey,
+            citationKey: emptyToNull(ref.citationKey),
+            citekey: emptyToNull(ref.citationKey),
           }
       : stubCiteItem(ref.citationKey);
     return toCitationItem(item, ref);
@@ -172,7 +173,8 @@ export function narrowBaseDataToCiteItemData(
     noteLink: _noteLink,
     ...rest
   } = base;
-  return { ...rest, citationKey, citekey: citationKey };
+  const key = emptyToNull(citationKey);
+  return { ...rest, citationKey: key, citekey: key };
 }
 
 /**
@@ -196,16 +198,18 @@ export function resolveCitedItem(
 ): TemplateCiteItemData {
   if (dbItem) return narrowToCiteItemData(dbItem, citationKey);
   if (snapshot) {
+    const key = emptyToNull(citationKey);
     return {
       ...cslToTemplateItem(snapshot),
-      citationKey,
-      citekey: citationKey,
+      citationKey: key,
+      citekey: key,
     };
   }
   return stubCiteItem(citationKey);
 }
 
 function stubCiteItem(citationKey: string | null): TemplateCiteItemData {
+  const key = emptyToNull(citationKey);
   return {
     itemType: null,
     creators: [],
@@ -213,8 +217,8 @@ function stubCiteItem(citationKey: string | null): TemplateCiteItemData {
     title: null,
     abstract: null,
     containerTitle: null,
-    citationKey,
-    citekey: citationKey,
+    citationKey: key,
+    citekey: key,
     date: null,
     shortTitle: null,
     DOI: null,
@@ -246,11 +250,11 @@ function toCitationItem(
 ): CitationTemplateItem {
   return {
     item,
-    locator: props.locator ?? null,
-    label: props.label ?? null,
+    locator: emptyToNull(props.locator ?? null),
+    label: emptyToNull(props.label ?? null),
     labelShort: props.labelShort ?? DEFAULT_LOCATOR_LABEL_SHORT,
     suppressAuthor: props.suppressAuthor ?? false,
-    prefix: props.prefix ?? null,
-    suffix: props.suffix ?? null,
+    prefix: emptyToNull(props.prefix ?? null),
+    suffix: emptyToNull(props.suffix ?? null),
   };
 }

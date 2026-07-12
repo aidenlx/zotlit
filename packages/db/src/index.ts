@@ -68,6 +68,8 @@ export {
   type AnnotationType,
 } from "./lib/zt-annot";
 export {
+  type FallibleTemplateLink,
+  type TemplateFilenameItemData,
   type TemplateItemData,
   type TemplateLink,
   type TemplateParentItemData,

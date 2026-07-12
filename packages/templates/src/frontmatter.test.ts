@@ -5,22 +5,45 @@ import {
   evalFrontmatterFields,
   type FrontmatterField,
 } from "./frontmatter";
+import { createLiquidEngine } from "./liquid";
 
 function evalFields(
   fields: readonly FrontmatterField[],
   zt: object,
-  onError?: (key: string, error: unknown) => void,
+  options: {
+    javascript?: boolean;
+    onError?: (key: string, error: unknown) => void;
+  } = {},
 ): Record<string, unknown> {
-  return evalFrontmatterFields(compileFrontmatterFields(fields), zt, onError);
+  const { compiled } = compileFrontmatterFields(fields, {
+    liquid: createLiquidEngine(),
+    javascript: options.javascript ?? true,
+  });
+  return evalFrontmatterFields(compiled, zt, options.onError);
 }
 
-describe("evalFrontmatterFields", () => {
+describe("evalFrontmatterFields (javascript fields)", () => {
   it("evaluates each field into a record, preserving value types", () => {
     const fm = evalFields(
       [
-        { key: "title", expr: "zt.title", merge: "replace" },
-        { key: "year", expr: "zt.year", merge: "replace" },
-        { key: "tags", expr: "zt.tags", merge: "replace" },
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "javascript",
+        },
+        {
+          key: "year",
+          expr: "zt.year",
+          merge: "replace",
+          language: "javascript",
+        },
+        {
+          key: "tags",
+          expr: "zt.tags",
+          merge: "replace",
+          language: "javascript",
+        },
       ],
       { title: "A Study", year: 2024, tags: ["a", "b"] },
     );
@@ -28,16 +51,24 @@ describe("evalFrontmatterFields", () => {
   });
 
   it("skips empty keys", () => {
-    const fm = evalFields([{ key: "", expr: "'y'", merge: "replace" }], {});
+    const fm = evalFields(
+      [{ key: "", expr: "'y'", merge: "replace", language: "javascript" }],
+      {},
+    );
     expect(fm).toEqual({});
   });
 
   it("evaluates an expression ending in a line comment", () => {
     const fm = evalFields(
-      [{ key: "title", expr: "zt.title // primary", merge: "replace" }],
-      {
-        title: "A Study",
-      },
+      [
+        {
+          key: "title",
+          expr: "zt.title // primary",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
+      { title: "A Study" },
     );
     expect(fm).toEqual({ title: "A Study" });
   });
@@ -45,9 +76,16 @@ describe("evalFrontmatterFields", () => {
   it("skips a failing expression and reports it", () => {
     const errors: string[] = [];
     const fm = evalFields(
-      [{ key: "boom", expr: "zt.nope.deep", merge: "replace" }],
+      [
+        {
+          key: "boom",
+          expr: "zt.nope.deep",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
       {},
-      (key) => errors.push(key),
+      { onError: (key) => errors.push(key) },
     );
     expect("boom" in fm).toBe(false);
     expect(errors).toEqual(["boom"]);
@@ -56,9 +94,9 @@ describe("evalFrontmatterFields", () => {
   it("reports a syntactically invalid expression at eval time", () => {
     const errors: string[] = [];
     const fm = evalFields(
-      [{ key: "bad", expr: "1 +", merge: "replace" }],
+      [{ key: "bad", expr: "1 +", merge: "replace", language: "javascript" }],
       {},
-      (key) => errors.push(key),
+      { onError: (key) => errors.push(key) },
     );
     expect("bad" in fm).toBe(false);
     expect(errors).toEqual(["bad"]);
@@ -66,7 +104,14 @@ describe("evalFrontmatterFields", () => {
 
   it("omits undefined values", () => {
     const fm = evalFields(
-      [{ key: "missing", expr: "undefined", merge: "replace" }],
+      [
+        {
+          key: "missing",
+          expr: "undefined",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
       {},
     );
     expect(fm).toEqual({});
@@ -74,16 +119,31 @@ describe("evalFrontmatterFields", () => {
 
   it("keeps null values", () => {
     const fm = evalFields(
-      [{ key: "empty", expr: "null", merge: "replace" }],
+      [
+        {
+          key: "empty",
+          expr: "null",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
       {},
     );
     expect(fm).toEqual({ empty: null });
   });
 
   it("compiles each field once for reuse across evaluations", () => {
-    const compiled = compileFrontmatterFields([
-      { key: "title", expr: "zt.title", merge: "replace" },
-    ]);
+    const { compiled } = compileFrontmatterFields(
+      [
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
+      { liquid: createLiquidEngine(), javascript: true },
+    );
     expect(evalFrontmatterFields(compiled, { title: "First" })).toEqual({
       title: "First",
     });
@@ -93,16 +153,30 @@ describe("evalFrontmatterFields", () => {
   });
 
   it("carries merge strategy on compiled fields", () => {
-    expect(
-      compileFrontmatterFields([
-        { key: "tags", expr: "zt.tags", merge: "append" },
-      ]),
-    ).toMatchObject([{ key: "tags", merge: "append" }]);
+    const { compiled } = compileFrontmatterFields(
+      [
+        {
+          key: "tags",
+          expr: "zt.tags",
+          merge: "append",
+          language: "javascript",
+        },
+      ],
+      { liquid: createLiquidEngine(), javascript: true },
+    );
+    expect(compiled).toMatchObject([{ key: "tags", merge: "append" }]);
   });
 
   it("treats keys as literal top-level names", () => {
     const fm = evalFields(
-      [{ key: "zotero.related", expr: "'literal'", merge: "replace" }],
+      [
+        {
+          key: "zotero.related",
+          expr: "'literal'",
+          merge: "replace",
+          language: "javascript",
+        },
+      ],
       {},
     );
     expect(fm).toEqual({ "zotero.related": "literal" });
@@ -111,11 +185,17 @@ describe("evalFrontmatterFields", () => {
   it("injects basename into frontmatter expressions", () => {
     const fm = evalFields(
       [
-        { key: "defaultExt", expr: "basename(zt.path)", merge: "replace" },
+        {
+          key: "defaultExt",
+          expr: "basename(zt.path)",
+          merge: "replace",
+          language: "javascript",
+        },
         {
           key: "customExt",
           expr: "basename(zt.path, '.txt')",
           merge: "replace",
+          language: "javascript",
         },
       ],
       { path: "folder/Smith2024.md" },
@@ -125,5 +205,140 @@ describe("evalFrontmatterFields", () => {
       defaultExt: "Smith2024",
       customExt: "Smith2024.md",
     });
+  });
+});
+
+describe("evalFrontmatterFields (liquid fields)", () => {
+  it("returns an intact array regardless of the javascript gate", () => {
+    const zt = { tags: [{ name: "ai" }, { name: "nlp" }] };
+    const fields: FrontmatterField[] = [
+      {
+        key: "tags",
+        expr: "zt.tags | map: 'name'",
+        merge: "replace",
+        language: "liquid",
+      },
+    ];
+
+    for (const javascript of [true, false]) {
+      const fm = evalFields(fields, zt, { javascript });
+      expect(fm.tags).toEqual(["ai", "nlp"]);
+      expect(Array.isArray(fm.tags)).toBe(true);
+    }
+  });
+
+  it("returns an intact number regardless of the javascript gate", () => {
+    const zt = { year: 2024 };
+    const fields: FrontmatterField[] = [
+      { key: "year", expr: "zt.year", merge: "replace", language: "liquid" },
+    ];
+
+    for (const javascript of [true, false]) {
+      const fm = evalFields(fields, zt, { javascript });
+      expect(fm.year).toBe(2024);
+      expect(typeof fm.year).toBe("number");
+    }
+  });
+
+  it("does not throw on a liquid parse error; reports it per-field, siblings unaffected", () => {
+    const errors: string[] = [];
+    const fm = evalFields(
+      [
+        { key: "bad", expr: "1 +", merge: "replace", language: "liquid" },
+        { key: "ok", expr: "zt.year", merge: "replace", language: "liquid" },
+      ],
+      { title: "A Study", year: 2024 },
+      { onError: (key) => errors.push(key) },
+    );
+    expect("bad" in fm).toBe(false);
+    expect(errors).toEqual(["bad"]);
+    expect(fm.ok).toBe(2024);
+  });
+
+  it("reports a liquid runtime throw per-field, siblings unaffected", () => {
+    const errors: string[] = [];
+    const zt = {
+      get boom(): never {
+        throw new Error("kaboom");
+      },
+      year: 2024,
+    };
+    const fm = evalFields(
+      [
+        { key: "bad", expr: "zt.boom", merge: "replace", language: "liquid" },
+        { key: "ok", expr: "zt.year", merge: "replace", language: "liquid" },
+      ],
+      zt,
+      { onError: (key) => errors.push(key) },
+    );
+    expect("bad" in fm).toBe(false);
+    expect(errors).toEqual(["bad"]);
+    expect(fm.ok).toBe(2024);
+  });
+
+  it("omits undefined results (missing variable)", () => {
+    const fm = evalFields(
+      [
+        {
+          key: "missing",
+          expr: "zt.nope",
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+      {},
+    );
+    expect("missing" in fm).toBe(false);
+  });
+
+  it("filters javascript fields before compilation, so a js syntax error never throws while gate is off, and liquid fields still evaluate", () => {
+    const { compiled, inertKeys } = compileFrontmatterFields(
+      [
+        {
+          key: "broken",
+          expr: "1 +",
+          merge: "replace",
+          language: "javascript",
+        },
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+      { liquid: createLiquidEngine(), javascript: false },
+    );
+
+    expect(inertKeys).toEqual(["broken"]);
+    expect(compiled.map((f) => f.key)).toEqual(["title"]);
+
+    const fm = evalFrontmatterFields(compiled, { title: "A Study" });
+    expect(fm).toEqual({ title: "A Study" });
+  });
+
+  it("compiles a liquid field once and reuses it correctly across different scopes", () => {
+    const { compiled } = compileFrontmatterFields(
+      [
+        {
+          key: "paths",
+          expr: "zt.collections | collection_paths",
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+      { liquid: createLiquidEngine(), javascript: true },
+    );
+
+    expect(
+      evalFrontmatterFields(compiled, {
+        collections: [{ path: ["Top", "Sub"] }],
+      }),
+    ).toEqual({ paths: ["Top/Sub"] });
+    expect(
+      evalFrontmatterFields(compiled, {
+        collections: [{ path: ["Alt", "Deep", "Path"] }],
+      }),
+    ).toEqual({ paths: ["Alt/Deep/Path"] });
   });
 });

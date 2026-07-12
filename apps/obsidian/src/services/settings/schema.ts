@@ -9,10 +9,7 @@ import {
   type AutoTrim,
 } from "@zotlit/templates/constants";
 
-import {
-  DEFAULT_FRONTMATTER_FIELDS,
-  DEFAULT_NOTE_FILENAME,
-} from "@/services/template/defaults";
+import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
  * JSON-safe values a setting may take. Recursive so structured settings (e.g.
@@ -78,7 +75,6 @@ export const schema = v.object({
   "server.hostname": v.string(),
 
   "template.folder": v.string(),
-  "template.filename": v.string(),
   "template.auto-pair-eta": v.boolean(),
   "template.auto-trim-leading": autoTrimSchema,
   "template.auto-trim-trailing": autoTrimSchema,
@@ -113,7 +109,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "server.port": 9091,
   "server.hostname": "127.0.0.1",
   "template.folder": "templates",
-  "template.filename": DEFAULT_NOTE_FILENAME,
   "template.auto-pair-eta": false,
   "template.auto-trim-leading": DEFAULT_AUTO_TRIM.leading,
   "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,

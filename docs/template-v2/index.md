@@ -1,23 +1,40 @@
-# ZotLit v2 Template System
+# Template System
 
-ZotLit v2 replaces the v1 template engine, data model, and frontmatter system. This guide covers everything needed to write and migrate templates.
+ZotLit renders literature notes, citations, and filenames through templates. Templates are Markdown files with embedded expressions and logic that shape what your notes look like.
 
-## What changed
+## Template types
 
-- **Data root**: The template variable changed from `it` to `zt`. All field access is now `zt.title`, `zt.creators`, etc.
-- **Field naming**: Zotero canonical names with two CSL-inspired renames (`abstractNote` -> `abstract`, `publicationTitle` -> `containerTitle`). All fields are flat on `zt.*`.
-- **Creator shape**: A flat `creators` array with `{family, given, literal, role, fullName}` replaces v1's role-keyed Proxy wrappers. Creators coerce to `fullName` in string contexts.
-- **Collection shape**: `zt.collections` is a flat array of `{key, name, path}` sorted by name. `path` is root->leaf as a plain array (use `c.path.join(" > ")`); the v1 `it.collection` singular alias and the auto-rendering `CollectionPath` subclass are gone.
-- **Frontmatter**: JS expression evaluation replaces the v1 `zt-field` template. Users configure fields with a key, expression, and merge strategy instead of editing a template.
-- **Annotation updates**: A managed-region overwrite (`%%zt-managed%%`) replaces v1's block-ID-based incremental diffing.
-- **Removed templates**: `zt-field` and `zt-colored` are gone. `zt-annots` is renamed to `zt-content`.
-- **Removed helpers**: Template data is plain objects with simple properties. The only callable members are the link helpers (`noteLink()`, `fileLink()`, `imgLink()`) and the global `bq()` / `suffix()` / `embed()` helpers.
+| Type         | Purpose                                                     | Vault file                      |
+| ------------ | ------------------------------------------------------------ | -------------------------------- |
+| `note`       | The literature note created for a Zotero item                | `zotlit-note.liquid.md`          |
+| `content`    | The managed region (child notes + annotations), re-rendered on update | `zotlit-content.liquid.md`       |
+| `annotation` | A single annotation/highlight rendered into the note         | `zotlit-annotation.liquid.md`    |
+| `cite`       | An in-text citation link                                     | `zotlit-cite.liquid.md`          |
+| `cite2`      | An alternate in-text citation format                         | `zotlit-cite2.liquid.md`         |
+| `filename`   | The generated filename for a literature note                | `zotlit-filename.liquid.md`      |
 
-## Documentation
+## Choosing a language
 
-- [Template Syntax](syntax.md) -- Eta syntax, `zt.*` prefix, `include()`, link helpers, `bq()` / `suffix()` / `embed()` helpers, autoTrim, managed region
-- [Data Reference](data-reference.md) -- Complete property reference for every template type
-- [Frontmatter](frontmatter.md) -- JS expression system, system fields, user fields, merge behavior
-- [Note Import](note-import.md) -- How child Zotero notes are imported as Markdown files (create-only, lazy, link-driven)
-- [Default Templates](defaults.md) -- Side-by-side v1 vs v2 defaults with explanations
-- [Migration Guide](migration.md) -- Step-by-step guide for migrating custom v1 templates
+Liquid is the default template language — it's always active, and you don't need to do anything to use it. Every template type above ships with a Liquid default that you can customize.
+
+For advanced use cases, ZotLit also supports Eta ("JavaScript Templates"), which lets templates run arbitrary JavaScript expressions. Because that carries a larger security surface, Eta is off by default and must be turned on per device via the JavaScript templates setting. See [JavaScript Templates](javascript-templates.md) for how to enable it and what it protects against.
+
+Templates are matched by filename: `zotlit-<name>.liquid.md` for Liquid, `zotlit-<name>.eta.md` for Eta. Both files can exist for the same template name at once — when they do, the Liquid template wins and the Eta file is ignored. Settings > Templates shows a language dropdown for each template so you can see and control which file is active.
+
+## Getting started
+
+To customize a template, go to Settings > Templates and eject the default you want to change. Ejecting copies the built-in Liquid template into your vault's template folder as a `.liquid.md` file, which you can then edit freely.
+
+## Pages in this guide
+
+- [Syntax](syntax.md) — Liquid syntax and ZotLit vocabulary
+- [Data Reference](data-reference.md) — All `zt.*` properties
+- [Frontmatter](frontmatter.md) — Expression fields, merge strategies
+- [Note Import](note-import.md) — Importing Zotero child notes
+- [Defaults](defaults.md) — Shipped default templates explained
+- [JavaScript Templates](javascript-templates.md) — Enabling Eta and the security gate
+
+### For advanced users migrating from Eta
+
+- [Eta Syntax](eta/syntax.md) — Eta syntax reference
+- [Migration Guide](eta/migration.md) — Migrating custom Eta templates

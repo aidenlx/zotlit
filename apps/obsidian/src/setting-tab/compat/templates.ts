@@ -1,6 +1,7 @@
 import { type App, type Setting, type TFile } from "obsidian";
 
-import { validateFrontmatterExpr } from "@zotlit/templates/frontmatter";
+import { type TemplateLanguage } from "@zotlit/templates/facade";
+import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { confirm } from "@/lib/confirm";
 import { ensureFolder } from "@/lib/ensure-folder";
@@ -25,9 +26,10 @@ import { sectionGroup } from "./group";
 const logger = getLogger(["setting-tab", "compat", "templates"]);
 
 /**
- * "Templates" section: template folder, the Eta engine toggles (auto-pair and
- * the two auto-trim dropdowns), and the ejectable template files including the
- * note filename and the imperative frontmatter-fields list.
+ * "Templates" section: template folder, the JavaScript templates gate and the
+ * Eta engine toggles (auto-pair and the two auto-trim dropdowns), and the
+ * ejectable template files including the note filename and the imperative
+ * frontmatter-fields list.
  */
 export function templatesSection(
   containerEl: HTMLElement,
@@ -55,28 +57,35 @@ export function templatesSection(
       ),
   );
 
-  const engine = sectionGroup(
-    group.listEl,
-    m.settings_template_engine_heading(),
-  );
+  const engine = sectionGroup(group.listEl, m.settings_template_js_heading());
   engine.addSetting((setting) =>
-    setting
-      .setName(m.settings_template_auto_pair_name())
-      .setDesc(m.settings_template_auto_pair_desc())
-      .addToggle((toggle) =>
-        toggle
-          .setValue(ctx.settings.current?.["template.auto-pair-eta"] ?? true)
-          .onChange((value) =>
-            ctx.settings.update({ "template.auto-pair-eta": value }),
-          ),
-      ),
+    renderJsTemplatesButton(
+      setting
+        .setName(m.settings_template_js_enable_name())
+        .setDesc(m.settings_template_js_enable_desc()),
+      ctx,
+    ),
   );
-  engine.addSetting((setting) =>
-    renderTrimRow(setting, ctx, "template.auto-trim-leading"),
-  );
-  engine.addSetting((setting) =>
-    renderTrimRow(setting, ctx, "template.auto-trim-trailing"),
-  );
+  if (ctx.plugin.services.template.javascriptTemplatesEnabled) {
+    engine.addSetting((setting) =>
+      setting
+        .setName(m.settings_template_auto_pair_name())
+        .setDesc(m.settings_template_auto_pair_desc())
+        .addToggle((toggle) =>
+          toggle
+            .setValue(ctx.settings.current?.["template.auto-pair-eta"] ?? true)
+            .onChange((value) =>
+              ctx.settings.update({ "template.auto-pair-eta": value }),
+            ),
+        ),
+    );
+    engine.addSetting((setting) =>
+      renderTrimRow(setting, ctx, "template.auto-trim-leading"),
+    );
+    engine.addSetting((setting) =>
+      renderTrimRow(setting, ctx, "template.auto-trim-trailing"),
+    );
+  }
 
   const files = sectionGroup(
     group.listEl,
@@ -86,15 +95,6 @@ export function templatesSection(
       .setIcon("folder-output")
       .setTooltip(m.settings_template_eject_all())
       .onClick(() => void ejectAll(ctx)),
-  );
-
-  files.addSetting((setting) =>
-    renderFilenameRow(
-      setting
-        .setName(m.settings_template_filename_name())
-        .setDesc(m.settings_template_filename_desc()),
-      ctx,
-    ),
   );
 
   renderFrontmatterList(files.listEl, ctx);
@@ -145,6 +145,60 @@ function renderTrimRow(
     });
 }
 
+/**
+ * Gate button for `TemplateService.javascriptTemplatesEnabled` — "Turn on" /
+ * "Turn off" by current state. Imperative mirror of the declarative
+ * `renderJsTemplatesButton` in `setting-tab/templates.ts`.
+ */
+function renderJsTemplatesButton(setting: Setting, ctx: CompatContext): void {
+  const service = ctx.plugin.services.template;
+  const enabled = service.javascriptTemplatesEnabled;
+  setting.addButton((btn) => {
+    if (enabled) {
+      btn.setButtonText(m.settings_template_js_turn_off());
+    } else {
+      btn.setButtonText(m.settings_template_js_turn_on()).setWarning();
+    }
+    btn.onClick(() => {
+      btn.buttonEl.blur();
+      void applyJsTemplatesFlag(ctx, !enabled).finally(() => ctx.rerender());
+    });
+  });
+}
+
+/**
+ * Disabling applies immediately. Enabling requires confirmation first, since
+ * Eta templates then run with ZotLit's full JS access; declining leaves the
+ * gate off and the trailing `rerender` re-renders the button to match.
+ */
+async function applyJsTemplatesFlag(
+  ctx: CompatContext,
+  enabled: boolean,
+): Promise<void> {
+  const service = ctx.plugin.services.template;
+  try {
+    if (!enabled) {
+      await service.setJavascriptTemplatesEnabled(false);
+      return;
+    }
+    const confirmed = await confirm(
+      {
+        title: m.settings_template_js_confirm_title(),
+        content: m.settings_template_js_confirm_body(),
+        action: m.settings_template_js_confirm_action(),
+        cta: true,
+      },
+      ctx.app,
+    );
+    if (confirmed) await service.setJavascriptTemplatesEnabled(true);
+  } catch (error) {
+    logger.error("Failed to change JavaScript templates flag", {
+      enabled,
+      error,
+    });
+  }
+}
+
 // --- Frontmatter fields (imperative port of frontmatter.ts) -----------------
 
 function renderFrontmatterList(
@@ -190,7 +244,7 @@ function renderFrontmatterList(
     group.addSetting((setting) =>
       setting
         .setName(frontmatterFieldLabel(field))
-        .setDesc(describeField(field.expr))
+        .setDesc(describeField(ctx, field))
         .addExtraButton((btn) =>
           btn
             .setIcon("pencil")
@@ -210,16 +264,34 @@ function renderFrontmatterList(
   });
 }
 
-/** Show the expression, flagging it in red when it doesn't compile. The raw
- *  parser error is left to the edit modal, where it can be fixed. */
-function describeField(expr: string): string | DocumentFragment {
-  if (!expr || !validateFrontmatterExpr(expr)) return expr;
+/**
+ * Show the expression, flagging it in red when it doesn't compile. The raw
+ * parser error is left to the edit modal, where it can be fixed.
+ */
+function describeField(
+  ctx: CompatContext,
+  field: FrontmatterField,
+): string | DocumentFragment {
+  const { expr } = field;
+  const service = ctx.plugin.services.template;
+  const compileError = service.validateFrontmatterExpr(expr, field.language);
+  const inert =
+    field.language === "javascript" && !service.javascriptTemplatesEnabled;
+  if (!inert && (!expr || !compileError)) return expr;
   const desc = document.createDocumentFragment();
   desc.append(expr);
-  const note = document.createElement("div");
-  note.className = "zt:mt-2 zt:text-(--text-error)";
-  note.textContent = m.settings_frontmatter_compile_error();
-  desc.append(note);
+  if (inert) {
+    const note = document.createElement("div");
+    note.className = "zt:mt-2 zt:text-(--text-warning)";
+    note.textContent = m.settings_frontmatter_inert_js();
+    desc.append(note);
+  }
+  if (expr && compileError) {
+    const note = document.createElement("div");
+    note.className = "zt:mt-2 zt:text-(--text-error)";
+    note.textContent = m.settings_frontmatter_compile_error();
+    desc.append(note);
+  }
   return desc;
 }
 
@@ -227,8 +299,15 @@ function openFieldModal(ctx: CompatContext, index: number | null): void {
   const fields = ctx.settings.current?.["note.frontmatter-fields"] ?? [];
   const field = index === null ? null : (fields[index] ?? null);
   const existingKeys = fields.filter((_, i) => i !== index).map((f) => f.key);
+  const service = ctx.plugin.services.template;
 
-  openFrontmatterFieldModal(ctx.app, { field, existingKeys }).then(
+  openFrontmatterFieldModal(ctx.app, {
+    field,
+    existingKeys,
+    validateExpr: (expr, language) =>
+      service.validateFrontmatterExpr(expr, language),
+    javascriptTemplatesEnabled: service.javascriptTemplatesEnabled,
+  }).then(
     (value) => {
       const next = [...fields];
       if (index === null) next.push(value);
@@ -259,8 +338,11 @@ function renderEjectableRow(
   name: TemplateName,
 ): void {
   const folder = currentFolder(ctx);
-  const path = templatePath(folder, name);
-  const file = ctx.app.vault.getFileByPath(path);
+  const liquidFile = ctx.app.vault.getFileByPath(templatePath(folder, name));
+  const etaFile = ctx.app.vault.getFileByPath(
+    templatePath(folder, name, "eta"),
+  );
+  const file = liquidFile ?? etaFile;
 
   const compileError = ctx.plugin.services.template.compileErrors.get(name);
   const desc = document.createDocumentFragment();
@@ -268,29 +350,83 @@ function renderEjectableRow(
   desc.append(document.createElement("br"));
   if (file) {
     const code = document.createElement("code");
-    code.textContent = path;
+    code.textContent = file.path;
     desc.append(code);
   } else {
     desc.append(m.settings_template_using_default());
+  }
+  const shadowedPath = ctx.plugin.services.template.shadowedFiles.get(name);
+  if (shadowedPath) {
+    const shadowed = document.createElement("div");
+    shadowed.className = "zt:mt-2 zt:text-(--text-warning)";
+    shadowed.textContent = m.settings_template_shadowed({
+      path: shadowedPath,
+    });
+    desc.append(shadowed);
+  }
+  const inertPath = ctx.plugin.services.template.inertEtaFiles.get(name);
+  if (inertPath) {
+    const inert = document.createElement("div");
+    inert.className = "zt:mt-2 zt:text-(--text-warning)";
+    inert.textContent = m.settings_template_inert_eta({ path: inertPath });
+    desc.append(inert);
   }
   if (compileError) {
     appendCompileError(desc, compileError, m.settings_template_compile_error());
   }
   setting.setDesc(desc);
 
+  const gate = ctx.plugin.services.template.javascriptTemplatesEnabled;
+  const showLanguage = gate || (etaFile !== null && liquidFile === null);
+  if (showLanguage) {
+    const currentLanguage: TemplateLanguage = liquidFile
+      ? "liquid"
+      : etaFile
+        ? "eta"
+        : "liquid";
+    setting.addDropdown((dropdown) => {
+      // Gate off, the row is an inert `.eta.md`: list Eta first as the current
+      // value and Liquid as the only switch target; gate on, Liquid leads as
+      // the default language.
+      dropdown
+        .addOptions(
+          gate
+            ? {
+                liquid: m.settings_template_language_liquid(),
+                eta: m.settings_template_language_eta(),
+              }
+            : {
+                eta: m.settings_template_language_eta(),
+                liquid: m.settings_template_language_liquid(),
+              },
+        )
+        .setValue(currentLanguage)
+        .onChange((value) => {
+          dropdown.selectEl.blur();
+          void switchLanguage(ctx, name, value as TemplateLanguage);
+        });
+      dropdown.selectEl.setAttr(
+        "aria-label",
+        m.settings_template_language_tooltip(),
+      );
+    });
+  }
+
   if (file) {
     // This section only runs on Obsidian < 1.13 (the declarative path owns
     // 1.13+), so the destructive-button styling must use `setWarning()` —
     // `setDestructive()` is @since 1.13.0 and throws `is not a function` here,
     // aborting the render and dropping every section below Templates.
-    setting
-      .addButton((btn) =>
-        btn
-          .setIcon("pencil")
-          .setTooltip(m.settings_template_open())
-          .onClick(() => void openTemplate(ctx.app, file)),
-      )
-      .addButton((btn) =>
+    setting.addButton((btn) =>
+      btn
+        .setIcon("pencil")
+        .setTooltip(m.settings_template_open())
+        .onClick(() => void openTemplate(ctx.app, file)),
+    );
+    // Resetting overwrites with the Liquid default source, so it's only safe
+    // to offer when the effective file is the Liquid one.
+    if (file === liquidFile) {
+      setting.addButton((btn) =>
         btn
           .setIcon("rotate-ccw")
           .setTooltip(m.settings_template_reset())
@@ -316,34 +452,35 @@ function renderEjectableRow(
                 logger.error("Failed to reset template", { name, error: err });
               });
           }),
-      )
-      .addButton((btn) =>
-        btn
-          .setIcon("trash-2")
-          .setTooltip(m.settings_template_delete())
-          .setWarning()
-          .onClick(() => {
-            btn.buttonEl.blur();
-            void confirm(
-              {
-                title: m.settings_template_delete_confirm_title(),
-                content: m.settings_template_delete_confirm_body({
-                  name: TEMPLATE_META[name].title(),
-                }),
-                action: m.settings_template_delete(),
-                destructive: true,
-              },
-              ctx.app,
-            )
-              .then(async (yes) => {
-                if (!yes) return;
-                await deleteAndRefresh(ctx, file, name);
-              })
-              .catch((err) => {
-                logger.error("Failed to delete template", { name, error: err });
-              });
-          }),
       );
+    }
+    setting.addButton((btn) =>
+      btn
+        .setIcon("trash-2")
+        .setTooltip(m.settings_template_delete())
+        .setWarning()
+        .onClick(() => {
+          btn.buttonEl.blur();
+          void confirm(
+            {
+              title: m.settings_template_delete_confirm_title(),
+              content: m.settings_template_delete_confirm_body({
+                name: TEMPLATE_META[name].title(),
+              }),
+              action: m.settings_template_delete(),
+              destructive: true,
+            },
+            ctx.app,
+          )
+            .then(async (yes) => {
+              if (!yes) return;
+              await deleteAndRefresh(ctx, file, name);
+            })
+            .catch((err) => {
+              logger.error("Failed to delete template", { name, error: err });
+            });
+        }),
+    );
   } else {
     setting.addButton((btn) =>
       btn
@@ -354,6 +491,80 @@ function renderEjectableRow(
           void ejectAndRefresh(ctx, name);
         }),
     );
+  }
+}
+
+/**
+ * Toward Eta: trash the Liquid file (if any), then reveal a shadowed `.eta.md`
+ * or create and open an empty one. Toward Liquid: trash the `.eta.md` and let
+ * the name fall back to an existing Liquid file or the embedded default.
+ * Nothing converts — dispatch, Liquid-wins precedence, and the watcher pick the
+ * file change up as they would a manual edit. All removals go through
+ * Obsidian's recoverable trash.
+ */
+async function switchLanguage(
+  ctx: CompatContext,
+  name: TemplateName,
+  target: TemplateLanguage,
+): Promise<void> {
+  const folder = currentFolder(ctx);
+  const etaPath = templatePath(folder, name, "eta");
+  const liquidFile = ctx.app.vault.getFileByPath(templatePath(folder, name));
+  const etaFile = ctx.app.vault.getFileByPath(etaPath);
+  const service = ctx.plugin.services.template;
+  try {
+    if (target === "eta") {
+      // Gate-off invariant: never create or reveal an Eta file on a device
+      // that has not consented to JavaScript templates.
+      if (!service.javascriptTemplatesEnabled) return;
+      if (liquidFile) {
+        const yes = await confirm(
+          {
+            title: m.settings_template_switch_eta_confirm_title(),
+            content: m.settings_template_switch_eta_confirm_body({
+              name: TEMPLATE_META[name].title(),
+              path: liquidFile.path,
+            }),
+            action: m.settings_template_switch_action(),
+            destructive: true,
+          },
+          ctx.app,
+        );
+        if (!yes) return;
+        await ctx.app.fileManager.trashFile(liquidFile);
+        if (etaFile) return;
+      } else if (etaFile) {
+        return;
+      }
+      await ensureFolder(ctx.app, folder);
+      const created = await ctx.app.vault.create(etaPath, "");
+      await openTemplate(ctx.app, created);
+    } else {
+      if (!etaFile) return;
+      const yes = await confirm(
+        {
+          title: m.settings_template_switch_liquid_confirm_title(),
+          content: m.settings_template_switch_liquid_confirm_body({
+            name: TEMPLATE_META[name].title(),
+            path: etaFile.path,
+          }),
+          action: m.settings_template_switch_action(),
+          destructive: true,
+        },
+        ctx.app,
+      );
+      if (!yes) return;
+      await ctx.app.fileManager.trashFile(etaFile);
+    }
+  } catch (error) {
+    logger.error("Failed to switch template language", {
+      name,
+      target,
+      error,
+    });
+    new BaseNotice(m.notice_template_switch_failed());
+  } finally {
+    ctx.rerender();
   }
 }
 
@@ -413,8 +624,13 @@ async function deleteAndRefresh(
 
 async function ejectAll(ctx: CompatContext): Promise<void> {
   const folder = currentFolder(ctx);
+  // A name only counts as missing when neither extension's file exists —
+  // ejecting a `.liquid.md` on top of a user's `.eta.md` override would
+  // silently shadow it.
   const missing = TEMPLATE_NAMES.filter(
-    (name) => !ctx.app.vault.getFileByPath(templatePath(folder, name)),
+    (name) =>
+      !ctx.app.vault.getFileByPath(templatePath(folder, name)) &&
+      !ctx.app.vault.getFileByPath(templatePath(folder, name, "eta")),
   );
   if (missing.length === 0) {
     new BaseNotice(m.notice_template_eject_none());
@@ -447,52 +663,6 @@ function currentFolder(ctx: CompatContext): string {
   return normalizeVaultPath(ctx.settings.current?.["template.folder"] ?? "");
 }
 
-function renderFilenameRow(setting: Setting, ctx: CompatContext): void {
-  const { template } = ctx.plugin.services;
-  const saved = ctx.settings.current?.["template.filename"] ?? "";
-  const filenameError = template.filenameError;
-
-  if (filenameError) {
-    const desc = document.createDocumentFragment();
-    desc.append(m.settings_template_filename_desc());
-    appendCompileError(
-      desc,
-      filenameError,
-      m.settings_template_compile_error(),
-    );
-    setting.setDesc(desc);
-  }
-
-  setting.addTextArea((ta) => {
-    ta.setPlaceholder(defaultPlaceholder("template.filename"));
-    ta.setValue(saved);
-    ta.inputEl.rows = 3;
-  });
-
-  setting.addExtraButton((btn) => {
-    btn
-      .setIcon("check")
-      .setTooltip(m.settings_frontmatter_save())
-      .onClick(() => {
-        const textarea = setting.controlEl.querySelector("textarea");
-        if (!textarea) return;
-
-        const value = textarea.value.trim();
-        const error = value ? template.validateSource(value) : null;
-
-        if (error) {
-          const desc = document.createDocumentFragment();
-          desc.append(m.settings_template_filename_desc());
-          appendCompileError(desc, error, m.settings_template_compile_error());
-          setting.setDesc(desc);
-          return;
-        }
-
-        ctx.settings.update({ "template.filename": value });
-      });
-  });
-}
-
 const TEMPLATE_META: Record<
   TemplateName,
   { title: () => string; desc: () => string }
@@ -516,5 +686,9 @@ const TEMPLATE_META: Record<
   cite2: {
     title: () => m.settings_template_name_cite2(),
     desc: () => m.settings_template_desc_cite2(),
+  },
+  filename: {
+    title: () => m.settings_template_name_filename(),
+    desc: () => m.settings_template_desc_filename(),
   },
 };

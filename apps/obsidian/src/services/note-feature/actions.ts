@@ -20,6 +20,7 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
+import { InertTemplateError } from "@/services/template/errors";
 
 import { type NoteFeature, type UpdateScope } from "./operations";
 import { updateNoteToast } from "./update-single";
@@ -175,12 +176,15 @@ async function reimportNote(
 function reimportNoteToast(): {
   loading: string;
   success: (result: ReimportResult) => string | undefined;
-  error: string;
+  error: (_msg: string, e: unknown) => string;
 } {
   return {
     loading: m.notice_reimporting_note(),
     success: reimportNoteNotice,
-    error: m.notice_reimport_note_failed(),
+    error: (_msg, e) =>
+      e instanceof InertTemplateError
+        ? e.message
+        : m.notice_reimport_note_failed(),
   };
 }
 
@@ -252,7 +256,10 @@ async function handleOverwriteNote(
   await toast.promise(deps.noteFeature.overwriteNote(file, itemKey), {
     loading: m.notice_overwriting_note(),
     success: m.notice_overwrote_note(),
-    error: m.notice_overwrite_note_failed(),
+    error: (_msg, e) =>
+      e instanceof InertTemplateError
+        ? e.message
+        : m.notice_overwrite_note_failed(),
   });
 }
 

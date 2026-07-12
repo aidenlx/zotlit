@@ -18,18 +18,33 @@ describe("schema/defaults invariants", () => {
   it("trims frontmatter fields and requires unique keys", () => {
     const entry = schema.entries["note.frontmatter-fields"];
     const result = v.safeParse(entry, [
-      { key: " title ", expr: " zt.title ", merge: "replace" },
+      {
+        key: " title ",
+        expr: " zt.title ",
+        merge: "replace",
+        language: "liquid",
+      },
     ]);
 
     expect(result.success).toBe(true);
     expect(result.output).toEqual([
-      { key: "title", expr: "zt.title", merge: "replace" },
+      { key: "title", expr: "zt.title", merge: "replace", language: "liquid" },
     ]);
 
     expect(
       v.safeParse(entry, [
-        { key: "title", expr: "zt.title", merge: "replace" },
-        { key: "title", expr: "zt.shortTitle", merge: "keep" },
+        {
+          key: "title",
+          expr: "zt.title",
+          merge: "replace",
+          language: "liquid",
+        },
+        {
+          key: "title",
+          expr: "zt.shortTitle",
+          merge: "keep",
+          language: "liquid",
+        },
       ]).success,
     ).toBe(false);
   });
@@ -37,7 +52,15 @@ describe("schema/defaults invariants", () => {
   it("requires frontmatter merge strategy", () => {
     expect(
       v.safeParse(schema.entries["note.frontmatter-fields"], [
-        { key: "title", expr: "zt.title" },
+        { key: "title", expr: "zt.title", language: "liquid" },
+      ]).success,
+    ).toBe(false);
+  });
+
+  it("requires frontmatter language", () => {
+    expect(
+      v.safeParse(schema.entries["note.frontmatter-fields"], [
+        { key: "title", expr: "zt.title", merge: "replace" },
       ]).success,
     ).toBe(false);
   });

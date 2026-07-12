@@ -337,9 +337,12 @@ export class BatchModal extends Modal {
         },
         signal: abort.signal,
       });
-    } catch {
+    } catch (error) {
       if (!this.#dismissed) {
-        new BaseNotice(this.#options.text.runFailed);
+        const { runFailed } = this.#options.text;
+        new BaseNotice(
+          typeof runFailed === "function" ? runFailed(error) : runFailed,
+        );
         this.close();
       }
       return;

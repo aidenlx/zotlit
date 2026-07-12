@@ -4,6 +4,7 @@ export type DiskClassification =
   | { kind: "missing" }
   | { kind: "legacy"; raw: Record<string, unknown> }
   | { kind: "v1"; raw: Record<string, unknown> }
+  | { kind: "v2"; raw: Record<string, unknown> }
   | { kind: "future"; version: number }
   | { kind: "malformed"; reason: string };
 
@@ -28,7 +29,8 @@ export function classifyDiskData(raw: unknown): DiskClassification {
     };
   }
   if (version === 1) return { kind: "v1", raw };
-  if (version > 1) return { kind: "future", version };
+  if (version === 2) return { kind: "v2", raw };
+  if (version > 2) return { kind: "future", version };
   return {
     kind: "malformed",
     reason: `__VERSION__ is not a positive integer (got ${version})`,

@@ -157,6 +157,50 @@ describe("executeBatchRun", () => {
     expect(settled).toHaveLength(1);
     expect(result).toMatchObject({ created: 1, failed: 0, cancelled: true });
   });
+
+  it("halts the run and rethrows the first matching error without a failure row", async () => {
+    const { controls, settled } = makeRunControls();
+    class ConfigError extends Error {}
+    const run = vi.fn(async (t: BatchRunTask) => {
+      if (t.id === 1) throw new ConfigError("bad config");
+      return "created" as const;
+    });
+
+    await expect(
+      executeBatchRun({
+        tasks: [task(1), task(2), task(3)],
+        controls,
+        concurrency: 1,
+        run,
+        haltOn: (error) => error instanceof ConfigError,
+      }),
+    ).rejects.toThrow("bad config");
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(settled).toHaveLength(0);
+  });
+
+  it("still reports a per-item failure for a non-matching error", async () => {
+    const { controls, settled } = makeRunControls();
+    class ConfigError extends Error {}
+
+    const result = await executeBatchRun({
+      tasks: [task(1)],
+      controls,
+      concurrency: 1,
+      run: async () => {
+        throw new Error("write blew up");
+      },
+      haltOn: (error) => error instanceof ConfigError,
+    });
+
+    expect(result).toMatchObject({ failed: 1 });
+    expect(settled).toContainEqual({
+      id: 1,
+      status: "failed",
+      failure: { label: "Item 1", message: "write blew up" },
+    });
+  });
 });
 
 describe("runBatchWrite", () => {
@@ -293,6 +337,26 @@ describe("runBatchWrite", () => {
         run: async () => "created",
       }),
     ).rejects.toThrow();
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases the lease when the run halts", async () => {
+    const { db, dispose } = makeLeasingDb();
+    const { controls } = makeRunControls();
+    class ConfigError extends Error {}
+
+    await expect(
+      runBatchWrite({
+        db,
+        tasks: [task(1)],
+        controls,
+        concurrency: 4,
+        run: async () => {
+          throw new ConfigError("bad config");
+        },
+        haltOn: (error) => error instanceof ConfigError,
+      }),
+    ).rejects.toThrow("bad config");
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 

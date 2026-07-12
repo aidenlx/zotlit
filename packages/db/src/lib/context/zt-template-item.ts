@@ -26,6 +26,8 @@ export interface TemplateCreator {
  * are normalized to their canonical form. Two CSL-inspired renames:
  * - `abstractNote` → `abstract`
  * - `publicationTitle` → `containerTitle`
+ *
+ * An empty-string field value is normalized away (absent / `null`).
  */
 export interface TemplateItemBaseData {
   key: string;
@@ -104,10 +106,16 @@ export type FallibleTemplateLink = (
   subpath?: string,
 ) => string | null;
 
+/**
+ * Resolvers receive the item-own {@link TemplateFilenameItemData} twin — not the
+ * live {@link TemplateItemData} — so a filename template rendered during
+ * note-path resolution reads inert `notePath`/`noteLink` stubs and cannot
+ * re-enter resolution.
+ */
 export interface TemplateItemResolvers {
-  notePath: (item: TemplateItemData) => string | null;
+  notePath: (item: TemplateFilenameItemData) => string | null;
   noteLink: (
-    item: TemplateItemData,
+    item: TemplateFilenameItemData,
     alias?: string,
     subpath?: string,
   ) => string | null;
@@ -125,13 +133,13 @@ export function itemToTemplateBaseData({
   const allFields: Record<string, string> = {};
 
   for (const [key, val] of Object.entries(item.fields)) {
-    if (key === "itemType" || typeof val !== "string") continue;
+    if (key === "itemType" || typeof val !== "string" || val === "") continue;
     const canonical = FIELD_ALIASES[key] ?? key;
     allFields[canonical] = val;
   }
   // Built-in fields win over a custom field of the same name.
   for (const [key, val] of item.customFields) {
-    if (val != null && !(key in allFields)) allFields[key] = val;
+    if (val != null && val !== "" && !(key in allFields)) allFields[key] = val;
   }
 
   const creators = item.creators.map(toTemplateCreator);
