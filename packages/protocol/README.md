@@ -4,10 +4,13 @@ Shared wire contracts for the Zotero companion and Obsidian plugin.
 
 ## Protocol version
 
-`src/version.ts` exports `PROTOCOL_VERSION`, a hand-bumped integer for the wire
-format. Bump it when any shape in `src/notify.ts` or `src/url.ts` changes.
+`src/version.ts` exports `PROTOCOL_VERSION`, a hand-bumped integer for the
+**HTTP** wire format. Bump it when an HTTP body/header shape changes
+(`src/notify.ts` or the `*RequestSchema` bodies in `src/url.ts`). The
+`obsidian://zotlit/*` URL transport is unversioned and permanent, so a URL-only
+change never bumps it — see `CONTEXT.md`.
 
-After changing a wire shape:
+After changing an HTTP wire shape:
 
 1. Update `PROTOCOL_VERSION` in `src/version.ts`.
 2. Update the inline wire-format snapshot:

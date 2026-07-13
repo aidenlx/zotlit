@@ -1,7 +1,8 @@
 export const PROTOCOL_VERSION_HEADER = "X-Zotlit-Protocol-Version";
-export const PROTOCOL_VERSION_PARAM = "v";
 
-// Bump on any change to the wire shapes in notify.ts or url.ts.
+// HTTP wire version. Bump only on an HTTP body/header schema change
+// (notify.ts, batchUpdateRequestSchema, importNotesRequestSchema). URL actions
+// are unversioned and permanent, so a URL-only change never bumps this.
 export const PROTOCOL_VERSION = 4;
 
 export type ProtocolVersionCheck =

@@ -5,14 +5,17 @@ import {
   batchUpdateRequestSchema,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
+  buildImportManyProtocolUrl,
+  buildImportProtocolUrl,
   buildProtocolUrl,
   parseExploreProtocolQuery,
+  parseImportManyProtocolQuery,
+  parseImportProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
   protocolActions,
   protocolSourceMatches,
 } from "./url";
-import { PROTOCOL_VERSION } from "./version";
 
 const SOURCE = "a1b2c3d4";
 
@@ -28,9 +31,7 @@ function decode(url: string): Record<string, string> {
 describe("zotlit obsidian protocol", () => {
   it.each(protocolActions)("builds + round-trips %s", (action) => {
     const url = buildProtocolUrl(action, 42, { sourceId: SOURCE });
-    expect(url).toBe(
-      `obsidian://zotlit/${action}?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
-    );
+    expect(url).toBe(`obsidian://zotlit/${action}?item=42&source-id=${SOURCE}`);
     expect(decode(url).action).toBe(`zotlit/${action}`);
     expect(parseProtocolQuery(decode(url))).toEqual({
       item: 42,
@@ -39,13 +40,19 @@ describe("zotlit obsidian protocol", () => {
     });
   });
 
+  it("ignores a legacy v param on an embedded link", () => {
+    expect(
+      parseProtocolQuery({ item: "42", "source-id": SOURCE, v: "3" }),
+    ).toEqual({ item: 42, sourceId: SOURCE, scope: "full" });
+  });
+
   it("builds + round-trips a metadata-scoped update link", () => {
     const url = buildProtocolUrl("update", 42, {
       sourceId: SOURCE,
       scope: "metadata",
     });
     expect(url).toBe(
-      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}&scope=metadata`,
+      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&scope=metadata`,
     );
     expect(parseProtocolQuery(decode(url))).toEqual({
       item: 42,
@@ -57,9 +64,7 @@ describe("zotlit obsidian protocol", () => {
   it("omits scope from the link when it is the full default", () => {
     expect(
       buildProtocolUrl("update", 42, { sourceId: SOURCE, scope: "full" }),
-    ).toBe(
-      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
-    );
+    ).toBe(`obsidian://zotlit/update?item=42&source-id=${SOURCE}`);
   });
 
   it("defaults scope to full and parses an explicit metadata scope", () => {
@@ -84,11 +89,43 @@ describe("zotlit obsidian protocol", () => {
   });
 });
 
+describe("zotlit import protocol", () => {
+  it("builds + round-trips a single-note link", () => {
+    const url = buildImportProtocolUrl(42, {
+      sourceId: SOURCE,
+      mode: "note",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/import-note?item=42&mode=note&source-id=${SOURCE}`,
+    );
+    expect(parseImportProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      mode: "note",
+      sourceId: SOURCE,
+    });
+  });
+
+  it("builds + round-trips a multi-note link", () => {
+    const url = buildImportManyProtocolUrl([1, 2, 3], {
+      sourceId: SOURCE,
+      mode: "child",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/import-notes?items=1%2C2%2C3&mode=child&source-id=${SOURCE}`,
+    );
+    expect(parseImportManyProtocolQuery(decode(url))).toEqual({
+      items: [1, 2, 3],
+      mode: "child",
+      sourceId: SOURCE,
+    });
+  });
+});
+
 describe("zotlit update-many protocol", () => {
   it("builds + round-trips a batch link", () => {
     const url = buildBatchProtocolUrl([1, 2, 3], { sourceId: SOURCE });
     expect(url).toBe(
-      `obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
+      `obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=${SOURCE}`,
     );
     expect(parseProtocolBatchQuery(decode(url))).toEqual({
       items: [1, 2, 3],
@@ -103,7 +140,7 @@ describe("zotlit update-many protocol", () => {
       scope: "metadata",
     });
     expect(url).toBe(
-      `obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=${SOURCE}&v=${PROTOCOL_VERSION}&scope=metadata`,
+      `obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=${SOURCE}&scope=metadata`,
     );
     expect(parseProtocolBatchQuery(decode(url))).toEqual({
       items: [1, 2, 3],
@@ -170,9 +207,7 @@ describe("batchUpdateRequestSchema (HTTP body)", () => {
 describe("zotlit explore protocol", () => {
   it("builds + round-trips an item-only link", () => {
     const url = buildExploreProtocolUrl(42, { sourceId: SOURCE });
-    expect(url).toBe(
-      `obsidian://zotlit/explore?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
-    );
+    expect(url).toBe(`obsidian://zotlit/explore?item=42&source-id=${SOURCE}`);
     expect(decode(url).action).toBe("zotlit/explore");
     expect(parseExploreProtocolQuery(decode(url))).toEqual({
       item: 42,
@@ -187,7 +222,7 @@ describe("zotlit explore protocol", () => {
       annotation: "ABC23456",
     });
     expect(url).toBe(
-      `obsidian://zotlit/explore?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}&annotation=ABC23456`,
+      `obsidian://zotlit/explore?item=42&source-id=${SOURCE}&annotation=ABC23456`,
     );
     expect(parseExploreProtocolQuery(decode(url))).toEqual({
       item: 42,
