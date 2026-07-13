@@ -13,6 +13,7 @@ import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
+import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
 import "./zt-main.css";
 
 /**
@@ -124,6 +125,16 @@ export default class ZotLitPlugin extends Plugin {
       attachmentImport: services.attachmentImport,
       itemLookup: services.itemLookup,
       settings: services.settings,
+    });
+
+    registerTemplateDataExplorer(this, {
+      app: this.app,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      zoteroPref: services.zoteroPref,
+      itemLookup: services.itemLookup,
+      settings: services.settings,
+      template: services.template,
     });
 
     // A Zotero item add/modify/trash push means the database changed; feed it

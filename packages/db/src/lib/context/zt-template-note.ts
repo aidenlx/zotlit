@@ -4,10 +4,12 @@ import {
 } from "@/lib/context/zt-template-annot";
 import {
   attachmentToTemplateData,
+  withAttachmentPreview,
   type TemplateAttachment,
 } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
+  withItemPreview,
   type FallibleTemplateLink,
   type TemplateCreator,
   type TemplateFilenameItemData,
@@ -16,6 +18,7 @@ import {
   type TemplateItemResolvers,
   type TemplateLink,
 } from "@/lib/context/zt-template-item";
+import { defineToString } from "@/lib/to-string";
 import { type Annotation } from "@/lib/zt-annot";
 import { type Attachment } from "@/lib/zt-attach";
 import { type TemplateCollection } from "@/lib/zt-collection";
@@ -43,6 +46,8 @@ export interface TemplateRelatedItem extends TemplateItemData {
 /**
  * A child note exposed on {@link NoteTemplateContext.notes} as a link only —
  * the imported note's Markdown body lives in its own file, never inlined here.
+ * Carries a non-enumerable `toString` rendering its {@link title} (falling back
+ * to {@link key}), so it stringifies to a title in string contexts and previews.
  */
 export interface TemplateNoteLink {
   /** Bare Zotero key (not scoped). */
@@ -50,6 +55,12 @@ export interface TemplateNoteLink {
   title: string | null;
   /** Renders the Obsidian link; default alias is the live title. */
   noteLink: TemplateLink;
+}
+
+export function withNotePreview(note: TemplateNoteLink): TemplateNoteLink {
+  return defineToString(note, function () {
+    return this.title ?? this.key;
+  });
 }
 
 /**
@@ -183,11 +194,13 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     tags: input.tagsByItemID.get(item.itemID) ?? [],
   });
 
-  const attachments: TemplateAttachment[] = input.attachments.map((a) => ({
-    ...attachmentToTemplateData(a),
-    filePath: input.filePath(a),
-    fileLink: input.fileLink(a),
-  }));
+  const attachments: TemplateAttachment[] = input.attachments.map((a) =>
+    withAttachmentPreview({
+      ...attachmentToTemplateData(a),
+      filePath: input.filePath(a),
+      fileLink: input.fileLink(a),
+    }),
+  );
 
   const annotations: TemplateAnnotation[] = [];
   // `result` is referenced inside annotation objects (`parentItem`); it is
@@ -223,14 +236,14 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     .sort(byTitle);
 
   const notes = input.resolveChildNote
-    ? (input.childNotes ?? []).map(input.resolveChildNote)
+    ? (input.childNotes ?? []).map(input.resolveChildNote).map(withNotePreview)
     : [];
 
   const collections = input.collectionsByItemID.get(item.itemID) ?? [];
   // The inert item-own twin the resolvers receive; see TemplateItemResolvers.
   const filenameData = toFilenameItemData(baseData, collections);
 
-  result = {
+  result = withItemPreview({
     ...baseData,
     get notePath() {
       return itemResolvers.notePath(filenameData);
@@ -246,7 +259,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     authorsShort: itemResolvers.authorsShort(item),
     relatedItems,
     notes,
-  };
+  });
   return result;
 }
 
@@ -270,7 +283,7 @@ function buildRelatedItem({
 }): TemplateRelatedItem {
   const baseData = itemToTemplateBaseData({ item, tags });
   const filenameData = toFilenameItemData(baseData, collections);
-  return {
+  return withItemPreview({
     ...baseData,
     get notePath() {
       return itemResolvers.notePath(filenameData);
@@ -282,7 +295,7 @@ function buildRelatedItem({
     authors: selectPrimaryAuthors(baseData),
     authorsShort: itemResolvers.authorsShort(item),
     collections,
-  };
+  });
 }
 
 /**

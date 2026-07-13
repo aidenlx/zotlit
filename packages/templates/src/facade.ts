@@ -220,6 +220,7 @@ export class TemplateFacade {
    * only decides, at render time, which engine `name` now resolves to.
    */
   #createBridgeTag() {
+    // oxlint-disable-next-line typescript/no-this-alias
     const self = this;
 
     return class BridgeTag extends Tag {

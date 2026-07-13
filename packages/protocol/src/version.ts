@@ -2,7 +2,7 @@ export const PROTOCOL_VERSION_HEADER = "X-Zotlit-Protocol-Version";
 export const PROTOCOL_VERSION_PARAM = "v";
 
 // Bump on any change to the wire shapes in notify.ts or url.ts.
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export type ProtocolVersionCheck =
   | { ok: true; received: number }

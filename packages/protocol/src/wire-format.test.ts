@@ -5,6 +5,7 @@ import { notifyEventSchema } from "./notify";
 import { SOURCE_ID_HEADER } from "./source-id";
 import {
   batchUpdateRequestSchema,
+  exploreProtocolQuerySchema,
   importManyProtocolQuerySchema,
   importNotesRequestSchema,
   importProtocolQuerySchema,
@@ -51,6 +52,10 @@ function protocolUrlWireSurface(): unknown {
   };
 }
 
+function exploreUrlWireSurface(): unknown {
+  return { params: pipedObjectKeys(exploreProtocolQuerySchema) };
+}
+
 function importNoteUrlWireSurface(): unknown {
   return { params: pipedObjectKeys(importProtocolQuerySchema) };
 }
@@ -83,12 +88,20 @@ describe("wire format", () => {
       version: PROTOCOL_VERSION,
       notify: notifyWireSurface(),
       url: protocolUrlWireSurface(),
+      exploreUrl: exploreUrlWireSurface(),
       importNoteUrl: importNoteUrlWireSurface(),
       importNotesUrl: importNotesUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
       zoteroNotes: zoteroNotesWireSurface(),
     }).toMatchInlineSnapshot(`
       {
+        "exploreUrl": {
+          "params": [
+            "annotation",
+            "item",
+            "source-id",
+          ],
+        },
         "importNoteUrl": {
           "params": [
             "item",
@@ -157,7 +170,7 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "version": 3,
+        "version": 4,
         "zoteroNotes": {
           "body": [
             "items",
