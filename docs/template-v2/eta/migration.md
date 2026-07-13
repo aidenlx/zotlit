@@ -195,7 +195,7 @@ If you customized `zt-field.eta.md`:
 
 You no longer need to worry about YAML escaping -- `stringifyYaml()` handles it.
 
-ZotLit auto-manages three reserved frontmatter keys you cannot target from a user field: `zotero-key`, `citekey`, and `zotero-atchs` (the attachment scope). `zotero-atchs` keeps v1's key name, so upgraded notes are not re-keyed. See [System-managed fields](../frontmatter.md#system-managed-fields) for details.
+ZotLit auto-manages two reserved frontmatter keys for literature notes that you cannot target from a user field: `zotero-key` and `citekey`. See [System-managed fields](../frontmatter.md#system-managed-fields) for details.
 
 Use **Replace** for fields that should follow Zotero on every update. Use **Append arrays** for array fields where manual additions should remain. Use **Keep existing** when ZotLit should fill a field once and then leave your edits alone.
 

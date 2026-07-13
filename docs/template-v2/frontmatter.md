@@ -10,7 +10,6 @@ These fields are always written by ZotLit and cannot be overridden by user confi
 |-------|--------|-------------|
 | `zotero-key` | `zt.indexedKey` | The indexed item key (e.g. `"ABC12345"` or `"ABC12345g12345"` for group libraries) |
 | `citekey` | `zt.citationKey` | The citation key. Only written when the item has a citation key. |
-| `zotero-atchs` | attachment scope | Attachment keys for attachment-scoped updates. Missing or empty means all attachments. |
 
 ## User-configurable fields
 
@@ -73,7 +72,6 @@ The following keys are reserved and cannot be used in user field configuration:
 
 - `zotero-key` (system-managed)
 - `citekey` (system-managed)
-- `zotero-atchs` (system-managed)
 - `zotero-note-key`, `zotero-lastmod` (owned by [imported notes](note-import.md#imported-note-structure), not the literature note itself)
 
 Attempting to use a reserved key is rejected at configuration time.
@@ -93,7 +91,7 @@ Expression syntax errors are detected when you save the setting. Runtime errors 
 
 When you run "Update literature note", ZotLit updates only the frontmatter keys it manages:
 
-1. **System fields** (`zotero-key`, `citekey`, `zotero-atchs`) are refreshed from ZotLit.
+1. **System fields** (`zotero-key`, `citekey`) are refreshed from ZotLit.
 2. **User-configured fields** are re-evaluated and then applied using their merge strategy.
 3. **Unmanaged keys** (any frontmatter key not in the managed set -- e.g. `aliases`, `tags`, `cssclasses`) are preserved. The update never touches keys it does not own.
 
@@ -112,12 +110,3 @@ Each user-configured field chooses one of three merge strategies:
 Blank values are treated like missing values for `Append arrays` and `Keep existing`. In practice, this means an absent field, `null`, an empty string, an empty array, or an empty object can be filled by ZotLit.
 
 If an expression returns `undefined`, ZotLit leaves that field untouched for every strategy. If an expression returns `null`, ZotLit writes YAML `null` where the selected strategy allows a write.
-
-## `zotero-atchs` field
-
-The `zotero-atchs` frontmatter key is managed by ZotLit:
-
-- **Missing or empty** -> all attachments are included when updating.
-- **Present with keys** -> scoped to those specific attachments.
-
-Do not add this key as a custom frontmatter field. ZotLit writes or removes it as needed.

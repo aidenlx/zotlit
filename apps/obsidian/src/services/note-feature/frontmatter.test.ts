@@ -8,7 +8,6 @@ import {
 import { createLiquidEngine } from "@zotlit/templates/liquid";
 
 import {
-  FIELD_ATTACHMENTS,
   FIELD_CITEKEY,
   FIELD_ZOTERO_KEY,
   RESERVED_KEYS,
@@ -89,24 +88,6 @@ describe("applyManagedFrontmatter", () => {
       [FIELD_CITEKEY]: "smith2024",
       year: 2024,
     });
-  });
-
-  it("writes the attachment-scope key only when a non-empty scope is given", () => {
-    const scoped: Record<string, unknown> = {};
-    applyManagedFrontmatter(scoped, makeContext(), {
-      compiled: compileFrontmatter([]),
-      attachmentScope: ["ATCH1", "ATCH2"],
-    });
-    expect(scoped[FIELD_ATTACHMENTS]).toEqual(["ATCH1", "ATCH2"]);
-
-    const unscoped: Record<string, unknown> = {
-      [FIELD_ATTACHMENTS]: ["OLD"],
-    };
-    applyManagedFrontmatter(unscoped, makeContext(), {
-      compiled: compileFrontmatter([]),
-      attachmentScope: [],
-    });
-    expect(FIELD_ATTACHMENTS in unscoped).toBe(false);
   });
 
   it("writes default related item note links as an array, with the gate off", () => {
