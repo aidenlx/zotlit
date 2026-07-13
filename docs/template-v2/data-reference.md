@@ -42,7 +42,7 @@ Common fields:
 | `zt.ISSN` | `string \| null` | ISSN | all templates |
 | `zt.language` | `string \| null` | Language | all templates |
 | `zt.shortTitle` | `string \| null` | Short title | all templates |
-| `zt.extra` | `string \| null` | Extra field | all templates |
+| `zt.extra` | `ItemExtra \| null` | Parsed Extra field (see [Extra field](#extra-field) below) | all templates |
 | `zt.dateAdded` | `Temporal.Instant` | When the item was added to Zotero. Renders as the local date (e.g. `"2026-06-21"`) in `{{ }}` output. | all templates |
 | `zt.dateModified` | `Temporal.Instant` | When the item was last modified. Renders as the local date (e.g. `"2026-06-21"`) in `{{ }}` output. | all templates |
 | `zt.collections` | `array` | Zotero collections this item belongs to, sorted by name (see [Collections](#collections)) | note, content, frontmatter, filename |
@@ -98,7 +98,7 @@ When `zt.itemType` is `"journalArticle"`, the following fields are available (in
 | `zt.libraryCatalog` | `string \| null` | Library catalog |
 | `zt.callNumber` | `string \| null` | Call number |
 | `zt.rights` | `string \| null` | Rights / license |
-| `zt.extra` | `string \| null` | Extra field (free-form text) |
+| `zt.extra` | `ItemExtra \| null` | Parsed Extra field (see [Extra field](#extra-field)) |
 
 Example template using journal article fields:
 
@@ -184,6 +184,50 @@ Each tag has:
 | `type` | `0 \| 1` | `0` = manual, `1` = auto |
 
 Tags coerce to `tag.name` in string contexts, so `{{ zt.tags | join: ", " }}` renders the tag names directly. To reach the nested field explicitly, chain `map` twice: `{{ zt.tags | map: "tag" | map: "name" | join: ", " }}`.
+
+### Extra field
+
+`zt.extra` is a parsed view of Zotero's free-text Extra field. When the field is empty or absent, `zt.extra` is `null`. Otherwise it provides three complementary views of the same data:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `raw` | `string` | The original field text, verbatim |
+| `fields` | `object` | First value per key — e.g. `zt.extra.fields["tex.mendeley-tags"]` |
+| `lines` | `array` | Every source row in order (see below) |
+
+Each entry in `lines` is either a parsed key-value pair or a text row:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `raw` | `string` | The verbatim source line |
+| `key` | `string \| null` | The parsed key, or `null` for non-pair lines |
+| `value` | `string` | _(pair rows only)_ The parsed value |
+
+**Parsing rules:**
+
+- Lines split on the **first** `:` or `=` delimiter — values keep any later `:` or `=` characters intact.
+- A key must start with a letter and can contain letters, digits, spaces, dots, hyphens, and underscores. Lines that don't match this pattern become text rows (`key: null`).
+- Empty values (key with nothing after the delimiter) become text rows, not pairs.
+- `fields` is a first-wins lookup: when a key repeats, `fields[k]` holds the first occurrence; all occurrences are in `lines`.
+
+**String rendering:** `{{ zt.extra }}` prints the raw field text — existing templates that interpolate `zt.extra` directly keep working.
+
+```liquid
+{{ zt.extra.fields.DOI }}
+{{ zt.extra.fields["tex.mendeley-tags"] }}
+{{ zt.extra.raw }}
+```
+
+To iterate all parsed pairs:
+
+```liquid
+{% for line in zt.extra.lines %}
+{% if line.key %}{{ line.key }}: {{ line.value }}
+{% endif %}
+{% endfor %}
+```
+
+> **Note:** `zt.extra` in the citation template context (`item.extra`) remains a raw `string | null` — it is not parsed. The parsed `ItemExtra` shape is available only in note, content, annotation, frontmatter, and filename templates.
 
 ### Collections
 
