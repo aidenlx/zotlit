@@ -7,6 +7,7 @@ import { type ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
+import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
@@ -23,6 +24,7 @@ export interface ExplorerRegistrationDeps {
   zoteroPref: ZoteroPrefService;
   itemLookup: ItemLookup;
   settings: SettingsService;
+  templates: TemplateService;
 }
 
 export function registerTemplateDataExplorer(

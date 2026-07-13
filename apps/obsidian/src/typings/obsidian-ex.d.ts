@@ -36,4 +36,8 @@ declare module "obsidian" {
       newLeaf: boolean | PaneType,
     ): void;
   }
+  interface MenuItem {
+    /** Convert this item into a submenu parent, returning the nested {@link Menu} to populate. Runtime API present since Obsidian 1.4, absent from the vendored typings. */
+    setSubmenu(): Menu;
+  }
 }
