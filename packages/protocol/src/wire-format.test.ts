@@ -5,14 +5,22 @@ import { notifyEventSchema } from "./notify";
 import { SOURCE_ID_HEADER } from "./source-id";
 import {
   batchUpdateRequestSchema,
+  buildBatchProtocolUrl,
+  buildExploreProtocolUrl,
+  buildImportManyProtocolUrl,
+  buildImportProtocolUrl,
+  buildProtocolUrl,
   exploreProtocolQuerySchema,
   importManyProtocolQuerySchema,
   importNotesRequestSchema,
   importProtocolQuerySchema,
   protocolActions,
+  protocolBatchQuerySchema,
   protocolQuerySchema,
 } from "./url";
 import { PROTOCOL_VERSION } from "./version";
+
+const SOURCE = "a1b2c3d4";
 
 type ObjectSchema = v.ObjectSchema<
   v.ObjectEntries,
@@ -48,20 +56,45 @@ function notifyWireSurface(): unknown {
 function protocolUrlWireSurface(): unknown {
   return {
     actions: protocolActions,
+    examples: protocolActions.map((action) =>
+      buildProtocolUrl(action, 42, { sourceId: SOURCE }),
+    ),
     params: pipedObjectKeys(protocolQuerySchema),
   };
 }
 
+function updateManyUrlWireSurface(): unknown {
+  return {
+    example: buildBatchProtocolUrl([1, 2, 3], { sourceId: SOURCE }),
+    params: pipedObjectKeys(protocolBatchQuerySchema),
+  };
+}
+
 function exploreUrlWireSurface(): unknown {
-  return { params: pipedObjectKeys(exploreProtocolQuerySchema) };
+  return {
+    example: buildExploreProtocolUrl(42, { sourceId: SOURCE }),
+    params: pipedObjectKeys(exploreProtocolQuerySchema),
+  };
 }
 
 function importNoteUrlWireSurface(): unknown {
-  return { params: pipedObjectKeys(importProtocolQuerySchema) };
+  return {
+    example: buildImportProtocolUrl(42, {
+      sourceId: SOURCE,
+      mode: "note",
+    }),
+    params: pipedObjectKeys(importProtocolQuerySchema),
+  };
 }
 
 function importNotesUrlWireSurface(): unknown {
-  return { params: pipedObjectKeys(importManyProtocolQuerySchema) };
+  return {
+    example: buildImportManyProtocolUrl([1, 2, 3], {
+      sourceId: SOURCE,
+      mode: "child",
+    }),
+    params: pipedObjectKeys(importManyProtocolQuerySchema),
+  };
 }
 
 function literatureNotesWireSurface(): unknown {
@@ -93,9 +126,11 @@ describe("wire format", () => {
       importNotesUrl: importNotesUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
       zoteroNotes: zoteroNotesWireSurface(),
+      updateManyUrl: updateManyUrlWireSurface(),
     }).toMatchInlineSnapshot(`
       {
         "exploreUrl": {
+          "example": "obsidian://zotlit/explore?item=42&source-id=a1b2c3d4",
           "params": [
             "annotation",
             "item",
@@ -103,6 +138,7 @@ describe("wire format", () => {
           ],
         },
         "importNoteUrl": {
+          "example": "obsidian://zotlit/import-note?item=42&mode=note&source-id=a1b2c3d4",
           "params": [
             "item",
             "mode",
@@ -110,6 +146,7 @@ describe("wire format", () => {
           ],
         },
         "importNotesUrl": {
+          "example": "obsidian://zotlit/import-notes?items=1%2C2%2C3&mode=child&source-id=a1b2c3d4",
           "params": [
             "items",
             "mode",
@@ -159,10 +196,22 @@ describe("wire format", () => {
             ],
           },
         ],
+        "updateManyUrl": {
+          "example": "obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=a1b2c3d4",
+          "params": [
+            "items",
+            "scope",
+            "source-id",
+          ],
+        },
         "url": {
           "actions": [
             "open",
             "update",
+          ],
+          "examples": [
+            "obsidian://zotlit/open?item=42&source-id=a1b2c3d4",
+            "obsidian://zotlit/update?item=42&source-id=a1b2c3d4",
           ],
           "params": [
             "item",
