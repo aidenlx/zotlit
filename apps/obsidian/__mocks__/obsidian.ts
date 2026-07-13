@@ -189,6 +189,9 @@ export class MenuItem {
   #title = "";
   #onClick: ((evt: MouseEvent) => unknown) | null = null;
 
+  /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
+  submenu: Menu | null = null;
+
   get title(): string {
     return this.#title;
   }
@@ -200,6 +203,11 @@ export class MenuItem {
 
   setIcon(_icon: string | null): this {
     return this;
+  }
+
+  setSubmenu(): Menu {
+    this.submenu = new Menu();
+    return this.submenu;
   }
 
   onClick(cb: (evt: MouseEvent) => unknown): this {
@@ -231,6 +239,11 @@ export class Menu {
     const item = new MenuItem();
     cb(item);
     this.items.push(item);
+    return this;
+  }
+
+  /** No-op divider; kept out of `items` so index-based assertions see only actionable entries. */
+  addSeparator(): this {
     return this;
   }
 
