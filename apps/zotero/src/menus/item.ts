@@ -4,6 +4,7 @@ import { registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
 import {
+  exploreInObsidian,
   importInObsidian,
   importManyInObsidian,
   openInObsidian,
@@ -141,6 +142,18 @@ export function registerItemMenu(pluginID: string): Disposable {
                 items.map((item) => item.id),
                 "note",
               );
+            },
+          },
+          {
+            menuType: "menuitem",
+            l10nID: "zotlit-menu-item-explore",
+            onShowing(_event: Event, context: LibraryMenuContext): void {
+              context.setVisible(regularItems(context).length === 1);
+            },
+            onCommand(_event: Event, context: LibraryMenuContext): void {
+              const items = regularItems(context);
+              if (items.length !== 1) return;
+              exploreInObsidian(items[0]!);
             },
           },
         ],

@@ -40,6 +40,7 @@ export interface AnnotActionDeps {
   onToggleFollowReader: AnnotActions["onToggleFollowReader"];
   onLinkItem: AnnotActions["onLinkItem"];
   onUnlinkItem: AnnotActions["onUnlinkItem"];
+  onExploreAnnotation: (annotationKey: string) => void;
 }
 
 const IMG_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(
@@ -126,6 +127,16 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
             success: m.annot_view_copied_citation(),
             error: m.annot_view_copy_failed(),
           });
+        });
+    });
+
+    menu.addSeparator();
+    menu.addItem((item) => {
+      item
+        .setTitle(m.template_data_explorer_menu_explore())
+        .setIcon("braces")
+        .onClick(() => {
+          deps.onExploreAnnotation(annot.key);
         });
     });
 

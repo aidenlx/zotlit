@@ -182,6 +182,63 @@ export function getLanguage(): string {
   return "en";
 }
 
+/** Minimal stand-in for `MenuItem`; only the builder methods the plugin
+ * chains off `Menu.addItem` plus a test-only `click()` to invoke the
+ * registered handler. */
+export class MenuItem {
+  #title = "";
+  #onClick: ((evt: MouseEvent) => unknown) | null = null;
+
+  get title(): string {
+    return this.#title;
+  }
+
+  setTitle(title: string): this {
+    this.#title = title;
+    return this;
+  }
+
+  setIcon(_icon: string | null): this {
+    return this;
+  }
+
+  onClick(cb: (evt: MouseEvent) => unknown): this {
+    this.#onClick = cb;
+    return this;
+  }
+
+  /** Test helper: invoke the registered `onClick` handler. */
+  click(): void {
+    this.#onClick?.({} as MouseEvent);
+  }
+}
+
+/**
+ * Minimal stand-in for `Menu`. Records every constructed instance on
+ * `Menu.instances` so tests can inspect the menu built by code under test
+ * without the production code needing to return it.
+ */
+export class Menu {
+  static instances: Menu[] = [];
+
+  readonly items: MenuItem[] = [];
+
+  constructor() {
+    Menu.instances.push(this);
+  }
+
+  addItem(cb: (item: MenuItem) => unknown): this {
+    const item = new MenuItem();
+    cb(item);
+    this.items.push(item);
+    return this;
+  }
+
+  showAtMouseEvent(_evt: MouseEvent): this {
+    return this;
+  }
+}
+
 /**
  * Deterministic test stand-in for Obsidian's `debounce`. Unlike the real
  * implementation it does **not** use timers: the callback fires only when

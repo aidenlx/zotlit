@@ -46,7 +46,10 @@ zotlit-menu-item-import-notes =
         [one] Import note to Obsidian
        *[other] Import notes to Obsidian
     }
+zotlit-menu-item-explore =
+    .label = Explore template data in Obsidian
 zotlit-menu-reader-annot-merge = Merge Annotations
+zotlit-menu-reader-annot-explore = Explore Annotation in Obsidian
 zotlit-menu-reader-page-open = Open Note in Obsidian
 
 zotlit-batch-update-server-needed-title = Can't update notes in Obsidian

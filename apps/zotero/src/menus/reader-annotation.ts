@@ -1,35 +1,33 @@
-// import { formatValue } from "@/lib/l10n";
+import { formatValue } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
+
+import { exploreInObsidian, readerTopLevelItem } from "./obsidian.js";
 
 const logger = appLogger.getChild(["menus", "reader-annot"]);
 
 type AnnotationEvent =
   _ZoteroTypes.Reader.EventParams<"createAnnotationContextMenu">;
 
-/**
- * Reader annotation context-menu scaffold. Registers no items today — the
- * "Merge Annotations" item is commented out below until annotation merging
- * returns. The listener stays wired so re-adding an item is a one-spot change.
- */
 export async function registerReaderAnnotationMenu(
   pluginID: string,
 ): Promise<Disposable> {
   logger.debug("registering reader-annot menu", { pluginID });
 
-  // Re-enable with annotation merging:
-  // const merge = await formatValue("zotlit-menu-reader-annot-merge");
-  // if (merge === null) {
-  //   logger.error("missing FTL message for reader annotation menu");
-  //   throw new Error("missing FTL message for reader annotation menu");
-  // }
+  const exploreLabel = await formatValue("zotlit-menu-reader-annot-explore");
+  if (exploreLabel === null) {
+    logger.error("missing FTL message for reader annotation explore menu");
+    throw new Error("missing FTL message for reader annotation explore menu");
+  }
 
-  const handler = (_event: AnnotationEvent): void => {
-    // _event.append({
-    //   label: merge,
-    //   onCommand: () => {
-    //     logger.info("reader-annot menu invoked", { action: "merge" });
-    //   },
-    // });
+  const handler = ({ reader, params, append }: AnnotationEvent): void => {
+    append({
+      label: exploreLabel,
+      onCommand: () => {
+        const item = readerTopLevelItem(reader);
+        if (item === null) return;
+        exploreInObsidian(item, params.currentID);
+      },
+    });
   };
 
   Zotero.Reader.registerEventListener(

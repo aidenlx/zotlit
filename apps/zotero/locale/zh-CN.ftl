@@ -31,7 +31,10 @@ zotlit-menu-item-import-child-notes =
     .label = 导入子笔记
 zotlit-menu-item-import-notes =
     .label = 导入笔记到 Obsidian
+zotlit-menu-item-explore =
+    .label = 在 Obsidian 中探索模板数据
 zotlit-menu-reader-annot-merge = 合并标注
+zotlit-menu-reader-annot-explore = 在 Obsidian 中探索标注
 zotlit-menu-reader-page-open = 在 Obsidian 中打开笔记
 
 zotlit-batch-update-server-needed-title = 无法在 Obsidian 中更新笔记

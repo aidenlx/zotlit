@@ -335,6 +335,59 @@ export function buildBatchProtocolUrl(
   return `obsidian://${batchProtocolActionId}?${params}`;
 }
 
+const PROTOCOL_EXPLORE_ACTION = "explore";
+
+export const exploreProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_EXPLORE_ACTION}` as const;
+
+const annotationKeyValue = v.optional(
+  v.pipe(v.string(), v.regex(/^[23456789A-NP-Z]{8}$/u)),
+);
+
+export const exploreProtocolQuerySchema = v.pipe(
+  v.object({
+    item: itemID,
+    annotation: annotationKeyValue,
+    "source-id": sourceIdValue,
+  }),
+  v.transform(({ item, annotation, "source-id": sourceId }) => ({
+    item,
+    annotation,
+    sourceId,
+  })),
+);
+
+export type ExploreProtocolQuery = v.InferOutput<
+  typeof exploreProtocolQuerySchema
+>;
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/explore` link.
+ *
+ * @param data decoded query record from Obsidian
+ * @returns the typed query
+ * @throws {v.ValiError} when `item` or `source-id` is missing or malformed
+ */
+export function parseExploreProtocolQuery(
+  data: Record<string, unknown>,
+): ExploreProtocolQuery {
+  return v.parse(exploreProtocolQuerySchema, data);
+}
+
+/**
+ * Build an `obsidian://zotlit/explore?item=<id>&source-id=<hash>` link for
+ * `Zotero.launchURL`. An optional `annotation` key anchors the explorer at
+ * that annotation.
+ */
+export function buildExploreProtocolUrl(
+  item: number,
+  options: { sourceId: string; annotation?: string },
+): string {
+  const params = protocolUrlParams({ item: String(item) }, options.sourceId);
+  if (options.annotation) params.set("annotation", options.annotation);
+  return `obsidian://${exploreProtocolActionId}?${params}`;
+}
+
 export function getProtocolUrlVersion(data: Record<string, unknown>): unknown {
   return data[PROTOCOL_VERSION_PARAM];
 }

@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import {
   batchUpdateRequestSchema,
   buildBatchProtocolUrl,
+  buildExploreProtocolUrl,
   buildProtocolUrl,
+  parseExploreProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
   protocolActions,
@@ -163,6 +165,62 @@ describe("batchUpdateRequestSchema (HTTP body)", () => {
   it("rejects non-integer ids", () => {
     expect(() => v.parse(batchUpdateRequestSchema, { items: [1.5] })).toThrow();
   });
+});
+
+describe("zotlit explore protocol", () => {
+  it("builds + round-trips an item-only link", () => {
+    const url = buildExploreProtocolUrl(42, { sourceId: SOURCE });
+    expect(url).toBe(
+      `obsidian://zotlit/explore?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}`,
+    );
+    expect(decode(url).action).toBe("zotlit/explore");
+    expect(parseExploreProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      annotation: undefined,
+      sourceId: SOURCE,
+    });
+  });
+
+  it("builds + round-trips a link with annotation anchor", () => {
+    const url = buildExploreProtocolUrl(42, {
+      sourceId: SOURCE,
+      annotation: "ABC23456",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/explore?item=42&source-id=${SOURCE}&v=${PROTOCOL_VERSION}&annotation=ABC23456`,
+    );
+    expect(parseExploreProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      annotation: "ABC23456",
+      sourceId: SOURCE,
+    });
+  });
+
+  it("omits annotation when not provided", () => {
+    const url = buildExploreProtocolUrl(42, { sourceId: SOURCE });
+    expect(url).not.toContain("annotation");
+  });
+
+  it("rejects a missing item", () => {
+    expect(() => parseExploreProtocolQuery({ "source-id": SOURCE })).toThrow();
+  });
+
+  it("rejects a missing source-id", () => {
+    expect(() => parseExploreProtocolQuery({ item: "42" })).toThrow();
+  });
+
+  it.each(["x", "ABC1234!", "ABC123456", "ABC10ILO"])(
+    "rejects malformed annotation key %s",
+    (annotation) => {
+      expect(() =>
+        parseExploreProtocolQuery({
+          item: "42",
+          annotation,
+          "source-id": SOURCE,
+        }),
+      ).toThrow();
+    },
+  );
 });
 
 describe("protocolSourceMatches", () => {

@@ -41,6 +41,16 @@ _Avoid_: advanced templates, legacy templates, scripting, user scripts
 The `filename` Template, evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time); output is a single line.
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
+**Template Data Explorer** _(Obsidian)_:
+The sidebar view that displays the exact template data (`zt`) a Template receives for a real library Item, as an explorable tree anchored at the Note Root or an Annotation Root. Nodes offer copy-path (Liquid `zt.…`; plus an explicit Eta `it.…` variant while JavaScript Templates is enabled) and copy-value; one filter box matches key names and values, scoped to the current root — changing roots resets it. Everything displayed is true at display time, and browsing never writes to the vault — link helpers that would queue imports show existing targets or labeled placeholders instead.
+_Avoid_: item details (v1's item-centric framing), template preview / data preview (preview implies rendered output, a non-goal)
+
+**Note Root**:
+The Template Data Explorer's default anchor — the full note-template context for the chosen Item, exactly what the `note`/`content` templates receive as `zt`.
+
+**Annotation Root**:
+The Template Data Explorer re-anchored at a single Annotation, exactly what the `annotation` template receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
+
 ### Note content
 
 **Annotation Excerpt**:
@@ -82,4 +92,4 @@ A vault-wide in-memory index mapping frontmatter identifiers to Obsidian files. 
 ### Protocol
 
 **Protocol Action**:
-A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Zotero companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Long URLs fall back to HTTP PUT on the plugin's local server.
+A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Zotero companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Long URLs fall back to HTTP PUT on the plugin's local server.

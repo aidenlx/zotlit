@@ -8,10 +8,12 @@ import {
 } from "@/lib/context/zt-template-annot";
 import {
   attachmentToTemplateData,
+  withAttachmentPreview,
   type TemplateAttachment,
 } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
+  withItemPreview,
   type TemplateItemResolvers,
   type TemplateParentItemData,
 } from "@/lib/context/zt-template-item";
@@ -183,7 +185,7 @@ export function fetchAnnotationsTemplateData(
       // `null` for a standalone attachment (a PDF with no parent
       // bibliographic item) — its parentItemID resolves to nothing.
       parentItem: parentItemData
-        ? {
+        ? withItemPreview({
             ...itemToTemplateBaseData({
               item: parentItemData,
               tags: tagsByItemID.get(parentItemData.itemID) ?? [],
@@ -192,13 +194,13 @@ export function fetchAnnotationsTemplateData(
             // cheap by design (see zt-template-item.ts's TemplateParentItemData).
             notePath: null,
             noteLink: () => null,
-          }
+          })
         : null,
-      tplAttachment: {
+      tplAttachment: withAttachmentPreview({
         ...attachmentToTemplateData(attachment),
         filePath: resolvers.filePath(attachment),
         fileLink: resolvers.fileLink(attachment),
-      },
+      }),
     });
   }
 
