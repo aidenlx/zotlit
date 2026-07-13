@@ -1,6 +1,7 @@
 import {
   type BatchUpdateRequest,
   buildBatchProtocolUrl,
+  buildExploreProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
   type ImportMode,
@@ -44,6 +45,22 @@ export function openInObsidian(
     scope,
   });
   logger.info("opening obsidian", { action, itemID: item.id, scope, url });
+  Zotero.launchURL(url);
+}
+
+export function exploreInObsidian(
+  item: Zotero.Item,
+  annotation?: string,
+): void {
+  const url = buildExploreProtocolUrl(item.id, {
+    sourceId: sourceId(),
+    annotation,
+  });
+  logger.info("opening obsidian (explore)", {
+    itemID: item.id,
+    annotation,
+    url,
+  });
   Zotero.launchURL(url);
 }
 

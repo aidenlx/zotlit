@@ -1,3 +1,4 @@
+import { defineToString } from "@/lib/to-string";
 import {
   linkModeToName,
   parseAttachmentPath,
@@ -53,6 +54,18 @@ export function attachmentToTemplateData(
         ? "unknown"
         : linkModeToName(attachment.linkMode),
   };
+}
+
+/**
+ * Apply after `filePath` and `fileLink` are attached because a spread drops
+ * the non-enumerable string form.
+ */
+export function withAttachmentPreview(
+  attachment: TemplateAttachment,
+): TemplateAttachment {
+  return defineToString(attachment, function () {
+    return this.filename ?? this.key;
+  });
 }
 
 function attachmentFilename(path: AttachmentPath): string | null {
