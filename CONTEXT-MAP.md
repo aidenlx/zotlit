@@ -4,6 +4,7 @@
 
 - [Zotero Data Model](./packages/db/CONTEXT.md) — Zotero's item hierarchy, identification, and query surface as modeled by `@zotlit/db`
 - [Obsidian Plugin](./apps/obsidian/CONTEXT.md) — literature notes, imported notes, templates, citations, and the services that bridge Zotero data into the vault
+- [ZotLit Protocol](./packages/protocol/CONTEXT.md) — the wire format between the Zotero companion and the Obsidian plugin: permanent `obsidian://` URIs versus ephemeral version-gated HTTP requests
 
 ## Relationships
 

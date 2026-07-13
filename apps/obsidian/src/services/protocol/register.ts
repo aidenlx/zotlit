@@ -4,7 +4,6 @@ import { getItemRefByID, type ItemRef } from "@zotlit/db";
 import {
   batchProtocolActionId,
   exploreProtocolActionId,
-  getProtocolUrlVersion,
   importManyProtocolActionId,
   importProtocolActionId,
   parseExploreProtocolQuery,
@@ -34,7 +33,6 @@ import {
 } from "@/services/note-feature/update-single";
 import { type BatchImport } from "@/services/note-import/batch-import";
 import { batchImportToast } from "@/services/note-import/batch-import-notices";
-import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
@@ -130,10 +128,10 @@ async function handleProtocol(
 }
 
 /**
- * Handle `obsidian://zotlit/update-many`. Validates protocol version and
- * source id at this transport edge, then hands the raw item-id list to
- * {@link runBatchUpdate}, which owns the database-ready gate, classification,
- * and the confirm/progress modal.
+ * Handle `obsidian://zotlit/update-many`. Validates the source id at this
+ * transport edge, then hands the raw item-id list to {@link runBatchUpdate},
+ * which owns the database-ready gate, classification, and the confirm/progress
+ * modal.
  */
 async function handleBatchProtocol(
   data: ObsidianProtocolData,
@@ -242,14 +240,6 @@ function parseProtocolData<Query extends { sourceId: string }>(
   },
 ): Query | null {
   const { action, parse } = options;
-  if (
-    rejectIncompatibleProtocol(getProtocolUrlVersion(data), logger, {
-      action,
-      transport: "url",
-    })
-  ) {
-    return null;
-  }
 
   let query: Query;
   try {
