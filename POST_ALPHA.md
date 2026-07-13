@@ -4,61 +4,20 @@ Extracted from `[MIGRATION.md](./MIGRATION.md)` after alpha (Stages 0–8) shipp
 
 ## 1. Zotero note import (Stage 9)
 
-Stages 9.0–9.3 and **9.2-CSL** shipped. **9.4** (Better Notes) remains.
+Stages 9.0–9.3 and 9.2-CSL shipped. **9.4** (Better Notes) remains.
 
-### 1.1 Import flow (shipped)
+### 1.1 Better Notes (9.4)
 
-- **Trigger from Zotero, not Obsidian UI.** No command-palette import command, modal, or in-vault note picker. The companion initiates import the same way open/update do today: Zotero context menus → `obsidian://zotlit/…` → Obsidian protocol handler → orchestrator (v1: `note-feature/note-import/index.ts`). Extend the existing library-item menus and/or add child-note menus; a dedicated protocol action is fine if import needs its own verb, but the entry point stays on the Zotero side.
-- Output is the fixed Stage-4 format: Zotero note HTML → Obsidian Markdown with inline annotation marks. Annotation paragraphs can optionally render through `annotation.eta` (opt-in setting, default OFF).
-
-### 1.2 Embedded image resolution (shipped)
-
-Stage-4 parser support ships; wire the import flow to construct `NoteEmbeddedImageDeps` (`db.client`, `libraryID`, `AttachmentPathContext`, prepared `AttachmentImportService` handle) and pass it into `parseNote`.
-
-### 1.3 Citation resolution (shipped)
-
-- `citation` rule ships as pass-through in Stage 4; resolving it belongs here because the citekey chain only feeds `template.render("cite", …)`.
-- Parsers already shipped (`parseCitation` → `@zotlit/db` `parseCitationData` / `parseItemUri`); only orchestrator wiring is new.
-- `ParseNoteDeps` grows from `{ Turndown, embeddedImage? }` with a `db`/`template` leg. Degraded DB (`db.state !== "ready"`) → fallback path, not a throw.
-- Declare `TurndownService` global in `src/typings/obsidian-ex.d.ts`.
-
-**Citekey chain** per cited item — DB → embedded → sentinel:
-
-1. **DB** — `IndexedItem.citationKey` from `queries/index-items.ts` (not `getItemsByKey`); resolve only against the note's own `libraryID`.
-2. **Embedded** — `data-citation-items[uri].itemData["citation-key"]` (standard CSL-JSON).
-3. **Sentinel** — ``${key}?`` — truthy, survives the default `cite` template's `filter(lit => !!lit.citekey)`, renders a visible greppable `[@KEY?]`.
-
-**Embedded map** is URI-keyed (each entry's `itemData.id` is the full library-qualified URI). Build `Map<uri, itemData>`, resolve a citation by walking its `uris` for the first hit. Sits on the same `<div>` as `data-schema-version` — `parseNoteSchema(root).container.getAttribute("data-citation-items")` reaches it. Needs a small valibot schema.
-
-**Cross-library cites** resolve via the embedded leg only (snapshot citekey, not live BBT data).
-
-### 1.4 Open items
-
-**9.2-CSL** (shipped) — cite-contract widening, locator/suppress-author rendering, CSL→zt reverse mapping, annotation citations, and docs correction. Record: `.scratch/csl/PRD.md` and ADR 0003.
-
-**9.4 — Better Notes.** Zotero Better Notes enhances native Zotero notes (not a separate source type), so compatibility belongs in this importer: fixed parser as baseline, extension points for Better Notes' enhanced HTML and user-controlled Markdown output. Requires a dedicated design pass — depends on the concrete parser extension surface from 9.0–9.3.
+Zotero Better Notes enhances native Zotero notes (not a separate source type), so compatibility belongs in this importer: fixed parser as baseline, extension points for Better Notes' enhanced HTML and user-controlled Markdown output. Requires a dedicated design pass — depends on the concrete parser extension surface from 9.0–9.3.
 
 ## 2. Companion-dependent features
 
 | Feature | v1 source | Notes |
 | --- | --- | --- |
-| Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; not yet ported (see §2.2) |
+| Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; not yet ported (see §2.1) |
 | Companion release | — | First public release cut and Obsidian community-plugin listing. Release pipeline ships (`pnpm release`, `.github/workflows/{ci,release}.yml`, Zotero update manifests on `zotero-release`) — see `CONTRIBUTING.md` and `docs/CI_SETUP.md`. |
 
-### 2.1 Protocol batch update (shipped)
-
-Initial land `55c7d60`; polish through `b7d2de4`. v1 source: `note-feature/protocol/service.ts` → v2 `services/note-feature/batch-update.ts` + `views/batch-update-modal.ts`.
-
-- **Transport** — `obsidian://zotlit/update-many?items=<id,…>&source-id=<hash>`. Zotero **Update** on a multi-selection sends one link; when the URL exceeds 2000 chars it falls back to `PUT /literature-notes` on the first `notify-url` target (Zotero progress window reports send outcome).
-- **Orchestrator** — `runBatchUpdate` batch-updates/creates literature notes through the per-item `NoteFeatures` path (no batch DB query). Classifies ids into update / create / not-found; branches on actionable count: 0 → notice, 1 → single-item handler, ≥2 → modal.
-- **Modal UX** — loading phase runs chunked classification behind a determinate bar (cancel stays responsive on large batches); confirm checklist; run phase with per-item progress, live failure panel, keep-open warning, and outcome summary.
-- **Consistency** — `DatabaseService.acquireRead()` pins the client across classify/run; batch create uses `suffix()` for collision-free filenames.
-- **HTTP path** — `LiveUpdateService` acks 204 immediately and defers the `update-many` emit past the response flush.
-- **Dropped** — v1 `export-many` (always-create); use update for in-place refresh.
-
-Stage 9 note import extends the same single-item pattern (Zotero menu → protocol → Obsidian orchestrator).
-
-### 2.2 Topic-import (v1 reference)
+### 2.1 Topic-import (v1 reference)
 
 A "subscribe a note to a Zotero tag" workflow: attach a `#zt-topic/<name>` tag to a note, flip the status-bar toggle, and every item subsequently **added** in Zotero auto-generates a Markdown note tagged with that topic.
 
@@ -73,26 +32,16 @@ v1 lives in `app/obsidian/src/note-feature/topic-import/` (~267 lines, an `@ophi
 ## 3. Annot view follow-ups
 
 - **Annotation merging** — v1's `mergeAnnots` / `mergeTags`. Combine annotations from multiple attachments or deduplicate across updates. The Zotero-side reader annotation context-menu item ("Merge Annotations") is scaffolded but commented out in `apps/zotero/src/menus/reader-annotation.ts` (FTL `zotlit-menu-reader-annot-merge` retained); re-enable it here when the feature returns.
-- **Citation with locator from annotation** (shipped in 9.2-CSL) — annotation template `zt.citation` field and annot-view "Copy citation" context-menu action. Record: `.scratch/csl/PRD.md`.
 
 ## 4. Template service follow-ups
 
 - **Template playground** — hosted editor over a real Zotero DB via sqlite-wasm (`apps/`). The `@zotlit/templates` extraction shipped; playground app, sqlite-wasm wiring, and editor UI remain.
 - **User-facing template docs** — drafted in `docs/template-v2/` (syntax, data reference, frontmatter, defaults, migration); wire into the website.
 - **Field-name completion in `EtaSuggest`** — `zt.title`, `zt.citekey`, `zt.creators`, `zt.tags`, etc. Needs template type definitions to drive the suggestion list.
-- **`template-edited` event** on `TemplateService` (nanoevents) — add when a live-preview consumer (annot view) needs to re-render on template edits.
-- **Async render path** (`renderAsync`) — only if a consumer ever needs `await`-able rendering.
 
-### 4.1 v1 template syntax compat layer (deferred)
+### 4.1 v1 template syntax compat layer (non-goal)
 
-A one-shot detector/transformer that keeps a user's **v1** template files rendering under the v2 engine. Deferred until there is demand from real upgraders — until then these are hard breaks documented in `docs/template-v2/migration.md`, not shims.
-
-Known v1→v2 breaks the compat layer would cover:
-
-- **Variable prefix** — v1 `it.*` → v2 `zt.*` (`varName` changed globally).
-- **Field names** — v1 raw Zotero field names → v2 CSL-inspired (`abstractNote` → `abstract`, `publicationTitle` → `containerTitle`, flat `zt.*` with no `fields` sub-object).
-- **Default-template filenames** — v1 `zt-*` → v2 `zotlit-*` (`zt-note` → `zotlit-note`, `zt-annots`/`zt-annot` → `zotlit-content`/`zotlit-annotation`, `zt-cite`/`zt-cite2` → `zotlit-cite`/`zotlit-cite2`; removed: `zt-field`, `zt-colored`).
-- **`eta-prf` fork syntax** — any template relying on fork-only behavior not covered by upstream `eta@^4`.
+Dropped. v1→v2 template breaks (variable prefix, field names, default-template filenames, `eta-prf` fork syntax) are hard breaks documented in the migration guide. Users migrating from v1 convert their templates manually.
 
 ## 5. Setting-tab enhancements
 
@@ -101,22 +50,12 @@ Deferred from Stage 6.
 - **Live template preview** — render a sample item through the active template in-tab.
 - **Frontmatter field preview + validation** — evaluate each `{key, expr}` against a sample item inside `FrontmatterFieldModal`; surface compile/runtime errors beyond today's key-level checks.
 - **Template preview view** — standalone template preview as an `ItemView` (distinct from the in-tab preview above).
-- **Item details view** — inspector-style view showing resolved item data.
 
 ## 6. Note feature follow-ups
 
 ### 6.1 Multi-attachment behavior
 
 Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annotation Item.
-
-**Alpha (shipped):**
-
-- **All attachments by default** — create, update, and overwrite always include every attachment; no selection UI; `zotero-atchs` is never read.
-- **`zt.annotations`** — flat list across all attachments; each annotation carries `parentAttachment` so templates can group/filter by source.
-- **`zt.attachments`** — top-level `TemplateAttachment[]` on the note context.
-- **`zotero-atchs` is scope input, not managed output** — excluded from the managed frontmatter set (union/append-only merge does not apply).
-
-**Post-alpha (land together):**
 
 - **`zotero-atchs` scoping** — missing or empty → all attachments at update time (including newly added ones). Present with keys → scoped to those specific attachments. Read/write wiring lands with the selection UI below.
 - **v1 backward compat** — `zotero-atchs` values that are numeric strings (v1 item IDs) are resolved to attachments by ID, then migrated to string keys on first update. Stale v1 values left unread in alpha remain as harmless unmanaged metadata until then.
