@@ -1,12 +1,18 @@
 import { regex } from "arkregex";
 import { basename, join } from "node:path/posix";
 
-import annotation from "@zotlit/templates/defaults/annotation?raw";
-import cite from "@zotlit/templates/defaults/cite?raw";
-import cite2 from "@zotlit/templates/defaults/cite2?raw";
-import content from "@zotlit/templates/defaults/content?raw";
-import filename from "@zotlit/templates/defaults/filename?raw";
-import note from "@zotlit/templates/defaults/note?raw";
+import annotationEta from "@zotlit/templates/defaults/annotation.eta?raw";
+import annotation from "@zotlit/templates/defaults/annotation.liquid?raw";
+import citeEta from "@zotlit/templates/defaults/cite.eta?raw";
+import cite from "@zotlit/templates/defaults/cite.liquid?raw";
+import cite2Eta from "@zotlit/templates/defaults/cite2.eta?raw";
+import cite2 from "@zotlit/templates/defaults/cite2.liquid?raw";
+import contentEta from "@zotlit/templates/defaults/content.eta?raw";
+import content from "@zotlit/templates/defaults/content.liquid?raw";
+import filenameEta from "@zotlit/templates/defaults/filename.eta?raw";
+import filename from "@zotlit/templates/defaults/filename.liquid?raw";
+import noteEta from "@zotlit/templates/defaults/note.eta?raw";
+import note from "@zotlit/templates/defaults/note.liquid?raw";
 import { type TemplateLanguage } from "@zotlit/templates/facade";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
@@ -59,6 +65,16 @@ export const DEFAULT_TEMPLATES: Record<TemplateName, string> = {
   content,
   cite,
   cite2,
+};
+
+/** Eta editions of the embedded defaults, byte-parity with {@link DEFAULT_TEMPLATES}; used when a Template row switches to Eta. */
+export const DEFAULT_TEMPLATES_ETA: Record<TemplateName, string> = {
+  filename: filenameEta,
+  note: noteEta,
+  annotation: annotationEta,
+  content: contentEta,
+  cite: citeEta,
+  cite2: cite2Eta,
 };
 
 function templateFilename(name: string, language: TemplateLanguage): string {

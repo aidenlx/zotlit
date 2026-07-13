@@ -29,7 +29,6 @@ import { type ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
@@ -77,7 +76,6 @@ export interface ExplorerViewDeps {
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
-  template: Pick<TemplateService, "javascriptTemplatesEnabled">;
 }
 
 function resolveLibraryID(
@@ -172,7 +170,6 @@ export class TemplateDataExplorerView extends ItemView {
       onChooseItem: () => this.#chooseItem(),
       onToggle: (key) => this.#toggle(key),
       onFilter: (query) => this.#setFilter(query),
-      isEtaEnabled: () => this.#deps.template.javascriptTemplatesEnabled,
       annotationKeyAt: (node) => {
         if (this.#treeState.anchorKey !== null || !this.#context) return null;
         return annotationKeyAtPath(this.#context, node.path);

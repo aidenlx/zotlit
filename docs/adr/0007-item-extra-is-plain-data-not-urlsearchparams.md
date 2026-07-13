@@ -4,5 +4,5 @@ Zotero's `extra` field is parsed into `ItemExtra` — a plain object of `{ raw, 
 
 ## Consequences
 
-- Bare `{{ zt.extra }}` / `<%= it.extra %>` still print the raw field text, because the non-enumerable `toString` returns `raw` — so changing the `zt.extra` contract from `string` to an object is print-compatible, and the explorer shows a collapsed one-line raw preview.
+- Bare `{{ zt.extra }}` / `<%= zt.extra %>` still print the raw field text, because the non-enumerable `toString` returns `raw` — so changing the `zt.extra` contract from `string` to an object is print-compatible, and the explorer shows a collapsed one-line raw preview.
 - "Get all values for a repeated key" is not a method; consumers scan `lines`. This was accepted as the rare case in exchange for a friction-free common-case lookup (`fields[key]`).

@@ -334,8 +334,6 @@
   "template_data_explorer_pick_placeholder": "Search for a Zotero item…",
   "template_data_explorer_not_imported": "Not imported",
   "template_data_explorer_menu_copy_path": "Copy path",
-  "template_data_explorer_menu_copy_liquid_path": "Copy Liquid path (zt.…)",
-  "template_data_explorer_menu_copy_eta_path": "Copy Eta path (it.…)",
   "template_data_explorer_menu_copy_value": "Copy value",
   "template_data_explorer_menu_explore_annotation": "Explore as annotation template data",
   "template_data_explorer_row_actions": "Template actions",
