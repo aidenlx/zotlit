@@ -32,6 +32,10 @@ A Zotero library — either the user's personal library or a group library. Each
 A user-organized folder within a Library. Collections form a tree; an Item can belong to multiple Collections. Resolved to ancestor paths (root → leaf) for template rendering.
 _Avoid_: folder, category, tag
 
+**Tag**:
+A label applied to an Item — either **manual** (user-added) or **auto** (added by a Zotero plugin such as a retrieval-metadata service). Carries a name and a type; its numeric IDs are Zotero-internal and never surface to users. In string contexts a Tag reads as its name.
+_Avoid_: keyword, label (in code), category
+
 ### Identification
 
 **Key**:

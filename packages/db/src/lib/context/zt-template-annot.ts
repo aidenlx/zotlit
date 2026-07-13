@@ -6,7 +6,7 @@ import {
   annotationColorToName,
   type AnnotationColorName,
 } from "@/lib/zt-color";
-import { type ItemTag } from "@/lib/zt-tag";
+import { toTemplateTag, type ItemTag, type TemplateTag } from "@/lib/zt-tag";
 import { annotationOpenUri } from "@/lib/zt-uri";
 
 import { emptyToNull } from "./normalize";
@@ -52,7 +52,7 @@ export interface TemplateAnnotationBaseData {
   isExternal: boolean;
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
-  tags: readonly ItemTag[];
+  tags: readonly TemplateTag[];
 }
 
 export interface TemplateAnnotation extends TemplateAnnotationBaseData {
@@ -112,7 +112,7 @@ function annotationToTemplateBaseData(
     isExternal: annotation.isExternal,
     dateAdded: annotation.dateAdded,
     dateModified: annotation.dateModified,
-    tags,
+    tags: tags.map(toTemplateTag),
   };
 }
 
