@@ -18,7 +18,7 @@ import {
 import { createClient } from "@zotlit/db/client/node";
 import { Temporal } from "@zotlit/shared/temporal";
 import { filenameSuffix } from "@zotlit/templates";
-import defaultCite from "@zotlit/templates/defaults/cite?raw";
+import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import {
   TemplateFacade,
   type TemplateLanguage,

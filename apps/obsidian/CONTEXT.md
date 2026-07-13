@@ -42,7 +42,7 @@ The `filename` Template, evaluated to determine a new Literature Note's filename
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
 **Template Data Explorer** _(Obsidian)_:
-The sidebar view that displays the exact template data (`zt`) a Template receives for a real library Item, as an explorable tree anchored at the Note Root or an Annotation Root. Nodes offer copy-path (Liquid `zt.…`; plus an explicit Eta `it.…` variant while JavaScript Templates is enabled) and copy-value; one filter box matches key names and values, scoped to the current root — changing roots resets it. Everything displayed is true at display time, and browsing never writes to the vault — link helpers that would queue imports show existing targets or labeled placeholders instead.
+The sidebar view that displays the exact template data (`zt`) a Template receives for a real library Item, as an explorable tree anchored at the Note Root or an Annotation Root. Nodes offer copy-path — one `zt.…` path shared by both Liquid and Eta, since both engines bind the data to `zt` — and copy-value; one filter box matches key names and values, scoped to the current root — changing roots resets it. Everything displayed is true at display time, and browsing never writes to the vault — link helpers that would queue imports show existing targets or labeled placeholders instead.
 _Avoid_: item details (v1's item-centric framing), template preview / data preview (preview implies rendered output, a non-goal)
 
 **Note Root**:

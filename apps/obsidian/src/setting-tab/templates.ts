@@ -17,6 +17,8 @@ import * as m from "@/paraglide/messages";
 import { type AutoTrim } from "@/services/settings/schema";
 import {
   DEFAULT_TEMPLATES,
+  DEFAULT_TEMPLATES_ETA,
+  templateFileFromPath,
   templatePath,
   TEMPLATE_NAMES,
   type TemplateName,
@@ -299,9 +301,11 @@ function renderEjectableRow(
         .setTooltip(m.settings_template_open())
         .onClick(() => void openTemplate(ctx.app, file)),
     );
-    // Resetting overwrites with the Liquid default source, so it's only safe
-    // to offer when the effective file is the Liquid one.
-    if (file === liquidFile) {
+    // Reset overwrites with the default source of the file's own edition. An
+    // Eta row resets only while JavaScript Templates is on; a lone inert
+    // `.eta.md` offers the toward-Liquid dropdown instead. Liquid reset is
+    // gate-independent.
+    if (file === liquidFile || (file === etaFile && gate)) {
       setting.addButton((btn) =>
         btn
           .setIcon("rotate-ccw")
@@ -377,8 +381,9 @@ function renderEjectableRow(
 
 /**
  * Toward Eta: trash the Liquid file (if any), then reveal a shadowed `.eta.md`
- * or create and open an empty one. Toward Liquid: trash the `.eta.md` and let
- * the name fall back to an existing Liquid file or the embedded default.
+ * or create one from the embedded Eta default and open it. Toward Liquid: trash
+ * the `.eta.md` and let the name fall back to an existing Liquid file or the
+ * embedded default.
  * Nothing converts — dispatch, Liquid-wins precedence, and the watcher pick the
  * file change up as they would a manual edit. All removals go through
  * Obsidian's recoverable trash.
@@ -418,7 +423,10 @@ async function switchLanguage(
         return;
       }
       await ensureFolder(ctx.app, folder);
-      const created = await ctx.app.vault.create(etaPath, "");
+      const created = await ctx.app.vault.create(
+        etaPath,
+        DEFAULT_TEMPLATES_ETA[name],
+      );
       await openTemplate(ctx.app, created);
     } else {
       if (!etaFile) return;
@@ -477,7 +485,13 @@ async function resetAndRefresh(
   name: TemplateName,
 ): Promise<void> {
   try {
-    await ctx.app.vault.modify(file, DEFAULT_TEMPLATES[name]);
+    const templateFile = templateFileFromPath(file.path);
+    if (!templateFile) throw new Error(`Invalid template path: ${file.path}`);
+    const source =
+      templateFile.language === "eta"
+        ? DEFAULT_TEMPLATES_ETA[name]
+        : DEFAULT_TEMPLATES[name];
+    await ctx.app.vault.modify(file, source);
     new BaseNotice(m.notice_template_reset());
   } catch (error) {
     logger.error("Failed to reset template", { name, error });

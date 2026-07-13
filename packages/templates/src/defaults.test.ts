@@ -4,6 +4,7 @@ import citeLiquid from "@defaults/cite.liquid?raw";
 import cite2Liquid from "@defaults/cite2.liquid?raw";
 import contentEta from "@defaults/content.eta?raw";
 import contentLiquid from "@defaults/content.liquid?raw";
+import filenameEta from "@defaults/filename.eta?raw";
 import filenameLiquid from "@defaults/filename.liquid?raw";
 import noteEta from "@defaults/note.eta?raw";
 import noteLiquid from "@defaults/note.liquid?raw";
@@ -327,6 +328,41 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
 
     expect(facade.render("annotation", { ...base, comment: null })).toBe(
       facade.render("annotation", { ...base, comment: "" }),
+    );
+  });
+
+  const filenameFixtures = [
+    [
+      "citationKey wins",
+      {
+        citationKey: "smith2024",
+        DOI: "10.1/x",
+        title: "Paper",
+        key: "ABCD1234",
+      },
+    ],
+    [
+      "DOI when no citationKey",
+      { citationKey: null, DOI: "10.1/x", title: "Paper", key: "ABCD1234" },
+    ],
+    [
+      "title when no citationKey/DOI",
+      { citationKey: null, DOI: null, title: "Paper", key: "ABCD1234" },
+    ],
+    [
+      "key as last resort",
+      { citationKey: null, DOI: null, title: null, key: "ABCD1234" },
+    ],
+  ] as const;
+
+  it.each(filenameFixtures)("filename: %s", (_label, fixture) => {
+    const eta = new TemplateFacade();
+    eta.define("filename", filenameEta, "eta");
+    const liquid = new TemplateFacade();
+    liquid.define("filename", filenameLiquid, "liquid");
+
+    expect(liquid.render("filename", fixture)).toBe(
+      eta.render("filename", fixture),
     );
   });
 });

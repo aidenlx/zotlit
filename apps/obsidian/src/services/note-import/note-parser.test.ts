@@ -13,7 +13,7 @@ import {
 } from "@zotlit/db";
 import { makeItem } from "@zotlit/db/test-utils";
 import { TemplateEngine } from "@zotlit/templates";
-import defaultCite from "@zotlit/templates/defaults/cite?raw";
+import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { renderAnnotations } from "@/lib/annotation-render";

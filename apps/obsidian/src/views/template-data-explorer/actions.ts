@@ -12,7 +12,7 @@ export interface ExplorerActions {
   onToggle(key: string): void;
   /** Copy the node's value; resolves on a successful write so the row icon can flash a confirmation. */
   onCopyValue(node: DisplayNode): Promise<void>;
-  /** Open the per-row template-actions menu: copy-path (Liquid, and Eta when enabled) plus explore-as-annotation-root when applicable. */
+  /** Open the per-row template-actions menu: copy-path plus explore-as-annotation-root when applicable. */
   onTemplateMenu(node: DisplayNode, event: React.MouseEvent): void;
   onBackToNoteRoot(): void;
   onFilter(query: string): void;
@@ -23,7 +23,6 @@ export function createExplorerActions(deps: {
   onChooseItem(this: void): void;
   onToggle(this: void, key: string): void;
   onFilter(this: void, query: string): void;
-  isEtaEnabled(): boolean;
   /** `null` unless `node` is a top-level `annotations[i]` entry and the tree isn't already anchored. */
   annotationKeyAt(node: DisplayNode): string | null;
   onAnchorAnnotation(key: string): void;
@@ -51,26 +50,18 @@ export function createExplorerActions(deps: {
   const onTemplateMenu = (node: DisplayNode, event: React.MouseEvent): void => {
     const menu = new Menu();
 
-    const addCopyPathItem = (title: string, rootAlias: string): void => {
-      menu.addItem((item) => {
-        item
-          .setTitle(title)
-          .setIcon("copy")
-          .onClick(() => {
-            void copyToClipboard(
-              formatPath(node.path, rootAlias),
-              m.template_data_explorer_copied_path(),
-            );
-          });
-      });
-    };
-
-    if (deps.isEtaEnabled()) {
-      addCopyPathItem(m.template_data_explorer_menu_copy_liquid_path(), "zt");
-      addCopyPathItem(m.template_data_explorer_menu_copy_eta_path(), "it");
-    } else {
-      addCopyPathItem(m.template_data_explorer_menu_copy_path(), "zt");
-    }
+    // Both engines bind data to `zt`, so one copy-path serves both.
+    menu.addItem((item) => {
+      item
+        .setTitle(m.template_data_explorer_menu_copy_path())
+        .setIcon("copy")
+        .onClick(() => {
+          void copyToClipboard(
+            formatPath(node.path, "zt"),
+            m.template_data_explorer_copied_path(),
+          );
+        });
+    });
 
     const annotationKey = deps.annotationKeyAt(node);
     if (annotationKey !== null) {
