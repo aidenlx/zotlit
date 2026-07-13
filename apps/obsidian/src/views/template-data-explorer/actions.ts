@@ -6,6 +6,36 @@ import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 
 import { copyValue, formatPath, type DisplayNode } from "./display-tree";
+import {
+  renderSnippet,
+  type SnippetKind,
+  snippetKindsFor,
+  type TemplateEngine,
+} from "./snippets";
+
+const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
+  output: m.template_data_explorer_menu_copy_output,
+  "if-present": m.template_data_explorer_menu_copy_if_present,
+  loop: m.template_data_explorer_menu_copy_loop,
+  joined: m.template_data_explorer_menu_copy_joined,
+};
+
+const SNIPPET_ICON: Record<SnippetKind, string> = {
+  output: "code",
+  "if-present": "git-branch",
+  loop: "repeat",
+  joined: "list",
+};
+
+const ENGINE_ICON: Record<TemplateEngine, string> = {
+  liquid: "droplet",
+  eta: "braces",
+};
+
+const ENGINE_SUBMENUS: readonly (readonly [TemplateEngine, () => string])[] = [
+  ["liquid", m.template_data_explorer_submenu_liquid],
+  ["eta", m.template_data_explorer_submenu_eta],
+];
 
 export interface ExplorerActions {
   onChooseItem(): void;
@@ -28,6 +58,8 @@ export function createExplorerActions(deps: {
   onAnchorAnnotation(key: string): void;
   onBackToNoteRoot(this: void): void;
   onRefresh(this: void): void;
+  /** Whether Eta is permitted on this device; read live per menu-open so it tracks the JavaScript Templates gate. */
+  isEtaEnabled(this: void): boolean;
 }): ExplorerActions {
   const copyToClipboard = (
     text: string,
@@ -50,7 +82,26 @@ export function createExplorerActions(deps: {
   const onTemplateMenu = (node: DisplayNode, event: React.MouseEvent): void => {
     const menu = new Menu();
 
-    // Both engines bind data to `zt`, so one copy-path serves both.
+    const addSnippetItem = (
+      target: Menu,
+      engine: TemplateEngine,
+      kind: SnippetKind,
+    ): void => {
+      target.addItem((item) => {
+        item
+          .setTitle(SNIPPET_LABEL[kind]())
+          .setIcon(SNIPPET_ICON[kind])
+          .onClick(() => {
+            void copyToClipboard(
+              renderSnippet(node, engine, kind),
+              m.template_data_explorer_copied_snippet(),
+            );
+          });
+      });
+    };
+
+    // The bare `zt.…` path is engine-neutral (both engines bind data to `zt`),
+    // so one copy-path serves both; the wrapped snippets below diverge by engine.
     menu.addItem((item) => {
       item
         .setTitle(m.template_data_explorer_menu_copy_path())
@@ -63,8 +114,27 @@ export function createExplorerActions(deps: {
         });
     });
 
+    const kinds = snippetKindsFor(node);
+    if (kinds.length > 0) {
+      menu.addSeparator();
+      if (deps.isEtaEnabled()) {
+        // Both engines apply: split into submenus so each snippet reads unambiguously.
+        for (const [engine, title] of ENGINE_SUBMENUS) {
+          menu.addItem((item) => {
+            item.setTitle(title()).setIcon(ENGINE_ICON[engine]);
+            const sub = item.setSubmenu();
+            for (const kind of kinds) addSnippetItem(sub, engine, kind);
+          });
+        }
+      } else {
+        // Liquid alone is active — its snippets sit inline, no needless submenu.
+        for (const kind of kinds) addSnippetItem(menu, "liquid", kind);
+      }
+    }
+
     const annotationKey = deps.annotationKeyAt(node);
     if (annotationKey !== null) {
+      menu.addSeparator();
       menu.addItem((item) => {
         item
           .setTitle(m.template_data_explorer_menu_explore_annotation())
