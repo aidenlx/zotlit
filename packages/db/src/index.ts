@@ -62,6 +62,7 @@ export {
   type IndexSignature,
 } from "./queries/index-items";
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";
+export { parseItemExtra, type ExtraLine, type ItemExtra } from "./lib/zt-extra";
 export {
   annotationTypeToName,
   type Annotation,

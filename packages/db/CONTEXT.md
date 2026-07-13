@@ -53,3 +53,16 @@ How an Attachment's file is stored: `imported_file` (copied into Zotero's storag
 
 **Attachment Path**:
 The resolved absolute filesystem path to an Attachment's file, computed from its Link Mode, Zotero's data directory, and the optional base attachment path preference.
+
+### Item fields
+
+**Extra**:
+Zotero's free-text `extra` field on an Item — arbitrary user text that conventionally holds `key: value` lines (CSL variables, Better BibTeX `tex.*` fields, citation keys) mixed with prose. Stored verbatim by Zotero, never normalized on write. ZotLit parses it best-effort into an **ItemExtra** carrying the `raw` string, a first-wins `fields` lookup, and per-row `lines`.
+_Avoid_: note (that is the CSL `note` variable and the Child Note), metadata
+
+**Extra Pair**:
+A single `key: value` (or `key = value`) line parsed out of an **Extra** field. Keys are preserved verbatim and are case-sensitive; when a key repeats, the first occurrence wins the `fields` lookup while every occurrence remains in `lines`.
+_Avoid_: extra field (ambiguous with the whole field), tag
+
+**Extra Line**:
+One source row of an **Extra** field in document order — either a parsed **Extra Pair** or a non-pair text/blank row. Retains the row's raw text so freeform prose interleaved with pairs is never dropped.

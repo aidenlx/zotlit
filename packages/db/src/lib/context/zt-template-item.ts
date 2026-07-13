@@ -4,6 +4,7 @@ import { FIELD_ALIASES } from "@zotlit/zotero-types";
 import { defineToString } from "@/lib/to-string";
 import { type TemplateCollection } from "@/lib/zt-collection";
 import { parseItemDate, type ItemDate } from "@/lib/zt-date";
+import { parseItemExtra, type ItemExtra } from "@/lib/zt-extra";
 import { type ItemTag } from "@/lib/zt-tag";
 import { type Creator, type Item } from "@/queries/items";
 
@@ -61,7 +62,8 @@ export interface TemplateItemBaseData {
   place: string | null;
   edition: string | null;
   language: string | null;
-  extra: string | null;
+  /** Parsed best-effort from Zotero's free-text `extra` field; prints `raw`. */
+  extra: ItemExtra | null;
 
   /** Additional Zotero fields beyond the explicitly typed ones above. */
   [field: string]: unknown;
@@ -177,7 +179,7 @@ export function itemToTemplateBaseData({
     place: allFields.place ?? null,
     edition: allFields.edition ?? null,
     language: allFields.language ?? null,
-    extra: allFields.extra ?? null,
+    extra: parseItemExtra(allFields.extra),
   };
 }
 
