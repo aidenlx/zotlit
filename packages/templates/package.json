@@ -17,7 +17,8 @@
     "./liquid": "./dist/liquid.mjs",
     "./obsidian": "./dist/obsidian.mjs",
     "./package.json": "./package.json",
-    "./defaults/*": "./defaults/*.liquid"
+    "./defaults/*.eta": "./defaults/*.eta",
+    "./defaults/*.liquid": "./defaults/*.liquid"
   },
   "scripts": {
     "build": "tsdown",

@@ -134,7 +134,6 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
       settings: services.settings,
-      template: services.template,
     });
 
     // A Zotero item add/modify/trash push means the database changed; feed it
