@@ -8,19 +8,10 @@ import {
   mergeFrontmatterFields,
 } from "@zotlit/templates/frontmatter-merge";
 
-import {
-  FIELD_ATTACHMENTS,
-  FIELD_CITEKEY,
-  FIELD_ZOTERO_KEY,
-} from "@/lib/constants";
+import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 
 export interface ApplyManagedFrontmatterOptions {
   compiled: readonly CompiledFrontmatterField[];
-  /**
-   * Attachment keys to persist; omit or pass empty to leave
-   * the note unscoped ("all attachments").
-   */
-  attachmentScope?: readonly string[];
   onError?: (key: string, error: unknown) => void;
   onConflict?: FrontmatterMergeConflictHandler;
 }
@@ -49,10 +40,5 @@ export function applyManagedFrontmatter(
     // `null` serializes as YAML null. Use delete for absent system fields so
     // create and refresh share the same explicit behavior.
     delete fm[FIELD_CITEKEY];
-  }
-  if (options.attachmentScope && options.attachmentScope.length > 0) {
-    fm[FIELD_ATTACHMENTS] = [...options.attachmentScope];
-  } else {
-    delete fm[FIELD_ATTACHMENTS];
   }
 }

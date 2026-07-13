@@ -39,10 +39,6 @@ v1 lives in `app/obsidian/src/note-feature/topic-import/` (~267 lines, an `@ophi
 - **User-facing template docs** — drafted in `docs/template-v2/` (syntax, data reference, frontmatter, defaults, migration); wire into the website.
 - **Field-name completion in `EtaSuggest`** — `zt.title`, `zt.citekey`, `zt.creators`, `zt.tags`, etc. Needs template type definitions to drive the suggestion list.
 
-### 4.1 v1 template syntax compat layer (non-goal)
-
-Dropped. v1→v2 template breaks (variable prefix, field names, default-template filenames, `eta-prf` fork syntax) are hard breaks documented in the migration guide. Users migrating from v1 convert their templates manually.
-
 ## 5. Setting-tab enhancements
 
 Deferred from Stage 6.
@@ -51,27 +47,17 @@ Deferred from Stage 6.
 - **Frontmatter field preview + validation** — evaluate each `{key, expr}` against a sample item inside `FrontmatterFieldModal`; surface compile/runtime errors beyond today's key-level checks.
 - **Template preview view** — standalone template preview as an `ItemView` (distinct from the in-tab preview above).
 
-## 6. Note feature follow-ups
-
-### 6.1 Multi-attachment behavior
-
-Zotero hierarchy: Literature Item → Attachment Item (PDF/EPUB/etc.) → Annotation Item.
-
-- **`zotero-atchs` scoping** — missing or empty → all attachments at update time (including newly added ones). Present with keys → scoped to those specific attachments. Read/write wiring lands with the selection UI below.
-- **v1 backward compat** — `zotero-atchs` values that are numeric strings (v1 item IDs) are resolved to attachments by ID, then migrated to string keys on first update. Stale v1 values left unread in alpha remain as harmless unmanaged metadata until then.
-- **Attachment selection UI** — v1 reference: `atch-suggest.ts` (`cacheAttachmentSelect`, `chooseAnnotAtch`). Port as whitelist + blacklist that writes `zotero-atchs`; deferred from alpha.
-
-## 7. PDF outline parser
+## 6. PDF outline parser
 
 v1 ships `getPDFOutline` / `getCachedOutlineKeys` but never calls them — no API, server, or view consumer. Don't port until the annot view (or another feature) actually consumes an outline; then it lands as its own stage.
 
 Source: `services/pdf-parser/service.ts`.
 
-## 8. Polish & tuning
+## 7. Polish & tuning
 
 - **Citation suggester styling** — the current citation item row in editor-suggest and quick-switcher has styling issues.
 
-### 8.1 ItemLookup bench/tuner
+### 7.1 ItemLookup bench/tuner
 
 MiniSearch scoring is functional but not well tuned. Build an empirical bench/tuner harness in `packages/item-lookup/bench/` to tune `ScoringConfig` against a real Zotero corpus (today: `/Users/aidenlx/repo/zotlit-repo/1287.zotero.migrated.sqlite`; future: §9 common testing DB).
 
@@ -123,7 +109,7 @@ MiniSearch scoring is functional but not well tuned. Build an empirical bench/tu
 - **Disk-persisted index** — Omnisearch-style cache; build time on 1287 items is well under budget (`search-comparison.md` §5.4).
 - **Hand pre-tuning** — recency curve, left-anchor creator boost, exact-title boost are what the bench tunes for; don't tune by hand ahead of empirical results.
 
-## 9. Contributor testing fixtures & collaboration guide
+## 8. Contributor testing fixtures & collaboration guide
 
 - **Common testing Zotero database** — repo-maintained library fixture for reproducible manual and automated testing.
 - **Common testing Obsidian vault** — matching vault fixture (templates, sample notes, plugin settings).

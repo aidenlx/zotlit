@@ -2,8 +2,6 @@ import { Temporal } from "@zotlit/shared/temporal";
 
 export const FIELD_ZOTERO_KEY = "zotero-key";
 export const FIELD_CITEKEY = "citekey";
-/** v1-compatible key (v1: `zotero-atchs`); kept so upgraded notes are not re-keyed. */
-export const FIELD_ATTACHMENTS = "zotero-atchs";
 /**
  * Identity of an imported Zotero note. Disjoint from {@link FIELD_ZOTERO_KEY}
  * so imported notes never register as literature notes.
@@ -34,13 +32,11 @@ export function stringifyInstant(
 
 /**
  * Frontmatter keys owned by the system; user expressions cannot target them.
- * Item identity fields are written from item data; attachment scope is managed
- * by the update flow.
+ * Item identity fields are written from item data by the update flow.
  */
 export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   FIELD_ZOTERO_KEY,
   FIELD_CITEKEY,
-  FIELD_ATTACHMENTS,
   FIELD_ZOTERO_NOTE_KEY,
   FIELD_ZOTERO_LASTMOD,
 ]);
