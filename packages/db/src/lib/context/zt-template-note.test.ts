@@ -128,10 +128,7 @@ describe("buildNoteContext", () => {
     });
 
     expect(ctx.backlink).toBe("zotero://select/library/items/ITEM2345");
-    expect(ctx.tags).toEqual([
-      { itemID: item.itemID, tag: itemTagRecord, type: 0 },
-    ]);
-    expect(ctx.tags[0]?.tag).toBe(itemTagRecord);
+    expect(ctx.tags).toEqual([{ name: "zt", type: "manual" }]);
     expect(ctx.authorsShort).toBe("Smith et al.");
 
     expect(ctx.attachments).toHaveLength(1);
@@ -154,7 +151,7 @@ describe("buildNoteContext", () => {
     expect(annot.page).toBe(1);
     expect(annot.fileLink()).toBe("[paper.pdf](file:///x/paper.pdf#page=1)");
     expect(ctx.attachments[0]!.filePath).toBe("/x/paper.pdf");
-    expect(annot.tags[0]?.tag).toBe(annotTagRecord);
+    expect(annot.tags).toEqual([{ name: "claim", type: "auto" }]);
     expect(annot.parentAttachment).toBe(ctx.attachments[0]);
     expect(annot.parentItem?.citationKey).toBe("smith2024");
 
@@ -369,7 +366,7 @@ describe("buildNoteContext", () => {
     expect(beta.backlink).toBe("zotero://select/library/items/RELB2345");
     expect(beta.authors.map((a) => a.family)).toEqual(["Adams"]);
     expect(beta.authorsShort).toBe("short:RELB2345");
-    expect(beta.tags.map((t) => t.tag.name)).toEqual(["method"]);
+    expect(beta.tags.map((t) => t.name)).toEqual(["method"]);
     // group backlink resolved from the related item's own indexedKey
     expect(ctx.relatedItems[0]!.backlink).toBe(
       "zotero://select/groups/99/items/RELA2345",

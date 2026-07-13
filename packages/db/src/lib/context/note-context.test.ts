@@ -68,14 +68,14 @@ describe("fetchNoteContext", () => {
       collectionCache: new CollectionCache(),
     });
 
-    expect(ctx.tags.map((t) => t.tag.name)).toEqual(["zt"]);
+    expect(ctx.tags.map((t) => t.name)).toEqual(["zt"]);
     expect(ctx.collections.map((c) => c.name)).toEqual(["Reading"]);
 
     expect(ctx.attachments).toHaveLength(1);
     expect(ctx.attachments[0]!.key).toBe("ATCH0001");
 
     expect(ctx.annotations.map((a) => a.key)).toEqual(["ANNO0001", "ANNO0002"]);
-    expect(ctx.annotations[0]!.tags.map((t) => t.tag.name)).toEqual(["claim"]);
+    expect(ctx.annotations[0]!.tags.map((t) => t.name)).toEqual(["claim"]);
     expect(ctx.annotations[0]!.comment).toBe("md(<i>excerpt</i>)");
     expect(ctx.annotations[0]!.parentAttachment).toBe(ctx.attachments[0]);
 
@@ -84,7 +84,7 @@ describe("fetchNoteContext", () => {
       "Beta Book",
     ]);
     const beta = ctx.relatedItems.find((r) => r.title === "Beta Book")!;
-    expect(beta.tags.map((t) => t.tag.name)).toEqual(["method"]);
+    expect(beta.tags.map((t) => t.name)).toEqual(["method"]);
     expect(beta.collections.map((c) => c.name)).toEqual(["Reading"]);
     expect(beta.authorsShort).toBe("short:RELB0001");
 
@@ -114,7 +114,7 @@ describe("fetchNoteContext", () => {
       collectionCache,
     });
 
-    expect(ctx.tags.map((t) => t.tag.name)).toEqual(["zt"]);
+    expect(ctx.tags.map((t) => t.name)).toEqual(["zt"]);
     expect(ctx.collections.map((c) => c.name)).toEqual(["Reading"]);
   });
 });
@@ -131,7 +131,7 @@ describe("fetchAnnotationsTemplateData", () => {
     const [first, second] = [...result.values()];
     expect(first!.parentAttachment).toBe(second!.parentAttachment);
     expect(first!.parentItem).toBe(second!.parentItem);
-    expect(first!.tags.map((t) => t.tag.name)).toEqual(["claim"]);
+    expect(first!.tags.map((t) => t.name)).toEqual(["claim"]);
     expect(second!.tags).toEqual([]);
   });
 

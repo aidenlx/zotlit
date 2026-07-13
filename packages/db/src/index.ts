@@ -51,7 +51,7 @@ export {
   type AnnotViewAttachment,
   type AnnotViewItem,
 } from "./queries/annot-view";
-export { type ItemTag } from "./lib/zt-tag";
+export { type ItemTag, type TemplateTag } from "./lib/zt-tag";
 export { type Attachment } from "./lib/zt-attach";
 export {
   getIndexedItemIDsByLibrary,

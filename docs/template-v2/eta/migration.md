@@ -172,10 +172,10 @@ v1 exposed tags as formatted strings. v2 exposes them as tag objects:
 <%= zt.tags.join(", ") %>
 
 <%# Explicit access via tag.name %>
-<%= zt.tags.map(t => t.tag.name).join(", ") %>
+<%= zt.tags.map(t => t.name).join(", ") %>
 
 <%# Filter to manual tags only %>
-<%= zt.tags.filter(t => t.type === 0).join(", ") %>
+<%= zt.tags.filter(t => t.type === "manual").join(", ") %>
 ```
 
 ## Step 10: Migrate frontmatter
@@ -191,7 +191,7 @@ If you customized `zt-field.eta.md`:
 | `title: "<%= it.title %>"` | Key: `title`, Expr: `zt.title`, Merge: Replace |
 | `authors: ...` | Key: `authors`, Expr: `zt.authors.map(c => c.fullName)`, Merge: Replace |
 | `year: "<%= it.date %>"` | Key: `year`, Expr: `zt.date?.year`, Merge: Replace |
-| `tags: ...` | Key: `tags`, Expr: `zt.tags.map(t => t.tag.name)`, Merge: Append arrays |
+| `tags: ...` | Key: `tags`, Expr: `zt.tags.map(t => t.name)`, Merge: Append arrays |
 
 You no longer need to worry about YAML escaping -- `stringifyYaml()` handles it.
 
@@ -434,7 +434,7 @@ property that is new in v2.
 | `it.publicationTitle` | `zt.containerTitle` / `zt.publicationTitle` | CSL alias |
 | `it.DOI` | `zt.DOI` | |
 | `it.backlink` | `zt.backlink` | Zotero `select` deep link to the item |
-| `it.tags` | `zt.tags` | Now tag objects (with `tag.name`, `type`), not strings |
+| `it.tags` | `zt.tags` | Now tag objects (with `name`, `type`), not strings |
 | `it.collections` | `zt.collections` | Now collection objects (`key`, `name`, `path`); `path` is root->leaf; the `it.collection` singular alias is removed (see [Collections differences](#collections-differences)) |
 | `it.authors` | `zt.authors` | Now an array of creator objects, not formatted strings |
 | `it.authorsShort` | `zt.authorsShort` | Same semantics |

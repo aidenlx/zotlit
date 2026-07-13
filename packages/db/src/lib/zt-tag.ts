@@ -1,7 +1,14 @@
 import { getLogger } from "@logtape/logtape";
 
+import { defineToString } from "./to-string";
+
 const logger = getLogger(["zotlit", "db", "tags"]);
 
+/**
+ * `itemTags.type`: 0 (default) is a manual tag, 1 is an automatic tag.
+ *
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/data/item.js#L4508-L4518 — `Zotero.Item.prototype.addTag`
+ */
 const TAG_TYPE = {
   0: "manual",
   1: "auto",
@@ -28,4 +35,24 @@ export function tagTypeToName(type: TagType): TagTypeName | "unknown" {
 
   logger.warn("Unknown tag type {type}", { type });
   return "unknown";
+}
+
+/**
+ * A Tag in the template vocabulary. Coerces to `name` in string contexts (like a
+ * collection coerces to its name). Zotero-internal IDs are dropped; `type` is the
+ * resolved name rather than {@link ItemTag}'s raw int.
+ */
+export interface TemplateTag {
+  name: string;
+  type: TagTypeName | "unknown";
+  toString(): string;
+}
+
+export function toTemplateTag(tag: ItemTag): TemplateTag {
+  return defineToString(
+    { name: tag.tag.name, type: tagTypeToName(tag.type) },
+    function () {
+      return this.name;
+    },
+  );
 }

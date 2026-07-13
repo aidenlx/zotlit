@@ -28,7 +28,7 @@ Liquid expressions are typed value-expressions -- they return real types (arrays
 ```
 zt.title                                -> "My Paper Title"
 zt.authors | join: ", "                 -> "Jane Smith, Bob Jones"
-zt.tags | map: "tag" | map: "name"       -> ["methodology", "review"]
+zt.tags | map: "name"                   -> ["methodology", "review"]
 zt.collections | collection_paths       -> ["Project/Reading", "Research"]
 zt.date.year                            -> 2023
 ```
@@ -41,7 +41,7 @@ JavaScript expressions require the **JavaScript Templates** gate to be enabled (
 
 ```
 zt.authors.map(c => c.fullName)   -> ["Jane Smith", "Bob Jones"]
-zt.tags.map(t => t.tag.name)      -> ["methodology", "review"]
+zt.tags.map(t => t.name)          -> ["methodology", "review"]
 zt.date?.year                     -> 2023
 ```
 

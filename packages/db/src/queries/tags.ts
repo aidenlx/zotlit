@@ -1,7 +1,6 @@
 import { distinct } from "@std/collections";
 
 import { type NodeDatabaseClient } from "@/client/node";
-import { defineToString } from "@/lib/to-string";
 import { type ItemTag, type Tag } from "@/lib/zt-tag";
 
 import { defineQuery, type QueryRow } from "./_shared";
@@ -42,12 +41,7 @@ function toItemTag(
   if (!tag) {
     throw new Error(`Missing tag row for tagID ${row.tagID}`);
   }
-  return defineToString(
-    { itemID: row.itemID, tag, type: row.type },
-    function () {
-      return this.tag.name;
-    },
-  );
+  return { itemID: row.itemID, tag, type: row.type };
 }
 
 const byTagName = (a: ItemTag, b: ItemTag): number =>
