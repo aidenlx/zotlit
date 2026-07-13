@@ -1,5 +1,6 @@
 import { type Temporal } from "@zotlit/shared/temporal";
 
+import { defineToString } from "@/lib/to-string";
 import { annotationTypeToName, type Annotation } from "@/lib/zt-annot";
 import {
   annotationColorToName,
@@ -150,31 +151,40 @@ export function annotationToTemplateData({
 }: AnnotationTemplateDataInput): TemplateAnnotation {
   let comment: string | null | undefined;
   const baseData = annotationToTemplateBaseData(annotation, tags);
-  return {
-    ...baseData,
-    get backlink() {
-      return annotationOpenUri({
-        attachmentKey: getParentAttachment().key,
-        annotationKey: annotation.key,
-        pageLabel: annotation.pageLabel,
-        groupID: annotation.groupID,
-      });
+  // Previews by excerpt text, falling back to the raw comment then the type
+  // name — so `zt.annotations` items read as content, not a bare index. Uses
+  // `commentHtml` (not the lazy `comment` getter) to avoid triggering Markdown
+  // conversion on every stringify.
+  return defineToString(
+    {
+      ...baseData,
+      get backlink() {
+        return annotationOpenUri({
+          attachmentKey: getParentAttachment().key,
+          annotationKey: annotation.key,
+          pageLabel: annotation.pageLabel,
+          groupID: annotation.groupID,
+        });
+      },
+      imgLink: annotationImageLink(annotation),
+      get comment() {
+        if (comment === undefined) {
+          comment = baseData.commentHtml
+            ? emptyToNull(commentToMarkdown(baseData.commentHtml))
+            : null;
+        }
+        return comment ?? null;
+      },
+      fileLink: fileLink(baseData.page),
+      get parentItem() {
+        return getParentItem();
+      },
+      get parentAttachment() {
+        return getParentAttachment();
+      },
     },
-    imgLink: annotationImageLink(annotation),
-    get comment() {
-      if (comment === undefined) {
-        comment = baseData.commentHtml
-          ? emptyToNull(commentToMarkdown(baseData.commentHtml))
-          : null;
-      }
-      return comment ?? null;
+    function () {
+      return this.text ?? this.commentHtml ?? this.type;
     },
-    fileLink: fileLink(baseData.page),
-    get parentItem() {
-      return getParentItem();
-    },
-    get parentAttachment() {
-      return getParentAttachment();
-    },
-  };
+  );
 }

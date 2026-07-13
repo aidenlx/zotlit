@@ -33,6 +33,7 @@ import { type NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 import {
   AnnotActionsContext,
@@ -202,6 +203,13 @@ export class AnnotationView extends ItemView {
           }
         },
       }),
+      onExploreAnnotation: (annotationKey) => {
+        if (!this.#itemKey) return;
+        void openTemplateDataExplorer(this.#deps.app, {
+          itemIndexedKey: this.#itemKey,
+          anchorAnnotationKey: annotationKey,
+        });
+      },
     });
 
     this.#store.setState({

@@ -3,11 +3,11 @@ import { type ObsidianProtocolData, type Plugin } from "obsidian";
 import { getItemRefByID, type ItemRef } from "@zotlit/db";
 import {
   batchProtocolActionId,
+  exploreProtocolActionId,
   getProtocolUrlVersion,
   importManyProtocolActionId,
   importProtocolActionId,
-  type ImportManyProtocolQuery,
-  type ImportProtocolQuery,
+  parseExploreProtocolQuery,
   parseImportManyProtocolQuery,
   parseImportProtocolQuery,
   parseProtocolBatchQuery,
@@ -15,9 +15,7 @@ import {
   type ProtocolAction,
   protocolActionId,
   protocolActions,
-  type ProtocolBatchQuery,
   protocolSourceMatches,
-  type ProtocolQuery,
 } from "@zotlit/protocol";
 
 import { getLogger } from "@/lib/log";
@@ -38,6 +36,7 @@ import { type BatchImport } from "@/services/note-import/batch-import";
 import { batchImportToast } from "@/services/note-import/batch-import-notices";
 import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 const logger = getLogger("protocol");
 
@@ -77,6 +76,9 @@ export function registerProtocolHandlers(
   plugin.registerObsidianProtocolHandler(importManyProtocolActionId, (data) => {
     void handleImportManyProtocol(data, deps);
   });
+  plugin.registerObsidianProtocolHandler(exploreProtocolActionId, (data) => {
+    void handleExploreProtocol(data, deps);
+  });
 
   // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
   // runs the same interactive flow as the `update-many` protocol link.
@@ -106,48 +108,14 @@ async function handleProtocol(
   data: ObsidianProtocolData,
   deps: ProtocolDeps,
 ): Promise<void> {
-  if (
-    rejectIncompatibleProtocol(getProtocolUrlVersion(data), logger, {
-      action,
-      transport: "url",
-    })
-  ) {
-    return;
-  }
+  const query = parseProtocolData(data, deps, {
+    action,
+    parse: parseProtocolQuery,
+  });
+  if (!query) return;
 
-  let query: ProtocolQuery;
-  try {
-    query = parseProtocolQuery(data);
-  } catch (error) {
-    logger.warn("Invalid protocol query", { action, error });
-    new BaseNotice(m.notice_protocol_invalid());
-    return;
-  }
-
-  if (!protocolSourceMatches(query, deps.zoteroPref.sourceId)) {
-    logger.warn("Protocol source id mismatch", {
-      action,
-      received: query.sourceId,
-      expected: deps.zoteroPref.sourceId,
-    });
-    return;
-  }
-
-  if (deps.db.state !== "ready") {
-    logger.warn("Protocol handler: database not ready", { action });
-    new BaseNotice(m.notice_protocol_db_unavailable());
-    return;
-  }
-
-  const ref = getItemRefByID(deps.db.client, query.item);
-  if (!ref) {
-    logger.warn("Protocol handler: item not found", {
-      action,
-      itemID: query.item,
-    });
-    new BaseNotice(m.notice_protocol_item_not_found());
-    return;
-  }
+  const ref = resolveProtocolItem(query, deps, action);
+  if (!ref) return;
 
   await deps.noteIndex.whenIndexed();
 
@@ -172,32 +140,11 @@ async function handleBatchProtocol(
   deps: ProtocolDeps,
 ): Promise<void> {
   const action = "update-many";
-  if (
-    rejectIncompatibleProtocol(getProtocolUrlVersion(data), logger, {
-      action,
-      transport: "url",
-    })
-  ) {
-    return;
-  }
-
-  let query: ProtocolBatchQuery;
-  try {
-    query = parseProtocolBatchQuery(data);
-  } catch (error) {
-    logger.warn("Invalid protocol query", { action, error });
-    new BaseNotice(m.notice_protocol_invalid());
-    return;
-  }
-
-  if (!protocolSourceMatches(query, deps.zoteroPref.sourceId)) {
-    logger.warn("Protocol source id mismatch", {
-      action,
-      received: query.sourceId,
-      expected: deps.zoteroPref.sourceId,
-    });
-    return;
-  }
+  const query = parseProtocolData(data, deps, {
+    action,
+    parse: parseProtocolBatchQuery,
+  });
+  if (!query) return;
 
   await toast.promise(runBatchUpdate(deps, query.items, query.scope), {
     success: batchUpdateNotice,
@@ -236,32 +183,11 @@ async function handleImportProtocol(
   deps: ProtocolDeps,
 ): Promise<void> {
   const action = "import-note";
-  if (
-    rejectIncompatibleProtocol(getProtocolUrlVersion(data), logger, {
-      action,
-      transport: "url",
-    })
-  ) {
-    return;
-  }
-
-  let query: ImportProtocolQuery;
-  try {
-    query = parseImportProtocolQuery(data);
-  } catch (error) {
-    logger.warn("Invalid protocol query", { action, error });
-    new BaseNotice(m.notice_protocol_invalid());
-    return;
-  }
-
-  if (!protocolSourceMatches(query, deps.zoteroPref.sourceId)) {
-    logger.warn("Protocol source id mismatch", {
-      action,
-      received: query.sourceId,
-      expected: deps.zoteroPref.sourceId,
-    });
-    return;
-  }
+  const query = parseProtocolData(data, deps, {
+    action,
+    parse: parseImportProtocolQuery,
+  });
+  if (!query) return;
 
   await toast.promise(
     deps.batchImport.runBatchImport(query.mode, [query.item]),
@@ -275,22 +201,63 @@ async function handleImportManyProtocol(
   deps: ProtocolDeps,
 ): Promise<void> {
   const action = "import-notes";
+  const query = parseProtocolData(data, deps, {
+    action,
+    parse: parseImportManyProtocolQuery,
+  });
+  if (!query) return;
+
+  await toast.promise(
+    deps.batchImport.runBatchImport(query.mode, query.items),
+    batchImportToast(),
+  );
+}
+
+async function handleExploreProtocol(
+  data: ObsidianProtocolData,
+  deps: ProtocolDeps,
+): Promise<void> {
+  const action = "explore";
+  const query = parseProtocolData(data, deps, {
+    action,
+    parse: parseExploreProtocolQuery,
+  });
+  if (!query) return;
+
+  const ref = resolveProtocolItem(query, deps, action);
+  if (!ref) return;
+
+  await openTemplateDataExplorer(deps.app, {
+    itemIndexedKey: ref.indexedKey,
+    anchorAnnotationKey: query.annotation,
+  });
+}
+
+function parseProtocolData<Query extends { sourceId: string }>(
+  data: ObsidianProtocolData,
+  deps: ProtocolDeps,
+  options: {
+    action: string;
+    parse: (data: Record<string, unknown>) => Query;
+  },
+): Query | null {
+  const { action, parse } = options;
   if (
     rejectIncompatibleProtocol(getProtocolUrlVersion(data), logger, {
       action,
       transport: "url",
     })
   ) {
-    return;
+    return null;
   }
 
-  let query: ImportManyProtocolQuery;
+  let query: Query;
   try {
-    query = parseImportManyProtocolQuery(data);
+    query = parse(data);
   } catch (error) {
     logger.warn("Invalid protocol query", { action, error });
     new BaseNotice(m.notice_protocol_invalid());
-    return;
+    return null;
   }
 
   if (!protocolSourceMatches(query, deps.zoteroPref.sourceId)) {
@@ -299,11 +266,32 @@ async function handleImportManyProtocol(
       received: query.sourceId,
       expected: deps.zoteroPref.sourceId,
     });
-    return;
+    return null;
   }
 
-  await toast.promise(
-    deps.batchImport.runBatchImport(query.mode, query.items),
-    batchImportToast(),
-  );
+  return query;
+}
+
+function resolveProtocolItem(
+  query: { item: number },
+  deps: ProtocolDeps,
+  action: string,
+): ItemRef | null {
+  if (deps.db.state !== "ready") {
+    logger.warn("Protocol handler: database not ready", { action });
+    new BaseNotice(m.notice_protocol_db_unavailable());
+    return null;
+  }
+
+  const ref = getItemRefByID(deps.db.client, query.item);
+  if (!ref) {
+    logger.warn("Protocol handler: item not found", {
+      action,
+      itemID: query.item,
+    });
+    new BaseNotice(m.notice_protocol_item_not_found());
+    return null;
+  }
+
+  return ref;
 }

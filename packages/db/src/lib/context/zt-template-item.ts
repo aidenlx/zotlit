@@ -181,6 +181,16 @@ export function itemToTemplateBaseData({
   };
 }
 
+/**
+ * Apply after resolver getters are attached because a spread drops the
+ * non-enumerable string form.
+ */
+export function withItemPreview<T extends TemplateItemBaseData>(item: T): T {
+  return defineToString(item, function () {
+    return this.title ?? this.key;
+  });
+}
+
 function toTemplateCreator(c: Creator): TemplateCreator {
   if (c.fieldMode === 1) {
     const literal = c.lastName ?? "";
