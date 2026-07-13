@@ -17,7 +17,6 @@ export {
   buildProtocolUrl,
   exploreProtocolActionId,
   type ExploreProtocolQuery,
-  getProtocolUrlVersion,
   importManyProtocolActionId,
   type ImportManyProtocolQuery,
   type ImportMode,

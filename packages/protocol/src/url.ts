@@ -1,7 +1,5 @@
 import * as v from "valibot";
 
-import { PROTOCOL_VERSION, PROTOCOL_VERSION_PARAM } from "./version";
-
 /**
  * Obsidian protocol namespace ZotLit owns. Each action is registered as
  * `"zotlit/<action>"` following Obsidian's URI convention
@@ -97,19 +95,14 @@ export function buildProtocolUrl(
 
 /**
  * `URLSearchParams` shared by every `obsidian://zotlit/*` link builder:
- * action-specific params first, then the common `source-id` + protocol
- * version trailer, preserving the wire order each builder previously
- * inlined.
+ * action-specific params first, then the common `source-id`. A Public URI Link
+ * is unversioned, so no version param is emitted.
  */
 function protocolUrlParams(
   params: Record<string, string>,
   sourceId: string,
 ): URLSearchParams {
-  return new URLSearchParams({
-    ...params,
-    "source-id": sourceId,
-    [PROTOCOL_VERSION_PARAM]: String(PROTOCOL_VERSION),
-  });
+  return new URLSearchParams({ ...params, "source-id": sourceId });
 }
 
 /** Append `scope` only when it diverges from the `full` default so the common
@@ -386,10 +379,6 @@ export function buildExploreProtocolUrl(
   const params = protocolUrlParams({ item: String(item) }, options.sourceId);
   if (options.annotation) params.set("annotation", options.annotation);
   return `obsidian://${exploreProtocolActionId}?${params}`;
-}
-
-export function getProtocolUrlVersion(data: Record<string, unknown>): unknown {
-  return data[PROTOCOL_VERSION_PARAM];
 }
 
 /**
