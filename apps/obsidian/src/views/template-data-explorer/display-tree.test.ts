@@ -489,12 +489,6 @@ describe("formatPath", () => {
   it("bare-renders a non-identifier segment when it is first with no root", () => {
     expect(formatPath(["archive-location"])).toBe('["archive-location"]');
   });
-
-  it("formats with the Eta root alias", () => {
-    expect(formatPath(["annotations", 0, "comment"], "it")).toBe(
-      "it.annotations[0].comment",
-    );
-  });
 });
 
 describe("copyValue", () => {
@@ -691,7 +685,6 @@ describe("annotation re-anchoring integration", () => {
       value: "hi",
     });
     expect(formatPath(commentNode!.path, "zt")).toBe("zt.comment");
-    expect(formatPath(commentNode!.path, "it")).toBe("it.comment");
 
     const parentItemNode = nodes.find((n) => n.label === "parentItem");
     expect(parentItemNode).toMatchObject({

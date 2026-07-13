@@ -14,7 +14,8 @@ export default defineConfig({
   dts: { tsgo: true, enabled: true },
   exports: {
     customExports(exports) {
-      exports["./defaults/*"] = "./defaults/*.liquid";
+      exports["./defaults/*.eta"] = "./defaults/*.eta";
+      exports["./defaults/*.liquid"] = "./defaults/*.liquid";
       return exports;
     },
   },

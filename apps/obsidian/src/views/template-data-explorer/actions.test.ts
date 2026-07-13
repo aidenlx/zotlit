@@ -17,7 +17,6 @@ const node: DisplayNode = {
 const event = { nativeEvent: {} } as unknown as React.MouseEvent;
 
 function makeActions(overrides?: {
-  isEtaEnabled?: () => boolean;
   annotationKeyAt?: (node: DisplayNode) => string | null;
   onAnchorAnnotation?: (key: string) => void;
 }) {
@@ -25,7 +24,6 @@ function makeActions(overrides?: {
     onChooseItem: vi.fn(),
     onToggle: vi.fn(),
     onFilter: vi.fn(),
-    isEtaEnabled: overrides?.isEtaEnabled ?? (() => false),
     annotationKeyAt: overrides?.annotationKeyAt ?? (() => null),
     onAnchorAnnotation: overrides?.onAnchorAnnotation ?? vi.fn(),
     onBackToNoteRoot: vi.fn(),
@@ -44,9 +42,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("onTemplateMenu — Eta flag gate", () => {
-  it("adds only the Liquid copy-path item when Eta is disabled", () => {
-    const actions = makeActions({ isEtaEnabled: () => false });
+describe("onTemplateMenu", () => {
+  it("adds a single zt copy-path item shared by both engines", () => {
+    const actions = makeActions();
     actions.onTemplateMenu(node, event);
 
     const menu = Menu.instances.at(-1)!;
@@ -54,20 +52,6 @@ describe("onTemplateMenu — Eta flag gate", () => {
 
     menu.items[0]!.click();
     expect(writeText).toHaveBeenCalledWith(formatPath(node.path, "zt"));
-  });
-
-  it("adds both Liquid and Eta copy-path items when Eta is enabled", () => {
-    const actions = makeActions({ isEtaEnabled: () => true });
-    actions.onTemplateMenu(node, event);
-
-    const menu = Menu.instances.at(-1)!;
-    expect(menu.items).toHaveLength(2);
-
-    menu.items[0]!.click();
-    expect(writeText).toHaveBeenCalledWith(formatPath(node.path, "zt"));
-
-    menu.items[1]!.click();
-    expect(writeText).toHaveBeenCalledWith(formatPath(node.path, "it"));
   });
 
   it("adds the anchor item and invokes onAnchorAnnotation when annotationKeyAt matches", () => {

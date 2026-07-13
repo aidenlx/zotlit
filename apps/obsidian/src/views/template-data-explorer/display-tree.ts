@@ -109,8 +109,8 @@ export function buildDisplayTree(
 const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /**
- * Render a data path. With no rootAlias, used as the expansion/React key.
- * The "zt" / "it" root aliases produce the Liquid / Eta copy-paths.
+ * Render a data path. With no rootAlias, used as the expansion/React key; the
+ * "zt" alias produces the copy-path both engines share (both bind data to `zt`).
  * Numeric segments render as [i]; identifier string segments as .name (or
  * bare when first with no root); other string segments (e.g. Zotero custom
  * field keys with dashes or spaces) as [JSON.stringify(segment)] so the
