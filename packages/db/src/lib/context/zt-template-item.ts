@@ -5,7 +5,7 @@ import { defineToString } from "@/lib/to-string";
 import { type TemplateCollection } from "@/lib/zt-collection";
 import { parseItemDate, type ItemDate } from "@/lib/zt-date";
 import { parseItemExtra, type ItemExtra } from "@/lib/zt-extra";
-import { type ItemTag } from "@/lib/zt-tag";
+import { toTemplateTag, type ItemTag, type TemplateTag } from "@/lib/zt-tag";
 import { type Creator, type Item } from "@/queries/items";
 
 export interface TemplateCreator {
@@ -41,7 +41,7 @@ export interface TemplateItemBaseData {
 
   creators: readonly TemplateCreator[];
   primaryCreatorType: string | null;
-  tags: readonly ItemTag[];
+  tags: readonly TemplateTag[];
 
   title: string | null;
   abstract: string | null;
@@ -157,7 +157,7 @@ export function itemToTemplateBaseData({
     dateModified: item.dateModified,
     creators,
     primaryCreatorType: item.primaryCreatorType,
-    tags,
+    tags: tags.map(toTemplateTag),
 
     title: allFields.title ?? null,
     // CSL-inspired aliases: the canonical source field stays accessible via the

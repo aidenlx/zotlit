@@ -22,6 +22,7 @@ Common fields:
 |----------|------|-------------|--------------|
 | `zt.key` | `string` | Zotero item key (e.g. `"ABC12345"`) | all templates |
 | `zt.libraryID` | `number` | Library ID | all templates |
+| `zt.groupID` | `number \| null` | Group library ID; `null` for the personal library | all templates |
 | `zt.indexedKey` | `string` | Indexed key -- `KEY` for user library, `KEYgGROUPID` for groups | all templates |
 | `zt.itemType` | `string` | Zotero item type (e.g. `"journalArticle"`, `"book"`) | all templates |
 | `zt.title` | `string \| null` | Item title | all templates |
@@ -178,12 +179,10 @@ Each tag has:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `itemID` | `number` | Item ID the tag applies to |
-| `tag.tagID` | `number` | Tag ID |
-| `tag.name` | `string` | Tag name |
-| `type` | `0 \| 1` | `0` = manual, `1` = auto |
+| `name` | `string` | Tag name |
+| `type` | `"manual" \| "auto" \| "unknown"` | `"manual"` = user-added, `"auto"` = added by a Zotero plugin; `"unknown"` for any future Zotero tag type |
 
-Tags coerce to `tag.name` in string contexts, so `{{ zt.tags | join: ", " }}` renders the tag names directly. To reach the nested field explicitly, chain `map` twice: `{{ zt.tags | map: "tag" | map: "name" | join: ", " }}`.
+Tags coerce to `name` in string contexts, so `{{ zt.tags | join: ", " }}` renders the tag names directly. To project them explicitly, `{{ zt.tags | map: "name" | join: ", " }}`; filter by type with `{{ zt.tags | where: "type", "manual" | map: "name" }}`.
 
 ### Extra field
 
