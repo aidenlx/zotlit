@@ -16,17 +16,17 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@js-temporal/polyfill": "^0.5.1"
   },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",
-    "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
-    "tsdown": "catalog:"
+    "tsdown": "catalog:",
+    "typescript": "catalog:"
   },
   "peerDependencies": {
     "@logtape/logtape": ">=2.0.0"

@@ -8,6 +8,6 @@ export default defineConfig({
     },
   ],
   tsconfig: "./tsconfig.lib.json",
-  dts: { tsgo: true, enabled: true },
+  dts: true,
   exports: true,
 });
