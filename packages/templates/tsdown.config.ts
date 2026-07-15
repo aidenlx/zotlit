@@ -11,7 +11,7 @@ export default defineConfig({
     "./src/frontmatter-merge.ts",
   ],
   tsconfig: "./tsconfig.lib.json",
-  dts: { tsgo: true, enabled: true },
+  dts: true,
   exports: {
     customExports(exports) {
       exports["./defaults/*.eta"] = "./defaults/*.eta";

@@ -7,7 +7,7 @@
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
-    "typecheck": "tsgo --noEmit -p tsconfig.app.json",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "lint": "oxlint"
   },
   "dependencies": {
@@ -29,12 +29,12 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "@typescript/native-preview": "catalog:",
     "@vitejs/plugin-react": "^6.0.1",
     "@zotlit/config": "workspace:*",
     "nitro": "3.0.260429-beta",
     "oxlint": "catalog:",
     "tailwindcss": "catalog:",
+    "typescript": "catalog:",
     "vite": "catalog:"
   }
 }

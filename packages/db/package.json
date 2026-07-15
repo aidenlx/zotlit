@@ -20,8 +20,8 @@
     "build": "tsdown",
     "db:pull": "drizzle-kit pull",
     "dev": "tsdown --watch",
-    "typecheck": "tsgo --noEmit -p tsconfig.lib.json",
-    "typecheck:test": "tsgo --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
     "test": "vitest run"
   },
@@ -37,11 +37,11 @@
   "devDependencies": {
     "@types/node-22": "npm:@types/node@^22.9.0",
     "@types/node-25": "npm:@types/node@^25.6.2",
-    "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
     "drizzle-kit": "catalog:",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
+    "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "peerDependencies": {

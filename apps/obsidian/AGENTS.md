@@ -7,7 +7,7 @@ The Obsidian plugin. Shared constants live in `src/lib/constants.ts`.
 Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
 
 - `pnpm --filter @zotlit/obsidian dev` — Vite watch build.
-- `pnpm --filter @zotlit/obsidian paraglide:compile` — recompile Paraglide messages. Only needed for direct-tool iteration that bypasses turbo (e.g. `pnpm exec vitest`/`tsgo`); turbo `typecheck`/`test` depend on it.
+- `pnpm --filter @zotlit/obsidian paraglide:compile` — recompile Paraglide messages. Only needed for direct-tool iteration that bypasses turbo (e.g. `pnpm exec vitest`/`tsc`); turbo `typecheck`/`test` depend on it.
 
 ## Logging
 
@@ -58,7 +58,7 @@ new BaseNotice(m.notice_indexed_library({ count }));
 
 - **Compilation**: `paraglideVitePlugin` in `vite.config.ts` re-emits `src/paraglide/` on every `dev`/`build`/`build:dev`. The output is gitignored, so the compiled `m.*` and `paraglide/runtime` exports do not exist yet on fresh checkout.
 - **Turbo auto-compiles**: `typecheck` and `test` declare `dependsOn: ["paraglide:compile"]` (see `turbo.json`), so running them through turbo regenerates `src/paraglide/` first.
-- **Recompile manually** only when bypassing turbo (e.g. `pnpm exec vitest run` or a direct `tsgo` after editing `messages/*.json`): `pnpm run paraglide:compile`.
+- **Recompile manually** only when bypassing turbo (e.g. `pnpm exec vitest run` or a direct `tsc` after editing `messages/*.json`): `pnpm run paraglide:compile`.
 
 When extending the test `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
 

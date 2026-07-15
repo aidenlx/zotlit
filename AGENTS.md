@@ -32,7 +32,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm build`                      | `turbo run build` across the graph.                                                                                         |
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
 | `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
-| `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks (tsgo) + lints in one pass. **Preferred over per-package typecheck.** |
+| `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks + lints in one pass. **Preferred over per-package typecheck.** |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt`.                                                                                                         |
 | `pnpm quality[:fix]`              | Lint + format together via turbo.                                                                                           |
 
