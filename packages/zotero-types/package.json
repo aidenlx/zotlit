@@ -17,14 +17,14 @@
     "dev": "tsdown --watch",
     "generate:fields": "node scripts/generate-fields.ts && oxlint --fix && oxfmt",
     "generate:csl": "node scripts/generate-csl.ts && oxlint --fix && oxfmt",
-    "typecheck": "tsgo --noEmit -p tsconfig.lib.json && tsgo --noEmit -p tsconfig.node.json",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint"
   },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",
-    "@typescript/native-preview": "catalog:",
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
-    "tsdown": "catalog:"
+    "tsdown": "catalog:",
+    "typescript": "catalog:"
   }
 }

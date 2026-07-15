@@ -18,7 +18,6 @@ catalog:
   "@types/node": ^25.5.0
   "@types/react": ^19.2.0
   "@types/react-dom": ^19.2.0
-  "@typescript/native-preview": 7.0.0-dev.20260615.1
   arkregex: ^0.0.5
   eta: 4.6.0
   drizzle-kit: 1.0.0-rc.4
@@ -29,7 +28,8 @@ catalog:
   react: ^19.2.0
   react-dom: ^19.2.0
   tailwindcss: ^4.3.0
-  tsdown: ^0.22.0
+  tsdown: ^0.22.5
+  typescript: ^7.0.2
   valibot: ^1.0.0
   vite: ^8.0.0
   vitest: ^4.0.13
