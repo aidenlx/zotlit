@@ -1,6 +1,7 @@
 import type * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
+import { noteStatusResponseSchema } from "./note-status";
 import { notifyEventSchema } from "./notify";
 import { SOURCE_ID_HEADER } from "./source-id";
 import {
@@ -106,6 +107,15 @@ function literatureNotesWireSurface(): unknown {
   };
 }
 
+function noteStatusWireSurface(): unknown {
+  const schema = noteStatusResponseSchema as ObjectSchema;
+  return {
+    method: "GET",
+    sourceHeader: SOURCE_ID_HEADER,
+    body: Object.keys(schema.entries).sort(),
+  };
+}
+
 function zoteroNotesWireSurface(): unknown {
   const schema = importNotesRequestSchema as ObjectSchema;
   return {
@@ -125,6 +135,7 @@ describe("wire format", () => {
       importNoteUrl: importNoteUrlWireSurface(),
       importNotesUrl: importNotesUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
+      noteStatus: noteStatusWireSurface(),
       zoteroNotes: zoteroNotesWireSurface(),
       updateManyUrl: updateManyUrlWireSurface(),
     }).toMatchInlineSnapshot(`
@@ -159,6 +170,13 @@ describe("wire format", () => {
             "scope",
           ],
           "method": "PUT",
+          "sourceHeader": "X-Zotlit-Source-Id",
+        },
+        "noteStatus": {
+          "body": [
+            "keys",
+          ],
+          "method": "GET",
           "sourceHeader": "X-Zotlit-Source-Id",
         },
         "notify": [
@@ -219,7 +237,7 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "version": 4,
+        "version": 5,
         "zoteroNotes": {
           "body": [
             "items",
