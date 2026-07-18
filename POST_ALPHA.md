@@ -15,7 +15,6 @@ Zotero Better Notes enhances native Zotero notes (not a separate source type), s
 | Feature | v1 source | Notes |
 | --- | --- | --- |
 | Topic-import | `note-feature/topic-import/` | Tag-driven auto-create; not yet ported (see §2.1) |
-| Companion release | — | First public release cut and Obsidian community-plugin listing. Release pipeline ships (`pnpm release`, `.github/workflows/{ci,release}.yml`, Zotero update manifests on `zotero-release`) — see `CONTRIBUTING.md` and `docs/CI_SETUP.md`. |
 
 ### 2.1 Topic-import (v1 reference)
 
