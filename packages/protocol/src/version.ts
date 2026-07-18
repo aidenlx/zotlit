@@ -1,9 +1,10 @@
 export const PROTOCOL_VERSION_HEADER = "X-Zotlit-Protocol-Version";
 
 // HTTP wire version. Bump only on an HTTP body/header schema change
-// (notify.ts, batchUpdateRequestSchema, importNotesRequestSchema). URL actions
-// are unversioned and permanent, so a URL-only change never bumps this.
-export const PROTOCOL_VERSION = 4;
+// (notify.ts, batchUpdateRequestSchema, importNotesRequestSchema,
+// noteStatusResponseSchema). URL actions are unversioned and permanent, so a
+// URL-only change never bumps this.
+export const PROTOCOL_VERSION = 5;
 
 export type ProtocolVersionCheck =
   | { ok: true; received: number }

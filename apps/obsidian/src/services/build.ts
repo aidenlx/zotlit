@@ -59,8 +59,11 @@ export function buildServices(
       zoteroPref: ({ settings }) => new ZoteroPrefService({ settings }),
     })
     .use({
-      liveUpdate: ({ settings, zoteroPref }) =>
-        new LiveUpdateService({ settings, zoteroPref }),
+      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+    })
+    .use({
+      liveUpdate: ({ settings, zoteroPref, noteIndex }) =>
+        new LiveUpdateService({ settings, zoteroPref, noteIndex }),
     })
     .use({
       db: ({ settings, zoteroPref }) =>
@@ -69,9 +72,6 @@ export function buildServices(
     .use({
       attachmentImport: ({ settings }) =>
         new AttachmentImportService({ app: plugin.app, settings }),
-    })
-    .use({
-      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .useValue({
       noteImport: ({

@@ -53,3 +53,12 @@ zotlit-batch-import-failed-title = 无法连接到 Obsidian
 zotlit-batch-import-failed-message = 请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。
 zotlit-batch-import-sent-title = 请在 Obsidian 中继续
 zotlit-batch-import-sent-message = 已请求 Obsidian 导入 { $count } 条笔记。请切换到 Obsidian 继续。
+
+zotlit-column-obsidian-note = Obsidian 笔记
+zotlit-menu-tools-refresh-note-status =
+    .label = ZotLit：刷新笔记状态
+zotlit-note-status-refreshing-title = 正在刷新笔记状态…
+zotlit-note-status-refreshed-title = 笔记状态已刷新
+zotlit-note-status-refreshed-message = { $count } 个条目在 Obsidian 中有笔记。
+zotlit-note-status-refresh-failed-title = 无法刷新笔记状态
+zotlit-note-status-refresh-failed-message = 请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。

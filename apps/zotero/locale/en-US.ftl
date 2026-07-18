@@ -74,3 +74,15 @@ zotlit-batch-import-sent-message = { $count ->
         [one] Asked Obsidian to import 1 note. Switch to Obsidian to continue.
        *[other] Asked Obsidian to import { $count } notes. Switch to Obsidian to continue.
     }
+
+zotlit-column-obsidian-note = Obsidian Note
+zotlit-menu-tools-refresh-note-status =
+    .label = ZotLit: Refresh note status
+zotlit-note-status-refreshing-title = Refreshing note status…
+zotlit-note-status-refreshed-title = Note status refreshed
+zotlit-note-status-refreshed-message = { $count ->
+        [one] 1 item has a note in Obsidian.
+       *[other] { $count } items have notes in Obsidian.
+    }
+zotlit-note-status-refresh-failed-title = Couldn't refresh note status
+zotlit-note-status-refresh-failed-message = Make sure Obsidian is running with the ZotLit server enabled, then try again.
