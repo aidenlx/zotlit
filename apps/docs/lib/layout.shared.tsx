@@ -1,0 +1,24 @@
+import { type BaseLayoutProps } from "fumadocs-ui/layouts/shared";
+import { BookIcon, MessageSquareMoreIcon, NewspaperIcon } from "lucide-react";
+
+import { Logo } from "@/components/logo";
+
+import { gitConfig } from "./shared";
+
+export function baseOptions({
+  includeDocsLink = true,
+}: { includeDocsLink?: boolean } = {}): BaseLayoutProps {
+  return {
+    nav: {
+      title: <Logo small className="ml-1 text-lg" />,
+    },
+    links: [
+      ...(includeDocsLink
+        ? [{ text: "Docs", url: "/docs", icon: <BookIcon /> }]
+        : []),
+      { text: "Blog", url: "/blog", icon: <MessageSquareMoreIcon /> },
+      { text: "Changelog", url: "/changelog", icon: <NewspaperIcon /> },
+    ],
+    githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
+  };
+}

@@ -8,6 +8,7 @@ allowBuilds:
   es5-ext: false
   esbuild: true
   lefthook: true
+  sharp: false
 
 catalog:
   "@inlang/paraglide-js": ^2.15.1

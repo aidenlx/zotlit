@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
+    "codegen": {
+      "outputs": [".source/**", ".next/types/**", "next-env.d.ts"],
+      "outputLogs": "errors-only"
+    }
+  }
+}

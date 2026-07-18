@@ -30,16 +30,17 @@
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",
-        "@zotlit/zotero-types#build"
+        "@zotlit/zotero-types#build",
+        "@zotlit/docs#codegen"
       ]
     },
     "//#lint:repo": {
       "dependsOn": ["//#lint:repo:deps"],
       "inputs": [
         "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
-        ".oxlintrc.json",
-        "**/.oxlintrc.json",
-        "packages/config/oxlint.base.json",
+        "oxlint.config.ts",
+        "**/oxlint.config.ts",
+        "packages/config/oxlint.base.ts",
         "tsconfig*.json",
         "**/tsconfig*.json"
       ]
@@ -47,8 +48,9 @@
     "//#format": {
       "inputs": [
         "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,md,mdx,yml,yaml,html,css,scss}",
-        ".oxfmtrc.json",
-        "**/.oxfmtrc.json"
+        "oxfmt.config.ts",
+        "**/oxfmt.config.ts",
+        "packages/config/oxfmt.base.ts"
       ]
     }
   }

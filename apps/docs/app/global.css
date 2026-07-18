@@ -1,0 +1,114 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* ZotLit brand palette — see docs/brand.md. Orange carries the interactive
+   accent; navy/light ink carries structure and drives the mark. */
+/* "Manuscript & Machine" site theme — cream ground, navy ink, deep-orange
+   accent — see .scratch/docs-site-v2/issues/01-design-mock.html. Applies
+   site-wide (including /docs) since one token system drives the whole site. */
+:root {
+  --color-fd-background: oklch(97.33% 0.0111 89.72); /* #f9f6ee */
+  --color-fd-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-card: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
+  --color-fd-card-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-popover: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
+  --color-fd-popover-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-border: oklch(86.42% 0.0226 89.81); /* #d8d2c2 */
+  --color-fd-muted: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
+  --color-fd-muted-foreground: oklch(52.94% 0.0384 255.32); /* #5d6d82 */
+  --color-fd-secondary: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
+  --color-fd-secondary-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-accent: oklch(95.04% 0.0204 62.86); /* #f9ece1 */
+  --color-fd-accent-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-primary: oklch(
+    0.58 0.17 40.45
+  ); /* deeper orange, ~4.6:1 vs cream */
+  --color-fd-primary-foreground: oklch(96.13% 0.0111 89.72);
+  --color-fd-ring: oklch(0.58 0.17 40.45);
+  --zotlit-ink: oklch(34.62% 0.0736 256.04); /* #1e3a5f */
+  --zotlit-accent: oklch(65.74% 0.1789 40.45); /* #e8622c */
+}
+
+.dark {
+  --color-fd-background: oklch(23% 0.0232 262.36); /* #171d28 */
+  --color-fd-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-card: oklch(26.29% 0.0271 259.99); /* #1d2532 */
+  --color-fd-card-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-popover: oklch(26.29% 0.0271 259.99); /* #1d2532 */
+  --color-fd-popover-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-border: oklch(35.31% 0.0316 257.68); /* #313c4c */
+  --color-fd-muted: oklch(31.01% 0.0288 256.84); /* #27313f */
+  --color-fd-muted-foreground: oklch(70.71% 0.0339 255.63); /* #93a2b6 */
+  --color-fd-secondary: oklch(31.01% 0.0288 256.84); /* #27313f */
+  --color-fd-secondary-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-accent: oklch(32.99% 0.0116 9.17); /* #3b3334 */
+  --color-fd-accent-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-primary: oklch(0.75 0.155 45); /* a bit lighter than your 0.72 */
+  --color-fd-primary-foreground: oklch(
+    0.22 0.04 256
+  ); /* near-black with navy tint, ~7:1 */
+  --color-fd-ring: oklch(0.75 0.155 45);
+  --zotlit-ink: oklch(90.94% 0.022 256.73); /* #d8e2f0 */
+  --zotlit-accent: oklch(70.36% 0.163 44.66); /* #f0793f */
+}
+
+@theme inline {
+  /* Inter's variable lives on <html>, so preflight's html font-family rule
+     (--default-font-family → --font-sans) picks it up everywhere, portaled
+     dialogs and the default 404 included. */
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-brand: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  /* --font-gelasio lives on <html> (root layout), no longer scoped to the
+     (home) container, and its next/font `fallback` option already bakes the
+     system-serif stack into the variable itself — the var() fallback here is
+     just belt-and-braces. */
+  --font-serif: var(--font-gelasio);
+}
+
+/* Docs prose — "quiet manuscript": serif body with sans small-caps h4 labels.
+   `.zt-prose` is our own anchor, set on <DocsBody> in the docs page and on
+   the blog post body — markdown
+   descendants can only be reached from CSS, so these stay rules rather than
+   utilities. Deliberately unlayered: fumadocs' prose styles compile into
+   @layer utilities, and unlayered CSS wins the cascade without !important.
+   All other chrome styling lives in the app-owned layout slots
+   (layouts/home/slots/header.tsx, layouts/docs/slots/sidebar.tsx,
+   components/docs-subnav.tsx). */
+.zt-prose {
+  font-family: var(--font-serif);
+}
+/* fumadocs' prose sets kbd to font-family: inherit, which would now mean serif */
+.zt-prose kbd {
+  font-family: var(--font-mono);
+}
+.zt-prose :is(h1, h2, h3) {
+  font-weight: 500;
+}
+.zt-prose h4 {
+  font-family: var(--font-sans);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+/* square, like the changelog's version chips */
+.zt-prose code {
+  border-radius: 0;
+}
+/* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact
+   id and exposes no className hook short of ejecting the whole TOC slot. */
+#toc-title {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.1em;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
