@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/@fumadocs/cli/dist/schema.json",
+  "uiLibrary": "base-ui",
+  "framework": "next",
+  "baseDir": "",
+  "aliases": {
+    "uiDir": "./components/ui",
+    "componentsDir": "./components",
+    "layoutDir": "./layouts",
+    "cssDir": "./styles",
+    "libDir": "./lib"
+  }
+}

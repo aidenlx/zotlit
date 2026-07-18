@@ -1,0 +1,56 @@
+/* "Manuscript & Machine" giscus theme — light. Inherits giscus' Primer base
+   (syntax highlighting, loader images) then overrides the surface variables
+   with the site palette from app/global.css :root. Served with CORS from
+   /giscus/ (see next.config.mjs) because giscus loads it cross-origin. */
+@import url("https://giscus.app/themes/light.css");
+
+main {
+  /* Grounds — cream canvas, paper overlay, muted inset */
+  --color-canvas-default: oklch(97.33% 0.0111 89.72);
+  --color-canvas-overlay: oklch(99.39% 0.0082 91.48);
+  --color-canvas-inset: oklch(94.87% 0.0137 92.98);
+  --color-canvas-subtle: oklch(94.87% 0.0137 92.98);
+
+  /* Ink */
+  --color-fg-default: oklch(32.45% 0.0496 254.76);
+  --color-fg-muted: oklch(52.94% 0.0384 255.32);
+  --color-fg-subtle: oklch(52.94% 0.0384 255.32);
+
+  /* Rules */
+  --color-border-default: oklch(86.42% 0.0226 89.81);
+  --color-border-muted: oklch(90.5% 0.0182 90);
+  --color-neutral-muted: oklch(86.42% 0.0226 89.81 / 0.4);
+
+  /* Accent — deep orange links/focus */
+  --color-accent-fg: oklch(0.58 0.17 40.45);
+  --color-accent-emphasis: oklch(0.58 0.17 40.45);
+  --color-accent-muted: oklch(65.74% 0.1789 40.45 / 0.4);
+  --color-accent-subtle: oklch(95.04% 0.0204 62.86);
+
+  /* Default (paper) buttons */
+  --color-btn-text: oklch(32.45% 0.0496 254.76);
+  --color-btn-bg: oklch(99.39% 0.0082 91.48);
+  --color-btn-border: oklch(86.42% 0.0226 89.81);
+  --color-btn-hover-bg: oklch(94.87% 0.0137 92.98);
+  --color-btn-hover-border: oklch(86.42% 0.0226 89.81);
+  --color-btn-active-bg: oklch(92% 0.015 92);
+  --color-btn-selected-bg: oklch(94.87% 0.0137 92.98);
+
+  /* Primary (submit) button — orange fill, the site's single interactive accent */
+  --color-btn-primary-text: oklch(96.13% 0.0111 89.72);
+  --color-btn-primary-bg: oklch(0.58 0.17 40.45);
+  --color-btn-primary-border: oklch(0.5 0.17 40.45 / 0.5);
+  --color-btn-primary-hover-bg: oklch(0.53 0.17 40.45);
+  --color-btn-primary-hover-border: oklch(0.5 0.17 40.45 / 0.5);
+  --color-btn-primary-selected-bg: oklch(0.5 0.17 40.45);
+  --color-btn-primary-disabled-text: oklch(96.13% 0.0111 89.72 / 0.8);
+  --color-btn-primary-disabled-bg: oklch(0.58 0.1 40.45 / 0.5);
+
+  /* Sort tabs, reactions, list hovers */
+  --color-segmented-control-bg: oklch(94.87% 0.0137 92.98);
+  --color-segmented-control-button-bg: oklch(99.39% 0.0082 91.48);
+  --color-segmented-control-button-selected-border: oklch(0.58 0.17 40.45);
+  --color-social-reaction-bg-hover: oklch(95.04% 0.0204 62.86);
+  --color-social-reaction-bg-reacted-hover: oklch(65.74% 0.1789 40.45 / 0.3);
+  --color-action-list-item-default-hover-bg: oklch(86.42% 0.0226 89.81 / 0.3);
+}
