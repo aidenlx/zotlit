@@ -76,6 +76,11 @@ export class NoteIndex extends Service<void> {
     return sortNotes(this.#notesByNoteKey.get(noteKey));
   }
 
+  /** Indexed keys that currently have at least one Literature Note. */
+  getIndexedItemKeys(): string[] {
+    return [...this.#notesByItemKey.keys()];
+  }
+
   on<K extends keyof NoteIndexEvents>(
     event: K,
     cb: NoteIndexEvents[K],

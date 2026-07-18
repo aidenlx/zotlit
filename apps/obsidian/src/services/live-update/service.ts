@@ -1,25 +1,17 @@
 import { serve, type ServerType } from "@hono/node-server";
-import { vValidator } from "@hono/valibot-validator";
-import { type Context, type Next } from "hono";
-import { Hono } from "hono/tiny";
 
 import {
-  batchUpdateRequestSchema,
-  importNotesRequestSchema,
   type ImportMode,
+  type ItemUpdate,
   type NotifyEvent,
-  notifyEventSchema,
-  PROTOCOL_VERSION_HEADER,
-  SOURCE_ID_HEADER,
   type ReaderActive,
   type ReaderAnnotSelect,
-  type ItemUpdate,
   type UpdateScope,
 } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import { rejectIncompatibleProtocol } from "@/services/protocol/compat";
+import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import {
   type Settings,
@@ -27,15 +19,9 @@ import {
 } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-const logger = getLogger("live-update");
+import { createLiveUpdateApp } from "./app";
 
-/** Sender's raw profile/data dirs, present only when its debug logging is on. */
-function senderDirs(event: NotifyEvent): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (event.profilePath !== undefined) out.profilePath = event.profilePath;
-  if (event.dataPath !== undefined) out.dataPath = event.dataPath;
-  return out;
-}
+const logger = getLogger("live-update");
 
 /**
  * Live state of the Zotero reader, derived from the companion's reader pushes.
@@ -81,6 +67,7 @@ export interface LiveUpdateEvents {
 export interface LiveUpdateServiceDeps {
   settings: SettingsService;
   zoteroPref: ZoteroPrefService;
+  noteIndex: NoteIndex;
 }
 
 /**
@@ -94,6 +81,7 @@ export interface LiveUpdateServiceDeps {
 export class LiveUpdateService extends Service<void> {
   readonly #settings;
   readonly #zoteroPref;
+  readonly #noteIndex;
   readonly #emitter = createNanoEvents<LiveUpdateEvents>();
 
   #server: ServerType | null = null;
@@ -112,6 +100,7 @@ export class LiveUpdateService extends Service<void> {
     super();
     this.#settings = deps.settings;
     this.#zoteroPref = deps.zoteroPref;
+    this.#noteIndex = deps.noteIndex;
     this.ready = this.#load();
   }
 
@@ -219,105 +208,13 @@ export class LiveUpdateService extends Service<void> {
   }
 
   #startServer(): void {
-    const app = new Hono();
-    app
-      /** Reject a request whose `X-Zotlit-Protocol-Version` header is incompatible. */
-      .use(async (c: Context, next: Next): Promise<Response | void> => {
-        if (
-          rejectIncompatibleProtocol(
-            c.req.header(PROTOCOL_VERSION_HEADER),
-            logger,
-            { transport: "http" },
-          )
-        ) {
-          return c.body(null, 426);
-        }
-        await next();
-      })
-      /** Discard a request whose `X-Zotlit-Source-Id` isn't the configured install. */
-      .use(async (c: Context, next: Next): Promise<Response | void> => {
-        const expected = this.#zoteroPref.sourceId;
-        const received = c.req.header(SOURCE_ID_HEADER);
-        if (expected === null || received !== expected) {
-          logger.warn("Discarded request: source id mismatch", {
-            expected,
-            received,
-          });
-          return c.body(null, 204);
-        }
-        await next();
-      })
-      .post(
-        "/notify",
-        vValidator("json", notifyEventSchema, (result, c) => {
-          if (result.success) return;
-          logger.warn("Received notify event failed validation", {
-            issues: result.issues,
-          });
-          return c.json(result, 400);
-        }),
-        (c) => {
-          const event = c.req.valid("json");
-          logger.debug("Received notify event", {
-            event: event.event,
-            ...senderDirs(event),
-          });
-          this.#dispatch(event);
-          return c.body(null, 204);
-        },
-      )
-      // Fire-and-forget: the batch modal is interactive and long-running, so ack
-      // 204 immediately and let the subscriber drive it; never await the batch.
-      .put(
-        "/literature-notes",
-        vValidator("json", batchUpdateRequestSchema, (result, c) => {
-          if (result.success) return;
-          logger.warn("Received literature-notes update failed validation", {
-            issues: result.issues,
-          });
-          return c.json(result, 400);
-        }),
-        (c) => {
-          const body = c.req.valid("json");
-          logger.debug("Received literature-notes update", {
-            items: body.items.length,
-            scope: body.scope,
-          });
-          // Decouple from the event loop to avoid the handler from blocking
-          // the main thread and let the response finish first.
-          void sleep(0).then(() => {
-            this.#emitter.emit("update-many", {
-              items: body.items,
-              scope: body.scope,
-            });
-          });
-          return c.body(null, 204);
-        },
-      )
-      .put(
-        "/zotero-notes",
-        vValidator("json", importNotesRequestSchema, (result, c) => {
-          if (result.success) return;
-          logger.warn("Received zotero-notes import failed validation", {
-            issues: result.issues,
-          });
-          return c.json(result, 400);
-        }),
-        (c) => {
-          const body = c.req.valid("json");
-          logger.debug("Received zotero-notes import", {
-            items: body.items.length,
-            mode: body.mode,
-          });
-          void sleep(0).then(() => {
-            this.#emitter.emit("import-notes", {
-              items: body.items,
-              mode: body.mode,
-            });
-          });
-          return c.body(null, 204);
-        },
-      );
+    const app = createLiveUpdateApp({
+      sourceId: () => this.#zoteroPref.sourceId,
+      noteIndex: this.#noteIndex,
+      onNotify: (event) => this.#dispatch(event),
+      onUpdateMany: (event) => this.#emitter.emit("update-many", event),
+      onImportNotes: (event) => this.#emitter.emit("import-notes", event),
+    });
 
     const server = serve(
       { fetch: app.fetch, port: this.#port, hostname: this.#hostname },

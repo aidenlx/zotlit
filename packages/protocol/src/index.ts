@@ -5,6 +5,10 @@ export {
   type ReaderAnnotSelect,
   type ItemUpdate,
 } from "./notify";
+export {
+  type NoteStatusResponse,
+  noteStatusResponseSchema,
+} from "./note-status";
 export { SOURCE_ID_HEADER, sourceIdFromUris } from "./source-id";
 export {
   batchProtocolActionId,

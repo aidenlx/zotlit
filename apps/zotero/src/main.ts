@@ -5,6 +5,7 @@ import {
 import { attachFluentToWindow } from "./lib/l10n";
 import { logger, setupLogging } from "./lib/logger";
 import { registerMenus } from "./menus";
+import { type NoteStatus, registerNoteStatus } from "./note-status";
 import { registerNotify } from "./notify";
 import { registerPrefPane } from "./prefs";
 
@@ -24,6 +25,7 @@ export interface PluginData {
 export class ZotLitZotero {
   readonly #data: PluginData;
   #stack: AsyncDisposableStack | null = null;
+  #noteStatus: NoteStatus | null = null;
 
   constructor(data: PluginData) {
     this.#data = data;
@@ -44,6 +46,7 @@ export class ZotLitZotero {
     await registerPrefPane(this.#data.id);
     stack.use(await registerMenus(this.#data.id));
     stack.use(registerNotify());
+    this.#noteStatus = stack.use(await registerNoteStatus(this.#data.id));
     logger.info("startup", {
       version: this.#data.version,
       id: this.#data.id,
@@ -55,10 +58,12 @@ export class ZotLitZotero {
     logger.info("shutdown", { reason: BOOTSTRAP_REASONS[reason] });
     await this.#stack?.[Symbol.asyncDispose]();
     this.#stack = null;
+    this.#noteStatus = null;
   }
 
   onMainWindowLoad(window: Window): void {
     attachFluentToWindow(window);
+    this.#noteStatus?.attachWindow(window);
   }
 
   onMainWindowUnload(_window: Window): void {}
