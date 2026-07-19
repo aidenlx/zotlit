@@ -1,0 +1,68 @@
+---
+title: "Enable JavaScript templates"
+description: "Turn on the JavaScript Templates gate so Eta templates and JavaScript frontmatter fields run on this device."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+JavaScript Templates is a per-device gate that lets Eta templates (`.eta.md` files) and JavaScript-language frontmatter fields execute. It is disabled by default.
+
+<Callout type="info" title="Understand the implications first">
+  Eta templates run JavaScript with the same access as ZotLit itself: they can
+  read and modify your vault, connect to the internet, and on desktop, access
+  your system. Read [JavaScript templates](/docs/concepts/javascript-templates)
+  for the full explanation before opting in.
+</Callout>
+
+## Turn on
+
+<Steps>
+  <Step>
+    ### Open template settings
+
+    In Obsidian, open **Settings > ZotLit > Templates**. Locate the **JavaScript templates** group.
+
+  </Step>
+  <Step>
+    ### Click Turn on
+
+    Click the **Turn on** button. A confirmation modal titled **Enable JavaScript templates?** appears with the following warning:
+
+    > Eta templates run JavaScript with the same access as ZotLit itself: they can read and modify your vault, connect to the internet, and on desktop, access your system. Only enable this if you trust every template file in your vault.
+
+    Click **Enable** to confirm.
+
+  </Step>
+</Steps>
+
+The gate takes effect immediately. ZotLit recompiles the template folder in place. No plugin reload is needed.
+
+## Turn off
+
+In the same **JavaScript templates** group, click **Turn off**. The gate disables immediately with no confirmation modal. All `.eta.md` templates become inert and JavaScript frontmatter fields stop evaluating until the gate is re-enabled.
+
+## Per-device scope
+
+The setting is stored locally on the device, outside the synced plugin data. Enabling it on one device does not enable it on another. Each device where you want Eta templates to run requires its own opt-in.
+
+## See also
+
+<Cards>
+  <Card
+    title="JavaScript templates"
+    description="What the gate enables, risks, and behavior when disabled."
+    href="/docs/concepts/javascript-templates"
+  />
+  <Card
+    title="Customize a template"
+    description="Create an editable template file and switch its language to Eta."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="How templates work"
+    description="Template types, languages, and the defaults-plus-eject model."
+    href="/docs/concepts/how-templates-work"
+  />
+</Cards>

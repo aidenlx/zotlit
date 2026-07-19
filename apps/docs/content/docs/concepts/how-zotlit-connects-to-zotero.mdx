@@ -1,0 +1,81 @@
+---
+title: "How ZotLit connects to Zotero"
+description: "The database connection, the companion add-on, protocol links, and the live-updates server: how the pieces fit together."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+ZotLit reads your Zotero data through three channels: a direct database read, protocol links triggered by the companion, and an optional HTTP connection for live pushes. ZotLit supports one configuration: Zotero 9 or later with the ZotLit companion installed.
+
+## Reading the Zotero database
+
+ZotLit reads the Zotero SQLite database file (`zotero.sqlite`) directly and read-only, without modifying Zotero's data or requiring Zotero to be running for queries. This is how ZotLit resolves item metadata, annotations, and citekey lookups when you create or update a literature note.
+
+ZotLit offers several read modes that control how it accesses the database file. Some modes create a snapshot (Reflink clone, Full copy) so that the write-ahead log (WAL) is replayed for the freshest rows; others read the committed file in place (Immutable source) at the cost of not seeing WAL changes until Zotero checkpoints. The default Auto setting picks the best available mode for your filesystem.
+
+See the [Settings reference](/docs/reference/settings) for the full option list and descriptions.
+
+## The companion
+
+The ZotLit companion is a Zotero add-on that adds context-menu actions inside Zotero (open a note in Obsidian, update notes, import notes) and optionally pushes live events to Obsidian. It requires Zotero 9 or later.
+
+The companion does not run a background server. Its context-menu actions construct `obsidian://zotlit/...` protocol links and hand them to the operating system, which routes them to Obsidian. This works without any server or network listener enabled in Obsidian.
+
+## Protocol links versus live updates
+
+ZotLit uses two transport mechanisms between Zotero and Obsidian. They serve different purposes and can operate independently.
+
+### Protocol links (no server required)
+
+When you right-click an item in Zotero and choose a ZotLit action (open note, update note, import), the companion builds an `obsidian://zotlit/...` URL and opens it. Obsidian receives the URL and ZotLit handles the action.
+
+Protocol links work out of the box with no additional configuration beyond installing both plugins. They carry a source identifier so ZotLit only processes links originating from the expected Zotero install.
+
+<Callout type="info" title="Batch actions and the URL length limit">
+  Batch operations (selecting many items in Zotero) may exceed the URL length
+  limit. When this happens, the companion falls back to an HTTP request to the
+  ZotLit server. If the server is not enabled, Zotero shows a notice asking you
+  to enable it or select fewer items.
+</Callout>
+
+### Live updates (server required)
+
+Live updates are a push channel: the companion sends HTTP notifications to Obsidian whenever items change, annotations are added, or you navigate in the Zotero PDF reader. This powers the annotation view's reader-following mode and automatic database refreshes.
+
+Live updates require two things enabled:
+
+- **In Obsidian:** the ZotLit server (a local HTTP listener on port 9091 by default).
+- **In Zotero:** the companion's notify preference, pointed at the same address.
+
+Both sides carry a source identifier and a protocol version. The server discards requests from unrecognized Zotero installs (source mismatch) and rejects requests with an incompatible protocol version.
+
+<Callout type="info" title="Off by default">
+  Both the Obsidian server and the companion's notify preference are disabled by
+  default. Protocol links handle all context-menu actions without them. Enable
+  live updates only when you want real-time push from Zotero.
+</Callout>
+
+## How the pieces fit together
+
+The direct database read operates independently: it needs only the Zotero data directory and does not require Zotero to be running or the companion to be installed. Protocol links and live updates both depend on the companion. The full feature set requires all three channels working together: Zotero 9 or later with the ZotLit companion installed.
+
+## See also
+
+<Cards>
+  <Card
+    title="Set up live updates"
+    description="Enable the server and companion notify preference step by step."
+    href="/docs/how-to/set-up-live-updates"
+  />
+  <Card
+    title="Install the companion"
+    description="Download and install the ZotLit companion in Zotero."
+    href="/docs/install-companion"
+  />
+  <Card
+    title="Literature notes and the managed region"
+    description="How ZotLit separates your writing from generated content."
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+</Cards>

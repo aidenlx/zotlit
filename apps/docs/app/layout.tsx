@@ -6,6 +6,7 @@ import { type Metadata } from "next";
 import { Gelasio, Inter } from "next/font/google";
 import localFont from "next/font/local";
 
+import { LegacyBanner } from "@/components/legacy-banner";
 import { appName, baseURL } from "@/lib/shared";
 
 // App-wide base font, exposed as a variable and assigned via --font-sans in
@@ -13,9 +14,12 @@ import { appName, baseURL } from "@/lib/shared";
 // root layout = every route) while paint is route-dependent — /docs stays on
 // the sans stack and (home) never renders it at all. /docs discovers it at
 // CSS-parse time and swaps from the metric-adjusted "Inter Fallback", so the
-// cost there is a brief shift-free FOUT.
+// cost there is a brief shift-free FOUT. Italic ships too: the prose body is
+// sans, and its <em>s must be true italics next to Gelasio's — a synthesized
+// oblique would read as a rendering bug in a mixed-face page.
 const inter = Inter({
   subsets: ["latin"],
+  style: ["normal", "italic"],
   variable: "--font-inter",
   preload: false,
 });
@@ -67,7 +71,10 @@ export default function Layout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <body className="flex min-h-screen flex-col">
-        <RootProvider theme={{ scriptProps }}>{children}</RootProvider>
+        <RootProvider theme={{ scriptProps }}>
+          <LegacyBanner />
+          {children}
+        </RootProvider>
         <Analytics />
       </body>
     </html>

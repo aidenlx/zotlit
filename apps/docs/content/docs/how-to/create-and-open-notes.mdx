@@ -1,0 +1,72 @@
+---
+title: "Create and open literature notes"
+description: "Open an existing literature note or create one from a Zotero item using the quick switcher or a clickable citekey."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+ZotLit treats opening and creating a literature note as a single gesture. If a note already exists for a Zotero item, ZotLit opens it. If not, ZotLit creates the note and then opens it.
+
+## Use the quick switcher
+
+The quick switcher searches your Zotero library and opens or creates a literature note for the item you pick.
+
+<Steps>
+  <Step>
+    ### Open the quick switcher
+
+    Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+
+    <Command>ZotLit: Open literature note quick switcher</Command>
+
+  </Step>
+  <Step>
+    ### Search and select an item
+
+    Type to search your library. Use the arrow keys to navigate the results.
+
+    - Press `Enter` to open the literature note.
+    - Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to open it in a new pane.
+    - Press `Esc` to dismiss the switcher.
+
+    If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief "Creating literature note..." notice, followed by "Literature note created."
+
+  </Step>
+</Steps>
+
+## Open a note from a citekey
+
+When you type or paste an `@citekey` in the editor, ZotLit makes it clickable. Click the citekey to open or create the corresponding literature note.
+
+ZotLit recognizes Pandoc-style citekeys: `@` followed by key characters, including bracketed forms like `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`, as well as bare `@key`.
+
+If the item is not found in your Zotero library, a notice appears: "No Zotero item with citekey `@{citekey}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up `@{citekey}`."
+
+Citekey clicks resolve against the **Default library** setting at the top of **Settings > ZotLit**.
+
+## How ZotLit identifies literature notes
+
+ZotLit identifies literature notes by their `zotero-key` frontmatter field. For details on note identity and the managed region, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+
+## See also
+
+<Cards>
+  <Card
+    title="Create your first literature note"
+    description="A step-by-step tutorial for new users."
+    href="/docs/tutorial/first-note"
+  />
+  <Card
+    title="Insert citations"
+    description="Insert citation markers while typing or from the command palette."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="Literature notes and the managed region"
+    description="How ZotLit separates your writing from generated content."
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+</Cards>

@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import { type Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -27,9 +28,9 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
         <p className="mt-11.5 text-[14.5px]">
           <Link
             href="/blog"
-            className="text-fd-muted-foreground hover:text-fd-primary"
+            className="inline-flex items-center gap-1 text-fd-muted-foreground hover:text-fd-primary"
           >
-            ← Blog
+            <ArrowLeft className="size-3.5" /> Blog
           </Link>
         </p>
         <header className="pt-4.5 pb-2">

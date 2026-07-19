@@ -1,0 +1,116 @@
+---
+title: "Keep notes up to date"
+description: "Update a single literature note or a batch of notes when your Zotero data changes, without losing your own writing."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+When your Zotero metadata or annotations change, you can refresh your literature notes to match. ZotLit preserves your own writing by updating only the parts it manages.
+
+## Update a single note
+
+These commands are available from the command palette and from the right-click context menu on a literature note file. They only appear when the active file is a literature note (a note with a `zotero-key` frontmatter field).
+
+### Update the full note
+
+<Steps>
+  <Step>
+    ### Open a literature note
+
+    Open the literature note you want to update.
+
+  </Step>
+  <Step>
+    ### Run the update command
+
+    Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+
+    <Command>ZotLit: Update literature note</Command>
+
+    ZotLit refreshes the frontmatter and re-renders the content inside the managed region (`%%zt-managed%%` ... `%%/zt-managed%%`). Your writing outside the managed region stays untouched.
+
+    A notice confirms: "Literature note updated."
+
+  </Step>
+</Steps>
+
+### Update metadata only
+
+To refresh frontmatter without touching the note body, run:
+
+<Command>ZotLit: Update literature note metadata</Command>
+
+A notice confirms: "Metadata updated." The note body is not changed.
+
+### Context menu
+
+You can also right-click a literature note file in the file explorer. The **ZotLit** section of the context menu offers **Update literature note**, **Update literature note metadata**, and **Overwrite literature note**.
+
+## Update notes in batch
+
+You start batch updates from the ZotLit companion, not from an Obsidian command.
+
+<Steps>
+  <Step>
+    ### Select items in Zotero
+
+    In Zotero, select one or more items in your library. Right-click to open the context menu, then choose **ZotLit > Update note(s) in Obsidian** (or **Update note(s) metadata in Obsidian** for metadata only).
+
+  </Step>
+  <Step>
+    ### Confirm in Obsidian
+
+    Obsidian opens a confirmation dialog titled **Update literature notes**. It shows how many notes will be created or updated, grouped by status (Update, Create, Not found).
+
+    Click **Update notes** to proceed.
+
+  </Step>
+  <Step>
+    ### Review the summary
+
+    After the batch completes, a summary appears: "Done. `{created}` created, `{updated}` updated, `{failed}` failed."
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="Large selections">
+  A selection too large to fit in a protocol link falls back to an HTTP
+  connection to Obsidian. If the ZotLit server is not enabled in Obsidian,
+  Zotero shows a notice asking you to enable it or select fewer items.
+</Callout>
+
+You can also open a single note from Zotero by right-clicking one item and choosing **ZotLit > Open note in Obsidian**.
+
+## Overwrite a note
+
+<Command inline>ZotLit: Overwrite literature note</Command> is a separate,
+destructive command. It replaces the entire note body with the re-rendered note
+template. Frontmatter keys managed by ZotLit are refreshed; other frontmatter
+keys you added are kept.
+
+A confirmation dialog appears before the overwrite proceeds.
+
+<Callout type="warn" title="Notes created with ZotLit v1">
+  Literature notes created with ZotLit v1 do not have a managed region. Running **Update literature note** on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
+
+To fully refresh a v1 note's body, use <Command inline>ZotLit: Overwrite literature note</Command>. This replaces the entire body with the current note template.
+
+</Callout>
+
+## See also
+
+<Cards>
+  <Card
+    title="Literature notes and the managed region"
+    description="How ZotLit separates your writing from generated content."
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+  <Card
+    title="Create and open literature notes"
+    description="Open or create a note from the quick switcher or a citekey."
+    href="/docs/how-to/create-and-open-notes"
+  />
+</Cards>

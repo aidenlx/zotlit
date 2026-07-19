@@ -1,0 +1,371 @@
+---
+title: "Migrate v1 Eta templates"
+description: "Rename, update variables, and rewrite custom v1 Eta templates to the v2 format, or convert them to Liquid."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+Custom v1 Eta templates need renamed files and updated variables to run in v2. If you never customized your templates (using only the defaults), no action is needed. V2 ships updated defaults.
+
+Two migration paths:
+
+- **Keep Eta**: rename files, update the data vocabulary, enable the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates). The rest of this page covers this path.
+- **Convert to Liquid**: rewrite each template in v2's default Liquid engine. No gate needed. See [Eta to Liquid translations](#eta-to-liquid-translations) at the end.
+
+<Callout type="info" title="JavaScript Templates gate required for Eta">
+  Eta templates require the JavaScript Templates gate. See [Enable JavaScript
+  templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
+</Callout>
+
+<Steps>
+  <Step>
+    ### Rename template files
+
+    v2 templates use a `zotlit-` prefix (replacing `zt-`) and the template formerly called `annots` is now `content`.
+
+    | v1 filename | v2 filename |
+    |-------------|-------------|
+    | `zt-note.eta.md` | `zotlit-note.eta.md` |
+    | `zt-annots.eta.md` | `zotlit-content.eta.md` |
+    | `zt-annot.eta.md` | `zotlit-annotation.eta.md` |
+    | `zt-cite.eta.md` | `zotlit-cite.eta.md` |
+    | `zt-cite2.eta.md` | `zotlit-cite2.eta.md` |
+
+    Delete these files if present (they have no v2 equivalent):
+
+    - `zt-field.eta.md`: replaced by the settings-based [frontmatter system](/docs/reference/templates/frontmatter).
+    - `zt-colored.eta.md`: color styling is now handled automatically during note import.
+
+  </Step>
+  <Step>
+    ### Replace `it` with `zt`
+
+    The template data variable changed from `it` to `zt`. A search-and-replace of `it.` to `zt.` within template tags covers most cases:
+
+    ```
+    it.title       →  zt.title
+    it.creators    →  zt.creators
+    it.backlink    →  zt.backlink
+    it.pageLabel   →  zt.pageLabel
+    ```
+
+    The exceptions below (`comment`, `tags`, `collections`, `date`, `notes`) have changed semantics. Handle them in the following steps rather than with a blanket replace.
+
+  </Step>
+  <Step>
+    ### Update renamed and reshaped fields
+
+    These fields changed name or type:
+
+    | v1 property | v2 property | Notes |
+    |-------------|-------------|-------|
+    | `it.citekey` | `zt.citationKey` | `zt.citekey` also works as an alias |
+    | `it.abstractNote` | `zt.abstract` | `zt.abstractNote` also works |
+    | `it.publicationTitle` | `zt.containerTitle` | `zt.publicationTitle` also works |
+    | `it.color` | `zt.colorHex` | Hex string, e.g. `#ffd400` |
+    | — | `zt.colorName` | New: palette name (`"yellow"`, `"red"`, etc.) |
+    | `it.imgExcerpt` | `embed(zt.imgLink)` | `zt.imgLink` is a [link helper](/docs/reference/templates/eta-syntax#link-helpers) or `null`; `embed()` adds the `!` prefix |
+    | `it.imgPath` | _(removed)_ | Use `zt.imgLink()` instead |
+    | `it.imgUrl` | _(removed)_ | Use `zt.imgLink()` instead |
+    | `it.textExcerpt` | `zt.text` | Renamed |
+    | `it.commentMd` | `zt.comment` | Markdown comment is now the default |
+    | `it.comment` | `zt.commentHtml` | Raw HTML (only `<i>/<b>/<sub>/<sup>`) |
+
+    Direct Zotero fields that are plain strings (`title`, `DOI`, `url`, `volume`, `issue`, `pages`, `publisher`, etc.) carry over unchanged after the `it` → `zt` rename.
+
+  </Step>
+  <Step>
+    ### Update tag access
+
+    v1 exposed tags as formatted strings. v2 exposes them as objects with `name` and `type` properties. Tags coerce to their `name` in string contexts, so `join` still works:
+
+    ```eta
+    <%/* Tags coerce to their name */%>
+    <%= zt.tags.join(", ") %>
+
+    <%/* Explicit property access */%>
+    <%= zt.tags.map(t => t.name).join(", ") %>
+
+    <%/* Filter to manual tags only */%>
+    <%= zt.tags.filter(t => t.type === "manual").join(", ") %>
+    ```
+
+  </Step>
+  <Step>
+    ### Update collection access
+
+    v2 reshapes collection objects. Key differences:
+
+    | Aspect | v1 | v2 |
+    |--------|----|----|
+    | `path` order | leaf → root | root → leaf |
+    | `path` rendering | auto-rendered `"A > B > C"` | plain `string[]` — use `c.path.join(" > ")` |
+    | Singular alias | `it.collection` | removed — use `zt.collections` array |
+
+    ```eta
+    <%/* Collections coerce to their name in string contexts */%>
+    <%= zt.collections.join(", ") %>
+
+    <%/* Render each collection's full hierarchy */%>
+    <%= zt.collections.map(c => c.path.join(" > ")).join("; ") %>
+    ```
+
+  </Step>
+  <Step>
+    ### Update date fields
+
+    | v1 property | v2 property | Type change |
+    |-------------|-------------|-------------|
+    | `it.date` | `zt.date` | Was a year-only string; now a parsed `ItemDate` object. `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
+    | `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant`. Render as local date in `<%= %>` tags (e.g. `2026-06-21`). |
+
+    If your v1 template used `it.date` as a year string, replace with `zt.date?.year`:
+
+    ```eta
+    <%/* v1 */%>
+    year: "<%= it.date %>"
+
+    <%/* v2 */%>
+    year: "<%= zt.date?.year %>"
+    ```
+
+  </Step>
+  <Step>
+    ### Update child note access
+
+    v1 inlined child-note content as Markdown on `it.notes`. v2 writes each child note to a separate file and provides link-only entries:
+
+    | v1 | v2 |
+    |----|-----|
+    | `it.notes` — array of `{title, content}` | `zt.notes` — array of `{key, title, noteLink()}` |
+    | Note content inlined | Content in a separate file; `noteLink()` links to it |
+
+    The default content template renders child notes as a bulleted list of links:
+
+    ```eta
+    <% if (zt.notes.length) { %>
+    ## Notes
+
+    <% for (const note of zt.notes) { -%>
+    - <%~ note.noteLink() %>
+    <% } %>
+    <% } %>
+    ```
+
+  </Step>
+  <Step>
+    ### Rewrite the annotation template with `bq()`
+
+    v1 relied on external blockquote handling. v2 uses the [`bq()` helper](/docs/reference/templates/eta-syntax#bq-blockquote-helper) inside the annotation template:
+
+    ```eta
+    <% bq(() => { %>
+    [!note] Page <%= zt.pageLabel %>
+
+    <%= embed(zt.imgLink) %><%= zt.text %>
+    <% if (zt.comment) { %>
+
+    <%= zt.comment %>
+    <% } %>
+    <% }) %>
+    ```
+
+    `bq()` wraps all content in a Markdown blockquote (`> ` per line), trims the result, and collapses consecutive empty blockquote lines. It must appear in a `<% %>` execute tag.
+
+  </Step>
+  <Step>
+    ### Update the content template
+
+    The template is renamed from `annots` to `content`. It now receives the full context object instead of a raw annotation array:
+
+    ```eta
+    <%/* v1: received a raw array as `it` */%>
+    <% for (const annotation of it) { %>
+
+    <%/* v2: receives full context, access annotations via zt.annotations */%>
+    <% for (const annotation of zt.annotations) { %>
+    ```
+
+    Update the `include` call in your note template:
+
+    ```eta
+    <%/* v1 */%>
+    <%~ include("annots", it.annotations) %>
+
+    <%/* v2 */%>
+    <%~ include("content", zt) %>
+    ```
+
+    The content template now has access to all `zt.*` properties (attachments, tags, notes, etc.), not only annotations.
+
+  </Step>
+  <Step>
+    ### Update citation templates
+
+    v1 passed `it` as a raw array. v2 wraps items in an object:
+
+    ```eta
+    <%/* v1 */%>
+    [<%= it.filter(lit => !!lit.citekey).map(lit => `@${lit.citekey}`).join("; ") %>]
+
+    <%/* v2 */%>
+    [<%= zt.citations.filter(c => c.item.citationKey).map(c =>
+      `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}`
+    ).join("; ") %>]
+    ```
+
+    Key changes:
+
+    - `it` (array) becomes `zt.citations` (array inside an object). `zt.items` exposes the same items without citation metadata.
+    - `lit.citekey` becomes `c.item.citationKey` (or `c.item.citekey`).
+
+  </Step>
+  <Step>
+    ### Update attachment access
+
+    v1 selected one attachment and exposed it as `it.fileLink` (a string). v2 provides all attachments as an array, and `fileLink` is a [link helper](/docs/reference/templates/eta-syntax#link-helpers) you call:
+
+    ```eta
+    <%= zt.attachments.map(a => a.fileLink()).filter(Boolean).join(" ") %>
+    ```
+
+    Each attachment object has: `key`, `filename`, `contentType`, `linkMode`, `filePath`, `fileLink`.
+
+  </Step>
+  <Step>
+    ### Update creator access
+
+    v2 uses a flat array with explicit properties. Creators coerce to their full name in string contexts:
+
+    ```eta
+    <%/* All authors (coerces to fullName) */%>
+    <%= zt.authors.join(", ") %>
+
+    <%/* Explicit property access */%>
+    <%= zt.authors.map(c => c.fullName).join(", ") %>
+
+    <%/* Filter by role */%>
+    <%= zt.creators.filter(c => c.role === "editor").join(", ") %>
+    ```
+
+    Creator properties: `family`, `given`, `literal` (institutional names), `role`, `fullName`.
+
+    Convenience properties on the item context: `zt.authors` (primary creator type) and `zt.authorsShort` (formatted short string, e.g. "Smith et al.").
+
+  </Step>
+  <Step>
+    ### Update the filename template
+
+    The filename template is a template file (`zotlit-filename.eta.md`), not a setting string. The v2 default adds `suffix()` for collision avoidance:
+
+    ```eta
+    <%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
+    ```
+
+    - `it.citekey` becomes `zt.citationKey` (canonical name; `zt.citekey` also works).
+    - The `.md` extension is no longer included. ZotLit appends it automatically.
+    - [`suffix()`](/docs/reference/templates/eta-syntax#suffix-filename-collision-guard) appends a random string only when the name collides with an existing note.
+
+  </Step>
+  <Step>
+    ### Migrate frontmatter fields
+
+    If you customized `zt-field.eta.md`, delete it and recreate the fields in **Settings > ZotLit > Templates > Frontmatter**:
+
+    For each field, configure:
+
+    - **Key**: the YAML property name.
+    - **Expression**: a JavaScript or Liquid expression evaluated against `zt`.
+    - **Language**: select JavaScript to use JS expressions (requires the JavaScript Templates gate), or Liquid for Liquid expressions.
+    - **Merge strategy**: Replace, Append arrays, or Keep existing.
+
+    | v1 template line | v2 frontmatter field |
+    |-----------------|---------------------|
+    | `title: "<%= it.title %>"` | Key: `title`, Expr: `zt.title`, Merge: Replace |
+    | `authors: ...` | Key: `authors`, Expr: `zt.authors.map(c => c.fullName)`, Merge: Replace |
+    | `year: "<%= it.date %>"` | Key: `year`, Expr: `zt.date?.year`, Merge: Replace |
+    | `tags: ...` | Key: `tags`, Expr: `zt.tags.map(t => t.name)`, Merge: Append arrays |
+
+    YAML escaping is handled automatically.
+
+    ZotLit manages reserved frontmatter keys that you cannot target from a user field. For literature notes: `zotero-key` and `citekey`. For imported notes: `zotero-note-key` and `zotero-lastmod`. See [Frontmatter reference](/docs/reference/templates/frontmatter) for details.
+
+    <Callout type="info" title="Language selector">
+      JavaScript expressions (like `zt.authors.map(...)`) require selecting **JavaScript** in the Language dropdown for that field. The JavaScript Templates gate must be on.
+    </Callout>
+
+  </Step>
+  <Step>
+    ### Overwrite v1 notes to add the managed region
+
+    v1 notes lack the `%%zt-managed%%` / `%%/zt-managed%%` markers that v2 uses to isolate generated content. Incremental update cannot target their body. Running <Command inline>ZotLit: Update literature note</Command> on a v1 note refreshes frontmatter only.
+
+    To add the managed region, run the overwrite command on each note you want refreshed:
+
+    <Command>ZotLit: Overwrite literature note</Command>
+
+    A confirmation modal appears. Click **Overwrite** to proceed. ZotLit regenerates the entire note body from the current templates, inserting the managed-region markers.
+
+    After overwriting, the note responds to <Command inline>ZotLit: Update literature note</Command> for incremental updates going forward. You do not need to overwrite every note at once. Leave notes untouched until you are ready.
+
+    See [Refresh v1 notes](/docs/how-to/migrate-from-v1#refresh-v1-notes) for the full procedure.
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="Whitespace change from v1">
+  v1 defaulted `autoTrim` to `[false, "nl"]` (trim one newline after tags). v2 defaults to `[false, false]` (preserve all whitespace). Migrated templates may produce extra blank lines where `%>` previously consumed a trailing newline. Add `-%>` to the closing side of tags that need the old trim behavior. See [Whitespace control](/docs/reference/templates/eta-syntax#whitespace-control).
+</Callout>
+
+## Expected result
+
+After completing these steps, your custom Eta templates render with v2 field names and helpers. Notes that have been overwritten contain the `%%zt-managed%%` markers and respond to incremental updates. Notes you have not overwritten continue to work for frontmatter-only refreshes.
+
+## Eta to Liquid translations
+
+v2's default engine is Liquid. Converting your templates to Liquid removes the need for the JavaScript Templates gate entirely. For each construct, the table below shows the Liquid equivalent and links to the relevant syntax reference section.
+
+| Eta construct                                         | Liquid equivalent                                 | Reference                                                                      |
+| ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `<%= zt.title %>`                                     | `{{ zt.title }}`                                  | [Outputs and tags](/docs/reference/templates/syntax#outputs-and-tags)          |
+| `<% if (zt.abstract) { %> ... <% } %>`                | `{% if zt.abstract %} ... {% endif %}`            | [Control flow](/docs/reference/templates/syntax#if-elsif-else-endif)           |
+| `<% for (const a of zt.annotations) { %> ... <% } %>` | `{% for a in zt.annotations %} ... {% endfor %}`  | [for / endfor](/docs/reference/templates/syntax#for-endfor)                    |
+| `<%~ include("content", zt) %>`                       | `{% render "content" with zt as zt %}`            | [Includes with render](/docs/reference/templates/syntax#includes-with-render)  |
+| `<% bq(() => { %> ... <% }) %>`                       | `{% bq %} ... {% endbq %}`                        | [bq: blockquote block](/docs/reference/templates/syntax#bq-blockquote-block)   |
+| `embed(zt.imgLink)`                                   | `{{ zt.imgLink \| embed }}`                       | [embed filter](/docs/reference/templates/syntax#embed-embed-filter)            |
+| `<%= suffix() %>`                                     | `{% suffix %}`                                    | [suffix tag](/docs/reference/templates/syntax#suffix-filename-collision-guard) |
+| `zt.attachments[0].fileLink()`                        | `{{ zt.attachments[0] \| file_link }}`            | [Link filters](/docs/reference/templates/syntax#link-filters)                  |
+| `zt.collections.map(c => c.path.join(" > "))`         | `{{ zt.collections \| collection_paths: " > " }}` | [collection_paths](/docs/reference/templates/syntax#collection-paths)          |
+| `zt.tags.map(t => t.name).join(", ")`                 | `{{ zt.tags \| map: "name" \| join: ", " }}`      | [Array filters](/docs/reference/templates/syntax#array-filters)                |
+| `zt.dateAdded` (Temporal.Instant formatting)          | `{{ zt.dateAdded \| date: "%Y-%m-%d" }}`          | [date filter](/docs/reference/templates/syntax#date-formatting-filter)         |
+| `-%>` (trim one newline after tag)                    | `-%}` / `-}}`                                     | [Whitespace control](/docs/reference/templates/syntax#whitespace-control)      |
+
+Liquid template files use the `.liquid.md` extension (e.g. `zotlit-note.liquid.md`). The data variable is still `zt` and the property names are identical to the Eta equivalents documented above.
+
+## See also
+
+<Cards>
+  <Card
+    title="Eta syntax reference"
+    description="Full Eta delimiter, helper, and link reference."
+    href="/docs/reference/templates/eta-syntax"
+  />
+  <Card
+    title="Template syntax (Liquid)"
+    description="The default Liquid engine's syntax and vocabulary."
+    href="/docs/reference/templates/syntax"
+  />
+  <Card
+    title="Data reference"
+    description="Properties available on zt for each template type."
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="Customize a template"
+    description="Create and edit template files in your vault."
+    href="/docs/how-to/customize-a-template"
+  />
+</Cards>

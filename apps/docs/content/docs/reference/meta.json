@@ -1,3 +1,4 @@
 {
-  "title": "Reference"
+  "title": "Reference",
+  "pages": ["settings", "commands", "protocol-links", "templates"]
 }

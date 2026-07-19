@@ -5,6 +5,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
+    "test": "vitest run",
     "start": "next start",
     "codegen": "fumadocs-mdx && _FUMADOCS_MDX=1 next typegen",
     "types:check": "pnpm run codegen && tsc --noEmit",
@@ -42,7 +43,9 @@
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
     "postcss": "^8.5.17",
+    "shiki": "4.3.1",
     "tailwindcss": "^4.3.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "catalog:"
   }
 }

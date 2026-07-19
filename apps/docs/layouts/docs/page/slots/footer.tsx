@@ -8,6 +8,7 @@ import { usePathname } from "fumadocs-core/framework";
 import Link from "fumadocs-core/link";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { useFooterItems } from "fumadocs-ui/utils/use-footer-items";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { type ComponentProps, useMemo } from "react";
 
 import { cn } from "@/lib/cn";
@@ -86,8 +87,21 @@ function FooterCard({
         next && "text-end",
       )}
     >
-      <p className="text-xs text-fd-muted-foreground">
-        {next ? "Next →" : "← Previous"}
+      <p
+        className={cn(
+          "flex items-center gap-1 text-xs text-fd-muted-foreground",
+          next && "justify-end",
+        )}
+      >
+        {next ? (
+          <>
+            Next <ArrowRight className="size-3" />
+          </>
+        ) : (
+          <>
+            <ArrowLeft className="size-3" /> Previous
+          </>
+        )}
       </p>
       <p className="font-medium">{item.name}</p>
     </Link>
