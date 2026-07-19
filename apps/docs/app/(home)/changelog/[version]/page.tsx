@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import { type Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -26,9 +27,9 @@ export default async function ChangelogVersionPage(
         <p className="mt-11.5 text-[14.5px]">
           <Link
             href="/changelog"
-            className="text-fd-muted-foreground hover:text-fd-primary"
+            className="inline-flex items-center gap-1 text-fd-muted-foreground hover:text-fd-primary"
           >
-            ← Changelog
+            <ArrowLeft className="size-3.5" /> Changelog
           </Link>
         </p>
         <header className="pt-4.5 pb-2">
@@ -54,7 +55,7 @@ export default async function ChangelogVersionPage(
             {description}
           </p>
         )}
-        <div className="max-w-none prose-sm text-fd-muted-foreground">
+        <div className="zt-prose prose max-w-none prose-sm text-fd-muted-foreground">
           <MDX components={getMDXComponents()} />
         </div>
         <a

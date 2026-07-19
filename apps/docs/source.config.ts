@@ -1,3 +1,4 @@
+import { rehypeCodeDefaultOptions } from "fumadocs-core/mdx-plugins";
 import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
 import {
   defineCollections,
@@ -6,6 +7,8 @@ import {
 } from "fumadocs-mdx/config";
 import { valid as isValidSemVer } from "semver";
 import * as v from "valibot";
+
+import { etaGrammar } from "./lib/eta-grammar";
 
 /** @see https://fumadocs.dev/docs/mdx/collections */
 export const docs = defineDocs({
@@ -59,5 +62,10 @@ export const blogs = defineCollections({
 });
 
 export default defineConfig({
-  mdxOptions: {},
+  mdxOptions: {
+    rehypeCodeOptions: {
+      ...rehypeCodeDefaultOptions,
+      langs: ["javascript", etaGrammar],
+    },
+  },
 });

@@ -1,0 +1,107 @@
+---
+title: "Explore template data"
+description: "Open the Template Data Explorer to browse available fields, copy property paths, and generate template snippets."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+The Template Data Explorer shows the full data tree that templates receive for a Zotero item. Use it to discover field paths, inspect values, and copy ready-to-use snippets into your templates.
+
+## Open the explorer
+
+The explorer opens in the right sidebar. You can reach it from several entry points.
+
+### From the command palette
+
+<Steps>
+  <Step>
+    ### Run the command
+
+    Open the command palette and run:
+
+    <Command>ZotLit: Open template data explorer</Command>
+
+    If a literature note is active in the editor, the explorer seeds from that note's Zotero item. Otherwise it opens with an item picker.
+
+  </Step>
+</Steps>
+
+### From a literature note
+
+Right-click (or click the three-dot menu) on a literature note in the file explorer or tab, then select **Explore template data**. The explorer opens seeded with that note's item.
+
+### From the annotation view
+
+In the annotation sidebar, open the more-options menu on any annotation row and select **Explore template data**. The explorer opens anchored at that annotation.
+
+### From Zotero (item)
+
+The companion adds these entry points in Zotero. Right-click a single item, open the **ZotLit** submenu, and select **Explore template data in Obsidian**. Zotero opens the explorer in Obsidian via a protocol link.
+
+### From Zotero (annotation)
+
+In Zotero's PDF reader, right-click an annotation. Under the **ZotLit** submenu (added by the companion), select **Explore Annotation in Obsidian**. The explorer opens in Obsidian anchored at that annotation.
+
+## Browse the data tree
+
+The explorer displays a collapsible tree of every property available under the `zt` root object. Expand nodes to drill into nested objects and arrays. Primitive values (strings, numbers, booleans) display inline next to their key.
+
+### Filter properties
+
+Type in the filter box (placeholder: "Filter properties...") to narrow the tree. Filtering matches key names and stringified primitive values by case-insensitive substring. Matching nodes and their ancestor chains auto-expand.
+
+### Switch between note root and annotation root
+
+By default the tree shows the full `zt` object (note root). To view the data available inside annotation templates, open the more-options menu on an annotation node in the tree and select **Explore as annotation template data**. The tree re-anchors to that annotation's data shape.
+
+To return, click **Back to note root** in the breadcrumb.
+
+## Copy paths and snippets
+
+Each row in the tree offers actions to copy data into your templates.
+
+### Copy path
+
+Click **Copy path** in a row's more-options menu to copy the engine-neutral property path (e.g. `zt.creators[0].lastName`). The notice "Path copied" confirms the action.
+
+### Copy value
+
+Click the **Copy value** button on a row to copy its current value. Primitives copy verbatim; objects and arrays copy as JSON. The notice "Value copied" confirms the action.
+
+### Copy template snippets
+
+Below **Copy path**, the menu offers ready-to-use template snippets wrapped in the correct syntax:
+
+- **Copy output**: renders the value (e.g. `{{ zt.title }}`).
+- **Copy if present**: wraps the value in a conditional block.
+- **Copy loop**: iterates over an array node.
+- **Copy joined**: joins an array into a delimiter-separated string.
+
+Array nodes show **Copy loop** and **Copy joined**. Non-array nodes show **Copy output** and **Copy if present**.
+
+When JavaScript Templates is enabled, these snippet items split into **Liquid** and **Eta** submenus so you can pick the syntax matching your template. When disabled, Liquid snippets appear inline with no submenu.
+
+A successful copy shows the notice "Snippet copied."
+
+## See also
+
+<Cards>
+  <Card
+    title="Customize a template"
+    description="Create an editable template file and apply your changes."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="How templates work"
+    description="Template types, languages, and the defaults-plus-eject model."
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="Configure frontmatter properties"
+    description="Add custom YAML properties using template expressions."
+    href="/docs/how-to/configure-frontmatter-properties"
+  />
+</Cards>

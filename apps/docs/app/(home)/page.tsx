@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-import { gitConfig } from "@/lib/shared";
+import { RepoDatum } from "@/components/repo-datum";
+import { SiteFooter } from "@/components/site-footer";
 
 const features: Array<{
   term: string;
@@ -10,32 +11,28 @@ const features: Array<{
 }> = [
   {
     term: "Literature notes",
-    // TODO(issue-02): retarget to the literature-notes tutorial page.
-    href: "/docs",
+    href: "/docs/tutorial/first-note",
     ref: "Tutorial →",
     description:
       "One command turns a Zotero item into a Markdown note, shaped by your template.",
   },
   {
     term: "Citations",
-    // TODO(issue-02): retarget to the citations how-to page.
-    href: "/docs",
+    href: "/docs/how-to/insert-citations",
     ref: "How-to →",
     description:
       "Type to search your library and insert citations without leaving the editor.",
   },
   {
     term: "Annotation view",
-    // TODO(issue-03): retarget to the annotation view how-to page.
-    href: "/docs",
+    href: "/docs/how-to/use-annotation-view",
     ref: "How-to →",
     description:
       "A sidebar of highlights and notes that follows your active Zotero reader.",
   },
   {
     term: "Note import",
-    // TODO(issue-03): retarget to the note import how-to page.
-    href: "/docs",
+    href: "/docs/how-to/import-zotero-notes",
     ref: "How-to →",
     description:
       "Bring Zotero child notes and standalone notes into your vault as Markdown.",
@@ -53,26 +50,24 @@ export default function HomePage() {
           <h1 className="mb-5 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
             Your Zotero library, written into your vault.
           </h1>
-          <p className="mb-8 max-w-[44ch] text-lg text-fd-muted-foreground italic">
+          <p className="mb-4 max-w-[44ch] text-lg text-fd-muted-foreground italic">
             Integrate Zotero with Obsidian: literature notes, citations,
             annotations.
           </p>
+          <RepoDatum className="mb-5" />
           <div className="flex flex-wrap items-center gap-4">
             <Link
-              // TODO(issue-02): retarget to the first tutorial page.
-              href="/docs"
+              href="/docs/tutorial/first-note"
               className="bg-fd-foreground px-6 py-2.5 text-base text-fd-background transition-colors hover:bg-fd-primary hover:text-fd-primary-foreground"
             >
               Get started
             </Link>
-            <a
-              href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`}
-              target="_blank"
-              rel="noreferrer noopener"
+            <Link
+              href="/docs"
               className="text-fd-muted-foreground underline decoration-fd-border underline-offset-4 transition-colors hover:text-fd-primary hover:decoration-fd-primary"
             >
-              View on GitHub
-            </a>
+              Read the docs
+            </Link>
           </div>
         </div>
 
@@ -131,19 +126,7 @@ export default function HomePage() {
         ))}
       </dl>
 
-      <footer className="flex flex-wrap justify-between gap-3 border-t border-fd-border py-6 text-sm text-fd-muted-foreground">
-        <span>
-          © 2022–{new Date().getFullYear()} AidenLx ·{" "}
-          <a
-            href={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/LICENSE`}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="underline decoration-fd-border underline-offset-4 transition-colors hover:text-fd-primary hover:decoration-fd-primary"
-          >
-            MIT Licensed
-          </a>
-        </span>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

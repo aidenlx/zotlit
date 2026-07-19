@@ -1,6 +1,72 @@
 ---
 title: "Install the companion"
-description: "Install the ZotLit companion add-on in Zotero from the .xpi release."
+description: "Install the ZotLit companion add-on in Zotero"
 ---
 
-Placeholder — content lands with issue 02.
+import { Tabs, Tab } from "fumadocs-ui/components/tabs";
+import { VersionLedger } from "@/components/version-ledger";
+import { XpiDownload } from "@/components/xpi-download";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+
+The companion is a Zotero add-on that lets ZotLit communicate with your library. It requires **Zotero 9** or later.
+
+The companion ships on two update channels. The v2 alpha is served on the beta channel; the stable channel has no v2 release yet. To follow the alpha, use the Beta tab below.
+
+## Install the add-on
+
+<Tabs items={["Beta", "Stable"]}>
+  <Tab value="Beta">
+    <VersionLedger app="zotero" channel="pre-release" />
+
+    A beta install auto-updates through Zotero as new releases ship on either channel.
+
+    <Steps>
+      <Step>
+        ### Download the `.xpi` file
+
+        Download the latest companion asset directly:
+
+        <XpiDownload channel="pre-release" />
+
+        If you are using Firefox, you should right click the link and choose `Save Link As...`
+
+        Prefer to pick manually? Find latest companion release from [ZotLit releases page](https://github.com/aidenlx/zotlit/releases) that starts with `zt-`.
+
+      </Step>
+      <Step>
+        ### Install in Zotero
+
+        In Zotero, open **Tools > Add-ons**. Click the gear menu and select **Install Add-on From File...**. Choose the `.xpi` file you downloaded, then confirm when prompted.
+
+      </Step>
+      <Step>
+        ### Confirm the installation
+
+        After installing, a **ZotLit** pane should appear in Zotero's settings.
+
+        You do not need to configure anything here right now. The next section explains when this matters.
+
+      </Step>
+    </Steps>
+
+  </Tab>
+  <Tab value="Stable">
+    <VersionLedger app="zotero" channel="stable" />
+
+    <Callout type="info" title="The stable channel has no v2 release yet">
+      During the alpha period, use the **Beta** tab to install the companion. Beta installs move to stable releases automatically once v2 is promoted.
+    </Callout>
+
+  </Tab>
+</Tabs>
+
+## About live updates
+
+The companion supports two modes of communication with ZotLit in Obsidian. Basic actions like opening items from context menus work through protocol links with no extra setup. For live updates (where changes in your Zotero library push automatically to Obsidian), the companion needs its notification server enabled and pointed at the right URL.
+
+The setup for live updates is covered in [Set up live updates](/docs/how-to/set-up-live-updates).
+
+## Next steps
+
+If you have not installed ZotLit yet, head to [Install ZotLit](/docs/install-zotlit). Once both are in place, follow the tutorial to [create your first literature note](/docs/tutorial/first-note).

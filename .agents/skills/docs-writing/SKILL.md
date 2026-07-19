@@ -31,11 +31,19 @@ While writing, keep checking: "which quadrant am I in?" Content that answers a d
 
 ## Writing Style
 
-**Voice:** Friendly and direct, like explaining to a friend. Address the reader as "you" — "You can adjust playback speed…" not "Users can adjust…"
+Two registers, split by page role:
+
+**Plain manual** — the default for every page outside the onboarding walk, landing page included. Dry, declarative, second person. State what and where; save why for Explanation pages. Friendliness comes from clarity and brevity, not warmth: no chattiness, no "Let's", no "Simply", no exclamation marks. Register exemplar: the Linear docs (e.g. [Creating issues](https://linear.app/docs/creating-issues)). The landing page carries pitch *content* in this same cadence — short confident declaratives, never marketing rhythm.
+
+**Friendly guide** — the onboarding walk only (the two install pages and the tutorial). Warmth as calm reassurance: confirm progress, tell the reader what they'll see, pace gently. Still no emoji, no exclamation marks. Register exemplar: 1Password's getting-started pages (e.g. [Get to know 1Password in your browser](https://support.1password.com/getting-started-browser/)).
+
+**Address the reader as "you"** — "You can adjust playback speed…" not "Users can adjust…"
 
 **Sentences:** Active voice, present tense. Under 20 words where possible. One idea per sentence. Paragraphs of 2–3 sentences max.
 
 **Structure:** Start each page with a one-line summary. Use headings liberally for scanning. Essential info first, edge cases later — happy path first, warnings after.
+
+**Slop gate:** audit every finished page with the `slop-check` skill. Fix high- and medium-severity flags and re-run; escalate only disputed false positives to the maintainer.
 
 ## Page Patterns
 

@@ -1,10 +1,11 @@
 ---
 name: docs-writer
 description: >-
-  Prose worker for end-user documentation: writing new doc pages,
-  restructuring or improving existing docs, and documenting features for
-  users. Give it the topic, audience, and which pages to touch — it owns
-  the writing. Not for code changes.
+  Prose worker for end-user documentation. Use whenever a task calls for
+  writing, restructuring, or improving user-facing doc pages, documenting a
+  feature for users, or implementing a docs ticket/PRD. Delegate the writing here
+  instead of authoring docs in the main thread; give it the topic, audience,
+  and which pages to touch, and it owns the prose. Not for code changes.
 model: claude-opus-4-6
 effort: medium
 ---

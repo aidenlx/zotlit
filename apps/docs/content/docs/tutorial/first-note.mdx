@@ -1,0 +1,81 @@
+---
+title: "Create your first literature note"
+description: "A hands-on walkthrough: pick an item from your Zotero library and create a literature note in Obsidian with metadata and annotations."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+This tutorial walks you through creating your first literature note in Obsidian from a Zotero library item. By the end, you will have a Markdown note with the item's title, a link back to Zotero, and any annotations you have already made on the PDF.
+
+<Callout type="info" title="Before you start">
+  You need ZotLit installed in Obsidian and the ZotLit companion installed in Zotero:
+
+- [Install ZotLit](/docs/install-zotlit)
+- [Install the companion](/docs/install-companion)
+
+ZotLit finds your Zotero database automatically from your Zotero profile.
+
+</Callout>
+
+## Create the note
+
+<Steps>
+  <Step>
+    ### Open the quick switcher
+
+    Open the Obsidian command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+
+    <Command>ZotLit: Open literature note quick switcher</Command>
+
+    A search modal appears, connected to your Zotero library.
+
+  </Step>
+  <Step>
+    ### Pick a library item
+
+    Type to search for an item in your library. For this tutorial, choose an item that already has PDF annotations (highlights or notes you made in the Zotero PDF reader). That way you can see annotations appear in the finished note.
+
+    Select the item and press `Enter`.
+
+  </Step>
+  <Step>
+    ### See the result
+
+    ZotLit creates the note and opens it. You will see a brief notice: "Literature note created."
+
+    The note appears in a `literatures` folder in your vault (the default location). It contains:
+
+    - A heading with the item's title
+    - A link back to the item in Zotero
+    - Links to any attached files
+    - An **Annotations** section with your PDF highlights and notes (if the item had annotations)
+
+    The note's filename is the item's citation key by default.
+
+  </Step>
+</Steps>
+
+## What you are looking at
+
+The note contains a marked section called the **managed region** (between `%%zt-managed%%` and `%%/zt-managed%%` markers). ZotLit owns this region; your own writing goes above or below it. When you update the note later, ZotLit refreshes the managed region while leaving your writing intact.
+
+For more on how this works, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+
+## Opening an existing note
+
+If you run the quick switcher again and select the same item, ZotLit opens the existing note instead of creating a duplicate.
+
+## What's next
+
+Now that you have a literature note with annotations, the next lesson shows you how to change how those annotations look.
+
+<Cards>
+  <Card
+    title="Customize your annotations"
+    description="Edit a template to change how callouts render, then update the note in place."
+    href="/docs/tutorial/customize-template"
+  />
+</Cards>

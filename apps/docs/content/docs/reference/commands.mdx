@@ -1,0 +1,160 @@
+---
+title: "Commands"
+description: "Every ZotLit command-palette command, its entry points, and when it is available."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+This page documents every command registered by ZotLit. Each command is listed with its palette name, additional entry points (ribbon, file menu, context menu), and availability conditions.
+
+<Callout type="info">
+  ZotLit is a desktop-only plugin. These commands are not available on Obsidian
+  Mobile.
+</Callout>
+
+## Database
+
+<Command>ZotLit: Refresh Zotero database</Command>
+
+Reloads the Zotero database from disk. Use this after making changes in Zotero when automatic watching is disabled.
+
+| Entry point     | Details          |
+| --------------- | ---------------- |
+| Command palette | Always available |
+
+## Literature note quick switcher
+
+<Command>ZotLit: Open literature note quick switcher</Command>
+
+Opens a modal to search your Zotero library and jump to (or create) the corresponding literature note.
+
+| Entry point     | Details          |
+| --------------- | ---------------- |
+| Command palette | Always available |
+
+## Citations
+
+<Command>ZotLit: Insert Markdown citation</Command>
+
+Opens a modal to search your library and insert a Markdown citation at the cursor.
+
+| Entry point      | Details                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| Command palette  | Active when an editor is open                                                               |
+| Editor suggester | Triggered by typing `[@` in the editor (when **Citation suggester** is enabled in settings) |
+
+## Literature note actions
+
+The following commands operate on a literature note: the file currently open in the editor must be a ZotLit literature note. They also appear in the **file menu** (right-click the tab or use the file menu icon) under the **zotlit** section.
+
+<Command>ZotLit: Update literature note</Command>
+
+Re-renders the full literature note (frontmatter and managed body region) from the current Zotero data.
+
+| Entry point     | Details                     |
+| --------------- | --------------------------- |
+| Command palette | Active on a literature note |
+| File menu       | yes                         |
+
+---
+
+<Command>ZotLit: Update literature note metadata</Command>
+
+Re-renders only the frontmatter of the literature note from the current Zotero data. Body content is unchanged.
+
+| Entry point     | Details                     |
+| --------------- | --------------------------- |
+| Command palette | Active on a literature note |
+| File menu       | yes                         |
+
+---
+
+<Command>ZotLit: Overwrite literature note</Command>
+
+Destructively replaces the entire literature note with a fresh render. A confirmation modal appears before proceeding.
+
+| Entry point     | Details                     |
+| --------------- | --------------------------- |
+| Command palette | Active on a literature note |
+| File menu       | yes                         |
+
+---
+
+<Command>ZotLit: Import child notes from Zotero</Command>
+
+Imports the Zotero notes attached to the current item into the vault.
+
+| Entry point     | Details                     |
+| --------------- | --------------------------- |
+| Command palette | Active on a literature note |
+| File menu       | yes                         |
+
+## Imported note actions
+
+<Command>ZotLit: Update imported note from Zotero</Command>
+
+Re-imports a Zotero note that was previously imported. A confirmation modal appears before overwriting.
+
+| Entry point     | Details                                                 |
+| --------------- | ------------------------------------------------------- |
+| Command palette | Active on an imported note (file has a Zotero note key) |
+| File menu       | yes                                                     |
+
+## Annotations
+
+<Command>ZotLit: Open Zotero annotations</Command>
+
+Opens the annotation view in the right sidebar, showing annotations from the Zotero reader.
+
+| Entry point     | Details                                  |
+| --------------- | ---------------------------------------- |
+| Command palette | Always available                         |
+| Ribbon          | yes (tooltip: "Open Zotero annotations") |
+
+## Template data explorer
+
+<Command>ZotLit: Open template data explorer</Command>
+
+Opens the template data explorer, showing the full data object available to templates for the current item.
+
+| Entry point     | Details                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| Command palette | Always available                                                           |
+| File menu       | Label: **Explore template data**. Appears on files that carry an item key. |
+
+## Entry-point summary
+
+| Command                             | Palette | Ribbon | File menu |     Editor     |
+| ----------------------------------- | :-----: | :----: | :-------: | :------------: |
+| Refresh Zotero database             |   yes   |   —    |     —     |       —        |
+| Open literature note quick switcher |   yes   |   —    |     —     |       —        |
+| Insert Markdown citation            |   yes   |   —    |     —     | `[@` suggester |
+| Update literature note              |   yes   |   —    |    yes    |       —        |
+| Update literature note metadata     |   yes   |   —    |    yes    |       —        |
+| Overwrite literature note           |   yes   |   —    |    yes    |       —        |
+| Import child notes from Zotero      |   yes   |   —    |    yes    |       —        |
+| Update imported note from Zotero    |   yes   |   —    |    yes    |       —        |
+| Open Zotero annotations             |   yes   |  yes   |     —     |       —        |
+| Open template data explorer         |   yes   |   —    |    yes    |       —        |
+
+## See also
+
+<Cards>
+  <Card
+    title="Settings"
+    description="Every ZotLit setting: key, label, default, and location."
+    href="/docs/reference/settings"
+  />
+  <Card
+    title="Protocol links"
+    description="obsidian://zotlit/* actions for scripting workflows."
+    href="/docs/reference/protocol-links"
+  />
+  <Card
+    title="Template syntax"
+    description="Liquid markup reference for ZotLit templates."
+    href="/docs/reference/templates/syntax"
+  />
+</Cards>

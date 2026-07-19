@@ -1,0 +1,103 @@
+---
+title: "How templates work"
+description: "The six template types, Liquid and Eta languages, filename matching, and the defaults-plus-eject model."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+Templates are Markdown files with embedded expressions that control what your literature notes, citations, and filenames look like. Each template type handles one piece of the output, and you can customize any of them by ejecting the built-in default into your vault.
+
+## Template types
+
+ZotLit uses six template types. Each type receives data from Zotero and renders one piece of output.
+
+| Template     | Settings label     | Vault filename                | What it renders                                                                                                                  |
+| ------------ | ------------------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`   | Note filename      | `zotlit-filename.liquid.md`   | Filename of a new literature note. Use a forward slash (`/`) to route the note into subfolders under the literature note folder. |
+| `note`       | Literature note    | `zotlit-note.liquid.md`       | Body of a new literature note.                                                                                                   |
+| `annotation` | Annotation         | `zotlit-annotation.liquid.md` | A single annotation.                                                                                                             |
+| `content`    | Managed region     | `zotlit-content.liquid.md`    | Managed region that is overwritten on note update.                                                                               |
+| `cite`       | Citation           | `zotlit-cite.liquid.md`       | Citation inserted into the editor.                                                                                               |
+| `cite2`      | Alternate citation | `zotlit-cite2.liquid.md`      | Alternate citation format.                                                                                                       |
+
+The `content` template is the one whose output is wrapped in managed-region markers. When you run an update, only the content between those markers is replaced. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region) for details.
+
+## Two template languages
+
+ZotLit supports two template languages: **Liquid** and **Eta**.
+
+**Liquid** is the default. It is always active and requires no opt-in. Liquid templates can only combine data into text: they cannot read files, make network requests, or run system commands. That makes them safe to share, sync, and install from community sources.
+
+**Eta** is a JavaScript-based engine. Eta templates can run arbitrary JavaScript with the same access as ZotLit itself. Because of the wider security surface, Eta is disabled by default and requires a per-device opt-in called the JavaScript Templates gate. See [JavaScript templates](/docs/concepts/javascript-templates) for the full explanation.
+
+## Filename matching
+
+Template files follow a strict naming pattern:
+
+```
+zotlit-<name>.<language>.md
+```
+
+The `<name>` slot accepts any combination of alphanumeric characters and hyphens. The `<language>` portion is either `liquid` or `eta`. The pattern is case-sensitive.
+
+The six canonical names in the table above (`filename`, `note`, `annotation`, `content`, `cite`, `cite2`) each bind to a template type. A file with a canonical name overrides that type's built-in default. Files with non-canonical names are also compiled and can be referenced from other templates via `include()`.
+
+Examples: `zotlit-note.liquid.md`, `zotlit-annotation.eta.md`.
+
+## Liquid-wins shadowing [#liquid-wins-shadowing]
+
+Both a `.liquid.md` and a `.eta.md` file can exist for the same template name at the same time. When both are present, the Liquid file always takes precedence, regardless of whether JavaScript templates are enabled. The shadowed Eta file is reported with a warning in **Settings > Templates**:
+
+> The Eta template at `{path}` is ignored because a Liquid template with the same name takes precedence.
+
+## Built-in defaults and ejecting
+
+Every template type ships with a built-in Liquid default. When no vault file exists for a template name, ZotLit uses the embedded default.
+
+<Callout type="info" title="Using the built-in default">
+  **Settings > Templates** shows "Using the built-in default." next to any template that has not been ejected. The template works without any file in your vault.
+</Callout>
+
+To customize a template, you **eject** it: the built-in default is copied into your vault's template folder as a `.liquid.md` file and opened for editing. Each template's row in **Settings > Templates** shows a **Create editable template file** action when that template still uses the default.
+
+Once ejected, the file is yours. ZotLit watches the template folder and recompiles any changed file immediately. Edits take effect without reloading the plugin.
+
+### Restoring the default
+
+Deleting an ejected template file returns that template to the built-in default. No plugin reload is needed. The watcher picks up the deletion and reverts immediately. See [Customize a template](/docs/how-to/customize-a-template) for the steps.
+
+### Template folder
+
+All template files live under the folder configured in **Settings > Templates > Template folder**. Ejecting, loading, and file watching all use that folder.
+
+## Switching languages
+
+Each template can use either Liquid or Eta. Switching to Eta trashes the Liquid file (recoverable) and reveals an existing `.eta.md` or creates one from the built-in Eta default. Switching to Liquid trashes the `.eta.md` and the template reverts to an existing Liquid file or the built-in default.
+
+The switch never converts content between the two syntaxes: it replaces the file. Switching to Eta requires the JavaScript Templates gate to be on. See [Customize a template](/docs/how-to/customize-a-template) and [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for the procedures.
+
+## See also
+
+<Cards>
+  <Card
+    title="JavaScript templates"
+    description="What the gate enables, why it exists, and what happens when disabled."
+    href="/docs/concepts/javascript-templates"
+  />
+  <Card
+    title="Customize a template"
+    description="Eject, edit, and test a template step by step."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="Explore template data"
+    description="Use the Template Data Explorer to discover available fields."
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="Customize your annotations"
+    description="Tutorial lesson 2: change how annotations render in your notes."
+    href="/docs/tutorial/customize-template"
+  />
+</Cards>
