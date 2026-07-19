@@ -1,3 +1,10 @@
 {
-  "title": "Concepts"
+  "title": "Concepts",
+  "pages": [
+    "literature-notes-and-the-managed-region",
+    "how-zotlit-connects-to-zotero",
+    "how-templates-work",
+    "javascript-templates",
+    "..."
+  ]
 }

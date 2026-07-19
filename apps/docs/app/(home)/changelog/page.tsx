@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { getMDXComponents } from "@/components/mdx";
+import { SiteFooter } from "@/components/site-footer";
 import { formatReleaseDate } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
 
@@ -62,7 +63,7 @@ export default function ChangelogListPage() {
                     Companion {companion} released alongside.
                   </p>
                 )}
-                <div className="mt-3 max-w-none prose-sm text-fd-muted-foreground">
+                <div className="prose mt-2.5 max-w-none prose-sm text-fd-muted-foreground prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]">
                   <MDX components={getMDXComponents()} />
                 </div>
               </div>
@@ -71,10 +72,7 @@ export default function ChangelogListPage() {
         })}
       </div>
 
-      <footer className="flex flex-wrap justify-between gap-3 border-t border-fd-border py-6 text-sm text-fd-muted-foreground">
-        <span>ZotLit · free &amp; open source</span>
-        <span>Requires Zotero 9+ · Obsidian desktop</span>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

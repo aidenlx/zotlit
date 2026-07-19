@@ -1,0 +1,156 @@
+---
+title: "Protocol links"
+description: "Every obsidian://zotlit/* action, its parameters, and usage for scripting workflows."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+This page documents every `obsidian://zotlit/*` protocol action. These deep links allow external tools (the ZotLit companion, scripts, launchers) to trigger ZotLit operations in Obsidian.
+
+## Common parameters
+
+Every protocol link requires a `source-id` parameter: an 8-character hex string identifying the Zotero install that generated the link. ZotLit rejects links whose `source-id` does not match the connected database, showing:
+
+> This link was created by a different Zotero install.
+
+If the Zotero database is not yet loaded, ZotLit shows:
+
+> Open the Zotero database to handle this link.
+
+## Actions
+
+### open
+
+Opens the existing literature note for a Zotero item, or creates one if none exists.
+
+```
+obsidian://zotlit/open?item=<id>&source-id=<hash>
+```
+
+| Parameter   | Type       | Required | Description               |
+| ----------- | ---------- | -------- | ------------------------- |
+| `item`      | Integer    | Yes      | Zotero item ID            |
+| `source-id` | 8-char hex | Yes      | Zotero install identifier |
+
+---
+
+### update
+
+Re-renders a literature note from the current Zotero data.
+
+```
+obsidian://zotlit/update?item=<id>&source-id=<hash>
+```
+
+| Parameter   | Type                 | Required | Description                                                                                               |
+| ----------- | -------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `item`      | Integer              | Yes      | Zotero item ID                                                                                            |
+| `source-id` | 8-char hex           | Yes      | Zotero install identifier                                                                                 |
+| `scope`     | `full` or `metadata` | No       | What to update. Default: `full` (frontmatter + managed body region). `metadata` updates frontmatter only. |
+
+---
+
+### update-many
+
+Batch-updates multiple literature notes. Opens an interactive confirm/progress modal.
+
+```
+obsidian://zotlit/update-many?items=<id,id,...>&source-id=<hash>
+```
+
+| Parameter   | Type                     | Required | Description                                              |
+| ----------- | ------------------------ | -------- | -------------------------------------------------------- |
+| `items`     | Comma-separated integers | Yes      | Zotero item IDs (deduplicated; trailing comma tolerated) |
+| `source-id` | 8-char hex               | Yes      | Zotero install identifier                                |
+| `scope`     | `full` or `metadata`     | No       | Default: `full`                                          |
+
+<Callout type="info">
+  For batches too large for a URL, ZotLit also exposes `PUT {host}
+  /literature-notes` with the same parameters in the request body, gated by a
+  `source-id` header.
+</Callout>
+
+---
+
+### import-note
+
+Imports a single Zotero note (or child notes from an item) into the vault.
+
+```
+obsidian://zotlit/import-note?item=<id>&mode=<mode>&source-id=<hash>
+```
+
+| Parameter   | Type              | Required | Description                                                                    |
+| ----------- | ----------------- | -------- | ------------------------------------------------------------------------------ |
+| `item`      | Integer           | Yes      | Zotero item ID                                                                 |
+| `mode`      | `note` or `child` | Yes      | `note` imports a standalone note; `child` imports child notes of a parent item |
+| `source-id` | 8-char hex        | Yes      | Zotero install identifier                                                      |
+
+---
+
+### import-notes
+
+Batch-imports multiple Zotero notes.
+
+```
+obsidian://zotlit/import-notes?items=<id,id,...>&mode=<mode>&source-id=<hash>
+```
+
+| Parameter   | Type                     | Required | Description                                              |
+| ----------- | ------------------------ | -------- | -------------------------------------------------------- |
+| `items`     | Comma-separated integers | Yes      | Zotero item IDs (deduplicated; trailing comma tolerated) |
+| `mode`      | `note` or `child`        | Yes      | Import mode                                              |
+| `source-id` | 8-char hex               | Yes      | Zotero install identifier                                |
+
+<Callout type="info">
+  For batches too large for a URL, ZotLit also exposes `PUT {host}/zotero-notes`
+  with the same parameters in the request body, gated by a `source-id` header.
+</Callout>
+
+---
+
+### explore
+
+Opens the Template Data Explorer anchored on a specific item.
+
+```
+obsidian://zotlit/explore?item=<id>&source-id=<hash>
+```
+
+| Parameter    | Type       | Required | Description                                                                                                |
+| ------------ | ---------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `item`       | Integer    | Yes      | Zotero item ID                                                                                             |
+| `source-id`  | 8-char hex | Yes      | Zotero install identifier                                                                                  |
+| `annotation` | 8-char key | No       | Zotero annotation key (charset: `23456789A-NP-Z`). When provided, the explorer focuses on this annotation. |
+
+## Action summary
+
+| Action         | Single item | Batch | Scope param | Mode param |
+| -------------- | :---------: | :---: | :---------: | :--------: |
+| `open`         |     yes     |   —   |      —      |     —      |
+| `update`       |     yes     |   —   |     yes     |     —      |
+| `update-many`  |      —      |  yes  |     yes     |     —      |
+| `import-note`  |     yes     |   —   |      —      |    yes     |
+| `import-notes` |      —      |  yes  |      —      |    yes     |
+| `explore`      |     yes     |   —   |      —      |     —      |
+
+## See also
+
+<Cards>
+  <Card
+    title="Commands"
+    description="Every command-palette command and its entry points."
+    href="/docs/reference/commands"
+  />
+  <Card
+    title="Settings"
+    description="Every ZotLit setting: key, label, default, and location."
+    href="/docs/reference/settings"
+  />
+  <Card
+    title="Template syntax"
+    description="Liquid markup reference for ZotLit templates."
+    href="/docs/reference/templates/syntax"
+  />
+</Cards>

@@ -1,0 +1,170 @@
+---
+title: "Settings"
+description: "Every ZotLit setting: key, label, default value, and location in the settings tab."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+This page documents every setting exposed by ZotLit, grouped by the settings tab where it appears. Each entry lists the UI label, internal key, control type, and default value.
+
+Open settings from **Settings > Community plugins > ZotLit**.
+
+## Hub (top-level)
+
+The hub page shows when you first open ZotLit settings.
+
+| Label                           | Key                                  | Control                                | Default       |
+| ------------------------------- | ------------------------------------ | -------------------------------------- | ------------- |
+| **Default library**             | `zotero.citation-library`            | Dropdown (lists your Zotero libraries) | My Library    |
+| **Literature note folder**      | `note.literature-folder`             | Folder picker                          | `literatures` |
+| **Citation suggester**          | `citation.editor-suggester`          | Toggle                                 | On            |
+| **Show citekey in suggestions** | `citation.show-citekey-in-suggester` | Toggle                                 | Off           |
+
+## Zotero database
+
+| Label                 | Key                   | Control                                | Default     |
+| --------------------- | --------------------- | -------------------------------------- | ----------- |
+| **Zotero profile**    | `zotero.profile-dir`  | Profile picker                         | Auto-detect |
+| **Zotero database**   | (read-only)           | Displays resolved `zotero.sqlite` path | —           |
+| **Read mode**         | `zotero.read-mode`    | Dropdown                               | Auto        |
+| **Watch for changes** | `zotero.auto-refresh` | Toggle                                 | On          |
+
+**Read mode** options:
+
+| Option           | Behavior                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| Auto             | Selects the best mode for your platform automatically                               |
+| Reflink clone    | Fast snapshot via copy-on-write clone (needs a filesystem that supports reflinking) |
+| Full copy        | Byte-for-byte copy of the database file                                             |
+| Immutable source | Reads the Zotero database file directly, without a snapshot copy                    |
+
+### Advanced
+
+| Label                       | Key               | Control                                                                  | Default     |
+| --------------------------- | ----------------- | ------------------------------------------------------------------------ | ----------- |
+| **Data directory override** | `zotero.data-dir` | Folder picker                                                            | Auto-detect |
+| **Source ID**               | (read-only)       | Displays the 8-character hex identifier for the connected Zotero install | —           |
+
+## Templates
+
+| Label               | Key               | Control       | Default     |
+| ------------------- | ----------------- | ------------- | ----------- |
+| **Template folder** | `template.folder` | Folder picker | `templates` |
+
+### JavaScript templates
+
+JavaScript (Eta) templates are gated behind a per-device toggle. Enabling shows a confirmation modal.
+
+| Label                           | Key                           | Control                   | Default |
+| ------------------------------- | ----------------------------- | ------------------------- | ------- |
+| **JavaScript templates**        | (per-device gate)             | Turn on / Turn off button | Off     |
+| **Auto-pair Eta tags**          | `template.auto-pair-eta`      | Toggle                    | Off     |
+| **Trim whitespace before tags** | `template.auto-trim-leading`  | Dropdown                  | Keep    |
+| **Trim whitespace after tags**  | `template.auto-trim-trailing` | Dropdown                  | Keep    |
+
+<Callout type="info">
+  The three settings below the gate are visible only when JavaScript templates
+  are enabled.
+</Callout>
+
+**Trim whitespace** options: Keep, Strip one newline, Strip all whitespace.
+
+### Template files
+
+This group lists one row per template type, in order: **Note filename**, **Literature note**, **Annotation**, **Managed region**, **Citation**, **Alternate citation**.
+
+Each row provides:
+
+- **Create editable template file:** ejects the built-in default to a file you can edit.
+- **Open template:** opens the ejected file in the editor.
+- **Reset to default:** deletes the ejected file and reverts to the built-in (destructive; requires confirmation).
+- **Delete template file:** removes the ejected file (destructive; requires confirmation).
+- **Language:** dropdown to switch between Liquid and JavaScript (Eta).
+
+A **Create all editable template files** button at the top of the group ejects every template at once.
+
+### Template files > Frontmatter
+
+A sub-page managing the `note.frontmatter-fields` setting as an editable list. Each field row has:
+
+| Column             | Description                                                                     |
+| ------------------ | ------------------------------------------------------------------------------- |
+| **Key**            | The YAML frontmatter key name                                                   |
+| **Expression**     | Template expression that produces the value                                     |
+| **Language**       | Liquid or JavaScript (Eta)                                                      |
+| **Merge strategy** | How the field is updated on re-render: Replace, Append arrays, or Keep existing |
+
+Actions: **Add field**, **Reset to default** (reverts the full list).
+
+## Note import
+
+| Label                                | Key                                   | Control       | Default        |
+| ------------------------------------ | ------------------------------------- | ------------- | -------------- |
+| **Imported note folder**             | `note.import-folder`                  | Folder picker | `zotero_notes` |
+| **Render annotations from template** | `note.import-annotations-as-template` | Toggle        | Off            |
+
+## Attachments
+
+| Label                  | Key                      | Control       | Default            |
+| ---------------------- | ------------------------ | ------------- | ------------------ |
+| **Import attachments** | `attachment.import`      | Toggle        | On                 |
+| **Attachment folder**  | `attachment.folder-path` | Folder picker | (Obsidian default) |
+
+<Callout type="info">
+  **Attachment folder** is visible only when **Import attachments** is on.
+</Callout>
+
+## Live updates
+
+| Label                           | Key              | Control                | Default |
+| ------------------------------- | ---------------- | ---------------------- | ------- |
+| **Receive updates from Zotero** | `server.enabled` | Toggle                 | Off     |
+| **Port**                        | `server.port`    | Number (1024 -- 65535) | `9091`  |
+
+<Callout type="info">
+  **Port** and **Hostname** are visible only when **Receive updates from
+  Zotero** is on.
+</Callout>
+
+### Advanced
+
+| Label        | Key               | Control | Default     |
+| ------------ | ----------------- | ------- | ----------- |
+| **Hostname** | `server.hostname` | Text    | `127.0.0.1` |
+
+## Logging
+
+| Label                  | Key           | Control  | Default |
+| ---------------------- | ------------- | -------- | ------- |
+| **Log level**          | `log.level`   | Dropdown | info    |
+| **Write logs to file** | `log.to-file` | Toggle   | Off     |
+
+**Log level** options: Off, trace, debug, info, warning, error, fatal.
+
+When **Write logs to file** is on, logs append to `zotlit.log.jsonl` inside the plugin folder. Two additional action rows appear:
+
+- **Open log file:** opens the JSONL log in the system editor.
+- **Save log archive:** exports the log file for sharing.
+
+Both actions are disabled while **Write logs to file** is off.
+
+## See also
+
+<Cards>
+  <Card
+    title="Commands"
+    description="Every command-palette command and its entry points."
+    href="/docs/reference/commands"
+  />
+  <Card
+    title="Protocol links"
+    description="obsidian://zotlit/* actions for scripting workflows."
+    href="/docs/reference/protocol-links"
+  />
+  <Card
+    title="Template syntax"
+    description="Liquid markup reference for ZotLit templates."
+    href="/docs/reference/templates/syntax"
+  />
+</Cards>

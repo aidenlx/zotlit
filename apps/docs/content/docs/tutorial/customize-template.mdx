@@ -1,0 +1,145 @@
+---
+title: "Customize your annotations"
+description: "Edit how annotation callouts render by ejecting a template, changing its markup, and updating the note in place."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+This tutorial picks up where [Create your first literature note](/docs/tutorial/first-note) left off. You will change how annotation callouts look in that note by editing a template file, then use the Template data explorer to find new data you can add.
+
+<Callout type="info" title="Before you start">
+  You need the literature note you created in [the first
+  tutorial](/docs/tutorial/first-note). It should contain at least one
+  annotation callout (a highlight or note from the Zotero PDF reader). If your
+  note has no annotations, open a PDF in Zotero, highlight a passage, then come
+  back here.
+</Callout>
+
+## Change the callout type
+
+Each annotation in your note renders as a callout block. The built-in template uses `[!note]` as the callout type. In this section you will switch it to `[!quote]` by editing the annotation template file.
+
+<Steps>
+  <Step>
+    ### Create the editable template file
+
+    Open ZotLit's settings in Obsidian (**Settings > ZotLit**) and go to the **Templates** sub-page. Under the **Template files** group, find the row labeled **Annotation**.
+
+    Click the pen icon button to the right of the row. Its tooltip reads "Create editable template file."
+
+    A notice confirms the file was saved: **Template saved to templates/zotlit-annotation.liquid.md** (the exact path depends on your template folder setting).
+
+  </Step>
+  <Step>
+    ### Edit the template
+
+    Open the file `templates/zotlit-annotation.liquid.md` in your vault. It contains the default annotation template:
+
+    ```liquid
+    {% bq %}
+    [!note] Page {{ zt.pageLabel }}
+
+    {{ zt.imgLink | embed }}{{ zt.text }}
+    {% if zt.comment %}
+
+    {{ zt.comment }}
+    {% endif %}
+    {% endbq %}
+    ```
+
+    Change `[!note]` to `[!quote]` on the second line:
+
+    ```liquid
+    [!quote] Page {{ zt.pageLabel }}
+    ```
+
+    Save the file. ZotLit picks up template changes as soon as you save. No restart is required.
+
+  </Step>
+  <Step>
+    ### Update the note
+
+    Open the command palette and run:
+
+    <Command>ZotLit: Update literature note</Command>
+
+    The managed region re-renders with your new template. Every annotation callout in the note now shows `[!quote]` instead of `[!note]`. You will see a notice: "Literature note updated." Your own writing above or below the managed region stays untouched.
+
+    <Callout type="warn" title="Use the right command">
+      A similarly named <Command inline>ZotLit: Update literature note metadata</Command> refreshes frontmatter only. It does not re-render annotation callouts. If your callouts did not change, check that you ran <Command inline>ZotLit: Update literature note</Command> (without "metadata").
+    </Callout>
+
+  </Step>
+</Steps>
+
+## Add annotation color to the title
+
+The annotation template has access to data from each annotation in your Zotero library. One useful property is `colorName`, which holds the highlight color as a word (such as "yellow", "red", or "green"). You can discover properties like this in the Template data explorer.
+
+<Steps>
+  <Step>
+    ### Open the explorer
+
+    With your literature note open, run the command palette and choose:
+
+    <Command>ZotLit: Open template data explorer</Command>
+
+    A panel opens showing the data tree for the current note.
+
+  </Step>
+  <Step>
+    ### Find the color property
+
+    In the explorer, expand the **annotations** list and find an annotation entry. Right-click that annotation row and choose **Explore as annotation template data**. This re-roots the tree so that each property's path matches what you write in the annotation template.
+
+    Look for the `colorName` row. Right-click it and choose **Copy output**. The clipboard now contains `{{ zt.colorName }}`, ready to paste into your template.
+
+  </Step>
+  <Step>
+    ### Add color to the callout title
+
+    Go back to `templates/zotlit-annotation.liquid.md`. On the callout title line, add a comma after `{{ zt.pageLabel }}` and paste what you copied:
+
+    ```liquid
+    [!quote] Page {{ zt.pageLabel }}, {{ zt.colorName }}
+    ```
+
+    Save the file.
+
+  </Step>
+  <Step>
+    ### Update again
+
+    Run <Command inline>ZotLit: Update literature note</Command> once more. Each callout title now includes the annotation's highlight color, such as "Page 12, yellow."
+
+  </Step>
+</Steps>
+
+## Restoring the default template
+
+If you want to undo your changes, delete the `templates/zotlit-annotation.liquid.md` file from your vault. The next time you run **Update literature note**, ZotLit renders annotations with the original built-in template.
+
+## What's next
+
+From here you can adjust any template file in the same way.
+
+<Cards>
+  <Card
+    title="Explore template data"
+    description="Use the Template data explorer to find any property available in your templates."
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="Customize a template"
+    description="The complete recipe for ejecting, editing, and managing any template type."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="How templates work"
+    description="Understand the six template types, the managed region, and how changes take effect."
+    href="/docs/concepts/how-templates-work"
+  />
+</Cards>

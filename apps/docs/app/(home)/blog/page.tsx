@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SiteFooter } from "@/components/site-footer";
 import { formatReleaseDate } from "@/lib/shared";
 import { getBlogPages } from "@/lib/source";
 
@@ -65,10 +66,7 @@ export default function BlogListPage() {
         })}
       </div>
 
-      <footer className="flex flex-wrap justify-between gap-3 border-t border-fd-border py-6 text-sm text-fd-muted-foreground">
-        <span>ZotLit · free &amp; open source</span>
-        <span>Requires Zotero 9+ · Obsidian desktop</span>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }
