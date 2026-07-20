@@ -7,6 +7,7 @@ import { getBlogPages } from "@/lib/source";
 export const metadata = {
   title: "Blog",
   description: "Notes from building ZotLit.",
+  alternates: { canonical: "/blog" },
 };
 
 export default function BlogListPage() {

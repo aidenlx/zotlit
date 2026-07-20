@@ -8,6 +8,9 @@ const withMDX = createMDX();
 const config = {
   serverExternalPackages: ["@takumi-rs/core"],
   reactStrictMode: true,
+  // Statically-typed routes; app/sitemap.ts keys its route table off the
+  // generated `@next/routes` AppRoutes union so a new page can't escape it.
+  typedRoutes: true,
   turbopack: {
     rules: {
       "*": {
