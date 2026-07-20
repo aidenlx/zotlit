@@ -1,0 +1,4 @@
+{
+  "origins": ["https://zotlit.aidenlx.site"],
+  "originsRegex": ["http://localhost:[0-9]+"]
+}
