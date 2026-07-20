@@ -3,7 +3,7 @@
 const REPO = "aidenlx/zotlit";
 const ZOTERO_ADDON_ID = "zotlit@aidenlx.site";
 /** ISR window: release facts may lag GitHub by up to an hour. */
-const REVALIDATE_SECONDS = 3600;
+export const REVALIDATE_SECONDS = 3600;
 
 export type ReleaseChannel = "pre-release" | "stable";
 
@@ -42,9 +42,14 @@ export interface ZoteroCompanion {
  * @throws on transient failures (network, rate limit) so callers can
  * distinguish "known missing" from "couldn't check".
  */
-export async function fetchGitHubJson<T>(url: string): Promise<T | null> {
+export async function fetchGitHubJson<T>(
+  url: string,
+  { cache }: { cache?: RequestCache } = {},
+): Promise<T | null> {
   const res = await fetch(url, {
-    next: { revalidate: REVALIDATE_SECONDS },
+    // `cache` opts out of the fetch data cache — used inside unstable_cache so
+    // an oversized response isn't stored whole; otherwise use the ISR window.
+    ...(cache ? { cache } : { next: { revalidate: REVALIDATE_SECONDS } }),
     // Raises the GitHub rate limit from 60/hr (anonymous) to 5000/hr in CI.
     headers: process.env.GITHUB_TOKEN
       ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }

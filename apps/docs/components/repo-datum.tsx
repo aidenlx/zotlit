@@ -1,10 +1,11 @@
 import cn from "cnfast";
 // Ruled GitHub datum for the landing hero: live stars + downloads, degrading to just the slug when GitHub is unreachable.
 import { Download, Star } from "lucide-react";
+import { unstable_cache } from "next/cache";
 import { Fragment } from "react";
 
 import GithubMark from "@/assets/github.svg?svgr";
-import { fetchGitHubJson } from "@/lib/github-releases";
+import { fetchGitHubJson, REVALIDATE_SECONDS } from "@/lib/github-releases";
 import { gitConfig } from "@/lib/shared";
 
 interface RepoStats {
@@ -20,12 +21,19 @@ async function getStars(): Promise<number | null> {
   return data?.stargazers_count ?? null;
 }
 
-async function getDownloads(): Promise<number | null> {
-  const data = await fetchGitHubJson<PluginStats>(
-    "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json",
-  ).catch(() => null);
-  return data?.zotlit?.downloads ?? null;
-}
+// The upstream community-plugin-stats blob is >2MB and can't go in the fetch
+// data cache, so fetch it uncached and memoize only the one count we read.
+const getDownloads = unstable_cache(
+  async (): Promise<number | null> => {
+    const data = await fetchGitHubJson<PluginStats>(
+      "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json",
+      { cache: "no-store" },
+    ).catch(() => null);
+    return data?.zotlit?.downloads ?? null;
+  },
+  ["obsidian-plugin-downloads"],
+  { revalidate: REVALIDATE_SECONDS },
+);
 
 /** Humanizes a count like the hero prototype: <1000 verbatim, else `N.MK` with a trailing `.0` stripped. */
 function humanize(count: number): string {
