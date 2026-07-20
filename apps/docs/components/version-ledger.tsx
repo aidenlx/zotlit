@@ -120,7 +120,7 @@ function formatDate(iso: string): string {
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline gap-2.5">
-      <span className="shrink-0 text-[0.9375rem] font-medium tracking-[0.07em] text-fd-muted-foreground [font-variant-caps:all-small-caps]">
+      <span className="shrink-0 font-mono text-xs font-medium tracking-[0.08em] text-fd-muted-foreground uppercase">
         {label}
       </span>
       <span

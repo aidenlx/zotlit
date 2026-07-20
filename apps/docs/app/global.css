@@ -61,6 +61,12 @@
     var(--font-inter), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-brand: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  /* IBM Plex Mono is the "Machine" voice — overriding --font-mono here reroutes
+     both the `font-mono` utility and every var(--font-mono) reference (code,
+     kbd, version chips, meta lines, uppercase apparatus labels) onto it. */
+  --font-mono:
+    var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
   /* --font-gelasio lives on <html> (root layout), no longer scoped to the
      (home) container, and its next/font `fallback` option already bakes the
      system-serif stack into the variable itself — the var() fallback here is
@@ -111,9 +117,11 @@
   line-height: 1.45;
 }
 .zt-prose h4:not(:where(.not-prose, .not-prose *)) {
-  font-variant-caps: all-small-caps;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 0.9em;
 }
 /* Quotes and captions carry the serif-italic editorial register (the lede /
    standfirst voice), bridging the two faces inside the sans body. Blockquote's
@@ -155,8 +163,11 @@
 /* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact
    id and exposes no className hook short of ejecting the whole TOC slot. */
 #toc-title {
-  font-variant-caps: all-small-caps;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
   letter-spacing: 0.1em;
+  font-weight: 600;
+  font-size: 0.8125rem;
 }
 
 html {

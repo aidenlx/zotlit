@@ -3,7 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import "./global.css";
 import { RootProvider } from "fumadocs-ui/provider/next";
 import { type Metadata } from "next";
-import { Gelasio, Inter } from "next/font/google";
+import { Gelasio, IBM_Plex_Mono, Inter } from "next/font/google";
 import localFont from "next/font/local";
 
 import { LegacyBanner } from "@/components/legacy-banner";
@@ -33,6 +33,19 @@ const gelasio = Gelasio({
   style: ["normal", "italic"],
   variable: "--font-gelasio",
   fallback: ["Iowan Old Style", "Charter", "Georgia", "serif"],
+});
+
+// IBM Plex Mono — the "Machine" voice: apparatus labels (nav, meta lines,
+// version chips), code, and OG cards. A humanist mono that sits calmly beside
+// Gelasio. Plex Mono isn't a variable font on Google Fonts, so weights are
+// explicit: 400 code/kbd, 500 chips, 600 uppercase labels. preload off for the
+// same reason as Inter — it swaps shift-free from the system-mono fallback.
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-ibm-plex-mono",
+  preload: false,
+  fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
 });
 
 // Archivo SemiBold subset to the five "ZotLit" glyphs (~1 KB) — brand wordmark only.
@@ -67,7 +80,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${gelasio.variable} ${archivo.variable}`}
+      className={`${inter.variable} ${gelasio.variable} ${ibmPlexMono.variable} ${archivo.variable}`}
       suppressHydrationWarning
     >
       <body className="flex min-h-screen flex-col">
