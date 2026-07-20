@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { RepoDatum } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
+import { V1HomeNotice } from "@/components/v1-home-notice";
 
 const features: Array<{
   term: string;
@@ -42,6 +43,7 @@ const features: Array<{
 export default function HomePage() {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6">
+      <V1HomeNotice />
       <section className="grid items-center gap-13 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
         <div>
           <p className="mb-4 text-sm tracking-[0.22em] text-fd-primary [font-variant-caps:all-small-caps]">
