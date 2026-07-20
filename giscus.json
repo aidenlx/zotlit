@@ -1,4 +1,4 @@
 {
-  "origins": ["https://obzt.aidenlx.top", "https://zotlit.aidenlx.top"],
+  "origins": ["https://zotlit.aidenlx.site"],
   "originsRegex": ["http://localhost:[0-9]+"]
 }
