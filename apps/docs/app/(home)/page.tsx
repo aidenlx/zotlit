@@ -1,8 +1,13 @@
+import { type Route } from "next";
 import Link from "next/link";
 
 import { RepoDatum } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
 import { V1HomeNotice } from "@/components/v1-home-notice";
+
+export const metadata = {
+  alternates: { canonical: "/" },
+};
 
 const features: Array<{
   term: string;
@@ -65,7 +70,9 @@ export default function HomePage() {
               Get started
             </Link>
             <Link
-              href="/docs"
+              // `/docs` is the optional catch-all base, which typedRoutes can't
+              // statically prove; it resolves the docs index at runtime.
+              href={"/docs" as Route}
               className="text-fd-muted-foreground underline decoration-fd-border underline-offset-4 transition-colors hover:text-fd-primary hover:decoration-fd-primary"
             >
               Read the docs
@@ -115,7 +122,7 @@ export default function HomePage() {
               </dt>
               <span className="flex-1 -translate-y-1 border-b-2 border-dotted border-fd-border" />
               <Link
-                href={feature.href}
+                href={feature.href as Route}
                 className="text-sm tracking-[0.1em] whitespace-nowrap text-fd-primary [font-variant-caps:all-small-caps] hover:underline"
               >
                 {feature.ref}

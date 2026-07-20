@@ -16,7 +16,8 @@
     "incremental": true,
     "paths": {
       "@/*": ["./*"],
-      "collections/*": ["./.source/*"]
+      "collections/*": ["./.source/*"],
+      "@next/*": ["./.next/types/*.d.ts", "./.next/dev/types/*.d.ts"]
     },
     "plugins": [
       {
