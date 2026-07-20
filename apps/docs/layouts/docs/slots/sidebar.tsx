@@ -365,7 +365,7 @@ function SidebarItem({
         // Uniform rubric: every root-level row (links-prop entries included)
         // speaks the orange caps voice; nested page links lead in near-ink.
         depth === 0
-          ? "text-[0.88rem] tracking-widest text-fd-primary [font-variant-caps:all-small-caps]"
+          ? "font-mono text-[0.72rem] font-semibold tracking-widest text-fd-primary uppercase"
           : "text-[0.84rem] text-[color-mix(in_oklab,var(--color-fd-foreground)_82%,var(--color-fd-muted-foreground))]",
         className,
       )}
@@ -391,7 +391,7 @@ function SidebarLinkEntry({
       className={cn(
         itemVariants({ variant: "link" }),
         // Unified `links` voice (shared with the home-nav links)
-        "text-[0.9375rem] font-medium tracking-[0.06em] text-fd-muted-foreground [font-variant-caps:all-small-caps] [&_svg]:translate-y-[2px]",
+        "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase [&_svg]:translate-y-[2px]",
         className,
       )}
       style={{ paddingInlineStart: getItemOffset(0), ...style }}
@@ -415,7 +415,7 @@ function SidebarFolderTrigger({
         cn(
           itemVariants({ variant: collapsible ? "button" : null }),
           // Rubricated folder labels at the TOC-title voice; chevrons stay muted.
-          "w-full text-[0.88rem] font-medium tracking-widest text-fd-primary [font-variant-caps:all-small-caps] [&_svg]:text-fd-muted-foreground",
+          "w-full font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-primary uppercase [&_svg]:text-fd-muted-foreground",
           typeof className === "function" ? className(state) : className,
         )
       }
@@ -446,7 +446,7 @@ function SidebarFolderLink({
       className={cn(
         itemVariants({ variant: "link", highlight: depth > 1 }),
         // Folder labels carry the rubric even when the folder is a link.
-        "w-full text-[0.88rem] font-medium tracking-widest text-fd-primary [font-variant-caps:all-small-caps] [&_svg]:text-fd-muted-foreground",
+        "w-full font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-primary uppercase [&_svg]:text-fd-muted-foreground",
         className,
       )}
       style={{

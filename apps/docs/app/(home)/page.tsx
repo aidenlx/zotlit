@@ -51,7 +51,7 @@ export default function HomePage() {
       <V1HomeNotice />
       <section className="grid items-center gap-13 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
         <div>
-          <p className="mb-4 text-sm tracking-[0.22em] text-fd-primary [font-variant-caps:all-small-caps]">
+          <p className="mb-4 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase">
             Zotero × Obsidian
           </p>
           <h1 className="mb-5 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
@@ -117,13 +117,13 @@ export default function HomePage() {
         {features.map((feature) => (
           <div key={feature.term} className="py-3">
             <div className="flex items-baseline gap-2.5">
-              <dt className="text-lg tracking-[0.07em] whitespace-nowrap [font-variant-caps:all-small-caps]">
+              <dt className="font-mono text-sm font-semibold tracking-[0.08em] whitespace-nowrap uppercase">
                 {feature.term}
               </dt>
               <span className="flex-1 -translate-y-1 border-b-2 border-dotted border-fd-border" />
               <Link
                 href={feature.href as Route}
-                className="text-sm tracking-[0.1em] whitespace-nowrap text-fd-primary [font-variant-caps:all-small-caps] hover:underline"
+                className="font-mono text-xs font-semibold tracking-[0.12em] whitespace-nowrap text-fd-primary uppercase hover:underline"
               >
                 {feature.ref}
               </Link>

@@ -57,8 +57,8 @@ function BlockCommand({ children }: { children: string }) {
         onClick={copy}
         aria-label={copied ? "Command name copied" : "Copy command name"}
         className={
-          "ml-auto shrink-0 cursor-pointer self-center text-[0.76rem] font-medium tracking-[0.09em] text-fd-primary transition-opacity" +
-          " [font-variant-caps:all-small-caps] hover:opacity-80" +
+          "ml-auto shrink-0 cursor-pointer self-center font-mono text-[0.68rem] font-semibold tracking-[0.1em] text-fd-primary uppercase transition-opacity" +
+          " hover:opacity-80" +
           " focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary"
         }
       >

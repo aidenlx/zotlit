@@ -41,7 +41,7 @@ export default async function ChangelogVersionPage(
               </span>
             )}
           </h1>
-          <p className="mb-1.5 text-[15px] tracking-[0.1em] text-fd-muted-foreground [font-variant-caps:all-small-caps]">
+          <p className="mb-1.5 font-mono text-xs font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
             {formatReleaseDate(date)}
           </p>
         </header>

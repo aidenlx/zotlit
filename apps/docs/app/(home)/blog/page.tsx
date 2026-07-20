@@ -32,7 +32,7 @@ export default function BlogListPage() {
               className="grid grid-cols-1 gap-2 border-b border-fd-border/60 py-6 last:border-b-0 md:grid-cols-[190px_1fr] md:gap-6.5"
             >
               <div className="text-left md:text-right">
-                <time className="block text-[15px] tracking-[0.1em] text-fd-muted-foreground [font-variant-caps:all-small-caps]">
+                <time className="block font-mono text-xs font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
                   {formatReleaseDate(date)}
                 </time>
                 <p className="text-[14.5px] text-fd-muted-foreground italic">
@@ -56,7 +56,7 @@ export default function BlogListPage() {
                 <p className="mt-2.5">
                   <Link
                     href={page.url as `/blog/${string}`}
-                    className="text-[15px] tracking-[0.1em] text-fd-primary [font-variant-caps:all-small-caps] hover:underline"
+                    className="font-mono text-xs font-semibold tracking-[0.12em] text-fd-primary uppercase hover:underline"
                   >
                     Read the post →
                   </Link>

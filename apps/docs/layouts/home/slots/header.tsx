@@ -32,8 +32,8 @@ import { mergeRefs } from "@/lib/merge-refs";
 export const navItemVariants = cva("[&_svg]:size-4", {
   variants: {
     variant: {
-      // Unified `links` voice (shared with the /docs sidebar entries)
-      main: "inline-flex items-center gap-1 p-2 text-lg font-medium tracking-[0.06em] [font-variant-caps:all-small-caps] text-fd-muted-foreground transition-colors hover:text-fd-accent-foreground data-[active=true]:text-fd-primary",
+      // Apparatus-label voice: IBM Plex Mono uppercase (the "Machine" register).
+      main: "inline-flex items-center gap-1 p-2 font-mono text-[0.8125rem] font-medium uppercase tracking-[0.11em] text-fd-muted-foreground transition-colors hover:text-fd-accent-foreground data-[active=true]:text-fd-primary",
       button: buttonVariants({
         color: "secondary",
         className: "gap-1.5",
