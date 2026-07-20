@@ -24,6 +24,10 @@ Owned layout slots:
   label over the title. Exports `FooterCards` for reuse on blog posts.
 - `components/docs-subnav.tsx` — mobile docs header with the hairline
   signature (`DocsLayout slots.header`).
+- `components/banner.tsx` — vendored fumadocs `Banner`: `height` is a floor
+  (`min-height`), so the strip wraps instead of overflowing on narrow
+  viewports, and a resize-synced `--fd-banner-height` keeps sticky offsets
+  tracking the wrapped height. Consumed by `components/legacy-banner.tsx`.
 
 ## Type system
 
