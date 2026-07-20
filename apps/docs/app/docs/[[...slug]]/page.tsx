@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 
 import { DocsPageFooter } from "@/components/docs-page-footer";
 import { getMDXComponents } from "@/components/mdx";
+import { V1RedirectNotice } from "@/components/v1-redirect-notice";
 import { gitConfig } from "@/lib/shared";
 import { getPageImage, getPageMarkdownUrl, source } from "@/lib/source";
 
@@ -29,6 +30,7 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
       full={page.data.full}
       slots={{ footer: DocsPageFooter }}
     >
+      <V1RedirectNotice />
       <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
         {page.data.title}
       </DocsTitle>
