@@ -1,0 +1,39 @@
+# .vercelignore — deployment target: @zotlit/docs (apps/docs)
+#
+# `next build` in apps/docs pulls in only apps/docs itself plus its lone
+# workspace dep, packages/config (tsconfig/oxlint presets, no workspace deps
+# of its own). pnpm's frozen-lockfile install derives its project scope from
+# pnpm-lock.yaml, so the sibling workspaces excluded below can be absent from
+# the upload without breaking install. Root manifests + turbo.json stay.
+
+# --- Sibling apps (not in the docs dependency graph) ---
+/apps/obsidian
+/apps/zotero
+/apps/website
+
+# --- Packages the docs build never imports ---
+/packages/db
+/packages/item-lookup
+/packages/obsidian-api
+/packages/pdfjs-dist
+/packages/protocol
+/packages/scripts
+/packages/shared
+/packages/templates
+/packages/zotero-types
+
+# --- Repo-level content unrelated to the build ---
+/docs
+/.scratch
+/scripts
+
+# --- Caches & build artifacts (regenerated on Vercel) ---
+node_modules
+.git
+.turbo
+**/.turbo
+**/.next
+**/.source
+**/dist
+**/coverage
+**/*.tsbuildinfo
