@@ -7,6 +7,7 @@
 // i18n ships and no zh path lands on `/`.
 
 import { ArrowUpRight, ChevronRight, X } from "lucide-react";
+import { type Route } from "next";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -55,12 +56,14 @@ function Notice() {
         className="mt-2.5 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[0.9rem]"
       >
         {equivalent ? (
-          <Link href={equivalent} className={linkClass}>
+          <Link href={equivalent as Route} className={linkClass}>
             阅读此页的英文版
             <ChevronRight aria-hidden className="size-[1em]" />
           </Link>
         ) : (
-          <Link href="/docs" className={linkClass}>
+          // `/docs` optional catch-all base — cast past typedRoutes; resolves
+          // the docs index at runtime.
+          <Link href={"/docs" as Route} className={linkClass}>
             浏览 v2 英文文档
             <ChevronRight aria-hidden className="size-[1em]" />
           </Link>

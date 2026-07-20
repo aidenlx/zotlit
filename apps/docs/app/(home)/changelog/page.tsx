@@ -8,6 +8,7 @@ import { getChangelogPages } from "@/lib/source";
 export const metadata = {
   title: "Changelog",
   description: "Every ZotLit release, newest first.",
+  alternates: { canonical: "/changelog" },
 };
 
 export default function ChangelogListPage() {

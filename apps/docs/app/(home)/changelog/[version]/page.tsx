@@ -91,5 +91,6 @@ export async function generateMetadata(
     description:
       description ??
       `Changelog for ZotLit v${version} released on ${formatReleaseDate(date)}.`,
+    alternates: { canonical: page.url },
   };
 }
