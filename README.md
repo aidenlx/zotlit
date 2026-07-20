@@ -10,11 +10,11 @@
 <p>Integrate Zotero with Obsidian: literature notes, citations, annotations.</p>
 
 <p>
-  <a href="https://zotlit.aidenlx.site">Website</a>
+  <a href="https://zotlit.aidenlx.site">🌐 Website</a>
   ·
-  <a href="https://zotlit.aidenlx.site/docs">Docs</a>
+  <a href="https://zotlit.aidenlx.site/docs">📖 Docs</a>
   ·
-  <a href="https://github.com/aidenlx/zotlit/discussions">Discussions</a>
+  <a href="https://zotlit.aidenlx.site/community">💬 Community</a>
 </p>
 
 <p>
@@ -73,7 +73,7 @@ New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/
 
 ## Support
 
-Questions and help: [GitHub Discussions](https://github.com/aidenlx/zotlit/discussions). Bug reports: [open an issue](https://github.com/aidenlx/zotlit/issues/new).
+Questions, help, and bug reports: [Community](https://zotlit.aidenlx.site/community) — Discord for chat, GitHub Discussions for ideas and bugs.
 
 ---
 
