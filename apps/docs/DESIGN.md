@@ -17,7 +17,7 @@ surface is identical, and the CLI's `base-ui` registry serves it first-class.)
 
 Owned layout slots:
 
-- `layouts/home/slots/header.tsx` — home nav: caps-rule links, double hairline.
+- `layouts/home/slots/header.tsx` — home nav: IBM Plex Mono uppercase links, double hairline.
 - `layouts/docs/slots/sidebar.tsx` — docs sidebar: orange rubric on folder
   rows, muted small-caps `links`-prop entries, near-ink page links.
 - `layouts/docs/page/slots/footer.tsx` — prev/next cards: muted direction
@@ -35,9 +35,9 @@ Four faces, four roles:
 
 | Face | Role |
 | --- | --- |
-| **Gelasio** (serif) | Content & display: headings, titles, descriptions/ledes/standfirsts, small-caps labels, feature list, editorial annotations |
-| **Inter** (sans, `preload: false`) | Prose body & chrome: markdown running text, nav, sidebar, TOC, buttons, search |
-| **Mono** (system stack) | Code, version chips, the hero note card |
+| **Gelasio** (serif) | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations |
+| **Inter** (sans, `preload: false`) | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search |
+| **IBM Plex Mono** (Google, weights 400/500/600, `preload: false`) | The **"Machine" voice**: code, version chips, the hero note card, meta lines, and every UPPERCASE apparatus label (home nav, landing eyebrow/feature terms, blog & changelog dates). Drives `--font-mono`. |
 | **Archivo** (subset woff2) | Wordmark only — subset to exactly the "ZotLit" glyphs |
 
 Serif carries the editorial voice at **weight 500** for display headings and
@@ -51,24 +51,31 @@ compensate for Gelasio's smaller x-height (~0.48em vs Inter's ~0.55em).
 Blockquotes at 1.125em put Gelasio at optical parity with the surrounding
 sans body.
 
-## The caps rule
+## The label voice
 
-The rule scopes to **labels** — short apparatus that names a thing rather than
-saying a sentence. Every label site-wide uses `font-variant-caps:
-all-small-caps` — uniform small-capital height, no tall initials — plus
-0.07–0.1em tracking:
+Apparatus **labels** — short text that names a thing rather than saying a
+sentence — speak the **Machine register: IBM Plex Mono, `uppercase`**, 0.08–0.2em
+tracking, weight 500–600. Real uppercase over the bundled mono replaces the old
+`all-small-caps` (serif on the marketing surfaces, sans in docs chrome): it
+stays razor-legible at any size, including shrunk-down OG cards, where
+synthesized small-caps crowd and blur.
 
-- Nav links
-- Sidebar root-level rows (folders and `links`-prop entries)
-- TOC "On this page" title
-- Docs prose h4 (minor heads as apparatus labels, in sans)
-- Landing feature terms and eyebrow
-- Changelog/blog dates and meta lines
+Every apparatus label site-wide is mono uppercase:
+
+- Home nav links
+- Landing eyebrow, feature terms, and feature links
+- Changelog/blog dates and meta lines; version-ledger row labels
+- Docs sidebar folder + `links`-prop rows, the TOC "On this page" title, docs
+  prose h4, and the command `Copy →` affordance
+
+Docs-chrome labels ride the same voice at a smaller size (~0.72rem) and quieter
+weight — micro-apparatus inside the sans body rather than marketing display, but
+the same mono-uppercase register.
 
 **Running prose stays in normal case**, even in chrome: full sentences read as
 text, not labels — so the v2-beta banner notice, tooltips, and any
 sentence-shaped copy keep their upright case and sans body voice. The Archivo
-wordmark likewise stays outside caps treatment.
+wordmark likewise stays outside label treatment.
 
 ## Font loading
 
@@ -77,6 +84,12 @@ inline` block in `app/global.css`. Gelasio preloads app-wide (paints on every
 route). Inter is `preload: false` — fetched only where sans paints, swapping
 shift-free from a metric-adjusted fallback on serif-only routes.
 
+IBM Plex Mono loads three explicit weights (400/500/600 — Plex Mono isn't a
+variable font on Google Fonts) with `preload: false`, swapping shift-free from a
+system-mono fallback. Its `@theme inline` `--font-mono` override reroutes both
+the `font-mono` utility and every `var(--font-mono)` reference onto it in one
+lever.
+
 ## Per-surface
 
 ### Landing (`app/(home)/page.tsx`)
@@ -84,7 +97,7 @@ shift-free from a metric-adjusted fallback on serif-only routes.
 Serif content throughout (the landing is hero + feature index, no markdown
 body):
 
-- **Hero, two columns.** Left: orange all-small-caps eyebrow, serif headline,
+- **Hero, two columns.** Left: orange mono-uppercase eyebrow, serif headline,
   italic lede, the **repo datum** (`components/repo-datum.tsx`) — a 2px accent
   left bar (no box) with the official Invertocat mark in accent orange and one
   muted mono line showing slug, stars, and downloads (each stat drops out when
@@ -92,8 +105,8 @@ body):
   the docs" text link. Right: the note mock as a chrome-less paper sheet in
   mono, slight rotation, hard offset shadow, accent bookmark tab at the top
   edge.
-- **Features as an index**: four rows — all-small-caps serif term, dotted
-  leader, all-small-caps orange link into the docs — with a one-line
+- **Features as an index**: four rows — mono-uppercase term, dotted
+  leader, mono-uppercase orange link into the docs — with a one-line
   description under each.
 - **Shared copyright footer** (`components/site-footer.tsx`): hairline-topped
   "© year AidenLx · MIT Licensed" line, shared across all `(home)` index
@@ -102,7 +115,7 @@ body):
 ### Changelog (`/changelog`)
 
 List/detail pages in the `(home)` route group styled with Tailwind over fd
-tokens. Each release: right-aligned gutter (all-small-caps date, mono version
+tokens. Each release: right-aligned gutter (mono-uppercase date, mono version
 badge; latest badge orange-bordered) and a body with serif heading, optional
 companion note, then bullet notes in serif digest density. The detail page
 renders full release notes as `zt-prose` (sans body with serif headings).
@@ -116,7 +129,7 @@ The changelog's sibling in the `(home)` route group:
   serif title, italic deck, orange "Read the post →" link. Closes on the
   shared `SiteFooter`.
 - **Post head**: "← Blog" caps crumb, serif title, italic standfirst,
-  all-small-caps meta line, hairline, then `zt-prose` body.
+  mono-uppercase meta line, hairline, then `zt-prose` body.
 - **Post tail**: `FooterCards` prev/next, then comments (Giscus).
 
 ### Docs content column
@@ -124,24 +137,26 @@ The changelog's sibling in the `(home)` route group:
 - Title: serif, medium weight, balanced.
 - Description: serif italic.
 - Prose (`.zt-prose`): sans body, serif h1–h3 at weight 500 with balance and
-  the compensated scale, h4 as sans all-small-caps label, inline code
+  the compensated scale, h4 as a mono-uppercase label, inline code
   square-cornered, `kbd` mono.
 - Blockquotes and figcaptions carry the serif-italic editorial register.
 - Lists run tighter than paragraphs (0.75em block margins, 0.25em item gaps).
 - **Command references** (`components/command.tsx`): leading Lucide `Terminal`
-  glyph (accent) + command name in serif display voice + a `Copy →` caps link.
+  glyph (accent) + command name in serif display voice + a mono-uppercase
+  `Copy →` link.
   Block form rules a hairline; inline form is glyph + underlined name only.
 
 ### Docs chrome (sidebar)
 
-Sans throughout. The sidebar keeps Fumadocs' stock shapes (rounded rows,
-tinted active pill, indent guides) via the owned slot; the type carries:
+Sans page links, mono-uppercase rubric labels. The sidebar keeps Fumadocs' stock
+shapes (rounded rows, tinted active pill, indent guides) via the owned slot; the
+type carries:
 
-- **Folder rows speak orange caps** at the TOC-title register (0.88rem, weight
-  500, wide tracking).
-- **`links`-prop entries** sit in muted small-caps (0.9375rem, weight 500,
-  0.06em tracking) — set apart from folders by color + tracking and from page
-  links by case. The home nav renders the same voice at 1.125rem.
+- **Folder rows speak orange mono uppercase** (0.72rem, weight 600, 0.1em
+  tracking).
+- **`links`-prop entries** sit in muted mono uppercase (0.72rem, weight 500,
+  0.08em tracking) — set apart from folders by color and from page links by
+  case. The home nav shares this mono-uppercase voice at 0.8125rem.
 - **Page links** lead in near-ink (0.84rem, foreground mixed 82% toward ink).
 - Active states are stock (tinted pill with `fd-primary` text, guide-line bar
   on nested items).
