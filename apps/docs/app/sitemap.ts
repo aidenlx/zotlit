@@ -22,6 +22,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       "/": [{ pathname: "" }],
       "/blog": [{}],
       "/changelog": [{}],
+      "/community": [{}],
       "/blog/[slug]": blog.getPages().map(
         (page): Entry => ({
           pathname: page.url,

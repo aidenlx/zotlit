@@ -1,5 +1,10 @@
 import { type BaseLayoutProps } from "fumadocs-ui/layouts/shared";
-import { BookIcon, MessageSquareMoreIcon, NewspaperIcon } from "lucide-react";
+import {
+  BookIcon,
+  MessageSquareMoreIcon,
+  NewspaperIcon,
+  UsersIcon,
+} from "lucide-react";
 
 import { Logo } from "@/components/logo";
 
@@ -18,6 +23,7 @@ export function baseOptions({
         : []),
       { text: "Blog", url: "/blog", icon: <MessageSquareMoreIcon /> },
       { text: "Changelog", url: "/changelog", icon: <NewspaperIcon /> },
+      { text: "Community", url: "/community", icon: <UsersIcon /> },
     ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };
