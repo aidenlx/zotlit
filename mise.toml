@@ -1,7 +1,7 @@
 min_version = "2024.9.5"
 
 [tools]
-node = "26"
+node = "24"
 "npm:zx" = "8"
 
 [hooks]

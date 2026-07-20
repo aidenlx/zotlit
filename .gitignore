@@ -34,3 +34,5 @@ yarn-error.log*
 # git status and Turbo input hashes.
 project.inlang/*
 !project.inlang/settings.json
+
+.vercel
