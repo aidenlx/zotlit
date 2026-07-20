@@ -18,7 +18,7 @@
     "format:fix": "oxfmt",
     "quality": "turbo run //#lint:repo //#format",
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
-    "prepare": "lefthook install"
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true"
   },
   "devDependencies": {
     "@clack/prompts": "^0.11.0",
