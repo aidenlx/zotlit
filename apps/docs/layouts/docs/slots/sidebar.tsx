@@ -313,7 +313,7 @@ function SidebarDrawer({
       <Base.SidebarDrawerOverlay className="fixed inset-0 z-40 backdrop-blur-xs data-[state=closed]:animate-fd-fade-out data-[state=open]:animate-fd-fade-in" />
       <Base.SidebarDrawerContent
         className={cn(
-          "fixed inset-y-0 inset-e-0 z-40 flex w-[85%] max-w-[380px] flex-col border-s bg-fd-background text-[0.9375rem] shadow-lg data-[state=closed]:animate-fd-sidebar-out data-[state=open]:animate-fd-sidebar-in",
+          "fixed inset-y-0 inset-e-0 z-40 flex w-[85%] max-w-95 flex-col border-s bg-fd-background text-[0.9375rem] shadow-lg data-[state=closed]:animate-fd-sidebar-out data-[state=open]:animate-fd-sidebar-in",
           className,
         )}
         {...props}
@@ -391,7 +391,7 @@ function SidebarLinkEntry({
       className={cn(
         itemVariants({ variant: "link" }),
         // Unified `links` voice (shared with the home-nav links)
-        "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase [&_svg]:translate-y-[2px]",
+        "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase [&_svg]:translate-y-0.5",
         className,
       )}
       style={{ paddingInlineStart: getItemOffset(0), ...style }}
@@ -415,7 +415,7 @@ function SidebarFolderTrigger({
         cn(
           itemVariants({ variant: collapsible ? "button" : null }),
           // Rubricated folder labels at the TOC-title voice; chevrons stay muted.
-          "w-full font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-primary uppercase [&_svg]:text-fd-muted-foreground",
+          "w-full font-mono text-[0.72rem] font-semibold tracking-widest text-fd-primary uppercase [&_svg]:text-fd-muted-foreground",
           typeof className === "function" ? className(state) : className,
         )
       }
@@ -446,7 +446,7 @@ function SidebarFolderLink({
       className={cn(
         itemVariants({ variant: "link", highlight: depth > 1 }),
         // Folder labels carry the rubric even when the folder is a link.
-        "w-full font-mono text-[0.72rem] font-semibold tracking-[0.1em] text-fd-primary uppercase [&_svg]:text-fd-muted-foreground",
+        "w-full font-mono text-[0.72rem] font-semibold tracking-widest text-fd-primary uppercase [&_svg]:text-fd-muted-foreground",
         className,
       )}
       style={{

@@ -2,13 +2,14 @@ import Link from "next/link";
 
 import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
-import { formatReleaseDate } from "@/lib/shared";
+import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
 
 export const metadata = {
   title: "Changelog",
   description: "Every ZotLit release, newest first.",
   alternates: { canonical: "/changelog" },
+  openGraph: { images: ogImageUrl("changelog") },
 };
 
 export default function ChangelogListPage() {
@@ -39,7 +40,7 @@ export default function ChangelogListPage() {
               className="grid grid-cols-1 gap-2 border-b border-fd-border/60 py-6 last:border-b-0 md:grid-cols-[190px_1fr] md:gap-6.5"
             >
               <div className="text-left md:text-right">
-                <time className="mb-2 block font-mono text-xs font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
+                <time className="mb-2 block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
                   {formatReleaseDate(date)}
                 </time>
                 <span

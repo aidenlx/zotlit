@@ -11,3 +11,13 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 Custom MDX components (`components/`) are imported per-page in the `.mdx`, not registered in `components/mdx.tsx`; wrap them in `not-prose` and style over `--color-fd-*` tokens (see `action-link.tsx`).
 
 `<Command>` marks an Obsidian command-palette string, keeping the `ZotLit:` prefix — `<Command>` block or `<Command inline>` mid-sentence; menu items and labels stay `**bold**`. See `command.tsx` and `DESIGN.md`.
+
+# Social (OG) images
+
+Every page's `og:image` is a takumi-rendered 1200×630 card served by one dynamic route.
+
+- `app/og/_render.tsx` — the card itself (Google Fonts + Tailwind `tw` styling); `ogImage(props)` returns the `ImageResponse`.
+- `app/og/[...slug]/route.tsx` — maps a `[type, ...ids]` slug to a card; the `OgType` list + `assertNever` keep the switch exhaustive.
+- `lib/shared.ts` — `ogImageUrl(type, ...ids)`, the URL a page's `metadata` points at.
+
+Adding a page type: add its `case` (+ `OgType` entry + `generateStaticParams` seg) in the route, then set `openGraph: { images: ogImageUrl("<type>") }` in the page's `metadata`.
