@@ -1,5 +1,8 @@
 import { Temporal } from "@zotlit/shared/temporal";
 
+/** @see https://zotlit.aidenlx.site — the v2 documentation site. */
+export const DOCS_SITE_URL = "https://zotlit.aidenlx.site";
+
 export const FIELD_ZOTERO_KEY = "zotero-key";
 export const FIELD_CITEKEY = "citekey";
 /**

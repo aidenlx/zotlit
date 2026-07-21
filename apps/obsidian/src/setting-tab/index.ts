@@ -11,7 +11,11 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
 import { type CompatContext, renderCompatSettings } from "./compat";
-import { type SettingsKey, type SettingTabContext } from "./context";
+import {
+  type ReleaseTabActions,
+  type SettingsKey,
+  type SettingTabContext,
+} from "./context";
 import { databasePageItems, libraryDefinition } from "./database";
 import { liveUpdatesPageItems } from "./live-updates";
 import {
@@ -22,6 +26,7 @@ import {
 } from "./logging";
 import { noteImportPageItems } from "./note-import";
 import { defaultPlaceholder } from "./placeholder";
+import { resourcesGroup } from "./resources";
 import {
   AUTO_TRIM_KEYS,
   decodeAutoTrim,
@@ -35,6 +40,7 @@ export interface ZotLitSettingTabOptions {
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
   template: TemplateService;
+  release: ReleaseTabActions;
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
@@ -42,6 +48,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #settings: SettingsService;
   readonly #db: DatabaseService;
   readonly #zoteroPref: ZoteroPrefService;
+  readonly #release: ReleaseTabActions;
 
   /**
    * Backward-compat (Obsidian < 1.13.0) only: teardown for the event
@@ -56,12 +63,14 @@ export class ZotLitSettingTab extends PluginSettingTab {
     db,
     zoteroPref,
     template,
+    release,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
     this.#plugin = plugin;
     this.#settings = settings;
     this.#db = db;
     this.#zoteroPref = zoteroPref;
+    this.#release = release;
 
     plugin.register(
       template.on("compile-status-changed", () => this.#requestUpdate()),
@@ -71,12 +80,17 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // so the tab must re-render. Reference identity changes only when that key
     // is mutated, so scalar `control` edits (read on the framework's own render
     // cycle) never trigger a rebuild and never steal focus from inline inputs.
+    // The migration-pending flag is tracked the same way, so the resources
+    // reminder appears/disappears reactively on both render paths.
     let lastFields = settings.current?.["note.frontmatter-fields"];
+    let lastPending = settings.current?.["release.migration-pending"];
     plugin.register(
       settings.subscribe((value) => {
         const fields = value?.["note.frontmatter-fields"];
-        if (fields === lastFields) return;
+        const pending = value?.["release.migration-pending"];
+        if (fields === lastFields && pending === lastPending) return;
         lastFields = fields;
+        lastPending = pending;
         this.#requestUpdate();
       }),
     );
@@ -123,10 +137,16 @@ export class ZotLitSettingTab extends PluginSettingTab {
       settings: this.#settings,
       db: this.#db,
       zoteroPref: this.#zoteroPref,
+      release: this.#release,
       requestUpdate: () => this.update(),
     };
 
     const items: SettingDefinitionItem<SettingsKey>[] = [
+      // Migration reminder (while pending) and the resources strip, one
+      // headerless group — see resourcesGroup for why the reminder is
+      // included structurally rather than via `visible`.
+      resourcesGroup(ctx),
+
       // Hub — the most-used settings, no top-level heading (per Obsidian style).
       libraryDefinition(ctx),
       {
@@ -147,6 +167,11 @@ export class ZotLitSettingTab extends PluginSettingTab {
         name: m.settings_citation_show_citekey_name(),
         desc: m.settings_citation_show_citekey_desc(),
         control: { type: "toggle", key: "citation.show-citekey-in-suggester" },
+      },
+      {
+        name: m.settings_update_notices_name(),
+        desc: m.settings_update_notices_desc(),
+        control: { type: "toggle", key: "release.notices-enabled" },
       },
 
       // Self-contained domains live on navigable sub-pages.
@@ -210,6 +235,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       settings: this.#settings,
       db: this.#db,
       zoteroPref: this.#zoteroPref,
+      release: this.#release,
       rerender: () => this.display(),
       defer: (cleanup) => stack.defer(cleanup),
     };

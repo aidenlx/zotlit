@@ -65,7 +65,13 @@ import * as v from "valibot";
 
 import { Service } from "@/services/service-base";
 
-import { classifyDiskData, isPlainObject, VERSION_KEY } from "./classify";
+import {
+  classifyDiskData,
+  hydrationOriginOf,
+  isPlainObject,
+  VERSION_KEY,
+  type HydrationOrigin,
+} from "./classify";
 import { defaults, schema, type Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
@@ -114,6 +120,7 @@ export class SettingsService extends Service<void> {
 
   #overrides: Partial<Settings> = {};
   #loaded = false;
+  #hydrationOrigin: HydrationOrigin | null = null;
   #pendingWrite: Promise<void> | undefined;
 
   ready: Promise<void>;
@@ -150,6 +157,16 @@ export class SettingsService extends Service<void> {
    */
   get loaded(): Promise<Readonly<Settings>> {
     return this.ready.then(() => this.#snapshot());
+  }
+
+  /**
+   * Bucketed origin of the completed load, for the release service's
+   * same-launch onboarding branch. `null` before load finishes. This is the
+   * in-memory signal: the Legacy Data marker self-destructs once migration
+   * rewrites the file, so on-disk classification can't be re-derived later.
+   */
+  get hydrationOrigin(): HydrationOrigin | null {
+    return this.#hydrationOrigin;
   }
 
   /**
@@ -298,6 +315,7 @@ export class SettingsService extends Service<void> {
 
   async #hydrateFrom(raw: unknown): Promise<void> {
     const classification = classifyDiskData(raw);
+    this.#hydrationOrigin = hydrationOriginOf(classification.kind);
     switch (classification.kind) {
       case "missing": {
         this.#overrides = {};
