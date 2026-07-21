@@ -1,0 +1,138 @@
+---
+title: "Collect debug logs"
+description: "Gather ZotLit logs, Zotero debug output, and Obsidian debug info to include when reporting a bug."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+Bug reports often need logs from ZotLit, from the ZotLit companion, or from Obsidian itself. Each section below is self-contained. Follow only the one you were asked for.
+
+<Callout type="warn" title="Cross-component bugs need both sides">
+  If the bug spans ZotLit and the companion (e.g. syncing, live update,
+  importing, or any action that rely on Zotero running), complete the setup
+  steps in **both** [ZotLit logs](#zotlit-logs) and [Zotero debug
+  output](#zotero-debug-output) before you reproduce the problem. Reproduce
+  once, then save logs from both sides.
+</Callout>
+
+## Obsidian debug info
+
+<Steps>
+  <Step>
+    ### Run the debug info command
+
+    Open the command palette and run <Command inline>Show debug info</Command>.
+
+  </Step>
+  <Step>
+    ### Copy the output
+
+    Copy the output and paste it into the issue.
+
+  </Step>
+</Steps>
+
+## ZotLit logs
+
+<Steps>
+  <Step>
+    ### Open the Logging settings
+
+    In Obsidian, open **Settings > ZotLit > Logging**.
+
+  </Step>
+  <Step>
+    ### Turn on debug logging
+
+    Set **Log level** to **debug**, then turn on **Write logs to file**. Logs now append to `zotlit.log.jsonl` inside the plugin folder.
+
+  </Step>
+  <Step>
+    ### Reproduce the problem
+
+    Do whatever triggers the bug.
+
+  </Step>
+  <Step>
+    ### Save the log archive
+
+    Back in **Settings > ZotLit > Logging**, click **Save log archive**. This exports the log file for sharing.
+
+  </Step>
+  <Step>
+    ### Upload the archive
+
+    Attach the saved archive to your GitHub issue.
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="Turn logging back off">
+  Set **Log level** back to **info** and turn off **Write logs to file** once
+  you no longer need ongoing logging.
+</Callout>
+
+## Zotero debug output
+
+<Steps>
+  <Step>
+    ### Set the companion's log level
+
+    In Zotero, open **Edit > Settings** (Windows/Linux) or **Zotero > Settings** (macOS), then select the **ZotLit** pane. Set **Log level** to **Debug**.
+
+  </Step>
+  <Step>
+    ### Restart Zotero with logging enabled
+
+    Go to **Help > Debug Output Logging** and click **Restart with Logging Enabled…**.
+
+    <Callout type="warn" title="Do not use troubleshooting mode">
+      A confirmation dialog appears. Do not select **Restart in Troubleshooting Mode**: that mode disables all add-ons, including the companion, so no debug output would be captured.
+    </Callout>
+
+  </Step>
+  <Step>
+    ### Reproduce the problem
+
+    As soon as Zotero restarts, reproduce the problem.
+
+  </Step>
+  <Step>
+    ### Open the debug output viewer
+
+    Go to **Help > Debug Output Logging > View Output**.
+
+  </Step>
+  <Step>
+    ### Save the output
+
+    In the viewer, go to **File > Save…**, choose Format: **Text Files**, and save the output.
+
+    Do not use **Submit Output** or **Copy to Clipboard**. The full log file is needed.
+
+  </Step>
+  <Step>
+    ### Upload the file
+
+    Attach the saved text file to your GitHub issue.
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="Reset the log level">
+  Set the companion's **Log level** back to its previous value after collecting
+  the output.
+</Callout>
+
+## See also
+
+<Cards>
+  <Card
+    title="Settings"
+    description="Full reference for every ZotLit setting, including Logging."
+    href="/docs/reference/settings"
+  />
+</Cards>

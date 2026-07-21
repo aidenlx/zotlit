@@ -13,6 +13,7 @@
     "enable-javascript-templates",
     "migrate-from-v1",
     "migrate-v1-eta-templates",
+    "collect-debug-logs",
     "..."
   ]
 }
