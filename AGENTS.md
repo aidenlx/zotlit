@@ -248,7 +248,7 @@ Run `/paraglide-i18n` skill for related task
 
 ### Issue tracker
 
-Issues and PRDs are tracked as local markdown files under `.scratch/<feature-slug>/`; there is no external PR triage surface. See `docs/agents/issue-tracker.md`.
+Issues, specs, and tickets are tracked as local markdown files under `.scratch/<feature-slug>/`; there is no external PR triage surface. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
