@@ -13,12 +13,17 @@ import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { type WelcomeActions, WelcomeActionsContext } from "./actions";
-import { readConnectionStatus } from "./connection";
+import { readConnectionStatus, readConnectionSync } from "./connection";
 import { type SetupActions } from "./setup-actions";
 import { createWelcomeStore, WelcomeStoreProvider } from "./store";
 import { Welcome } from "./Welcome";
 
 export const WELCOME_VIEW_TYPE = "zotlit-welcome";
+
+// Delay before the connection spinner appears; a readout that settles faster —
+// the common case, since the DB is usually already loaded on open — resolves
+// straight to connected/missing without ever flashing the spinner.
+const CONNECTION_CHECKING_DELAY_MS = 200;
 
 export interface WelcomeViewDeps {
   app: App;
@@ -35,6 +40,7 @@ export class WelcomeView extends ItemView {
   #closed = false;
   #stack: DisposableStack | undefined;
   #connectionGen = 0;
+  #checkingTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(leaf: WorkspaceLeaf, deps: WelcomeViewDeps) {
     super(leaf);
@@ -88,6 +94,12 @@ export class WelcomeView extends ItemView {
       ...this.#deps.setupActions,
     };
 
+    // Seed the definite readout before first paint so an already-loaded DB
+    // renders connected/missing directly instead of flashing the spinner.
+    this.#store.setState({
+      connection: readConnectionSync(this.#deps) ?? { status: "checking" },
+    });
+
     this.#root = createRoot(this.contentEl);
     this.#root.render(
       <WelcomeStoreProvider value={this.#store}>
@@ -104,10 +116,10 @@ export class WelcomeView extends ItemView {
     stack.defer(
       this.#deps.db.on("refreshing", (active) => {
         if (active) {
-          // Invalidate any in-flight readout so its stale result can't land
-          // on top of this checking state before the refresh settles.
-          this.#connectionGen += 1;
-          this.#store.setState({ connection: { status: "checking" } });
+          // Invalidate any in-flight readout so its stale result can't land on
+          // top of this refresh, then show checking only once the refresh is
+          // slow enough to matter — a quick refresh never flashes the spinner.
+          this.#armChecking(++this.#connectionGen);
         }
       }),
     );
@@ -116,6 +128,7 @@ export class WelcomeView extends ItemView {
 
   protected override async onClose(): Promise<void> {
     this.#closed = true;
+    this.#clearCheckingTimer();
     this.#stack?.dispose();
     this.#stack = undefined;
     this.#root?.unmount();
@@ -124,8 +137,28 @@ export class WelcomeView extends ItemView {
 
   async #loadConnection(): Promise<void> {
     const gen = ++this.#connectionGen;
+    this.#armChecking(gen);
     const connection = await readConnectionStatus(this.#deps);
     if (this.#closed || gen !== this.#connectionGen) return;
+    this.#clearCheckingTimer();
     this.#store.setState({ connection });
+  }
+
+  /** Show the checking spinner only if this readout is still pending after the grace delay. */
+  #armChecking(gen: number): void {
+    this.#clearCheckingTimer();
+    this.#checkingTimer = setTimeout(() => {
+      this.#checkingTimer = null;
+      if (!this.#closed && gen === this.#connectionGen) {
+        this.#store.setState({ connection: { status: "checking" } });
+      }
+    }, CONNECTION_CHECKING_DELAY_MS);
+  }
+
+  #clearCheckingTimer(): void {
+    if (this.#checkingTimer !== null) {
+      clearTimeout(this.#checkingTimer);
+      this.#checkingTimer = null;
+    }
   }
 }
