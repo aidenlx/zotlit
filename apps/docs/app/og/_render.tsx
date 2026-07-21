@@ -4,22 +4,44 @@
 // mark + wordmark footer. Styling is Tailwind via takumi's `tw` prop. See
 // apps/docs/DESIGN.md and docs/brand.md.
 import { readFile } from "node:fs/promises";
-import { googleFonts } from "takumi-js/helpers";
+import { setTimeout as delay } from "node:timers/promises";
+import { type FetchLike, googleFonts } from "takumi-js/helpers";
 import { Renderer } from "takumi-js/node";
 import { ImageResponse } from "takumi-js/response";
 
 import ZotLitMark from "@/public/logo/zotlit-mark.svg?svgr";
+
+/**
+ * `fonts.gstatic.com` drops connections and stalls during CI prerender, so a
+ * single failed subset download would abort the whole build. Retry transient
+ * network failures, but bail the moment takumi's own timeout signal fires.
+ */
+const fetchFont: FetchLike = async (input, init) => {
+  const attempts = 4;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      if (attempt >= attempts || init?.signal?.aborted) throw error;
+      await delay(250 * attempt);
+    }
+  }
+};
 
 /** One renderer whose fonts (Google subsets + the vendored Archivo wordmark face) register once, then reuse. */
 let rendererPromise: Promise<Renderer> | undefined;
 function getRenderer(): Promise<Renderer> {
   return (rendererPromise ??= (async () => {
     const [subsets, archivo] = await Promise.all([
-      googleFonts([
-        { name: "Gelasio", weight: 500 },
-        { name: "Inter", weight: [400, 800] },
-        { name: "IBM Plex Mono", weight: [500, 600] },
-      ]),
+      googleFonts({
+        families: [
+          { name: "Gelasio", weight: 500 },
+          { name: "Inter", weight: [400, 800] },
+          { name: "IBM Plex Mono", weight: [500, 600] },
+        ],
+        fetch: fetchFont,
+        timeout: 30_000,
+      }),
       // Same Archivo SemiBold "ZotLit" subset the docs UI ships as --font-brand.
       readFile(
         new URL("../fonts/archivo-semibold-zotlit.woff2", import.meta.url),
