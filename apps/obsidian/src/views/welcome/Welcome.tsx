@@ -331,7 +331,7 @@ function MigrationBanner() {
 export function Welcome() {
   const mode = useWelcomeStore((s) => s.mode);
   return (
-    <div className="zt:mx-auto zt:max-w-[640px] zt:px-8 zt:pt-12 zt:pb-20">
+    <div className="zt:mx-auto zt:max-w-160 zt:px-8 zt:pt-6 zt:pb-2">
       <Header />
       {mode === "upgraded" ? <MigrationBanner /> : null}
       <div className="zt:mt-9">
