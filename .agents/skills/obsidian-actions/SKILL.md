@@ -278,34 +278,6 @@ onPaneMenu(menu: Menu, source: string) {
 }
 ```
 
-### Complete wiring in onload()
-
-```ts
-// Action modules — unconditional command registration
-addDatabaseActions(this, { db: services.db });
-addNoteActions(this, { db: services.db, noteIndex: services.noteIndex });
-addCitationActions(this, { db: services.db, settings: services.settings });
-
-// Menu segments — composed once, wired to all menu events
-const zotlitMenu = buildMenuSegments(services);
-
-this.registerEvent(
-  this.app.workspace.on("editor-menu", (menu, _editor, info) => {
-    zotlitMenu(menu, resolveItemContext(this.app, { kind: "editor", file: info.file }));
-  }),
-);
-this.registerEvent(
-  this.app.workspace.on("file-menu", (menu, file, source) => {
-    zotlitMenu(menu, resolveItemContext(this.app, { kind: "file", file, source }));
-  }),
-);
-
-// Views — receive zotlitMenu via deps for onPaneMenu
-this.registerView("my-view", (leaf) =>
-  new MyView(leaf, { db: services.db, zotlitMenu }),
-);
-```
-
 ## Relationship Between Actions and Menus
 
 Action modules and menu segments are separate concerns that may share the same underlying operation. Menu items may call `app.commands.executeCommandById()` to reuse command logic, but direct invocation is also fine when the menu handler needs different args or flow.
