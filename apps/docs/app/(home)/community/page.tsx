@@ -2,12 +2,13 @@ import DiscordMark from "@/assets/discord.svg?svgr";
 import GithubMark from "@/assets/github.svg?svgr";
 import { RepoDatum } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
-import { gitConfig } from "@/lib/shared";
+import { gitConfig, ogImageUrl } from "@/lib/shared";
 
 export const metadata = {
   title: "Community",
   description: "Get help, share ideas, and shape where ZotLit goes next.",
   alternates: { canonical: "/community" },
+  openGraph: { images: ogImageUrl("community") },
 };
 
 const destinations: Array<{
@@ -62,11 +63,11 @@ export default function CommunityPage() {
             href={href}
             target="_blank"
             rel="noreferrer noopener"
-            className="group relative flex min-h-[252px] flex-col border border-fd-border bg-fd-card p-7 no-underline shadow-[6px_6px_0_0_var(--color-fd-border)] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:border-fd-primary hover:shadow-[6px_6px_0_0_var(--color-fd-primary)]"
+            className="group relative flex min-h-63 flex-col border border-fd-border bg-fd-card p-7 no-underline shadow-[6px_6px_0_0_var(--color-fd-border)] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:border-fd-primary hover:shadow-[6px_6px_0_0_var(--color-fd-primary)]"
           >
             <span
               aria-hidden
-              className="absolute top-[-7px] right-[30px] h-[38px] w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]"
+              className="absolute -top-1.75 right-7.5 h-9.5 w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]"
             />
             <Icon
               aria-hidden

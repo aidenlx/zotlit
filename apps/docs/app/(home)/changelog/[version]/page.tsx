@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getMDXComponents } from "@/components/mdx";
-import { formatReleaseDate, gitConfig } from "@/lib/shared";
+import { formatReleaseDate, gitConfig, ogImageUrl } from "@/lib/shared";
 import { changelog, getChangelogPages } from "@/lib/source";
 
 function isLatest(version: string): boolean {
@@ -41,7 +41,7 @@ export default async function ChangelogVersionPage(
               </span>
             )}
           </h1>
-          <p className="mb-1.5 font-mono text-xs font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
+          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
             {formatReleaseDate(date)}
           </p>
         </header>
@@ -92,5 +92,6 @@ export async function generateMetadata(
       description ??
       `Changelog for ZotLit v${version} released on ${formatReleaseDate(date)}.`,
     alternates: { canonical: page.url },
+    openGraph: { images: ogImageUrl("changelog", ...page.slugs) },
   };
 }

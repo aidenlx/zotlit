@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import Comments from "@/components/comment";
 import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
-import { formatReleaseDate } from "@/lib/shared";
+import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 
 export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
@@ -42,7 +42,7 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
               {description}
             </p>
           )}
-          <p className="mb-1.5 font-mono text-xs font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
+          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
             {formatReleaseDate(date)} · by {author}
           </p>
         </header>
@@ -84,5 +84,6 @@ export async function generateMetadata(
     title: page.data.title,
     description: page.data.description,
     alternates: { canonical: page.url },
+    openGraph: { images: ogImageUrl("blog", ...page.slugs) },
   };
 }

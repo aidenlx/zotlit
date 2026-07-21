@@ -7,7 +7,7 @@
 </picture>
 
 <p><strong>Your Zotero library, written into your vault.</strong></p>
-<p>Integrate Zotero with Obsidian: literature notes, citations, annotations.</p>
+<p>Literature notes, citations, and annotations from Zotero in Obsidian.</p>
 
 <p>
   <a href="https://zotlit.aidenlx.site">🌐 Website</a>

@@ -63,7 +63,7 @@ export const metadata: Metadata = {
     template: `%s | ${appName}`,
   },
   description:
-    "ZotLit integrates Zotero with Obsidian — literature notes, citations, and annotations, all inside your vault.",
+    "ZotLit brings your Zotero library into Obsidian. Create literature notes, insert citations, and annotate PDFs without leaving your vault.",
 };
 
 // Suppress React 19 "Encountered a script tag" dev warning from next-themes.
