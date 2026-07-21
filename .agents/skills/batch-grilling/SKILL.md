@@ -1,7 +1,6 @@
 ---
-name: batch-grill-me
+name: batch-grilling
 description: A relentless interview that asks every frontier question at once, round by round.
-disable-model-invocation: true
 disallowed-tools: AskUserQuestion
 ---
 

@@ -87,6 +87,10 @@ export const schema = v.object({
 
   "attachment.folder-path": v.nullable(v.string()),
   "attachment.import": v.boolean(),
+
+  "release.previous-version": v.nullable(v.string()),
+  "release.notices-enabled": v.boolean(),
+  "release.migration-pending": v.boolean(),
 }) satisfies v.GenericSchema<unknown, Record<string, SettingsValue>>;
 
 export type Settings = v.InferOutput<typeof schema>;
@@ -119,4 +123,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "zotero.citation-library": USER_LIBRARY_ID,
   "attachment.folder-path": null,
   "attachment.import": true,
+  // Absent until the release check records a launch; see the release service.
+  "release.previous-version": null,
+  "release.notices-enabled": true,
+  "release.migration-pending": false,
 } satisfies Settings);

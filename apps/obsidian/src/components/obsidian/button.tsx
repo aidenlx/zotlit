@@ -7,7 +7,7 @@ import { tv } from "@/lib/tw";
 import { Icon } from "./icon";
 
 const button = tv({
-  base: "",
+  base: "zt:gap-1.5",
   variants: {
     variant: {
       default: "",

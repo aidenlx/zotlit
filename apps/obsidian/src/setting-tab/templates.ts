@@ -29,6 +29,7 @@ import { appendCompileError } from "./compile-error";
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { frontmatterPageItems } from "./frontmatter";
 import { defaultPlaceholder } from "./placeholder";
+import { migrationReminderItem } from "./resources";
 
 const logger = getLogger(["setting-tab", "templates"]);
 
@@ -59,7 +60,11 @@ export function decodeAutoTrim(value: unknown): AutoTrim {
 export function templatesPageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
+  const pending = ctx.settings.current?.["release.migration-pending"] === true;
   return [
+    // Included structurally, not via `visible` — see migrationReminderItem's
+    // JSDoc for why.
+    ...(pending ? [migrationReminderItem(ctx)] : []),
     {
       name: m.settings_template_folder_name(),
       desc: m.settings_template_folder_desc(),

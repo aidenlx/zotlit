@@ -60,6 +60,17 @@ export function generalSection(
           }),
         ),
     );
+
+  new Setting(containerEl)
+    .setName(m.settings_update_notices_name())
+    .setDesc(m.settings_update_notices_desc())
+    .addToggle((toggle) =>
+      toggle
+        .setValue(ctx.settings.current?.["release.notices-enabled"] ?? true)
+        .onChange((value) =>
+          ctx.settings.update({ "release.notices-enabled": value }),
+        ),
+    );
 }
 
 function renderLibraryRow(containerEl: HTMLElement, ctx: CompatContext): void {
