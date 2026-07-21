@@ -1,6 +1,6 @@
 ---
 title: "Migrate from v1"
-description: "Upgrade from ZotLit v1 to v2 and confirm your settings, notes, and templates carried over."
+description: "Rename your Eta templates, enable the JavaScript gate, and overwrite v1 notes to complete the v1-to-v2 upgrade."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -9,7 +9,15 @@ import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 import { zotlitLegacyUrl } from "@/lib/shared";
 
-ZotLit v2 replaces v1 in place. Install v2, confirm your settings migrated, overwrite any notes you want refreshed, and migrate your Eta templates when you are ready.
+ZotLit v2 replaces v1 in place. Settings migrate automatically on first load, but if you customized your Eta templates, they are not loaded until you rename them, update the data vocabulary, and enable the JavaScript Templates gate. Notes you created with v1 still appear in the index. Overwrite them when you want incremental body updates.
+
+<Callout type="info" title="What needs your attention">
+
+- **Required to restore note generation:** Rename template files to the v2 pattern, replace `it.*` with `zt.*`, and [enable the JavaScript Templates gate](/docs/how-to/enable-javascript-templates). Without these steps, v2 falls back to built-in defaults that do not reflect your customizations.
+- **Automatic (no action):** Settings, including folder paths and custom frontmatter fields. Migrated on first load.
+- **Optional:** Run <Command inline>ZotLit: Overwrite literature note</Command> on v1 notes to add the managed region for incremental body updates.
+
+</Callout>
 
 ## Install v2
 
@@ -23,21 +31,21 @@ ZotLit v2 replaces v1 in place. Install v2, confirm your settings migrated, over
   <Step>
     ### Confirm in Obsidian
 
-    After the upgrade, open **Settings > ZotLit**. The settings pane loads with your migrated configuration. If you see your literature-note folder path and template folder path, the migration succeeded.
+    After the upgrade, open **Settings &rarr; ZotLit**. The settings pane loads with your migrated configuration. If you see your literature-note folder path and template folder path, the migration succeeded.
 
   </Step>
 </Steps>
 
 After the upgrade, v1 is gone. If you need to consult the original documentation while you transition, the <a href={zotlitLegacyUrl} target="_blank" rel="noreferrer noopener">ZotLit v1 docs</a> remain available.
 
-## Confirm settings migrated
+## Settings (automatic)
 
-On first load after upgrading, ZotLit detects your v1 settings and migrates them automatically. The migration is best-effort: write failures are logged but never block the plugin from loading. No action is required. The migration runs once and persists the result.
+On first load after upgrading, ZotLit detects your v1 settings and migrates them automatically. No action is required for settings. The migration runs once and persists the result; write failures are logged but never block the plugin from loading.
 
 What carries over:
 
-- Your literature-note folder and template folder paths are preserved.
-- Custom frontmatter fields are kept as JavaScript-language fields. Fields you never customized (still using v1 defaults) are converted to Liquid and continue working without changes.
+- Your literature-note folder and template folder paths.
+- Custom frontmatter fields, kept as JavaScript-language fields. Fields you never customized (still using v1 defaults) convert to Liquid.
 - Embedded template sources (such as the filename template body) are not migrated because v2 uses a different data vocabulary (`zt.*` instead of v1's `it.*`). V2 reads templates from vault files instead.
 
 <Callout type="info" title="JavaScript-language fields need the gate">
@@ -48,9 +56,33 @@ What carries over:
   steps.
 </Callout>
 
+## Migrate templates
+
+V2 template files use the naming pattern `zotlit-<name>.(liquid|eta).md`. V1 files used the `zt-` prefix (for example, `zt-note.eta.md`) and do not match the v2 pattern. Until you rename them, v2 does not load your custom templates and falls back to the built-in defaults.
+
+V1 templates were written in Eta (JavaScript). In v2, Eta templates require the **JavaScript Templates** gate: a per-device opt-in stored outside synced settings, disabled by default. Until the gate is on:
+
+- Eta template files (`.eta.md`) that match the v2 naming pattern are inert. A notice names the file and explains that JavaScript templates are disabled.
+- JavaScript-language frontmatter fields are also inert. A notice lists the skipped fields when you update a note.
+
+If you customized your Eta templates, these three steps are required to restore note generation:
+
+1. **Rename** your template files to the v2 pattern (`zt-` to `zotlit-`, `annots` to `content`).
+2. **Replace `it.*` with `zt.*`** throughout your templates.
+3. **Enable the JavaScript Templates gate** on each device where you use ZotLit.
+
+Follow [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full procedure, including field-by-field mappings and an optional Liquid conversion path.
+
+<Callout type="info" title="Never customized your templates?">
+  If you used only the v1 defaults, no action is needed. V2 ships updated
+  defaults in Liquid that work without the JavaScript Templates gate.
+</Callout>
+
 ## Refresh v1 notes [#refresh-v1-notes]
 
-V2 recognizes your existing literature notes by their `zotero-key` frontmatter value. They appear in the note index and respond to update commands. However, v1 notes lack a managed region (the `%%zt-managed%%` markers that v2 uses to separate generated content from your writing), so incremental update cannot target their body.
+V2 recognizes your existing literature notes by their `zotero-key` frontmatter value. They appear in the note index, and <Command inline>ZotLit: Update literature note metadata</Command> refreshes their frontmatter. However, v1 notes lack a managed region (the `%%zt-managed%%` markers that v2 uses to separate generated content from your writing), so incremental body updates cannot target them.
+
+Adding the managed region is optional. You do not need to do it immediately or for every note. When you are ready:
 
 <Steps>
   <Step>
@@ -66,7 +98,7 @@ V2 recognizes your existing literature notes by their `zotero-key` frontmatter v
 
     <Command>ZotLit: Overwrite literature note</Command>
 
-    A confirmation modal appears. Click **Overwrite** to proceed. ZotLit regenerates the entire note body from the current note template. Managed frontmatter keys are refreshed; other frontmatter keys you added are kept.
+    A confirmation modal appears. Select **Overwrite** to proceed. ZotLit regenerates the entire note body from the current note template. Managed frontmatter keys are refreshed; other frontmatter keys you added are kept.
 
   </Step>
   <Step>
@@ -84,19 +116,6 @@ V2 recognizes your existing literature notes by their `zotero-key` frontmatter v
   region](/docs/concepts/literature-notes-and-the-managed-region) for more
   detail.
 </Callout>
-
-You do not need to overwrite every v1 note at once. Notes you leave untouched still appear in the note index and still respond to <Command inline>ZotLit: Update literature note metadata</Command> for frontmatter-only refreshes.
-
-## Migrate templates
-
-V2 template files use the naming pattern `zotlit-<name>.(liquid|eta).md`. V1 template files used the `zt-` prefix (for example, `zt-note.eta.md`). V1 files do not match the v2 pattern and are not loaded until renamed.
-
-V1 templates were written in Eta (JavaScript). In v2, Eta templates require the **JavaScript Templates** gate to be enabled: a per-device opt-in stored outside synced settings, disabled by default. Until you enable the gate:
-
-- Eta template files (`.eta.md`) that match the v2 naming pattern are inert. Rendering them surfaces a notice naming the file and explaining that JavaScript templates are disabled.
-- JavaScript-language frontmatter fields are also inert. A notice lists the skipped fields when you update a note.
-
-To restore your custom Eta templates in v2, follow [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates), which covers renaming, data-vocabulary changes, and the gate opt-in.
 
 ## See also
 
