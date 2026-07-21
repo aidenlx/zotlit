@@ -1,0 +1,84 @@
+---
+title: "Suppress the Zotero security prompt"
+description: "Stop Zotero from showing a confirmation dialog every time it opens an obsidian:// link."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+Zotero shows a security confirmation dialog each time it opens an `obsidian://` URI (for example, when you click a backlink in Zotero that points back to an Obsidian note). You can suppress this dialog by adding a preference in Zotero's Config Editor.
+
+![Zotero security confirmation dialog asking whether to open an obsidian link](/img/how-to/protocol-choose-app.webp)
+
+## Add the protocol-handler preference
+
+<Steps>
+  <Step>
+    ### Open Zotero Settings
+
+    In Zotero, open **Edit > Settings** (Windows/Linux) or **Zotero > Settings** (macOS).
+
+  </Step>
+  <Step>
+    ### Open the Config Editor
+
+    Click the **Advanced** tab, then click **Config Editor**. Click **Accept Risk and Continue** when prompted.
+
+  </Step>
+  <Step>
+    ### Search for the preference
+
+    In the search field, type:
+
+    ```
+    network.protocol-handler.external.obsidian
+    ```
+
+    No matching entry appears because this preference does not exist by default.
+
+  </Step>
+  <Step>
+    ### Create the preference
+
+    Click the **+** (New) button on the right side of the search bar. The type defaults to **Boolean** and the value to **true**. Confirm the entry is created.
+
+    ![Zotero Config Editor showing the new network.protocol-handler.external.obsidian preference set to Boolean](/img/how-to/config-editor.webp)
+
+  </Step>
+</Steps>
+
+Zotero now opens `obsidian://` links without a confirmation dialog.
+
+<Callout type="info" title="Links triggered from outside Zotero">
+  If prompts still appear for links opened from other applications (not from
+  within Zotero itself), additionally create the preference
+  `network.protocol-handler.prompt-from-external` and set it to **false** using
+  the same procedure: search for the key, click **+** (New), set the type to
+  **Boolean**, and set the value to **false**.
+</Callout>
+
+<Callout type="info" title="Credit">
+  Procedure adapted from
+  [zotero-markdb-connect](https://github.com/daeh/zotero-markdb-connect).
+</Callout>
+
+## See also
+
+<Cards>
+  <Card
+    title="Keep notes up to date"
+    description="Update notes in batch from Zotero's context menu."
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="Import Zotero notes"
+    description="Re-import notes in batch from Zotero's context menu."
+    href="/docs/how-to/import-zotero-notes"
+  />
+  <Card
+    title="Explore template data"
+    description="Open the data explorer from Zotero's context menu."
+    href="/docs/how-to/explore-template-data"
+  />
+</Cards>

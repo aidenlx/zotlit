@@ -15,6 +15,7 @@ export const docs = defineDocs({
   dir: "content/docs",
   docs: {
     schema: pageSchema,
+    files: ["**/*.mdx", "!**/_*.mdx"],
     postprocess: {
       includeProcessedMarkdown: true,
     },
