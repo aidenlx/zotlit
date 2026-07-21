@@ -1,13 +1,14 @@
 import Link from "next/link";
 
 import { SiteFooter } from "@/components/site-footer";
-import { formatReleaseDate } from "@/lib/shared";
+import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
 import { getBlogPages } from "@/lib/source";
 
 export const metadata = {
   title: "Blog",
   description: "Notes from building ZotLit.",
   alternates: { canonical: "/blog" },
+  openGraph: { images: ogImageUrl("blog") },
 };
 
 export default function BlogListPage() {
@@ -32,7 +33,7 @@ export default function BlogListPage() {
               className="grid grid-cols-1 gap-2 border-b border-fd-border/60 py-6 last:border-b-0 md:grid-cols-[190px_1fr] md:gap-6.5"
             >
               <div className="text-left md:text-right">
-                <time className="block font-mono text-xs font-medium tracking-[0.1em] text-fd-muted-foreground uppercase">
+                <time className="block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
                   {formatReleaseDate(date)}
                 </time>
                 <p className="text-[14.5px] text-fd-muted-foreground italic">

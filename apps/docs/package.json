@@ -29,10 +29,11 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "semver": "^7.7.2",
-    "takumi-js": "^2.1.1",
+    "takumi-js": "^2.3.0",
     "valibot": "catalog:"
   },
   "devDependencies": {
+    "@std/assert": "catalog:",
     "@svgr/webpack": "^8.1.0",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/mdx": "^2.0.14",

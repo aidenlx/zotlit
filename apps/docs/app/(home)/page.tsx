@@ -4,9 +4,11 @@ import Link from "next/link";
 import { RepoDatum } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
 import { V1HomeNotice } from "@/components/v1-home-notice";
+import { ogImageUrl } from "@/lib/shared";
 
 export const metadata = {
   alternates: { canonical: "/" },
+  openGraph: { images: ogImageUrl("home") },
 };
 
 const features: Array<{
@@ -58,8 +60,8 @@ export default function HomePage() {
             Your Zotero library, written into your vault.
           </h1>
           <p className="mb-4 max-w-[44ch] text-lg text-fd-muted-foreground italic">
-            Integrate Zotero with Obsidian: literature notes, citations,
-            annotations.
+            Literature notes, citations, and annotations from Zotero in
+            Obsidian.
           </p>
           <RepoDatum className="mb-5" />
           <div className="flex flex-wrap items-center gap-4">
@@ -80,8 +82,8 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="relative -rotate-[0.8deg] border border-fd-border bg-fd-card font-mono text-[12.5px] leading-[1.6] shadow-[6px_6px_0_0_var(--color-fd-border)]">
-          <div className="absolute top-[-7px] right-[26px] h-[38px] w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]" />
+        <div className="relative rotate-[-0.8deg] border border-fd-border bg-fd-card font-mono text-[12.5px] leading-[1.6] shadow-[6px_6px_0_0_var(--color-fd-border)]">
+          <div className="absolute -top-1.75 right-6.5 h-9.5 w-5 bg-fd-primary [clip-path:polygon(0_0,100%_0,100%_100%,50%_74%,0_100%)]" />
           <div className="overflow-x-auto p-6">
             <div className="mb-3 text-[11px] tracking-[0.16em] text-fd-muted-foreground uppercase">
               @vaswani2017.md
@@ -113,7 +115,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <dl className="max-w-[680px] border-t border-fd-border py-8">
+      <dl className="max-w-170 border-t border-fd-border py-8">
         {features.map((feature) => (
           <div key={feature.term} className="py-3">
             <div className="flex items-baseline gap-2.5">
