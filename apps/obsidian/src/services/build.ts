@@ -1,3 +1,4 @@
+import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
@@ -15,6 +16,7 @@ import {
 import { createNoteImporter, type NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
+import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { migrateLegacyV0, migrateV1ToV2 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
@@ -50,6 +52,15 @@ export function buildServices(
     })
     .use({
       log: ({ settings }) => new LoggingService({ plugin, settings }),
+    })
+    .use({
+      release: ({ settings }) =>
+        new ReleaseService({
+          app: plugin.app,
+          version: plugin.manifest.version,
+          settings,
+          openWelcomeView: (mode) => openWelcomeView(plugin.app, mode),
+        }),
     })
     .use({
       template: ({ settings }) =>

@@ -14,6 +14,17 @@ declare module "obsidian" {
     plugins: {
       plugins: Record<string, unknown>;
     };
+    internalPlugins: {
+      /** The enabled core plugin instance, or null when disabled/absent. */
+      getEnabledPluginById(id: string): unknown;
+    };
+    setting: {
+      open(): void;
+      openTabById(id: string): unknown;
+    };
+    commands: {
+      executeCommandById(id: string): boolean;
+    };
   }
 
   /** Position-resolved link/tag token from {@link Editor.getClickableTokenAt}. */

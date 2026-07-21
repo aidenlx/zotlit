@@ -273,6 +273,44 @@ describe("SettingsService loading", () => {
   });
 });
 
+describe("SettingsService hydrationOrigin", () => {
+  it("is null before load finishes", () => {
+    const { service } = makeService();
+    expect(service.hydrationOrigin).toBeNull();
+  });
+
+  it("reports 'absent' for missing data", async () => {
+    const { service } = makeService({ plugin: new PluginStub(null) });
+    await service.ready;
+    expect(service.hydrationOrigin).toBe("absent");
+  });
+
+  it("reports 'malformed' for non-plain data", async () => {
+    const { service } = makeService({
+      plugin: new PluginStub("not-an-object"),
+    });
+    await service.ready;
+    expect(service.hydrationOrigin).toBe("malformed");
+  });
+
+  it("reports 'legacy' for versionless (v1 upgrade) data", async () => {
+    const { service } = makeService({
+      plugin: new PluginStub({ "note.literature-folder": "/legacy" }),
+      migrateLegacy: (raw) => raw,
+    });
+    await service.ready;
+    expect(service.hydrationOrigin).toBe("legacy");
+  });
+
+  it("reports 'current' for v2 data", async () => {
+    const { service } = makeService({
+      plugin: new PluginStub({ __VERSION__: 2, "note.literature-folder": "R" }),
+    });
+    await service.ready;
+    expect(service.hydrationOrigin).toBe("current");
+  });
+});
+
 describe("SettingsService legacy migration", () => {
   it("migrates schema-known keys, drops non-schema keys, writes v1 best-effort", async () => {
     const plugin = new PluginStub({

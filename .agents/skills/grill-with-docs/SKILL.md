@@ -4,4 +4,4 @@ description: A relentless interview to sharpen a plan or design, which also crea
 disable-model-invocation: true
 ---
 
-Run a `/batch-grill-me` session, using the `/domain-modeling` skill.
+Run a `/batch-grilling` session, using the `/domain-modeling` skill.

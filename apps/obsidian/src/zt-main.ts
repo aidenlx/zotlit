@@ -9,11 +9,13 @@ import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
+import { addReleaseActions } from "./services/release/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
+import { registerWelcomeView } from "./views/welcome/register";
 import "./zt-main.css";
 
 /**
@@ -80,10 +82,12 @@ export default class ZotLitPlugin extends Plugin {
         db: services.db,
         zoteroPref: services.zoteroPref,
         template: services.template,
+        release: services.release,
       }),
     );
 
     addDatabaseActions(this, { db: services.db });
+    addReleaseActions(this, { release: services.release });
     addNoteFeatureActions(this, {
       app: this.app,
       noteFeature: services.noteFeature,
@@ -135,6 +139,13 @@ export default class ZotLitPlugin extends Plugin {
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
+    });
+
+    registerWelcomeView(this, {
+      app: this.app,
+      db: services.db,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
     });
 
     // A Zotero item add/modify/trash push means the database changed; feed it

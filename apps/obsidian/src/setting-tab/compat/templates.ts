@@ -24,6 +24,7 @@ import { defaultPlaceholder } from "@/setting-tab/placeholder";
 
 import { type CompatContext } from "./context";
 import { sectionGroup } from "./group";
+import { renderMigrationReminderRow } from "./resources";
 
 const logger = getLogger(["setting-tab", "compat", "templates"]);
 
@@ -42,6 +43,12 @@ export function templatesSection(
     m.settings_page_templates(),
     m.settings_page_templates_desc(),
   );
+
+  // "Finish migrating from v1" reminder, only while pending — see
+  // renderMigrationReminderRow's JSDoc.
+  if (ctx.settings.current?.["release.migration-pending"] === true) {
+    group.addSetting((setting) => renderMigrationReminderRow(setting, ctx));
+  }
 
   // Pre-1.13 has no declarative `folder` control; a plain text input is the
   // faithful imperative fallback (loses the folder suggester autocomplete).

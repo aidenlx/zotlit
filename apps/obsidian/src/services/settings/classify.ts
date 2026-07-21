@@ -9,6 +9,32 @@ export type DiskClassification =
   | { kind: "malformed"; reason: string };
 
 /**
+ * Bucketed origin of a completed settings load, for the release service's
+ * same-launch onboarding branch. `legacy` = ZotLit v1 Legacy Data was detected
+ * and migrated this launch; `absent`/`malformed` both mean no usable data on
+ * disk (first-install onboarding); `current` = existing v1/v2/future data
+ * loaded normally.
+ */
+export type HydrationOrigin = "legacy" | "absent" | "malformed" | "current";
+
+export function hydrationOriginOf(
+  kind: DiskClassification["kind"],
+): HydrationOrigin {
+  switch (kind) {
+    case "legacy":
+      return "legacy";
+    case "missing":
+      return "absent";
+    case "malformed":
+      return "malformed";
+    case "v1":
+    case "v2":
+    case "future":
+      return "current";
+  }
+}
+
+/**
  * Classify the raw `loadData()` result. Only `null` means "no `data.json`";
  * `undefined` and any other non-plain value fall into `malformed` so the
  * service can warn loudly instead of silently treating them as fresh state.

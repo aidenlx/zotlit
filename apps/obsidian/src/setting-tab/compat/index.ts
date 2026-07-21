@@ -5,6 +5,7 @@ import { generalSection } from "./general";
 import { liveUpdatesSection } from "./live-updates";
 import { loggingSection } from "./logging";
 import { noteImportSection } from "./note-import";
+import { resourcesSection } from "./resources";
 import { templatesSection } from "./templates";
 
 export { type CompatContext } from "./context";
@@ -21,6 +22,7 @@ export function renderCompatSettings(
   containerEl: HTMLElement,
   ctx: CompatContext,
 ): void {
+  resourcesSection(containerEl, ctx);
   generalSection(containerEl, ctx);
   databaseSection(containerEl, ctx);
   templatesSection(containerEl, ctx);
