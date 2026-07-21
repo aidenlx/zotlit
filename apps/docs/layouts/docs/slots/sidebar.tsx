@@ -391,7 +391,7 @@ function SidebarLinkEntry({
       className={cn(
         itemVariants({ variant: "link" }),
         // Unified `links` voice (shared with the home-nav links)
-        "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase [&_svg]:translate-y-0.5",
+        "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase",
         className,
       )}
       style={{ paddingInlineStart: getItemOffset(0), ...style }}
