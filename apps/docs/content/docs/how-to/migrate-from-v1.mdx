@@ -78,6 +78,22 @@ Follow [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the
   defaults in Liquid that work without the JavaScript Templates gate.
 </Callout>
 
+## Annotations in imported notes
+
+When you import a Zotero note into your vault, v2 converts the annotation content already in the note directly. Highlights and underlines become inline marks with a `zotero://` backlink, image excerpts become embeds, and your typed comments are kept as written. If you edited an annotation paragraph inside Zotero before importing, those edits are preserved. V1 re-rendered every annotation through the annotation template instead, which discarded in-place edits.
+
+To restore v1-style rendering, open **Settings &rarr; ZotLit &rarr; Note import** and enable **Render annotations from template**. The toggle is off by default. When on, annotation paragraphs are re-rendered through your annotation template with data pulled fresh from Zotero.
+
+<Callout
+  type="warn"
+  title="Edits in Zotero are discarded when this setting is on"
+>
+  This is the same behavior v1 had: annotations are re-rendered from Zotero's
+  stored data, so any edits you made to annotation paragraphs inside the Zotero
+  note are not preserved. Paragraphs you restructured or added prose to fall
+  back to the direct conversion.
+</Callout>
+
 ## Refresh v1 notes [#refresh-v1-notes]
 
 V2 recognizes your existing literature notes by their `zotero-key` frontmatter value. They appear in the note index, and <Command inline>ZotLit: Update literature note metadata</Command> refreshes their frontmatter. However, v1 notes lack a managed region (the `%%zt-managed%%` markers that v2 uses to separate generated content from your writing), so incremental body updates cannot target them.
