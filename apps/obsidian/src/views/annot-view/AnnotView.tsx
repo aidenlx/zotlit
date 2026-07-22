@@ -1,22 +1,30 @@
-import { useContext, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 
 import { IconButton } from "@/components/obsidian/icon-button";
+import { SearchInput } from "@/components/obsidian/search-input";
 import { tooltipAttrs } from "@/lib/utils";
 import * as m from "@/paraglide/messages";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
+import { filterAnnotations, isFilterActive } from "./filter";
+import { FilterBar } from "./FilterBar";
 import {
   selectActiveAttachment,
+  useAnnotFilter,
   useAnnotStore,
+  useClearFilters,
+  useSetFilterQuery,
   useSetSelectedAttachmentID,
+  useToggleSearchOpen,
 } from "./store";
 
 export function AnnotView() {
   const itemKey = useAnnotStore((s) => s.itemKey);
   const attachments = useAnnotStore((s) => s.attachments);
   const followMode = useAnnotStore((s) => s.followMode);
-  const [collapsed, setCollapsed] = useState(false);
+  const searchOpen = useAnnotStore((s) => s.searchOpen);
+  const [collapsed, setCollapsed] = useState(true);
 
   const hasItem =
     itemKey !== null && attachments !== null && attachments.length > 0;
@@ -29,6 +37,8 @@ export function AnnotView() {
         onToggleCollapsed={() => setCollapsed((c) => !c)}
       />
       <ItemIdentityLabel />
+      {hasItem && searchOpen && <SearchRow />}
+      {hasItem && <FilterBar />}
       {itemKey === null ? (
         <div className="pane-empty zt:p-2">
           {followMode === "reader"
@@ -57,6 +67,8 @@ interface ToolbarProps {
 function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
   const actions = useContext(AnnotActionsContext);
   const followMode = useAnnotStore((s) => s.followMode);
+  const searchOpen = useAnnotStore((s) => s.searchOpen);
+  const toggleSearchOpen = useToggleSearchOpen();
 
   return (
     <div className="nav-header zt:flex zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
@@ -67,7 +79,6 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
             <IconButton
               className="nav-action-button"
               icon={collapsed ? "chevrons-up-down" : "chevrons-down-up"}
-              active={collapsed}
               onClick={onToggleCollapsed}
               {...tooltipAttrs(
                 collapsed
@@ -80,6 +91,13 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
               icon="refresh-ccw"
               onClick={() => actions.onRefresh()}
               {...tooltipAttrs(m.annot_view_refresh_tooltip())}
+            />
+            <IconButton
+              className="nav-action-button"
+              icon="search"
+              active={searchOpen}
+              onClick={toggleSearchOpen}
+              {...tooltipAttrs(m.annot_view_search_tooltip())}
             />
           </>
         )}
@@ -145,6 +163,22 @@ function ItemIdentityLabel() {
   );
 }
 
+function SearchRow() {
+  const filterQuery = useAnnotStore((s) => s.filterQuery);
+  const setFilterQuery = useSetFilterQuery();
+
+  return (
+    <div className="zt:px-3 zt:pb-1">
+      <SearchInput
+        value={filterQuery}
+        onChange={setFilterQuery}
+        autoFocus
+        placeholder={m.annot_view_search_placeholder()}
+      />
+    </div>
+  );
+}
+
 function AttachmentSelector() {
   const attachments = useAnnotStore((s) => s.attachments);
   const active = useAnnotStore(selectActiveAttachment);
@@ -172,15 +206,33 @@ function AttachmentSelector() {
 function AnnotList({ collapsed }: { collapsed: boolean }) {
   const annotations = useAnnotStore((s) => s.annotations);
   const attachment = useAnnotStore(selectActiveAttachment);
+  const clearFilters = useClearFilters();
+
+  const filter = useAnnotFilter();
+  const filtered = useMemo(
+    () => (annotations ? filterAnnotations(annotations, filter) : []),
+    [annotations, filter],
+  );
 
   if (!annotations || !attachment) {
     return <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>;
   }
 
+  if (isFilterActive(filter) && filtered.length === 0) {
+    return (
+      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-1 zt:p-2">
+        <div>{m.annot_view_filter_no_match()}</div>
+        <button className="zt:underline" onClick={clearFilters}>
+          {m.annot_view_clear_filters()}
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1 zt:pb-8 zt:text-xs">
+    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-8 zt:text-xs">
       <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
-        {annotations.map((annot) => (
+        {filtered.map((annot) => (
           <Annotation key={annot.itemID} annot={annot} collapsed={collapsed} />
         ))}
       </div>
