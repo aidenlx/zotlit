@@ -12,7 +12,7 @@ A question about logic/state rather than looks belongs on the other branch — [
 
 ## The deliverable
 
-**One self-contained `.html` file** in the scratchpad — React + Tailwind + Babel over CDN, zero build — published as an Artifact.
+**One self-contained `.html` file** — React + Tailwind + Babel over CDN, zero build — opened straight from disk in the browser; it never leaves the machine.
 
 `template.html` (next to this file) is the **source of truth** for that boilerplate: CDN imports, the switcher bar, hash routing, keyboard nav, and three placeholder `VariantA`/`VariantB`/`VariantC` bodies. Every prototype starts by copying it.
 
@@ -22,6 +22,8 @@ A question about logic/state rather than looks belongs on the other branch — [
 
 Default **3 variants**; **5** is the ceiling — past that they stop being radically different. Record the plan as a comment at the top of the copied HTML.
 
+When variants are interactive (selections, toggles, a mock filter), wire the state into the copied template before delegating: **one shared store in the harness**, defined above the variant placeholders and read through a hook (`useProtoState()`). Flipping variants then keeps the scenario, so the user compares shapes in the same state instead of rebuilding it in each variant. Scenario presets — switcher buttons that jump the mock to a telling state ("empty inbox", "3 selected") — mutate this store and live in the switcher, never in a variant.
+
 ### 2. Delegate each variant to a `code-edit` subagent
 
 One `code-edit` subagent per variant (`subagent_type: code-edit`), drafting in parallel. Each receives:
@@ -29,7 +31,7 @@ One `code-edit` subagent per variant (`subagent_type: code-edit`), drafting in p
 - the design question plus any reference (screenshots, existing UI, spec link),
 - the project's visual language / design tokens if known,
 - its own write path (`$SCRATCHPAD/variant-A.jsx`, ...) — one file each keeps parallel writes isolated,
-- the contract: **write a single `function VariantA() {...}` in Tailwind classes to that file, and return only the path.** JSX is bulky; keeping it out of the orchestrator's context is the point.
+- the contract: **write a single paramless `function VariantA() {...}` in Tailwind classes to that file — mock state comes from the shared hook, never from props — and return only the path.** JSX is bulky; keeping it out of the orchestrator's context is the point.
 
 You orchestrate; the subagents write the variant code.
 
@@ -47,9 +49,9 @@ Prototype files live in the scratchpad, clear of the project tree. Done when the
 
 ### 4. Hand it over
 
-Publish the assembled file as an Artifact, then share the URL. The user flips through variants using the switcher bar and arrow keys, then answers — usually **"header from B, sidebar from C"**.
+Hand over the file path for the user to open directly in the browser — the file is self-contained, so no server and nothing published anywhere. The user flips through variants using the switcher bar and arrow keys, then answers — usually **"header from B, sidebar from C"**.
 
-A broken or too-similar variant — whether the user catches it or you spot it — goes back to the same subagent: `SendMessage` it the feedback for a patch, re-assemble, re-publish.
+A broken or too-similar variant — whether the user catches it or you spot it — goes back to the same subagent: `SendMessage` it the feedback for a patch, re-assemble; the user reloads the page.
 
 ### 5. Capture the answer
 
@@ -65,7 +67,7 @@ Once you have one resolved key:
    ```sh
    .claude/skills/prototype/trim.py "$SCRATCHPAD/prototype-<feature>.html" <winning-key>
    ```
-   This strips every non-winning `Variant` block and the whole switcher (VARIANTS array, `App`, bottom bar) in place, and points the render call straight at the winner. Re-publish the trimmed file as an Artifact and confirm the winner still renders.
+   This strips every non-winning `Variant` block and the whole switcher (VARIANTS array, `App`, bottom bar) in place, and points the render call straight at the winner. Paramless, hook-fed variants are what make this safe: `trim.py` brace-scans from the function's first `{` (a destructured parameter list breaks the scan), and the surviving variant must render with no switcher passing it props. Confirm the winner still renders from disk, then move the trimmed file to live alongside the feature's spec/design notes — that copy is the only one that persists, as the verdict's visual reference.
 
 ## Anti-patterns
 
