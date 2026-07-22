@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { type TooltipOptions } from "obsidian";
+import { type KeyboardEvent, type MouseEvent } from "react";
 
 import { twMerge } from "@/lib/tw";
 
@@ -38,4 +39,40 @@ export function tooltipAttrs(
     attrs["data-tooltip-delay"] = options.delay;
   }
   return attrs;
+}
+
+/** Enter/Space activates a `role="button"` element the way a native `<button>` would. */
+function onActivateKey(e: KeyboardEvent, activate: () => void) {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    activate();
+  }
+}
+
+/**
+ * Accessible-button behavior for a non-`<button>` element: adds `role="button"`,
+ * focusability, and click/Enter/Space activation with propagation stopped so a
+ * parent handler never double-fires. Spread onto the element; supply
+ * `aria-pressed`/`aria-expanded`, className, and content at the call site.
+ * @param activate Runs on click and on Enter/Space.
+ * @param options `disabled` drops it from the tab order and blocks activation.
+ */
+export function activatable(
+  activate: () => void,
+  { disabled }: { disabled?: boolean } = {},
+) {
+  return {
+    role: "button" as const,
+    tabIndex: disabled ? -1 : 0,
+    onClick: (e: MouseEvent) => {
+      e.stopPropagation();
+      if (disabled) return;
+      activate();
+    },
+    onKeyDown: (e: KeyboardEvent) => {
+      e.stopPropagation();
+      if (disabled) return;
+      onActivateKey(e, activate);
+    },
+  };
 }

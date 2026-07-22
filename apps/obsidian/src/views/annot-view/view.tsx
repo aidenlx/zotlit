@@ -13,6 +13,7 @@ import {
   getItemRefByID,
   getItemsByKey,
   getLibraries,
+  type AnnotViewItem,
   type Item,
   type ItemRef,
   parseIndexedKey,
@@ -42,19 +43,26 @@ import {
 } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { createDragInsertHandler } from "./drag-insert";
+import { sanitizeSavedFilter, type SavedFilter } from "./filter";
 import { pickItem } from "./item-picker";
 import {
   type LoadTarget,
   resolveLibraryID,
   resolveLoadTarget,
 } from "./resolve-target";
-import { AnnotStoreProvider, createAnnotStore, type FollowMode } from "./store";
+import {
+  AnnotStoreProvider,
+  createAnnotStore,
+  INITIAL_FILTER_STATE,
+  type FollowMode,
+} from "./store";
 
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
 const logger = getLogger(["views", "annot-view"]);
 
 const STORAGE_KEY_PREFIX = "zotlit-annot-atch-";
+const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
 
 function formatDisplayLabel(
   info: {
@@ -464,9 +472,19 @@ export class AnnotationView extends ItemView {
     const { db } = this.#deps;
     const { indexedKey, key, libraryID, groupID, boundAttachmentID } = target;
 
+    const itemChanged = indexedKey !== this.#itemKey;
     this.#groupID = groupID;
     this.#itemKey = indexedKey;
+
+    // Dispose the previous load's subscriptions before any state mutation of
+    // this load: `subscribeWithSelector` fires synchronously, so the reset
+    // below would otherwise trigger the old save subscription (closed over
+    // the previous item's indexedKey) and wipe its persisted filter.
+    this.#loadDisposables?.[Symbol.dispose]();
+    this.#loadDisposables = new DisposableStack();
+
     this.#store.setState({
+      ...(itemChanged ? INITIAL_FILTER_STATE : null),
       groupID,
       itemKey: indexedKey,
       itemDisplayLabel: this.#resolveDisplayLabel(target),
@@ -480,9 +498,6 @@ export class AnnotationView extends ItemView {
       const client = db.client;
       const attachments = getAnnotViewAttachments(client, key, libraryID);
       this.#store.setState({ attachments });
-
-      this.#loadDisposables?.[Symbol.dispose]();
-      this.#loadDisposables = new DisposableStack();
 
       const valid = (id: number | null): number | null =>
         id !== null && attachments.some((a) => a.itemID === id) ? id : null;
@@ -505,9 +520,21 @@ export class AnnotationView extends ItemView {
       }
 
       this.#store.setState({ selectedAttachmentID: activeAtchID });
-      this.#store.setState({
-        annotations: getAnnotViewAnnotations(client, activeAtchID),
-      });
+      const initialAnnotations = getAnnotViewAnnotations(client, activeAtchID);
+      this.#store.setState({ annotations: initialAnnotations });
+
+      if (itemChanged) {
+        const savedFilter = this.#loadFilterSelection(
+          indexedKey,
+          initialAnnotations,
+        );
+        if (savedFilter) {
+          this.#store.setState({
+            selectedColors: savedFilter.colors,
+            selectedTagIDs: savedFilter.tagIDs,
+          });
+        }
+      }
 
       this.#loadDisposables.defer(
         this.#store.subscribe(
@@ -527,6 +554,18 @@ export class AnnotationView extends ItemView {
                 { atchID, error: err },
               );
             }
+          },
+        ),
+      );
+
+      this.#loadDisposables.defer(
+        this.#store.subscribe(
+          (s) => [s.selectedColors, s.selectedTagIDs] as const,
+          ([colors, tagIDs]) =>
+            this.#saveFilterSelection(indexedKey, { colors, tagIDs }),
+          {
+            equalityFn: ([aColors, aTags], [bColors, bTags]) =>
+              aColors === bColors && aTags === bTags,
           },
         ),
       );
@@ -572,6 +611,7 @@ export class AnnotationView extends ItemView {
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#store.setState({
+      ...INITIAL_FILTER_STATE,
       itemKey: null,
       itemDisplayLabel: null,
       attachments: null,
@@ -621,6 +661,29 @@ export class AnnotationView extends ItemView {
     this.#deps.app.saveLocalStorage(
       STORAGE_KEY_PREFIX + indexedKey,
       String(atchID),
+    );
+  }
+
+  #loadFilterSelection(
+    indexedKey: string,
+    annots: readonly AnnotViewItem[],
+  ): SavedFilter | null {
+    const raw = this.#deps.app.loadLocalStorage(
+      FILTER_STORAGE_KEY_PREFIX + indexedKey,
+    );
+    return sanitizeSavedFilter(raw, annots);
+  }
+
+  #saveFilterSelection(indexedKey: string, filter: SavedFilter): void {
+    const { colors, tagIDs } = filter;
+    const key = FILTER_STORAGE_KEY_PREFIX + indexedKey;
+    if (colors.length === 0 && tagIDs.length === 0) {
+      this.#deps.app.saveLocalStorage(key, null);
+      return;
+    }
+    this.#deps.app.saveLocalStorage(
+      key,
+      JSON.stringify({ colors, tags: tagIDs }),
     );
   }
 }

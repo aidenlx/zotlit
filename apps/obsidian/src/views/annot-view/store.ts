@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
@@ -10,6 +10,8 @@ import {
 } from "@zotlit/db";
 
 import { type ReaderTarget } from "@/services/live-update/service";
+
+import { type AnnotFilter } from "./filter";
 
 /**
  * What the view tracks: the active literature note (default), the active Zotero
@@ -34,7 +36,33 @@ export interface AnnotState {
   linked: { target: ItemRef; displayLabel: string } | null;
   /** Whether the Zotero reader can be followed (server enabled and listening). */
   serverAvailable: boolean;
+  /** Search row visible. */
+  searchOpen: boolean;
+  /** Case-insensitive substring query typed into the search row. */
+  filterQuery: string;
+  /** Selected swatch colors, canonical uppercase "#RRGGBB". */
+  selectedColors: string[];
+  /** Selected tag IDs. */
+  selectedTagIDs: number[];
+  /** Inline tag panel (below the filter bar) open. */
+  panelOpen: boolean;
 }
+
+/** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
+export const INITIAL_FILTER_STATE: Pick<
+  AnnotState,
+  | "searchOpen"
+  | "filterQuery"
+  | "selectedColors"
+  | "selectedTagIDs"
+  | "panelOpen"
+> = {
+  searchOpen: false,
+  filterQuery: "",
+  selectedColors: [],
+  selectedTagIDs: [],
+  panelOpen: false,
+};
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
 
@@ -52,6 +80,7 @@ export function createAnnotStore() {
         followMode: "note",
         linked: null,
         serverAvailable: false,
+        ...INITIAL_FILTER_STATE,
       }),
     ),
   );
@@ -86,4 +115,72 @@ export function useAnnotStore<T>(selector: (s: AnnotState) => T): T {
 export function useSetSelectedAttachmentID(): (id: number) => void {
   const store = useAnnotStoreApi();
   return (id) => store.setState({ selectedAttachmentID: id });
+}
+
+/**
+ * Toggle the search row. Closing must also clear the query so a hidden row
+ * never keeps filtering the list.
+ */
+export function useToggleSearchOpen(): () => void {
+  const store = useAnnotStoreApi();
+  return () => {
+    const { searchOpen } = store.getState();
+    store.setState(
+      searchOpen
+        ? { searchOpen: false, filterQuery: "" }
+        : { searchOpen: true },
+    );
+  };
+}
+
+export function useSetFilterQuery(): (query: string) => void {
+  const store = useAnnotStoreApi();
+  return (query) => store.setState({ filterQuery: query });
+}
+
+/** Clears filterQuery/selectedColors/selectedTagIDs; leaves searchOpen/panelOpen untouched. */
+export function useClearFilters(): () => void {
+  const store = useAnnotStoreApi();
+  return () =>
+    store.setState({ filterQuery: "", selectedColors: [], selectedTagIDs: [] });
+}
+
+export function useTogglePanel(): () => void {
+  const store = useAnnotStoreApi();
+  return () => {
+    const { panelOpen } = store.getState();
+    store.setState({ panelOpen: !panelOpen });
+  };
+}
+
+export function useToggleSelectedColor(): (color: string) => void {
+  const store = useAnnotStoreApi();
+  return (color) => {
+    const { selectedColors } = store.getState();
+    store.setState({
+      selectedColors: selectedColors.includes(color)
+        ? selectedColors.filter((c) => c !== color)
+        : [...selectedColors, color],
+    });
+  };
+}
+
+/** Assembles the {@link AnnotFilter} from the store's query/colors/tagIDs slices. */
+export function useAnnotFilter(): AnnotFilter {
+  const query = useAnnotStore((s) => s.filterQuery);
+  const colors = useAnnotStore((s) => s.selectedColors);
+  const tagIDs = useAnnotStore((s) => s.selectedTagIDs);
+  return useMemo(() => ({ query, colors, tagIDs }), [query, colors, tagIDs]);
+}
+
+export function useToggleSelectedTagID(): (tagID: number) => void {
+  const store = useAnnotStoreApi();
+  return (tagID) => {
+    const { selectedTagIDs } = store.getState();
+    store.setState({
+      selectedTagIDs: selectedTagIDs.includes(tagID)
+        ? selectedTagIDs.filter((id) => id !== tagID)
+        : [...selectedTagIDs, tagID],
+    });
+  };
 }

@@ -86,6 +86,7 @@ export {
 export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {
   annotationColorToName,
+  type AnnotationColorName,
   highlightColorToName,
   textColorToName,
 } from "./lib/zt-color";

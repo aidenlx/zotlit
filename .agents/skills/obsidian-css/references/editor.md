@@ -220,6 +220,35 @@ Type colors (RGB triplets so you can `rgba(var(--callout-info), 0.2)`). Each map
 | `--tag-radius` | Corner radius |
 | `--tag-weight` | Font weight |
 
+To render a content-tag pill, compose the variables above with `zt:` Tailwind
+utilities on a plain `<span>` — don't borrow Obsidian's own `.tag` class. `.tag` is
+unlayered (so any `zt:` override needs `!important`) and its selector is `a.tag` (so
+it only styles `<a>`, and a bare `<a>` also inherits Obsidian's unlayered link
+color). A `<span>` styled with `zt:` utilities stays in the utilities layer, so
+accent state utilities override the resting look cleanly. When more than one surface
+renders the same chip (or the states get complex — resting / selected / disabled,
+density, truncation), centralize the variants in one `tailwind-variants` recipe with
+the repo's prefix-aware `tv` from `@/lib/tw`, rather than duplicating the token
+string per call site:
+
+```ts
+import { tv } from "@/lib/tw";
+
+export const tagChipVariants = tv({
+  base: "zt:rounded-(--tag-radius) zt:border-(length:--tag-border-width) zt:font-(--tag-weight) zt:leading-none",
+  variants: {
+    state: {
+      resting: "zt:border-(--tag-border-color) zt:bg-(--tag-background) zt:text-(color:--tag-color) zt:hover:bg-(--tag-background-hover)",
+      selected: "zt:border-primary zt:bg-primary zt:text-primary-foreground",
+    },
+  },
+});
+// <span className={tagChipVariants({ state: sel ? "selected" : "resting" })} aria-pressed={sel} />
+```
+
+Note the type hints: `text-(color:…)` for the color vs. `text-(length:…)` for the
+font size, and `border-(length:…)` for the border width vs. `border-(…)` for its color.
+
 ## Embeds
 
 | Variable | Use |
