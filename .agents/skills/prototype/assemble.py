@@ -6,10 +6,11 @@ Usage:
         [--name A="Sidebar nav"] [--name B="Single scroll"] ...
 
 Each variant file must be named `variant-<KEY>.jsx` (KEY = A, B, C, ...) and hold
-exactly one `function Variant<KEY>() { ... }` component. The matching placeholder
-body in the HTML is replaced in place — file to file, so the JSX never has to pass
-through the orchestrator's context. Optional `--name KEY=Label` rewrites that
-variant's label in the switcher bar. Prints only a one-line summary.
+exactly one `function Variant<KEY>() { ... }` component. The HTML carries a
+`// --- Variant <KEY> ---` / `// --- Variant <KEY> END ---` marker pair per variant;
+the lines between them are replaced with the fragment, file to file, so the JSX never
+has to pass through the orchestrator's context. Optional `--name KEY=Label` rewrites
+that variant's label in the switcher bar. Prints only a one-line summary.
 """
 import argparse
 import pathlib
@@ -38,16 +39,24 @@ def main() -> None:
     for vpath in a.variants:
         key = key_of(vpath)
         body = pathlib.Path(vpath).read_text().strip("\n")
-        # placeholder is a single indented line: `    function VariantA() { ... }`
+        # replace the lines between the marker pair, keeping the markers themselves
         pat = re.compile(
-            r"^([ \t]*)function Variant" + re.escape(key) + r"\(\)\s*\{.*\}[ \t]*$", re.M
+            r"^([ \t]*)// --- Variant " + re.escape(key) + r" ---[ \t]*\n"
+            r".*?"
+            r"^[ \t]*// --- Variant " + re.escape(key) + r" END ---[ \t]*$",
+            re.M | re.S,
         )
         m = pat.search(html)
         if not m:
-            sys.exit(f"placeholder function Variant{key}() not found in {html_path}")
+            sys.exit(f"marker pair for Variant{key} not found in {html_path}")
         indent = m.group(1)
         block = "\n".join((indent + ln if ln.strip() else ln) for ln in body.splitlines())
-        html = html[: m.start()] + block + html[m.end():]
+        replacement = (
+            f"{indent}// --- Variant {key} ---\n"
+            f"{block}\n"
+            f"{indent}// --- Variant {key} END ---"
+        )
+        html = html[: m.start()] + replacement + html[m.end():]
 
     for spec in a.name:
         key, _, label = spec.partition("=")

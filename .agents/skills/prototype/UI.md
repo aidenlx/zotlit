@@ -22,7 +22,7 @@ A question about logic/state rather than looks belongs on the other branch — [
 
 Default **3 variants**; **5** is the ceiling — past that they stop being radically different. Record the plan as a comment at the top of the copied HTML.
 
-When variants are interactive (selections, toggles, a mock filter), wire the state into the copied template before delegating: **one shared store in the harness**, defined above the variant placeholders and read through a hook (`useProtoState()`). Flipping variants then keeps the scenario, so the user compares shapes in the same state instead of rebuilding it in each variant. Scenario presets — switcher buttons that jump the mock to a telling state ("empty inbox", "3 selected") — mutate this store and live in the switcher, never in a variant.
+When variants are interactive (selections, toggles, a mock filter), wire the state into the copied template before delegating: **one module-level shared store** (e.g. `useSyncExternalStore`), defined above the variant placeholders and read through a hook (`useProtoState()`). Keep it provider-free — no `createContext`/provider wrapper — because the trimmed winner (step 5) renders bare, with no provider to supply a context. Flipping variants then keeps the scenario, so the user compares shapes in the same state instead of rebuilding it in each variant. Scenario presets — switcher buttons that jump the mock to a telling state ("empty inbox", "3 selected") — mutate this store and live in the switcher, never in a variant.
 
 ### 2. Delegate each variant to a `code-edit` subagent
 
@@ -67,7 +67,7 @@ Once you have one resolved key:
    ```sh
    .claude/skills/prototype/trim.py "$SCRATCHPAD/prototype-<feature>.html" <winning-key>
    ```
-   This strips every non-winning `Variant` block and the whole switcher (VARIANTS array, `App`, bottom bar) in place, and points the render call straight at the winner. Paramless, hook-fed variants are what make this safe: `trim.py` brace-scans from the function's first `{` (a destructured parameter list breaks the scan), and the surviving variant must render with no switcher passing it props. Confirm the winner still renders from disk, then move the trimmed file to live alongside the feature's spec/design notes — that copy is the only one that persists, as the verdict's visual reference.
+   This deletes every non-winning variant region and the whole switcher region (VARIANTS array, `App`, bottom bar) — each bounded by its `// --- … ---` / `END` marker pair, so no JavaScript structure is parsed — then points the render call straight at the winner. The one contract this rests on: the trimmed winner renders bare (`<VariantB />`), so a variant reads all its state from the shared hook and takes no props. Confirm the winner still renders from disk, then move the trimmed file to live alongside the feature's spec/design notes — that copy is the only one that persists, as the verdict's visual reference.
 
 ## Anti-patterns
 
