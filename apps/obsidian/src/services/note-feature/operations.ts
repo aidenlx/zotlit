@@ -1,4 +1,3 @@
-import { withContext } from "@logtape/logtape";
 import { stringifyYaml, type TFile } from "obsidian";
 
 import {
@@ -253,24 +252,22 @@ async function writeNewNote(
     groupIdMemo: options.groupIdMemo,
     tagMemo,
   });
-  const content = withContext({ targetNote: item.indexedKey }, () => {
-    const resolvers = buildNoteResolvers(ctx, {
-      attachmentImport,
-      noteImport,
-      settings,
-      sourcePath: path,
-    });
-    const context = fetchNoteContext(options.client, item, {
-      resolvers,
-      tagMemo,
-      collectionCache,
-      groupIdMemo: options.groupIdMemo,
-    });
-    const body = ctx.template.render("note", context);
-    const fm: Record<string, unknown> = {};
-    applyFrontmatter(ctx, fm, context);
-    return `---\n${stringifyYaml(fm)}---\n${body}`;
+  const resolvers = buildNoteResolvers(ctx, {
+    attachmentImport,
+    noteImport,
+    settings,
+    sourcePath: path,
   });
+  const context = fetchNoteContext(options.client, item, {
+    resolvers,
+    tagMemo,
+    collectionCache,
+    groupIdMemo: options.groupIdMemo,
+  });
+  const body = ctx.template.render("note", context);
+  const fm: Record<string, unknown> = {};
+  applyFrontmatter(ctx, fm, { context, itemKey: item.indexedKey });
+  const content = `---\n${stringifyYaml(fm)}---\n${body}`;
 
   const file = await ctx.app.vault.create(path, content);
   await attachmentImport.flush();
@@ -291,23 +288,17 @@ async function updateNote(
   await Promise.all([ctx.noteIndex.whenIndexed(), ctx.template.ready]);
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
-  return await withContext({ targetNote: indexedKey }, async () => {
-    const { context, noteImport } = await contextForIndexedKey(
-      ctx,
-      indexedKey,
-      {
-        client: lease.client,
-        attachmentImport,
-        sourcePath: file.path,
-      },
-    );
-    return applyManagedUpdate(ctx, file, {
-      context,
-      attachmentImport,
-      noteImport,
-      itemKey: indexedKey,
-      scope,
-    });
+  const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
+    client: lease.client,
+    attachmentImport,
+    sourcePath: file.path,
+  });
+  return applyManagedUpdate(ctx, file, {
+    context,
+    attachmentImport,
+    noteImport,
+    itemKey: indexedKey,
+    scope,
   });
 }
 
@@ -334,26 +325,24 @@ async function writeNoteUpdate(
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
   });
-  return withContext({ targetNote: options.item.indexedKey }, () => {
-    const resolvers = buildNoteResolvers(ctx, {
-      attachmentImport,
-      noteImport,
-      settings: options.settings,
-      sourcePath: file.path,
-    });
-    const context = fetchNoteContext(options.client, options.item, {
-      resolvers,
-      tagMemo: options.tagMemo,
-      collectionCache: options.collectionCache,
-      groupIdMemo: options.groupIdMemo,
-    });
-    return applyManagedUpdate(ctx, file, {
-      context,
-      attachmentImport,
-      noteImport,
-      itemKey: options.item.indexedKey,
-      scope: options.scope ?? "full",
-    });
+  const resolvers = buildNoteResolvers(ctx, {
+    attachmentImport,
+    noteImport,
+    settings: options.settings,
+    sourcePath: file.path,
+  });
+  const context = fetchNoteContext(options.client, options.item, {
+    resolvers,
+    tagMemo: options.tagMemo,
+    collectionCache: options.collectionCache,
+    groupIdMemo: options.groupIdMemo,
+  });
+  return applyManagedUpdate(ctx, file, {
+    context,
+    attachmentImport,
+    noteImport,
+    itemKey: options.item.indexedKey,
+    scope: options.scope ?? "full",
   });
 }
 
@@ -373,10 +362,10 @@ async function applyManagedUpdate(
   },
 ): Promise<UpdateResult> {
   const { context, attachmentImport, noteImport, itemKey, scope } = input;
-  await refreshFrontmatter(ctx, file, context);
+  await refreshFrontmatter(ctx, file, { context, itemKey });
   const result =
     scope === "full"
-      ? await replaceManagedBody(ctx, file, context)
+      ? await replaceManagedBody(ctx, file, { context, itemKey })
       : NO_BODY_UPDATE;
 
   await Promise.all([attachmentImport.flush(), noteImport.flush()]);
@@ -396,8 +385,9 @@ async function applyManagedUpdate(
 async function replaceManagedBody(
   ctx: NoteFeatureDeps,
   file: TFile,
-  context: NoteTemplateContext,
+  input: { context: NoteTemplateContext; itemKey: string },
 ): Promise<UpdateResult> {
+  const { context, itemKey } = input;
   let replaced = false;
   let duplicateCount = 0;
   await ctx.app.vault.process(file, (content) => {
@@ -415,6 +405,7 @@ async function replaceManagedBody(
   if (duplicateCount > 0) {
     logger.warn("Literature note has duplicate managed regions", {
       path: file.path,
+      itemKey,
       count: duplicateCount + 1,
     });
   }
@@ -432,28 +423,22 @@ async function overwriteNote(
   await Promise.all([ctx.noteIndex.whenIndexed(), ctx.template.ready]);
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
-  await withContext({ targetNote: indexedKey }, async () => {
-    const { context, noteImport } = await contextForIndexedKey(
-      ctx,
-      indexedKey,
-      {
-        client: lease.client,
-        attachmentImport,
-        sourcePath: file.path,
-      },
-    );
-    await refreshFrontmatter(ctx, file, context);
-    const body = ctx.template.render("note", context);
-    await ctx.app.vault.process(file, (content) => {
-      const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
-      return `${prefix}${body}`;
-    });
+  const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
+    client: lease.client,
+    attachmentImport,
+    sourcePath: file.path,
+  });
+  await refreshFrontmatter(ctx, file, { context, itemKey: indexedKey });
+  const body = ctx.template.render("note", context);
+  await ctx.app.vault.process(file, (content) => {
+    const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
+    return `${prefix}${body}`;
+  });
 
-    await Promise.all([attachmentImport.flush(), noteImport.flush()]);
-    logger.info("Overwrote literature note", {
-      path: file.path,
-      itemKey: indexedKey,
-    });
+  await Promise.all([attachmentImport.flush(), noteImport.flush()]);
+  logger.info("Overwrote literature note", {
+    path: file.path,
+    itemKey: indexedKey,
   });
 }
 
@@ -585,10 +570,10 @@ async function contextForIndexedKey(
 async function refreshFrontmatter(
   ctx: NoteFeatureDeps,
   file: TFile,
-  context: NoteTemplateContext,
+  input: { context: NoteTemplateContext; itemKey: string },
 ): Promise<void> {
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
-    applyFrontmatter(ctx, fm, context);
+    applyFrontmatter(ctx, fm, input);
   });
 }
 
@@ -600,17 +585,18 @@ async function refreshFrontmatter(
 function applyFrontmatter(
   ctx: NoteFeatureDeps,
   fm: Record<string, unknown>,
-  context: NoteTemplateContext,
+  input: { context: NoteTemplateContext; itemKey: string },
 ): void {
+  const { context, itemKey } = input;
   const failed: string[] = [];
   applyManagedFrontmatter(fm, context, {
     compiled: ctx.template.frontmatterFields,
     onError: (key, error) => {
       failed.push(key);
-      logger.warn("Frontmatter expression failed", { key, error });
+      logger.warn("Frontmatter expression failed", { key, itemKey, error });
     },
     onConflict: (key, detail) => {
-      logger.warn("Skipped frontmatter append", { key, ...detail });
+      logger.warn("Skipped frontmatter append", { key, itemKey, ...detail });
     },
   });
   if (failed.length > 0) {
