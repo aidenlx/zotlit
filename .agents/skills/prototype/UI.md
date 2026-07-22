@@ -1,112 +1,75 @@
 # UI Prototype
 
-Generate **several radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one (or steals bits from each), then throws the rest away.
+Generate **several radically different UI variations** in one standalone HTML file, switchable from a floating bottom bar. The user flips between variants, keeps one (or steals bits from each), and throws the rest away.
 
-If the question is about logic/state rather than what something looks like — wrong branch. Use [LOGIC.md](LOGIC.md).
+A question about logic/state rather than looks belongs on the other branch — [LOGIC.md](LOGIC.md).
 
 ## When this is the right shape
 
 - "What should this page look like?"
-- "I want to see a few options for this dashboard before committing."
+- "Show me a few options for this dashboard before I commit."
 - "Try a different layout for the settings screen."
-- Any time the user would otherwise spend a day picking between three vague mockups in their head.
 
-## Two sub-shapes — strongly prefer sub-shape A
+## The deliverable
 
-A UI prototype is much easier to judge when it's **butting up against the rest of the app** — real header, real sidebar, real data, real density. A throwaway route on its own is a vacuum: every variant looks fine in isolation. Default to sub-shape A whenever there's a plausible existing page to host the variants. Only reach for sub-shape B if the prototype genuinely has no nearby home.
+**One self-contained `.html` file** in the scratchpad — React + Tailwind + Babel over CDN, zero build — published as an Artifact.
 
-### Sub-shape A — adjustment to an existing page (preferred)
-
-The route already exists. Variants are rendered **on the same route**, gated by a `?variant=` URL search param. The existing data fetching, params, and auth all stay — only the rendering swaps. This is the default; pick it unless there's a specific reason not to.
-
-If the prototype is for something that doesn't yet have a page but *would naturally live inside one* (a new section of the dashboard, a new card on the settings screen, a new step in an existing flow) — that's still sub-shape A. Mount the variants inside the host page.
-
-### Sub-shape B — a new page (last resort)
-
-Only use this when the thing being prototyped genuinely has no existing page to live inside — e.g. an entirely new top-level surface, or a flow that can't be embedded anywhere sensible.
-
-Create a **throwaway route** following whatever routing convention the project already uses — don't invent a new top-level structure. Name it so it's obviously a prototype (e.g. include the word `prototype` in the path or filename). Same `?variant=` pattern.
-
-Before committing to sub-shape B, sanity-check: is there really no existing page this could be embedded in? An empty route hides design problems that a populated one would expose.
-
-In both sub-shapes the floating bottom bar is identical.
+`template.html` (next to this file) is the **source of truth** for that boilerplate: CDN imports, the switcher bar, hash routing, keyboard nav, and three placeholder `VariantA`/`VariantB`/`VariantC` bodies. Every prototype starts by copying it.
 
 ## Process
 
-### 1. State the question and pick N
+### 1. Frame the question, pick N
 
-Default to **3 variants**. More than 5 stops being radically different and starts being noise — cap there.
+Default **3 variants**; **5** is the ceiling — past that they stop being radically different. Record the plan as a comment at the top of the copied HTML.
 
-Write down the plan in one line, in the prototype's location or a top-of-file comment:
+### 2. Delegate each variant to a `code-edit` subagent
 
-> "Three variants of the settings page, switchable via `?variant=`, on the existing `/settings` route."
+One `code-edit` subagent per variant (`subagent_type: code-edit`), drafting in parallel. Each receives:
 
-This works whether the user is here to push back or not.
+- the design question plus any reference (screenshots, existing UI, spec link),
+- the project's visual language / design tokens if known,
+- its own write path (`$SCRATCHPAD/variant-A.jsx`, ...) — one file each keeps parallel writes isolated,
+- the contract: **write a single `function VariantA() {...}` in Tailwind classes to that file, and return only the path.** JSX is bulky; keeping it out of the orchestrator's context is the point.
 
-### 2. Generate radically different variants
+You orchestrate; the subagents write the variant code.
 
-Draft each variant. Hold each one to:
+### 3. Assemble
 
-- The page's purpose and the data it has access to.
-- The project's component library / styling system (TailwindCSS, shadcn, MUI, plain CSS, whatever).
-- A clear exported component name, e.g. `VariantA`, `VariantB`, `VariantC`.
+1. `cp .claude/skills/prototype/template.html "$SCRATCHPAD/prototype-<feature>.html"`
+2. **Splice** the variants in with `assemble.py` (next to this file) — file->file, so the JSX never enters your context:
+   ```sh
+   .claude/skills/prototype/assemble.py "$SCRATCHPAD/prototype-<feature>.html" \
+     "$SCRATCHPAD"/variant-*.jsx --name 'A=Sidebar nav' --name 'B=Single scroll'
+   ```
+   Each `variant-<KEY>.jsx` replaces the matching `Variant<KEY>` placeholder; `--name KEY=Label` sets the switcher label.
 
-Variants must be **structurally different** — different layout, different information hierarchy, different primary affordance, not just different colours. Three slightly-tweaked card grids isn't a UI prototype, it's wallpaper. If two drafts come out too similar, redo one with explicit "do not use a card grid" guidance.
+Prototype files live in the scratchpad, clear of the project tree. Done when the splice reports every variant placed — then go straight to step 4: the user's own flip-through is the inspection.
 
-### 3. Wire them together
+### 4. Hand it over
 
-Create a single switcher component on the route:
+Publish the assembled file as an Artifact, then share the URL. The user flips through variants using the switcher bar and arrow keys, then answers — usually **"header from B, sidebar from C"**.
 
-```tsx
-// pseudo-code — adapt to the project's framework
-const variant = searchParams.get('variant') ?? 'A';
-return (
-  <>
-    {variant === 'A' && <VariantA {...data} />}
-    {variant === 'B' && <VariantB {...data} />}
-    {variant === 'C' && <VariantC {...data} />}
-    <PrototypeSwitcher variants={['A','B','C']} current={variant} />
-  </>
-);
-```
+A broken or too-similar variant — whether the user catches it or you spot it — goes back to the same subagent: `SendMessage` it the feedback for a patch, re-assemble, re-publish.
 
-For sub-shape A (existing page): keep all the existing data fetching above the switcher; only the rendered subtree changes per variant.
+### 5. Capture the answer
 
-For sub-shape B (new page): the throwaway route under `/prototype/<name>` mounts the same switcher.
+The user's answer may name a variant loosely — a bare number ("3"), a position ("the last one"), a key ("C"), or a mix-and-match ("header from B, sidebar from C"). Resolve it before writing anything:
 
-### 4. Build the floating switcher
+- **Single clean winner** (number/position/key, or a name that maps to exactly one switcher entry): map it to its `key` in the `VARIANTS` array — position and switcher order match, so "3" is whichever variant is third in that array, not necessarily key `C`. Don't guess past this; if the mapping is ambiguous, ask which key they mean rather than assume.
+- **Mix-and-match**: there's no single winning file to point at. Say so, and ask whether they want it built as a new merged variant (loop back to step 2 with a subagent scoped to "combine B's header with C's sidebar") or whether the verdict is just recorded as-is for someone else to build later.
 
-A small fixed-position bar at the bottom-centre of the screen with three pieces:
+Once you have one resolved key:
 
-- **Left arrow** — cycles to the previous variant (wraps around).
-- **Variant label** — shows the current variant key and, if the variant exports a name, that name too. e.g. `B — Sidebar layout`.
-- **Right arrow** — cycles forward (wraps around).
-
-Behaviour:
-
-- Clicking an arrow updates the URL search param (use the framework's router — `router.replace` on Next, `navigate` on React Router, etc) so the variant is shareable and reload-stable.
-- Keyboard: `←` and `→` arrow keys also cycle. Don't intercept arrow keys when an `<input>`, `<textarea>`, or `[contenteditable]` is focused.
-- Visually distinct from the page (e.g. high-contrast pill, subtle shadow) so it's obviously not part of the design being evaluated.
-- Hidden in production builds — gate on `process.env.NODE_ENV !== 'production'` or an equivalent check, so a stray prototype merge can't ship the bar to users.
-
-Put the switcher in a single shared component so both sub-shapes can reuse it. Locate it wherever shared UI lives in the project.
-
-### 5. Hand it over
-
-Surface the URL (and the `?variant=` keys). The user will flip through whenever they get to it. The interesting feedback is usually **"I want the header from B with the sidebar from C"** — that's the actual design they want.
-
-### 6. Capture the answer and clean up
-
-Once a variant has won, write down which one and why (commit message, ADR, issue, or a `NOTES.md` next to the prototype if running AFK and the user hasn't responded yet). Then:
-
-- **Sub-shape A** — delete the losing variants and the switcher; fold the winner into the existing page.
-- **Sub-shape B** — promote the winning variant to a real route, delete the throwaway route and the switcher.
-
-Don't leave variant components or the switcher lying around. They rot fast and confuse the next reader.
+1. Record the verdict as a top comment in the HTML: which key/name won, plus **why** — quote or paraphrase the user's own reasoning. If they only gave a pick with no reasoning ("winner is 3"), write the verdict without inventing a rationale — don't fabricate one to fill the line.
+2. **Trim the losers out.** The switcher gallery served the flip-through conversation — what gets kept is the winner alone:
+   ```sh
+   .claude/skills/prototype/trim.py "$SCRATCHPAD/prototype-<feature>.html" <winning-key>
+   ```
+   This strips every non-winning `Variant` block and the whole switcher (VARIANTS array, `App`, bottom bar) in place, and points the render call straight at the winner. Re-publish the trimmed file as an Artifact and confirm the winner still renders.
 
 ## Anti-patterns
 
-- **Variants that differ only in colour or copy.** That's a tweak, not a prototype. Real variants disagree about structure.
-- **Sharing too much code between variants.** A shared `<Header>` is fine; a shared `<Layout>` defeats the point. Each variant should be free to throw out the layout.
-- **Wiring variants to real mutations.** Read-only prototypes are fine. If a variant needs to mutate, point it at a stub — the question is "what should this look like", not "does the backend work".
-- **Promoting the prototype directly to production.** The variant code was written under prototype constraints (no tests, minimal error handling). Rewrite it properly when you fold it in.
+- **Variants that differ only in colour or copy.** A tweak, not a prototype — real variants disagree about structure.
+- **A shared `<Layout>`.** A shared `<Header>` is fine; the moment the layout is shared the variants can no longer disagree about it, which was the whole point.
+- **Wiring variants to real mutations.** Read-only is fine; point anything that must mutate at a stub. The question is what it looks like, not whether the backend works.
+- **Promoting prototype code to production.** It was written under prototype constraints — no tests, thin error handling. Rewrite it when you fold it in.

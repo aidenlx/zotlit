@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prototype: [feature name]</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    { "imports": {
+        "react": "https://esm.sh/react@19",
+        "react-dom/client": "https://esm.sh/react-dom@19/client",
+        "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime"
+    }}
+  </script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>html,body,#root{height:100%;margin:0}</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect } from "react";
+    import { createRoot } from "react-dom/client";
+
+    // --- Variant A ---
+    function VariantA() { return <div className="p-8"><h1 className="text-2xl font-bold">Variant A</h1></div>; }
+
+    // --- Variant B ---
+    function VariantB() { return <div className="p-8"><h1 className="text-2xl font-bold">Variant B</h1></div>; }
+
+    // --- Variant C ---
+    function VariantC() { return <div className="p-8"><h1 className="text-2xl font-bold">Variant C</h1></div>; }
+
+    // --- Switcher ---
+    const VARIANTS = [
+      { key: "A", name: "Variant A", component: VariantA },
+      { key: "B", name: "Variant B", component: VariantB },
+      { key: "C", name: "Variant C", component: VariantC },
+    ];
+
+    function App() {
+      const [idx, setIdx] = useState(() => {
+        const h = location.hash.slice(1);
+        const i = VARIANTS.findIndex(v => v.key === h);
+        return i >= 0 ? i : 0;
+      });
+
+      useEffect(() => {
+        location.hash = VARIANTS[idx].key;
+        const onHash = () => {
+          const i = VARIANTS.findIndex(v => v.key === location.hash.slice(1));
+          if (i >= 0) setIdx(i);
+        };
+        window.addEventListener("hashchange", onHash);
+        const onKey = (e) => {
+          if (["INPUT","TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
+          if (e.key === "ArrowLeft")  setIdx(i => (i - 1 + VARIANTS.length) % VARIANTS.length);
+          if (e.key === "ArrowRight") setIdx(i => (i + 1) % VARIANTS.length);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => { window.removeEventListener("hashchange", onHash); window.removeEventListener("keydown", onKey); };
+      }, [idx]);
+
+      const V = VARIANTS[idx];
+      return (
+        <>
+          <V.component />
+          <div style={{position:"fixed",bottom:"1rem",left:"50%",transform:"translateX(-50%)",
+            background:"#1e293b",color:"#f8fafc",borderRadius:"9999px",padding:"0.5rem 1.25rem",
+            display:"flex",alignItems:"center",gap:"1rem",fontSize:"0.875rem",zIndex:9999,
+            boxShadow:"0 4px 12px rgba(0,0,0,0.3)"}}>
+            <button onClick={() => setIdx(i => (i - 1 + VARIANTS.length) % VARIANTS.length)}
+              style={{background:"none",border:"none",color:"inherit",cursor:"pointer",fontSize:"1.25rem"}}>←</button>
+            <span>{V.key} — {V.name}</span>
+            <button onClick={() => setIdx(i => (i + 1) % VARIANTS.length)}
+              style={{background:"none",border:"none",color:"inherit",cursor:"pointer",fontSize:"1.25rem"}}>→</button>
+          </div>
+        </>
+      );
+    }
+
+    createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
