@@ -14,7 +14,7 @@ A question about logic/state rather than looks belongs on the other branch — [
 
 **One self-contained `.html` file** — React + Tailwind + Babel over CDN, zero build — opened straight from disk in the browser; it never leaves the machine.
 
-`template.html` (next to this file) is the **source of truth** for that boilerplate: CDN imports, the switcher bar, hash routing, keyboard nav, and three placeholder `VariantA`/`VariantB`/`VariantC` bodies. Every prototype starts by copying it.
+`template.html` (next to this file) is the **source of truth** for that boilerplate: CDN imports (React, Tailwind, and `lucide-react` for icons — all via the import map), the switcher bar, hash routing, keyboard nav, and three placeholder `VariantA`/`VariantB`/`VariantC` bodies. Every prototype starts by copying it.
 
 ## Process
 
@@ -31,7 +31,7 @@ One `code-edit` subagent per variant (`subagent_type: code-edit`), drafting in p
 - the design question plus any reference (screenshots, existing UI, spec link),
 - the project's visual language / design tokens if known,
 - its own write path (`$SCRATCHPAD/variant-A.jsx`, ...) — one file each keeps parallel writes isolated,
-- the contract: **write a single paramless `function VariantA() {...}` in Tailwind classes to that file — mock state comes from the shared hook, never from props — and return only the path.** JSX is bulky; keeping it out of the orchestrator's context is the point.
+- the contract: **write a single paramless `function VariantA() {...}` in Tailwind classes to that file — mock state comes from the shared hook, never from props; icons come from `lucide-react` named imports (`import { Search } from "lucide-react"`) — and return only the path.** JSX is bulky; keeping it out of the orchestrator's context is the point.
 
 You orchestrate; the subagents write the variant code.
 

@@ -9,7 +9,8 @@
     { "imports": {
         "react": "https://esm.sh/react@19",
         "react-dom/client": "https://esm.sh/react-dom@19/client",
-        "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime"
+        "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+        "lucide-react": "https://esm.sh/lucide-react@1?external=react"
     }}
   </script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,6 +21,7 @@
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect } from "react";
     import { createRoot } from "react-dom/client";
+    import { Search, ChevronDown } from "lucide-react"; // any lucide-react icon; <Search size={16} className="text-slate-500" />
 
     // --- Variant A ---
     function VariantA() { return <div className="p-8"><h1 className="text-2xl font-bold">Variant A</h1></div>; }
