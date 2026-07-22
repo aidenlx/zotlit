@@ -49,7 +49,7 @@ Prototype files live in the scratchpad, clear of the project tree. Done when the
 
 ### 4. Hand it over
 
-Hand over the file path for the user to open directly in the browser — the file is self-contained, so no server and nothing published anywhere. The user flips through variants using the switcher bar and arrow keys, then answers — usually **"header from B, sidebar from C"**.
+Hand over the full absolute file path for the user to open directly in the browser — the file is self-contained, so no server and nothing published anywhere. The user flips through variants using the switcher bar and arrow keys, then answers — usually **"header from B, sidebar from C"**.
 
 A broken or too-similar variant — whether the user catches it or you spot it — goes back to the same subagent: `SendMessage` it the feedback for a patch, re-assemble; the user reloads the page.
 
