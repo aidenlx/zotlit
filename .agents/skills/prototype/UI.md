@@ -45,7 +45,7 @@ You orchestrate; the subagents write the variant code.
    ```
    Each `variant-<KEY>.jsx` replaces the matching `Variant<KEY>` placeholder; `--name KEY=Label` sets the switcher label.
 
-Prototype files live in the scratchpad, clear of the project tree. Done when the splice reports every variant placed — then go straight to step 4: the user's own flip-through is the inspection.
+`$SCRATCHPAD` is the Claude scratchpad when the session provides one, `/tmp` otherwise — either way clear of the project tree, and only the trimmed winner (step 5) ever leaves it. Done when the splice reports every variant placed — then go straight to step 4: the user's own flip-through is the inspection.
 
 ### 4. Hand it over
 
