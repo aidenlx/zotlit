@@ -1,5 +1,6 @@
 {
   "__VERSION__": 2,
   "server.enabled": true,
-  "note.import-annotations-as-template": true
+  "note.import-annotations-as-template": true,
+  "release.previous-version": "2.0.0-beta.0"
 }
