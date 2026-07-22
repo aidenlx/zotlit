@@ -9,6 +9,8 @@ import { FooterCards } from "@/layouts/docs/page/slots/footer";
 import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 
+export const dynamicParams = false;
+
 export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
   const params = await props.params;
   const page = blog.getPage([params.slug]);

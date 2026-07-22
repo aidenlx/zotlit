@@ -178,3 +178,13 @@ html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
+
+/* The 404/500 pages carry their own wordmark only when they render standalone
+   (a hard load resolves them in the root layout, which has no site nav). On a
+   soft in-app navigation the boundary can render inside route-group chrome that
+   already shows the wordmark — hide the duplicate then. */
+body:has(#nd-nav) [data-error-brand],
+body:has(#nd-subnav) [data-error-brand],
+body:has(#nd-sidebar) [data-error-brand] {
+  display: none;
+}

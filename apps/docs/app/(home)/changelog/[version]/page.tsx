@@ -7,6 +7,8 @@ import { getMDXComponents } from "@/components/mdx";
 import { formatReleaseDate, gitConfig, ogImageUrl } from "@/lib/shared";
 import { changelog, getChangelogPages } from "@/lib/source";
 
+export const dynamicParams = false;
+
 function isLatest(version: string): boolean {
   const [latest] = getChangelogPages();
   return latest?.data.version === version;
