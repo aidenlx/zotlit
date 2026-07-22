@@ -8,3 +8,10 @@
   overflow: hidden;
   padding: 0;
 }
+
+/* Obsidian's status bar (position: fixed, bottom-right) overlays the pane's
+   bottom edge in any dock, covering the tail of the scrollable annotation
+   list. Reserve enough bottom clearance so the list is never covered. */
+.workspace-leaf-content[data-type="zotero-annotation-view"] .view-content {
+  padding-bottom: var(--size-4-8);
+}

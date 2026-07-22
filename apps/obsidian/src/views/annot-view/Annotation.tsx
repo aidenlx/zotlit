@@ -8,11 +8,12 @@ import {
 
 import { Icon } from "@/components/obsidian/icon";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
-import { cn, tooltipAttrs } from "@/lib/utils";
+import { activatable, cn, tooltipAttrs } from "@/lib/utils";
 import * as m from "@/paraglide/messages";
 
 import { AnnotActionsContext } from "./actions";
-import { useAnnotStore } from "./store";
+import { useAnnotStore, useToggleSelectedTagID } from "./store";
+import { tagChipVariants } from "./tag-chip";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -45,15 +46,17 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       s.followMode === "reader" &&
       (s.readerTarget?.selected.includes(annot.itemID) ?? false),
   );
+  const selectedTagIDs = useAnnotStore((s) => s.selectedTagIDs);
+  const toggleTag = useToggleSelectedTagID();
 
   return (
     <div
-      className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:data-[selected]:border-primary zt:data-[selected]:bg-primary/10 zt:data-[selected]:ring-1 zt:data-[selected]:ring-primary zt:@md:mb-3"
+      className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:data-selected:border-primary zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:@md:mb-3"
       data-id={annot.itemID}
       data-selected={selected ? "" : undefined}
     >
       <div
-        className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-[selected]:bg-transparent"
+        className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-selected:bg-transparent"
         onContextMenu={(e) => actions.onMoreOptions(e, annot)}
       >
         <span
@@ -86,11 +89,22 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
       {annot.tags.length > 0 && (
         <div className="zt:flex zt:flex-wrap zt:gap-1 zt:px-2 zt:py-1">
-          {annot.tags.map((tag) => (
-            <a key={tag.tagID} className="tag">
-              {tag.name}
-            </a>
-          ))}
+          {annot.tags.map((tag) => {
+            const tagSelected = selectedTagIDs.includes(tag.tagID);
+            return (
+              <span
+                key={tag.tagID}
+                className={tagChipVariants({
+                  state: tagSelected ? "selected" : "resting",
+                  ring: true,
+                })}
+                {...activatable(() => toggleTag(tag.tagID))}
+                aria-pressed={tagSelected}
+              >
+                {tag.name}
+              </span>
+            );
+          })}
         </div>
       )}
     </div>
