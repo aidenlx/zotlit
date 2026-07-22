@@ -14,8 +14,8 @@ citekey: Hensher2011
 %%zt-managed%%
 ## Notes
 
-- [[zotero_notes/Format test_P6Y8O6|Format test]]
-- [[zotero_notes/“Interrogation of Responses to Stated Choice Experiments” (Hensher and Collins, 2011, p. 62) hello world testing_tMFDjo|“Interrogation of Responses to Stated Choice Experiments” (Hensher and Collins, 2011, p. 62) hello world testing]]
+- [[Format test_P6Y8O6|Format test]]
+- [[“Interrogation of Responses to Stated Choice Experiments” (Hensher and Collins, 2011, p. 62) hello world testing_tMFDjo|“Interrogation of Responses to Stated Choice Experiments” (Hensher and Collins, 2011, p. 62) hello world testing]]
 
 
 
@@ -52,6 +52,23 @@ citekey: Hensher2011
 > [!note] Page 62
 >
 > text comment
+
+
+> [!note] Page 62
+>
+> versions received October 2010, acc
+
+
+> [!note] Page 62
+>
+> literature on the desi
+
+
+> [!note] Page 62
+>
+> use of stat
+>
+> comment in annotation
 
 
 > [!note] Page 62
