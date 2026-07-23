@@ -23,7 +23,7 @@ import { type Annotation } from "@/lib/zt-annot";
 import { type Attachment } from "@/lib/zt-attach";
 import { type TemplateCollection } from "@/lib/zt-collection";
 import { type ItemTag } from "@/lib/zt-tag";
-import { itemSelectUri } from "@/lib/zt-uri";
+import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
 import { type Item } from "@/queries/items";
 import { type ChildNote } from "@/queries/notes";
 
@@ -37,6 +37,8 @@ import { type ChildNote } from "@/queries/notes";
 export interface TemplateRelatedItem extends TemplateItemData {
   /** Zotero deep link to the related item (`zotero://select/...`). */
   backlink: string;
+  /** Zotero web library URL, `null` for a never-synced personal library. */
+  weblink: string | null;
   /** Creators filtered to {@link TemplateItemData.primaryCreatorType}. */
   authors: TemplateCreator[];
   /** Formatted short author string, e.g. `"Smith et al."`. */
@@ -71,6 +73,8 @@ export function withNotePreview(note: TemplateNoteLink): TemplateNoteLink {
 export interface NoteTemplateContext extends TemplateItemData {
   /** Zotero deep link to the literature item (`zotero://select/...`). */
   backlink: string;
+  /** Zotero web library URL, `null` for a never-synced personal library. */
+  weblink: string | null;
   /** Flat annotation list across all (or scoped) attachments. */
   annotations: TemplateAnnotation[];
   /** All attachments for the item. */
@@ -122,6 +126,8 @@ export interface AnnotationResolvers {
 export type NoteContextInput = AnnotationResolvers &
   TemplateItemResolvers & {
     item: Item;
+    /** The signed-in account username, resolved once per batch; `null` when unknown/never-synced. */
+    username: string | null;
     /** The item's attachments, in display order. */
     attachments: readonly Attachment[];
     /** Annotations keyed by their parent attachment's `itemID`. */
@@ -231,6 +237,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
         tags: input.tagsByItemID.get(related.itemID) ?? [],
         collections: input.collectionsByItemID.get(related.itemID) ?? [],
         itemResolvers,
+        username: input.username,
       }),
     )
     .sort(byTitle);
@@ -252,6 +259,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
       return itemResolvers.noteLink(filenameData, alias, subpath);
     },
     backlink: itemSelectUri(item.key, item.groupID),
+    weblink: itemWebUrl(item.key, item.groupID, input.username),
     annotations,
     attachments,
     collections,
@@ -275,11 +283,13 @@ function buildRelatedItem({
   tags,
   collections,
   itemResolvers,
+  username,
 }: {
   item: Item;
   tags: readonly ItemTag[];
   collections: readonly TemplateCollection[];
   itemResolvers: TemplateItemResolvers;
+  username: string | null;
 }): TemplateRelatedItem {
   const baseData = itemToTemplateBaseData({ item, tags });
   const filenameData = toFilenameItemData(baseData, collections);
@@ -292,6 +302,7 @@ function buildRelatedItem({
       return itemResolvers.noteLink(filenameData, alias, subpath);
     },
     backlink: itemSelectUri(item.key, item.groupID),
+    weblink: itemWebUrl(item.key, item.groupID, username),
     authors: selectPrimaryAuthors(baseData),
     authorsShort: itemResolvers.authorsShort(item),
     collections,

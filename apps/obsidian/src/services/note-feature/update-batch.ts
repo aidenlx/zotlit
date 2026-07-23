@@ -2,6 +2,7 @@ import { type TFile } from "obsidian";
 
 import {
   CollectionCache,
+  getCurrentUsername,
   getItemDisplayRefByID,
   getItemRefByID,
   getItemsByID,
@@ -46,6 +47,12 @@ interface RunContext {
   collectionCache: CollectionCache;
   /** Spans the whole batch so a shared item's tags load once. */
   tagMemo: TagMemo;
+  /**
+   * Signed-in account username, resolved once for the whole batch.
+   *
+   * @see docs/adr/0009-weblink-is-the-web-url-not-the-item-uri.md
+   */
+  username: string | null;
   /** How much of each existing note an update refreshes. */
   scope: UpdateScope;
 }
@@ -216,9 +223,10 @@ async function executeBatchActions(
     deps.noteFeature.ready,
   ]);
 
-  // Per-run caches + scope span the whole batch; only `client` varies per call
-  // (threaded from the pinned lease), so build the invariant context once.
-  const baseContext: Omit<RunContext, "client"> = {
+  // Per-run caches + scope span the whole batch; `client` and `username` are
+  // run-invariant too but only available inside the run closure, so they're
+  // passed per call instead of baked in here.
+  const baseContext: Omit<RunContext, "client" | "username"> = {
     settings,
     groupIdMemo: new Map(),
     collectionCache: new CollectionCache(),
@@ -226,13 +234,21 @@ async function executeBatchActions(
     scope,
   };
 
+  // The signed-in username is an account-wide scalar, resolved once under the
+  // batch's own read lease (the client `runBatchWrite` pins) rather than via a
+  // separate lease a refresh could swap. `undefined` marks it unresolved —
+  // unreachable as a `getCurrentUsername` result — so the first task resolves it
+  // and the rest reuse the value.
+  let username: string | null | undefined;
+
   const result = await runBatchWrite({
     db: deps.db,
     tasks: actions.map((a) => ({ ...a, id: a.itemID })),
     controls,
     concurrency: 32,
     run: async (task, client) => {
-      await runAction(deps, task, { ...baseContext, client });
+      if (username === undefined) username = getCurrentUsername(client);
+      await runAction(deps, task, { ...baseContext, client, username });
       return task.kind === "create" ? "created" : "updated";
     },
     onTaskFailed: (task, error) => {
@@ -280,6 +296,7 @@ async function runAction(
       settings: run.settings,
       scope: run.scope,
       groupIdMemo: run.groupIdMemo,
+      username: run.username,
     });
     return;
   }
@@ -287,6 +304,7 @@ async function runAction(
     collectionCache: run.collectionCache,
     tagMemo: run.tagMemo,
     groupIdMemo: run.groupIdMemo,
+    username: run.username,
   });
 }
 

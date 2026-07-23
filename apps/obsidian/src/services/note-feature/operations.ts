@@ -6,6 +6,7 @@ import {
   fetchAnnotationsTemplateData,
   fetchNoteContext,
   getAnnotationsByItemId,
+  getCurrentUsername,
   getItemsByKey,
   resolveIndexedKeyLibrary,
   resolveItemTags,
@@ -76,6 +77,11 @@ export interface CreateNoteOptions {
   collectionCache?: CollectionCache;
   tagMemo?: TagMemo;
   groupIdMemo?: GroupIDMemo;
+  /**
+   * The batch supplies the once-resolved account username; a single-item create
+   * resolves it from its own lease when omitted.
+   */
+  username?: string | null;
 }
 
 /**
@@ -90,6 +96,8 @@ export interface WriteNoteUpdateOptions {
   settings: Readonly<Settings>;
   scope?: UpdateScope;
   groupIdMemo?: GroupIDMemo;
+  /** Once-resolved account username for the batch. */
+  username: string | null;
 }
 
 /**
@@ -178,6 +186,10 @@ async function createNote(
   // so an auto-refresh swap can't dispose it mid-operation; `lease.client` is
   // threaded through the helpers so they read one stable snapshot.
   using lease = await ctx.db.acquireRead();
+  const username =
+    options.username !== undefined
+      ? options.username
+      : getCurrentUsername(lease.client);
   const itemTags = resolveItemTags(lease.client, item.itemID, tagMemo);
   const itemCollections = fetchItemCollections(
     collectionCache,
@@ -199,6 +211,7 @@ async function createNote(
         path,
         settings,
         groupIdMemo: options.groupIdMemo,
+        username,
       });
     } catch (error) {
       if (
@@ -239,6 +252,7 @@ async function writeNewNote(
     path: string;
     settings: Readonly<Settings>;
     groupIdMemo?: GroupIDMemo;
+    username: string | null;
   },
 ): Promise<TFile> {
   const { tagMemo, collectionCache, path, settings } = options;
@@ -263,6 +277,7 @@ async function writeNewNote(
     tagMemo,
     collectionCache,
     groupIdMemo: options.groupIdMemo,
+    username: options.username,
   });
   const body = ctx.template.render("note", context);
   const fm: Record<string, unknown> = {};
@@ -336,6 +351,7 @@ async function writeNoteUpdate(
     tagMemo: options.tagMemo,
     collectionCache: options.collectionCache,
     groupIdMemo: options.groupIdMemo,
+    username: options.username,
   });
   return applyManagedUpdate(ctx, file, {
     context,
@@ -563,6 +579,7 @@ async function contextForIndexedKey(
     resolvers,
     tagMemo: new Map(),
     collectionCache: new CollectionCache(),
+    username: getCurrentUsername(client),
   });
   return { context, noteImport };
 }

@@ -171,6 +171,12 @@ const FIXTURE_DDL = `
     orderIndex integer not null default 0,
     primary key (collectionID, itemID)
   );
+  create table settings (
+    setting text,
+    key text,
+    value,
+    primary key (setting, key)
+  );
 `;
 
 /** A minimal full DB item fixture (Hensher2011-shaped defaults), overridable via `fields`/`base`. */

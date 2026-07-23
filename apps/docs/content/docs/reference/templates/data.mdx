@@ -63,6 +63,7 @@ The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-co
 | Property          | Type             | Description                                                                                                                   |
 | ----------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `zt.backlink`     | `string`         | Zotero deep link (`zotero://select/...`)                                                                                      |
+| `zt.weblink`      | `string \| null` | Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library                             |
 | `zt.annotations`  | `array`          | All annotations across all attachments (see [Annotation template](#annotation-template))                                      |
 | `zt.attachments`  | `array`          | All attachments (see [Attachments](#attachments))                                                                             |
 | `zt.authors`      | `array`          | Creators filtered to the item's primary creator type. All creators when none matches. Coerce to `fullName` in string contexts |
@@ -79,7 +80,7 @@ The filename template (`zotlit-filename.liquid.md`) receives item-level fields o
 
 **Available:** all [item fields](#item-fields), plus `zt.creators`, `zt.tags`, and `zt.collections`.
 
-**Not available:** `zt.backlink`, `zt.annotations`, `zt.attachments`, `zt.relatedItems`, `zt.authors`, `zt.authorsShort`, `zt.notes`.
+**Not available:** `zt.backlink`, `zt.weblink`, `zt.annotations`, `zt.attachments`, `zt.relatedItems`, `zt.authors`, `zt.authorsShort`, `zt.notes`.
 
 `zt.notePath` and `zt.noteLink` exist but always resolve empty, because a note has no path until it is named.
 
@@ -163,7 +164,7 @@ A cited item uses the same field vocabulary as the note template, narrowed to fi
 | `item.language`           | `string \| null`                    |
 | `item.extra`              | `string \| null`                    |
 
-Note-tier fields (`key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, `noteLink`) are not available on cited items.
+Note-tier fields (`key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, `noteLink`) are not available on cited items.
 
 <Callout type="info" title="extra is a raw string here">
   In the citation context, `item.extra` is a raw `string | null`. It is not the
@@ -294,14 +295,15 @@ Used in `zt.attachments` and `zt.parentAttachment`:
 
 `zt.relatedItems` mirrors Zotero's Related panel, sorted by title. Each entry carries all standard item fields, creators, tags, and aliases, plus:
 
-| Property       | Type             | Description                                      |
-| -------------- | ---------------- | ------------------------------------------------ |
-| `backlink`     | `string`         | Zotero deep link to the related item             |
-| `authors`      | `array`          | Primary authors                                  |
-| `authorsShort` | `string`         | Formatted short author string                    |
-| `collections`  | `array`          | Collections the related item belongs to          |
-| `notePath`     | `string \| null` | Vault path to the related item's literature note |
-| `noteLink`     | link property    | Wiki-link to the related item's literature note  |
+| Property       | Type             | Description                                                        |
+| -------------- | ---------------- | ------------------------------------------------------------------ |
+| `backlink`     | `string`         | Zotero deep link to the related item                               |
+| `weblink`      | `string \| null` | Zotero web library URL; `null` for a never-synced personal library |
+| `authors`      | `array`          | Primary authors                                                    |
+| `authorsShort` | `string`         | Formatted short author string                                      |
+| `collections`  | `array`          | Collections the related item belongs to                            |
+| `notePath`     | `string \| null` | Vault path to the related item's literature note                   |
+| `noteLink`     | link property    | Wiki-link to the related item's literature note                    |
 
 Related items are depth-1: their own `annotations`, `attachments`, and `relatedItems` are absent.
 
