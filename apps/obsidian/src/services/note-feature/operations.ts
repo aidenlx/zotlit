@@ -18,6 +18,7 @@ import {
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { type UpdateScope } from "@zotlit/protocol";
+import { createNanoEvents, type Emitter } from "@zotlit/shared/nanoevents";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import {
@@ -27,9 +28,7 @@ import {
 } from "@/lib/annotation-render";
 import { ensureParentFolder } from "@/lib/ensure-folder";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import { isFileExistsError } from "@/lib/vault-errors";
-import * as m from "@/paraglide/messages";
 import { type AttachmentImport } from "@/services/attachment-import/service";
 import { type NoteImport } from "@/services/note-import/service";
 import { type Settings } from "@/services/settings/schema";
@@ -100,6 +99,21 @@ export interface WriteNoteUpdateOptions {
   username: string | null;
 }
 
+/** Events the bound note feature emits; a UI subscriber owns any rendering. */
+export interface NoteFeatureEvents {
+  /**
+   * Frontmatter field expressions threw during a write; the write still
+   * completed with those keys skipped.
+   */
+  "frontmatter-eval-failed": (payload: {
+    itemKey: string;
+    fields: string[];
+  }) => void;
+}
+
+/** Deps plus the feature's emitter, threaded through the internal operations. */
+type OpsContext = NoteFeatureDeps & { events: Emitter<NoteFeatureEvents> };
+
 /**
  * The bound note-feature operations returned by {@link createNoteFeature}.
  * Consumers hold this object; the collaborators stay behind the seam.
@@ -134,29 +148,38 @@ export interface NoteFeature {
   ): string | null;
   /** @see renderAnnotationCitation */
   renderAnnotationCitation(annotationItemId: number): string | null;
+  /** Subscribe to {@link NoteFeatureEvents}; returns an unsubscribe. */
+  on<K extends keyof NoteFeatureEvents>(
+    event: K,
+    cb: NoteFeatureEvents[K],
+  ): () => void;
 }
 
 /**
  * Bind the note-feature operations to `deps` once (in `build.ts`). The bound
  * object is the module's external seam — consumers call its methods and never
  * see the collaborators. Holds no state of its own; the closure only captures
- * `deps`, and compiled template artifacts live in {@link TemplateService}.
+ * `deps` and the feature's event emitter, and compiled template artifacts live
+ * in {@link TemplateService}.
  */
 export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
+  const events = createNanoEvents<NoteFeatureEvents>();
+  const ctx: SyncRenderDeps & OpsContext = { ...deps, events };
   return {
     ready: Promise.all([deps.template.ready, deps.noteIndex.ready]).then(
       () => {},
     ),
-    createNote: (item, options) => createNote(deps, item, options),
-    updateNote: (file, options) => updateNote(deps, file, options),
-    overwriteNote: (file, indexedKey) => overwriteNote(deps, file, indexedKey),
-    writeNoteUpdate: (file, options) => writeNoteUpdate(deps, file, options),
+    createNote: (item, options) => createNote(ctx, item, options),
+    updateNote: (file, options) => updateNote(ctx, file, options),
+    overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
+    writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
     renderCitation: (items, secondary = false) =>
-      renderCitation(deps, items, secondary),
+      renderCitation(ctx, items, secondary),
     renderAnnotation: (annotationItemId, options) =>
-      renderAnnotation(deps, annotationItemId, options),
+      renderAnnotation(ctx, annotationItemId, options),
     renderAnnotationCitation: (annotationItemId) =>
-      renderAnnotationCitation(deps, annotationItemId),
+      renderAnnotationCitation(ctx, annotationItemId),
+    on: (event, cb) => events.on(event, cb),
   };
 }
 
@@ -171,7 +194,7 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
  *   retries exhausted).
  */
 async function createNote(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   item: Item,
   options: CreateNoteOptions = {},
 ): Promise<TFile> {
@@ -243,7 +266,7 @@ async function createNote(
  * @throws an Obsidian vault error (e.g. a file already exists at `path`).
  */
 async function writeNewNote(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   item: Item,
   options: {
     client: NodeDatabaseClient;
@@ -292,7 +315,7 @@ async function writeNewNote(
 }
 
 async function updateNote(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   file: TFile,
   options: { indexedKey: string; scope?: UpdateScope },
 ): Promise<UpdateResult> {
@@ -328,7 +351,7 @@ async function updateNote(
  * (via {@link contextForIndexedKey}) this does not await them itself.
  */
 async function writeNoteUpdate(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   file: TFile,
   options: WriteNoteUpdateOptions,
 ): Promise<UpdateResult> {
@@ -367,7 +390,7 @@ async function writeNoteUpdate(
  *  {@link updateNote} and {@link writeNoteUpdate}; the caller supplies the
  *  already-built context and its prepared `attachmentImport`. */
 async function applyManagedUpdate(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   file: TFile,
   input: {
     context: NoteTemplateContext;
@@ -429,7 +452,7 @@ async function replaceManagedBody(
 }
 
 async function overwriteNote(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   file: TFile,
   indexedKey: string,
 ): Promise<void> {
@@ -585,7 +608,7 @@ async function contextForIndexedKey(
 }
 
 async function refreshFrontmatter(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   file: TFile,
   input: { context: NoteTemplateContext; itemKey: string },
 ): Promise<void> {
@@ -597,10 +620,10 @@ async function refreshFrontmatter(
 /**
  * Apply managed frontmatter into the target. Field expressions that throw are
  * skipped so the import still completes; the skipped keys are logged and
- * surfaced in one toast.
+ * surfaced in one `frontmatter-eval-failed` event.
  */
 function applyFrontmatter(
-  ctx: NoteFeatureDeps,
+  ctx: OpsContext,
   fm: Record<string, unknown>,
   input: { context: NoteTemplateContext; itemKey: string },
 ): void {
@@ -617,8 +640,6 @@ function applyFrontmatter(
     },
   });
   if (failed.length > 0) {
-    new BaseNotice(
-      m.notice_frontmatter_eval_failed({ fields: failed.join(", ") }),
-    );
+    ctx.events.emit("frontmatter-eval-failed", { itemKey, fields: failed });
   }
 }

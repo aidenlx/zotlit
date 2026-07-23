@@ -17,15 +17,6 @@ import { DEFAULT_TEMPLATES, templatePath } from "./defaults";
 import { InertTemplateError } from "./errors";
 import { TemplateService } from "./service";
 
-const noticeCalls: string[] = [];
-vi.mock("@/lib/notice", () => ({
-  BaseNotice: class {
-    constructor(message: string) {
-      noticeCalls.push(message);
-    }
-  },
-}));
-
 type VaultEvent = "create" | "modify" | "rename" | "delete";
 type VaultCallback = (...args: unknown[]) => void;
 
@@ -203,7 +194,6 @@ let harnesses: Harness[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   harnesses = [];
-  noticeCalls.length = 0;
 });
 
 afterEach(async () => {
@@ -745,7 +735,6 @@ describe("javascript templates gate", () => {
       "templates/zotlit-note.eta.md",
     );
     expect(service.compileErrors.get("note")).toBeUndefined();
-    expect(noticeCalls).toHaveLength(0);
   });
 
   it("reports a shadowed eta file as shadowed, not inert, even when the gate is off", async () => {
@@ -808,30 +797,6 @@ describe("javascript templates gate", () => {
     expect(JSON.stringify(settings.current)).not.toContain(
       "javascript-templates",
     );
-  });
-
-  it("never fires a notice for an inert eta file across scan, rebuild, watcher flush, or gate flip", async () => {
-    const vault = new MockVault();
-    vault.addFile("templates/zotlit-note.eta.md", "custom <%= zt.title %>");
-    const { service } = await makeHarness({ vault });
-
-    expect(noticeCalls).toHaveLength(0);
-
-    vault.modifyFile("templates/zotlit-note.eta.md", "updated <%= zt.title %>");
-    await vi.advanceTimersByTimeAsync(500);
-
-    expect(noticeCalls).toHaveLength(0);
-
-    vault.createFile("templates/zotlit-custom.eta.md", "c <%= zt.title %>");
-    await vi.advanceTimersByTimeAsync(500);
-
-    expect(noticeCalls).toHaveLength(0);
-
-    await service.setJavascriptTemplatesEnabled(true);
-    expect(noticeCalls).toHaveLength(0);
-
-    await service.setJavascriptTemplatesEnabled(false);
-    expect(noticeCalls).toHaveLength(0);
   });
 });
 
@@ -903,7 +868,6 @@ describe("frontmatter fields", () => {
 
     expect(() => service.frontmatterFields).toThrow(InertTemplateError);
     expect(() => service.frontmatterFields).toThrow("note_js");
-    expect(noticeCalls).toHaveLength(0);
   });
 
   it("compiles and evaluates a javascript field when the gate is pre-seeded on, with no throw", async () => {
@@ -931,7 +895,6 @@ describe("frontmatter fields", () => {
       "note_liquid",
       "note_js",
     ]);
-    expect(noticeCalls).toHaveLength(0);
 
     const result = evalFrontmatterFields(service.frontmatterFields, {
       title: "Hi",
@@ -964,7 +927,7 @@ describe("frontmatter fields", () => {
     ]);
   });
 
-  it("keeps throwing across settings updates and gate flips, and never fires a notice", async () => {
+  it("keeps throwing across settings updates and gate flips", async () => {
     const { service, settings } = await makeHarness({
       settings: {
         "note.frontmatter-fields": [
@@ -1006,8 +969,6 @@ describe("frontmatter fields", () => {
 
     await service.setJavascriptTemplatesEnabled(false);
     expect(() => service.frontmatterFields).toThrow(InertTemplateError);
-
-    expect(noticeCalls).toHaveLength(0);
   });
 });
 

@@ -896,6 +896,36 @@ describe("updateNote", () => {
     });
   });
 
+  it("emits frontmatter-eval-failed with the skipped keys when a field expression throws", async () => {
+    const context = updateContext();
+    stubIndexedKeyUpdate(context);
+
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatterFields: compileFrontmatterFields(
+        [
+          {
+            key: "broken",
+            expr: "zt.title.no.such",
+            merge: "replace",
+            language: "javascript",
+          },
+        ],
+        { liquid: createLiquidEngine(), javascript: true },
+      ).compiled,
+    });
+
+    const feature = createNoteFeature(harness.deps);
+    const events: { itemKey: string; fields: string[] }[] = [];
+    feature.on("frontmatter-eval-failed", (payload) => events.push(payload));
+
+    await feature.updateNote(makeFile("Literature/Root.md"), {
+      indexedKey: "ABC12345",
+    });
+
+    expect(events).toEqual([{ itemKey: "ABC12345", fields: ["broken"] }]);
+  });
+
   it("defers the content render and reports no update when the note has no managed region", async () => {
     const context = updateContext();
     stubIndexedKeyUpdate(context);
