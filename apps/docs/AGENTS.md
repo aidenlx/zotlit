@@ -6,6 +6,14 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
  
 <!-- END:nextjs-agent-rules -->
 
+# Writing docs
+
+End-user doc pages are authored by the `docs-writer` agent, which runs the `docs-writing` skill. When docs work comes up, scope the topic, verify the facts, and settle the content tree, then delegate the prose to `docs-writer` — don't self-author pages in the main thread. Author inline only for a tiny touch.
+
+# Docs site design
+
+The docs site's visual spec — "Manuscript & Machine" theme, the `--color-fd-*` token system, type roles, and the app-owned fumadocs layout slots — lives in [`DESIGN.md`](DESIGN.md). Read it before touching site theming, chrome, or layout.
+
 # Docs content components
 
 Custom MDX components (`components/`) are imported per-page in the `.mdx`, not registered in `components/mdx.tsx`; wrap them in `not-prose` and style over `--color-fd-*` tokens (see `action-link.tsx`).

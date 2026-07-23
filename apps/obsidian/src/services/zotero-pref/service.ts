@@ -91,7 +91,16 @@ export class ZoteroPrefService extends Service<void> {
   #profileDirOverride: string | null;
   /** Device Override for the data dir; wins over prefs in {@link dataDir}. */
   #dataDirOverride: string | null;
-  /** Discards stale reloads when the profile override changes faster than reads complete. */
+  /**
+   * Monotonic reload token, compared after each `await` in {@link #reload} to
+   * discard a stale read once a newer reload has started — the profile override
+   * can change faster than a prefs read completes.
+   *
+   * Resource-level by design: only this service reloads its own prefs, so a
+   * private counter suffices. A cross-service coordinator (e.g. a `Symbol.for`
+   * registry shared across resources) would add global state to arbitrate a race
+   * that never leaves this instance.
+   */
   #loadGen = 0;
 
   readonly ready: Promise<void>;

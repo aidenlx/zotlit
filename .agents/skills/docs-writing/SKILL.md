@@ -8,6 +8,8 @@ description: >
 
 # Documentation Writing
 
+This skill is the `docs-writer` agent's playbook. Docs prose is authored there, not the main thread: the orchestrator scopes the topic — verifying facts and settling the content tree — then hands `docs-writer` the brief. When you are orchestrating and reach for this skill to write a page, delegate to `docs-writer`; author directly only for a tiny inline touch.
+
 Write for **end users** — people who use the product, not build it. Use terms the audience already knows; avoid programmer jargon. When introducing a product-specific term, define it on first use and use that one name consistently everywhere.
 
 ## The Diataxis Principle

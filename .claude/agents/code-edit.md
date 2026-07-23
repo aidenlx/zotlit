@@ -1,12 +1,16 @@
 ---
 name: code-edit
 description: >-
-  Sonnet worker for delegated code edits and trial operations: scoped
-  implementation phases whose design is already decided by the
-  orchestrator, mechanical migrations, test writing/fixing, and
-  verification runs. Code only — not prose/documentation writing (Markdown
-  docs, READMEs, guides). Give it precise instructions — files, contracts,
-  expected behavior — not open design questions.
+  Sonnet worker for hands-on code changes and trial operations — the
+  orchestrator briefs, this agent touches files. Route every code edit and
+  probe/pipeline script here, however small, so file contents and probe
+  churn stay out of the orchestrator's context: scoped implementation
+  phases whose design the orchestrator already decided, mechanical
+  migrations, test writing/fixing, verification runs, one-off trial
+  scripts, and iterative probe-fix-verify debug loops. Code only — not
+  prose/documentation writing (Markdown docs, READMEs, guides). Give it
+  precise instructions — files, contracts, expected behavior — not open
+  design questions.
 model: sonnet
 effort: medium
 ---

@@ -338,6 +338,21 @@ constructor(app: App, plugin: MyPlugin) {
 }
 ```
 
+### Gotcha: `update()` skips the row holding focus
+
+The reconciler behind `update()`/`refreshCurrentPage` **deliberately skips clearing and re-rendering
+any setting row whose `settingEl` contains `document.activeElement`** — it preserves focus while the
+user edits a field. A matched row (stable key) only re-runs its `render`/control build when
+`e.setting && !e.settingEl.contains(activeElement)`.
+
+**Symptom:** an `action`/button handler inside a row calls `this.update()`; every *other* row
+refreshes but the clicked row stays stuck on its pre-action state, because the clicked button is
+`activeElement` and lives in that row.
+
+**Fix:** blur the button before triggering the update, e.g. `btn.extraSettingsEl.blur()` (or
+`el.blur()`) before the async work. Modal-driven actions are unaffected — focus is on the modal, not
+the row.
+
 ## Style guide
 
 - **Sentence case** for all UI text: "Template folder location", not "Template Folder Location".
