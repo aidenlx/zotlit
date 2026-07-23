@@ -17,7 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.4",
+    "@hono/node-server": "^2.0.10",
     "@hono/valibot-validator": "^0.6.1",
     "@std/async": "catalog:",
     "@std/collections": "catalog:",
@@ -32,7 +32,7 @@
     "clsx": "^2.1.1",
     "eta": "catalog:",
     "fflate": "^0.8.2",
-    "hono": "^4.12.25",
+    "hono": "^4.12.31",
     "monkey-around": "catalog:",
     "nanoid": "^5.1.14",
     "p-limit": "^7.3.0",

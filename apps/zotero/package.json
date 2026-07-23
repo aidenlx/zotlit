@@ -28,7 +28,7 @@
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.0",
     "eta": "catalog:",
     "oxc-parser": "^0.129.0",
     "oxlint": "catalog:",
