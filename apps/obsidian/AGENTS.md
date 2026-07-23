@@ -87,6 +87,17 @@ Run the full task via turbo (see root AGENTS.md → Commands). For tight iterati
 Extend the mock when a service starts touching new `obsidian` exports; add the
 new symbol and keep the surface minimal.
 
+Keep UI out of tests. Test logic and state transitions directly; don't test view
+rendering or stand up UI mocks (`Notice`/`BaseNotice`, view DOM) to assert
+behavior. When a service would otherwise need a UI mock to be testable, that's
+the signal to extract a seam: emit a typed event and let a thin UI subscriber
+render it, so the logic stays testable without the UI. This is a strong
+preference, not an absolute — a test whose subject *is* a UI fallback (e.g.
+`log/vault-sink`) may still stub it. Extracted view logic (`filter`,
+`tree-state`, `connection`) is logic, not rendering — test it freely. (Exemplar:
+`DatabaseService` emits `db-file-missing`; `views/welcome/register.ts` renders
+it — the service test asserts the event and mocks no UI.)
+
 `function sleep(ms: number): Promise<void>` is an Obsidian global (see `packages/obsidian-api/obsidian.d.ts`); it doesn't exist in Node. If module need to work in tests, use `delay` from `@std/async` instead.
 
 ## Extended Obsidian APIs

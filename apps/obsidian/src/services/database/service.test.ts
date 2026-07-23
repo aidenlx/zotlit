@@ -81,13 +81,10 @@ describe("DatabaseService", () => {
   let zoteroPref: FakeZoteroPref;
   let DatabaseService: typeof import("./service").DatabaseService;
   let DatabaseError: typeof import("./service").DatabaseError;
-  let BaseNoticeMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.useFakeTimers();
-    BaseNoticeMock = vi.fn();
-    vi.doMock("@/lib/notice", () => ({ BaseNotice: BaseNoticeMock }));
 
     prepareMock = vi.fn();
     reapStaleReadTempsMock = vi.fn(async () => undefined);
@@ -125,7 +122,6 @@ describe("DatabaseService", () => {
     vi.doUnmock("./read-source");
     vi.doUnmock("@zotlit/db/client/node");
     vi.doUnmock("node:fs");
-    vi.doUnmock("@/lib/notice");
   });
 
   it("opens the configured read source during startup", async () => {
@@ -243,24 +239,6 @@ describe("DatabaseService", () => {
     expect(events).toEqual([true]);
     await Promise.all([firstRefresh, secondRefresh]);
     expect(events).toEqual([true, false]);
-  });
-
-  it("shows a one-time fallback notice for explicit reflink fallback", async () => {
-    prepareMock
-      .mockResolvedValueOnce(
-        prepared("/zotero/zotero.sqlite", "immutable", "reflink-unsupported"),
-      )
-      .mockResolvedValueOnce(
-        prepared("/zotero/zotero.sqlite", "immutable", "reflink-unsupported"),
-      );
-    createClientMock.mockReturnValue(fakeClient());
-    settings.set({ "zotero.read-mode": "reflink" });
-
-    await using service = new DatabaseService(deps(settings, zoteroPref));
-    await service.ready;
-    await service.refresh();
-
-    expect(BaseNoticeMock).toHaveBeenCalledOnce();
   });
 
   it("defers refresh while a read lease is held and swaps once after release", async () => {
@@ -433,6 +411,62 @@ describe("DatabaseService", () => {
     await waitForCallCount(prepareMock, 2);
     expect(prepareMock).toHaveBeenCalledTimes(2);
   });
+
+  describe("db-file-missing signal", () => {
+    it("emits once when the database file is absent", async () => {
+      existsSyncMock.mockReturnValue(false);
+      prepareMock.mockRejectedValueOnce(new Error("ENOENT"));
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      const missing = vi.fn();
+      service.on("db-file-missing", missing);
+      await service.ready;
+
+      expect(service.state).toBe("degraded");
+      expect(missing).toHaveBeenCalledOnce();
+    });
+
+    it("does not emit a second time on a later same-launch failure", async () => {
+      existsSyncMock.mockReturnValue(false);
+      prepareMock
+        .mockRejectedValueOnce(new Error("ENOENT"))
+        .mockRejectedValueOnce(new Error("ENOENT"));
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      const missing = vi.fn();
+      service.on("db-file-missing", missing);
+      await service.ready;
+      await expect(service.refresh()).rejects.toThrow(DatabaseError);
+
+      expect(missing).toHaveBeenCalledOnce();
+    });
+
+    it("does not emit when the file exists (other cause)", async () => {
+      existsSyncMock.mockReturnValue(true);
+      prepareMock.mockRejectedValueOnce(new Error("database is locked"));
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      const missing = vi.fn();
+      service.on("db-file-missing", missing);
+      await service.ready;
+
+      expect(service.state).toBe("degraded");
+      expect(missing).not.toHaveBeenCalled();
+    });
+
+    it("emits nothing on a healthy refresh", async () => {
+      prepareMock.mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"));
+      createClientMock.mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      const missing = vi.fn();
+      service.on("db-file-missing", missing);
+      await service.ready;
+
+      expect(service.state).toBe("ready");
+      expect(missing).not.toHaveBeenCalled();
+    });
+  });
 });
 
 type Deps = {
@@ -507,8 +541,8 @@ class FakeZoteroPref {
     return this.#databasePath;
   }
 
-  on(event: "changed" | "data-dir-changed", cb: () => void): () => void {
-    expect(["changed", "data-dir-changed"]).toContain(event);
+  on(event: "resolved-changed", cb: () => void): () => void {
+    expect(event).toBe("resolved-changed");
     this.#subscribers.add(cb);
     return () => {
       this.#subscribers.delete(cb);

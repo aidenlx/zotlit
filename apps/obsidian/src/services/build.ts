@@ -67,7 +67,7 @@ export function buildServices(
         new TemplateService({ plugin, app: plugin.app, settings }),
     })
     .use({
-      zoteroPref: ({ settings }) => new ZoteroPrefService({ settings }),
+      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),

@@ -93,6 +93,12 @@ A pinpoint reference within a cited work (CSL locator), e.g. a page number, with
 **Note Index**:
 A vault-wide in-memory index mapping frontmatter identifiers to Obsidian files. Three maps keyed on `zotero-key` (Literature Notes), `citekey`, and `zotero-note-key` (Imported Notes). Rebuilt from Obsidian's metadata cache on startup and kept current via cache-change events. Its Literature-Note key set also answers the companion's `GET /literature-notes` note-status query, after the first full scan settles.
 
+### Zotero connection
+
+**Device Override**:
+A device-scoped value for the Zotero profile directory or data directory — stored per vault × device, never synced — that overrides ZotLit's automatic Zotero detection (default profile from `profiles.ini`, data directory from `prefs.js`) on that device only. Clearing it returns the device to auto-detection. These two values exist solely as Device Overrides; no synced copy exists.
+_Avoid_: local setting ("local" is overloaded: local library, local attachments), per-device setting (implies a category of ordinary settings rather than an override of auto-detection)
+
 ### Releases and onboarding
 
 **Welcome View** _(Obsidian)_:
