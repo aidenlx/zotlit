@@ -64,6 +64,17 @@ function bridgeSource(name: string): string {
   return `{% ${BRIDGE_TAG_NAME} "${name}" %}`;
 }
 
+/**
+ * Renders named templates across Liquid and Eta from one registry, dispatching
+ * per name to whichever language defined it. When both languages define the
+ * same name, Liquid wins (see {@link TemplateSlot}). Every include — Liquid via
+ * the in-memory `fs` bridge, Eta via the `render` override — routes back through
+ * a single dispatch point, so mixed-language template sets compose, and
+ * `transformRender` applies uniformly to direct and include renders alike.
+ *
+ * The public surface is sync-only (`render`); Eta's `renderAsync`/`includeAsync`
+ * are deliberately not intercepted, since no async entry point can reach them.
+ */
 export class TemplateFacade {
   readonly #registry = new Map<string, TemplateSlot>();
   readonly #transform: (name: string, output: string) => string;

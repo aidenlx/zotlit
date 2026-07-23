@@ -8,6 +8,8 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 
 - `pnpm --filter @zotlit/zotero dev` — watch build + Zotero reload.
 
+Debug live runtime state (notifiers, `Zotero.*` returns, pref reads, HTTP notify dispatch) by evaluating JS in Zotero's parent process over the dev server's RDP port — use the `/zotero-rdp-debug` skill.
+
 ## Rules
 
 ### HTTP

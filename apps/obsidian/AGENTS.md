@@ -7,105 +7,78 @@ The Obsidian plugin. Shared constants live in `src/lib/constants.ts`.
 Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
 
 - `pnpm --filter @zotlit/obsidian dev` — Vite watch build.
-- `pnpm --filter @zotlit/obsidian paraglide:compile` — recompile Paraglide messages. Only needed for direct-tool iteration that bypasses turbo (e.g. `pnpm exec vitest`/`tsc`); turbo `typecheck`/`test` depend on it.
+- `pnpm --filter @zotlit/obsidian paraglide:compile` — recompile Paraglide messages. Only needed when bypassing turbo (e.g. `pnpm exec vitest`/`tsc`); turbo `typecheck`/`test` depend on it.
+
+## Code conventions
+
+Package-specific authoring conventions live in [`policies/`](policies/), one topic per file (root `policies/` still applies):
+
+- [local-storage](policies/local-storage.md) — `app.loadLocalStorage`/`saveLocalStorage`, never `window.localStorage`
+- [tooltips](policies/tooltips.md) — `aria-label` is the tooltip; spread `tooltipAttrs` in React
+- [file-ops](policies/file-ops.md) — attempt the file op, don't stat-then-fileop; branch on `isErrno`
+
+## UI stack
+
+React, not Preact — for the compiler's auto-memoization and the wider ecosystem. The lib-CJS build omits `@vitejs/plugin-react` on purpose (no Vite dev server for Fast Refresh to attach to).
+
+View/modal state uses a zustand **vanilla store + React context, one per instance** — not the global `create()` hook, not signals. Follow `src/views/annot-view/store.ts`.
+
+## Note feature
+
+`src/services/note-feature/` is composable free functions over an injected `NoteFeatureDeps` bundle — **not a `Service`**, despite living under `src/services/`. `createNoteFeature(deps)` binds them; read `context.ts` (deps) and `operations.ts` (bound ops) before editing. Batch runners fetch shared context (item tags, note path) once and thread it through the stages, so per-item ops take already-fetched data instead of re-reading.
+
+## Setting tab
+
+Run `/obsidian-settings` for the declarative 1.13 `getSettingDefinitions()` API (controls, sub-pages, migration). Never React, never a tab library. Tab lives in `src/setting-tab/index.ts`.
+
+Project-specific: settings live in `SettingsService` under flat dot-notation keys, not `plugin.settings`; the tab bridges `control` keys through `getControlValue`/`setControlValue`. The imperative `display()` path under `src/setting-tab/compat/` backs Obsidian < 1.13 and stays decoupled for easy removal.
 
 ## Logging
 
-Import `getLogger` from `@/lib/log` and create a logger at module level:
+Import `getLogger` from `@/lib/log` — wraps LogTape with parent category `["zotlit", "obsidian"]`:
 
 ```ts
 import { getLogger } from "@/lib/log";
-
 const logger = getLogger("settings");
-// or, for deeper namespacing:
-const logger = getLogger(["zotero", "library"]);
-
-logger.info("Loaded {count} items", { count });
 ```
 
-The root category is `["zotlit", "obsidian"]`; whatever you pass becomes a child of it.
-
-`LoggingService` owns the `configure()` lifecycle — it subscribes to `SettingsService` and reapplies on every change to `log.level` / `log.to-file`. Don't call `configure()` anywhere else.
-
-**Bootstrap-tier exception.** The following call sites legitimately use `console.*` — they run before `LoggingService.#load()` configures LogTape, or are themselves part of the logging plumbing:
-
-- `zt-main.ts` (plugin onload/unload — onload runs before any service `ready` has settled; unload runs after services have already been disposed).
-- `services/build.ts` and `services/service-base.ts` (service wiring errors — fired during DI registration, before any service is ready).
-- `services/settings/service.ts` (load path, save errors, subscriber errors — settings runs strictly before `LoggingService`, so it can't depend on a configured logger).
-- `services/log/vault-sink.ts` (sink-failure fallback — when the file sink itself is what's reporting a write error, routing through LogTape would just feed it back into the broken sink).
-
-Anywhere else, use `getLogger`.
-
-### What to log
-
-Every service must emit basic lifecycle and operation logs. At minimum:
-
-- **`info`** — service ready/disposed, and outcome of each public operation (with counts / `durationMs`).
-- **`debug`** — per-item decisions, cache hits, watcher events, query params.
-- **`warn`** / **`error`** — handled-but-unexpected vs. failed operations (always include the `error` field).
-
-Aggregate hot loops into one summary log; don't log per-iteration at `info`.
+`LoggingService` owns `configure()` — don't call it anywhere else.
 
 ## UI text (Paraglide JS)
 
-All user-facing strings come from Paraglide message functions; never hardcode UI text.
+Import as `import * as m from "@/paraglide/messages"`. `src/paraglide/` is gitignored and generated on build; recompile manually only when bypassing turbo (see Commands).
 
-```ts
-import * as m from "@/paraglide/messages";
+When extending `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
 
-new BaseNotice(m.notice_indexed_library({ count }));
-```
-
-- **Compilation**: `paraglideVitePlugin` in `vite.config.ts` re-emits `src/paraglide/` on every `dev`/`build`/`build:dev`. The output is gitignored, so the compiled `m.*` and `paraglide/runtime` exports do not exist yet on fresh checkout.
-- **Turbo auto-compiles**: `typecheck` and `test` declare `dependsOn: ["paraglide:compile"]` (see `turbo.json`), so running them through turbo regenerates `src/paraglide/` first.
-- **Recompile manually** only when bypassing turbo (e.g. `pnpm exec vitest run` or a direct `tsc` after editing `messages/*.json`): `pnpm run paraglide:compile`.
-
-When extending the test `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
-
-Run `/i18n-ui-text` skill when authoring or editing the wording of UI strings (command names, setting labels, button text, notices). It inlines Obsidian's house style rules — sentence case, imperatives, preferred terminology — so the copy matches the rest of the Obsidian ecosystem. Use it alongside `/paraglide-i18n`, which covers the JSON message format and `m.*` runtime.
+Run `/i18n-ui-text` for wording style; `/paraglide-i18n` for JSON format and runtime API.
 
 ## Notices and toasts
 
-Use `BaseNotice` from `@/lib/notice` and `toast.promise` from `@/lib/toast` — never raw `new Notice(...)` from `obsidian`. Read `src/lib/notice.ts` and `src/lib/toast.ts` for the API surface (`BaseNotice`, `BaseNotice.render`, `toast.promise`).
+Use `BaseNotice` from `@/lib/notice` and `toast.promise` from `@/lib/toast` — never raw `new Notice(...)`.
 
 ## CSS
 
-View-specific styles live next to the view (e.g. `views/<view>/style.css`) and are imported from that view's entry module. Only put truly global styles in `src/zt-main.css`.
+Run `/obsidian-css` for styling decisions (colors, spacing, components, `zt:` prefix, theme tokens, `.zt-root` scoped preflight).
 
-**Tailwind prefix (`zt:`).** Theme and utilities imports use `prefix(zt)` — write every utility as `zt:flex`, `zt:gap-2`, `zt:hover:opacity-100`, `zt:@md:columns-2`. 
+Mark each plugin UI root (`ItemView.contentEl`, modal `contentEl`, settings pane) with `class="zt-root"` — that scope enables the Tailwind preflight so semantic HTML and border utilities render clean. See the skill's **Scoped preflight** section.
+
+View-specific styles live next to the view (`views/<view>/style.css`). Global styles go in `src/zt-main.css`.
+
+## Debugging
+
+Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.
 
 ## Testing
 
-Vitest runs in Node and resolves `"obsidian"` to a local mock via
-`resolve.alias`. Types still come from `packages/obsidian-api`.
-
-Run the full task via turbo (see root AGENTS.md → Commands). For tight iteration, call Vitest directly from this package:
+Vitest runs in Node with `"obsidian"` resolved to a local mock via `resolve.alias`. Extend the mock when touching new `obsidian` exports; keep the surface minimal.
 
 - `pnpm exec vitest run path/to/file.test.ts` — single file.
 - `pnpm exec vitest` — watch mode.
 
-Extend the mock when a service starts touching new `obsidian` exports; add the
-new symbol and keep the surface minimal.
-
-Keep UI out of tests. Test logic and state transitions directly; don't test view
-rendering or stand up UI mocks (`Notice`/`BaseNotice`, view DOM) to assert
-behavior. When a service would otherwise need a UI mock to be testable, that's
-the signal to extract a seam: emit a typed event and let a thin UI subscriber
-render it, so the logic stays testable without the UI. This is a strong
-preference, not an absolute — a test whose subject *is* a UI fallback (e.g.
-`log/vault-sink`) may still stub it. Extracted view logic (`filter`,
-`tree-state`, `connection`) is logic, not rendering — test it freely. (Exemplar:
-`DatabaseService` emits `db-file-missing`; `views/welcome/register.ts` renders
-it — the service test asserts the event and mocks no UI.)
-
-`function sleep(ms: number): Promise<void>` is an Obsidian global (see `packages/obsidian-api/obsidian.d.ts`); it doesn't exist in Node. If module need to work in tests, use `delay` from `@std/async` instead.
+`sleep` is an Obsidian global that doesn't exist in Node. Use `delay` from `@std/async` instead.
 
 For a macrotask yield between chunks of synchronous work (not a timed wait), use `yieldToMain` from `@/lib/yield-to-main` instead of `sleep(0)`/`delay(0)`: it runs as a `MessageChannel` message task, so it isn't clamped/throttled in hidden or occluded windows the way timer-based yields are, and it works identically under Node (Vitest) with no mock needed.
 
 ## Extended Obsidian APIs
 
-When the plugin uses private Obsidian runtime APIs that are missing from
-`packages/obsidian-api/obsidian.d.ts`, declare them in
-`src/typings/obsidian-ex.d.ts` with `declare module "obsidian" { ... }`. Keep
-the augmentation limited to runtime surface the plugin actually touches, and
-update the Vitest mock separately when tests need that value.
+Declare private Obsidian runtime APIs in `src/typings/obsidian-ex.d.ts` with `declare module "obsidian" { ... }`. Limit to surface the plugin actually touches; update the Vitest mock separately.
