@@ -13,7 +13,6 @@ import {
   type ConfiguredReadMode,
   type EffectiveReadMode,
 } from "@/services/database/read-source";
-import { RESET_SETTING } from "@/services/settings/service";
 import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
@@ -287,6 +286,7 @@ function renderProfileDirRow(setting: Setting, ctx: CompatContext): () => void {
 
   const desc = document.createDocumentFragment();
   desc.append(m.settings_db_profile_dir_desc());
+  appendDeviceOverrideNote(desc);
   desc.append(document.createElement("br"));
   const pathCode = document.createElement("code");
   desc.append(pathCode);
@@ -299,8 +299,7 @@ function renderProfileDirRow(setting: Setting, ctx: CompatContext): () => void {
   let dropdown: DropdownComponent | undefined;
   let profiles: readonly ZoteroProfileInfo[] = [];
 
-  const selectedValue = (): string =>
-    ctx.settings.current?.["zotero.profile-dir"] ?? PICKER_AUTO;
+  const selectedValue = (): string => pref.profileDirOverride ?? PICKER_AUTO;
 
   const repopulate = (): void => {
     if (!dropdown) return;
@@ -323,15 +322,13 @@ function renderProfileDirRow(setting: Setting, ctx: CompatContext): () => void {
         d.setValue(selectedValue()); // browse isn't itself a saved choice
         void browseForDir({
           title: m.settings_db_profile_dir_dialog_title(),
-          startPath:
-            ctx.settings.current?.["zotero.profile-dir"] ??
-            getZoteroProfilesRoot(),
-          onPick: (path) => ctx.settings.update({ "zotero.profile-dir": path }),
+          startPath: pref.profileDirOverride ?? getZoteroProfilesRoot(),
+          onPick: (path) => pref.setProfileDir(path),
         });
       } else if (value === PICKER_AUTO) {
-        ctx.settings.update({ "zotero.profile-dir": RESET_SETTING });
+        pref.setProfileDir(null);
       } else {
-        ctx.settings.update({ "zotero.profile-dir": value });
+        pref.setProfileDir(value);
       }
     });
     repopulate();
@@ -374,13 +371,11 @@ function renderProfileDirRow(setting: Setting, ctx: CompatContext): () => void {
   });
 
   stack.defer(
-    ctx.settings.subscribe((value) => {
-      if (value === null || !dropdown) return;
-      const current = value["zotero.profile-dir"] ?? PICKER_AUTO;
-      if (dropdown.getValue() !== current) repopulate();
+    pref.on("changed", () => {
+      applyStatus();
+      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
     }),
   );
-  stack.defer(pref.on("changed", applyStatus));
 
   return () => stack.dispose();
 }
@@ -429,14 +424,14 @@ function renderDataDirRow(setting: Setting, ctx: CompatContext): () => void {
 
   const desc = document.createDocumentFragment();
   desc.append(m.settings_db_data_dir_desc());
+  appendDeviceOverrideNote(desc);
   desc.append(document.createElement("br"));
   const pathCode = document.createElement("code");
   desc.append(pathCode);
 
   let dropdown: DropdownComponent | undefined;
 
-  const selectedValue = (): string =>
-    ctx.settings.current?.["zotero.data-dir"] ?? PICKER_AUTO;
+  const selectedValue = (): string => pref.dataDirOverride ?? PICKER_AUTO;
 
   const repopulate = (): void => {
     if (!dropdown) return;
@@ -459,13 +454,13 @@ function renderDataDirRow(setting: Setting, ctx: CompatContext): () => void {
         d.setValue(selectedValue()); // browse isn't itself a saved choice
         void browseForDir({
           title: m.settings_db_data_dir_dialog_title(),
-          startPath: ctx.settings.current?.["zotero.data-dir"] ?? undefined,
-          onPick: (path) => ctx.settings.update({ "zotero.data-dir": path }),
+          startPath: pref.dataDirOverride ?? undefined,
+          onPick: (path) => pref.setDataDir(path),
         });
       } else if (value === PICKER_AUTO) {
-        ctx.settings.update({ "zotero.data-dir": RESET_SETTING });
+        pref.setDataDir(null);
       } else {
-        ctx.settings.update({ "zotero.data-dir": value });
+        pref.setDataDir(value);
       }
     });
     repopulate();
@@ -478,16 +473,13 @@ function renderDataDirRow(setting: Setting, ctx: CompatContext): () => void {
     });
   }
 
+  stack.defer(pref.on("changed", applyPath));
   stack.defer(
-    ctx.settings.subscribe((value) => {
-      if (value === null || !dropdown) return;
-      const current = value["zotero.data-dir"] ?? PICKER_AUTO;
-      if (dropdown.getValue() !== current) repopulate();
+    pref.on("data-dir-changed", () => {
       applyPath();
+      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
     }),
   );
-  stack.defer(pref.on("changed", applyPath));
-  stack.defer(pref.on("data-dir-changed", applyPath));
 
   return () => stack.dispose();
 }
@@ -530,6 +522,14 @@ function renderSourceIdRow(setting: Setting, ctx: CompatContext): () => void {
   stack.defer(pref.on("data-dir-changed", refresh));
 
   return () => stack.dispose();
+}
+
+/** Append the "stored on this device only" Device Override note as a fresh description line. */
+function appendDeviceOverrideNote(frag: DocumentFragment): void {
+  frag.append(document.createElement("br"));
+  const note = document.createElement("small");
+  note.textContent = m.settings_db_device_override_note();
+  frag.append(note);
 }
 
 /** Append a `label: <code/>` line to `frag`, returning the `<code>` to fill in. */

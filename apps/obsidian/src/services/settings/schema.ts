@@ -81,8 +81,6 @@ export const schema = v.object({
 
   "zotero.auto-refresh": v.boolean(),
   "zotero.read-mode": zoteroReadMode,
-  "zotero.profile-dir": v.nullable(v.string()),
-  "zotero.data-dir": v.nullable(v.string()),
   "zotero.citation-library": settingsNumber,
 
   "attachment.folder-path": v.nullable(v.string()),
@@ -118,8 +116,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,
   "zotero.auto-refresh": true,
   "zotero.read-mode": "auto",
-  "zotero.profile-dir": null,
-  "zotero.data-dir": null,
   "zotero.citation-library": USER_LIBRARY_ID,
   "attachment.folder-path": null,
   "attachment.import": true,

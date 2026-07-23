@@ -19,7 +19,7 @@ export interface SetupActions {
 export interface SetupActionsDeps {
   app: App;
   settings: Pick<SettingsService, "update">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "setDataDir">;
   /** Plugin id — prefixes command ids and identifies the settings tab. */
   pluginId: string;
 }
@@ -69,7 +69,7 @@ class LiteratureFolderModal extends FuzzySuggestModal<TFolder> {
   }
 }
 
-/** Mirror the settings data-dir browse flow: pick a directory, write the `zotero.data-dir` override. */
+/** Mirror the settings data-dir browse flow: pick a directory, save it as this device's data-dir override. */
 async function browseForDataDir(deps: SetupActionsDeps): Promise<void> {
   try {
     const result = await requireDialog().showOpenDialog({
@@ -78,7 +78,7 @@ async function browseForDataDir(deps: SetupActionsDeps): Promise<void> {
       properties: ["openDirectory"],
     });
     if (result.canceled || result.filePaths.length === 0) return;
-    deps.settings.update({ "zotero.data-dir": result.filePaths[0]! });
+    deps.zoteroPref.setDataDir(result.filePaths[0]!);
   } catch (error) {
     logger.error("Failed to open Zotero data directory dialog", { error });
   }

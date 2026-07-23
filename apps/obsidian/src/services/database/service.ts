@@ -60,6 +60,12 @@ export interface DatabaseEvents {
    * until the shared refresh lane drains, so UI busy state does not flicker.
    */
   refreshing: (active: boolean) => void;
+  /**
+   * The resolved Zotero database file is absent — a fresh device where
+   * auto-detect missed the install. Raised at most once per launch (see the
+   * gate in {@link DatabaseService}). A UI subscriber renders the notice.
+   */
+  "db-file-missing": () => void;
 }
 
 export interface DatabaseServiceDeps {
@@ -100,6 +106,8 @@ export class DatabaseService extends Service<void> {
   #lastConfiguredMode: ConfiguredReadMode | null = null;
   #lastAutoRefresh: boolean | null = null;
   readonly #shownFallbackNotices = new Set<string>();
+  /** Gate so the fresh-device signal raises at most once per launch. */
+  #missingDbSignalled = false;
 
   /**
    * Startup-only: awaits upstream deps, runs the first open attempt, and commits
@@ -257,11 +265,11 @@ export class DatabaseService extends Service<void> {
       this.#lastSourcePath = next;
       this.#scheduleRefresh();
     };
-    // `changed` (profile re-read) and `data-dir-changed` (override) can both
-    // move the resolved database path.
-    stack.defer(this.#zoteroPref.on("changed", onSourcePathMaybeChanged));
+    // `resolved-changed` fires for either cause that can move the resolved
+    // database path — a profile re-read or a data-dir override; the handler
+    // still diffs `databasePath` to skip no-op re-reads.
     stack.defer(
-      this.#zoteroPref.on("data-dir-changed", onSourcePathMaybeChanged),
+      this.#zoteroPref.on("resolved-changed", onSourcePathMaybeChanged),
     );
     // Registered last so it runs first on disposal (stack is LIFO): the flag
     // must flip before any client/watcher teardown, so a lease releasing during
@@ -381,6 +389,7 @@ export class DatabaseService extends Service<void> {
       const error = new DatabaseError("refresh-failed", cause);
       this.#emitter.emit("refresh-failed", error);
       logger.warn("Failed to refresh Zotero database", { error });
+      this.#maybeSignalMissingDatabase();
 
       // Keep serving the previous client on a failed refresh; only go degraded
       // (and tear down watchers) when there was never a working client to fall
@@ -395,6 +404,24 @@ export class DatabaseService extends Service<void> {
         this.#emitter.emit("degraded", degraded);
       }
     }
+  }
+
+  /**
+   * Fresh-device handling: when a refresh fails because the resolved database
+   * file is absent (a synced vault landing on a machine with a custom Zotero
+   * location where auto-detect misses), emits `db-file-missing`; a
+   * Welcome-View subscriber renders the durable notice. Other failure causes
+   * (locks, corruption — the file exists) are left to the normal
+   * degraded/failed path. At most once per launch; recurs on later launches
+   * while the file stays missing since no dismissal state is stored.
+   */
+  #maybeSignalMissingDatabase(): void {
+    if (this.#missingDbSignalled) return;
+    const dbPath = this.#zoteroPref.databasePath;
+    if (existsSync(dbPath)) return;
+    this.#missingDbSignalled = true;
+    logger.info("Zotero database not found on this device", { dbPath });
+    this.#emitter.emit("db-file-missing");
   }
 
   #showFallbackNotice(prepared: PreparedRead): void {

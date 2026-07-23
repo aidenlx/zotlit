@@ -1,6 +1,7 @@
 // Registers the Welcome View and its open-command, plus the shared open-or-reveal entry point.
 import { type App, type Plugin } from "obsidian";
 
+import { BaseNotice } from "@/lib/notice";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { type SettingsService } from "@/services/settings/service";
@@ -19,7 +20,10 @@ export interface WelcomeRegistrationDeps {
 }
 
 export function registerWelcomeView(
-  plugin: Pick<Plugin, "registerView" | "addCommand" | "app" | "manifest">,
+  plugin: Pick<
+    Plugin,
+    "registerView" | "addCommand" | "app" | "manifest" | "register"
+  >,
   deps: WelcomeRegistrationDeps,
 ): void {
   const setupActions = createSetupActions({
@@ -51,6 +55,25 @@ export function registerWelcomeView(
           : "fresh",
       ),
   });
+
+  // Fresh-device notice: the database service signals when the resolved DB
+  // file is absent (auto-detect missed the install on this device). Attached
+  // synchronously during onload — before the db service's first async refresh
+  // can emit — so the one-per-launch signal is never missed.
+  const unsubscribe = deps.db.on("db-file-missing", () => {
+    new BaseNotice(
+      BaseNotice.render((renderer) => {
+        renderer.setTitle(m.notice_db_not_found_on_device());
+        renderer.addAction((button) => {
+          button
+            .setButtonText(m.notice_db_not_found_action())
+            .onClick(() => void openWelcomeView(deps.app));
+        });
+      }),
+      0,
+    );
+  });
+  plugin.register(unsubscribe);
 }
 
 /** Every entry point delegates to this function: reuses an existing Welcome leaf, else opens one in the active leaf. */

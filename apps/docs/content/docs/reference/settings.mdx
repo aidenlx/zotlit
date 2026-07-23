@@ -23,12 +23,20 @@ The hub page shows when you first open ZotLit settings.
 
 ## Zotero database
 
-| Label                 | Key                   | Control                                | Default     |
-| --------------------- | --------------------- | -------------------------------------- | ----------- |
-| **Zotero profile**    | `zotero.profile-dir`  | Profile picker                         | Auto-detect |
-| **Zotero database**   | (read-only)           | Displays resolved `zotero.sqlite` path | —           |
-| **Read mode**         | `zotero.read-mode`    | Dropdown                               | Auto        |
-| **Watch for changes** | `zotero.auto-refresh` | Toggle                                 | On          |
+<Callout type="info" title="Device Overrides">
+  **Zotero profile** and **Data directory override** are stored per device and
+  never sync through the vault. Setting either value on one computer does not
+  affect other computers that share the same vault. When unset, ZotLit
+  auto-detects the default Zotero location. See [Use ZotLit on multiple
+  devices](/docs/how-to/sync-across-devices) for details.
+</Callout>
+
+| Label                 | Key                   | Control                                | Default     | Storage    |
+| --------------------- | --------------------- | -------------------------------------- | ----------- | ---------- |
+| **Zotero profile**    | (device-local)        | Profile picker                         | Auto-detect | Per device |
+| **Zotero database**   | (read-only)           | Displays resolved `zotero.sqlite` path | —           | —          |
+| **Read mode**         | `zotero.read-mode`    | Dropdown                               | Auto        | Synced     |
+| **Watch for changes** | `zotero.auto-refresh` | Toggle                                 | On          | Synced     |
 
 **Read mode** options:
 
@@ -41,10 +49,10 @@ The hub page shows when you first open ZotLit settings.
 
 ### Advanced
 
-| Label                       | Key               | Control                                                                  | Default     |
-| --------------------------- | ----------------- | ------------------------------------------------------------------------ | ----------- |
-| **Data directory override** | `zotero.data-dir` | Folder picker                                                            | Auto-detect |
-| **Source ID**               | (read-only)       | Displays the 8-character hex identifier for the connected Zotero install | —           |
+| Label                       | Key            | Control                                                                  | Default     | Storage    |
+| --------------------------- | -------------- | ------------------------------------------------------------------------ | ----------- | ---------- |
+| **Data directory override** | (device-local) | Folder picker                                                            | Auto-detect | Per device |
+| **Source ID**               | (read-only)    | Displays the 8-character hex identifier for the connected Zotero install | —           | —          |
 
 ## Templates
 

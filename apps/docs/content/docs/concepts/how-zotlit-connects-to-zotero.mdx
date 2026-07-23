@@ -16,6 +16,12 @@ ZotLit offers several read modes that control how it accesses the database file.
 
 See the [Settings reference](/docs/reference/settings) for the full option list and descriptions.
 
+### Per-device path resolution
+
+The profile directory and data directory are absolute filesystem paths that differ between computers. ZotLit resolves them per device: on each machine, it auto-detects the default Zotero profile (from `profiles.ini`) and data directory. If Zotero is in a non-default location, you set a Device Override on that device only. The override is stored locally (per vault, per device) and never syncs through the vault, so one computer's path cannot overwrite another's.
+
+For step-by-step instructions, see [Use ZotLit on multiple devices](/docs/how-to/sync-across-devices).
+
 ## The companion
 
 The ZotLit companion is a Zotero add-on that adds context-menu actions inside Zotero (open a note in Obsidian, update notes, import notes) and optionally pushes live events to Obsidian. It requires Zotero 9 or later.
