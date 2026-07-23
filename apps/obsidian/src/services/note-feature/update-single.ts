@@ -1,6 +1,6 @@
-import { type App } from "obsidian";
+import { type App, type TFile } from "obsidian";
 
-import { getItemsByID, type ItemRef } from "@zotlit/db";
+import { getItemsByID, type Item, type ItemRef } from "@zotlit/db";
 
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
@@ -93,8 +93,24 @@ export async function createAndOpen(
   const [item] = getItemsByID(deps.db.client, [ref.itemID]);
   if (!item) return;
 
+  const file = await createNoteWithToast(deps.noteFeature, item);
+  if (!file) return;
+  await deps.app.workspace.openLinkText(file.path, "", false, {
+    active: true,
+  });
+}
+
+/**
+ * Create a literature note for `item` behind the standard create toast. Returns
+ * the created file, or `null` when creation failed — the toast already surfaced
+ * the failure, so callers only need to skip their follow-up.
+ */
+export async function createNoteWithToast(
+  noteFeature: Pick<NoteFeature, "createNote">,
+  item: Item,
+): Promise<TFile | null> {
   try {
-    const file = await toast.promise(deps.noteFeature.createNote(item), {
+    return await toast.promise(noteFeature.createNote(item), {
       loading: m.notice_creating_note(),
       success: m.notice_created_note(),
       error: (_msg, e) =>
@@ -103,10 +119,7 @@ export async function createAndOpen(
           : m.notice_create_note_failed(),
       swallowError: false,
     });
-    await deps.app.workspace.openLinkText(file.path, "", false, {
-      active: true,
-    });
   } catch {
-    // toast.promise already surfaced the failure.
+    return null;
   }
 }

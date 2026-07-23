@@ -81,35 +81,64 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const context = this.context;
     if (!context) return;
 
-    const citationKey =
-      "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
-    if (!citationKey) {
-      new BaseNotice(m.notice_no_citekey({ key: hit.item.key }));
+    const outcome = resolveCitationInsert(
+      this.#deps.noteFeature,
+      hit,
+      this.#secondary,
+    );
+    if (outcome.kind === "notice") {
+      new BaseNotice(outcome.message);
       return;
     }
-
-    let rendered: string | null;
-    try {
-      rendered = this.#deps.noteFeature.renderCitation(
-        [{ citationKey, item: hit.item }],
-        this.#secondary,
-      );
-    } catch (e) {
-      if (!(e instanceof InertTemplateError)) throw e;
-      new BaseNotice(e.message);
-      return;
-    }
-    if (rendered === null) {
-      new BaseNotice(m.notice_template_not_ready());
-      return;
-    }
-    context.editor.replaceRange(rendered, context.start, context.end);
+    context.editor.replaceRange(outcome.text, context.start, context.end);
     context.editor.setCursor(
       context.editor.offsetToPos(
-        context.editor.posToOffset(context.start) + rendered.length,
+        context.editor.posToOffset(context.start) + outcome.text.length,
       ),
     );
   }
+}
+
+/** What selecting a suggestion does: insert `text`, or show `message`. */
+export type CitationInsertOutcome =
+  | { kind: "insert"; text: string }
+  | { kind: "notice"; message: string };
+
+/**
+ * Decide what selecting `hit` inserts. Pure decision core for
+ * {@link CitationEditorSuggest.selectSuggestion}: returns the rendered citation
+ * to insert, or the notice message to show (item without a citekey, inert cite
+ * template, or template not loaded yet). Errors other than
+ * {@link InertTemplateError} propagate.
+ */
+export function resolveCitationInsert(
+  noteFeature: CitationSuggestDeps["noteFeature"],
+  hit: SearchHit,
+  secondary: boolean,
+): CitationInsertOutcome {
+  const citationKey =
+    "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
+  if (!citationKey) {
+    return {
+      kind: "notice",
+      message: m.notice_no_citekey({ key: hit.item.key }),
+    };
+  }
+
+  let rendered: string | null;
+  try {
+    rendered = noteFeature.renderCitation(
+      [{ citationKey, item: hit.item }],
+      secondary,
+    );
+  } catch (e) {
+    if (!(e instanceof InertTemplateError)) throw e;
+    return { kind: "notice", message: e.message };
+  }
+  if (rendered === null) {
+    return { kind: "notice", message: m.notice_template_not_ready() };
+  }
+  return { kind: "insert", text: rendered };
 }
 
 function closingBracketAt(line: string, ch: number): boolean {

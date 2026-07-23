@@ -16,6 +16,7 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 - [local-storage](policies/local-storage.md) — `app.loadLocalStorage`/`saveLocalStorage`, never `window.localStorage`
 - [tooltips](policies/tooltips.md) — `aria-label` is the tooltip; spread `tooltipAttrs` in React
 - [file-ops](policies/file-ops.md) — attempt the file op, don't stat-then-fileop; branch on `isErrno`
+- [ui-seams](policies/ui-seams.md) — functional core, imperative shell; notices render at the seam, tests assert data
 
 ## UI stack
 
@@ -51,10 +52,6 @@ Import as `import * as m from "@/paraglide/messages"`. `src/paraglide/` is gitig
 When extending `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
 
 Run `/i18n-ui-text` for wording style; `/paraglide-i18n` for JSON format and runtime API.
-
-## Notices and toasts
-
-Use `BaseNotice` from `@/lib/notice` and `toast.promise` from `@/lib/toast` — never raw `new Notice(...)`.
 
 ## CSS
 

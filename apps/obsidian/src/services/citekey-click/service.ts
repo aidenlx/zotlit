@@ -7,7 +7,6 @@ import {
   type EditorPosition,
   type MarkdownEditView,
   type PaneType,
-  type TFile,
   type WorkspaceLeaf,
 } from "obsidian";
 
@@ -21,15 +20,13 @@ import {
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { type NoteFeature } from "@/services/note-feature";
-import { EmptyFilenameError } from "@/services/note-feature/filename";
+import { createNoteWithToast } from "@/services/note-feature/update-single";
 import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { type SettingsService } from "@/services/settings/service";
-import { InertTemplateError } from "@/services/template/errors";
 
 import { citationAtOffset } from "./parse";
 
@@ -172,21 +169,8 @@ export class CitekeyClick extends Service<void> {
       return;
     }
 
-    let file: TFile;
-    try {
-      file = await toast.promise(this.#noteFeature.createNote(item), {
-        loading: m.notice_creating_note(),
-        success: m.notice_created_note(),
-        error: (_msg, e) =>
-          e instanceof EmptyFilenameError || e instanceof InertTemplateError
-            ? e.message
-            : m.notice_create_note_failed(),
-        swallowError: false,
-      });
-    } catch {
-      // toast.promise already surfaced the failure to the user.
-      return;
-    }
+    const file = await createNoteWithToast(this.#noteFeature, item);
+    if (!file) return;
     await workspace.openLinkText(file.path, "", true, { active: true });
   }
 

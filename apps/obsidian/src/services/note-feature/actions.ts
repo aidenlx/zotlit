@@ -8,6 +8,7 @@ import {
 } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
+import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import {
@@ -32,9 +33,19 @@ interface NoteFeatureActionDeps {
 }
 
 export function addNoteFeatureActions(
-  plugin: Pick<Plugin, "addCommand" | "registerEvent"> & { app: Plugin["app"] },
+  plugin: Pick<Plugin, "addCommand" | "registerEvent" | "register"> & {
+    app: Plugin["app"];
+  },
   deps: NoteFeatureActionDeps,
 ): void {
+  plugin.register(
+    deps.noteFeature.on("frontmatter-eval-failed", ({ fields }) => {
+      new BaseNotice(
+        m.notice_frontmatter_eval_failed({ fields: fields.join(", ") }),
+      );
+    }),
+  );
+
   addUpdateCommand(plugin, deps, {
     id: "update-note",
     name: m.command_update_note_name(),

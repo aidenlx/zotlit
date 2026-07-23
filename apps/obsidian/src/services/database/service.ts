@@ -11,8 +11,6 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
 import { Service } from "@/services/service-base";
 import {
   type Settings,
@@ -26,6 +24,7 @@ import {
   type EffectiveReadMode,
   type PreparedRead,
   prepareRead,
+  type ReadFallbackNotice,
   reapStaleReadTemps,
 } from "./read-source";
 
@@ -66,6 +65,11 @@ export interface DatabaseEvents {
    * gate in {@link DatabaseService}). A UI subscriber renders the notice.
    */
   "db-file-missing": () => void;
+  /**
+   * The configured read mode fell back to another mode. Raised at most once
+   * per fallback kind per launch. A UI subscriber renders the notice.
+   */
+  "read-fallback": (notice: ReadFallbackNotice) => void;
 }
 
 export interface DatabaseServiceDeps {
@@ -367,7 +371,7 @@ export class DatabaseService extends Service<void> {
       const uri = buildSqliteUri(prepared.path, prepared.uriOptions);
       const client = createClient(uri, DB_OPTIONS);
       refreshStack.use(client.$client);
-      this.#showFallbackNotice(prepared);
+      this.#signalReadFallback(prepared);
 
       const previousReadStack = this.#activeReadStack;
       // Commit the new client before releasing the old read stack.
@@ -424,7 +428,7 @@ export class DatabaseService extends Service<void> {
     this.#emitter.emit("db-file-missing");
   }
 
-  #showFallbackNotice(prepared: PreparedRead): void {
+  #signalReadFallback(prepared: PreparedRead): void {
     if (!prepared.fallbackNotice) return;
     if (this.#shownFallbackNotices.has(prepared.fallbackNotice)) return;
     this.#shownFallbackNotices.add(prepared.fallbackNotice);
@@ -432,7 +436,7 @@ export class DatabaseService extends Service<void> {
       fallbackNotice: prepared.fallbackNotice,
       effectiveMode: prepared.effectiveMode,
     });
-    new BaseNotice(m.notice_db_reflink_unsupported());
+    this.#emitter.emit("read-fallback", prepared.fallbackNotice);
   }
 
   /**
