@@ -11,6 +11,7 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   CollectionCache,
   fetchNoteContext,
+  getCurrentUsername,
   getItemsByKey,
   getLibraries,
   type Item,
@@ -299,6 +300,7 @@ export class TemplateDataExplorerView extends ItemView {
       this.#context = fetchNoteContext(this.#deps.db.client, item, {
         resolvers,
         collectionCache: new CollectionCache(),
+        username: getCurrentUsername(this.#deps.db.client),
       });
     } catch (err) {
       logger.warn("Failed to build note context for {key}", {

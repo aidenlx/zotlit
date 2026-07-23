@@ -14,6 +14,7 @@ export {
   type Creator,
   type Item,
 } from "./queries/items";
+export { getCurrentUsername } from "./queries/account";
 export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,

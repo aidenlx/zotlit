@@ -62,6 +62,8 @@ export function fetchNoteContext(
   item: Item,
   options: {
     resolvers: NoteResolvers;
+    /** The signed-in account username, for {@link NoteTemplateContext.weblink}; `null` when unknown. */
+    username: string | null;
     tagMemo?: TagMemo;
     groupIdMemo?: GroupIDMemo;
     collectionCache: CollectionCache;
@@ -110,6 +112,7 @@ export function fetchNoteContext(
 
   return buildNoteContext({
     item,
+    username: options.username,
     attachments,
     annotationsByAttachment,
     tagsByItemID,

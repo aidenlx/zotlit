@@ -57,6 +57,9 @@ vi.mock("@zotlit/db", async (importOriginal) => {
       }
     },
     resolveItemTags: () => [],
+    // The single-item create / update paths resolve the account username from the
+    // pinned client; stub it so the note-feature flow under test stays DB-free.
+    getCurrentUsername: () => null,
     // `fetchNoteContext` normally fetches every row from the DB; each test
     // stubs it to apply the caller's resolvers to a small fixture instead, so
     // resolver wiring (notePath / noteLink resolution) is exercised without a
@@ -1015,6 +1018,7 @@ describe("writeNoteUpdate", () => {
     collectionCache: new CollectionCache(),
     settings: { ...settingsDefaults, "note.literature-folder": "Literature" },
     scope,
+    username: null,
   });
 
   it("replaces the region and preserves user content from the already-fetched item", async () => {

@@ -601,6 +601,7 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
     const ctx = fetchNoteContext(client, main!, {
       resolvers,
       collectionCache: new CollectionCache(),
+      username: null,
     });
 
     // Spot-check evaluated values before the full browse.

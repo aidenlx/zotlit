@@ -50,6 +50,23 @@ _Avoid_: item key, scoped key
 A human-readable identifier for an Item (e.g., `smith2024`). Stored in Zotero's native `citationKey` field — originally a Better BibTeX feature, now an official Zotero field. The frontmatter field name `citekey` is a legacy abbreviation from before Zotero adopted the field.
 _Avoid_: BBT key, BibTeX key, citekey (legacy; use Citation Key in prose)
 
+### Links
+
+**Backlink**:
+A Zotero **desktop deep link** (`zotero://select/...`) that opens an Item in the Zotero app. Exposed to templates as `zt.backlink`, present on the note's main Item, related Items, and Annotations.
+_Avoid_: link, deep link (in prose), URI
+
+**Weblink**:
+A Zotero **web library URL** pointing at the Item's page on zotero.org. Personal-library Items use the account **username slug** (`https://www.zotero.org/{slugify(username)}/items/{key}`, the form zotero.org serves and the Zotero dataserver emits); group-library Items use the numeric `groupID` (`.../groups/{groupID}/items/{key}`, which zotero.org redirects to the `groups/{id}/{slug}` form). Exposed as `zt.weblink` on the same surface as Backlink minus Annotations (the web library has no per-Annotation page). A synced account carries a username, so group-library Items always resolve and personal-library Items resolve once synced; a never-synced account has no username, so its personal-library Items are `null`.
+_Avoid_: online URL, web URL, url (that is the Item's own resource URL — see below)
+
+**URL** _(field)_:
+An Item's own resource URL as recorded in Zotero's `url` field — the article's DOI landing page, the web page a snapshot was taken from, etc. Exposed as `zt.url`. Distinct from **Weblink**, which points at zotero.org rather than the source.
+
+**Item URI** _(Zotero)_:
+Zotero's persistent identifier for an Item, `http://zotero.org/users/{userID}|groups/{groupID}/items/{key}`. A stable machine identity, not a browsable page. ZotLit parses this form **inbound** (from note-editor mark payloads) but does not expose it to templates.
+_Avoid_: backlink, weblink
+
 ### Attachment storage
 
 **Link Mode**:

@@ -106,6 +106,7 @@ describe("buildNoteContext", () => {
     const annotTagRecord = { tagID: 2, name: "claim" };
 
     const ctx = buildNoteContext({
+      username: null,
       item,
       attachments: [attachment],
       annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
@@ -154,6 +155,8 @@ describe("buildNoteContext", () => {
     expect(annot.tags).toEqual([{ name: "claim", type: "auto" }]);
     expect(annot.parentAttachment).toBe(ctx.attachments[0]);
     expect(annot.parentItem?.citationKey).toBe("smith2024");
+    // annotations have no web page
+    expect("weblink" in annot).toBe(false);
 
     expect(ctx.authors.map((a) => a.family)).toEqual(["Smith"]);
   });
@@ -168,6 +171,7 @@ describe("buildNoteContext", () => {
     });
 
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem({ itemType: "journalArticle" }),
       attachments: [attachment],
       annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
@@ -197,6 +201,7 @@ describe("buildNoteContext", () => {
     const annotation = makeAnnotation({ comment: "<i></i>" });
 
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem({ itemType: "journalArticle" }),
       attachments: [attachment],
       annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
@@ -224,6 +229,7 @@ describe("buildNoteContext", () => {
     });
 
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem({ itemType: "book" }),
       attachments: [attachment],
       annotationsByAttachment: new Map([[attachment.itemID, [annotation]]]),
@@ -255,6 +261,7 @@ describe("buildNoteContext", () => {
     ];
 
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem({ itemType: "journalArticle" }),
       attachments: [attachment],
       annotationsByAttachment: new Map([[attachment.itemID, annotations]]),
@@ -286,6 +293,7 @@ describe("buildNoteContext", () => {
 
   it("resolves group backlinks from a group indexedKey", () => {
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem(
         { itemType: "book" },
         { key: "ITEM2345", indexedKey: "ITEM2345g99", groupID: 99 },
@@ -304,6 +312,93 @@ describe("buildNoteContext", () => {
       annotationImageLink: () => null,
     });
     expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM2345");
+  });
+
+  it("builds the username weblink for a personal-library item with a known username", () => {
+    const ctx = buildNoteContext({
+      username: "aidenlx",
+      item: makeItem({ itemType: "book" }),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+    expect(ctx.weblink).toBe("https://www.zotero.org/aidenlx/items/ITEM2345");
+  });
+
+  it("builds the groups weblink for a group-library item regardless of username", () => {
+    const ctx = buildNoteContext({
+      username: null,
+      item: makeItem(
+        { itemType: "book" },
+        { key: "ITEM2345", indexedKey: "ITEM2345g99", groupID: 99 },
+      ),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+    expect(ctx.weblink).toBe("https://www.zotero.org/groups/99/items/ITEM2345");
+  });
+
+  it("returns a null weblink for a personal-library item with no known username", () => {
+    const ctx = buildNoteContext({
+      username: null,
+      item: makeItem({ itemType: "book" }),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+    expect(ctx.weblink).toBeNull();
+  });
+
+  it("returns a null weblink for a personal-library related item with no known username", () => {
+    const related = makeItem(
+      { itemType: "book" },
+      { itemID: 2, key: "REL2345", indexedKey: "REL2345" },
+    );
+    const ctx = buildNoteContext({
+      username: null,
+      item: makeItem({ itemType: "book" }),
+      attachments: [],
+      annotationsByAttachment: new Map(),
+      tagsByItemID: new Map(),
+      collectionsByItemID: new Map(),
+      relatedItems: [related],
+      authorsShort: () => "",
+      filePath: () => null,
+      fileLink: () => () => "",
+      commentToMarkdown: (html) => html,
+      notePath: () => "",
+      noteLink: () => "",
+      annotationImageLink: () => null,
+    });
+    expect(ctx.relatedItems[0]!.weblink).toBeNull();
   });
 
   it("maps related items title-sorted with flattened authors, untitled last", () => {
@@ -342,6 +437,7 @@ describe("buildNoteContext", () => {
 
     const betaTag = { tagID: 7, name: "method" };
     const ctx = buildNoteContext({
+      username: "aidenlx",
       item: makeItem({ itemType: "journalArticle" }),
       attachments: [],
       annotationsByAttachment: new Map(),
@@ -367,9 +463,13 @@ describe("buildNoteContext", () => {
     expect(beta.authors.map((a) => a.family)).toEqual(["Adams"]);
     expect(beta.authorsShort).toBe("short:RELB2345");
     expect(beta.tags.map((t) => t.name)).toEqual(["method"]);
+    expect(beta.weblink).toBe("https://www.zotero.org/aidenlx/items/RELB2345");
     // group backlink resolved from the related item's own indexedKey
     expect(ctx.relatedItems[0]!.backlink).toBe(
       "zotero://select/groups/99/items/RELA2345",
+    );
+    expect(ctx.relatedItems[0]!.weblink).toBe(
+      "https://www.zotero.org/groups/99/items/RELA2345",
     );
     // depth-1 boundary: no nested annotations / attachments / relatedItems
     expect("annotations" in beta).toBe(false);
@@ -385,6 +485,7 @@ describe("buildNoteContext", () => {
     const calls: string[] = [];
 
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem(
         { itemType: "journalArticle", citationKey: "main2024" },
         { indexedKey: "MAIN2345" },
@@ -437,6 +538,7 @@ describe("buildNoteContext", () => {
 
     const captured: TemplateFilenameItemData[] = [];
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem(
         { itemType: "journalArticle", citationKey: "main2024" },
         { indexedKey: "MAIN2345" },
@@ -500,6 +602,7 @@ describe("buildNoteContext", () => {
     };
 
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem({ itemType: "journalArticle" }),
       attachments: [],
       annotationsByAttachment: new Map(),
@@ -528,6 +631,7 @@ describe("buildNoteContext", () => {
 
   it("leaves notes empty when no resolveChildNote is given", () => {
     const ctx = buildNoteContext({
+      username: null,
       item: makeItem({ itemType: "journalArticle" }),
       attachments: [],
       annotationsByAttachment: new Map(),

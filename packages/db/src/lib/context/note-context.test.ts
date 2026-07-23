@@ -65,11 +65,14 @@ describe("fetchNoteContext", () => {
 
     const ctx = fetchNoteContext(db, main!, {
       resolvers: noteResolvers,
+      username: "aidenlx",
       collectionCache: new CollectionCache(),
     });
 
     expect(ctx.tags.map((t) => t.name)).toEqual(["zt"]);
     expect(ctx.collections.map((c) => c.name)).toEqual(["Reading"]);
+    // MAIN0001 is a personal-library item
+    expect(ctx.weblink).toBe("https://www.zotero.org/aidenlx/items/MAIN0001");
 
     expect(ctx.attachments).toHaveLength(1);
     expect(ctx.attachments[0]!.key).toBe("ATCH0001");
@@ -110,6 +113,7 @@ describe("fetchNoteContext", () => {
 
     const ctx = fetchNoteContext(db, main!, {
       resolvers: noteResolvers,
+      username: "aidenlx",
       tagMemo,
       collectionCache,
     });
