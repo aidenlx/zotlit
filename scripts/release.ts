@@ -67,6 +67,14 @@ if (currentBranch !== "main" && currentBranch !== "next") {
   );
 }
 
+// Sync the branch with origin before bumping so the release PR contains only the
+// version-bump commit. Basing the release branch on `origin/${currentBranch}`
+// (below) drops any unpushed local commits; pushing first lands them on the base
+// branch instead of dragging them into the PR (where a rebase-merge would replay
+// them with fresh SHAs). `HEAD` for a local-only branch with no origin counterpart.
+const remoteExists = await assertBranchSynced(currentBranch);
+const baseRef = remoteExists ? `origin/${currentBranch}` : "HEAD";
+
 const selection = await p.select({
   message: "Which app(s) to release?",
   options: [
@@ -132,14 +140,14 @@ if (p.isCancel(gitConfirm) || !gitConfirm) {
   p.outro(
     [
       "Version files updated but not committed.",
-      `To finish manually: git checkout -b ${branchName} && git add -A && git commit -m "${commitMsg}" && git push -u origin ${branchName}`,
+      `To finish manually: git checkout -b ${branchName} ${baseRef} && git add -A && git commit -m "${commitMsg}" && git push -u origin ${branchName}`,
     ].join("\n"),
   );
   process.exit(0);
 }
 
 s.start(`Creating branch ${branchName}`);
-await $({ cwd: repoRoot })`git checkout -b ${branchName}`;
+await $({ cwd: repoRoot })`git checkout -b ${branchName} ${baseRef}`;
 s.stop(`On branch ${branchName}`);
 
 s.start("Committing");
@@ -175,10 +183,13 @@ async function openPR(
   if (hasGh) {
     const s = p.spinner();
     s.start("Creating PR via gh");
-    await $({
+    // `gh pr create` prints the new PR's URL to stdout.
+    const created = await $({
       cwd: repoRoot,
     })`gh pr create --title ${title} --body "" --head ${branch} --base ${base}`;
     s.stop("PR created");
+    const prUrl = created.stdout.trim();
+    if (prUrl) p.log.info(`PR: ${prUrl}`);
   } else {
     const rootPkg = JSON.parse(
       await readFile(join(repoRoot, "package.json"), "utf-8"),
@@ -306,6 +317,58 @@ async function assertCleanWorkingTree(): Promise<void> {
     `Working tree is not clean. Commit or stash changes first:\n${status}`,
   );
   process.exit(1);
+}
+
+/**
+ * Fetches `origin/${branch}` and requires local to match it before releasing, so
+ * the release branch (cut from the remote tip) carries only the version bump.
+ * Offers to push when the branch is merely ahead; aborts on behind/diverged since
+ * the base would be stale.
+ *
+ * @returns whether an origin counterpart exists — `false` for a local-only
+ *   branch, whose release branch falls back to `HEAD`.
+ */
+async function assertBranchSynced(branch: string): Promise<boolean> {
+  const fetched = await $({
+    cwd: repoRoot,
+    nothrow: true,
+  })`git fetch origin ${branch}`;
+  if (fetched.exitCode !== 0) {
+    p.log.warn(`No origin/${branch}: basing the release branch on local HEAD.`);
+    return false;
+  }
+
+  const counts = (
+    await $({
+      cwd: repoRoot,
+    })`git rev-list --left-right --count origin/${branch}...HEAD`
+  ).stdout.trim();
+  const [behind, ahead] = counts.split(/\s+/).map(Number);
+
+  if (behind > 0 && ahead > 0) {
+    p.cancel(
+      `"${branch}" has diverged from origin/${branch} (${ahead} ahead, ${behind} behind). Reconcile before releasing.`,
+    );
+    process.exit(1);
+  }
+  if (behind > 0) {
+    p.cancel(
+      `"${branch}" is ${behind} commit(s) behind origin/${branch}. Pull before releasing.`,
+    );
+    process.exit(1);
+  }
+  if (ahead > 0) {
+    const push = await p.confirm({
+      message: `"${branch}" has ${ahead} commit(s) not on origin/${branch}. Push them before bumping the version?`,
+    });
+    if (p.isCancel(push) || !push) cancel();
+    const s = p.spinner();
+    s.start(`Pushing ${branch} to origin`);
+    await $({ cwd: repoRoot })`git push origin ${branch}`;
+    s.stop(`Pushed ${branch}`);
+  }
+
+  return true;
 }
 
 function cancel(): never {
