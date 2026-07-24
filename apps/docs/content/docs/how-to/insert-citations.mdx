@@ -12,7 +12,9 @@ ZotLit inserts Markdown citations from your Zotero library in two ways: an inlin
 
 ## Insert while typing
 
-The citation suggester triggers when you type `[@` in the editor. A dropdown appears with items from your Zotero library.
+The citation suggester opens when you type `[@` (or `【@`) in the editor. A dropdown appears with items from your Zotero library.
+
+With the opt-in **At trigger** enabled, a bare `@` at a word boundary (start of line, after a space, or after an opening bracket or quote) also opens the suggester.
 
 <Steps>
   <Step>
@@ -20,19 +22,28 @@ The citation suggester triggers when you type `[@` in the editor. A dropdown app
 
     Type `[@` in the editor. A suggestion list appears.
 
+    With **At trigger** enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
+
   </Step>
   <Step>
     ### Search and select
 
-    Continue typing to filter the list. Select an item and press `Enter` to insert the citation.
+    Continue typing to filter the list. Select an item and press `Enter` to insert the citation. The citation is inserted with a trailing space so you can keep typing immediately.
 
     By default, this inserts the primary citation format (e.g. `[@citationKey]`).
+
+    An `@` query ends at the first space. Type `_` where the search needs a space: `@machine_learning` finds "machine learning". Bracket trigger queries (`[@`) accept real spaces.
 
   </Step>
   <Step>
     ### Insert the secondary format (optional)
 
-    To insert the secondary citation format instead (e.g. `@citationKey`), end your query with `/` before pressing `Enter`. The instruction row in the suggester shows "/ Enter to insert secondary citation" as a reminder.
+    To insert the secondary citation format instead (e.g. `@citationKey`), do one of:
+
+    - End your query with `/` before pressing `Enter`.
+    - Press `Shift+Enter` on the selected item.
+
+    The instruction row in the suggester shows these shortcuts as a reminder.
 
   </Step>
 </Steps>
@@ -42,6 +53,7 @@ If the selected item has no citation key, nothing is inserted and a notice appea
 ### Suggester settings
 
 - **Citation suggester** (default: on): enables or disables the inline suggester. Find it at the top of **Settings > ZotLit**.
+- **At trigger** (default: off): also opens the suggester on a bare `@` at a word boundary. Visible only while **Citation suggester** is on. Find it at the top of **Settings > ZotLit**.
 - **Show citekey in suggestions** (default: off): shows each item's citation key beside its title in the suggester list. Find it at the top of **Settings > ZotLit**.
 
 ## Insert from the command palette
@@ -76,7 +88,7 @@ ZotLit ships two citation templates:
 | Primary   | **Citation**           | Bracketed citation | `[@citationKey]` |
 | Secondary | **Alternate citation** | Bare citation      | `@citationKey`   |
 
-These are the default outputs. You can change them by editing the **Citation** and **Alternate citation** templates in **Settings > Templates**.
+These are the default outputs. You can change them by editing the **Citation** and **Alternate citation** templates in **Settings > Templates**. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
 
 ## See also
 

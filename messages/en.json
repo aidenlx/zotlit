@@ -230,6 +230,8 @@
   "settings_note_import_annotations_template_desc": "Render annotation paragraphs in imported notes with the annotation template, sourced from Zotero. In-place edits to those paragraphs in Zotero will be discarded.",
   "settings_citation_suggester_name": "Citation suggester",
   "settings_citation_suggester_desc": "Suggest Zotero items while typing `[@` in the editor.",
+  "settings_citation_at_trigger_name": "At trigger",
+  "settings_citation_at_trigger_desc": "Also open the suggester on a bare `@` at a word boundary. The query ends at the first space; type `_` where the search needs a space.",
   "settings_citation_show_citekey_name": "Show citekey in suggestions",
   "settings_citation_show_citekey_desc": "Show each item's citekey beside its title in the suggester.",
   "settings_note_frontmatter_heading": "Frontmatter fields",

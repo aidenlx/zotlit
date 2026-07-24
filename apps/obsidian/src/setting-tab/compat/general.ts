@@ -46,6 +46,26 @@ export function generalSection(
         ),
     );
 
+  const atTriggerSetting = new Setting(containerEl)
+    .setName(m.settings_citation_at_trigger_name())
+    .setDesc(m.settings_citation_at_trigger_desc())
+    .addToggle((toggle) =>
+      toggle
+        .setValue(ctx.settings.current?.["citation.at-trigger"] ?? false)
+        .onChange((value) =>
+          ctx.settings.update({ "citation.at-trigger": value }),
+        ),
+    );
+  // Pre-1.13 has no declarative `visible` hook, so mirror it by toggling
+  // display in response to setting changes, same as the status row in
+  // compat/database.ts.
+  const applyAtTriggerVisibility = (): void => {
+    const visible = ctx.settings.current?.["citation.editor-suggester"] ?? true;
+    atTriggerSetting.settingEl.style.display = visible ? "" : "none";
+  };
+  applyAtTriggerVisibility();
+  ctx.defer(ctx.settings.subscribe(applyAtTriggerVisibility));
+
   new Setting(containerEl)
     .setName(m.settings_citation_show_citekey_name())
     .setDesc(m.settings_citation_show_citekey_desc())

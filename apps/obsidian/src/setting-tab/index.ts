@@ -164,6 +164,13 @@ export class ZotLitSettingTab extends PluginSettingTab {
         control: { type: "toggle", key: "citation.editor-suggester" },
       },
       {
+        name: m.settings_citation_at_trigger_name(),
+        desc: m.settings_citation_at_trigger_desc(),
+        visible: () =>
+          ctx.settings.current?.["citation.editor-suggester"] ?? true,
+        control: { type: "toggle", key: "citation.at-trigger" },
+      },
+      {
         name: m.settings_citation_show_citekey_name(),
         desc: m.settings_citation_show_citekey_desc(),
         control: { type: "toggle", key: "citation.show-citekey-in-suggester" },

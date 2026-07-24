@@ -1141,6 +1141,28 @@ describe("renderCitation", () => {
     expect(render).not.toHaveBeenCalled();
   });
 
+  it("renders the default cite template without a trailing line break", () => {
+    // A vault template file ends with a newline; inserting that into the
+    // editor on confirm would add a line break after the citation.
+    const result = createNoteFeature(
+      annotDeps(citeTemplate(`${defaultCite}\n`)),
+    ).renderCitation([{ citationKey: "smith2024" }]);
+
+    expect(result).toBe("[@smith2024]");
+  });
+
+  it("normalizes a multi-line cite template to inline form", () => {
+    // Citations are in-text tokens: line-break runs collapse to one space and
+    // the ends are trimmed, whatever whitespace the template renders.
+    const source =
+      "[@<%= zt.citations[0].item.citationKey %>,\n   p. 1]   \n\n";
+    const result = createNoteFeature(
+      annotDeps(citeTemplate(source, { language: "eta" })),
+    ).renderCitation([{ citationKey: "smith2024" }]);
+
+    expect(result).toBe("[@smith2024, p. 1]");
+  });
+
   it("carries the selected item's full narrowed data through to the cite template (9.2-CSL #03)", () => {
     // Citation-suggest passes the selected search hit's full item alongside
     // its citationKey; a data-driven (author-year) cite template should see
@@ -1410,6 +1432,19 @@ describe("renderAnnotationCitation (9.2-CSL #06)", () => {
       new Map([["ANN1", annData(null, "62")]]),
     );
     expect(renderCite(annotDeps(citeTemplate()))).toBeNull();
+  });
+
+  it("normalizes the copied citation to inline form", () => {
+    // A vault cite template's trailing newline must not reach the clipboard.
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62")]]),
+    );
+    expect(renderCite(annotDeps(citeTemplate(`${defaultCite}\n`)))).toBe(
+      "[@Hensher2011, p. 62]",
+    );
   });
 });
 

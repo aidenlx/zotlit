@@ -27,6 +27,7 @@ import {
   renderAnnotations,
 } from "@/lib/annotation-render";
 import { ensureParentFolder } from "@/lib/ensure-folder";
+import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { isFileExistsError } from "@/lib/vault-errors";
 import { type AttachmentImport } from "@/services/attachment-import/service";
@@ -489,6 +490,7 @@ async function overwriteNote(
  *
  * @param secondary - render the bare `cite2` template (narrative/in-prose,
  *   e.g. `@key`) instead of the default bracketed `cite` template (`[@key]`).
+ * @returns the rendered citation in inline form ({@link inlineCitation}).
  */
 function renderCitation(
   ctx: NoteFeatureDeps,
@@ -496,9 +498,11 @@ function renderCitation(
   secondary = false,
 ): string | null {
   if (!ctx.template.loaded) return null;
-  return ctx.template.render(
-    secondary ? "cite2" : "cite",
-    citekeysToCiteTemplateData(items),
+  return inlineCitation(
+    ctx.template.render(
+      secondary ? "cite2" : "cite",
+      citekeysToCiteTemplateData(items),
+    ),
   );
 }
 

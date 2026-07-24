@@ -51,4 +51,8 @@ declare module "obsidian" {
     /** Convert this item into a submenu parent, returning the nested {@link Menu} to populate. Runtime API present since Obsidian 1.4, absent from the vendored typings. */
     setSubmenu(): Menu;
   }
+  interface EditorSuggest<T> {
+    /** Undocumented internal driving the popover's selection; invoking it from a custom keymap handler selects the highlighted suggestion as if Enter were pressed. */
+    suggestions: { useSelectedItem(evt: KeyboardEvent | MouseEvent): void };
+  }
 }

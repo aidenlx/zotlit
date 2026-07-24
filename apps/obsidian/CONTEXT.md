@@ -75,7 +75,7 @@ Copying a Zotero-managed file (PDF, annotation excerpt image, note-embedded imag
 _Avoid_: image import (covers more than images)
 
 **Citation**:
-An in-text reference to one or more Zotero Items, rendered through the `cite` template. In editor text: an `@citekey` token. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citekey through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
+An in-text reference to one or more Zotero Items, rendered through the `cite` template. Always a single inline line of text, wherever it renders. In editor text: an `@citekey` token. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citekey through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
 
 **Embedded Item Data**:
 A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
@@ -87,6 +87,20 @@ _Avoid_: cite item, citation entry
 
 **Locator**:
 A pinpoint reference within a cited work (CSL locator), e.g. a page number, with an accompanying label naming its kind (`page` by default). An annotation-derived Citation uses the annotation's page label as its Locator — mirroring Zotero's own annotation citations.
+
+### Citation insertion
+
+**Citation Suggester** _(Obsidian)_:
+The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — primary format by default; a trailing `/` in the query or Shift+Enter selects the secondary format. Distinct from the command-palette insert modal.
+_Avoid_: autocomplete, citation picker, editor suggester (names the mechanism, not the feature)
+
+**Bracket Trigger**:
+The always-available Citation Suggester trigger: typing `[@` (or `【@`). Its query may contain spaces and is delimited by the closing bracket.
+_Avoid_: default trigger
+
+**At Trigger**:
+The opt-in Citation Suggester trigger: a bare ASCII `@` typed at a word boundary, never mid-word. Off by default. Having no closing delimiter, its query ends at the first space; an underscore in the query stands for a space in the search.
+_Avoid_: mention trigger, @-suggester
 
 ### Index and identity
 

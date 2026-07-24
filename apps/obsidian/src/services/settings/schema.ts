@@ -63,6 +63,7 @@ export const schema = v.object({
   "log.to-file": v.boolean(),
 
   "citation.editor-suggester": v.boolean(),
+  "citation.at-trigger": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
 
   "note.literature-folder": v.string(),
@@ -102,6 +103,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "log.level": __DEV__ ? "trace" : "info",
   "log.to-file": false,
   "citation.editor-suggester": true,
+  "citation.at-trigger": false,
   "citation.show-citekey-in-suggester": false,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,

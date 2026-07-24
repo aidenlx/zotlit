@@ -21,6 +21,7 @@ import {
   type AttachmentPathContext,
 } from "@zotlit/db/path";
 
+import { inlineCitation } from "@/lib/inline-citation";
 import { fileUrlLink } from "@/lib/markdown-link";
 import {
   commentToMarkdown,
@@ -138,15 +139,17 @@ export function annotationCitation(
   template: Pick<TemplateService, "render">,
 ): string | null {
   if (!parentItem?.citekey) return null;
-  return template.render(
-    "cite",
-    citekeysToCiteTemplateData([
-      {
-        citationKey: parentItem.citekey,
-        item: narrowBaseDataToCiteItemData(parentItem, parentItem.citekey),
-        label: "page",
-        locator: pageLabel,
-      },
-    ]),
+  return inlineCitation(
+    template.render(
+      "cite",
+      citekeysToCiteTemplateData([
+        {
+          citationKey: parentItem.citekey,
+          item: narrowBaseDataToCiteItemData(parentItem, parentItem.citekey),
+          label: "page",
+          locator: pageLabel,
+        },
+      ]),
+    ),
   );
 }

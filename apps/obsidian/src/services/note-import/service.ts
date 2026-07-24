@@ -31,6 +31,7 @@ import {
   joinFolderPath,
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
+import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
 import { isFileExistsError } from "@/lib/vault-errors";
@@ -391,7 +392,9 @@ async function writeNote(
       client: run.client,
       libraryID: note.libraryID,
       renderCite: (items) =>
-        ctx.template.render("cite", citekeysToCiteTemplateData(items)),
+        inlineCitation(
+          ctx.template.render("cite", citekeysToCiteTemplateData(items)),
+        ),
       pathContext: {
         dataDir: ctx.zoteroPref.dataDir,
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,

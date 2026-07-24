@@ -6,6 +6,7 @@ import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/rend
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
 
+import { padCitationInsert } from "./editor-suggest";
 import { type CitationSuggestDeps } from "./register";
 
 /**
@@ -63,6 +64,16 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
       new BaseNotice(m.notice_template_not_ready());
       return;
     }
-    this.#editor.replaceSelection(rendered);
+    const editor = this.#editor;
+    const from = editor.getCursor("from");
+    const to = editor.getCursor("to");
+    const padded = padCitationInsert(
+      rendered,
+      editor.getLine(to.line).charAt(to.ch),
+    );
+    editor.replaceRange(padded.text, from, to);
+    editor.setCursor(
+      editor.offsetToPos(editor.posToOffset(from) + padded.cursor),
+    );
   }
 }
