@@ -5,7 +5,7 @@ date: 2026-07-24
 description: "Per-device Zotero paths, web library links, reader window fix"
 ---
 
-## Features
+## Breaking Changes
 
 ### Per-device Zotero paths
 
@@ -13,20 +13,16 @@ The Zotero profile and data directory paths are now per device. If you sync your
 
 If the plugin cannot find your Zotero database on a new device, the Welcome View shows a notice pointing you to the locate action. See [Use ZotLit on multiple devices](/docs/how-to/sync-across-devices).
 
-**Breaking:** If you previously set a custom Zotero profile or data directory path, you need to re-enter it once on each device after updating. The old synced values are not migrated.
+If you previously set a custom Zotero profile or data directory path, you need to re-enter it once on each device after updating. The old synced values are not migrated.
+
+## What's New
 
 ### `zt.weblink` template field
 
-A new template variable `zt.weblink` gives you the browsable Zotero web library URL for an item (e.g. `https://www.zotero.org/yourname/items/ABC123`), alongside the existing `zt.backlink` desktop deep link. It is available on the main item and on each entry in `zt.relatedItems`. Not available for accounts that have never synced.
+A new template variable `zt.weblink` gives you the browsable Zotero web library URL for an item (e.g. `https://www.zotero.org/yourname/items/ABC123`), alongside the existing `zt.backlink` desktop deep link. It is available on the main item and on each entry in `zt.relatedItems`. Not available for accounts that have never synced. See [Template data reference](/docs/reference/templates/data).
 
-See [Template data reference](/docs/reference/templates/data).
+## Bug Fixes
 
-## Fixes
+- Fixed the annotation view not following a Zotero reader opened in its own window (not a tab). Only tabbed readers were tracked before; standalone reader windows are now picked up on focus.
 
-### Reader window focus
-
-When you open a Zotero reader in its own window (not a tab), the annotation view now correctly follows it. Previously, only tabbed readers were tracked.
-
-### Background performance
-
-Batch imports and index builds no longer slow down when Obsidian's window is in the background or occluded.
+- Fixed batch imports and index builds slowing down when Obsidian's window was in the background or occluded.
