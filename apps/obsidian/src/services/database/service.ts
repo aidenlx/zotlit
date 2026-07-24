@@ -32,7 +32,7 @@ const logger = getLogger("database");
 const DB_OPTIONS: DatabaseOptions = {
   jit: true,
 };
-const WATCH_DEBOUNCE_MS = 800;
+const WATCH_DEBOUNCE_MS = 2000;
 // `persistent: false` so no watcher keeps Node's event loop alive on its own —
 // Obsidian (Electron) owns the loop, and a leaked watcher must not block
 // process exit if plugin disposal fails.
