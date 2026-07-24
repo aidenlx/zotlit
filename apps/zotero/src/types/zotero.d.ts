@@ -40,6 +40,15 @@ declare global {
     }
   }
 
+  // `zotero-types@4.1.2`'s generated `nsIWindowMediator.getMostRecentWindow`
+  // only accepts `string`, but the underlying XPCOM method accepts `null`
+  // for "any window type" (widely used by Zotero itself, e.g. the focus
+  // check in zoteroPane.js).
+  // https://searchfox.org/mozilla-esr140/source/xpcom/ds/nsIWindowMediator.idl
+  interface nsIWindowMediator {
+    getMostRecentWindow(aWindowType: null): mozIDOMWindowProxy;
+  }
+
   interface Window {
     /**
      * Gecko chrome-window global. We only use `insertFTLIfNeeded`, which
@@ -61,6 +70,13 @@ declare global {
     console: {
       logStringMessage(message: string): void;
     };
+    // Tracks chrome window open/close and enumerates open windows by type
+    // (e.g. "zotero:reader", "navigator:browser") — the same idiom Zotero's
+    // own plugin loader uses to notice main-window load/unload.
+    wm: nsIWindowMediator;
+    // Point-in-time OS focus state (which chrome window currently has
+    // focus); no listener API, unlike `wm`.
+    focus: nsIFocusManager;
     scriptloader: {
       /**
        * Synchronously fetch and execute a script.
