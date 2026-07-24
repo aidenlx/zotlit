@@ -5,16 +5,14 @@ import { assertNever } from "@std/assert/unstable-never";
 import { notFound } from "next/navigation";
 
 import { ogImage } from "@/app/og/_render";
-import { baseURL, formatReleaseDate } from "@/lib/shared";
+import { baseURL, formatReleaseDate, type OgType, ogTypes } from "@/lib/shared";
 import { blog, changelog, source } from "@/lib/source";
 
 export const revalidate = false;
 
-// The OG card each `[type, …]` slug selects. `assertNever` in the switch keeps it
-// exhaustive, so removing or renaming a card without updating this list is a
-// compile error.
-const ogTypes = ["home", "community", "blog", "changelog", "docs"] as const;
-type OgType = (typeof ogTypes)[number];
+// `assertNever` in the switch below keeps it exhaustive against `ogTypes`
+// (defined in lib/shared.ts), so removing or renaming a card without
+// updating this list is a compile error.
 const isOgType = (type: string): type is OgType =>
   (ogTypes as readonly string[]).includes(type);
 

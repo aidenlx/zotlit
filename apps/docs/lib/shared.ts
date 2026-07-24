@@ -1,10 +1,11 @@
 export const appName = "ZotLit";
+export const appDescription =
+  "ZotLit brings your Zotero library into Obsidian. Create literature notes, insert citations, and annotate PDFs without leaving your vault.";
 export const baseURL =
   process.env.NEXT_PUBLIC_BASE_URL || "https://zotlit.aidenlx.site";
 export const docsRoute = "/docs";
 export const changelogRoute = "/changelog";
 export const blogRoute = "/blog";
-export const docsImageRoute = "/og/docs";
 export const docsContentRoute = "/llms.mdx/docs";
 export const changelogContentRoute = "/llms.mdx/changelog";
 export const blogContentRoute = "/llms.mdx/blog";
@@ -17,8 +18,20 @@ export const gitConfig = {
 
 export const zotlitLegacyUrl = "https://zotlit-v1.aidenlx.site";
 
+// The OG card each `[type, …]` slug selects; kept here so both the `/og`
+// route and page-level metadata (`ogImageUrl`/`pageMetadata`) share one
+// source of truth instead of drifting.
+export const ogTypes = [
+  "home",
+  "community",
+  "blog",
+  "changelog",
+  "docs",
+] as const;
+export type OgType = (typeof ogTypes)[number];
+
 /** OG card URL for a page type. Empty `ids` → the index/landing card. */
-export function ogImageUrl(type: string, ...ids: string[]) {
+export function ogImageUrl(type: OgType, ...ids: string[]) {
   return `/og/${[type, ...ids, "image.webp"].join("/")}`;
 }
 

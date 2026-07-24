@@ -4,7 +4,7 @@ import { lucideIconsPlugin } from "fumadocs-core/source/lucide-icons";
 import { toFumadocsSource } from "fumadocs-mdx/runtime/server";
 import { rcompare } from "semver";
 
-import { docsContentRoute, docsImageRoute, docsRoute } from "./shared";
+import { docsContentRoute, docsRoute } from "./shared";
 
 /** @see https://fumadocs.dev/docs/headless/source-api */
 export const source = loader({
@@ -39,15 +39,6 @@ export function getBlogPages() {
     if (dateCompare !== 0) return dateCompare;
     return a.data.title.localeCompare(b.data.title);
   });
-}
-
-export function getPageImage(page: (typeof source)["$inferPage"]) {
-  const segments = [...page.slugs, "image.webp"];
-
-  return {
-    segments,
-    url: `${docsImageRoute}/${segments.join("/")}`,
-  };
 }
 
 export function getPageMarkdownUrl(page: (typeof source)["$inferPage"]) {

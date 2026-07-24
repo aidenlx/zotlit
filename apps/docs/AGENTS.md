@@ -28,4 +28,4 @@ Every page's `og:image` is a takumi-rendered 1200×630 card served by one dynami
 - `app/og/[...slug]/route.tsx` — maps a `[type, ...ids]` slug to a card; the `OgType` list + `assertNever` keep the switch exhaustive.
 - `lib/shared.ts` — `ogImageUrl(type, ...ids)`, the URL a page's `metadata` points at.
 
-Adding a page type: add its `case` (+ `OgType` entry + `generateStaticParams` seg) in the route, then set `openGraph: { images: ogImageUrl("<type>") }` in the page's `metadata`.
+Adding a page type: add its `case` (+ `OgType` entry + `generateStaticParams` seg) in the route, then set the page's metadata via `pageMetadata({ card: { type: "<type>", ... } })` (see `lib/seo.ts`).

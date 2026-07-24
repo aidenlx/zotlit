@@ -1,15 +1,24 @@
 import { type Route } from "next";
 import Link from "next/link";
 
+import { JsonLd } from "@/components/json-ld";
 import { RepoDatum } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
 import { V1HomeNotice } from "@/components/v1-home-notice";
-import { ogImageUrl } from "@/lib/shared";
+import { HOME_OG_ALT, pageMetadata } from "@/lib/seo";
+import { appDescription, appName } from "@/lib/shared";
+import {
+  organizationSchema,
+  softwareApplicationSchema,
+  websiteSchema,
+} from "@/lib/structured-data";
 
-export const metadata = {
-  alternates: { canonical: "/" },
-  openGraph: { images: ogImageUrl("home") },
-};
+export const metadata = pageMetadata({
+  ogTitle: appName,
+  description: appDescription,
+  path: "/",
+  card: { type: "home", alt: HOME_OG_ALT },
+});
 
 const features: Array<{
   term: string;
@@ -50,6 +59,9 @@ const features: Array<{
 export default function HomePage() {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 font-serif">
+      <JsonLd schema={websiteSchema} />
+      <JsonLd schema={organizationSchema} />
+      <JsonLd schema={softwareApplicationSchema} />
       <V1HomeNotice />
       <section className="grid items-center gap-13 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
         <div>

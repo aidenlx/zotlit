@@ -1,0 +1,87 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`seo > builds a website-type page's metadata 1`] = `
+{
+  "alternates": {
+    "canonical": "/blog",
+  },
+  "description": "Notes from building ZotLit.",
+  "openGraph": {
+    "description": "Notes from building ZotLit.",
+    "images": [
+      {
+        "alt": "ZotLit Blog",
+        "height": 630,
+        "type": "image/webp",
+        "url": "/og/blog/image.webp",
+        "width": 1200,
+      },
+    ],
+    "locale": "en_US",
+    "siteName": "ZotLit",
+    "title": "Blog",
+    "type": "website",
+    "url": "/blog",
+  },
+  "title": "Blog",
+  "twitter": {
+    "card": "summary_large_image",
+    "description": "Notes from building ZotLit.",
+    "images": [
+      {
+        "alt": "ZotLit Blog",
+        "height": 630,
+        "type": "image/webp",
+        "url": "/og/blog/image.webp",
+        "width": 1200,
+      },
+    ],
+    "title": "Blog",
+  },
+}
+`;
+
+exports[`seo > builds an article-type page's metadata 1`] = `
+{
+  "alternates": {
+    "canonical": "/blog/building-zotlit",
+  },
+  "description": "How ZotLit came to be.",
+  "openGraph": {
+    "authors": [
+      "aidenlx",
+    ],
+    "description": "How ZotLit came to be.",
+    "images": [
+      {
+        "alt": "Building ZotLit — ZotLit blog",
+        "height": 630,
+        "type": "image/webp",
+        "url": "/og/blog/building-zotlit/image.webp",
+        "width": 1200,
+      },
+    ],
+    "locale": "en_US",
+    "publishedTime": "2026-01-02T00:00:00.000Z",
+    "siteName": "ZotLit",
+    "title": "Building ZotLit",
+    "type": "article",
+    "url": "/blog/building-zotlit",
+  },
+  "title": "Building ZotLit",
+  "twitter": {
+    "card": "summary_large_image",
+    "description": "How ZotLit came to be.",
+    "images": [
+      {
+        "alt": "Building ZotLit — ZotLit blog",
+        "height": 630,
+        "type": "image/webp",
+        "url": "/og/blog/building-zotlit/image.webp",
+        "width": 1200,
+      },
+    ],
+    "title": "Building ZotLit",
+  },
+}
+`;

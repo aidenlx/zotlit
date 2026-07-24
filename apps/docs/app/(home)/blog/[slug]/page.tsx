@@ -3,12 +3,15 @@ import { notFound } from "next/navigation";
 
 import { BackCrumb } from "@/components/back-crumb";
 import Comments from "@/components/comment";
+import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
 import { cn } from "@/lib/cn";
 import { ztProse } from "@/lib/prose";
-import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
+import { pageMetadata } from "@/lib/seo";
+import { appName, formatReleaseDate } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
+import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
 
 export const dynamicParams = false;
 
@@ -25,8 +28,24 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
   const older = pages[index + 1];
   const newer = index > 0 ? pages[index - 1] : undefined;
 
+  const crumbs = [
+    { name: appName, url: "/" },
+    { name: "Blog", url: "/blog" },
+    { name: title, url: page.url },
+  ];
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
+      <JsonLd
+        schema={blogPostingSchema({
+          title,
+          description,
+          author,
+          date,
+          url: page.url,
+        })}
+      />
+      <JsonLd schema={breadcrumbListSchema(crumbs)} />
       <article className="pb-14">
         <BackCrumb href="/blog" label="Blog" />
         <header className="pt-4.5 pb-2">
@@ -76,10 +95,18 @@ export async function generateMetadata(
   const page = blog.getPage([params.slug]);
   if (!page) notFound();
 
-  return {
+  return pageMetadata({
     title: page.data.title,
     description: page.data.description,
-    alternates: { canonical: page.url },
-    openGraph: { images: ogImageUrl("blog", ...page.slugs) },
-  };
+    path: page.url,
+    card: {
+      type: "blog",
+      ids: page.slugs,
+      alt: `${page.data.title} — ZotLit blog`,
+    },
+    article: {
+      publishedTime: page.data.date.toISOString(),
+      authors: [page.data.author],
+    },
+  });
 }

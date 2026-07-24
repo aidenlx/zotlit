@@ -8,7 +8,8 @@ import localFont from "next/font/local";
 
 import { LegacyBanner } from "@/components/legacy-banner";
 import { cn } from "@/lib/cn";
-import { appName, baseURL } from "@/lib/shared";
+import { HOME_OG_ALT, ogImageObject } from "@/lib/seo";
+import { appDescription, appName, baseURL } from "@/lib/shared";
 
 // App-wide base font, exposed as a variable and assigned via --font-sans in
 // global.css. Sans is the app-wide default, so Inter paints on essentially
@@ -56,14 +57,31 @@ const archivo = localFont({
   display: "swap",
 });
 
+const homeImage = ogImageObject("home", HOME_OG_ALT);
+
 export const metadata: Metadata = {
   metadataBase: baseURL,
   title: {
     default: appName,
     template: `%s | ${appName}`,
   },
-  description:
-    "ZotLit brings your Zotero library into Obsidian. Create literature notes, insert citations, and annotate PDFs without leaving your vault.",
+  description: appDescription,
+  applicationName: appName,
+  openGraph: {
+    type: "website",
+    siteName: appName,
+    locale: "en_US",
+    url: baseURL,
+    title: appName,
+    description: appDescription,
+    images: [homeImage],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: appName,
+    description: appDescription,
+    images: [homeImage.url],
+  },
 };
 
 // Suppress React 19 "Encountered a script tag" dev warning from next-themes.

@@ -2,11 +2,22 @@ import { type Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { BackCrumb } from "@/components/back-crumb";
+import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
 import { cn } from "@/lib/cn";
 import { changelogProseRoles } from "@/lib/prose";
-import { formatReleaseDate, gitConfig, ogImageUrl } from "@/lib/shared";
+import { pageMetadata } from "@/lib/seo";
+import {
+  appName,
+  changelogRoute,
+  formatReleaseDate,
+  gitConfig,
+} from "@/lib/shared";
 import { changelog, getChangelogPages } from "@/lib/source";
+import {
+  breadcrumbListSchema,
+  changelogArticleSchema,
+} from "@/lib/structured-data";
 
 export const dynamicParams = false;
 
@@ -24,8 +35,23 @@ export default async function ChangelogVersionPage(
 
   const { version, date, description, companion, body: MDX } = page.data;
 
+  const crumbs = [
+    { name: appName, url: "/" },
+    { name: "Changelog", url: "/changelog" },
+    { name: `v${version}`, url: page.url },
+  ];
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
+      <JsonLd
+        schema={changelogArticleSchema({
+          title: page.data.title,
+          version,
+          date,
+          url: page.url,
+        })}
+      />
+      <JsonLd schema={breadcrumbListSchema(crumbs)} />
       <article className="pb-14">
         <BackCrumb href="/changelog" label="Changelog" />
         <header className="pt-4.5 pb-2">
@@ -87,12 +113,18 @@ export async function generateMetadata(
 
   const { version, description, date } = page.data;
 
-  return {
+  return pageMetadata({
     title: `v${version}`,
     description:
       description ??
       `Changelog for ZotLit v${version} released on ${formatReleaseDate(date)}.`,
-    alternates: { canonical: page.url },
-    openGraph: { images: ogImageUrl("changelog", ...page.slugs) },
-  };
+    path: page.url,
+    card: {
+      type: "changelog",
+      ids: page.slugs,
+      alt: `ZotLit v${version} release notes`,
+    },
+    article: { publishedTime: date.toISOString() },
+    feeds: { "application/rss+xml": `${changelogRoute}/rss.xml` },
+  });
 }

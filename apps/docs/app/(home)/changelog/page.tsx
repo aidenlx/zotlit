@@ -1,24 +1,34 @@
 import Link from "next/link";
 
+import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/cn";
 import { changelogProseRoles } from "@/lib/prose";
-import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
+import { pageMetadata } from "@/lib/seo";
+import { appName, changelogRoute, formatReleaseDate } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
+import { breadcrumbListSchema } from "@/lib/structured-data";
 
-export const metadata = {
+const crumbs = [
+  { name: appName, url: "/" },
+  { name: "Changelog", url: "/changelog" },
+];
+
+export const metadata = pageMetadata({
   title: "Changelog",
   description: "Every ZotLit release, newest first.",
-  alternates: { canonical: "/changelog" },
-  openGraph: { images: ogImageUrl("changelog") },
-};
+  path: "/changelog",
+  card: { type: "changelog", alt: "ZotLit Changelog" },
+  feeds: { "application/rss+xml": `${changelogRoute}/rss.xml` },
+});
 
 export default function ChangelogListPage() {
   const pages = getChangelogPages();
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 font-serif">
+      <JsonLd schema={breadcrumbListSchema(crumbs)} />
       <header className="pt-14 pb-2">
         <h1 className="mb-2.5 text-4xl font-medium">Changelog</h1>
         <p className="mb-6 max-w-[60ch] text-[16.5px] text-fd-muted-foreground italic">

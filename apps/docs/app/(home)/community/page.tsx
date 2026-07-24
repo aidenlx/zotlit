@@ -2,14 +2,15 @@ import DiscordMark from "@/assets/discord.svg?svgr";
 import GithubMark from "@/assets/github.svg?svgr";
 import { RepoDatum } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
-import { gitConfig, ogImageUrl } from "@/lib/shared";
+import { pageMetadata } from "@/lib/seo";
+import { gitConfig } from "@/lib/shared";
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: "Community",
   description: "Get help, share ideas, and shape where ZotLit goes next.",
-  alternates: { canonical: "/community" },
-  openGraph: { images: ogImageUrl("community") },
-};
+  path: "/community",
+  card: { type: "community", alt: "ZotLit Community" },
+});
 
 const destinations: Array<{
   label: string;
