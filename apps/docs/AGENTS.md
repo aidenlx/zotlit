@@ -20,6 +20,10 @@ Custom MDX components (`components/`) are imported per-page in the `.mdx`, not r
 
 `<Command>` marks an Obsidian command-palette string, keeping the `ZotLit:` prefix — `<Command>` block or `<Command inline>` mid-sentence; menu items and labels stay `**bold**`. See `command.tsx` and `DESIGN.md`.
 
+# Deep-linkable heading anchors
+
+Give any heading that is a deep-link target (linked from another page, a changelog entry, or an issue reply as `/path#anchor`) a stable custom anchor via fumadocs' `[#slug]` syntax, e.g. `## Section title [#bulk]`. The auto-generated slug tracks the heading text, so rewording it silently breaks inbound links; a short custom id does not. Reference: https://www.fumadocs.dev/docs/markdown#toc-settings
+
 # Social (OG) images
 
 Every page's `og:image` is a takumi-rendered 1200×630 card served by one dynamic route.

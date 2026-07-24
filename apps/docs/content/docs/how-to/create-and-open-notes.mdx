@@ -1,6 +1,6 @@
 ---
 title: "Create and open literature notes"
-description: "Open an existing literature note or create one from a Zotero item using the quick switcher or a clickable citekey."
+description: "Open or create a literature note from a Zotero item using the quick switcher, a clickable citekey, or the Zotero right-click menu for bulk operations."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -47,6 +47,52 @@ If the item is not found in your Zotero library, a notice appears: "No Zotero it
 
 Citekey clicks resolve against the **Default library** setting at the top of **Settings > ZotLit**.
 
+## Create or update notes in bulk [#bulk]
+
+You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This requires the ZotLit Zotero companion plugin.
+
+### Open or update a single item from Zotero
+
+When exactly one regular item is selected in the Zotero library, the top-level context menu shows **Open note in Obsidian**. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
+
+### Update multiple items at once
+
+<Steps>
+  <Step>
+    ### Select items in Zotero
+
+    Select two or more items in your Zotero library. Use `Ctrl+A` (`Cmd+A` on macOS) to select everything in the current collection or view.
+
+  </Step>
+  <Step>
+    ### Open the ZotLit submenu
+
+    Right-click the selection, then open the **ZotLit** submenu.
+
+  </Step>
+  <Step>
+    ### Choose an update action
+
+    - **Update notes in Obsidian** creates a note for each item that does not have one yet, and refreshes existing notes with current Zotero data.
+    - **Update notes metadata in Obsidian** refreshes only the frontmatter of existing notes, leaving the note body unchanged.
+
+  </Step>
+  <Step>
+    ### Confirm in Obsidian
+
+    Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
+
+  </Step>
+</Steps>
+
+<Callout type="warn">
+  A large selection may exceed the length limit for an `obsidian://` link. When
+  that happens, ZotLit sends the item list over HTTP to the ZotLit server
+  running inside Obsidian. If the server is not enabled, Zotero shows an alert
+  asking you to enable it or select fewer items. You can enable the ZotLit
+  server in **Settings &gt; ZotLit**.
+</Callout>
+
 ## How ZotLit identifies literature notes
 
 ZotLit identifies literature notes by their `zotero-key` frontmatter field. For details on note identity and the managed region, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
@@ -63,6 +109,16 @@ ZotLit identifies literature notes by their `zotero-key` frontmatter field. For 
     title="Insert citations"
     description="Insert citation markers while typing or from the command palette."
     href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="Keep notes up to date"
+    description="Update literature notes when your Zotero data changes."
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="Import Zotero notes"
+    description="Import Zotero's own note items into Obsidian."
+    href="/docs/how-to/import-zotero-notes"
   />
   <Card
     title="Literature notes and the managed region"
