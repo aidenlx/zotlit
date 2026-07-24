@@ -47,3 +47,7 @@ overrides:
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: true
+# next 16.2.11 is a security patch; exempt it from the age gate to land the fix now
+minimumReleaseAgeExclude:
+  - next
+  - "@next/*"
