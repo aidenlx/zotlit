@@ -55,6 +55,16 @@ The Template Data Explorer's default anchor — the full note-template context f
 **Annotation Root**:
 The Template Data Explorer re-anchored at a single Annotation, exactly what the `annotation` template receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
 
+### Annotation view
+
+**Annotation Card** _(Obsidian)_:
+One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips, all sourced from the Zotero DB at display time. A deliberately dense surface: prose inside it renders compact.
+_Avoid_: annotation item, annotation row
+
+**Excerpt Block**:
+The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note; the Excerpt Block always reflects the DB.
+_Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
+
 ### Note content
 
 **Annotation Excerpt**:

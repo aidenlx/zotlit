@@ -15,6 +15,8 @@ import * as m from "@/paraglide/messages";
 import { type NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
+import { type CommentRenderer } from "./comment-render";
+
 export interface AnnotActions {
   onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotViewItem): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotViewItem): void;
@@ -27,6 +29,8 @@ export interface AnnotActions {
   onUnlinkItem(): void;
   getImgSrc(annot: AnnotViewItem): string;
   getBacklink(annot: AnnotViewItem): string | undefined;
+  /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
+  renderComment: CommentRenderer;
 }
 
 export interface AnnotActionDeps {
@@ -37,6 +41,8 @@ export interface AnnotActionDeps {
   noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
+  /** Comment renderer built by the view (owns the app, component, source path). */
+  renderComment: CommentRenderer;
   onToggleFollowReader: AnnotActions["onToggleFollowReader"];
   onLinkItem: AnnotActions["onLinkItem"];
   onUnlinkItem: AnnotActions["onUnlinkItem"];
@@ -153,6 +159,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       }
     },
     onDragStart: deps.onDragStart,
+    renderComment: deps.renderComment,
     onToggleFollowReader: deps.onToggleFollowReader,
     onLinkItem: deps.onLinkItem,
     onUnlinkItem: deps.onUnlinkItem,
@@ -175,6 +182,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onRefresh: () => {},
   getImgSrc: () => IMG_PLACEHOLDER,
   getBacklink: () => undefined,
+  renderComment: () => () => {},
 };
 
 export const AnnotActionsContext = createContext<AnnotActions>(NOOP_ACTIONS);

@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useCallback, useContext } from "react";
 
 import {
   annotationTypeToName,
@@ -111,14 +111,35 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
   );
 }
 
+/**
+ * `markdown-rendered` is what buys the theme's own prose styling: Obsidian
+ * declares those rules unlayered, so they outrank the scoped Tailwind preflight.
+ * `zt-annot-comment` is the card-scoped hook the view stylesheet compacts them
+ * through.
+ */
 function Comment({ html }: { html: string }) {
-  const ref = useSanitizedHtml<HTMLDivElement>(html);
+  const actions = useContext(AnnotActionsContext);
+  const ref = useCallback(
+    (el: HTMLDivElement) => actions.renderComment(el, html),
+    [actions, html],
+  );
   return (
     <div
       ref={ref}
-      className="zt:warp-break-words zt:overflow-x-auto zt:px-2 zt:py-1 zt:whitespace-pre-wrap zt:text-muted-foreground zt:select-text"
+      className="markdown-rendered zt-annot-comment zt:overflow-x-auto zt:px-2 zt:py-1 zt:break-words zt:text-muted-foreground zt:select-text"
     />
   );
+}
+
+/**
+ * Zotero stores the excerpt as text carrying its reader's inline rich-text tags
+ * (`i`/`b`/`sub`/`sup`), so it goes through Obsidian's sanitizer rather than
+ * rendering as a plain string — formulas and emphasis survive, and untrusted DB
+ * HTML can never inject markup.
+ */
+function ExcerptText({ text }: { text: string }) {
+  const ref = useSanitizedHtml<HTMLParagraphElement>(text);
+  return <p ref={ref} className="zt:select-text" />;
 }
 
 function ExcerptBlock({
@@ -150,7 +171,7 @@ function ExcerptBlock({
       />
     );
   } else if (annot.text) {
-    content = <p className="zt:select-text">{annot.text}</p>;
+    content = <ExcerptText text={annot.text} />;
   } else {
     content = m.annot_view_unsupported_type({ type: name });
   }

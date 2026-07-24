@@ -7,6 +7,7 @@ import { type DatabaseService } from "@/services/database/service";
 import { type ItemLookup } from "@/services/item-lookup/service";
 import { type LiveUpdateService } from "@/services/live-update/service";
 import { type NoteFeature } from "@/services/note-feature";
+import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -26,6 +27,7 @@ export interface AnnotViewRegistrationDeps {
     NoteFeature,
     "renderAnnotation" | "renderAnnotationCitation"
   >;
+  noteIndex: NoteIndex;
   attachmentImport: AttachmentImportService;
   itemLookup: ItemLookup;
   settings: SettingsService;
@@ -41,6 +43,7 @@ export function registerAnnotView(
     liveUpdate: deps.liveUpdate,
     zoteroPref: deps.zoteroPref,
     noteFeature: deps.noteFeature,
+    noteIndex: deps.noteIndex,
     attachmentImport: deps.attachmentImport,
     itemLookup: deps.itemLookup,
     settings: deps.settings,

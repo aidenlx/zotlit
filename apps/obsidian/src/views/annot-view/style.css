@@ -15,3 +15,55 @@
 .workspace-leaf-content[data-type="zotero-annotation-view"] .view-content {
   padding-bottom: var(--size-4-8);
 }
+
+/* Compact the Markdown rendered into an Annotation Card comment. Obsidian sizes
+   `.markdown-rendered` prose for a full-width note; a card in a narrow dock has
+   room for a fraction of that. These rules are unlayered (as Obsidian's own are)
+   and doubled on `.markdown-rendered` so they win on specificity, not on load
+   order. Everything else — colors, fonts, callouts, code — is left to the theme. */
+.zt-annot-comment {
+  /* Drives paragraph, heading, list, and table block margins in one place.
+     `--heading-spacing` is `calc(--p-spacing * 2.5)`, so it shrinks along. */
+  --p-spacing: 0.35em;
+  --list-spacing: 0;
+  --list-indent: 1.2em;
+  /* Table text is sized in absolute px for a full-width note; scale it to the
+     card instead, which also brings the cells' 6ch min-width down with it. */
+  --table-text-size: 1em;
+}
+
+/* The scoped preflight strips list markers, and Obsidian's unlayered rules
+   restore them only for nested lists (`ul ul`) and ordered lists. Task lists
+   opt back out through Obsidian's own `li.task-list-item` rule. */
+.zt-annot-comment.markdown-rendered ul {
+  list-style-type: disc;
+}
+
+/* The bare `hr` rule hard-codes `margin: 2rem 0`, and `.markdown-rendered hr`
+   re-declares only the border — the 2rem survives without this. */
+.zt-annot-comment.markdown-rendered hr {
+  margin-block: var(--p-spacing);
+}
+
+/* Obsidian indents top-level list items a hard-coded `3ch` and nested ones by
+   `--list-indent`; one step for every depth reads better in a narrow card. */
+.zt-annot-comment.markdown-rendered :is(ul, ol) > li {
+  margin-inline-start: var(--list-indent);
+}
+
+/* Obsidian's checkbox alignment is scoped to reading view, so a task list
+   rendered here gets the bare `input[type="checkbox"]` box and a `-1.5em`
+   pull that lands outside the card. Align it against the bullet indent
+   instead, at the comment's own font size. */
+.zt-annot-comment.markdown-rendered .task-list-item-checkbox {
+  --checkbox-size: 1em;
+  position: relative;
+  top: 0.15em;
+  margin-inline: 0 0.4em;
+}
+.zt-annot-comment.markdown-rendered
+  ul
+  > li.task-list-item
+  > .task-list-item-checkbox {
+  margin-inline-start: calc(var(--list-indent) * -1);
+}

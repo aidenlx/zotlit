@@ -31,6 +31,14 @@ export interface Annotation {
   dateModified: Temporal.Instant;
   /** Raw `itemAnnotations.type` int; resolve names via {@link annotationTypeToName}. */
   type: AnnotationType;
+  /**
+   * The highlighted or underlined excerpt. Not plain text: Zotero's reader edits
+   * it through a rich-text editor whose `supportedFormats` allowlist is
+   * `['i','b','sub','sup']`, so the string can carry those attribute-free inline
+   * tags. Render it as HTML (sanitized) rather than as a literal string.
+   *
+   * @see https://github.com/zotero/zotero/blob/9.0.3/reader/src/common/components/common/editor.js#L4
+   */
   text: string | null;
   comment: string | null;
   /** Hex color code, e.g. `"#ffd400"`. */

@@ -126,6 +126,7 @@ export default class ZotLitPlugin extends Plugin {
       liveUpdate: services.liveUpdate,
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
+      noteIndex: services.noteIndex,
       attachmentImport: services.attachmentImport,
       itemLookup: services.itemLookup,
       settings: services.settings,

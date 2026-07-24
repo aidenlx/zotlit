@@ -32,6 +32,7 @@ import { type ItemLookup } from "@/services/item-lookup/service";
 import { type LiveUpdateService } from "@/services/live-update/service";
 import { type NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
+import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
@@ -42,6 +43,7 @@ import {
   type AnnotActions,
 } from "./actions";
 import { AnnotView } from "./AnnotView";
+import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter, type SavedFilter } from "./filter";
 import { pickItem } from "./item-picker";
@@ -111,6 +113,7 @@ export interface AnnotViewDeps {
     NoteFeature,
     "renderAnnotation" | "renderAnnotationCitation"
   >;
+  noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
@@ -210,6 +213,11 @@ export class AnnotationView extends ItemView {
             this.#prepareImportHandle(activeFile.path);
           }
         },
+      }),
+      renderComment: createCommentRenderer({
+        app: this.#deps.app,
+        component: this,
+        getSourcePath: () => this.#sourcePath(),
       }),
       onExploreAnnotation: (annotationKey) => {
         if (!this.#itemKey) return;
@@ -583,6 +591,16 @@ export class AnnotationView extends ItemView {
   }
 
   // #endregion
+
+  /**
+   * The Literature Note comment links resolve against — the loaded item's most
+   * recent note. Falls back to the vault root when the item has no note yet, so
+   * a relative link still resolves to something rather than failing.
+   */
+  #sourcePath(): string {
+    if (this.#itemKey === null) return "";
+    return this.#deps.noteIndex.getNotesByItemKey(this.#itemKey)[0]?.path ?? "";
+  }
 
   /** Scroll the first card for the annotations selected in Zotero into view. */
   #scrollToSelected(selected: readonly number[]): void {

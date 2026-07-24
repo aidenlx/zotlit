@@ -16,6 +16,7 @@ export interface AnnotViewItem {
   itemID: number;
   key: string;
   type: AnnotationType;
+  /** May carry Zotero's inline rich-text tags; see `Annotation.text`. */
   text: string | null;
   comment: string | null;
   color: string | null;
