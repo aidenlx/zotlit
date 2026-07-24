@@ -50,10 +50,10 @@ each editorial surface opts its display type into serif. Shared `(home)` chrome
 — nav, banner, search — stays sans/mono. A sans prose body inside a serif
 surface stays sans; only its display headings take the serif.
 
-The `.zt-prose` heading scale sits one notch above Fumadocs' stock sizes to
-compensate for Gelasio's smaller x-height (~0.48em vs Inter's ~0.55em).
-Blockquotes at 1.125em put Gelasio at optical parity with the surrounding
-sans body.
+The `ztProse` heading scale (`lib/prose.ts`) sits one notch above Fumadocs'
+stock sizes to compensate for Gelasio's smaller x-height (~0.48em vs Inter's
+~0.55em). Blockquotes at 1.125em put Gelasio at optical parity with the
+surrounding sans body.
 
 ## The label voice
 
@@ -84,9 +84,10 @@ wordmark likewise stays outside label treatment.
 ## Font loading
 
 All loaders sit in the root layout; families are assigned in the `@theme
-inline` block in `app/global.css`. Gelasio preloads app-wide (paints on every
-route). Inter is `preload: false` — fetched only where sans paints, swapping
-shift-free from a metric-adjusted fallback on serif-only routes.
+inline` block in `app/global.css`. Gelasio preloads app-wide (serif display
+paints on essentially every route). Inter is `preload: false` — sans is the
+app-wide body default, but its metric-adjusted fallback swaps shift-free, so an
+eager fetch buys little.
 
 IBM Plex Mono loads three explicit weights (400/500/600 — Plex Mono isn't a
 variable font on Google Fonts) with `preload: false`, swapping shift-free from a
@@ -142,16 +143,15 @@ The changelog's sibling in the `(home)` route group:
   serif title, italic deck, orange "Read the post →" link. Closes on the
   shared `SiteFooter`.
 - **Post head**: "← Blog" caps crumb, serif title, italic standfirst,
-  mono-uppercase meta line, hairline, then `zt-prose` body.
+  mono-uppercase meta line, hairline, then `ztProse` body.
 - **Post tail**: `FooterCards` prev/next, then comments (Giscus).
 
 ### Docs content column
 
 - Title: serif, medium weight, balanced.
 - Description: serif italic.
-- Prose (`.zt-prose`): sans body, serif h1–h3 at weight 500 with balance and
-  the compensated scale, h4 as a mono-uppercase label, inline code
-  square-cornered, `kbd` mono.
+- Prose body: sans, serif h1–h3 at weight 500 with balance and the compensated
+  scale, h4 as a mono-uppercase label, inline code square-cornered, `kbd` mono.
 - Blockquotes and figcaptions carry the serif-italic editorial register.
 - Lists run tighter than paragraphs (0.75em block margins, 0.25em item gaps).
 - **Command references** (`components/command.tsx`): leading Lucide `Terminal`
@@ -189,9 +189,15 @@ Structural chrome overrides live in the owned layout slots. CSS in
 `app/global.css` is reduced to what CSS alone must do:
 
 - **Tokens** — the `--color-fd-*` palette and `@theme inline` font wiring.
-- **`.zt-prose`** — the docs prose restyle, anchored to `.zt-prose` on
-  `<DocsBody>`. Unlayered rules beat Fumadocs' `@layer utilities` without
-  `!important`. Every rule carries a `:not(:where(.not-prose, .not-prose *))`
-  guard mirroring Fumadocs' escape hatch.
 - **`#toc-title`** — the one accepted Fumadocs-shipped anchor (ships with this
   exact id, no className hook). Re-check on bumps.
+
+The docs/blog prose restyle is **not** here. Customize Fumadocs prose through
+its **typography element modifiers** (`prose-h2:…`, `prose-blockquote:…`) — the
+plugin's own customization surface — never hand-written `.prose`-descendant CSS
+in `global.css`. Modifiers carry the `not-prose` escape hatch and win over base
+`prose` by layer order, so no unlayered override is needed. The shared set lives
+in `lib/prose.ts` (`ztProse`), applied on `<DocsBody>` and the blog post. The
+fork's modifiers are single-element only; a descendant compound with no modifier
+(`li p`, nested lists) uses a Tailwind arbitrary variant (`[&_li_p]:…`) — still
+inline, still not `global.css`.

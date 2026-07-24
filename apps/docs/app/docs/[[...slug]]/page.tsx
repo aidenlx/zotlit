@@ -13,6 +13,7 @@ import { notFound } from "next/navigation";
 import { DocsPageFooter } from "@/components/docs-page-footer";
 import { getMDXComponents } from "@/components/mdx";
 import { V1RedirectNotice } from "@/components/v1-redirect-notice";
+import { ztProse } from "@/lib/prose";
 import { gitConfig } from "@/lib/shared";
 import { getPageImage, getPageMarkdownUrl, source } from "@/lib/source";
 
@@ -44,7 +45,7 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
           githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${page.path}`}
         />
       </div>
-      <DocsBody className="zt-prose">
+      <DocsBody className={ztProse}>
         <MDX
           components={getMDXComponents({
             a: createRelativeLink(source, page),

@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
+import { cn } from "@/lib/cn";
+import { changelogProseRoles } from "@/lib/prose";
 import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
 
@@ -44,9 +46,10 @@ export default function ChangelogListPage() {
                   {formatReleaseDate(date)}
                 </time>
                 <span
-                  className={`inline-block border px-2.5 py-0.5 font-mono text-xs tracking-[0.04em] text-fd-primary ${
-                    i === 0 ? "border-fd-primary" : "border-fd-border"
-                  }`}
+                  className={cn(
+                    "inline-block border px-2.5 py-0.5 font-mono text-xs tracking-[0.04em] text-fd-primary",
+                    i === 0 ? "border-fd-primary" : "border-fd-border",
+                  )}
                 >
                   v{version}
                 </span>
@@ -65,7 +68,12 @@ export default function ChangelogListPage() {
                     Companion {companion} released alongside.
                   </p>
                 )}
-                <div className="prose mt-2.5 max-w-none font-sans prose-sm text-fd-muted-foreground prose-h2:mt-6 prose-h2:mb-2.5 prose-h2:font-mono prose-h2:text-xs prose-h2:font-semibold prose-h2:tracking-[0.16em] prose-h2:text-fd-foreground prose-h2:uppercase prose-h2:before:mr-2 prose-h2:before:inline-block prose-h2:before:h-3 prose-h2:before:w-0.5 prose-h2:before:translate-y-px prose-h2:before:bg-fd-primary prose-h2:before:align-middle prose-h2:before:content-[''] prose-h3:mt-4 prose-h3:mb-1 prose-h3:font-serif prose-h3:text-base prose-h3:font-medium prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]">
+                <div
+                  className={cn(
+                    changelogProseRoles,
+                    "mt-2.5 prose-h2:mt-6 prose-h2:mb-2.5 prose-h2:text-xs prose-h2:tracking-[0.16em] prose-h2:before:mr-2 prose-h2:before:h-3 prose-h3:mt-4 prose-h3:mb-1 prose-h3:text-base prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]",
+                  )}
+                >
                   <MDX components={getMDXComponents()} />
                 </div>
               </div>

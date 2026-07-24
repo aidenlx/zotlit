@@ -7,16 +7,16 @@ import { Gelasio, IBM_Plex_Mono, Inter } from "next/font/google";
 import localFont from "next/font/local";
 
 import { LegacyBanner } from "@/components/legacy-banner";
+import { cn } from "@/lib/cn";
 import { appName, baseURL } from "@/lib/shared";
 
 // App-wide base font, exposed as a variable and assigned via --font-sans in
-// global.css. preload is off because preload scope follows this call site (the
-// root layout = every route) while paint is route-dependent — /docs stays on
-// the sans stack and (home) never renders it at all. /docs discovers it at
-// CSS-parse time and swaps from the metric-adjusted "Inter Fallback", so the
-// cost there is a brief shift-free FOUT. Italic ships too: the prose body is
-// sans, and its <em>s must be true italics next to Gelasio's — a synthesized
-// oblique would read as a rendering bug in a mixed-face page.
+// global.css. Sans is the app-wide default, so Inter paints on essentially
+// every route; preload stays off because next/font's metric-adjusted "Inter
+// Fallback" renders the body shift-free, making an eager fetch low-value — the
+// only cost is a brief FOUT as the real face swaps in. Italic ships too: the
+// prose body is sans, and its <em>s must be true italics next to Gelasio's — a
+// synthesized oblique would read as a rendering bug in a mixed-face page.
 const inter = Inter({
   subsets: ["latin"],
   style: ["normal", "italic"],
@@ -24,8 +24,8 @@ const inter = Inter({
   preload: false,
 });
 
-// Serif voice paints on every route — (home) chrome and now /docs article
-// body too — so the loader and its preload belong at the root. The
+// Serif paints on essentially every route — (home) page content and /docs
+// article headings — so the loader and its preload belong at the root. The
 // `fallback` list both serves as the runtime stack and suppresses next/font's
 // generated metric-fallback face.
 const gelasio = Gelasio({
@@ -80,7 +80,12 @@ export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${gelasio.variable} ${ibmPlexMono.variable} ${archivo.variable}`}
+      className={cn(
+        inter.variable,
+        gelasio.variable,
+        ibmPlexMono.variable,
+        archivo.variable,
+      )}
       suppressHydrationWarning
     >
       <body className="flex min-h-screen flex-col">

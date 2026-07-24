@@ -1,10 +1,12 @@
 import { type Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BackCrumb } from "@/components/back-crumb";
 import Comments from "@/components/comment";
 import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
+import { cn } from "@/lib/cn";
+import { ztProse } from "@/lib/prose";
 import { formatReleaseDate, ogImageUrl } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 
@@ -26,14 +28,7 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
       <article className="pb-14">
-        <p className="mt-11.5">
-          <Link
-            href="/blog"
-            className="inline-flex items-center gap-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase hover:text-fd-primary"
-          >
-            <span aria-hidden>←</span> Blog
-          </Link>
-        </p>
+        <BackCrumb href="/blog" label="Blog" />
         <header className="pt-4.5 pb-2">
           <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance">
             {title}
@@ -48,7 +43,7 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
           </p>
         </header>
         <div className="border-t border-fd-border pt-6">
-          <div className="zt-prose prose max-w-none">
+          <div className={cn("prose max-w-none", ztProse)}>
             <MDX components={getMDXComponents()} />
           </div>
         </div>

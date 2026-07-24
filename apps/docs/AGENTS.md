@@ -12,7 +12,7 @@ End-user doc pages are authored by the `docs-writer` agent, which runs the `docs
 
 # Docs site design
 
-The docs site's visual spec — "Manuscript & Machine" theme, the four-face type system (Gelasio serif / Inter sans / IBM Plex Mono / Archivo), `--color-fd-*` tokens, label voice, and the app-owned fumadocs layout slots — lives in [`DESIGN.md`](DESIGN.md). Read it before touching typography, fonts, serif/sans font roles, font loading, theming, color tokens, chrome, or layout.
+The docs site's visual spec — "Manuscript & Machine" theme, the four-face type system (Gelasio serif / Inter sans / IBM Plex Mono / Archivo), `--color-fd-*` tokens, label voice, and the app-owned fumadocs layout slots — lives in [`DESIGN.md`](DESIGN.md). Read it before touching typography, prose styling, fonts, serif/sans font roles, font loading, theming, color tokens, `global.css`, chrome, or layout.
 
 # Docs content components
 
