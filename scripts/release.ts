@@ -164,6 +164,14 @@ if (!p.isCancel(openPr) && openPr) {
   await openPR(branchName, commitMsg, currentBranch);
 }
 
+// The release branch now lives on origin (the PR references it); drop the local
+// copy and return to the working branch. `-D` because its release commit is not
+// merged into `${currentBranch}` locally.
+s.start(`Returning to ${currentBranch}`);
+await $({ cwd: repoRoot })`git checkout ${currentBranch}`;
+await $({ cwd: repoRoot })`git branch -D ${branchName}`;
+s.stop(`Back on ${currentBranch}, removed local ${branchName}`);
+
 p.outro(
   [
     `Released ${summary} on branch ${branchName}.`,
