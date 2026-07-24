@@ -5,15 +5,11 @@ import { baseOptions } from "@/lib/layout.shared";
 
 export default function Layout({ children }: LayoutProps<"/">) {
   return (
-    // Editorial serif voice covers the whole (home) chrome — the class lands on
-    // the layout container, which wraps the nav as well as the page content.
-    // /docs stays on the sans stack. The wordmark is exempt: <Logo> sets
-    // font-brand explicitly.
-    <HomeLayout
-      {...baseOptions()}
-      className="font-serif"
-      slots={{ header: Header }}
-    >
+    // Serif is opt-in per surface (see DESIGN.md type roles), not blanket-
+    // inherited here: the app-wide default is sans (Inter, via the <html>
+    // font-family). Each (home) page roots its own `font-serif` on its <main>;
+    // shared chrome (nav, banner, search) stays on the sans/mono stack.
+    <HomeLayout {...baseOptions()} slots={{ header: Header }}>
       {children}
     </HomeLayout>
   );

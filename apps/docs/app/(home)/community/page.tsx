@@ -41,7 +41,7 @@ const destinations: Array<{
 
 export default function CommunityPage() {
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 font-serif">
       <header className="max-w-2xl pt-16 pb-2">
         <p className="mb-4 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase">
           Community

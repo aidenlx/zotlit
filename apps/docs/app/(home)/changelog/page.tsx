@@ -16,7 +16,7 @@ export default function ChangelogListPage() {
   const pages = getChangelogPages();
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6">
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 font-serif">
       <header className="pt-14 pb-2">
         <h1 className="mb-2.5 text-4xl font-medium">Changelog</h1>
         <p className="mb-6 max-w-[60ch] text-[16.5px] text-fd-muted-foreground italic">
@@ -65,7 +65,7 @@ export default function ChangelogListPage() {
                     Companion {companion} released alongside.
                   </p>
                 )}
-                <div className="prose mt-2.5 max-w-none prose-sm text-fd-muted-foreground prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]">
+                <div className="prose mt-2.5 max-w-none font-sans prose-sm text-fd-muted-foreground prose-h2:mt-6 prose-h2:mb-2.5 prose-h2:font-mono prose-h2:text-xs prose-h2:font-semibold prose-h2:tracking-[0.16em] prose-h2:text-fd-foreground prose-h2:uppercase prose-h2:before:mr-2 prose-h2:before:inline-block prose-h2:before:h-3 prose-h2:before:w-0.5 prose-h2:before:translate-y-px prose-h2:before:bg-fd-primary prose-h2:before:align-middle prose-h2:before:content-[''] prose-h3:mt-4 prose-h3:mb-1 prose-h3:font-serif prose-h3:text-base prose-h3:font-medium prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]">
                   <MDX components={getMDXComponents()} />
                 </div>
               </div>

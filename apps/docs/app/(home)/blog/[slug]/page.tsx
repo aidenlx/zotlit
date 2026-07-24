@@ -1,4 +1,3 @@
-import { ArrowLeft } from "lucide-react";
 import { type Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,14 +24,14 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
   const newer = index > 0 ? pages[index - 1] : undefined;
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6">
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
       <article className="pb-14">
-        <p className="mt-11.5 text-[14.5px]">
+        <p className="mt-11.5">
           <Link
             href="/blog"
-            className="inline-flex items-center gap-1 text-fd-muted-foreground hover:text-fd-primary"
+            className="inline-flex items-center gap-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase hover:text-fd-primary"
           >
-            <ArrowLeft className="size-3.5" /> Blog
+            <span aria-hidden>←</span> Blog
           </Link>
         </p>
         <header className="pt-4.5 pb-2">

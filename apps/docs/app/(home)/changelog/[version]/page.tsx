@@ -1,4 +1,3 @@
-import { ArrowLeft } from "lucide-react";
 import { type Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -24,14 +23,14 @@ export default async function ChangelogVersionPage(
   const { version, date, description, companion, body: MDX } = page.data;
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6">
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
       <article className="pb-14">
-        <p className="mt-11.5 text-[14.5px]">
+        <p className="mt-11.5">
           <Link
             href="/changelog"
-            className="inline-flex items-center gap-1 text-fd-muted-foreground hover:text-fd-primary"
+            className="inline-flex items-center gap-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase hover:text-fd-primary"
           >
-            <ArrowLeft className="size-3.5" /> Changelog
+            <span aria-hidden>←</span> Changelog
           </Link>
         </p>
         <header className="pt-4.5 pb-2">
@@ -57,7 +56,7 @@ export default async function ChangelogVersionPage(
             {description}
           </p>
         )}
-        <div className="zt-prose prose max-w-none prose-sm text-fd-muted-foreground">
+        <div className="prose mt-6 max-w-none font-sans prose-sm text-fd-muted-foreground prose-h2:mt-10 prose-h2:mb-3 prose-h2:font-mono prose-h2:text-sm prose-h2:font-semibold prose-h2:tracking-[0.18em] prose-h2:text-fd-foreground prose-h2:uppercase prose-h2:before:mr-2.5 prose-h2:before:inline-block prose-h2:before:h-3.5 prose-h2:before:w-0.5 prose-h2:before:translate-y-px prose-h2:before:bg-fd-primary prose-h2:before:align-middle prose-h2:before:content-[''] prose-h3:mt-6 prose-h3:mb-1.5 prose-h3:font-serif prose-h3:text-lg prose-h3:font-medium prose-p:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-1 prose-li:leading-[1.6]">
           <MDX components={getMDXComponents()} />
         </div>
         <a

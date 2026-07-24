@@ -15,7 +15,7 @@ export default function BlogListPage() {
   const pages = getBlogPages();
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6">
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 font-serif">
       <header className="pt-14 pb-2">
         <h1 className="mb-2.5 text-4xl font-medium">Blog</h1>
         <p className="mb-6 max-w-[60ch] text-[16.5px] text-fd-muted-foreground italic">

@@ -42,9 +42,13 @@ Four faces, four roles:
 
 Serif carries the editorial voice at **weight 500** for display headings and
 **italic** for ledes/standfirsts. Sans carries the **markdown prose body** —
-running paragraphs in docs, blog, and changelog detail — whose h1–h3 headings
-sit in serif. Inter loads both upright and italic for true `<em>`s beside
-Gelasio's.
+running paragraphs in docs, blog, and the changelog — whose display headings sit
+in serif. Inter loads both upright and italic for true `<em>`s beside Gelasio's.
+
+Serif is **opt-in**, not blanket-inherited: the app-wide default is sans, and
+each editorial surface opts its display type into serif. Shared `(home)` chrome
+— nav, banner, search — stays sans/mono. A sans prose body inside a serif
+surface stays sans; only its display headings take the serif.
 
 The `.zt-prose` heading scale sits one notch above Fumadocs' stock sizes to
 compensate for Gelasio's smaller x-height (~0.48em vs Inter's ~0.55em).
@@ -116,9 +120,18 @@ body):
 
 List/detail pages in the `(home)` route group styled with Tailwind over fd
 tokens. Each release: right-aligned gutter (mono-uppercase date, mono version
-badge; latest badge orange-bordered) and a body with serif heading, optional
-companion note, then bullet notes in serif digest density. The detail page
-renders full release notes as `zt-prose` (sans body with serif headings).
+badge; latest badge orange-bordered), a serif release title, an optional
+companion note, then the release notes at digest density.
+
+Both views render the release notes with a **sans body**. The `##` category
+dividers (Breaking Changes / What's New / Bug Fixes) speak the **mono-uppercase
+label voice** rather than display headings — set in ink with an accent left-bar
+(the repo-datum motif) so each reads as a deliberate section rule, larger on the
+detail page (`text-sm`) than in the compressed list digest (`text-xs`). `###`
+feature names carry the serif display weight; the release title (`v{version}` /
+the serif standfirst) stays the dominant element. The list runs as a tighter
+digest, but the type roles hold across both. The detail head
+leads with a mono-uppercase `← Changelog` crumb (the blog's `← Blog` register).
 Changelog is not indexed in search.
 
 ### Blog (`/blog`)
