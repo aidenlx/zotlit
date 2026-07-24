@@ -47,6 +47,7 @@ const annotationResolvers: AnnotationResolvers = {
       : `[[${attachment.key}#page=${page}|${alias ?? attachment.key}]]`,
   annotationImageLink: () => null,
   commentToMarkdown: (html) => `md(${html})`,
+  authorsShort: (item) => `short:${item.key}`,
 };
 
 const noteResolvers: NoteResolvers = {
@@ -151,6 +152,24 @@ describe("fetchAnnotationsTemplateData", () => {
     expect(parentItem).not.toBeNull();
     expect(parentItem!.notePath).toBeNull();
     expect(parentItem!.noteLink()).toBeNull();
+  });
+
+  it("resolves parentItem authors, backlink, and weblink via the projection", () => {
+    const annotations = getAnnotationsByParent(db, 10);
+
+    const result = fetchAnnotationsTemplateData(db, annotations, {
+      resolvers: annotationResolvers,
+    });
+
+    // Attachment 10's parent is item MAIN0001; the annotation path must apply
+    // the author resolvers the note path already does.
+    const [first] = [...result.values()];
+    expect(first!.parentItem!.authorsShort).toBe("short:MAIN0001");
+    expect(Array.isArray(first!.parentItem!.authors)).toBe(true);
+    expect(first!.parentItem!.backlink).toBe(
+      "zotero://select/library/items/MAIN0001",
+    );
+    expect(first!.parentItem!.weblink).toBeNull(); // personal library, no username in fixture
   });
 
   it("omits an annotation whose parent attachment can't be resolved", () => {

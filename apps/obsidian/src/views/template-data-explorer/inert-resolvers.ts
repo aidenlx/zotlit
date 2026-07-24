@@ -154,6 +154,7 @@ export function buildInertNoteResolvers(
           }
         }
       },
+      authorsShort: creatorSummary,
     },
     item: {
       authorsShort: creatorSummary,

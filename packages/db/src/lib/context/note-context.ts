@@ -7,12 +7,12 @@ import {
   type TemplateAnnotation,
 } from "@/lib/context/zt-template-annot";
 import {
-  attachmentToTemplateData,
-  withAttachmentPreview,
+  resolveTemplateAttachment,
   type TemplateAttachment,
 } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
+  resolveItemCore,
   withItemPreview,
   type TemplateItemResolvers,
   type TemplateParentItemData,
@@ -21,6 +21,7 @@ import { type Annotation } from "@/lib/zt-annot";
 import { type Attachment } from "@/lib/zt-attach";
 import { type CollectionCache } from "@/lib/zt-collection";
 import { type GroupIDMemo } from "@/queries/_groups";
+import { getCurrentUsername } from "@/queries/account";
 import { getAnnotationsByParent } from "@/queries/annotations";
 import {
   getAttachmentByItemId,
@@ -158,6 +159,7 @@ export function fetchAnnotationsTemplateData(
   const result = new Map<string, TemplateAnnotation>();
   if (annotations.length === 0) return result;
 
+  const username = getCurrentUsername(client);
   const { resolvers, groupIdMemo } = options;
   const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const memo = { memo: groupIdMemo };
@@ -183,27 +185,32 @@ export function fetchAnnotationsTemplateData(
   const bundleByAttachment = new Map<number, ParentBundle>();
   for (const attachment of attachments) {
     const parentItemData = parentItemsByID.get(attachment.parentItemID);
+    // `null` for a standalone attachment (a PDF with no parent bibliographic
+    // item) — its parentItemID resolves to nothing.
+    let parentItem: TemplateParentItemData | null = null;
+    if (parentItemData) {
+      const parentBaseData = itemToTemplateBaseData({
+        item: parentItemData,
+        tags: tagsByItemID.get(parentItemData.itemID) ?? [],
+      });
+      parentItem = withItemPreview({
+        ...parentBaseData,
+        // Unresolved: this path runs synchronously on dragstart and stays
+        // cheap by design (see zt-template-item.ts's TemplateParentItemData).
+        notePath: null,
+        noteLink: () => null,
+        ...resolveItemCore({
+          item: parentItemData,
+          baseData: parentBaseData,
+          username,
+          authorsShort: resolvers.authorsShort,
+        }),
+      });
+    }
     bundleByAttachment.set(attachment.itemID, {
       attachment,
-      // `null` for a standalone attachment (a PDF with no parent
-      // bibliographic item) — its parentItemID resolves to nothing.
-      parentItem: parentItemData
-        ? withItemPreview({
-            ...itemToTemplateBaseData({
-              item: parentItemData,
-              tags: tagsByItemID.get(parentItemData.itemID) ?? [],
-            }),
-            // Unresolved: this path runs synchronously on dragstart and stays
-            // cheap by design (see zt-template-item.ts's TemplateParentItemData).
-            notePath: null,
-            noteLink: () => null,
-          })
-        : null,
-      tplAttachment: withAttachmentPreview({
-        ...attachmentToTemplateData(attachment),
-        filePath: resolvers.filePath(attachment),
-        fileLink: resolvers.fileLink(attachment),
-      }),
+      parentItem,
+      tplAttachment: resolveTemplateAttachment(attachment, resolvers),
     });
   }
 

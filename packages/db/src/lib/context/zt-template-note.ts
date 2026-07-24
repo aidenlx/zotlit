@@ -3,15 +3,15 @@ import {
   type TemplateAnnotation,
 } from "@/lib/context/zt-template-annot";
 import {
-  attachmentToTemplateData,
-  withAttachmentPreview,
+  resolveTemplateAttachment,
   type TemplateAttachment,
 } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
+  resolveItemCore,
   withItemPreview,
   type FallibleTemplateLink,
-  type TemplateCreator,
+  type ResolvedItemCore,
   type TemplateFilenameItemData,
   type TemplateItemBaseData,
   type TemplateItemData,
@@ -23,7 +23,6 @@ import { type Annotation } from "@/lib/zt-annot";
 import { type Attachment } from "@/lib/zt-attach";
 import { type TemplateCollection } from "@/lib/zt-collection";
 import { type ItemTag } from "@/lib/zt-tag";
-import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
 import { type Item } from "@/queries/items";
 import { type ChildNote } from "@/queries/notes";
 
@@ -34,16 +33,8 @@ import { type ChildNote } from "@/queries/notes";
  * `relatedItems` are deliberately absent (resolving them would require a
  * per-related-item DB fan-out), marking the boundary of the relation graph.
  */
-export interface TemplateRelatedItem extends TemplateItemData {
-  /** Zotero deep link to the related item (`zotero://select/...`). */
-  backlink: string;
-  /** Zotero web library URL, `null` for a never-synced personal library. */
-  weblink: string | null;
-  /** Creators filtered to {@link TemplateItemData.primaryCreatorType}. */
-  authors: TemplateCreator[];
-  /** Formatted short author string, e.g. `"Smith et al."`. */
-  authorsShort: string;
-}
+export interface TemplateRelatedItem
+  extends TemplateItemData, ResolvedItemCore {}
 
 /**
  * A child note exposed on {@link NoteTemplateContext.notes} as a link only —
@@ -70,19 +61,12 @@ export function withNotePreview(note: TemplateNoteLink): TemplateNoteLink {
  * runtime-computed fields assembled at the app layer (backlinks, resolved
  * attachment links, flattened annotations, author conveniences).
  */
-export interface NoteTemplateContext extends TemplateItemData {
-  /** Zotero deep link to the literature item (`zotero://select/...`). */
-  backlink: string;
-  /** Zotero web library URL, `null` for a never-synced personal library. */
-  weblink: string | null;
+export interface NoteTemplateContext
+  extends TemplateItemData, ResolvedItemCore {
   /** Flat annotation list across all (or scoped) attachments. */
   annotations: TemplateAnnotation[];
   /** All attachments for the item. */
   attachments: TemplateAttachment[];
-  /** Creators filtered to {@link TemplateItemData.primaryCreatorType}. */
-  authors: TemplateCreator[];
-  /** Formatted short author string, e.g. `"Smith et al."`. */
-  authorsShort: string;
   /**
    * Items from Zotero's "Related" panel (`dc:relation`), sorted by title.
    * Same-library, forward-only, depth-1.
@@ -121,6 +105,8 @@ export interface AnnotationResolvers {
    * when a template reads `zt.comment`, so the conversion is skipped otherwise.
    */
   commentToMarkdown: (html: string) => string;
+  /** Short author summary (e.g. `"Smith et al."`) for the annotation's parent item. */
+  authorsShort: (item: Item) => string;
 }
 
 export type NoteContextInput = AnnotationResolvers &
@@ -201,11 +187,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
   });
 
   const attachments: TemplateAttachment[] = input.attachments.map((a) =>
-    withAttachmentPreview({
-      ...attachmentToTemplateData(a),
-      filePath: input.filePath(a),
-      fileLink: input.fileLink(a),
-    }),
+    resolveTemplateAttachment(a, input),
   );
 
   const annotations: TemplateAnnotation[] = [];
@@ -258,24 +240,19 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
     noteLink(alias?: string, subpath?: string) {
       return itemResolvers.noteLink(filenameData, alias, subpath);
     },
-    backlink: itemSelectUri(item.key, item.groupID),
-    weblink: itemWebUrl(item.key, item.groupID, input.username),
     annotations,
     attachments,
     collections,
-    authors: selectPrimaryAuthors(baseData),
-    authorsShort: itemResolvers.authorsShort(item),
+    ...resolveItemCore({
+      item,
+      baseData,
+      username: input.username,
+      authorsShort: itemResolvers.authorsShort,
+    }),
     relatedItems,
     notes,
   });
   return result;
-}
-
-/** Creators filtered to the item's primary creator type; all when none. */
-function selectPrimaryAuthors(data: TemplateItemBaseData): TemplateCreator[] {
-  return data.primaryCreatorType
-    ? data.creators.filter((c) => c.role === data.primaryCreatorType)
-    : [...data.creators];
 }
 
 function buildRelatedItem({
@@ -301,10 +278,12 @@ function buildRelatedItem({
     noteLink(alias?: string, subpath?: string) {
       return itemResolvers.noteLink(filenameData, alias, subpath);
     },
-    backlink: itemSelectUri(item.key, item.groupID),
-    weblink: itemWebUrl(item.key, item.groupID, username),
-    authors: selectPrimaryAuthors(baseData),
-    authorsShort: itemResolvers.authorsShort(item),
+    ...resolveItemCore({
+      item,
+      baseData,
+      username,
+      authorsShort: itemResolvers.authorsShort,
+    }),
     collections,
   });
 }

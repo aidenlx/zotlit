@@ -68,6 +68,23 @@ export function withAttachmentPreview(
   });
 }
 
+/** Assemble an {@link Attachment} into its full template shape: base data plus
+ *  the app-layer `filePath`/`fileLink` resolvers, with the preview attached.
+ *  The single seam both the note and annotation paths call. */
+export function resolveTemplateAttachment(
+  attachment: Attachment,
+  resolvers: {
+    filePath: (attachment: Attachment) => string | null;
+    fileLink: (attachment: Attachment) => FallibleTemplateLink;
+  },
+): TemplateAttachment {
+  return withAttachmentPreview({
+    ...attachmentToTemplateData(attachment),
+    filePath: resolvers.filePath(attachment),
+    fileLink: resolvers.fileLink(attachment),
+  });
+}
+
 function attachmentFilename(path: AttachmentPath): string | null {
   switch (path.kind) {
     case "storage":

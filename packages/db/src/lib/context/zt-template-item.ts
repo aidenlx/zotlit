@@ -6,6 +6,7 @@ import { type TemplateCollection } from "@/lib/zt-collection";
 import { parseItemDate, type ItemDate } from "@/lib/zt-date";
 import { parseItemExtra, type ItemExtra } from "@/lib/zt-extra";
 import { toTemplateTag, type ItemTag, type TemplateTag } from "@/lib/zt-tag";
+import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
 import { type Creator, type Item } from "@/queries/items";
 
 export interface TemplateCreator {
@@ -225,13 +226,51 @@ function toTemplateCreator(c: Creator): TemplateCreator {
   );
 }
 
+/** Creators filtered to the item's primary creator type; all when none. */
+function selectPrimaryAuthors(data: TemplateItemBaseData): TemplateCreator[] {
+  return data.primaryCreatorType
+    ? data.creators.filter((c) => c.role === data.primaryCreatorType)
+    : [...data.creators];
+}
+
+/** The app-layer convenience fields shared by every resolved item shape
+ *  (note main item, related item, annotation parentItem). Centralized so a new
+ *  convenience is a compile error at every projection site until supplied. */
+export interface ResolvedItemCore {
+  /** Zotero desktop deep link (`zotero://select/...`). */
+  backlink: string;
+  /** Zotero web library URL; `null` for a never-synced personal library. */
+  weblink: string | null;
+  /** Creators filtered to {@link TemplateItemBaseData.primaryCreatorType}; all when none. */
+  authors: TemplateCreator[];
+  /** Formatted short author string, e.g. `"Smith et al."`. */
+  authorsShort: string;
+}
+
+/** Compute the {@link ResolvedItemCore} conveniences for an item. The single
+ *  seam all three item-assembly sites call, so these fields never diverge. */
+export function resolveItemCore(input: {
+  item: Item;
+  baseData: TemplateItemBaseData;
+  username: string | null;
+  authorsShort: (item: Item) => string;
+}): ResolvedItemCore {
+  return {
+    backlink: itemSelectUri(input.item.key, input.item.groupID),
+    weblink: itemWebUrl(input.item.key, input.item.groupID, input.username),
+    authors: selectPrimaryAuthors(input.baseData),
+    authorsShort: input.authorsShort(input.item),
+  };
+}
+
 /**
  * Parent literature item as seen from the standalone `annotation` template. The
  * annot-view drag-insert resolves the item's tags but omits collection rows
  * entirely — `collections` lives only on {@link TemplateItemData}. Read them
  * through the full `note` template (`zt.collections`).
  */
-export interface TemplateParentItemData extends TemplateItemBaseData {
+export interface TemplateParentItemData
+  extends TemplateItemBaseData, ResolvedItemCore {
   /**
    * Always `null` — resolving the parent's real literature-note path would
    * require app-layer vault-index I/O, which the annotation path (synchronous

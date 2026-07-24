@@ -28,6 +28,7 @@ import {
   createCommentTurndown,
 } from "@/lib/turndown/comment";
 import { type AttachmentImport } from "@/services/attachment-import/service";
+import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -72,6 +73,7 @@ export function buildAnnotationResolvers(options: {
       commentTurndown ??= createCommentTurndown(TurndownService);
       return commentToMarkdown(commentTurndown, html);
     },
+    authorsShort: creatorSummary,
     annotationImageLink: (annotation) => {
       const cachePath = resolveAnnotCachePath(annotation, {
         dataDir,
