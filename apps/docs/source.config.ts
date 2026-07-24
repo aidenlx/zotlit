@@ -33,6 +33,9 @@ const semverSchema = v.pipe(
 export const changelogs = defineCollections({
   type: "doc",
   dir: "content/changelog",
+  postprocess: {
+    includeProcessedMarkdown: true,
+  },
   schema: v.object({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
@@ -49,6 +52,9 @@ export const changelogs = defineCollections({
 export const blogs = defineCollections({
   type: "doc",
   dir: "content/blog",
+  postprocess: {
+    includeProcessedMarkdown: true,
+  },
   schema: v.object({
     title: v.string(),
     /** Standfirst shown under the title and in the index deck. */

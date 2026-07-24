@@ -2,8 +2,12 @@ export const appName = "ZotLit";
 export const baseURL =
   process.env.NEXT_PUBLIC_BASE_URL || "https://zotlit.aidenlx.site";
 export const docsRoute = "/docs";
+export const changelogRoute = "/changelog";
+export const blogRoute = "/blog";
 export const docsImageRoute = "/og/docs";
 export const docsContentRoute = "/llms.mdx/docs";
+export const changelogContentRoute = "/llms.mdx/changelog";
+export const blogContentRoute = "/llms.mdx/blog";
 
 export const gitConfig = {
   user: "aidenlx",
