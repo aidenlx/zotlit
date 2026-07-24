@@ -64,9 +64,12 @@ jobs:
       - name: Create release
         if: steps.gate.outputs.exists == 'false'
         run: |
+          notes=$(printf '%s\n\n%s' \
+            "ZotLit Obsidian plugin v${{ steps.meta.outputs.version }}" \
+            "Release notes: https://zotlit.aidenlx.site/changelog/${{ steps.meta.outputs.version }}")
           gh release create "${{ steps.meta.outputs.tag }}" \
             --title "${{ steps.meta.outputs.tag }}" \
-            --notes "ZotLit Obsidian plugin v${{ steps.meta.outputs.version }}" \
+            --notes "$notes" \
             ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }} \
             apps/obsidian/dist/main.js \
             apps/obsidian/dist/manifest.json \
@@ -107,6 +110,9 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=zt-$version" >> "$GITHUB_OUTPUT"
           echo "xpi=apps/zotero/dist/zotlit-zotero-$version.xpi" >> "$GITHUB_OUTPUT"
+          # The changelog is keyed on the Obsidian plugin version (the headline
+          # product); this companion release points at that same entry.
+          echo "changelog=$(node -p "require('./apps/obsidian/package.json').version")" >> "$GITHUB_OUTPUT"
           if node -e "process.exit(require('semver').prerelease('$version') ? 0 : 1)"; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
@@ -148,9 +154,12 @@ jobs:
       - name: Create release
         if: steps.gate.outputs.exists == 'false'
         run: |
+          notes=$(printf '%s\n\n%s' \
+            "ZotLit Zotero companion v${{ steps.meta.outputs.version }}" \
+            "Release notes: https://zotlit.aidenlx.site/changelog/${{ steps.meta.outputs.changelog }}")
           gh release create "${{ steps.meta.outputs.tag }}" \
             --title "${{ steps.meta.outputs.tag }}" \
-            --notes "ZotLit Zotero companion v${{ steps.meta.outputs.version }}" \
+            --notes "$notes" \
             ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest=false' }} \
             "${{ steps.meta.outputs.xpi }}"
 
