@@ -1,0 +1,72 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. This is diagnostic intake, not a bug
+        tracker. A maintainer will confirm it's a defect and move it to
+        GitHub Issues if so.
+
+        This category is for **ZotLit v2** only. v1 is no longer maintained
+        and no longer accepts bug reports. See the
+        [migration guide](https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1)
+        to upgrade first.
+
+        Before posting, search open discussions in this category for a
+        duplicate. General usage questions belong in
+        [Help](https://github.com/aidenlx/zotlit/discussions/categories/help)
+        instead.
+  - type: input
+    id: zotlit-version
+    attributes:
+      label: ZotLit version
+      description: Obsidian plugin and/or Zotero companion version.
+      placeholder: e.g. 2.0.0-beta.3
+    validations:
+      required: true
+  - type: input
+    id: host-versions
+    attributes:
+      label: Host application versions
+      description: Obsidian, Zotero, and OS versions.
+      placeholder: e.g. Obsidian 1.7.2, Zotero 7.0.9, macOS 15.1
+    validations:
+      required: true
+  - type: dropdown
+    id: sandbox
+    attributes:
+      label: Reproduces in a sandbox vault?
+      description: >-
+        Use Obsidian's built-in "Open sandbox vault" to rule out
+        conflicts with other plugins or your own configuration.
+      options:
+        - "Yes"
+        - "No"
+        - Haven't tried yet
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Starting from scratch, what are the fewest steps that trigger this?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: >-
+        Remove any sensitive information (API keys, personal file paths,
+        library contents) before pasting.

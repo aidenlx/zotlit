@@ -1,0 +1,37 @@
+name: Issue triage gate
+
+# GitHub Issues are reserved for defects a maintainer has already confirmed
+# (see notes on the community feedback loop). Issues opened directly by
+# non-maintainers are redirected to the Bug reports discussion instead of
+# sitting in the tracker unconfirmed.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  gate:
+    if: >-
+      !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+    steps:
+      - name: Redirect to discussions
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+          Hi @$ISSUE_AUTHOR — GitHub Issues here are reserved for defects a maintainer has already confirmed.
+
+          Please report this in [Bug reports](https://github.com/$REPO/discussions/categories/bug-reports) instead, using the report template. If it's confirmed as a bug, a maintainer will move it to Issues from there.
+
+          Feature ideas go in [Ideas](https://github.com/$REPO/discussions/categories/ideas), and general questions in [Help](https://github.com/$REPO/discussions/categories/help).
+
+          If this is about **ZotLit v1**: v1 is no longer maintained and no longer accepts bug reports or feature requests. Please [upgrade to v2](https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1) first.
+          EOF
+          )"
+          gh issue close "$ISSUE_NUMBER" --repo "$REPO" --reason "not planned"

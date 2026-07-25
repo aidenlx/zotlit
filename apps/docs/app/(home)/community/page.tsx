@@ -30,7 +30,7 @@ const destinations: Array<{
     Icon: DiscordMark,
   },
   {
-    label: "GitHub",
+    label: "Discussions",
     title: "Ideas & bug reports",
     description:
       "Post feature requests, report bugs, and have in-depth threads about research workflows.",

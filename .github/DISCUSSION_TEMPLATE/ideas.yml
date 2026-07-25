@@ -1,0 +1,37 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are prioritized partly by how many people want
+        them. Search open discussions first. If you find a close match,
+        react or add a comment there instead of opening a new one.
+
+        Requests are considered for **ZotLit v2** only. v1 is no longer
+        maintained. See the
+        [migration guide](https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1)
+        to upgrade first.
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case or problem
+      description: >-
+        What are you trying to accomplish when you realize you need this?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: How do you think this should work, and how would it solve your problem?
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround (optional)
+      description: If you're working around this today, it might help us find inspiration.
+  - type: textarea
+    id: related
+    attributes:
+      label: Related feature requests (optional)
+      description: Link any related discussions so they get a backlink here too.

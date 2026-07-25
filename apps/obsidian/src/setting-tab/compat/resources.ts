@@ -4,6 +4,7 @@ import { type Setting, SettingGroup } from "obsidian";
 
 import * as m from "@/paraglide/messages";
 import {
+  BUG_REPORT,
   COMMUNITY,
   DOCS_GETTING_STARTED,
   MIGRATION_GUIDE,
@@ -89,6 +90,17 @@ export function resourcesSection(
         btn
           .setButtonText(m.settings_resources_help_button())
           .onClick(() => window.open(COMMUNITY)),
+      ),
+  );
+
+  group.addSetting((setting) =>
+    setting
+      .setName(m.settings_resources_bug_report_name())
+      .setDesc(m.settings_resources_bug_report_desc())
+      .addButton((btn) =>
+        btn
+          .setButtonText(m.settings_resources_bug_report_button())
+          .onClick(() => window.open(BUG_REPORT)),
       ),
   );
 }

@@ -8,6 +8,7 @@ import {
 
 import * as m from "@/paraglide/messages";
 import {
+  BUG_REPORT,
   COMMUNITY,
   DOCS_GETTING_STARTED,
   MIGRATION_GUIDE,
@@ -108,6 +109,17 @@ function resourcesItems(
           btn
             .setButtonText(m.settings_resources_help_button())
             .onClick(() => window.open(COMMUNITY)),
+        );
+      },
+    },
+    {
+      name: m.settings_resources_bug_report_name(),
+      desc: m.settings_resources_bug_report_desc(),
+      render: (setting) => {
+        setting.addButton((btn) =>
+          btn
+            .setButtonText(m.settings_resources_bug_report_button())
+            .onClick(() => window.open(BUG_REPORT)),
         );
       },
     },

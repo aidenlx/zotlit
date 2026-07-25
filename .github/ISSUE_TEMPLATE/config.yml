@@ -1,0 +1,22 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Bug or issue report
+    url: https://github.com/aidenlx/zotlit/discussions/categories/bug-reports
+    about: >-
+      GitHub Issues are reserved for defects a developer has already
+      confirmed. Report the problem here first, using the report template —
+      it gets triaged and moved to Issues once confirmed.
+  - name: Feature request
+    url: https://github.com/aidenlx/zotlit/discussions/categories/ideas
+    about: Share the use case you're trying to solve using the feature request template.
+  - name: Ask a question / get help
+    url: https://github.com/aidenlx/zotlit/discussions/categories/help
+    about: General usage questions and troubleshooting help.
+  - name: Chat with the community
+    url: https://discord.gg/CpVTHcReAe
+    about: Prefer a conversation? Ask in Discord.
+  - name: ZotLit v1 (no longer maintained)
+    url: https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1
+    about: >-
+      v1 no longer accepts bug reports or feature requests. Upgrade to v2
+      first — if the problem persists there, report it above.

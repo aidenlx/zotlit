@@ -181,42 +181,48 @@ export class ZotLitSettingTab extends PluginSettingTab {
         control: { type: "toggle", key: "release.notices-enabled" },
       },
 
-      // Self-contained domains live on navigable sub-pages.
+      // Self-contained domains live on navigable sub-pages, grouped apart
+      // from the hub items above so the page rows read as their own section.
       {
-        type: "page",
-        name: m.settings_page_database(),
-        desc: m.settings_page_database_desc(),
-        items: databasePageItems(ctx),
-      },
-      {
-        type: "page",
-        name: m.settings_page_templates(),
-        desc: m.settings_page_templates_desc(),
-        items: templatesPageItems(ctx),
-      },
-      {
-        type: "page",
-        name: m.settings_page_note_import(),
-        desc: m.settings_page_note_import_desc(),
-        items: noteImportPageItems(ctx),
-      },
-      {
-        type: "page",
-        name: m.settings_page_attachments(),
-        desc: m.settings_page_attachments_desc(),
-        items: attachmentPageItems(ctx),
-      },
-      {
-        type: "page",
-        name: m.settings_page_live_updates(),
-        desc: m.settings_page_live_updates_desc(),
-        items: liveUpdatesPageItems(ctx),
-      },
-      {
-        type: "page",
-        name: m.settings_page_logging(),
-        desc: m.settings_page_logging_desc(),
-        items: loggingPageItems(ctx),
+        type: "group",
+        items: [
+          {
+            type: "page",
+            name: m.settings_page_database(),
+            desc: m.settings_page_database_desc(),
+            items: databasePageItems(ctx),
+          },
+          {
+            type: "page",
+            name: m.settings_page_templates(),
+            desc: m.settings_page_templates_desc(),
+            items: templatesPageItems(ctx),
+          },
+          {
+            type: "page",
+            name: m.settings_page_note_import(),
+            desc: m.settings_page_note_import_desc(),
+            items: noteImportPageItems(ctx),
+          },
+          {
+            type: "page",
+            name: m.settings_page_attachments(),
+            desc: m.settings_page_attachments_desc(),
+            items: attachmentPageItems(ctx),
+          },
+          {
+            type: "page",
+            name: m.settings_page_live_updates(),
+            desc: m.settings_page_live_updates_desc(),
+            items: liveUpdatesPageItems(ctx),
+          },
+          {
+            type: "page",
+            name: m.settings_page_logging(),
+            desc: m.settings_page_logging_desc(),
+            items: loggingPageItems(ctx),
+          },
+        ],
       },
     ];
 

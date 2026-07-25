@@ -10,4 +10,5 @@ export const BLOG = `${DOCS_SITE_URL}/blog`;
 export const CHANGELOG = `${DOCS_SITE_URL}/changelog`;
 export const GITHUB = "https://github.com/aidenlx/zotlit";
 export const COMMUNITY = `${DOCS_SITE_URL}/community`;
+export const BUG_REPORT = `https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports`;
 export const SPONSOR = "https://github.com/sponsors/aidenlx";
