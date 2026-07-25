@@ -1,4 +1,4 @@
-import { Download, ExternalLink } from "lucide-react";
+import { Download, Link } from "lucide-react";
 import { type ReactNode } from "react";
 
 import ObsidianMark from "@/assets/obsidian.svg?svgr";
@@ -18,7 +18,7 @@ function ObsidianGlyph({ className }: { className?: string }) {
 const icons: Record<ActionKind, typeof ObsidianGlyph> = {
   download: ({ className }) => <Download className={className} />,
   obsidian: ObsidianGlyph,
-  external: ({ className }) => <ExternalLink className={className} />,
+  external: ({ className }) => <Link className={className} />,
 };
 
 export interface ActionLinkProps {
