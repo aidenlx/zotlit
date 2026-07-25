@@ -42,8 +42,12 @@ Section rules:
 - Bullets restate the user-facing change in one or two sentences. Keep template variable names and command names in backticks.
 - No `@everyone` or `@here` unless the user explicitly asks for a ping.
 
-### 4. Slop check
+### 4. Write to file
 
-Run `/slop-check` on the draft. Fix high and medium flags. Em dashes are the most common hit; split into two sentences or use a period instead.
+Write the draft to `/tmp/discord-<version>.md`.
 
-Present the final message to the user as a copyable block.
+### 5. Slop check
+
+Run `/slop-check` on the written file. Fix high and medium flags in place. Em dashes are the most common hit; split into two sentences or use a period instead.
+
+Print the file path back to the user.
