@@ -89,7 +89,7 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
         <div
           tw={`font-['Gelasio'] font-medium ${
             hero ? "text-[150px]" : "text-[84px]"
-          } leading-[1.05] tracking-[-1px] text-[#1E3A5F] max-w-[1000px]`}
+          } leading-[1.05] tracking-[-1px] text-[#1E3A5F] max-w-[1000px] text-balance`}
         >
           {title}
         </div>
