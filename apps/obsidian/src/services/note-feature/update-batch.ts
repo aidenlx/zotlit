@@ -134,7 +134,10 @@ export async function runBatchUpdate(
     },
     total: itemIDs.length,
     onClassify: async (controls) => {
-      const classified = await classifyActions(deps, itemIDs, controls);
+      const classified = await classifyActions(deps, itemIDs, {
+        controls,
+        scope,
+      });
       actions = classified.actions;
       return new FlatManifest({
         tasks: actions.map(({ itemID, label, kind }) => ({
@@ -147,6 +150,11 @@ export async function runBatchUpdate(
           { kind: "update", header: m.batch_update_group_update },
           { kind: "create", header: m.batch_update_group_create },
         ],
+        // Non-actionable, so it rides the static informational slot rather than
+        // a task group — this keeps them out of the actionable count driving
+        // the confirm intro.
+        upToDate: classified.skipped,
+        upToDateHeader: m.batch_update_group_skipped,
         notFoundHeader: m.batch_update_group_not_found,
         abortedHeader: m.batch_update_group_aborted,
       });
@@ -158,12 +166,15 @@ export async function runBatchUpdate(
 }
 
 /**
- * Resolve `itemIDs` into update / create / not-found using one lightweight
- * {@link getItemDisplayRefByID} per id (indexed key + title only, no heavy
- * relational load — that is deferred to each item's write task). Chunked so the
- * synchronous per-id queries yield the main thread before the next slice: this
- * is the one UI-freeze risk in the flow, since `better-sqlite3` is synchronous
- * and a large batch would otherwise block paint and Cancel.
+ * Resolve `itemIDs` into update / create / skipped / not-found using one
+ * lightweight {@link getItemDisplayRefByID} per id (indexed key + title only, no
+ * heavy relational load — that is deferred to each item's write task). Chunked so
+ * the synchronous per-id queries yield the main thread before the next slice:
+ * this is the one UI-freeze risk in the flow, since `better-sqlite3` is
+ * synchronous and a large batch would otherwise block paint and Cancel.
+ *
+ * A `metadata` scope classifies note-less items as skipped rather than create —
+ * see {@link updateNote} for why the narrowing never creates.
  *
  * @throws when {@link BatchClassifyControls.signal} aborts (cancel /
  *   dismiss) or a query fails; the modal turns that into a close / notice.
@@ -171,14 +182,19 @@ export async function runBatchUpdate(
 async function classifyActions(
   deps: SingleUpdateDeps,
   itemIDs: readonly number[],
-  controls: BatchClassifyControls,
-): Promise<{ actions: BatchAction[]; notFound: NotFoundEntry[] }> {
+  { controls, scope }: { controls: BatchClassifyControls; scope: UpdateScope },
+): Promise<{
+  actions: BatchAction[];
+  skipped: NotFoundEntry[];
+  notFound: NotFoundEntry[];
+}> {
   // Pin the client for the chunked loop's whole async lifetime so a concurrent
   // refresh cannot swap it out between `yieldToMain()` yields.
   using lease = await deps.db.acquireRead();
   const client = lease.client;
   const groupIdMemo: GroupIDMemo = new Map();
   const actions: BatchAction[] = [];
+  const skipped: NotFoundEntry[] = [];
   const notFound: NotFoundEntry[] = [];
   await classifyChunked(itemIDs, controls, (slice) => {
     for (const itemID of slice) {
@@ -194,6 +210,8 @@ async function classifyActions(
       const label = itemLabel(ref.title, itemID);
       if (file) {
         actions.push({ itemID, label, kind: "update", file });
+      } else if (scope === "metadata") {
+        skipped.push({ itemID, label });
       } else {
         actions.push({ itemID, label, kind: "create" });
       }
@@ -206,10 +224,11 @@ async function classifyActions(
       total: itemIDs.length,
       update: update.length,
       create: create.length,
+      skipped: skipped.length,
       notFound: notFound.length,
     };
   });
-  return { actions, notFound };
+  return { actions, skipped, notFound };
 }
 
 async function executeBatchActions(

@@ -2,6 +2,7 @@ import { type App, type TFile } from "obsidian";
 
 import { getItemsByID, type Item, type ItemRef } from "@zotlit/db";
 
+import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
@@ -34,6 +35,10 @@ export interface SingleUpdateDeps {
 /**
  * Update the existing literature note, or create + open one if none exists.
  * `scope` controls how much an existing note is refreshed (see {@link UpdateScope}).
+ *
+ * A `metadata` scope never creates: the whole point of the narrowing is to leave
+ * the body alone, and `createNote` would write a full templated one. Missing
+ * notes report and stop, leaving the full-scope action as the way to create.
  */
 export async function updateNote(
   deps: SingleUpdateDeps,
@@ -43,6 +48,10 @@ export async function updateNote(
   const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
 
   if (!file) {
+    if (scope === "metadata") {
+      new BaseNotice(m.notice_update_metadata_no_note());
+      return;
+    }
     await createAndOpen(deps, ref);
     return;
   }

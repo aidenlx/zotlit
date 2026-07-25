@@ -37,6 +37,7 @@
   "notice_updated_note_metadata": "Metadata updated.",
   "notice_updated_note_no_region": "Frontmatter updated. No managed region found.",
   "notice_update_note_failed": "Failed to update literature note.",
+  "notice_update_metadata_no_note": "No literature note to update. Use Create or Update Literature Note to make one.",
   "notice_overwriting_note": "Overwriting literature note…",
   "notice_overwrote_note": "Literature note overwritten.",
   "notice_overwrite_note_failed": "Failed to overwrite literature note.",
