@@ -1,0 +1,34 @@
+---
+version: "2.0.0-beta.2"
+companion: "2.0.0-beta.2"
+date: "2026-07-25"
+description: "At Trigger for citations, rich annotation cards, citation normalization"
+---
+
+## Breaking Changes
+
+### Citation output normalization
+
+Rendered citation text inserted into notes is now trimmed and collapsed to a single inline line. The editor places a trailing space after the insert so the cursor lands ready to keep typing. Templates that intentionally produce multi-line citation output will see it flattened to one line when inserted.
+
+Shift+Enter now selects the secondary citation format in the inline Citation Suggester, matching the behavior of the command-palette modal.
+
+## What's New
+
+### At Trigger for citations
+
+An opt-in setting lets you type a bare `@` to open the Citation Suggester instead of the default `[@` trigger. Since the at-query has no closing bracket, use underscores in place of spaces (e.g. `@cognitive_load`). Enable it in the plugin settings under the citation section. See [Insert citations](/docs/how-to/insert-citations) for the full workflow.
+
+### Rich annotation cards
+
+Annotation cards in the annotation view now render excerpts with inline formatting (bold, italic, subscript, superscript) and render Markdown comments through the same pipeline as the literature note. What you see in the card matches what the note template produces. Links in comments resolve against the literature note and open through the workspace.
+
+### Other improvements
+
+- The Zotero companion's context-menu labels now say "Literature Note" instead of bare "note", and adopt Title Case to match Zotero's own menus.
+
+## Bug Fixes
+
+- `zt.parentItem.authorsShort` and `zt.parentItem.authors` rendered empty in annotation templates, even though `zt.parentItem.title` worked. These fields now resolve correctly. `zt.parentItem.backlink` and `zt.parentItem.weblink` are also filled in.
+
+- Updating only metadata on an item that had no literature note incorrectly created a full note from the template. Metadata-scoped updates now skip items without an existing note, as documented.
