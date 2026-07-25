@@ -6,9 +6,22 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
  
 <!-- END:nextjs-agent-rules -->
 
-# Writing docs
+# @zotlit/docs
 
-End-user doc pages are authored by the `docs-writer` agent, which runs the `docs-writing` skill. When docs work comes up, scope the topic, verify the facts, and settle the content tree, then delegate the prose to `docs-writer` — don't self-author pages in the main thread. Author inline only for a tiny touch.
+Documentation and landing site, built with Next.js + Fumadocs.
+
+## Commands
+
+Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
+
+- `pnpm --filter @zotlit/docs dev` — local dev server.
+- `pnpm --filter @zotlit/docs codegen` — regenerate Fumadocs MDX types.
+
+## Content & writing docs
+
+Content lives in `content/`; collections and schemas are defined in `source.config.ts`. `content/docs/` follows Diataxis. 
+
+Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
 
 # Docs site design
 
@@ -26,10 +39,4 @@ Give any heading that is a deep-link target (linked from another page, a changel
 
 # Social (OG) images
 
-Every page's `og:image` is a takumi-rendered 1200×630 card served by one dynamic route.
-
-- `app/og/_render.tsx` — the card itself (Google Fonts + Tailwind `tw` styling); `ogImage(props)` returns the `ImageResponse`.
-- `app/og/[...slug]/route.tsx` — maps a `[type, ...ids]` slug to a card; the `OgType` list + `assertNever` keep the switch exhaustive.
-- `lib/shared.ts` — `ogImageUrl(type, ...ids)`, the URL a page's `metadata` points at.
-
-Adding a page type: add its `case` (+ `OgType` entry + `generateStaticParams` seg) in the route, then set the page's metadata via `pageMetadata({ card: { type: "<type>", ... } })` (see `lib/seo.ts`).
+Adding a page type: add its `case` (+ `OgType` entry + `generateStaticParams` seg) in `app/og/[...slug]/route.tsx`, then set the page's metadata via `pageMetadata({ card: { type: "<type>", ... } })` (see `lib/seo.ts`).
