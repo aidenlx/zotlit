@@ -43,6 +43,8 @@ Hand-prefix every Zotero pref key with `extensions.zotlit.` in `addon/prefs.js`,
 ## Localization (l10n)
 
 - Author messages in `locale/{locale}.ftl` (flat, primary `en-US`).
+- Menu labels use **Title Case**, matching Zotero's own menus (`Add Note`, `Export Items…`) — not the Obsidian plugin's sentence case. Notice and progress-window copy stays sentence case.
+- Menu labels name the **Literature Note** / **Imported Note** vocabulary (see `apps/obsidian/CONTEXT.md`), never bare "note". Entries inside the ZotLit submenu omit "in Obsidian" — the submenu scopes them; entries appended flat to Zotero's own menus keep it.
 - Reference XUL strings via `data-l10n-id="…"` in `addon/**/*.xhtml`.
 - In TS, format via `formatValue(id, args)`; register menus via `registerMenu(...)`. utils in src/lib/l10n.ts.
 - For dynamic menu args (e.g. `$count` plural selection in an `onShowing`), pass a JSON **string**: `context.setL10nArgs(JSON.stringify(args))`. Zotero assigns the value straight to `dataset.l10nArgs` without serializing, so an object becomes `"[object Object]"` and silently disables Fluent selection. The upstream `object`-only type is widened to accept a string in `src/types/zotero.d.ts`.

@@ -106,9 +106,9 @@ export function registerItemMenu(pluginID: string): Disposable {
             menuType: "menuitem",
             l10nID: "zotlit-menu-item-import-child-notes",
             onShowing(_event: Event, context: LibraryMenuContext): void {
-              const items = regularItemsWithChildNotes(context);
-              context.setVisible(items.length >= 1);
-              context.setL10nArgs(JSON.stringify({ count: items.length }));
+              context.setVisible(
+                regularItemsWithChildNotes(context).length >= 1,
+              );
             },
             onCommand(_event: Event, context: LibraryMenuContext): void {
               const items = regularItemsWithChildNotes(context);

@@ -22,45 +22,41 @@ zotlit-prefs-log-level-error =
 zotlit-prefs-log-level-fatal =
     .label = Fatal
 
+# Menu labels use Title Case, matching Zotero's own menus. Entries inside the
+# ZotLit submenu omit "in Obsidian" — the submenu already scopes them; entries
+# appended flat to Zotero's menus keep it.
 zotlit-menu-item-open =
-    .label = Open note in Obsidian
+    .label = Open Literature Note in Obsidian
 zotlit-menu-submenu =
     .label = ZotLit
 zotlit-menu-item-update =
     .label = { $count ->
-        [one] Update note in Obsidian
-       *[other] Update notes in Obsidian
+        [one] Create or Update Literature Note
+       *[other] Create or Update Literature Notes
     }
 zotlit-menu-item-update-metadata =
-    .label = { $count ->
-        [one] Update note metadata in Obsidian
-       *[other] Update notes metadata in Obsidian
-    }
+    .label = Update Literature Note Metadata
 zotlit-menu-item-import-child-notes =
-    .label = { $count ->
-        [one] Import child notes
-       *[other] Import child notes
-    }
+    .label = Import Child Notes
 zotlit-menu-item-import-notes =
     .label = { $count ->
-        [one] Import note to Obsidian
-       *[other] Import notes to Obsidian
+        [one] Import Selected Note
+       *[other] Import Selected Notes
     }
 zotlit-menu-item-explore =
-    .label = Explore template data in Obsidian
-zotlit-menu-reader-annot-merge = Merge Annotations
+    .label = Explore Template Data
 zotlit-menu-reader-annot-explore = Explore Annotation in Obsidian
-zotlit-menu-reader-page-open = Open Note in Obsidian
+zotlit-menu-reader-page-open = Open Literature Note in Obsidian
 
-zotlit-batch-update-server-needed-title = Can't update notes in Obsidian
+zotlit-batch-update-server-needed-title = Can't update literature notes in Obsidian
 zotlit-batch-update-server-needed-message = This selection is too large to send through a link. Enable the ZotLit server in Obsidian's settings, or select fewer items, and try again.
-zotlit-batch-update-sending-title = Asking Obsidian to update notes…
+zotlit-batch-update-sending-title = Asking Obsidian to update literature notes…
 zotlit-batch-update-failed-title = Couldn't reach Obsidian
 zotlit-batch-update-failed-message = Make sure Obsidian is running with the ZotLit server enabled, then try again.
 zotlit-batch-update-sent-title = Continue in Obsidian
 zotlit-batch-update-sent-message = { $count ->
-        [one] Asked Obsidian to update 1 note. Switch to Obsidian to continue.
-       *[other] Asked Obsidian to update { $count } notes. Switch to Obsidian to continue.
+        [one] Asked Obsidian to update 1 literature note. Switch to Obsidian to continue.
+       *[other] Asked Obsidian to update { $count } literature notes. Switch to Obsidian to continue.
     }
 
 zotlit-protocol-incompatible-title = Update required
@@ -75,14 +71,14 @@ zotlit-batch-import-sent-message = { $count ->
        *[other] Asked Obsidian to import { $count } notes. Switch to Obsidian to continue.
     }
 
-zotlit-column-obsidian-note = Obsidian Note
+zotlit-column-obsidian-note = Literature Note
 zotlit-menu-tools-refresh-note-status =
-    .label = ZotLit: Refresh note status
-zotlit-note-status-refreshing-title = Refreshing note status…
-zotlit-note-status-refreshed-title = Note status refreshed
+    .label = ZotLit: Refresh Literature Note Status
+zotlit-note-status-refreshing-title = Refreshing literature note status…
+zotlit-note-status-refreshed-title = Literature note status refreshed
 zotlit-note-status-refreshed-message = { $count ->
-        [one] 1 item has a note in Obsidian.
-       *[other] { $count } items have notes in Obsidian.
+        [one] 1 item has a literature note in Obsidian.
+       *[other] { $count } items have literature notes in Obsidian.
     }
-zotlit-note-status-refresh-failed-title = Couldn't refresh note status
+zotlit-note-status-refresh-failed-title = Couldn't refresh literature note status
 zotlit-note-status-refresh-failed-message = Make sure Obsidian is running with the ZotLit server enabled, then try again.

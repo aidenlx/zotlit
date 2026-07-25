@@ -22,7 +22,6 @@ export type FluentMessageId =
   | "zotlit-menu-item-update"
   | "zotlit-menu-item-update-metadata"
   | "zotlit-menu-reader-annot-explore"
-  | "zotlit-menu-reader-annot-merge"
   | "zotlit-menu-reader-page-open"
   | "zotlit-menu-submenu"
   | "zotlit-menu-tools-refresh-note-status"
