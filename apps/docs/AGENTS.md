@@ -23,6 +23,8 @@ Content lives in `content/`; collections and schemas are defined in `source.conf
 
 Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
 
+Image attachments (screenshots, etc.) go under `public/img/<collection>/` as `.webp`, not `.png`/`.jpg` — convert with `cwebp` before committing.
+
 # Docs site design
 
 The docs site's visual spec — "Manuscript & Machine" theme, the four-face type system (Gelasio serif / Inter sans / IBM Plex Mono / Archivo), `--color-fd-*` tokens, label voice, and the app-owned fumadocs layout slots — lives in [`DESIGN.md`](DESIGN.md). Read it before touching typography, prose styling, fonts, serif/sans font roles, font loading, theming, color tokens, `global.css`, chrome, or layout.
