@@ -182,6 +182,11 @@ export function getLanguage(): string {
   return "en";
 }
 
+/** Tests run against the current API surface, so every version check passes. */
+export function requireApiVersion(_version: string): boolean {
+  return true;
+}
+
 /** Minimal stand-in for `MenuItem`; only the builder methods the plugin
  * chains off `Menu.addItem` plus a test-only `click()` to invoke the
  * registered handler. */
@@ -282,4 +287,35 @@ export function debounce<T extends unknown[], V>(
     return cb(...args);
   };
   return debouncer;
+}
+
+/** Base-class stand-ins for `Modal` and `ButtonComponent`. The plugin's
+ * modal/button subclasses only need something constructible to extend at import
+ * time; no test opens a modal, so the members stay unimplemented. */
+export class Modal {
+  containerEl: HTMLElement = noticeElStub;
+  modalEl: HTMLElement = noticeElStub;
+  contentEl: HTMLElement = noticeElStub;
+  constructor(readonly app: App) {}
+  open(): void {}
+  close(): void {}
+  onOpen(): void {}
+  onClose(): void {}
+}
+
+export class ButtonComponent {
+  buttonEl: HTMLElement = noticeElStub;
+  constructor(readonly containerEl: HTMLElement) {}
+  onClick(_cb: (evt: MouseEvent) => unknown): this {
+    return this;
+  }
+  setButtonText(_text: string): this {
+    return this;
+  }
+  setCta(): this {
+    return this;
+  }
+  setWarning(): this {
+    return this;
+  }
 }

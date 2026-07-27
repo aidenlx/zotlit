@@ -2,6 +2,16 @@ import { type App, ConfirmationModal, requireApiVersion } from "obsidian";
 
 import * as m from "@/paraglide/messages";
 
+import { CompatConfirmationModal } from "./confirm-modal-compat";
+
+// ConfirmationModal was added in Obsidian 1.13.0; older builds get the
+// standalone polyfill. Drop this line and its import once minAppVersion is 1.13.0.
+const ConfirmationModalImpl: typeof ConfirmationModal = requireApiVersion(
+  "1.13.0",
+)
+  ? ConfirmationModal
+  : (CompatConfirmationModal as unknown as typeof ConfirmationModal);
+
 export interface ConfirmOptions {
   title: string;
   content?: string;
@@ -12,17 +22,9 @@ export interface ConfirmOptions {
 }
 
 export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
-  // ConfirmationModal was added in Obsidian 1.13.0; older builds fall back to window.confirm.
-  if (!requireApiVersion("1.13.0")) {
-    const message = options.content
-      ? `${options.title}\n\n${options.content}`
-      : options.title;
-    return Promise.resolve(window.confirm(message));
-  }
-
   const { action, cancel, title, content, destructive, cta } = options;
   const { resolve, promise } = Promise.withResolvers<boolean>();
-  const modal = new ConfirmationModal(app);
+  const modal = new ConfirmationModalImpl(app);
   modal.setTitle(title);
   if (content) {
     modal.setContent(content);
