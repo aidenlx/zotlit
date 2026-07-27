@@ -1,4 +1,5 @@
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
+import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
@@ -95,6 +96,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [
+      preact(),
       paraglideVitePlugin({
         project: "../../project.inlang",
         outdir: "./src/paraglide",

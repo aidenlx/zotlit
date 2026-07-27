@@ -1,5 +1,5 @@
 import { Plugin } from "obsidian";
-import { gte as semverGte } from "semver";
+import semverGte from "semver/functions/gte";
 
 import * as m from "@/paraglide/messages";
 

@@ -20,7 +20,7 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 
 ## UI stack
 
-React, not Preact — for the compiler's auto-memoization and the wider ecosystem. The lib-CJS build omits `@vitejs/plugin-react` on purpose (no Vite dev server for Fast Refresh to attach to).
+Preact provides the UI runtime through `@preact/preset-vite` and its React compatibility aliases. Keep React imports and `@types/react`/`@types/react-dom` for the wider ecosystem.
 
 View/modal state uses a zustand **vanilla store + React context, one per instance** — not the global `create()` hook, not signals. Follow `src/views/annot-view/store.ts`.
 

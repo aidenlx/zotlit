@@ -1,3 +1,4 @@
+import preact from "@preact/preset-vite";
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
@@ -15,6 +16,7 @@ export default defineConfig({
   define: {
     __DEV__: JSON.stringify(true),
   },
+  plugins: [preact()],
   test: {
     include: ["src/**/*.test.ts"],
     environment: "node",

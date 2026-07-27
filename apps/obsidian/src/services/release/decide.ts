@@ -1,6 +1,7 @@
 // Pure branch decision for the once-per-launch release check.
 
-import { gt, valid } from "semver";
+import gt from "semver/functions/gt";
+import valid from "semver/functions/valid";
 
 import { type HydrationOrigin } from "@/services/settings/classify";
 
