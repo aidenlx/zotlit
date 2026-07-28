@@ -3,9 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "bin": {
-    "obsidian-i18n": "./dist/cli-main.mjs"
+    "obsidian-i18n": "./bin.mjs"
   },
   "files": [
+    "bin.mjs",
     "dist"
   ],
   "type": "module",
