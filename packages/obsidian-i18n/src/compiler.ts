@@ -792,11 +792,16 @@ function generatePack(
   return { messages, drift };
 }
 
+/**
+ * No pretty-printing: packs ship as artifacts under a serialized-byte cap.
+ *
+ * @see {@link LANGUAGE_PACK_LIMITS}
+ */
 function serializePack(
   locale: string,
   messages: Record<string, PackMessage>,
 ): string {
-  return `${JSON.stringify({ schemaVersion: 1, locale, messages }, null, 2)}\n`;
+  return `${JSON.stringify({ schemaVersion: 1, locale, messages })}\n`;
 }
 
 function normalizeMessage(
