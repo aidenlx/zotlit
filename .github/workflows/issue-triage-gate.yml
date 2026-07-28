@@ -27,9 +27,9 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<EOF
           Hi @$ISSUE_AUTHOR — GitHub Issues here are reserved for defects a maintainer has already confirmed.
 
-          Please report this in [Bug reports](https://github.com/$REPO/discussions/categories/bug-reports) instead, using the report template. If it's confirmed as a bug, a maintainer will move it to Issues from there.
+          Please report this in [Bug reports](https://github.com/$REPO/discussions/new?category=bug-reports) instead, using the report template. If it's confirmed as a bug, a maintainer will move it to Issues from there.
 
-          Feature ideas go in [Ideas](https://github.com/$REPO/discussions/categories/ideas), and general questions in [Help](https://github.com/$REPO/discussions/categories/help).
+          Feature ideas go in [Ideas](https://github.com/$REPO/discussions/new?category=ideas), and general questions in [Help](https://github.com/$REPO/discussions/new?category=help).
 
           If this is about **ZotLit v1**: v1 is no longer maintained and no longer accepts bug reports or feature requests. Please [upgrade to v2](https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1) first.
           EOF

@@ -4,8 +4,8 @@ contact_links:
     url: https://github.com/aidenlx/zotlit/discussions/categories/bug-reports
     about: >-
       GitHub Issues are reserved for defects a developer has already
-      confirmed. Report the problem here first, using the report template —
-      it gets triaged and moved to Issues once confirmed.
+      confirmed. Report the problem here first using the report template
+      and it will get triaged and moved to Issues once confirmed.
   - name: Feature request
     url: https://github.com/aidenlx/zotlit/discussions/categories/ideas
     about: Share the use case you're trying to solve using the feature request template.
@@ -19,4 +19,4 @@ contact_links:
     url: https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1
     about: >-
       v1 no longer accepts bug reports or feature requests. Upgrade to v2
-      first — if the problem persists there, report it above.
+      first. If the problem persists there, report it above.
