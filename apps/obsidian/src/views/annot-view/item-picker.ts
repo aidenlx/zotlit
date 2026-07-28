@@ -1,6 +1,6 @@
 import { type App, SuggestModal } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import {
   DEFAULT_LIMIT,

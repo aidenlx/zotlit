@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { type ItemRef } from "@zotlit/db";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import { InertTemplateError } from "@/services/template/errors";
 
 import {

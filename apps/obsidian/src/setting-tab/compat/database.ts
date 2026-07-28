@@ -5,10 +5,10 @@ import {
   type Setting,
 } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 import {
   type ConfiguredReadMode,
   type EffectiveReadMode,

@@ -24,8 +24,8 @@ import {
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import * as m from "@/paraglide/messages";
 import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";

@@ -2,9 +2,9 @@ import { type App, type TFile } from "obsidian";
 
 import { getItemsByID, type Item, type ItemRef } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import {

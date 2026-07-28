@@ -1,6 +1,7 @@
 import { PluginSettingTab, type SettingDefinitionItem } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import { type LanguagePackLifecycle } from "@/lib/i18n";
+import * as m from "@/lib/i18n/generated/messages";
 import { type DatabaseService } from "@/services/database/service";
 import {
   type SettingsPatch,
@@ -17,13 +18,13 @@ import {
   type SettingTabContext,
 } from "./context";
 import { databasePageItems, libraryDefinition } from "./database";
-import { liveUpdatesPageItems } from "./live-updates";
 import {
   decodeLogLevel,
+  diagnosticsPageItems,
   encodeLogLevel,
   LOG_LEVEL_KEY,
-  loggingPageItems,
-} from "./logging";
+} from "./diagnostics";
+import { liveUpdatesPageItems } from "./live-updates";
 import { noteImportPageItems } from "./note-import";
 import { defaultPlaceholder } from "./placeholder";
 import { resourcesGroup } from "./resources";
@@ -41,6 +42,7 @@ export interface ZotLitSettingTabOptions {
   zoteroPref: ZoteroPrefService;
   template: TemplateService;
   release: ReleaseTabActions;
+  languagePack: LanguagePackLifecycle;
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
@@ -49,6 +51,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #db: DatabaseService;
   readonly #zoteroPref: ZoteroPrefService;
   readonly #release: ReleaseTabActions;
+  readonly #languagePack: LanguagePackLifecycle;
 
   /**
    * Backward-compat (Obsidian < 1.13.0) only: teardown for the event
@@ -64,6 +67,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     zoteroPref,
     template,
     release,
+    languagePack,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
     this.#plugin = plugin;
@@ -71,10 +75,12 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#db = db;
     this.#zoteroPref = zoteroPref;
     this.#release = release;
+    this.#languagePack = languagePack;
 
     plugin.register(
       template.on("compile-status-changed", () => this.#requestUpdate()),
     );
+    plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
 
     // Settings: the frontmatter list is structural — its edits add/remove rows,
     // so the tab must re-render. Reference identity changes only when that key
@@ -138,6 +144,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       db: this.#db,
       zoteroPref: this.#zoteroPref,
       release: this.#release,
+      languagePack: this.#languagePack,
       requestUpdate: () => this.update(),
     };
 
@@ -218,9 +225,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
           },
           {
             type: "page",
-            name: m.settings_page_logging(),
-            desc: m.settings_page_logging_desc(),
-            items: loggingPageItems(ctx),
+            name: m.settings_page_diagnostics(),
+            desc: m.settings_page_diagnostics_desc(),
+            items: diagnosticsPageItems(ctx),
           },
         ],
       },
@@ -249,6 +256,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       db: this.#db,
       zoteroPref: this.#zoteroPref,
       release: this.#release,
+      languagePack: this.#languagePack,
       rerender: () => this.display(),
       defer: (cleanup) => stack.defer(cleanup),
     };

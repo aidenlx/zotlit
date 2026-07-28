@@ -4,8 +4,8 @@ import { useContext } from "react";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
+import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
-import * as m from "@/paraglide/messages";
 
 import { ExplorerActionsContext } from "./actions";
 import { DisplayTree } from "./DisplayTree";

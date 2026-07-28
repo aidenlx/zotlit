@@ -9,8 +9,8 @@ import {
   type TFile,
 } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";

@@ -1,11 +1,11 @@
 ---
 name: i18n-ui-text
-description: Obsidian house style for the wording of user-facing UI strings — command names, setting labels, button text, notices, modal copy. Use when authoring or editing the English text of a message in `messages/*.json`, naming a command, or copy-editing UI strings. Pair with `paraglide-i18n` (mechanics); this skill covers the words, not the format.
+description: Obsidian house style for the wording of user-facing UI strings — command names, setting labels, button text, notices, modal copy. Use when authoring or editing the English text of a message in `messages/*.json`, naming a command, or copy-editing UI strings. Pair with `inlang-i18n` (mechanics); this skill covers the words, not the format.
 ---
 
 # Writing UI Text
 
-This skill is about **what the strings say**, not how they're wired up. For the JSON message format, key naming, pluralization/variants, and the Paraglide runtime (`m.*`, `getLocale`, `setLocale`), use the `paraglide-i18n` skill. Use the two together: `paraglide-i18n` for the file shape, this skill for the words inside it.
+This skill is about **what the strings say**, not how they're wired up. For the JSON message format, key naming, pluralization/variants, and the generated Language Pack facade (`m.*`) and runtime, use the `inlang-i18n` skill. Use the two together: `inlang-i18n` for the file shape, this skill for the words inside it.
 
 ## When this applies
 
@@ -20,7 +20,7 @@ Any English string a user will read inside Obsidian:
 - Status bar text, ribbon tooltips, dropdown options
 - Error and validation messages shown to the user
 
-All of these should be authored in `messages/en.json` (the base locale) per the `paraglide-i18n` skill, then translated. **The base-locale string is the authoritative source — get the English right first.**
+All of these should be authored in `messages/en.json` (the base locale) per the `inlang-i18n` skill, then translated. **The base-locale string is the authoritative source — get the English right first.**
 
 Internal logs, code comments, and developer-only diagnostics are *not* UI text and don't follow this guide. Those go through LogTape (see `AGENTS.md` → Logging).
 

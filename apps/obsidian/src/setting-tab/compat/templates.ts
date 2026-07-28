@@ -5,9 +5,9 @@ import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { confirm } from "@/lib/confirm";
 import { ensureFolder } from "@/lib/ensure-folder";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
 import {
   DEFAULT_TEMPLATES,
   DEFAULT_TEMPLATES_ETA,

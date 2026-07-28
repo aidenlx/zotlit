@@ -1,5 +1,6 @@
 import { type App } from "obsidian";
 
+import { type LanguagePackLifecycle } from "@/lib/i18n";
 import { type DatabaseService } from "@/services/database/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -25,6 +26,7 @@ export interface CompatContext {
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
   release: ReleaseTabActions;
+  languagePack: LanguagePackLifecycle;
   /** Rebuild the entire tab (pre-1.13 has no granular `update()`). */
   rerender: () => void;
   /**

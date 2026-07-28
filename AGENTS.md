@@ -66,7 +66,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 
 ### i18n
 
-User-facing strings go through Paraglide JS, sourced from `messages/{locale}.json`. Run `/paraglide-i18n` skill for related tasks.
+User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics.
 
 ## Conventions worth knowing
 

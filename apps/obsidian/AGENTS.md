@@ -7,7 +7,8 @@ The Obsidian plugin. Shared constants live in `src/lib/constants.ts`.
 Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
 
 - `pnpm --filter @zotlit/obsidian dev` — Vite watch build.
-- `pnpm --filter @zotlit/obsidian paraglide:compile` — recompile Paraglide messages. Only needed when bypassing turbo (e.g. `pnpm exec vitest`/`tsc`); turbo `typecheck`/`test` depend on it.
+- `I18N_DEV_SERVER=true pnpm --filter @zotlit/obsidian dev` — opt-in when testing multi-language i18n: also serves the generated Language Pack JSONs at `http://127.0.0.1:9092` (or pass a port number) and points the dev build's pack download URL there instead of the GitHub release.
+- `pnpm --filter @zotlit/obsidian generate:language-packs` — regenerate the typed message facade and bundled English pack. Only needed when bypassing turbo; turbo `typecheck`/`test` depend on it.
 
 ## Code conventions
 
@@ -45,13 +46,13 @@ const logger = getLogger("settings");
 
 `LoggingService` owns `configure()` — don't call it anywhere else.
 
-## UI text (Paraglide JS)
+## UI text (JSON Language Packs)
 
-Import as `import * as m from "@/paraglide/messages"`. `src/paraglide/` is gitignored and generated on build; recompile manually only when bypassing turbo (see Commands).
+Import as `import * as m from "@/lib/i18n/generated/messages"`. `src/lib/i18n/generated/` is gitignored and regenerated on build; regenerate manually only when bypassing turbo (see Commands).
 
 When extending `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
 
-Run `/i18n-ui-text` for wording style; `/paraglide-i18n` for JSON format and runtime API.
+Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtime mechanics.
 
 ## CSS
 

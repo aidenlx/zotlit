@@ -1,8 +1,8 @@
 import { type Plugin } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 
 import { DatabaseError, type DatabaseService } from "./service";
 

@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@js-temporal/polyfill": "^0.5.1"
+    "@js-temporal/polyfill": "catalog:"
   },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",

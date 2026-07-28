@@ -2,12 +2,14 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
-    "paraglide:compile": {
+    "generate:language-packs": {
+      "dependsOn": ["@zotlit/obsidian-i18n#build"],
       "inputs": [
+        "$TURBO_ROOT$/packages/obsidian-i18n/src/**",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ],
-      "outputs": ["src/paraglide/**"],
+      "outputs": ["src/lib/i18n/generated/**"],
       "outputLogs": "errors-only"
     },
     "build": {
@@ -18,10 +20,13 @@
       ]
     },
     "typecheck": {
-      "dependsOn": ["$TURBO_EXTENDS$", "paraglide:compile"]
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
+    },
+    "typecheck:test": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
     },
     "test": {
-      "dependsOn": ["$TURBO_EXTENDS$", "paraglide:compile"]
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
     }
   }
 }

@@ -1,4 +1,4 @@
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 // Pure BatchImportResult → user-facing string mappings for notices and toasts.
 import { type BatchRunResult } from "@/services/batch-run";
 

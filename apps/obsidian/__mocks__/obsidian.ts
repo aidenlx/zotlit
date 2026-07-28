@@ -182,6 +182,10 @@ export function getLanguage(): string {
   return "en";
 }
 
+export async function requestUrl(): Promise<never> {
+  throw new Error("requestUrl not configured in the Obsidian test mock");
+}
+
 /** Tests run against the current API surface, so every version check passes. */
 export function requireApiVersion(_version: string): boolean {
   return true;

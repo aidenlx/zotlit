@@ -1,8 +1,8 @@
 // Registers the Welcome View and its open-command, plus the shared open-or-reveal entry point.
 import { type App, type Plugin } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";

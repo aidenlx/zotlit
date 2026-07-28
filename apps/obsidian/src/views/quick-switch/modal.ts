@@ -1,7 +1,7 @@
 import { Keymap, SuggestModal, type TFile } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";

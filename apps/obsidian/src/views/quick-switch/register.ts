@@ -1,6 +1,6 @@
 import { type App, type Plugin } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import { type ItemLookup } from "@/services/item-lookup/service";
 import { type NoteFeature } from "@/services/note-feature";
 import { type NoteIndex } from "@/services/note-index/service";

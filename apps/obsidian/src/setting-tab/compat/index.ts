@@ -1,9 +1,10 @@
 import { attachmentsSection } from "./attachments";
 import { type CompatContext } from "./context";
 import { databaseSection } from "./database";
+import { diagnosticsSection } from "./diagnostics";
 import { generalSection } from "./general";
+import { languagePackSetting } from "./language-pack";
 import { liveUpdatesSection } from "./live-updates";
-import { loggingSection } from "./logging";
 import { noteImportSection } from "./note-import";
 import { resourcesSection } from "./resources";
 import { templatesSection } from "./templates";
@@ -23,11 +24,12 @@ export function renderCompatSettings(
   ctx: CompatContext,
 ): void {
   resourcesSection(containerEl, ctx);
+  languagePackSetting(containerEl, ctx);
   generalSection(containerEl, ctx);
   databaseSection(containerEl, ctx);
   templatesSection(containerEl, ctx);
   noteImportSection(containerEl, ctx);
   attachmentsSection(containerEl, ctx);
   liveUpdatesSection(containerEl, ctx);
-  loggingSection(containerEl, ctx);
+  diagnosticsSection(containerEl, ctx);
 }

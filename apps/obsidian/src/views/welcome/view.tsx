@@ -7,7 +7,7 @@ import {
 } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";

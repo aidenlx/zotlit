@@ -1,0 +1,55 @@
+{
+  "name": "@zotlit/obsidian-i18n",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "obsidian-i18n": "./dist/cli-main.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./compiler": {
+      "types": "./dist/compiler.d.mts",
+      "default": "./dist/compiler.mjs"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.mts",
+      "default": "./dist/vite.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "oxlint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@inlang/sdk": "2.9.3",
+    "@js-temporal/polyfill": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node-25": "npm:@types/node@^25.6.2",
+    "@zotlit/config": "workspace:*",
+    "oxlint": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "vite": ">=8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  }
+}

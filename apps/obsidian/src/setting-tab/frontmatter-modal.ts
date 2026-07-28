@@ -7,7 +7,7 @@ import {
 
 import { AbortError } from "@/lib/abort-error";
 import { RESERVED_KEYS } from "@/lib/constants";
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 import { appendCompileError } from "./compile-error";
 import { frontmatterMergeStrategyLabel } from "./frontmatter-strategy";

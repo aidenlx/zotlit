@@ -11,7 +11,7 @@
 
 import { type App, ButtonComponent, Modal } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 /** The `ConfirmationButton` subset {@link confirm} touches. */
 class CompatConfirmationButton extends ButtonComponent {

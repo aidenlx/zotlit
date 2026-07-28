@@ -1,19 +1,46 @@
-import { getLanguage } from "obsidian";
+// ZotLit release policy and port wiring for the reusable Language Pack lifecycle.
 
-import { defineCustomClientStrategy, toLocale } from "@/paraglide/runtime";
+import {
+  createLanguagePackLifecycle,
+  type LanguagePackLifecyclePorts,
+} from "@zotlit/obsidian-i18n";
 
-/**
- * Wires Paraglide's `custom-obsidian` strategy to Obsidian's `getLanguage()`.
- * Must run before any `m.*` call so messages resolve under the user's locale.
- *
- * Obsidian owns its own locale; we never push changes back to it, so
- * `setLocale` is a no-op. Falls back to `baseLocale` (in
- * `project.inlang/settings.json`) when Obsidian's language is unset or not in
- * the configured `locales` list — `toLocale()` performs that normalization.
- */
-export function initI18n(): void {
-  defineCustomClientStrategy("custom-obsidian", {
-    getLocale: () => toLocale(getLanguage()),
-    setLocale: () => {},
+import { catalog } from "./i18n/generated/catalog.js";
+import { runtime } from "./i18n/generated/runtime.js";
+import { getLogger } from "./log.js";
+
+const logger = getLogger("i18n");
+
+/** ZotLit's release policy: Language Packs ship as GitHub release assets. */
+const ZOTLIT_PACK_SOURCE = {
+  baseUrl: "https://github.com/aidenlx/zotlit/releases/download/language-packs",
+  origin: "github.com/aidenlx/zotlit",
+};
+
+const source =
+  typeof __LANGUAGE_PACK_DEV_SERVER__ === "string"
+    ? {
+        baseUrl: __LANGUAGE_PACK_DEV_SERVER__,
+        origin: new URL(__LANGUAGE_PACK_DEV_SERVER__).host,
+      }
+    : ZOTLIT_PACK_SOURCE;
+
+export type LanguagePackLifecycle = ReturnType<typeof initI18n>;
+
+type InitI18nOptions = {
+  pluginVersion: string;
+  ports: LanguagePackLifecyclePorts;
+};
+
+export function initI18n({ pluginVersion, ports }: InitI18nOptions) {
+  return createLanguagePackLifecycle({
+    runtime,
+    pluginVersion,
+    namespace: "zotlit",
+    catalog,
+    source,
+    aliases: { zh: "zh-CN" },
+    ports,
+    logger,
   });
 }

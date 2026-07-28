@@ -4,8 +4,8 @@ import {
   type ProtocolVersionCheck,
 } from "@zotlit/protocol";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
 
 const noticedVersions = new Set<string>();
 

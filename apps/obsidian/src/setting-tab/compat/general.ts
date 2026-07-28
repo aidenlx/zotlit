@@ -2,8 +2,8 @@ import { type DropdownComponent, Setting } from "obsidian";
 
 import { getLibraries, type Library } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { defaultPlaceholder } from "@/setting-tab/placeholder";
 

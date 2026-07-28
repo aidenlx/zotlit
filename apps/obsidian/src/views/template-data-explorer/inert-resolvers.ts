@@ -23,12 +23,12 @@ import {
   joinFolderPath,
   resolveAttachmentFolderPath,
 } from "@/lib/ensure-folder";
+import * as m from "@/lib/i18n/generated/messages";
 import { fileUrlLink } from "@/lib/markdown-link";
 import {
   commentToMarkdown,
   createCommentTurndown,
 } from "@/lib/turndown/comment";
-import * as m from "@/paraglide/messages";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type Settings } from "@/services/settings/schema";

@@ -64,8 +64,10 @@ New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/
 > ZotLit reads your Zotero database directly, including files stored outside your Obsidian vault (Zotero's data directory, attachments on external drives or cloud storage). It reads only and does not write to your Zotero database.
 
 > [!IMPORTANT]
-> **Network access**
+> **Network use**
 > Live updates run a local notification server so the Zotero companion can push changes to Obsidian. Connections stay on your machine (localhost); ZotLit does not send your data to any external service.
+>
+> After you consent, ZotLit will download the `zh-CN.json` Language Pack from `github.com/aidenlx/zotlit`.
 
 > [!IMPORTANT]
 > **Third-party project: back up your data**

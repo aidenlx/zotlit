@@ -2,7 +2,7 @@ import { customAlphabet } from "nanoid";
 
 import { hasSuffixMarker, replaceSuffixMarkers } from "@zotlit/templates";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 /** Alphanumeric only, `_` and `-` reserved. */
 const suffixNanoid = customAlphabet(
@@ -26,7 +26,7 @@ const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 
 /**
  * Thrown when the filename slot of a rendered template resolves to an empty or
- * degenerate name. Its message is a Paraglide user-message ready for surfacing.
+ * degenerate name. Its message is localized and ready for surfacing.
  */
 export class EmptyFilenameError extends Error {
   constructor() {

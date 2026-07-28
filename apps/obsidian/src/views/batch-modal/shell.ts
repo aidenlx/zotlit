@@ -1,8 +1,8 @@
 import { type App, Modal, Setting, setIcon } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { cn } from "@/lib/utils";
-import * as m from "@/paraglide/messages";
 import { type BatchFailure } from "@/services/batch-run";
 
 import { failureRow, ICON_CLS, section, SECTION_SUMMARY_CLS } from "./dom";

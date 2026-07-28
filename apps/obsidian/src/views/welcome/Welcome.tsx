@@ -4,8 +4,8 @@ import { type ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
+import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
-import * as m from "@/paraglide/messages";
 
 import { useWelcomeActions } from "./actions";
 import {

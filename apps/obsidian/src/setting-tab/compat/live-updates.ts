@@ -1,4 +1,4 @@
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import { defaultPlaceholder } from "@/setting-tab/placeholder";
 
 import { type CompatContext } from "./context";

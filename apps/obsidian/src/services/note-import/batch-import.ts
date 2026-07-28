@@ -17,8 +17,8 @@ import {
 } from "@zotlit/db";
 import { type ImportMode } from "@zotlit/protocol";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import * as m from "@/paraglide/messages";
 import {
   type BatchClassifyControls,
   type BatchRunControls,

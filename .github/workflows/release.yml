@@ -75,6 +75,50 @@ jobs:
             apps/obsidian/dist/manifest.json \
             apps/obsidian/dist/styles.css
 
+      - name: Generate Language Packs
+        run: pnpm turbo run generate:language-packs --filter=@zotlit/obsidian
+
+      - name: Refresh Language Packs
+        run: |
+          if ! gh release view language-packs >/dev/null 2>&1; then
+            gh release create language-packs \
+              --title "Language Packs" \
+              --notes "Rolling JSON Language Packs for the ZotLit Obsidian plugin." \
+              --prerelease \
+              --latest=false
+          fi
+          remote_packs=()
+          for pack in apps/obsidian/src/lib/i18n/generated/*.json; do
+            [ "${pack##*/}" = "en.json" ] && continue
+            remote_packs+=("$pack")
+          done
+          gh release upload language-packs \
+            "${remote_packs[@]}" \
+            --clobber
+
+      - name: Verify Language Packs
+        run: |
+          download_dir="$(mktemp -d)"
+          for pack in apps/obsidian/src/lib/i18n/generated/*.json; do
+            file_name="${pack##*/}"
+            [ "$file_name" = "en.json" ] && continue
+            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/language-packs/$file_name"
+            for attempt in 1 2 3 4 5; do
+              if curl --fail --silent --show-error --location \
+                --header "Cache-Control: no-cache" \
+                --output "$download_dir/$file_name" \
+                "$url" &&
+                cmp --silent "$pack" "$download_dir/$file_name"; then
+                break
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error file=$pack::Anonymous download did not match the generated Language Pack"
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+
       - name: Attest provenance
         if: steps.gate.outputs.exists == 'false'
         uses: actions/attest@v4

@@ -1,6 +1,6 @@
 import { type Creator, type Item } from "@zotlit/db";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 const FALLBACK_CREATOR_TYPES = ["editor", "director", "contributor"] as const;
 

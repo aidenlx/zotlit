@@ -1,6 +1,6 @@
 import { type Plugin } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 import { type ReleaseService } from "./service";
 

@@ -1,4 +1,3 @@
-import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -6,6 +5,8 @@ import { builtinModules } from "node:module";
 import { join, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
+
+import { obsidianI18n } from "@zotlit/obsidian-i18n/vite";
 
 import packageJson from "./package.json" with { type: "json" };
 import { parseManifest, parseMinElectronVersion } from "./scripts/manifest.js";
@@ -46,6 +47,9 @@ export default defineConfig(({ mode }) => {
   const isProd = mode === "production";
   const isDev = mode === "development";
   const outDir = isProd ? "dist" : "dist-dev";
+  const i18nDevServerPort = isDev
+    ? parseI18nDevServerPort(process.env.I18N_DEV_SERVER)
+    : undefined;
 
   return {
     resolve: {
@@ -96,12 +100,21 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [
-      preact(),
-      paraglideVitePlugin({
+      obsidianI18n({
         project: "../../project.inlang",
-        outdir: "./src/paraglide",
-        strategy: ["custom-obsidian", "baseLocale"],
+        output: "src/lib/i18n/generated",
+        excludeMessagePrefixes: ["docs_"],
+        // Lifecycle copy has to be readable before its Language Pack exists.
+        targetLocaleMessagePrefixes: [
+          "notice_language_pack_",
+          "settings_language_pack_",
+        ],
+        servePacks:
+          i18nDevServerPort === undefined
+            ? undefined
+            : { port: i18nDevServerPort },
       }),
+      preact(),
       tailwindcss(),
       obsidianBuildPlugin(),
       process.env.ANALYZE === "true" &&
@@ -115,6 +128,13 @@ export default defineConfig(({ mode }) => {
     ],
   };
 });
+
+/** Opt-in via I18N_DEV_SERVER=true (or a port number); defaults to 9092. */
+function parseI18nDevServerPort(value: string | undefined): number | undefined {
+  if (!value || value === "false") return undefined;
+  const port = Number(value);
+  return Number.isInteger(port) && port > 0 ? port : 9092;
+}
 
 function obsidianBuildPlugin(): Plugin {
   const packageJsonPath = join(import.meta.dirname, "package.json");

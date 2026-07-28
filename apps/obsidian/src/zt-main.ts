@@ -1,9 +1,14 @@
-import { Plugin } from "obsidian";
+import { getLanguage, Plugin, requestUrl } from "obsidian";
 import semverGte from "semver/functions/gte";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
-import { initI18n } from "./lib/i18n";
+import { initI18n, type LanguagePackLifecycle } from "./lib/i18n";
+import {
+  installLanguagePack,
+  toastLanguagePackDownload,
+} from "./lib/i18n/install-toast";
+import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
 import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
@@ -48,6 +53,53 @@ function assertElectronVersion(): void {
   );
 }
 
+function showLanguagePackLifecycle(lifecycle: LanguagePackLifecycle): void {
+  const situation = lifecycle.getSituation();
+  switch (situation.kind) {
+    case "offered":
+      showLanguagePackInstallOffer(lifecycle);
+      break;
+    case "downloading":
+      void toastLanguagePackDownload(situation.done);
+      break;
+  }
+}
+
+function showLanguagePackInstallOffer(lifecycle: LanguagePackLifecycle): void {
+  const { endonym } = lifecycle;
+  const notice = new BaseNotice(
+    BaseNotice.render((renderer) => {
+      renderer.setTitle(m.notice_language_pack_install({ language: endonym }));
+      renderer.addAction((button) => {
+        button
+          .setButtonText(m.notice_language_pack_decline_action())
+          .onClick(() => {
+            lifecycle.decline();
+            notice.hide();
+          });
+      });
+      renderer.addAction((button) => {
+        button
+          .setButtonText(m.notice_language_pack_install_action())
+          .setCta()
+          .onClick(() => {
+            notice.hide();
+            installLanguagePack(lifecycle);
+          });
+      });
+    }),
+    0,
+  );
+  // Installing from the settings tab must also hide this notice, not just the
+  // settings tab's own row, so the two entry points onto the same download
+  // never disagree about whether it's still being offered.
+  const unsubscribe = lifecycle.subscribe(() => {
+    if (lifecycle.getSituation().kind === "offered") return;
+    unsubscribe();
+    notice.hide();
+  });
+}
+
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
 export default class ZotLitPlugin extends Plugin {
   // Owns every service/resource registered during onload after startup commits.
@@ -64,8 +116,19 @@ export default class ZotLitPlugin extends Plugin {
   override async onload(): Promise<void> {
     await super.onload();
 
-    // Register the Paraglide locale strategy before any service can call `m.*`.
-    initI18n();
+    if (__DEV__) enableStartupLogging();
+
+    // Install the current session's pack before any service can call `m.*`.
+    const languagePack = initI18n({
+      pluginVersion: this.manifest.version,
+      ports: {
+        getLanguage,
+        loadLocalStorage: (key) => this.app.loadLocalStorage(key),
+        saveLocalStorage: (key, value) => this.app.saveLocalStorage(key, value),
+        requestUrl,
+      },
+    });
+    showLanguagePackLifecycle(languagePack);
 
     // Block load on too-old Obsidian installers before allocating any resources.
     assertElectronVersion();
@@ -83,6 +146,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         template: services.template,
         release: services.release,
+        languagePack,
       }),
     );
 

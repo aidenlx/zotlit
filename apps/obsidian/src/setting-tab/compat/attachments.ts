@@ -1,4 +1,4 @@
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 import { type CompatContext } from "./context";
 import { sectionGroup } from "./group";

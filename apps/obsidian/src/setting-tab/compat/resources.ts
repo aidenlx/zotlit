@@ -2,7 +2,7 @@
 
 import { type Setting, SettingGroup } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import {
   BUG_REPORT,
   COMMUNITY,

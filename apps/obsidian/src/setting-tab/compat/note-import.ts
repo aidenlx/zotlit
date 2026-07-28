@@ -1,5 +1,5 @@
 // "Note import" compat section for Obsidian < 1.13.
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import { defaultPlaceholder } from "@/setting-tab/placeholder";
 
 import { type CompatContext } from "./context";

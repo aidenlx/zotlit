@@ -2,8 +2,8 @@
 import { Menu } from "obsidian";
 import { createContext } from "react";
 
+import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 
 import { copyValue, formatPath, type DisplayNode } from "./display-tree";
 import {

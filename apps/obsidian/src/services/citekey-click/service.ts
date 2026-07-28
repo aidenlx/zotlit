@@ -18,9 +18,9 @@ import {
 } from "@zotlit/db";
 
 import { registerEvent } from "@/lib/disposables";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { type NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";

@@ -2,8 +2,8 @@ import { useContext, useMemo, useState } from "react";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
+import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
-import * as m from "@/paraglide/messages";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";

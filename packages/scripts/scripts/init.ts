@@ -48,4 +48,3 @@ if (primary) {
 }
 
 await $`turbo run build --filter=./packages/*`;
-await $`turbo run paraglide:compile`;

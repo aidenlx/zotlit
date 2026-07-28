@@ -7,17 +7,12 @@
     "noEmit": true,
     "isolatedDeclarations": false,
     "types": ["node-22"],
-    "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"],
       "@mock/*": ["./__mocks__/*"]
     }
   },
-  "include": [
-    "./src/**/*.ts",
-    "./src/paraglide/**/*.js",
-    "./__mocks__/**/*.ts"
-  ],
+  "include": ["./src/**/*.ts", "./__mocks__/**/*.ts"],
   "exclude": ["./node_modules", "./dist", "./dist-dev"]
 }

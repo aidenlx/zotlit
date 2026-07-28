@@ -6,7 +6,8 @@ import {
   type SettingDefinitionGroup,
 } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
+import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
 import {
   BUG_REPORT,
   COMMUNITY,
@@ -15,6 +16,7 @@ import {
 } from "@/views/welcome/links";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
+import { languagePackDefinition } from "./language-pack";
 
 /**
  * "Finish migrating from v1" reminder row. Callers include this item only
@@ -64,10 +66,12 @@ export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
   const pending = ctx.settings.current?.["release.migration-pending"] === true;
+  const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",
     items: [
       ...(pending ? [migrationReminderItem(ctx)] : []),
+      ...(languagePack ? [languagePackDefinition(languagePack)] : []),
       ...resourcesItems(ctx),
     ],
   };

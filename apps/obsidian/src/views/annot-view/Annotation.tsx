@@ -7,9 +7,9 @@ import {
 } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
+import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
-import * as m from "@/paraglide/messages";
 
 import { AnnotActionsContext } from "./actions";
 import { useAnnotStore, useToggleSelectedTagID } from "./store";

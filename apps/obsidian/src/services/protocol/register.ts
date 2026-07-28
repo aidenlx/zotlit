@@ -17,10 +17,10 @@ import {
   protocolSourceMatches,
 } from "@zotlit/protocol";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 import { type LiveUpdateService } from "@/services/live-update/service";
 import {
   runBatchUpdate,

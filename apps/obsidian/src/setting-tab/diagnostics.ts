@@ -4,18 +4,19 @@ import { FileSystemAdapter, type SettingDefinitionItem } from "obsidian";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { confirm } from "@/lib/confirm";
 import { saveFile } from "@/lib/file-save";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
-import * as m from "@/paraglide/messages";
 import { LOG_FILENAME } from "@/services/log/service";
 import { type LogLevel } from "@/services/settings/schema";
 import type ZotLitPlugin from "@/zt-main";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
 
-const logger = getLogger(["setting-tab", "logging"]);
+const logger = getLogger(["setting-tab", "diagnostics"]);
 
 const LOG_LEVEL_OFF_KEY = "off";
 
@@ -51,8 +52,8 @@ const LOG_LEVEL_OPTIONS: Record<string, string> = (() => {
   return opts;
 })();
 
-/** Items for the "Logging" sub-page. */
-export function loggingPageItems(
+/** Items for the "Diagnostics" sub-page. */
+export function diagnosticsPageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   const fileDisabled = (): boolean => !ctx.settings.current?.["log.to-file"];
@@ -84,7 +85,31 @@ export function loggingPageItems(
       disabled: fileDisabled,
       action: () => void exportLogArchive(ctx.plugin),
     },
+    {
+      name: m.settings_language_pack_reset_name(),
+      desc: m.settings_language_pack_reset_desc(),
+      action: () => void resetLanguagePacks(ctx),
+    },
   ];
+}
+
+/**
+ * Clears every downloaded Language Pack and the consent behind it. The pack
+ * applied at startup keeps running, so the notice names the restart.
+ */
+async function resetLanguagePacks(ctx: SettingTabContext): Promise<void> {
+  const confirmed = await confirm(
+    {
+      title: m.settings_language_pack_reset_confirm_title(),
+      content: m.settings_language_pack_reset_confirm_body(),
+      action: m.settings_language_pack_reset_action(),
+      destructive: true,
+    },
+    ctx.app,
+  );
+  if (!confirmed) return;
+  ctx.languagePack.reset();
+  new BaseNotice(m.notice_language_pack_reset());
 }
 
 async function openLogFile(plugin: ZotLitPlugin): Promise<void> {

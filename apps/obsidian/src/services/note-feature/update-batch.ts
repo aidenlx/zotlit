@@ -11,8 +11,8 @@ import {
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import * as m from "@/paraglide/messages";
 import {
   type BatchClassifyControls,
   type BatchRunControls,

@@ -2,9 +2,9 @@
 
 import { type App, TFile } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import * as m from "@/paraglide/messages";
 import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import {

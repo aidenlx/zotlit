@@ -1,5 +1,6 @@
 import { type App } from "obsidian";
 
+import { type LanguagePackLifecycle } from "@/lib/i18n";
 import { type DatabaseService } from "@/services/database/service";
 import { type ReleaseService } from "@/services/release/service";
 import { type Settings } from "@/services/settings/schema";
@@ -29,6 +30,7 @@ export interface SettingTabContext {
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
   release: ReleaseTabActions;
+  languagePack: LanguagePackLifecycle;
   /** Rebuild the tab's definitions (e.g. after a list mutation or eject). */
   requestUpdate: () => void;
 }

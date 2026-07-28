@@ -5,8 +5,8 @@ import { type IconName } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
+import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
-import * as m from "@/paraglide/messages";
 
 import {
   copyValue,

@@ -1,6 +1,6 @@
 import { type FrontmatterMergeStrategy } from "@zotlit/templates/constants";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 export function frontmatterMergeStrategyLabel(
   strategy: FrontmatterMergeStrategy,

@@ -9,9 +9,9 @@ import {
 import { annotationOpenUri, type AnnotViewItem } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 import { type NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 

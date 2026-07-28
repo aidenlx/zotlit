@@ -154,6 +154,16 @@ The prominent banner in the Welcome View's upgraded state pointing a user upgrad
 **Legacy Data**:
 Plugin settings on disk written by ZotLit v1 — recognized by the absence of any settings version marker. Detected once during settings load, then silently migrated to the current shape; its one-launch presence is what distinguishes a v1 upgrader from a fresh install.
 
+### Localization
+
+Message, Message Input, Language Pack, Language Pack Lifecycle, and Locale
+Alias use the canonical definitions in
+[`@zotlit/obsidian-i18n`](../../packages/obsidian-i18n/CONTEXT.md).
+
+ZotLit configures English as its base locale, excludes `docs_` Messages from
+plugin artifacts, maps Obsidian's `zh` Locale Alias to `zh-CN`, and owns its
+release locations, consent copy, notices, and settings UI.
+
 ### Protocol
 
 **Protocol Action**:

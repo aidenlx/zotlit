@@ -4,8 +4,8 @@ import { useMemo } from "react";
 
 import { type AnnotationColorName, annotationColorToName } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
-import * as m from "@/paraglide/messages";
 
 import {
   deriveSwatchColors,

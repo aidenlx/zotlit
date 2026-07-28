@@ -146,7 +146,7 @@ Actions: **Add field**, **Reset to default** (reverts the full list).
 | ------------ | ----------------- | ------- | ----------- |
 | **Hostname** | `server.hostname` | Text    | `127.0.0.1` |
 
-## Logging
+## Diagnostics
 
 | Label                  | Key           | Control  | Default |
 | ---------------------- | ------------- | -------- | ------- |
@@ -161,6 +161,8 @@ When **Write logs to file** is on, logs append to `zotlit.log.jsonl` inside the 
 - **Save log archive:** exports the log file for sharing.
 
 Both actions are disabled while **Write logs to file** is off.
+
+**Reset language packs** removes the downloaded language packs stored on this device and forgets whether ZotLit already offered them. The pack loaded at startup stays in place until you restart Obsidian, after which ZotLit offers to install it again. Use it when translated text looks wrong or outdated.
 
 ## See also
 

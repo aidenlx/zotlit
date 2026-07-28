@@ -21,6 +21,7 @@ import {
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, type AttachmentPathContext } from "@zotlit/db/path";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import {
   ANNOTATION_CALLOUT_ATTR,
@@ -28,7 +29,6 @@ import {
   encodeCalloutAttr,
 } from "@/lib/turndown";
 import { renderColorMark, type ColorMarkKind } from "@/lib/turndown/color-mark";
-import * as m from "@/paraglide/messages";
 import { type AttachmentImport } from "@/services/attachment-import/service";
 
 import {

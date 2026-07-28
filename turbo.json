@@ -26,7 +26,7 @@
       "dependsOn": [
         "@zotlit/db#build",
         "@zotlit/item-lookup#build",
-        "@zotlit/obsidian#paraglide:compile",
+        "@zotlit/obsidian#generate:language-packs",
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",

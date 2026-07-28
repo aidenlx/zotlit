@@ -1,7 +1,7 @@
 import "./style.css";
 import { type App, type Plugin } from "obsidian";
 
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 import { type AttachmentImportService } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
 import { type ItemLookup } from "@/services/item-lookup/service";

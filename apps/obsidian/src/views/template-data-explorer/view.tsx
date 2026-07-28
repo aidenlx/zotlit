@@ -21,9 +21,9 @@ import {
   USER_LIBRARY_ID,
 } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
-import * as m from "@/paraglide/messages";
 import { type DatabaseService } from "@/services/database/service";
 import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { type ItemLookup } from "@/services/item-lookup/service";

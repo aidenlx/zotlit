@@ -3,7 +3,7 @@ import { type SettingDefinitionItem } from "obsidian";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { confirm } from "@/lib/confirm";
-import * as m from "@/paraglide/messages";
+import * as m from "@/lib/i18n/generated/messages";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { openFrontmatterFieldModal } from "./frontmatter-modal";

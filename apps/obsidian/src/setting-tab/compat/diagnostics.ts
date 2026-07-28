@@ -4,11 +4,12 @@ import { FileSystemAdapter } from "obsidian";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
+import { confirm } from "@/lib/confirm";
 import { saveFile } from "@/lib/file-save";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
-import * as m from "@/paraglide/messages";
 import { LOG_FILENAME } from "@/services/log/service";
 import { type LogLevel } from "@/services/settings/schema";
 import type ZotLitPlugin from "@/zt-main";
@@ -16,16 +17,19 @@ import type ZotLitPlugin from "@/zt-main";
 import { type CompatContext } from "./context";
 import { sectionGroup } from "./group";
 
-const logger = getLogger(["setting-tab", "compat", "logging"]);
+const logger = getLogger(["setting-tab", "compat", "diagnostics"]);
 
 const LOG_LEVEL_OFF_KEY = "off";
 
-/** "Logging" section: log-level dropdown, file toggle, and two action rows. */
-export function loggingSection(
+/**
+ * "Diagnostics" section: log-level dropdown, file toggle, the two log action
+ * rows, and the Language Pack reset.
+ */
+export function diagnosticsSection(
   containerEl: HTMLElement,
   ctx: CompatContext,
 ): void {
-  const group = sectionGroup(containerEl, m.settings_page_logging());
+  const group = sectionGroup(containerEl, m.settings_page_diagnostics());
 
   const fileDisabled = (): boolean => !ctx.settings.current?.["log.to-file"];
 
@@ -86,6 +90,37 @@ export function loggingSection(
           .onClick(() => void exportLogArchive(ctx.plugin)),
       ),
   );
+
+  group.addSetting((setting) =>
+    setting
+      .setName(m.settings_language_pack_reset_name())
+      .setDesc(m.settings_language_pack_reset_desc())
+      .addButton((button) =>
+        button
+          .setButtonText(m.settings_language_pack_reset_action())
+          .setDestructive()
+          .onClick(() => void resetLanguagePacks(ctx)),
+      ),
+  );
+}
+
+/**
+ * Clears every downloaded Language Pack and the consent behind it. The pack
+ * applied at startup keeps running, so the notice names the restart.
+ */
+async function resetLanguagePacks(ctx: CompatContext): Promise<void> {
+  const confirmed = await confirm(
+    {
+      title: m.settings_language_pack_reset_confirm_title(),
+      content: m.settings_language_pack_reset_confirm_body(),
+      action: m.settings_language_pack_reset_action(),
+      destructive: true,
+    },
+    ctx.app,
+  );
+  if (!confirmed) return;
+  ctx.languagePack.reset();
+  new BaseNotice(m.notice_language_pack_reset());
 }
 
 async function openLogFile(plugin: ZotLitPlugin): Promise<void> {
