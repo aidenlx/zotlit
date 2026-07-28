@@ -38,6 +38,22 @@ describe("attachmentToTemplateData", () => {
     expect(result.linkMode).toBe("imported_file");
   });
 
+  it("includes a backlink for the personal library", () => {
+    const result = attachmentToTemplateData(
+      makeAttachment({ key: "XYZ789", groupID: null }),
+    );
+
+    expect(result.backlink).toBe("zotero://open/library/items/XYZ789");
+  });
+
+  it("includes a backlink for a group library", () => {
+    const result = attachmentToTemplateData(
+      makeAttachment({ key: "XYZ789", groupID: 42 }),
+    );
+
+    expect(result.backlink).toBe("zotero://open/groups/42/items/XYZ789");
+  });
+
   it("takes the basename of an absolute linked path", () => {
     const result = attachmentToTemplateData(
       makeAttachment({

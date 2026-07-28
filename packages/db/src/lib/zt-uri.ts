@@ -54,6 +54,11 @@ export interface AnnotationOpenUriOptions {
   groupID: number | null;
 }
 
+/** `zotero://open` deep link to an attachment (opens it in Zotero's reader). */
+export function attachmentOpenUri(key: string, groupID: number | null): string {
+  return `zotero://open/${libraryPath(groupID)}/items/${key}`;
+}
+
 /** `zotero://open` deep link to an annotation within its attachment. */
 export function annotationOpenUri({
   attachmentKey,
@@ -64,5 +69,5 @@ export function annotationOpenUri({
   const params = new URLSearchParams([["annotation", annotationKey]]);
   if (pageLabel) params.set("page", pageLabel);
   params.sort();
-  return `zotero://open/${libraryPath(groupID)}/items/${attachmentKey}?${params.toString()}`;
+  return `${attachmentOpenUri(attachmentKey, groupID)}?${params.toString()}`;
 }

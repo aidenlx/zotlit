@@ -288,6 +288,7 @@ Used in `zt.attachments` and `zt.parentAttachment`:
 | `filename`    | `string \| null` | Filename; `null` for URL/unknown links                                                                   |
 | `contentType` | `string \| null` | MIME type (e.g. `"application/pdf"`)                                                                     |
 | `linkMode`    | `string`         | `"imported_file"`, `"imported_url"`, `"linked_file"`, `"linked_url"`, `"embedded_image"`, or `"unknown"` |
+| `backlink`    | `string`         | Zotero deep link to open this attachment in the reader (`zotero://open/...`)                             |
 | `filePath`    | `string \| null` | Absolute on-disk path; `null` for URL links or unparseable paths                                         |
 | `fileLink`    | link property    | Wiki-link to the attachment file. Pipe through `file_link` to override alias or subpath                  |
 

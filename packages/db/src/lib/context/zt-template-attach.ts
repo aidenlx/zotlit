@@ -5,6 +5,7 @@ import {
   type Attachment,
   type AttachmentPath,
 } from "@/lib/zt-attach";
+import { attachmentOpenUri } from "@/lib/zt-uri";
 
 import { emptyToNull } from "./normalize";
 import { type FallibleTemplateLink } from "./zt-template-item";
@@ -23,6 +24,8 @@ export interface TemplateAttachment {
    * or unrecognized.
    */
   linkMode: string;
+  /** Zotero deep link to open this attachment in the reader. */
+  backlink: string;
   /** Absolute on-disk path to the attachment file; `null` for URL links, an unset base directory, or an unparseable path. Computed at the app layer. */
   filePath: string | null;
   /**
@@ -53,6 +56,7 @@ export function attachmentToTemplateData(
       attachment.linkMode == null
         ? "unknown"
         : linkModeToName(attachment.linkMode),
+    backlink: attachmentOpenUri(attachment.key, attachment.groupID),
   };
 }
 

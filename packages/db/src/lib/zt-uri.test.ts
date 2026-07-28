@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { annotationOpenUri, itemSelectUri, itemWebUrl } from "./zt-uri";
+import {
+  annotationOpenUri,
+  attachmentOpenUri,
+  itemSelectUri,
+  itemWebUrl,
+} from "./zt-uri";
 
 describe("itemSelectUri", () => {
   it("uses the library path for personal items", () => {
@@ -12,6 +17,20 @@ describe("itemSelectUri", () => {
   it("uses the group path for group items", () => {
     expect(itemSelectUri("ABC12345", 42)).toBe(
       "zotero://select/groups/42/items/ABC12345",
+    );
+  });
+});
+
+describe("attachmentOpenUri", () => {
+  it("links to a personal-library attachment", () => {
+    expect(attachmentOpenUri("ATCH1234", null)).toBe(
+      "zotero://open/library/items/ATCH1234",
+    );
+  });
+
+  it("links to a group-library attachment", () => {
+    expect(attachmentOpenUri("ATCH1234", 7)).toBe(
+      "zotero://open/groups/7/items/ATCH1234",
     );
   });
 });
