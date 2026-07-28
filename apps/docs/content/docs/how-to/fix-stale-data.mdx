@@ -1,0 +1,55 @@
+---
+title: "Fix stale data from Zotero"
+description: "What to do when changes you made in Zotero don't appear in ZotLit."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+Use this guide when you edit something in Zotero but ZotLit still shows the old data.
+
+## Refresh the database manually
+
+Open the command palette and run <Command inline>Refresh Zotero database</Command>. This forces ZotLit to re-read the database file on disk.
+
+If the data updates after a manual refresh, the issue is a stale read. The fixes below prevent it from recurring.
+
+## Set up live updates
+
+If you find yourself refreshing manually after every edit, enable live updates. The Zotero companion triggers an automatic database refresh each time Zotero saves changes, so ZotLit stays current without intervention.
+
+See [Set up live updates](/docs/how-to/set-up-live-updates).
+
+## Check your read mode [#read-mode]
+
+Open **Settings > ZotLit > Zotero database** and check the **Read mode** setting.
+
+On Windows and Linux, **Auto** uses Immutable source, which reads only what Zotero has written to disk. Recent edits (annotations you just made, notes you just typed) may not be visible yet.
+
+<Callout type="warn" title="Full copy is expensive">
+  Switching to **Full copy** captures the most recent state, but it copies the
+  entire database on every refresh. With large Zotero libraries this is
+  noticeably slower and uses more disk space. Try live updates first.
+</Callout>
+
+For background on how each read mode works, see [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero#reading-the-zotero-database).
+
+## If the problem persists
+
+If none of the above resolves it, [collect debug logs](/docs/how-to/collect-debug-logs) and [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, OS, and the steps that trigger the stale read.
+
+## See also
+
+<Cards>
+  <Card
+    title="Set up live updates"
+    description="Push changes from Zotero to Obsidian automatically."
+    href="/docs/how-to/set-up-live-updates"
+  />
+  <Card
+    title="How ZotLit connects to Zotero"
+    description="How ZotLit reads the Zotero database and what each read mode does."
+    href="/docs/concepts/how-zotlit-connects-to-zotero"
+  />
+</Cards>

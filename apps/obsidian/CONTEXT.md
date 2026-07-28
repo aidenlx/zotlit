@@ -123,6 +123,23 @@ A vault-wide in-memory index mapping frontmatter identifiers to Obsidian files. 
 A device-scoped value for the Zotero profile directory or data directory — stored per vault × device, never synced — that overrides ZotLit's automatic Zotero detection (default profile from `profiles.ini`, data directory from `prefs.js`) on that device only. Clearing it returns the device to auto-detection. These two values exist solely as Device Overrides; no synced copy exists.
 _Avoid_: local setting ("local" is overloaded: local library, local attachments), per-device setting (implies a category of ordinary settings rather than an override of auto-detection)
 
+### Database access
+
+**Read Mode**:
+The strategy ZotLit uses to open `zotero.sqlite` while Zotero is running and holds the file exclusively. Configured per vault (synced) as one of four values: Auto, Reflink clone, Full copy, Immutable source. Auto resolves to one of the three concrete modes at runtime.
+
+**Reflink Clone** _(Read Mode)_:
+Creates a lightweight snapshot of the database files into a temporary directory and opens the snapshot read-only. Sees committed and recent uncommitted edits. Default on macOS (via `clonefile`); unavailable on filesystems that do not support reflinking.
+_Avoid_: copy-on-write clone (user-facing docs avoid this term)
+
+**Full Copy** _(Read Mode)_:
+Byte-for-byte copy of the database files into a temporary directory. Same freshness as Reflink clone but slower and uses more disk space, especially with large libraries. Auto never selects this mode; the user must choose it explicitly.
+_Avoid_: regular copy, normal copy
+
+**Immutable Source** _(Read Mode)_:
+Opens `zotero.sqlite` in place with SQLite's immutable flag. Skips locking and reads committed data only — recent edits not yet written to the main file are invisible until Zotero checkpoints. The fallback when cloning is unavailable; default on Windows and Linux.
+_Avoid_: direct read, read-only mode (all modes are read-only)
+
 ### Releases and onboarding
 
 **Welcome View** _(Obsidian)_:

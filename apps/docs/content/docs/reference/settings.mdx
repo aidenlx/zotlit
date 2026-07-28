@@ -45,12 +45,12 @@ The hub page shows when you first open ZotLit settings.
 
 **Read mode** options:
 
-| Option           | Behavior                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------- |
-| Auto             | Selects the best mode for your platform automatically                               |
-| Reflink clone    | Fast snapshot via copy-on-write clone (needs a filesystem that supports reflinking) |
-| Full copy        | Byte-for-byte copy of the database file                                             |
-| Immutable source | Reads the Zotero database file directly, without a snapshot copy                    |
+| Option           | Behavior                                                                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auto             | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero) for details. |
+| Reflink clone    | Fast, lightweight snapshot. Default on macOS.                                                                                                   |
+| Full copy        | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. Auto does not select this mode.           |
+| Immutable source | Reads the database file directly. Default on Windows and Linux. Recent edits in Zotero may not appear immediately.                              |
 
 ### Advanced
 

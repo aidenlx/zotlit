@@ -10,9 +10,15 @@ ZotLit reads your Zotero data through three channels: a direct database read, pr
 
 ## Reading the Zotero database
 
-ZotLit reads the Zotero SQLite database file (`zotero.sqlite`) directly and read-only, without modifying Zotero's data or requiring Zotero to be running for queries. This is how ZotLit resolves item metadata, annotations, and citekey lookups when you create or update a literature note.
+While Zotero is running, it holds the database file open exclusively. ZotLit uses a read mode to access it without interfering.
 
-ZotLit offers several read modes that control how it accesses the database file. Some modes create a snapshot (Reflink clone, Full copy) so that the write-ahead log (WAL) is replayed for the freshest rows; others read the committed file in place (Immutable source) at the cost of not seeing WAL changes until Zotero checkpoints. The default Auto setting picks the best available mode for your filesystem.
+The default **Auto** setting picks the best available mode: **Reflink clone** on macOS, **Immutable source** on Windows and Linux. If the filesystem does not support reflinking, Auto falls back to Immutable source silently. You can override this in Settings.
+
+**Reflink clone** creates a fast, lightweight snapshot of the database. It sees recent edits and is the default on macOS.
+
+**Immutable source** reads the database file directly without creating a copy. It is the default on Windows and Linux. Recent edits in Zotero (annotations you just made, notes you just typed) may not appear until Zotero writes them to disk. Enabling [live updates](/docs/how-to/set-up-live-updates) lets the companion trigger a database refresh when Zotero saves changes, which reduces this delay.
+
+**Full copy** works on any filesystem and sees recent edits. It copies the entire database each time, so it is slower and uses more disk space, especially with large Zotero libraries. Auto never selects this mode; choose it manually if other modes are unavailable.
 
 See the [Settings reference](/docs/reference/settings) for the full option list and descriptions.
 
@@ -69,6 +75,11 @@ The direct database read operates independently: it needs only the Zotero data d
 ## See also
 
 <Cards>
+  <Card
+    title="Fix stale data from Zotero"
+    description="What to do when changes in Zotero don't appear in ZotLit."
+    href="/docs/how-to/fix-stale-data"
+  />
   <Card
     title="Set up live updates"
     description="Enable the server and companion notify preference step by step."

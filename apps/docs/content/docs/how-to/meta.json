@@ -15,6 +15,7 @@
     "migrate-from-v1",
     "migrate-v1-eta-templates",
     "suppress-zotero-security-prompt",
+    "fix-stale-data",
     "collect-debug-logs",
     "..."
   ]
