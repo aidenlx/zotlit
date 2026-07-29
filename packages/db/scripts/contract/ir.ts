@@ -109,6 +109,8 @@ export interface ContractHelper {
   name: string;
   /** Rendered TS signature, e.g. `(alias?: string, subpath?: string) => string | null`. */
   signature: string;
+  /** Liquid filter passing the helper its arguments, e.g. `note_link`; from the member's `@ztFilter` tag. */
+  filter?: string;
   /** Serialized form of the zero-arg call result. */
   value: ContractType;
 }
@@ -139,4 +141,13 @@ export interface ContractMember {
   description?: string;
   optional: boolean;
   type: ContractType;
+  /** The member's `@example` blocks, in source order; absent when it declares none. */
+  examples?: readonly ContractExample[];
+}
+
+/** One `@example` block: a single fenced code sample an emitter renders as code. */
+export interface ContractExample {
+  /** Fence language, e.g. `liquid`; absent for an unlabelled fence. */
+  lang?: string;
+  code: string;
 }

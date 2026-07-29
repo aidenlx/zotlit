@@ -1671,6 +1671,7 @@
       "unevaluatedProperties": false
     },
     "TemplateAnnotation": {
+      "description": "One annotation with its app-layer links resolved: an entry of `zt.annotations` on the note root, and the base of the single-annotation root `AnnotationTemplateContext`.",
       "type": "object",
       "properties": {
         "imgLink": {

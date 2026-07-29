@@ -54,6 +54,8 @@ export interface TemplateNoteLink {
    * queues the child note for import — a link never rendered creates no file,
    * and an already-imported note links to the existing file without
    * re-importing.
+   *
+   * @ztFilter note_link
    */
   noteLink: TemplateLink;
 }
@@ -82,6 +84,11 @@ export interface NoteTemplateContext
   /**
    * Items from Zotero's "Related" panel (`dc:relation`), sorted by title.
    * Same-library, forward-only, depth-1.
+   *
+   * @example
+   * ```liquid
+   * {{ zt.relatedItems | note_links | join: ", " }}
+   * ```
    */
   relatedItems: TemplateRelatedItem[];
   /** Imported child notes as link-only entries; `[]` when the item has none. */

@@ -993,7 +993,13 @@
               "kind": "ref",
               "name": "TemplateRelatedItem"
             }
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.relatedItems | note_links | join: \", \" }}"
+            }
+          ]
         },
         {
           "name": "notes",
@@ -1033,6 +1039,7 @@
             "kind": "helper",
             "name": "noteLink",
             "signature": "(alias?: string, subpath?: string) => string | null",
+            "filter": "note_link",
             "value": {
               "kind": "union",
               "options": [
@@ -1050,7 +1057,7 @@
         },
         {
           "name": "collections",
-          "description": "Collections the item belongs to, sorted by name; trashed collections excluded.",
+          "description": "Collections the item belongs to, sorted by name; trashed collections\nexcluded.",
           "optional": false,
           "type": {
             "kind": "array",
@@ -1058,7 +1065,13 @@
               "kind": "ref",
               "name": "TemplateCollection"
             }
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.collections | collection_paths | join: \", \" }}"
+            }
+          ]
         },
         {
           "name": "key",
@@ -1121,7 +1134,13 @@
           "type": {
             "kind": "stringified",
             "type": "Temporal.Instant"
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.dateAdded | date: \"%Y-%m-%d\" }}"
+            }
+          ]
         },
         {
           "name": "dateModified",
@@ -1292,7 +1311,13 @@
                 "type": "null"
               }
             ]
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.date | date: \"%Y\" }}"
+            }
+          ]
         },
         {
           "name": "shortTitle",
@@ -1587,6 +1612,7 @@
     },
     "TemplateAnnotation": {
       "kind": "object",
+      "description": "One annotation with its app-layer links resolved: an entry of\n`zt.annotations` on the note root, and the base of the single-annotation\nroot {@link AnnotationTemplateContext}.",
       "members": [
         {
           "name": "imgLink",
@@ -1599,6 +1625,7 @@
                 "kind": "helper",
                 "name": "imgLink",
                 "signature": "(alias?: string, subpath?: string) => string",
+                "filter": "img_link",
                 "value": {
                   "kind": "primitive",
                   "type": "string"
@@ -1609,7 +1636,13 @@
                 "type": "null"
               }
             ]
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{% for annot in zt.annotations %}{{ annot | img_link | embed }}{% endfor %}"
+            }
+          ]
         },
         {
           "name": "comment",
@@ -1637,6 +1670,7 @@
             "kind": "helper",
             "name": "fileLink",
             "signature": "(alias?: string, subpath?: string) => string | null",
+            "filter": "file_link",
             "value": {
               "kind": "union",
               "options": [
@@ -1953,6 +1987,7 @@
             "kind": "helper",
             "name": "noteLink",
             "signature": "(alias?: string, subpath?: string) => string | null",
+            "filter": "note_link",
             "value": {
               "kind": "union",
               "options": [
@@ -2029,7 +2064,13 @@
           "type": {
             "kind": "stringified",
             "type": "Temporal.Instant"
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.dateAdded | date: \"%Y-%m-%d\" }}"
+            }
+          ]
         },
         {
           "name": "dateModified",
@@ -2200,7 +2241,13 @@
                 "type": "null"
               }
             ]
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.date | date: \"%Y\" }}"
+            }
+          ]
         },
         {
           "name": "shortTitle",
@@ -3050,6 +3097,7 @@
             "kind": "helper",
             "name": "fileLink",
             "signature": "(alias?: string, subpath?: string) => string | null",
+            "filter": "file_link",
             "value": {
               "kind": "union",
               "options": [
@@ -3131,6 +3179,7 @@
             "kind": "helper",
             "name": "noteLink",
             "signature": "(alias?: string, subpath?: string) => string | null",
+            "filter": "note_link",
             "value": {
               "kind": "union",
               "options": [
@@ -3148,7 +3197,7 @@
         },
         {
           "name": "collections",
-          "description": "Collections the item belongs to, sorted by name; trashed collections excluded.",
+          "description": "Collections the item belongs to, sorted by name; trashed collections\nexcluded.",
           "optional": false,
           "type": {
             "kind": "array",
@@ -3156,7 +3205,13 @@
               "kind": "ref",
               "name": "TemplateCollection"
             }
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.collections | collection_paths | join: \", \" }}"
+            }
+          ]
         },
         {
           "name": "key",
@@ -3219,7 +3274,13 @@
           "type": {
             "kind": "stringified",
             "type": "Temporal.Instant"
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.dateAdded | date: \"%Y-%m-%d\" }}"
+            }
+          ]
         },
         {
           "name": "dateModified",
@@ -3390,7 +3451,13 @@
                 "type": "null"
               }
             ]
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.date | date: \"%Y\" }}"
+            }
+          ]
         },
         {
           "name": "shortTitle",
@@ -3767,6 +3834,7 @@
             "kind": "helper",
             "name": "noteLink",
             "signature": "(alias?: string, subpath?: string) => string",
+            "filter": "note_link",
             "value": {
               "kind": "primitive",
               "type": "string"
@@ -3808,6 +3876,7 @@
                 "kind": "helper",
                 "name": "imgLink",
                 "signature": "(alias?: string, subpath?: string) => string",
+                "filter": "img_link",
                 "value": {
                   "kind": "primitive",
                   "type": "string"
@@ -3818,7 +3887,13 @@
                 "type": "null"
               }
             ]
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{% for annot in zt.annotations %}{{ annot | img_link | embed }}{% endfor %}"
+            }
+          ]
         },
         {
           "name": "comment",
@@ -3846,6 +3921,7 @@
             "kind": "helper",
             "name": "fileLink",
             "signature": "(alias?: string, subpath?: string) => string | null",
+            "filter": "file_link",
             "value": {
               "kind": "union",
               "options": [
@@ -4162,6 +4238,7 @@
             "kind": "helper",
             "name": "noteLink",
             "signature": "(alias?: string, subpath?: string) => string | null",
+            "filter": "note_link",
             "value": {
               "kind": "union",
               "options": [
@@ -4179,7 +4256,7 @@
         },
         {
           "name": "collections",
-          "description": "Collections the item belongs to, sorted by name; trashed collections excluded.",
+          "description": "Collections the item belongs to, sorted by name; trashed collections\nexcluded.",
           "optional": false,
           "type": {
             "kind": "array",
@@ -4187,7 +4264,13 @@
               "kind": "ref",
               "name": "TemplateCollection"
             }
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.collections | collection_paths | join: \", \" }}"
+            }
+          ]
         },
         {
           "name": "key",
@@ -4250,7 +4333,13 @@
           "type": {
             "kind": "stringified",
             "type": "Temporal.Instant"
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.dateAdded | date: \"%Y-%m-%d\" }}"
+            }
+          ]
         },
         {
           "name": "dateModified",
@@ -4421,7 +4510,13 @@
                 "type": "null"
               }
             ]
-          }
+          },
+          "examples": [
+            {
+              "lang": "liquid",
+              "code": "{{ zt.date | date: \"%Y\" }}"
+            }
+          ]
         },
         {
           "name": "shortTitle",

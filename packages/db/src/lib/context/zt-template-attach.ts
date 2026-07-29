@@ -41,6 +41,8 @@ export interface TemplateAttachment {
    * (defaults to the filename) and `subpath` to append a `#`-fragment. `null`
    * when the file is unresolvable. See {@link FallibleTemplateLink}. Computed
    * at the app layer.
+   *
+   * @ztFilter file_link
    */
   fileLink: FallibleTemplateLink;
 }

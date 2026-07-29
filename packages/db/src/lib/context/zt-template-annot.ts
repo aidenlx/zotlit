@@ -83,6 +83,11 @@ export interface TemplateAnnotationBaseData {
   tags: readonly TemplateTag[];
 }
 
+/**
+ * One annotation with its app-layer links resolved: an entry of
+ * `zt.annotations` on the note root, and the base of the single-annotation
+ * root {@link AnnotationTemplateContext}.
+ */
 export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   /**
    * Markdown link to the excerpt image, or `null` for annotation types with no
@@ -93,6 +98,12 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * links the in-vault copy, formatted per the vault's wikilink preference. Pass
    * `alias` to override the display text (defaults to the image filename). See
    * {@link TemplateLink}. Computed at the app layer.
+   *
+   * @ztFilter img_link
+   * @example
+   * ```liquid
+   * {% for annot in zt.annotations %}{{ annot | img_link | embed }}{% endfor %}
+   * ```
    */
   imgLink: TemplateLink | null;
   /** {@link commentHtml} converted to Markdown; `null` when there is no comment. Computed at the app layer. */
@@ -102,6 +113,8 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * annotation's {@link page} (`#page=N`); `null` when the file is unresolvable.
    * Call it to render — pass `alias`/`subpath` to override the display text or
    * the `#`-fragment. See {@link FallibleTemplateLink}. Computed at the app layer.
+   *
+   * @ztFilter file_link
    */
   fileLink: FallibleTemplateLink;
   /** Zotero deep link to this annotation. Computed at the app layer. */

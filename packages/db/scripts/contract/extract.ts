@@ -1,7 +1,9 @@
 // Walks the `zt` contract types with ts-morph and records their serialized form as contract IR.
+import { regex } from "arkregex";
 import {
   Node,
   type InterfaceDeclaration,
+  type JSDocTag,
   type Signature,
   type Symbol as TypeSymbol,
   type Type,
@@ -9,6 +11,7 @@ import {
 
 import {
   type ContractAdditionalMembers,
+  type ContractExample,
   type ContractMember,
   type ContractNamedType,
   type ContractObject,
@@ -27,6 +30,12 @@ const TEMPORAL_LIB = "lib.esnext.temporal.d.ts";
  * @see src/lib/to-string.ts
  */
 const DROPPED_MEMBER = "toString";
+
+/** Namespaced doc tag naming the Liquid filter that passes a helper its arguments. */
+const FILTER_TAG = "ztFilter";
+
+/** An `@example` holds exactly one fenced block, so an emitter renders it as code without re-parsing prose. */
+const EXAMPLE_FENCE = regex("^```(?<lang>[a-z]*)\n(?<code>.*?)\n?```$", "s");
 
 /** Held by a named type while its own members are still being walked, so a cycle back to it resolves to a ref. */
 const WALKING: ContractNamedType = { kind: "object", members: [] };
@@ -106,24 +115,49 @@ export class ContractExtractor {
 
   #member(property: TypeSymbol, location: Node): ContractMember {
     const name = property.getName();
+    const declaration = property.getValueDeclaration();
     const type = property.getTypeAtLocation(location);
     return {
       name,
-      description: jsDocOf(property.getValueDeclaration()),
+      description: jsDocOf(declaration),
       // A member that can hold `undefined` disappears from JSON output, which
       // is what an absent property means to a schema.
       optional: property.isOptional() || carriesUndefined(type),
-      type: this.#memberType(name, type, location),
+      type: this.#memberType({
+        name,
+        type,
+        location,
+        filter: filterOf(declaration, name),
+      }),
+      examples: examplesOf(declaration, name),
     };
   }
 
   /** A function-valued member serializes as a helper marker; every other member as its own value. */
-  #memberType(name: string, type: Type, location: Node): ContractType {
+  #memberType({
+    name,
+    type,
+    location,
+    filter,
+  }: {
+    name: string;
+    type: Type;
+    location: Node;
+    /** The member's `@ztFilter`, which only a helper can carry. */
+    filter: string | undefined;
+  }): ContractType {
     const options = type.isUnion() ? type.getUnionTypes() : [type];
     const callable = options.filter(
       (option) => option.getCallSignatures().length > 0,
     );
-    if (callable.length === 0) return this.#walk(type, location);
+    if (callable.length === 0) {
+      if (filter) {
+        throw new Error(
+          `@${FILTER_TAG} on a member that is no contract helper: ${name}`,
+        );
+      }
+      return this.#walk(type, location);
+    }
     if (callable.length > 1) {
       throw new Error(
         `A contract helper has multiple callable options in its union: ${type.getText()}`,
@@ -140,6 +174,7 @@ export class ContractExtractor {
       kind: "helper",
       name,
       signature: renderSignature(signature!),
+      filter,
       value: this.#walk(signature!.getReturnType(), location),
     };
     const values = options
@@ -267,6 +302,49 @@ function carriesUndefined(type: Type): boolean {
 function jsDocOf(declaration: Node | undefined): string | undefined {
   if (!declaration || !Node.isJSDocable(declaration)) return undefined;
   return declaration.getJsDocs().at(-1)?.getCommentText()?.trim() || undefined;
+}
+
+/** Tags of the doc comment {@link jsDocOf} reads, so description and tag data come from one block. */
+function tagsOf(declaration: Node | undefined, name: string): JSDocTag[] {
+  if (!declaration || !Node.isJSDocable(declaration)) return [];
+  const tags = declaration.getJsDocs().at(-1)?.getTags() ?? [];
+  return tags.filter((tag) => tag.getTagName() === name);
+}
+
+/** The Liquid filter a helper member names with `@ztFilter`. */
+function filterOf(
+  declaration: Node | undefined,
+  member: string,
+): string | undefined {
+  const tags = tagsOf(declaration, FILTER_TAG);
+  if (tags.length === 0) return undefined;
+  if (tags.length > 1) {
+    throw new Error(`Member ${member} declares more than one @${FILTER_TAG}`);
+  }
+  const filter = tags[0]!.getCommentText()?.trim();
+  if (!filter) {
+    throw new Error(`@${FILTER_TAG} on ${member} names no filter`);
+  }
+  return filter;
+}
+
+/** The member's `@example` blocks as code samples; `undefined` when it declares none. */
+function examplesOf(
+  declaration: Node | undefined,
+  member: string,
+): ContractExample[] | undefined {
+  const tags = tagsOf(declaration, "example");
+  if (tags.length === 0) return undefined;
+  return tags.map((tag) => {
+    const text = tag.getCommentText()?.trim() ?? "";
+    const match = EXAMPLE_FENCE.exec(text);
+    if (!match) {
+      throw new Error(
+        `@example on ${member} holds no single fenced code block: ${text}`,
+      );
+    }
+    return { lang: match.groups.lang || undefined, code: match.groups.code };
+  });
 }
 
 /** The doc comment on the index signature `type` carries, searched own-declaration first then up the `extends` chain. */

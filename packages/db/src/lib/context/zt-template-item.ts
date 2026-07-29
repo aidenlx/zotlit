@@ -52,6 +52,11 @@ export interface TemplateItemBaseData {
    * When the item was added to Zotero. Second precision — Zotero stores the
    * timestamp as a UTC string with no sub-second component. Renders as the
    * local date (e.g. `2026-06-21`) in `{{ }}` output.
+   *
+   * @example
+   * ```liquid
+   * {{ zt.dateAdded | date: "%Y-%m-%d" }}
+   * ```
    */
   dateAdded: Temporal.Instant;
   /**
@@ -87,7 +92,14 @@ export interface TemplateItemBaseData {
   citationKey: string | null;
   /** Alias for {@link citationKey}; both stay accessible on `zt.*`. */
   citekey: string | null;
-  /** Publication date, parsed from Zotero's multipart `date` field. */
+  /**
+   * Publication date, parsed from Zotero's multipart `date` field.
+   *
+   * @example
+   * ```liquid
+   * {{ zt.date | date: "%Y" }}
+   * ```
+   */
   date: ItemDate | null;
   /** Short title. */
   shortTitle: string | null;
@@ -138,9 +150,19 @@ export interface TemplateItemData extends TemplateItemBaseData {
    * renders on plain access (`{{ zt.noteLink }}`); pipe the item itself
    * through the `note_link` filter to override the alias or subpath. In Eta
    * call it with those arguments. See {@link FallibleTemplateLink}.
+   *
+   * @ztFilter note_link
    */
   noteLink: FallibleTemplateLink;
-  /** Collections the item belongs to, sorted by name; trashed collections excluded. */
+  /**
+   * Collections the item belongs to, sorted by name; trashed collections
+   * excluded.
+   *
+   * @example
+   * ```liquid
+   * {{ zt.collections | collection_paths | join: ", " }}
+   * ```
+   */
   collections: readonly TemplateCollection[];
 }
 
@@ -159,9 +181,21 @@ export interface TemplateFilenameItemData extends TemplateItemBaseData {
    * {@link TemplateItemData.notePath}'s `string | null` contract.
    */
   notePath: string | null;
-  /** Always returns `""`; matches {@link TemplateItemData.noteLink}'s signature. */
+  /**
+   * Always returns `""`; matches {@link TemplateItemData.noteLink}'s signature.
+   *
+   * @ztFilter note_link
+   */
   noteLink: FallibleTemplateLink;
-  /** Collections the item belongs to, sorted by name; trashed collections excluded. */
+  /**
+   * Collections the item belongs to, sorted by name; trashed collections
+   * excluded.
+   *
+   * @example
+   * ```liquid
+   * {{ zt.collections | collection_paths | join: ", " }}
+   * ```
+   */
   collections: readonly TemplateCollection[];
 }
 
@@ -353,6 +387,10 @@ export interface TemplateParentItemData
    * `undefined`.
    */
   notePath: string | null;
-  /** Always returns `null`, for the same reason as {@link notePath}. */
+  /**
+   * Always returns `null`, for the same reason as {@link notePath}.
+   *
+   * @ztFilter note_link
+   */
   noteLink: FallibleTemplateLink;
 }

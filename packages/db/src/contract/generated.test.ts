@@ -144,6 +144,81 @@ describe("serialized forms", () => {
   });
 });
 
+describe("docs data", () => {
+  const nodes = [...walkIR(ir)];
+
+  it("names the Liquid filter of every helper", () => {
+    const helpers = nodes.filter((node) => node.kind === "helper");
+    expect(helpers.length).toBeGreaterThan(0);
+    for (const helper of helpers) {
+      expect(helper.filter, `helper ${String(helper.name)}`).toBeTypeOf(
+        "string",
+      );
+    }
+    expect([
+      ...new Set(
+        helpers.map(
+          (helper) => `${String(helper.name)}/${String(helper.filter)}`,
+        ),
+      ),
+    ]).toEqual(
+      expect.arrayContaining([
+        "noteLink/note_link",
+        "fileLink/file_link",
+        "imgLink/img_link",
+      ]),
+    );
+  });
+
+  it("carries every @example block as a structured example", () => {
+    const documented = nodes.filter((node) => node.examples !== undefined);
+    expect(documented.length).toBeGreaterThan(0);
+    for (const node of documented) {
+      expect(node.examples, `member ${String(node.name)}`).toEqual(
+        expect.arrayContaining([
+          { lang: expect.any(String), code: expect.any(String) },
+        ]),
+      );
+    }
+    expect(
+      documented.find((node) => node.name === "dateAdded")?.examples,
+    ).toEqual([
+      { lang: "liquid", code: '{{ zt.dateAdded | date: "%Y-%m-%d" }}' },
+    ]);
+  });
+
+  it("describes every named type", () => {
+    const undocumented = Object.entries(ir.types)
+      .filter(([, type]) => !(type as { description?: string }).description)
+      .map(([name]) => name);
+    expect(undocumented).toEqual([]);
+  });
+
+  it("keeps doc-tag text out of descriptions", () => {
+    for (const node of nodes) {
+      if (typeof node.description !== "string") continue;
+      expect(node.description).not.toMatch(/@example|@ztFilter/);
+    }
+  });
+
+  it("keeps docs-only fields out of the JSON Schemas", () => {
+    for (const schema of Object.values(schemas)) {
+      expect(JSON.stringify(schema)).not.toMatch(/"(examples|filter)":/);
+    }
+  });
+});
+
+/** Every object node of the IR, so one assertion can hold across the whole tree. */
+function* walkIR(value: unknown): Generator<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    for (const item of value) yield* walkIR(item);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  yield value as Record<string, unknown>;
+  for (const child of Object.values(value)) yield* walkIR(child);
+}
+
 describe("annotation root schema", () => {
   const root = annotationSchema.$defs.AnnotationTemplateContext;
 
