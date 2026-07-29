@@ -27,6 +27,8 @@ export type FindManyOptions<TName extends keyof typeof relations> =
  */
 export const CHILD_ITEM_TYPES = ["attachment", "note", "annotation"] as const;
 
+export type ChildItemType = (typeof CHILD_ITEM_TYPES)[number];
+
 /**
  * Swap the result-kind generic of a Drizzle builder so a query authored
  * against the sync (Node) client can be re-exposed as the async (Web)

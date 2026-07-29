@@ -15,6 +15,7 @@ import {
 import {
   CHILD_ITEM_TYPES,
   defineQuery,
+  type ChildItemType,
   type FindManyOptions,
   type QueryRow,
 } from "./_shared";
@@ -56,6 +57,17 @@ export type Item = BaseItem & {
   /** `groups.groupID` for a group library, `null` for the user library. */
   groupID: number | null;
 };
+
+export type ChildItemFields = Extract<
+  ItemFields,
+  { readonly itemType: ChildItemType }
+>;
+
+export function isChildItemFields(
+  fields: ItemFields,
+): fields is ChildItemFields {
+  return CHILD_ITEM_TYPES.some((itemType) => itemType === fields.itemType);
+}
 
 const itemFindOptions = {
   columns: {

@@ -53,18 +53,6 @@
   content: ".";
 }
 
-.zt-citations .author-year > :not(:last-child)::after {
-  content: " ";
-}
-
-.zt-citations .date::before {
-  content: "(";
-}
-
-.zt-citations .date::after {
-  content: ")";
-}
-
 .zt-citations .publication {
   font-style: italic;
 }

@@ -14,6 +14,7 @@ import {
   getCurrentUsername,
   getItemsByKey,
   getLibraries,
+  isChildItemFields,
   type Item,
   type Library,
   type NoteTemplateContext,
@@ -22,10 +23,10 @@ import {
 } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
 import { type DatabaseService } from "@/services/database/service";
-import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { type ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
@@ -269,6 +270,7 @@ export class TemplateDataExplorerView extends ItemView {
   async #buildTree(): Promise<void> {
     const item = this.#item;
     if (!item) return;
+    if (isChildItemFields(item.fields)) return;
 
     const settings = await this.#deps.settings.loaded;
     const citationKey =
@@ -310,8 +312,9 @@ export class TemplateDataExplorerView extends ItemView {
       this.#clearItem();
       return;
     }
+    const summary = itemSummary(item, item.fields);
     this.#store.setState({
-      itemLabel: this.#formatLabel(item),
+      itemLabel: summary.formatted,
       ...this.#render(),
     });
   }
@@ -477,12 +480,5 @@ export class TemplateDataExplorerView extends ItemView {
       });
       return null;
     }
-  }
-
-  #formatLabel(item: Item): string {
-    const title =
-      ("title" in item.fields ? item.fields.title : null) || item.key;
-    const short = creatorSummary(item);
-    return short ? `${short}: ${title}` : title;
   }
 }

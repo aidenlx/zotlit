@@ -22,13 +22,13 @@ import {
 } from "@zotlit/db/path";
 
 import { inlineCitation } from "@/lib/inline-citation";
+import { creatorSummary } from "@/lib/item-summary";
 import { fileUrlLink } from "@/lib/markdown-link";
 import {
   commentToMarkdown,
   createCommentTurndown,
 } from "@/lib/turndown/comment";
 import { type AttachmentImport } from "@/services/attachment-import/service";
-import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 

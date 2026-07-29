@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { type Creator } from "@zotlit/db";
+import {
+  isChildItemFields,
+  type Creator,
+  type ItemDisplayInfo,
+} from "@zotlit/db";
 import { makeItem } from "@zotlit/item-lookup/fixtures";
 
-import { creatorSummary } from "./creator-summary";
+import { itemSummary, creatorSummary } from "./item-summary";
 
 function creator(
   firstName: string | null,
@@ -16,6 +20,84 @@ function creator(
 function organization(lastName: string, creatorType = "author"): Creator {
   return { firstName: null, lastName, creatorType, fieldMode: 1 };
 }
+
+describe("itemSummary", () => {
+  it("formats the primary author, year, and title", () => {
+    const item = makeItem({
+      key: "A",
+      title: "Reported book",
+      date: "2007",
+      creators: [
+        creator(null, "Bianca"),
+        creator(null, "Translator One", "translator"),
+        creator(null, "Translator Two", "translator"),
+      ],
+      primaryCreatorType: "author",
+    });
+
+    if (isChildItemFields(item.fields)) throw new Error("Expected Item fields");
+    expect(itemSummary(item, item.fields)).toEqual({
+      title: "Reported book",
+      subtitle: "Bianca (2007)",
+      formatted: "Bianca (2007): Reported book",
+    });
+  });
+
+  it("uses the citation key when the item has no title", () => {
+    const item = makeItem({
+      key: "A",
+      title: null,
+      citationKey: "bianca2007",
+      creators: [creator(null, "Bianca")],
+      primaryCreatorType: "author",
+    });
+
+    if (isChildItemFields(item.fields)) throw new Error("Expected Item fields");
+    expect(itemSummary(item, item.fields)).toEqual({
+      title: "bianca2007",
+      subtitle: "Bianca",
+      formatted: "Bianca: bianca2007",
+    });
+  });
+
+  it("formats lightweight display info with creator roles", () => {
+    const item: ItemDisplayInfo = {
+      key: "A",
+      fields: {
+        title: "Reported book",
+        citationKey: null,
+        date: "2007",
+      },
+      creators: [
+        creator(null, "Bianca"),
+        creator(null, "Translator One", "translator"),
+        creator(null, "Translator Two", "translator"),
+      ],
+      primaryCreatorType: "author",
+    };
+
+    expect(itemSummary(item, item.fields)).toEqual({
+      title: "Reported book",
+      subtitle: "Bianca (2007)",
+      formatted: "Bianca (2007): Reported book",
+    });
+  });
+
+  it("uses the title as formatted text when the subtitle is empty", () => {
+    const item: ItemDisplayInfo = {
+      key: "A",
+      fields: {
+        title: "Reported book",
+        citationKey: null,
+        date: null,
+      },
+      creators: [],
+      primaryCreatorType: "author",
+    };
+
+    expect(itemSummary(item, item.fields).formatted).toBe("Reported book");
+  });
+});
 
 describe("creatorSummary", () => {
   it("returns '' when no creators are available", () => {

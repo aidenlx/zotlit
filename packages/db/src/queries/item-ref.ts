@@ -1,6 +1,4 @@
 import { type NodeDatabaseClient } from "@/client/node";
-import { type CreatorFieldMode } from "@/lib/zt-creator";
-import { parseItemDate } from "@/lib/zt-date";
 import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
@@ -109,29 +107,42 @@ export function getItemDisplayRefByID(
   };
 }
 
-/** Lightweight display fields for the annotation view's item identity label. */
-export interface ItemDisplayInfo {
-  title: string | null;
-  creators: {
-    firstName: string | null;
-    lastName: string | null;
-    fieldMode: CreatorFieldMode;
-  }[];
-  year: number | null;
-}
+export type ItemDisplayInfo = Pick<
+  Item,
+  "key" | "creators" | "primaryCreatorType"
+> & {
+  fields: {
+    title: string | null;
+    citationKey: string | null;
+    date: string | null;
+  };
+};
 
 const itemDisplayInfoQuery = defineQuery<{ itemID: number }>()(
   (db, { placeholder }) =>
     db.query.items.findMany({
-      columns: {},
+      columns: { key: true },
       where: { itemID: placeholder("itemID"), deletedItem: false },
       with: {
+        itemType: {
+          columns: {},
+          with: {
+            itemTypeCreatorTypes: {
+              columns: {},
+              where: { primaryField: { eq: 1 } },
+              limit: 1,
+              with: {
+                creatorType: { columns: { creatorType: true } },
+              },
+            },
+          },
+        },
         itemData: {
           columns: {},
           with: {
             fieldsCombined: {
               columns: { fieldName: true },
-              where: { fieldName: { in: ["title", "date"] } },
+              where: { fieldName: { in: ["title", "citationKey", "date"] } },
             },
             itemDataValue: { columns: { value: true } },
           },
@@ -147,6 +158,7 @@ const itemDisplayInfoQuery = defineQuery<{ itemID: number }>()(
                 fieldMode: true,
               },
             },
+            creatorType: { columns: { creatorType: true } },
           },
         },
       },
@@ -154,10 +166,6 @@ const itemDisplayInfoQuery = defineQuery<{ itemID: number }>()(
     }),
 );
 
-/**
- * Fetch title, creators, and year for a single item by global item id.
- * Used by the annotation view to build the item identity label.
- */
 export function getItemDisplayInfoByID(
   db: NodeDatabaseClient,
   itemID: number,
@@ -166,25 +174,28 @@ export function getItemDisplayInfoByID(
   if (!row) return null;
 
   let title: string | null = null;
-  let dateRaw: string | null = null;
-  for (const d of row.itemData) {
-    if (!d.fieldsCombined) continue;
-    if (d.fieldsCombined.fieldName === "title") {
-      title = d.itemDataValue?.value ?? null;
-    } else if (d.fieldsCombined.fieldName === "date") {
-      dateRaw = d.itemDataValue?.value ?? null;
+  let citationKey: string | null = null;
+  let date: string | null = null;
+  for (const data of row.itemData) {
+    if (data.fieldsCombined?.fieldName === "title") {
+      title = data.itemDataValue?.value ?? null;
+    } else if (data.fieldsCombined?.fieldName === "citationKey") {
+      citationKey = data.itemDataValue?.value ?? null;
+    } else if (data.fieldsCombined?.fieldName === "date") {
+      date = data.itemDataValue?.value ?? null;
     }
   }
 
-  const creators = row.itemCreators.map((ic) => ({
-    firstName: ic.creator?.firstName ?? null,
-    lastName: ic.creator?.lastName ?? null,
-    fieldMode: (ic.creator?.fieldMode ?? 0) as CreatorFieldMode,
-  }));
-
   return {
-    title,
-    creators,
-    year: parseItemDate(dateRaw)?.year ?? null,
+    key: row.key,
+    fields: { title, citationKey, date },
+    creators: row.itemCreators.map((itemCreator) => ({
+      firstName: itemCreator.creator?.firstName ?? null,
+      lastName: itemCreator.creator?.lastName ?? null,
+      creatorType: itemCreator.creatorType?.creatorType ?? "",
+      fieldMode: itemCreator.creator?.fieldMode ?? 0,
+    })),
+    primaryCreatorType:
+      row.itemType.itemTypeCreatorTypes[0]?.creatorType?.creatorType ?? null,
   };
 }

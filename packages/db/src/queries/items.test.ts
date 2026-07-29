@@ -8,7 +8,12 @@ import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseItemLanguage } from "@/lib/zt-lang";
 import { createFixtureSchema } from "@/test-utils";
 
-import { getItemsByID, getItemsByKey, getItemsByLibrary } from "./items";
+import {
+  getItemsByID,
+  getItemsByKey,
+  getItemsByLibrary,
+  isChildItemFields,
+} from "./items";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -21,6 +26,19 @@ beforeEach(() => {
 
 afterEach(() => {
   sqlite.close();
+});
+
+describe("isChildItemFields", () => {
+  it.each(["attachment", "note", "annotation"] as const)(
+    "identifies %s fields as child item fields",
+    (itemType) => {
+      expect(isChildItemFields({ itemType })).toBe(true);
+    },
+  );
+
+  it("rejects regular item fields", () => {
+    expect(isChildItemFields({ itemType: "book" })).toBe(false);
+  });
 });
 
 describe("getItemsByLibrary", () => {

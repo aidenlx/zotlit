@@ -100,35 +100,68 @@ describe("getItemDisplayRefByID", () => {
 });
 
 describe("getItemDisplayInfoByID", () => {
-  it("loads title and year from itemData, ignoring other stored fields", () => {
-    const result = getItemDisplayInfoByID(db, 1);
-
-    // USER1 also stores citationKey, publicationTitle, volume, issue, pages,
-    // language, and a custom mood field — the display query must pick only
-    // title and date.
-    expect(result).toEqual({
-      title: "Alpha kernels",
-      year: 2024,
+  it("returns creator roles and the primary creator type", () => {
+    expect(getItemDisplayInfoByID(db, 1)).toEqual({
+      key: "USER1",
+      fields: {
+        title: "Alpha kernels",
+        citationKey: "doe2024alpha",
+        date: "2024-02-03 February 3, 2024",
+      },
+      primaryCreatorType: "author",
       creators: [
-        { firstName: "Jane", lastName: "Doe", fieldMode: 0 },
-        { firstName: "Richard", lastName: "Roe", fieldMode: 0 },
+        {
+          firstName: "Jane",
+          lastName: "Doe",
+          fieldMode: 0,
+          creatorType: "author",
+        },
+        {
+          firstName: "Richard",
+          lastName: "Roe",
+          fieldMode: 0,
+          creatorType: "translator",
+        },
+        {
+          firstName: "Alice",
+          lastName: "Poe",
+          fieldMode: 0,
+          creatorType: "translator",
+        },
       ],
     });
   });
 
-  it("returns null title and year when the item has no title or date rows", () => {
+  it("returns null fields for an item without title, date, or creators", () => {
     expect(getItemDisplayInfoByID(db, 6)).toEqual({
-      title: null,
-      year: null,
+      key: "USER2",
+      fields: {
+        title: null,
+        citationKey: null,
+        date: null,
+      },
+      primaryCreatorType: "author",
       creators: [],
     });
   });
 
-  it("extracts year from a year-only Zotero date string", () => {
+  it("returns a raw year-only date and organization creator", () => {
     expect(getItemDisplayInfoByID(db, 7)).toEqual({
-      title: "Group paper",
-      year: 2025,
-      creators: [{ firstName: null, lastName: "Research Group", fieldMode: 1 }],
+      key: "GRP1",
+      fields: {
+        title: "Group paper",
+        citationKey: "group2025paper",
+        date: "2025-00-00 2025",
+      },
+      primaryCreatorType: "author",
+      creators: [
+        {
+          firstName: null,
+          lastName: "Research Group",
+          fieldMode: 1,
+          creatorType: "author",
+        },
+      ],
     });
   });
 
@@ -144,10 +177,9 @@ describe("getItemDisplayInfoByID", () => {
     const user1 = getItemDisplayInfoByID(db, 1);
     const user2 = getItemDisplayInfoByID(db, 6);
 
-    expect(user1?.title).toBe("Alpha kernels");
-    expect(user2?.title).toBeNull();
-
-    expect(getItemDisplayInfoByID(db, 1)?.title).toBe("Alpha kernels");
+    expect(user1?.fields.title).toBe("Alpha kernels");
+    expect(user2?.fields.title).toBeNull();
+    expect(getItemDisplayInfoByID(db, 1)?.fields.title).toBe("Alpha kernels");
   });
 });
 
@@ -233,14 +265,19 @@ function seedFixture(sqlite: DatabaseSync): void {
         (7, 17, 115);
 
     insert into creatorTypes (creatorTypeID, creatorType)
-      values (1, 'author'), (2, 'editor');
+      values (1, 'author'), (2, 'translator');
     insert into creators (creatorID, firstName, lastName, fieldMode)
       values
         (1, 'Jane', 'Doe', 0),
         (2, 'Richard', 'Roe', 0),
-        (3, null, 'Research Group', 1);
+        (3, null, 'Research Group', 1),
+        (4, 'Alice', 'Poe', 0);
     insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex)
-      values (1, 2, 2, 1), (1, 1, 1, 0), (7, 3, 1, 0);
+      values
+        (1, 2, 2, 1),
+        (1, 1, 1, 0),
+        (1, 4, 2, 2),
+        (7, 3, 1, 0);
     insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField)
       values
         (1, 1, 1), (1, 2, 0),

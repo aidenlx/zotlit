@@ -10,7 +10,9 @@ export {
   getItemsByLibrary,
   getItemsByKey,
   getItemsByLibraryAsync,
+  isChildItemFields,
   type BaseItem,
+  type ChildItemFields,
   type Creator,
   type Item,
 } from "./queries/items";
@@ -19,6 +21,7 @@ export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,
   getItemRefByID,
+  type ItemDisplayInfo,
   type ItemRef,
 } from "./queries/item-ref";
 export {

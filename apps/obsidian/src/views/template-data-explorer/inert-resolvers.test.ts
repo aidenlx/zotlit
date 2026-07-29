@@ -19,7 +19,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { Temporal } from "@zotlit/shared/temporal";
 import { type ItemFields } from "@zotlit/zotero-types";
 
-import { creatorSummary } from "@/services/item-lookup/creator-summary";
+import { creatorSummary } from "@/lib/item-summary";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 
 import { inertPlaceholderReason } from "./display-tree";

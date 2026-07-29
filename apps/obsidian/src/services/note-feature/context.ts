@@ -14,6 +14,7 @@ import { hasSuffixMarker } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
 import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
+import { creatorSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
 import {
@@ -21,7 +22,6 @@ import {
   type AttachmentImportService,
 } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
-import { creatorSummary } from "@/services/item-lookup/creator-summary";
 import {
   type NoteImport,
   type NoteImporter,

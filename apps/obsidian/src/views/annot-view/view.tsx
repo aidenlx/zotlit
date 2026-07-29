@@ -13,15 +13,16 @@ import {
   getItemRefByID,
   getItemsByKey,
   getLibraries,
+  isChildItemFields,
   type AnnotViewItem,
   type Item,
   type ItemRef,
   parseIndexedKey,
-  parseItemDate,
   type Library,
 } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import {
   type AttachmentImport,
@@ -65,37 +66,6 @@ const logger = getLogger(["views", "annot-view"]);
 
 const STORAGE_KEY_PREFIX = "zotlit-annot-atch-";
 const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
-
-function formatDisplayLabel(
-  info: {
-    title?: string | null;
-    creators: { lastName: string | null }[];
-    year: number | null;
-  },
-  fallbackKey: string,
-): string {
-  const title = info.title || fallbackKey;
-  const first = info.creators[0]?.lastName;
-  let creatorText = "";
-  if (first) {
-    const second = info.creators[1]?.lastName ?? "";
-    const count =
-      info.creators.length === 1
-        ? 1
-        : info.creators.length === 2 && second
-          ? 2
-          : 3;
-    creatorText = m.creator_summary({ count, first, second });
-  }
-  const lead = creatorText
-    ? info.year !== null
-      ? `${creatorText} (${info.year})`
-      : creatorText
-    : info.year !== null
-      ? `(${info.year})`
-      : null;
-  return lead ? `${lead} — ${title}` : title;
-}
 
 /**
  * Every member is a structural `Pick` of the full service sized to what the view
@@ -351,6 +321,9 @@ export class AnnotationView extends ItemView {
   }
 
   #setLinkedItem(item: Item): void {
+    if (isChildItemFields(item.fields)) return;
+
+    const summary = itemSummary(item, item.fields);
     this.#store.setState({
       followMode: "linked",
       linked: {
@@ -361,16 +334,7 @@ export class AnnotationView extends ItemView {
           groupID: item.groupID,
           indexedKey: item.indexedKey,
         },
-        displayLabel: formatDisplayLabel(
-          {
-            title: "title" in item.fields ? item.fields.title : null,
-            creators: item.creators,
-            year:
-              parseItemDate("date" in item.fields ? item.fields.date : null)
-                ?.year ?? null,
-          },
-          item.key,
-        ),
+        displayLabel: summary.formatted,
       },
     });
   }
@@ -381,7 +345,7 @@ export class AnnotationView extends ItemView {
     this.#reload();
   }
 
-  #resolveDisplayLabel(target: LoadTarget): string | null {
+  #resolveDisplayLabel(): string | null {
     switch (this.#followMode) {
       case "note":
         return null;
@@ -394,7 +358,8 @@ export class AnnotationView extends ItemView {
             readerTarget.itemID,
           );
           if (!info) return null;
-          return formatDisplayLabel(info, target.key);
+          const summary = itemSummary(info, info.fields);
+          return summary.formatted;
         } catch {
           return null;
         }
@@ -495,7 +460,7 @@ export class AnnotationView extends ItemView {
       ...(itemChanged ? INITIAL_FILTER_STATE : null),
       groupID,
       itemKey: indexedKey,
-      itemDisplayLabel: this.#resolveDisplayLabel(target),
+      itemDisplayLabel: this.#resolveDisplayLabel(),
     });
 
     const activeFile = this.#deps.app.workspace.getActiveFile();

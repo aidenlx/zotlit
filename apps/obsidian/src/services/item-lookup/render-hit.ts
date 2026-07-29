@@ -1,11 +1,11 @@
 import { renderMatches, type SearchMatches } from "obsidian";
 
-import { parseItemDate, type Item } from "@zotlit/db";
+import { isChildItemFields } from "@zotlit/db";
 import { type JournalArticleFields } from "@zotlit/zotero-types";
 
+import { itemSummary } from "@/lib/item-summary";
 import { type SettingsService } from "@/services/settings/service";
 
-import { creatorSummary } from "./creator-summary";
 import { type SearchHit } from "./service";
 
 /** CSS owns this value; JS reads it so the truncation window matches the
@@ -22,44 +22,38 @@ export function renderSuggestion(
   el: HTMLElement,
 ): void {
   el.empty();
+  if (isChildItemFields(hit.item.fields)) return;
+
   el.addClass("zt-citations");
 
   const contentEl = el.createDiv("suggestion-content");
   const titleEl = contentEl.createDiv("suggestion-title");
-  const title = "title" in hit.item.fields ? hit.item.fields.title : null;
   const citationKey =
     "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
-  const displayTitle = title ?? citationKey ?? hit.item.key;
-  renderTruncatedHighlight(titleEl.createSpan(), displayTitle, hit.matches);
+  const summary = itemSummary(hit.item, hit.item.fields);
+  renderTruncatedHighlight(titleEl.createSpan(), summary.title, hit.matches);
 
   if (settings.current?.["citation.show-citekey-in-suggester"] && citationKey) {
     contentEl.createDiv({ cls: "citekey", text: citationKey });
   }
 
   if (hit.item.fields.itemType === "journalArticle") {
-    appendJournalMeta(contentEl, hit.item, hit.item.fields);
+    appendJournalMeta(contentEl, summary.subtitle, hit.item.fields);
   }
 }
 
 function appendJournalMeta(
   contentEl: HTMLElement,
-  item: Item,
+  subtitle: string,
   fields: JournalArticleFields,
 ): void {
-  const creators = creatorSummary(item);
-  const year = parseItemDate(fields.date)?.year ?? "";
   const { publicationTitle, volume, issue, pages } = fields;
 
-  const hasAuthorYear = !!creators || !!year;
-  if (!hasAuthorYear && !publicationTitle && !volume && !issue && !pages) {
-    return;
-  }
+  if (!subtitle && !publicationTitle && !volume && !issue && !pages) return;
 
   const metaEl = contentEl.createDiv("meta");
-  if (hasAuthorYear) {
-    const ay = metaEl.createSpan("author-year");
-    if (creators) ay.createSpan({ cls: "creators", text: creators });
-    if (year) ay.createSpan({ cls: "date", text: year.toString() });
+  if (subtitle) {
+    metaEl.createSpan({ cls: "author-year", text: subtitle });
   }
   if (publicationTitle) {
     metaEl.createSpan({ cls: "publication", text: publicationTitle });
