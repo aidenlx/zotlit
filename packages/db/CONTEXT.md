@@ -43,7 +43,7 @@ Zotero's 8-character alphanumeric identifier for any item, unique within a Libra
 _Avoid_: id, itemID (the integer DB primary key — not exposed to users)
 
 **Indexed Key**:
-A disambiguated Key string used as the canonical cross-library identity: bare `key` for the personal library, `key + "g" + groupID` for group libraries. Stored in literature-note frontmatter as `zotero-key`.
+A disambiguated Key string used as the canonical cross-library identity: bare `key` for the personal library, `key + "g" + groupID` for group libraries. Identifies any Zotero object — Item, Attachment, Annotation, or Child Note — since all four share one keyed table. Stored in literature-note frontmatter as `zotero-key`.
 _Avoid_: item key, scoped key
 
 **Citation Key**:

@@ -42,7 +42,7 @@ The `filename` Template, evaluated to determine a new Literature Note's filename
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
 **Template Workbench** _(Obsidian)_:
-The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, and renders templates entirely in memory. Inspection and rendering are side-effect-free and reuse the Template Data Explorer's inert resolver behavior. Item and annotation selection uses Indexed Keys.
+The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, and renders templates entirely in memory. Inspection and rendering are side-effect-free and reuse the Template Data Explorer's inert resolver behavior. Selection takes one Indexed Key naming any Zotero object, with the data root as the lens on it.
 _Avoid_: agent template workbench (names the audience, not the thing), template CLI (names the mechanism), template preview (implies rendered visual output)
 
 **Template Data Explorer** _(Obsidian)_:
