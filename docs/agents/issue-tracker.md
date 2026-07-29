@@ -15,6 +15,11 @@ Issues, specifications, and tickets for this repo live in GitHub Issues at `aide
 
 Run commands inside this clone so `gh` infers the repository from the Git remote.
 
+## Specs and tickets
+
+- Label a spec (PRD) issue `spec`. Label each tracer-bullet implementation issue carved from it `ticket`.
+- A ticket is a sub-issue of its spec and declares blocking edges to the tickets that gate it, using the relationship commands above.
+
 ## Pull requests as a triage surface
 
 External pull requests are not a request or triage surface. Triage GitHub issues only.
