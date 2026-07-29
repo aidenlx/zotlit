@@ -10,6 +10,10 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Project, ts } from "ts-morph";
 
+import { FIELD_ALIASES } from "@zotlit/zotero-types";
+
+// oxlint-disable-next-line no-restricted-imports
+import zoteroSchema from "../../zotero-types/zotero-schema/schema.json" with { type: "json" };
 import {
   CONTRACT_VERSION,
   templateSlotsForRoot,
@@ -38,8 +42,25 @@ const ROOT_DECLARATIONS = {
   },
 } as const satisfies Record<ContractRoot, { module: string; type: string }>;
 
-/** Roots emitted so far. The note and annotation roots follow. */
-const EMITTED_ROOTS = ["filename"] as const satisfies readonly ContractRoot[];
+const EMITTED_ROOTS = [
+  "note",
+  "annotation",
+  "filename",
+] as const satisfies readonly ContractRoot[];
+
+interface ZoteroSchema {
+  readonly itemTypes: readonly {
+    readonly itemType: string;
+    readonly fields: readonly { readonly field: string }[];
+  }[];
+}
+
+const CHILD_ITEM_TYPES = new Set(["annotation", "attachment", "note"]);
+const ZT_FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  abstractNote: ["abstract"],
+  publicationTitle: ["containerTitle"],
+  citationKey: ["citekey"],
+};
 
 const project = new Project({ tsConfigFilePath: "tsconfig.lib.json" });
 const extractor = new ContractExtractor(resolve("src"));
@@ -60,6 +81,7 @@ const ir: ContractIR = {
   $comment: BANNER,
   contractVersion: CONTRACT_VERSION,
   roots,
+  itemTypes: extractItemTypes(zoteroSchema),
   types: extractor.types,
 };
 
@@ -80,4 +102,23 @@ console.log(
 
 function writeJson(name: string, value: unknown): Promise<void> {
   return writeFile(join(OUT_DIR, name), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function extractItemTypes(
+  schema: ZoteroSchema,
+): Record<string, readonly string[]> {
+  return Object.fromEntries(
+    schema.itemTypes
+      .filter(({ itemType }) => !CHILD_ITEM_TYPES.has(itemType))
+      .map(({ itemType, fields }) => {
+        const names = new Set<string>();
+        for (const { field } of fields) {
+          const canonical = FIELD_ALIASES[field] ?? field;
+          names.add(canonical);
+          for (const alias of ZT_FIELD_ALIASES[canonical] ?? [])
+            names.add(alias);
+        }
+        return [itemType, [...names].sort()] as const;
+      }),
+  );
 }

@@ -1,41 +1,101 @@
 import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, it } from "vitest";
 
+import annotationSchema from "./generated/annotation.schema.json";
 import filenameSchema from "./generated/filename.schema.json";
 import ir from "./generated/ir.json";
+import noteSchema from "./generated/note.schema.json";
 import { CONTRACT_VERSION, templateSlotsForRoot } from "./roots";
 
-describe("contract IR", () => {
-  it("stamps the contract version and the extracted roots", () => {
+const schemas = {
+  note: noteSchema,
+  annotation: annotationSchema,
+  filename: filenameSchema,
+};
+
+describe("contract artifacts", () => {
+  it("extracts every root and stamps the shared contract version", () => {
     expect(ir.contractVersion).toBe(CONTRACT_VERSION);
-    expect(ir.roots.filename).toEqual({
-      type: "TemplateFilenameItemData",
-      templates: templateSlotsForRoot("filename"),
+    expect(ir.roots).toEqual({
+      note: {
+        type: "NoteTemplateContext",
+        templates: templateSlotsForRoot("note"),
+      },
+      annotation: {
+        type: "AnnotationTemplateContext",
+        templates: templateSlotsForRoot("annotation"),
+      },
+      filename: {
+        type: "TemplateFilenameItemData",
+        templates: templateSlotsForRoot("filename"),
+      },
     });
+    for (const [root, schema] of Object.entries(schemas)) {
+      expect(schema.$id).toBe(
+        `urn:zotlit:template-contract:v${CONTRACT_VERSION}:${root}`,
+      );
+    }
   });
 
-  it("carries a generated-file banner", () => {
+  it("compiles every root as a draft 2020-12 schema", () => {
+    const ajv = new Ajv2020({ strict: true });
+    for (const schema of Object.values(schemas)) {
+      expect(() => ajv.compile(schema)).not.toThrow();
+    }
+  });
+
+  it("carries generated-file banners and resolved JSDoc links", () => {
     expect(ir.$comment).toMatch(/DO NOT EDIT/);
+    for (const schema of Object.values(schemas)) {
+      expect(JSON.stringify(schema)).not.toContain("{@link");
+      expect(schema.$comment).toMatch(/DO NOT EDIT/);
+    }
   });
 });
 
-describe("filename root schema", () => {
-  const root = filenameSchema.$defs.TemplateFilenameItemData;
-  const properties = root.properties;
+describe("per-item-type fields", () => {
+  const branches = filenameSchema.$defs.TemplateFilenameItemData.oneOf;
+  const branch = (itemType: string) =>
+    branches.find(
+      (candidate) => candidate.properties.itemType.const === itemType,
+    )!;
 
-  it("compiles as a draft 2020-12 schema", () => {
-    const ajv = new Ajv2020({ strict: true });
-    expect(() => ajv.compile(filenameSchema)).not.toThrow();
+  it("emits one closed branch per regular upstream Zotero item type", () => {
+    expect(branches).toHaveLength(37);
+    expect(
+      filenameSchema.$defs.TemplateFilenameItemData.unevaluatedProperties,
+    ).toBe(false);
+    expect(
+      branches.map(({ properties }) => properties.itemType.const),
+    ).not.toContain("annotation");
   });
 
-  it("stamps the contract version in its identifier", () => {
-    expect(filenameSchema.$id).toBe(
-      `urn:zotlit:template-contract:v${CONTRACT_VERSION}:filename`,
+  it("discriminates branches on itemType and keeps fields type-specific", () => {
+    expect(branch("journalArticle").properties.itemType).toMatchObject({
+      const: "journalArticle",
+    });
+    expect(branch("journalArticle").properties).toHaveProperty(
+      "journalAbbreviation",
+    );
+    expect(branch("bookSection").properties).not.toHaveProperty(
+      "journalAbbreviation",
     );
   });
 
-  it("represents a function-valued member in its serialized marker form", () => {
-    expect(properties.noteLink).toMatchObject({
+  it("applies Zotero base-field aliases and zt renames", () => {
+    expect(ir.itemTypes.blogPost).not.toContain("blogTitle");
+    expect(ir.itemTypes.blogPost).not.toContain("websiteType");
+    expect(ir.itemTypes.blogPost).toEqual(
+      expect.arrayContaining(["publicationTitle", "containerTitle", "type"]),
+    );
+  });
+});
+
+describe("serialized forms", () => {
+  const properties = filenameSchema.$defs.TemplateFilenameItemData.properties;
+
+  it("represents evaluated and inert helpers", () => {
+    expect(properties.noteLink.oneOf[0]).toMatchObject({
       type: "object",
       properties: {
         $helper: { const: "noteLink" },
@@ -47,24 +107,49 @@ describe("filename root schema", () => {
       required: ["$helper", "signature", "value"],
       additionalProperties: false,
     });
+    expect(properties.noteLink.oneOf[1]).toEqual({
+      type: "object",
+      properties: { $inert: { type: "string" } },
+      required: ["$inert"],
+      additionalProperties: false,
+    });
   });
 
-  it("serializes a Temporal value as its string form", () => {
+  it("serializes Temporal values as strings and shared cycles as ref paths", () => {
     expect(properties.dateAdded).toMatchObject({ type: "string" });
-  });
-
-  it("keeps the item-field index signature open", () => {
-    expect(root.additionalProperties).not.toBe(false);
+    expect(
+      noteSchema.$defs.TemplateAnnotation.properties.parentItem.anyOf[1],
+    ).toMatchObject({
+      properties: { $ref: { type: "string" } },
+      required: ["$ref"],
+      additionalProperties: false,
+    });
   });
 
   it("drops the non-enumerable toString from every shape", () => {
     expect(JSON.stringify(filenameSchema.$defs)).not.toContain('"toString"');
   });
+});
 
-  it("resolves JSDoc link tags into plain prose", () => {
-    expect(JSON.stringify(filenameSchema)).not.toContain("{@link");
-    expect(properties.indexedKey.description).toBe(
-      "`key` for the personal library, `KEYgGROUPID` for a group library.",
-    );
+describe("annotation root schema", () => {
+  const root = annotationSchema.$defs.AnnotationTemplateContext;
+
+  it("includes the typed citation field", () => {
+    expect(root.properties.citation).toMatchObject({
+      type: ["string", "null"],
+    });
+    expect(root.required).toContain("citation");
+  });
+
+  it("literalizes every resolved annotation type", () => {
+    expect(annotationSchema.$defs.ResolvedAnnotationTypeName.enum).toEqual([
+      "unknown",
+      "text",
+      "highlight",
+      "note",
+      "image",
+      "ink",
+      "underline",
+    ]);
   });
 });

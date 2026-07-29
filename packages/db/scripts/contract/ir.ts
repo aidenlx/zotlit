@@ -17,6 +17,8 @@ export interface ContractIR {
   /** The `CONTRACT_VERSION` of `src/contract/roots.ts` at extraction time. */
   contractVersion: number;
   roots: Readonly<Partial<Record<ContractRoot, ContractRootIR>>>;
+  /** Regular Zotero item types and the `zt` field names each type exposes. */
+  itemTypes: Readonly<Record<string, readonly string[]>>;
   /** Every named type reachable from {@link ContractIR.roots}, keyed by TS name. */
   types: Readonly<Record<string, ContractNamedType>>;
 }
@@ -112,6 +114,8 @@ export interface ContractObject {
 export interface ContractAdditionalMembers {
   description?: string;
   type: ContractType;
+  /** Replace the open TS index signature with generated per-item-type fields. */
+  itemFields?: boolean;
 }
 
 export interface ContractUnion {

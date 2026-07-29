@@ -26,7 +26,10 @@ export function toJsonSchema(ir: ContractIR, root: ContractRoot): JsonSchema {
     }.`,
     $ref: defRef(rootIR.type),
     $defs: Object.fromEntries(
-      Object.entries(ir.types).map(([name, type]) => [name, schemaFor(type)]),
+      Object.entries(ir.types).map(([name, type]) => [
+        name,
+        schemaFor(type, ir.itemTypes),
+      ]),
     ),
   };
 }
@@ -35,7 +38,10 @@ function defRef(name: string): string {
   return `#/$defs/${name}`;
 }
 
-function schemaFor(type: ContractType): JsonSchema {
+function schemaFor(
+  type: ContractType,
+  itemTypes: ContractIR["itemTypes"],
+): JsonSchema {
   switch (type.kind) {
     case "primitive":
       return { type: type.type };
@@ -44,9 +50,12 @@ function schemaFor(type: ContractType): JsonSchema {
     case "unknown":
       return {};
     case "array":
-      return { type: "array", items: schemaFor(type.items) };
+      return { type: "array", items: schemaFor(type.items, itemTypes) };
     case "record":
-      return { type: "object", additionalProperties: schemaFor(type.values) };
+      return {
+        type: "object",
+        additionalProperties: schemaFor(type.values, itemTypes),
+      };
     case "ref":
       return { $ref: defRef(type.name) };
     case "stringified":
@@ -56,44 +65,67 @@ function schemaFor(type: ContractType): JsonSchema {
       };
     case "helper":
       return {
-        type: "object",
-        properties: {
-          $helper: { const: type.name },
-          signature: { const: type.signature },
-          value: schemaFor(type.value),
-        },
-        required: ["$helper", "signature", "value"],
-        additionalProperties: false,
+        oneOf: [
+          {
+            type: "object",
+            properties: {
+              $helper: { const: type.name },
+              signature: { const: type.signature },
+              value: schemaFor(type.value, itemTypes),
+            },
+            required: ["$helper", "signature", "value"],
+            additionalProperties: false,
+          },
+          inertMarkerSchema(),
+        ],
       };
     case "object":
-      return objectSchema(type);
+      return objectSchema(type, itemTypes);
     case "union":
-      return unionSchema(type);
+      return unionSchema(type, itemTypes);
   }
 }
 
-function objectSchema(object: ContractObject): JsonSchema {
+function objectSchema(
+  object: ContractObject,
+  itemTypes: ContractIR["itemTypes"],
+): JsonSchema {
   const required = object.members
     .filter((member) => !member.optional)
     .map((member) => member.name);
-  return {
+  const properties = Object.fromEntries(
+    object.members.map((member) => [
+      member.name,
+      memberSchema(member, itemTypes),
+    ]),
+  );
+  const base = {
     type: "object",
-    description: normalizeDoc(object.description),
-    properties: Object.fromEntries(
-      object.members.map((member) => [member.name, memberSchema(member)]),
-    ),
+    properties,
     required: required.length > 0 ? required : undefined,
     additionalProperties: object.additional
       ? withDescription(
-          schemaFor(object.additional.type),
+          schemaFor(object.additional.type, itemTypes),
           object.additional.description,
         )
       : false,
   };
+  return {
+    description: normalizeDoc(object.description),
+    ...(object.additional?.itemFields ? itemTypeSchema(base, itemTypes) : base),
+  };
 }
 
-function memberSchema(member: ContractMember): JsonSchema {
-  return withDescription(schemaFor(member.type), member.description);
+function memberSchema(
+  member: ContractMember,
+  itemTypes: ContractIR["itemTypes"],
+): JsonSchema {
+  const schema = withDescription(
+    schemaFor(member.type, itemTypes),
+    member.description,
+  );
+  if (member.name !== "parentItem") return schema;
+  return { anyOf: [schema, referenceMarkerSchema()] };
 }
 
 /** A member's own doc wins over any note the emitted type carries. */
@@ -102,9 +134,12 @@ function withDescription(schema: JsonSchema, description?: string): JsonSchema {
   return { ...schema, description: normalizeDoc(description) };
 }
 
-function unionSchema(union: ContractUnion): JsonSchema {
+function unionSchema(
+  union: ContractUnion,
+  itemTypes: ContractIR["itemTypes"],
+): JsonSchema {
   const description = normalizeDoc(union.description);
-  const options = union.options.map(schemaFor);
+  const options = union.options.map((option) => schemaFor(option, itemTypes));
   const enumValues = union.options.map((option) =>
     option.kind === "literal" ? option.value : undefined,
   );
@@ -138,6 +173,53 @@ function normalizeDoc(text: string | undefined): string | undefined {
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.replaceAll(/\s+/g, " ").trim())
     .join("\n\n");
+}
+
+function itemTypeSchema(
+  base: JsonSchema,
+  itemTypes: ContractIR["itemTypes"],
+): JsonSchema {
+  const baseProperties = base.properties as Record<string, JsonSchema>;
+  return {
+    type: base.type,
+    properties: baseProperties,
+    required: base.required,
+    oneOf: Object.entries(itemTypes).map(([itemType, fields]) => ({
+      properties: {
+        ...Object.fromEntries(
+          fields
+            .filter((field) => !(field in baseProperties))
+            .map((field) => [field, { type: "string" }]),
+        ),
+        itemType: { const: itemType },
+      },
+    })),
+    unevaluatedProperties: false,
+  };
+}
+
+function inertMarkerSchema(): JsonSchema {
+  return {
+    type: "object",
+    properties: { $inert: { type: "string" } },
+    required: ["$inert"],
+    additionalProperties: false,
+  };
+}
+
+function referenceMarkerSchema(): JsonSchema {
+  return {
+    type: "object",
+    properties: {
+      $ref: {
+        type: "string",
+        description:
+          "Path to the first serialized occurrence, starting at `zt`.",
+      },
+    },
+    required: ["$ref"],
+    additionalProperties: false,
+  };
 }
 
 function formatList(items: readonly string[]): string {

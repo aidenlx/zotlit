@@ -197,6 +197,7 @@ export class ContractExtractor {
     return {
       description: indexSignatureDoc(type),
       type: this.#walk(values, location),
+      itemFields: extendsInterface(type, "TemplateItemBaseData"),
     };
   }
 
@@ -214,6 +215,17 @@ export class ContractExtractor {
 
 function isNullOption(option: ContractType): boolean {
   return option.kind === "primitive" && option.type === "null";
+}
+
+function extendsInterface(type: Type, name: string): boolean {
+  for (const declaration of type.getSymbol()?.getDeclarations() ?? []) {
+    if (!Node.isInterfaceDeclaration(declaration)) continue;
+    if (declaration.getName() === name) return true;
+    for (const base of declaration.getBaseDeclarations()) {
+      if (extendsInterface(base.getType(), name)) return true;
+    }
+  }
+  return false;
 }
 
 function carriesUndefined(type: Type): boolean {
