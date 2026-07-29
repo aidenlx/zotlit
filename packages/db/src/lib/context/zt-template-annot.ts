@@ -1,7 +1,11 @@
 import { type Temporal } from "@zotlit/shared/temporal";
 
 import { defineToString } from "@/lib/to-string";
-import { annotationTypeToName, type Annotation } from "@/lib/zt-annot";
+import {
+  annotationTypeToName,
+  type Annotation,
+  type ResolvedAnnotationTypeName,
+} from "@/lib/zt-annot";
 import {
   annotationColorToName,
   type AnnotationColorName,
@@ -28,8 +32,7 @@ import {
 export interface TemplateAnnotationBaseData {
   key: string;
   libraryID: number;
-  /** Annotation type: `"highlight"`, `"note"`, `"image"`, `"ink"`, etc. */
-  type: string;
+  type: ResolvedAnnotationTypeName;
   text: string | null;
   /**
    * Raw comment HTML as stored by Zotero — "plain text flavored with some HTML
@@ -86,6 +89,40 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   parentItem: TemplateParentItemData | null;
   /** Source attachment; shared across annotations from the same attachment. */
   parentAttachment: TemplateAttachment;
+}
+
+/**
+ * The `zt` root of the `annotation` template: a {@link TemplateAnnotation} plus
+ * {@link AnnotationTemplateContext.citation}. Entries of `zt.annotations` on the
+ * note root are plain {@link TemplateAnnotation}s — only the single-annotation
+ * render carries a citation.
+ */
+export interface AnnotationTemplateContext extends TemplateAnnotation {
+  /**
+   * Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered
+   * through the `cite` template with this annotation's
+   * {@link TemplateAnnotationBaseData.pageLabel} as locator; `null` when there
+   * is no parent item or it carries no citation key. Computed at the app layer.
+   */
+  citation: string | null;
+}
+
+/**
+ * Attach {@link AnnotationTemplateContext.citation} to an annotation's template
+ * data, promoting it to the annotation root.
+ *
+ * @param renderCitation - Called lazily, only when a template reads
+ *   `zt.citation`, so the `cite` render is skipped otherwise.
+ * @returns `data` itself, redeclared as the annotation root.
+ */
+export function withAnnotationCitation(
+  data: TemplateAnnotation,
+  renderCitation: (this: void) => string | null,
+): AnnotationTemplateContext {
+  return Object.defineProperty(data, "citation", {
+    enumerable: true,
+    get: renderCitation,
+  }) as AnnotationTemplateContext;
 }
 
 /**

@@ -21,6 +21,11 @@ const ANNOT_TYPE = {
 
 export type AnnotationType = keyof typeof ANNOT_TYPE;
 export type AnnotationTypeName = (typeof ANNOT_TYPE)[AnnotationType];
+/**
+ * {@link annotationTypeToName}'s output: a known {@link AnnotationTypeName}, or
+ * `"unknown"` for a type id Zotero added after this mapping was written.
+ */
+export type ResolvedAnnotationTypeName = AnnotationTypeName | "unknown";
 
 export interface Annotation {
   groupID: number | null;
@@ -59,7 +64,7 @@ export interface Annotation {
 
 export function annotationTypeToName(
   type: AnnotationType,
-): AnnotationTypeName | "unknown" {
+): ResolvedAnnotationTypeName {
   const name = ANNOT_TYPE[type];
   if (name) return name;
 

@@ -71,7 +71,13 @@ export {
   annotationTypeToName,
   type Annotation,
   type AnnotationType,
+  type ResolvedAnnotationTypeName,
 } from "./lib/zt-annot";
+export {
+  withAnnotationCitation,
+  type AnnotationTemplateContext,
+  type TemplateAnnotation,
+} from "./lib/context/zt-template-annot";
 export {
   type FallibleTemplateLink,
   type TemplateFilenameItemData,
