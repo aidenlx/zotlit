@@ -87,3 +87,13 @@ _Avoid_: extra field (ambiguous with the whole field), tag
 
 **Extra Line**:
 One source row of an **Extra** field in document order — either a parsed **Extra Pair** or a non-pair text/blank row. Retains the row's raw text so freeform prose interleaved with pairs is never dropped.
+
+### Template contract
+
+**Template Contract**:
+The stable, versioned promise of what the template data (`zt`) contains — every property, its type, and its documented meaning. Every generated restatement of the template data (schemas, the docs reference page, Workbench artifacts) derives from this one contract, so none can disagree with the types.
+_Avoid_: zt types (names the code, not the promise), template API
+
+**Contract Root**:
+One lens of the **Template Contract** — the complete `zt` shape a given template kind receives. Three exist: the note root (note and content templates), the annotation root, and the filename root. Citation templates sit outside the contract until a cite root is added.
+_Avoid_: template type (names the template, not the data shape)
