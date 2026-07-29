@@ -45,6 +45,10 @@ Correctness before agreement. Treat every user claim as unverified until checked
 
 Describe the target state — what exists and what to do. Negation activates the concept it tries to suppress, so state the replacement, not the rejection. If a contrast is needed, the positive target comes first ("Use X" / "Prefer X over Y"); keep "why not X" rationale out of the spec body.
 
+## Report language
+
+Write reports to the user in ASD-STE100 Simplified Technical English.
+
 ## Surgical changes
 
 Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only orphans YOUR changes created; mention pre-existing dead code, don't delete it.
@@ -82,7 +86,7 @@ User-facing strings are sourced from `messages/{locale}.json` and consumed throu
 
 ### Issue tracker
 
-Issues, specs, and tickets are tracked as local markdown files under `.scratch/<feature-slug>/`; there is no external PR triage surface. See `docs/agents/issue-tracker.md`.
+Issues, specs, and tickets are tracked in GitHub Issues; external pull requests are not a triage surface. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
