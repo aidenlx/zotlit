@@ -34,8 +34,16 @@ const DROPPED_MEMBER = "toString";
 /** Namespaced doc tag naming the Liquid filter that passes a helper its arguments. */
 const FILTER_TAG = "ztFilter";
 
+/** Every Liquid filter of this package's vocabulary is snake_case; see `packages/templates/src/liquid.ts`. */
+const FILTER_NAME = /^[a-z][a-z0-9_]*$/;
+
+const FENCE = "```";
+
 /** An `@example` holds exactly one fenced block, so an emitter renders it as code without re-parsing prose. */
-const EXAMPLE_FENCE = regex("^```(?<lang>[a-z]*)\n(?<code>.*?)\n?```$", "s");
+const EXAMPLE_FENCE = regex(
+  `^${FENCE}(?<lang>[a-z0-9-]*)\n(?<code>.*?)\n?${FENCE}$`,
+  "s",
+);
 
 /** Held by a named type while its own members are still being walked, so a cycle back to it resolves to a ref. */
 const WALKING: ContractNamedType = { kind: "object", members: [] };
@@ -321,9 +329,11 @@ function filterOf(
   if (tags.length > 1) {
     throw new Error(`Member ${member} declares more than one @${FILTER_TAG}`);
   }
-  const filter = tags[0]!.getCommentText()?.trim();
-  if (!filter) {
-    throw new Error(`@${FILTER_TAG} on ${member} names no filter`);
+  const filter = tags[0]!.getCommentText()?.trim() ?? "";
+  if (!FILTER_NAME.test(filter)) {
+    throw new Error(
+      `@${FILTER_TAG} on ${member} names one snake_case filter and nothing else: ${filter}`,
+    );
   }
   return filter;
 }
@@ -337,13 +347,15 @@ function examplesOf(
   if (tags.length === 0) return undefined;
   return tags.map((tag) => {
     const text = tag.getCommentText()?.trim() ?? "";
-    const match = EXAMPLE_FENCE.exec(text);
-    if (!match) {
+    const groups = EXAMPLE_FENCE.exec(text)?.groups;
+    // A lazy body still spans a closing and a reopening fence, so a second
+    // block reads as one block with fences inside it.
+    if (!groups || groups.code.includes(FENCE)) {
       throw new Error(
         `@example on ${member} holds no single fenced code block: ${text}`,
       );
     }
-    return { lang: match.groups.lang || undefined, code: match.groups.code };
+    return { lang: groups.lang || undefined, code: groups.code };
   });
 }
 
