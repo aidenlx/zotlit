@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { type ContractIR } from "./ir.ts";
+import { type ContractIR } from "@zotlit/db/contract/ir";
+
 import { buildPageModel, type RowModel } from "./page-model.ts";
 import { type SectionSpec } from "./sections.ts";
 

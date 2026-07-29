@@ -8,6 +8,11 @@
     "codegen": {
       "outputs": [".source/**", ".next/types/**", "next-env.d.ts"],
       "outputLogs": "errors-only"
+    },
+    "generate:template-data": {
+      "dependsOn": ["^build"],
+      "outputs": ["content/docs/reference/templates/data.mdx"],
+      "outputLogs": "errors-only"
     }
   }
 }

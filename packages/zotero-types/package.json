@@ -10,7 +10,8 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./csl": "./dist/csl.mjs",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./schema.json": "./zotero-schema/schema.json"
   },
   "scripts": {
     "build": "tsdown",

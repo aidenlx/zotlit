@@ -205,6 +205,9 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@zotlit/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       oxlint:
         specifier: 'catalog:'
         version: 1.70.0(oxlint-tsgolint@0.23.0)

@@ -8,13 +8,18 @@
   ],
   "type": "module",
   "sideEffects": false,
+  "imports": {
+    "#contract/*": "./src/contract/*.ts"
+  },
   "exports": {
     ".": "./dist/index.mjs",
     "./client/node": "./dist/client/node.mjs",
     "./client/web": "./dist/client/web.mjs",
+    "./contract/ir": "./dist/contract/ir.mjs",
     "./path": "./dist/path.mjs",
     "./test-utils": "./dist/test-utils.mjs",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./contract/ir.json": "./src/contract/generated/ir.json"
   },
   "scripts": {
     "build": "tsdown",

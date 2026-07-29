@@ -1,6 +1,7 @@
 // Emits one contract root's JSON Schema (draft 2020-12) from the contract IR.
 
 import { type ContractRoot } from "../../src/contract/roots.ts";
+
 import {
   type ContractIR,
   type ContractMember,
@@ -8,7 +9,7 @@ import {
   type ContractReference,
   type ContractType,
   type ContractUnion,
-} from "./ir.ts";
+} from "#contract/ir";
 
 export interface JsonSchema {
   [keyword: string]: unknown;

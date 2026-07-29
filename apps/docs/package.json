@@ -9,7 +9,7 @@
     "test": "vitest run",
     "start": "next start",
     "codegen": "fumadocs-mdx && _FUMADOCS_MDX=1 next typegen",
-    "generate:template-data": "node scripts/generate-template-data.ts && oxfmt lib/template-contract/generated",
+    "generate:template-data": "node scripts/generate-template-data.ts",
     "types:check": "pnpm run codegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx",
     "lint": "oxlint"
@@ -44,6 +44,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
+    "@zotlit/db": "workspace:*",
     "oxlint": "catalog:",
     "postcss": "^8.5.17",
     "schema-dts": "^2.0.0",

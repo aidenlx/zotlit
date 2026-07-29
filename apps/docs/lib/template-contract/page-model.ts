@@ -12,7 +12,8 @@ import {
   type ContractNamedType,
   type ContractObject,
   type ContractType,
-} from "./ir.ts";
+} from "@zotlit/db/contract/ir";
+
 import { SECTIONS, type SectionSpec } from "./sections.ts";
 
 /** One run of a description: plain prose, inline code, or a resolved link. */

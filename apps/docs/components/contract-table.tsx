@@ -1,19 +1,18 @@
 import Link from "fumadocs-core/link";
 import { type ReactNode } from "react";
 
-import irJson from "@/lib/template-contract/generated/ir.json";
-import { type ContractIR } from "@/lib/template-contract/ir.ts";
+import { CONTRACT_IR } from "@/lib/template-contract/contract";
 import {
   buildPageModel,
   type Doc,
   type ItemTypeRow,
   type RowModel,
   type TableModel,
-} from "@/lib/template-contract/page-model.ts";
+} from "@/lib/template-contract/page-model";
 
 import { TypeTable, type DetailNode, type TypeNode } from "./type-table";
 
-const model = buildPageModel(irJson as unknown as ContractIR);
+const model = buildPageModel(CONTRACT_IR);
 
 /**
  * The type tables of one generated section. Reads the committed contract IR

@@ -2,21 +2,21 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import ir from "./generated/ir.json";
-import { buildPageModel } from "./page-model.ts";
-import { SECTIONS } from "./sections.ts";
+import { CONTRACT_IR } from "./contract";
+import { buildPageModel } from "./page-model";
+import { SECTIONS } from "./sections";
 
 const page = readFileSync(
   join("content", "docs", "reference", "templates", "data.mdx"),
   "utf8",
 );
-const model = buildPageModel(ir as never);
+const model = buildPageModel(CONTRACT_IR);
 
 describe("generated template-data page", () => {
   it("carries the generated-file banner and names the prose source", () => {
     expect(page).toContain("DO NOT EDIT");
     expect(page).toContain("packages/db/src/lib/context/");
-    expect(ir.$comment).toMatch(/DO NOT EDIT/);
+    expect(CONTRACT_IR.$comment).toMatch(/DO NOT EDIT/);
   });
 
   it("heads every section with its explicit anchor", () => {
@@ -30,10 +30,10 @@ describe("generated template-data page", () => {
       SECTIONS.flatMap((section) => section.types ?? []),
     );
 
-    expect(Object.keys(ir.types).every((type) => documented.has(type))).toBe(
-      true,
-    );
-    for (const root of Object.values(ir.roots)) {
+    expect(
+      Object.keys(CONTRACT_IR.types).every((type) => documented.has(type)),
+    ).toBe(true);
+    for (const root of Object.values(CONTRACT_IR.roots)) {
       expect(page).toContain(
         `<ContractTable section="${
           SECTIONS.find((section) => section.types?.includes(root.type))!.id

@@ -16,11 +16,13 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 
 - `pnpm --filter @zotlit/docs dev` — local dev server.
 - `pnpm --filter @zotlit/docs codegen` — regenerate Fumadocs MDX types.
-- `pnpm --filter @zotlit/docs generate:template-data` — regenerate the template-data reference page.
+- `pnpm exec turbo run generate:template-data --filter=@zotlit/docs` — regenerate the template-data reference page.
 
-# Generated template-data reference
+## Generated template-data reference
 
-`content/docs/reference/templates/data.mdx` is emitter output — never hand-edit it. Its prose comes from the doc comments on the `zt` contract types in `packages/db/src/lib/context/`; regenerate the contract there first, then run the script above. `lib/template-contract/` holds the committed contract IR copy (the deploy excludes `@zotlit/db`), the page model both the emitter and `components/contract-table.tsx` read, and `sections.ts` — the page template that names each section, its anchor, and the contract types it documents. Content outside the Template Contract lives in the `_*.mdx` partials beside the page.
+`content/docs/reference/templates/data.mdx` is generated from the `zt` type comments in `packages/db/src/lib/context/`. Edit those comments, run `pnpm --filter @zotlit/db generate:contract`, then run the Turbo task above.
+
+`lib/template-contract/sections.ts` owns the section structure. The `_*.mdx` partials beside the generated page own supplementary prose.
 
 ## Content & writing docs
 

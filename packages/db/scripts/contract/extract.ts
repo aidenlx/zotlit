@@ -20,7 +20,7 @@ import {
   type ContractRef,
   type ContractStringified,
   type ContractType,
-} from "./ir.ts";
+} from "#contract/ir";
 
 /** ts-morph's in-memory path for the lib file declaring the `Temporal` namespace. */
 const TEMPORAL_LIB = "lib.esnext.temporal.d.ts";
