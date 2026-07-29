@@ -3,6 +3,7 @@ import { regex } from "arkregex";
 import {
   Node,
   type InterfaceDeclaration,
+  type JSDoc,
   type JSDocTag,
   type Signature,
   type Symbol as TypeSymbol,
@@ -34,7 +35,11 @@ const DROPPED_MEMBER = "toString";
 /** Namespaced doc tag naming the Liquid filter that passes a helper its arguments. */
 const FILTER_TAG = "ztFilter";
 
-/** Every Liquid filter of this package's vocabulary is snake_case; see `packages/templates/src/liquid.ts`. */
+/**
+ * Every filter of the Liquid vocabulary is snake_case.
+ *
+ * @see `packages/templates/src/liquid.ts` for the registered filters
+ */
 const FILTER_NAME = /^[a-z][a-z0-9_]*$/;
 
 const FENCE = "```";
@@ -307,19 +312,27 @@ function carriesUndefined(type: Type): boolean {
   );
 }
 
-function jsDocOf(declaration: Node | undefined): string | undefined {
+/** The block description and every tag come from this one doc comment, so they can never disagree. */
+function docOf(declaration: Node | undefined): JSDoc | undefined {
   if (!declaration || !Node.isJSDocable(declaration)) return undefined;
-  return declaration.getJsDocs().at(-1)?.getCommentText()?.trim() || undefined;
+  return declaration.getJsDocs().at(-1);
 }
 
-/** Tags of the doc comment {@link jsDocOf} reads, so description and tag data come from one block. */
+function jsDocOf(declaration: Node | undefined): string | undefined {
+  return docOf(declaration)?.getCommentText()?.trim() || undefined;
+}
+
 function tagsOf(declaration: Node | undefined, name: string): JSDocTag[] {
-  if (!declaration || !Node.isJSDocable(declaration)) return [];
-  const tags = declaration.getJsDocs().at(-1)?.getTags() ?? [];
+  const tags = docOf(declaration)?.getTags() ?? [];
   return tags.filter((tag) => tag.getTagName() === name);
 }
 
-/** The Liquid filter a helper member names with `@ztFilter`. */
+/**
+ * The Liquid filter a helper member names with `@ztFilter`.
+ *
+ * @throws when the member declares the tag more than once, or the tag holds
+ *   anything but one filter name.
+ */
 function filterOf(
   declaration: Node | undefined,
   member: string,
@@ -338,7 +351,11 @@ function filterOf(
   return filter;
 }
 
-/** The member's `@example` blocks as code samples; `undefined` when it declares none. */
+/**
+ * The member's `@example` blocks as code samples; `undefined` when it declares none.
+ *
+ * @throws when a tag holds anything but one fenced code block.
+ */
 function examplesOf(
   declaration: Node | undefined,
   member: string,
