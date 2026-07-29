@@ -55,6 +55,7 @@ const noteResolvers: NoteResolvers = {
   annotation: annotationResolvers,
   resolveChildNote: (note) => ({
     key: note.key,
+    indexedKey: note.indexedKey,
     title: note.title,
     noteLink: (alias) => `[[${note.key}|${alias ?? note.title}]]`,
   }),

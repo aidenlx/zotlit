@@ -31,6 +31,8 @@ export interface Annotation {
   groupID: number | null;
   itemID: number;
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
   libraryID: number;
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;

@@ -45,6 +45,8 @@ export interface TemplateRelatedItem
 export interface TemplateNoteLink {
   /** Bare Zotero key (not scoped). */
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
   /** Note title as Zotero stores it; `null` when the row carries none. */
   title: string | null;
   /**

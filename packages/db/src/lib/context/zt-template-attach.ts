@@ -17,6 +17,8 @@ import { type FallibleTemplateLink } from "./zt-template-item";
 export interface TemplateAttachment {
   /** Zotero item key of the attachment. */
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
   /** Filename resolved from the attachment path; null for URL / unknown links. */
   filename: string | null;
   /** MIME type, e.g. `"application/pdf"`. */
@@ -53,6 +55,7 @@ export function attachmentToTemplateData(
 ): Omit<TemplateAttachment, "filePath" | "fileLink"> {
   return {
     key: attachment.key,
+    indexedKey: attachment.indexedKey,
     filename: attachmentFilename(
       parseAttachmentPath(attachment.path, attachment.linkMode),
     ),

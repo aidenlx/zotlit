@@ -1,5 +1,6 @@
 import { type NodeDatabaseClient } from "@/client/node";
 import { type Attachment } from "@/lib/zt-attach";
+import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
@@ -70,6 +71,7 @@ function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
     groupID,
     libraryID: row.item_itemID.libraryID,
     key: row.item_itemID.key,
+    indexedKey: formatIndexedKey(row.item_itemID.key, groupID),
     parentItemID: row.parentItemID ?? 0,
     path: row.path,
     contentType: row.contentType,

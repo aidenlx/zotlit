@@ -13,6 +13,7 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     key: "ATCH1234",
+    indexedKey: "ATCH1234",
     parentItemID: 2,
     path: null,
     contentType: null,

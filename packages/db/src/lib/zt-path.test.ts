@@ -13,6 +13,7 @@ function attachment(overrides: Partial<Attachment>): Attachment {
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     key: "ATTACH1",
+    indexedKey: "ATTACH1",
     parentItemID: 2,
     path: null,
     contentType: null,

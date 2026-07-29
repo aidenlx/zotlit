@@ -32,6 +32,8 @@ import {
 export interface TemplateAnnotationBaseData {
   /** Zotero item key of the annotation. */
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
   /** Zotero library ID holding the annotation. */
   libraryID: number;
   /**
@@ -164,6 +166,7 @@ function annotationToTemplateBaseData(
   const pageIndex = annotation.position.pageIndex;
   return {
     key: annotation.key,
+    indexedKey: annotation.indexedKey,
     libraryID: annotation.libraryID,
     type: annotationTypeToName(annotation.type),
     text: emptyToNull(annotation.text),

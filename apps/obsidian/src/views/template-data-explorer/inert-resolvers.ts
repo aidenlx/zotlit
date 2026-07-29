@@ -172,6 +172,7 @@ export function buildInertNoteResolvers(
       )[0];
       return {
         key: note.key,
+        indexedKey: note.indexedKey,
         title: note.title,
         noteLink: existing
           ? (alias, subpath) =>

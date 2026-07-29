@@ -20,6 +20,7 @@ function makeAnnotation(overrides?: Partial<Annotation>): Annotation {
     groupID: null,
     itemID: 1,
     key: "ANNO0001",
+    indexedKey: "ANNO0001",
     libraryID: USER_LIBRARY_ID,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
@@ -40,6 +41,7 @@ function makeAnnotation(overrides?: Partial<Annotation>): Annotation {
 
 const parentAttachment: TemplateAttachment = {
   key: "ATCH0001",
+  indexedKey: "ATCH0001",
   filename: "paper.pdf",
   contentType: "application/pdf",
   linkMode: "imported_file",
@@ -79,6 +81,28 @@ describe("annotation type", () => {
   it("resolves the raw type int to its literal name", () => {
     expect(makeTemplateData({ type: 1 }).type).toBe("highlight");
     expect(makeTemplateData({ type: 5 }).type).toBe("underline");
+  });
+});
+
+describe("indexedKey", () => {
+  it("passes through the bare indexedKey for the personal library", () => {
+    const result = makeTemplateData({
+      key: "ANNO0001",
+      indexedKey: "ANNO0001",
+      groupID: null,
+    });
+
+    expect(result.indexedKey).toBe("ANNO0001");
+  });
+
+  it("passes through the scoped indexedKey for a group library", () => {
+    const result = makeTemplateData({
+      key: "ANNO0001",
+      indexedKey: "ANNO0001g42",
+      groupID: 42,
+    });
+
+    expect(result.indexedKey).toBe("ANNO0001g42");
   });
 });
 

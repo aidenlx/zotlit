@@ -35,6 +35,8 @@ export interface Attachment {
   libraryID: number;
   groupID: number | null;
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
   parentItemID: number;
   /**
    * Stored verbatim from Zotero; consumers should narrow via
