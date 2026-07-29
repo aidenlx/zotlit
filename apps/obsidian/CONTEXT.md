@@ -41,6 +41,10 @@ _Avoid_: advanced templates, legacy templates, scripting, user scripts
 The `filename` Template, evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time); output is a single line.
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
+**Template Workbench** _(Obsidian)_:
+The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, and renders templates entirely in memory. Inspection and rendering are side-effect-free and reuse the Template Data Explorer's inert resolver behavior. Item and annotation selection uses Indexed Keys.
+_Avoid_: agent template workbench (names the audience, not the thing), template CLI (names the mechanism), template preview (implies rendered visual output)
+
 **Template Data Explorer** _(Obsidian)_:
 The sidebar view that displays the exact template data (`zt`) a Template receives for a real library Item, as an explorable tree anchored at the Note Root or an Annotation Root. Nodes offer copy-path — one `zt.…` path shared by both Liquid and Eta, since both engines bind the data to `zt` — copy-value, and per-engine Template Snippets; one filter box matches key names and values, scoped to the current root — changing roots resets it. Everything displayed is true at display time, and browsing never writes to the vault — link helpers that would queue imports show existing targets or labeled placeholders instead.
 _Avoid_: item details (v1's item-centric framing), template preview / data preview (preview implies rendered output, a non-goal)

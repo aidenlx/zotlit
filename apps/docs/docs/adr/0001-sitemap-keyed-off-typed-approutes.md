@@ -1,6 +1,6 @@
 # The SEO sitemap is keyed off the typed `AppRoutes` union
 
-`app/sitemap.ts` enumerates URLs through an exhaustive `Record<StaticRoutes, [Entry]> & Record<DynamicRoutes, Entry[]>`, where `StaticRoutes`/`DynamicRoutes` are split out of `AppRoutes` (the union imported from the generated `@next/routes`). To get that union we enabled `typedRoutes: true` in `next.config.mjs` and added a `"@next/*"` path to `tsconfig.json`. A flat array concatenation of the four route groups would have been ~15 lines shorter and needs no config change, which is the default AGENTS.md would point at.
+`app/sitemap.ts` enumerates URLs through an exhaustive `Record<StaticRoutes, [Entry]> & Record<DynamicRoutes, Entry[]>`, where `StaticRoutes`/`DynamicRoutes` are split out of `AppRoutes` (the union imported from the generated `@next/routes`). To get that union we enabled `typedRoutes: true` in `next.config.ts` and added a `"@next/*"` path to `tsconfig.json`. A flat array concatenation of the four route groups would have been ~15 lines shorter and needs no config change, which is the default AGENTS.md would point at.
 
 We chose the typed table for two reasons. First, drift safety: adding a new page route grows `AppRoutes`, which leaves a key missing from the `Record` and fails the typecheck until the route is placed in the sitemap or explicitly excluded — a flat concat drifts silently. Second, consistency: the sibling `mx-repo` website sitemap uses this exact shape, and both sites are maintained together.
 

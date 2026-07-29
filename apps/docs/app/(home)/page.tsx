@@ -4,7 +4,6 @@ import Link from "next/link";
 import { JsonLd } from "@/components/json-ld";
 import { RepoDatum } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
-import { V1HomeNotice } from "@/components/v1-home-notice";
 import { HOME_OG_ALT, pageMetadata } from "@/lib/seo";
 import { appDescription, appName } from "@/lib/shared";
 import {
@@ -62,7 +61,6 @@ export default function HomePage() {
       <JsonLd schema={websiteSchema} />
       <JsonLd schema={organizationSchema} />
       <JsonLd schema={softwareApplicationSchema} />
-      <V1HomeNotice />
       <section className="grid items-center gap-13 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
         <div>
           <p className="mb-4 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase">

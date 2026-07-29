@@ -1,11 +1,11 @@
 import { createMDX } from "fumadocs-mdx/next";
+import { type NextConfig } from "next";
 
-import { buildV1Redirects } from "./lib/v1-redirects.mjs";
+import { buildV1Redirects } from "./lib/v1-redirects";
 
 const withMDX = createMDX();
 
-/** @type {import('next').NextConfig} */
-const config = {
+const config: NextConfig = {
   serverExternalPackages: ["@takumi-rs/core"],
   reactStrictMode: true,
   // Statically-typed routes; app/sitemap.ts keys its route table off the
@@ -21,7 +21,8 @@ const config = {
     },
   },
   // Legacy v1 permalinks (formerly served at this domain) → closest v2 page,
-  // 308 with a `?from=v1&src=` hint back to the exact v1 page. See lib/v1-redirects.mjs.
+  // plus a query hint that components/redirect-notice turns into a callout.
+  // See lib/v1-redirects.ts.
   async redirects() {
     return buildV1Redirects();
   },

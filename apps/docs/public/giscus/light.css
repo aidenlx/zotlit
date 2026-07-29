@@ -1,7 +1,7 @@
 /* "Manuscript & Machine" giscus theme — light. Inherits giscus' Primer base
    (syntax highlighting, loader images) then overrides the surface variables
    with the site palette from app/global.css :root. Served with CORS from
-   /giscus/ (see next.config.mjs) because giscus loads it cross-origin. */
+   /giscus/ (see next.config.ts) because giscus loads it cross-origin. */
 @import url("https://giscus.app/themes/light.css");
 
 main {

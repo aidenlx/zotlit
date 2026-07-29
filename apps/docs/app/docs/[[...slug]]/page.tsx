@@ -14,7 +14,7 @@ import { notFound } from "next/navigation";
 import { DocsPageFooter } from "@/components/docs-page-footer";
 import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
-import { V1RedirectNotice } from "@/components/v1-redirect-notice";
+import { RedirectNotice } from "@/components/redirect-notice";
 import { ztProse } from "@/lib/prose";
 import { pageMetadata } from "@/lib/seo";
 import { appName, docsRoute, gitConfig } from "@/lib/shared";
@@ -53,7 +53,7 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
       {treeCrumbs.length > 0 && (
         <JsonLd schema={breadcrumbListSchema(crumbs)} />
       )}
-      <V1RedirectNotice />
+      <RedirectNotice />
       <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
         {page.data.title}
       </DocsTitle>
