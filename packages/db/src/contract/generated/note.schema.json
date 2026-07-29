@@ -323,7 +323,8 @@
             "itemType": {
               "const": "artwork"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -363,7 +364,8 @@
             "itemType": {
               "const": "audioRecording"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -397,7 +399,8 @@
             "itemType": {
               "const": "bill"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -419,7 +422,8 @@
             "itemType": {
               "const": "blogPost"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -471,7 +475,8 @@
             "itemType": {
               "const": "book"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -523,7 +528,8 @@
             "itemType": {
               "const": "bookSection"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -551,7 +557,8 @@
             "itemType": {
               "const": "case"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -591,7 +598,8 @@
             "itemType": {
               "const": "computerProgram"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -637,7 +645,8 @@
             "itemType": {
               "const": "conferencePaper"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -677,7 +686,8 @@
             "itemType": {
               "const": "dataset"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -717,7 +727,8 @@
             "itemType": {
               "const": "dictionaryEntry"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -748,7 +759,8 @@
             "itemType": {
               "const": "document"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -764,7 +776,8 @@
             "itemType": {
               "const": "email"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -804,7 +817,8 @@
             "itemType": {
               "const": "encyclopediaArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -841,7 +855,8 @@
             "itemType": {
               "const": "film"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -863,7 +878,8 @@
             "itemType": {
               "const": "forumPost"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -897,7 +913,8 @@
             "itemType": {
               "const": "hearing"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -913,7 +930,8 @@
             "itemType": {
               "const": "instantMessage"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -944,7 +962,8 @@
             "itemType": {
               "const": "interview"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1002,7 +1021,8 @@
             "itemType": {
               "const": "journalArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1036,7 +1056,8 @@
             "itemType": {
               "const": "letter"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1067,7 +1088,8 @@
             "itemType": {
               "const": "magazineArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1104,7 +1126,8 @@
             "itemType": {
               "const": "manuscript"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1141,7 +1164,8 @@
             "itemType": {
               "const": "map"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1175,7 +1199,8 @@
             "itemType": {
               "const": "newspaperArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1221,7 +1246,8 @@
             "itemType": {
               "const": "patent"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1249,7 +1275,8 @@
             "itemType": {
               "const": "podcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1289,7 +1316,8 @@
             "itemType": {
               "const": "preprint"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1317,7 +1345,8 @@
             "itemType": {
               "const": "presentation"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1357,7 +1386,8 @@
             "itemType": {
               "const": "radioBroadcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1397,7 +1427,8 @@
             "itemType": {
               "const": "report"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1452,7 +1483,8 @@
             "itemType": {
               "const": "standard"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1486,7 +1518,8 @@
             "itemType": {
               "const": "statute"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1526,7 +1559,8 @@
             "itemType": {
               "const": "thesis"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1566,7 +1600,8 @@
             "itemType": {
               "const": "tvBroadcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1606,7 +1641,8 @@
             "itemType": {
               "const": "videoRecording"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -1628,7 +1664,8 @@
             "itemType": {
               "const": "webpage"
             }
-          }
+          },
+          "required": ["itemType"]
         }
       ],
       "unevaluatedProperties": false
@@ -1639,7 +1676,34 @@
         "imgLink": {
           "anyOf": [
             {
-              "$ref": "#/$defs/TemplateLink"
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "$helper": {
+                      "const": "imgLink"
+                    },
+                    "signature": {
+                      "const": "(alias?: string, subpath?: string) => string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["$helper", "signature", "value"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "$inert": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["$inert"],
+                  "additionalProperties": false
+                }
+              ]
             },
             {
               "type": "null"
@@ -1818,12 +1882,6 @@
         "dateModified",
         "tags"
       ],
-      "additionalProperties": false
-    },
-    "TemplateLink": {
-      "description": "A lazy Markdown-link helper exposed on the template context. Called with no args it renders the default link with its display text already filled in (so Markdown links are never blank); pass `alias` to override the display text and `subpath` to append a `#`-fragment (heading / block / `page=N`).",
-      "type": "object",
-      "properties": {},
       "additionalProperties": false
     },
     "TemplateParentItemData": {
@@ -2103,7 +2161,8 @@
             "itemType": {
               "const": "artwork"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2143,7 +2202,8 @@
             "itemType": {
               "const": "audioRecording"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2177,7 +2237,8 @@
             "itemType": {
               "const": "bill"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2199,7 +2260,8 @@
             "itemType": {
               "const": "blogPost"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2251,7 +2313,8 @@
             "itemType": {
               "const": "book"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2303,7 +2366,8 @@
             "itemType": {
               "const": "bookSection"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2331,7 +2395,8 @@
             "itemType": {
               "const": "case"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2371,7 +2436,8 @@
             "itemType": {
               "const": "computerProgram"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2417,7 +2483,8 @@
             "itemType": {
               "const": "conferencePaper"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2457,7 +2524,8 @@
             "itemType": {
               "const": "dataset"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2497,7 +2565,8 @@
             "itemType": {
               "const": "dictionaryEntry"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2528,7 +2597,8 @@
             "itemType": {
               "const": "document"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2544,7 +2614,8 @@
             "itemType": {
               "const": "email"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2584,7 +2655,8 @@
             "itemType": {
               "const": "encyclopediaArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2621,7 +2693,8 @@
             "itemType": {
               "const": "film"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2643,7 +2716,8 @@
             "itemType": {
               "const": "forumPost"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2677,7 +2751,8 @@
             "itemType": {
               "const": "hearing"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2693,7 +2768,8 @@
             "itemType": {
               "const": "instantMessage"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2724,7 +2800,8 @@
             "itemType": {
               "const": "interview"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2782,7 +2859,8 @@
             "itemType": {
               "const": "journalArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2816,7 +2894,8 @@
             "itemType": {
               "const": "letter"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2847,7 +2926,8 @@
             "itemType": {
               "const": "magazineArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2884,7 +2964,8 @@
             "itemType": {
               "const": "manuscript"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2921,7 +3002,8 @@
             "itemType": {
               "const": "map"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -2955,7 +3037,8 @@
             "itemType": {
               "const": "newspaperArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3001,7 +3084,8 @@
             "itemType": {
               "const": "patent"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3029,7 +3113,8 @@
             "itemType": {
               "const": "podcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3069,7 +3154,8 @@
             "itemType": {
               "const": "preprint"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3097,7 +3183,8 @@
             "itemType": {
               "const": "presentation"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3137,7 +3224,8 @@
             "itemType": {
               "const": "radioBroadcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3177,7 +3265,8 @@
             "itemType": {
               "const": "report"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3232,7 +3321,8 @@
             "itemType": {
               "const": "standard"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3266,7 +3356,8 @@
             "itemType": {
               "const": "statute"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3306,7 +3397,8 @@
             "itemType": {
               "const": "thesis"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3346,7 +3438,8 @@
             "itemType": {
               "const": "tvBroadcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3386,7 +3479,8 @@
             "itemType": {
               "const": "videoRecording"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -3408,7 +3502,8 @@
             "itemType": {
               "const": "webpage"
             }
-          }
+          },
+          "required": ["itemType"]
         }
       ],
       "unevaluatedProperties": false
@@ -4027,7 +4122,8 @@
             "itemType": {
               "const": "artwork"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4067,7 +4163,8 @@
             "itemType": {
               "const": "audioRecording"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4101,7 +4198,8 @@
             "itemType": {
               "const": "bill"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4123,7 +4221,8 @@
             "itemType": {
               "const": "blogPost"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4175,7 +4274,8 @@
             "itemType": {
               "const": "book"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4227,7 +4327,8 @@
             "itemType": {
               "const": "bookSection"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4255,7 +4356,8 @@
             "itemType": {
               "const": "case"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4295,7 +4397,8 @@
             "itemType": {
               "const": "computerProgram"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4341,7 +4444,8 @@
             "itemType": {
               "const": "conferencePaper"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4381,7 +4485,8 @@
             "itemType": {
               "const": "dataset"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4421,7 +4526,8 @@
             "itemType": {
               "const": "dictionaryEntry"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4452,7 +4558,8 @@
             "itemType": {
               "const": "document"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4468,7 +4575,8 @@
             "itemType": {
               "const": "email"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4508,7 +4616,8 @@
             "itemType": {
               "const": "encyclopediaArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4545,7 +4654,8 @@
             "itemType": {
               "const": "film"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4567,7 +4677,8 @@
             "itemType": {
               "const": "forumPost"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4601,7 +4712,8 @@
             "itemType": {
               "const": "hearing"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4617,7 +4729,8 @@
             "itemType": {
               "const": "instantMessage"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4648,7 +4761,8 @@
             "itemType": {
               "const": "interview"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4706,7 +4820,8 @@
             "itemType": {
               "const": "journalArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4740,7 +4855,8 @@
             "itemType": {
               "const": "letter"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4771,7 +4887,8 @@
             "itemType": {
               "const": "magazineArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4808,7 +4925,8 @@
             "itemType": {
               "const": "manuscript"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4845,7 +4963,8 @@
             "itemType": {
               "const": "map"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4879,7 +4998,8 @@
             "itemType": {
               "const": "newspaperArticle"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4925,7 +5045,8 @@
             "itemType": {
               "const": "patent"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4953,7 +5074,8 @@
             "itemType": {
               "const": "podcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -4993,7 +5115,8 @@
             "itemType": {
               "const": "preprint"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5021,7 +5144,8 @@
             "itemType": {
               "const": "presentation"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5061,7 +5185,8 @@
             "itemType": {
               "const": "radioBroadcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5101,7 +5226,8 @@
             "itemType": {
               "const": "report"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5156,7 +5282,8 @@
             "itemType": {
               "const": "standard"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5190,7 +5317,8 @@
             "itemType": {
               "const": "statute"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5230,7 +5358,8 @@
             "itemType": {
               "const": "thesis"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5270,7 +5399,8 @@
             "itemType": {
               "const": "tvBroadcast"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5310,7 +5440,8 @@
             "itemType": {
               "const": "videoRecording"
             }
-          }
+          },
+          "required": ["itemType"]
         },
         {
           "properties": {
@@ -5332,7 +5463,8 @@
             "itemType": {
               "const": "webpage"
             }
-          }
+          },
+          "required": ["itemType"]
         }
       ],
       "unevaluatedProperties": false
@@ -5410,1772 +5542,6 @@
       },
       "required": ["key", "indexedKey", "title", "noteLink"],
       "additionalProperties": false
-    },
-    "AnnotationTemplateContext": {
-      "description": "The `zt` root of the `annotation` template: a `TemplateAnnotation` plus `AnnotationTemplateContext.citation`. Entries of `zt.annotations` on the note root are plain `TemplateAnnotation`s — only the single-annotation render carries a citation.",
-      "type": "object",
-      "properties": {
-        "citation": {
-          "type": ["string", "null"],
-          "description": "Page-pinned citation of `TemplateAnnotation.parentItem`, rendered through the `cite` template with this annotation's `TemplateAnnotationBaseData.pageLabel` as locator; `null` when there is no parent item or it carries no citation key. Computed at the app layer."
-        },
-        "imgLink": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TemplateLink"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Markdown link to the excerpt image, or `null` for annotation types with no cached excerpt image (everything but `image` and `ink`), which resolves empty. Call it to render and pipe it through the `embed` filter (or prefix `!` yourself) for an Obsidian embed. With image import disabled it links the cached image's `file://` URI; with import enabled it links the in-vault copy, formatted per the vault's wikilink preference. Pass `alias` to override the display text (defaults to the image filename). See `TemplateLink`. Computed at the app layer."
-        },
-        "comment": {
-          "type": ["string", "null"],
-          "description": "`commentHtml` converted to Markdown; `null` when there is no comment. Computed at the app layer."
-        },
-        "fileLink": {
-          "oneOf": [
-            {
-              "type": "object",
-              "properties": {
-                "$helper": {
-                  "const": "fileLink"
-                },
-                "signature": {
-                  "const": "(alias?: string, subpath?: string) => string | null"
-                },
-                "value": {
-                  "type": ["string", "null"]
-                }
-              },
-              "required": ["$helper", "signature", "value"],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "$inert": {
-                  "type": "string"
-                }
-              },
-              "required": ["$inert"],
-              "additionalProperties": false
-            }
-          ],
-          "description": "Markdown link to the parent attachment file, deep-linked to this annotation's `page` (`#page=N`); `null` when the file is unresolvable. Call it to render — pass `alias`/`subpath` to override the display text or the `#`-fragment. See `FallibleTemplateLink`. Computed at the app layer."
-        },
-        "backlink": {
-          "type": "string",
-          "description": "Zotero deep link to this annotation. Computed at the app layer."
-        },
-        "parentItem": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TemplateParentItemData"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Parent literature item; shared across annotations from the same item. `null` for an annotation on a standalone attachment (a file with no parent bibliographic item).\n\nIts `collections` are populated when the annotation renders as part of a note; see `TemplateParentItemData` for the standalone case."
-        },
-        "parentAttachment": {
-          "$ref": "#/$defs/TemplateAttachment",
-          "description": "Source attachment; shared across annotations from the same attachment."
-        },
-        "key": {
-          "type": "string",
-          "description": "Zotero item key of the annotation."
-        },
-        "indexedKey": {
-          "type": "string",
-          "description": "`key` for the personal library, `KEYgGROUPID` for a group library."
-        },
-        "libraryID": {
-          "type": "number",
-          "description": "Zotero library ID holding the annotation."
-        },
-        "type": {
-          "$ref": "#/$defs/ResolvedAnnotationTypeName",
-          "description": "Annotation kind: `\"highlight\"`, `\"note\"`, `\"image\"`, `\"ink\"`, `\"underline\"`, or `\"text\"`; `\"unknown\"` for a type Zotero added after this release."
-        },
-        "text": {
-          "type": ["string", "null"],
-          "description": "The highlighted or underlined excerpt; `null` when the type carries none. Verbatim as Zotero stores it, so it can hold the attribute-free inline tags the reader's editor allows (`<i>`, `<b>`, `<sub>`, `<sup>`)."
-        },
-        "commentHtml": {
-          "type": ["string", "null"],
-          "description": "Raw comment HTML as stored by Zotero — \"plain text flavored with some HTML tags\" (only `<i>`/`<b>`/`<sub>`/`<sup>` plus `\\n` line breaks); `null` when there is no comment. For rendered Markdown use `comment`."
-        },
-        "colorHex": {
-          "type": ["string", "null"],
-          "description": "Hex color, e.g. `\"#ffd400\"`."
-        },
-        "colorName": {
-          "anyOf": [
-            {
-              "const": "yellow"
-            },
-            {
-              "const": "red"
-            },
-            {
-              "const": "green"
-            },
-            {
-              "const": "blue"
-            },
-            {
-              "const": "purple"
-            },
-            {
-              "const": "magenta"
-            },
-            {
-              "const": "orange"
-            },
-            {
-              "const": "gray"
-            },
-            {
-              "const": "plum"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Zotero palette name — `\"yellow\"`, `\"red\"`, `\"green\"`, `\"blue\"`, `\"purple\"`, `\"magenta\"`, `\"orange\"`, `\"gray\"`, or `\"plum\"`; `null` when `TemplateAnnotationBaseData.colorHex` is absent or holds a custom color outside the palette."
-        },
-        "pageLabel": {
-          "type": ["string", "null"],
-          "description": "Page label as the document itself shows it, e.g. `\"42\"`, `\"iv\"`."
-        },
-        "page": {
-          "type": ["number", "null"],
-          "description": "1-based page number derived from the PDF position (`pageIndex + 1`); `null` for annotations with no page index (EPUB / snapshot). Unlike `pageLabel` this ignores the document's own page labelling."
-        },
-        "authorName": {
-          "type": ["string", "null"],
-          "description": "Annotation author as stored on the annotation row; `null` when the row records none."
-        },
-        "isExternal": {
-          "type": "boolean",
-          "description": "Whether Zotero marks the annotation as external."
-        },
-        "dateAdded": {
-          "type": "string",
-          "description": "When the annotation was created. Second precision, like an item's timestamps."
-        },
-        "dateModified": {
-          "type": "string",
-          "description": "When the annotation was last modified; same precision as `dateAdded`."
-        },
-        "tags": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/TemplateTag"
-          },
-          "description": "Tags applied to this annotation."
-        }
-      },
-      "required": [
-        "citation",
-        "imgLink",
-        "comment",
-        "fileLink",
-        "backlink",
-        "parentItem",
-        "parentAttachment",
-        "key",
-        "indexedKey",
-        "libraryID",
-        "type",
-        "text",
-        "commentHtml",
-        "colorHex",
-        "colorName",
-        "pageLabel",
-        "page",
-        "authorName",
-        "isExternal",
-        "dateAdded",
-        "dateModified",
-        "tags"
-      ],
-      "additionalProperties": false
-    },
-    "TemplateFilenameItemData": {
-      "description": "The `zt` root of the `filename` template: an item's own `TemplateItemBaseData`, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.",
-      "type": "object",
-      "properties": {
-        "notePath": {
-          "type": ["string", "null"],
-          "description": "Always `\"\"` — the note does not exist yet when a filename is resolved. Stubbed (rather than omitted) so a filename template that references `TemplateItemData.notePath` does not throw; matches `TemplateItemData.notePath`'s `string | null` contract."
-        },
-        "noteLink": {
-          "oneOf": [
-            {
-              "type": "object",
-              "properties": {
-                "$helper": {
-                  "const": "noteLink"
-                },
-                "signature": {
-                  "const": "(alias?: string, subpath?: string) => string | null"
-                },
-                "value": {
-                  "type": ["string", "null"]
-                }
-              },
-              "required": ["$helper", "signature", "value"],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "$inert": {
-                  "type": "string"
-                }
-              },
-              "required": ["$inert"],
-              "additionalProperties": false
-            }
-          ],
-          "description": "Always returns `\"\"`; matches `TemplateItemData.noteLink`'s signature."
-        },
-        "collections": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/TemplateCollection"
-          },
-          "description": "Collections the item belongs to, sorted by name; trashed collections excluded."
-        },
-        "key": {
-          "type": "string",
-          "description": "Zotero item key, e.g. `\"ABC12345\"`; unique within its library."
-        },
-        "groupID": {
-          "type": ["number", "null"],
-          "description": "Group library ID; `null` for the personal library."
-        },
-        "libraryID": {
-          "type": "number",
-          "description": "Zotero library ID holding the item."
-        },
-        "indexedKey": {
-          "type": "string",
-          "description": "`key` for the personal library, `KEYgGROUPID` for a group library."
-        },
-        "itemType": {
-          "type": "string",
-          "description": "Zotero item type, e.g. `\"journalArticle\"`, `\"book\"`."
-        },
-        "dateAdded": {
-          "type": "string",
-          "description": "When the item was added to Zotero. Second precision — Zotero stores the timestamp as a UTC string with no sub-second component. Renders as the local date (e.g. `2026-06-21`) in `{{ }}` output."
-        },
-        "dateModified": {
-          "type": "string",
-          "description": "When the item was last modified in Zotero; same precision and rendering as `TemplateItemBaseData.dateAdded`."
-        },
-        "creators": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/TemplateCreator"
-          },
-          "description": "Every creator on the item, in Zotero's own order."
-        },
-        "primaryCreatorType": {
-          "type": ["string", "null"],
-          "description": "The creator role Zotero treats as primary for this item type, e.g. `\"author\"` for a journal article, `\"director\"` for a film; `null` when the type defines none."
-        },
-        "tags": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/TemplateTag"
-          },
-          "description": "Tags applied to the item."
-        },
-        "title": {
-          "type": ["string", "null"],
-          "description": "Item title."
-        },
-        "abstract": {
-          "type": ["string", "null"],
-          "description": "Abstract text. The CSL-inspired rename of Zotero's `abstractNote`, which stays accessible — both `zt.abstract` and `zt.abstractNote` work."
-        },
-        "containerTitle": {
-          "type": ["string", "null"],
-          "description": "Journal or container title. The CSL-inspired rename of Zotero's `publicationTitle`, which stays accessible — both names work."
-        },
-        "citationKey": {
-          "type": ["string", "null"],
-          "description": "Citation key, from Better BibTeX or Zotero's native citation key."
-        },
-        "citekey": {
-          "type": ["string", "null"],
-          "description": "Alias for `citationKey`; both stay accessible on `zt.*`."
-        },
-        "date": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ItemDateYMD"
-            },
-            {
-              "$ref": "#/$defs/ItemDateYearMonth"
-            },
-            {
-              "$ref": "#/$defs/ItemDateYear"
-            },
-            {
-              "$ref": "#/$defs/ItemDateText"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Publication date, parsed from Zotero's multipart `date` field."
-        },
-        "shortTitle": {
-          "type": ["string", "null"],
-          "description": "Short title."
-        },
-        "DOI": {
-          "type": ["string", "null"],
-          "description": "Digital Object Identifier."
-        },
-        "url": {
-          "type": ["string", "null"],
-          "description": "Item URL."
-        },
-        "ISBN": {
-          "type": ["string", "null"],
-          "description": "ISBN."
-        },
-        "ISSN": {
-          "type": ["string", "null"],
-          "description": "ISSN."
-        },
-        "volume": {
-          "type": ["string", "null"],
-          "description": "Volume."
-        },
-        "issue": {
-          "type": ["string", "null"],
-          "description": "Issue."
-        },
-        "pages": {
-          "type": ["string", "null"],
-          "description": "Page range."
-        },
-        "publisher": {
-          "type": ["string", "null"],
-          "description": "Publisher."
-        },
-        "place": {
-          "type": ["string", "null"],
-          "description": "Place of publication."
-        },
-        "edition": {
-          "type": ["string", "null"],
-          "description": "Edition."
-        },
-        "language": {
-          "type": ["string", "null"],
-          "description": "Language, verbatim as Zotero stores it, e.g. `\"en-US\"`, `\"English\"`."
-        },
-        "extra": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ItemExtra"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Parsed best-effort from Zotero's free-text `extra` field; prints `raw`. `null` when the field is empty or absent."
-        }
-      },
-      "required": [
-        "notePath",
-        "noteLink",
-        "collections",
-        "key",
-        "groupID",
-        "libraryID",
-        "indexedKey",
-        "itemType",
-        "dateAdded",
-        "dateModified",
-        "creators",
-        "primaryCreatorType",
-        "tags",
-        "title",
-        "abstract",
-        "containerTitle",
-        "citationKey",
-        "citekey",
-        "date",
-        "shortTitle",
-        "DOI",
-        "url",
-        "ISBN",
-        "ISSN",
-        "volume",
-        "issue",
-        "pages",
-        "publisher",
-        "place",
-        "edition",
-        "language",
-        "extra"
-      ],
-      "oneOf": [
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "artworkSize": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "eventPlace": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "artwork"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "runningTime": {
-              "type": "string"
-            },
-            "seriesTitle": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "audioRecording"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "authority": {
-              "type": "string"
-            },
-            "code": {
-              "type": "string"
-            },
-            "history": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "section": {
-              "type": "string"
-            },
-            "session": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "bill"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "blogPost"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "numPages": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "originalDate": {
-              "type": "string"
-            },
-            "originalPlace": {
-              "type": "string"
-            },
-            "originalPublisher": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "book"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "originalDate": {
-              "type": "string"
-            },
-            "originalPlace": {
-              "type": "string"
-            },
-            "originalPublisher": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "bookSection"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "authority": {
-              "type": "string"
-            },
-            "history": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "reporter": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "case"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "programmingLanguage": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "seriesTitle": {
-              "type": "string"
-            },
-            "system": {
-              "type": "string"
-            },
-            "versionNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "computerProgram"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "conferenceName": {
-              "type": "string"
-            },
-            "eventPlace": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "conferencePaper"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "versionNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "dataset"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "dictionaryEntry"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "document"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "email"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "encyclopediaArticle"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "runningTime": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "film"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "forumPost"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "authority": {
-              "type": "string"
-            },
-            "committee": {
-              "type": "string"
-            },
-            "history": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "session": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "hearing"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "instantMessage"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "interview"
-            }
-          }
-        },
-        {
-          "properties": {
-            "PMCID": {
-              "type": "string"
-            },
-            "PMID": {
-              "type": "string"
-            },
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "journalAbbreviation": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "partNumber": {
-              "type": "string"
-            },
-            "partTitle": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "section": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesText": {
-              "type": "string"
-            },
-            "seriesTitle": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "journalArticle"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "eventPlace": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "letter"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "magazineArticle"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "numPages": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "manuscript"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "scale": {
-              "type": "string"
-            },
-            "seriesTitle": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "map"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "section": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "newspaperArticle"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "applicationNumber": {
-              "type": "string"
-            },
-            "assignee": {
-              "type": "string"
-            },
-            "authority": {
-              "type": "string"
-            },
-            "country": {
-              "type": "string"
-            },
-            "filingDate": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "originalDate": {
-              "type": "string"
-            },
-            "priorityNumbers": {
-              "type": "string"
-            },
-            "references": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "status": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "patent"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "runningTime": {
-              "type": "string"
-            },
-            "seriesTitle": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "podcast"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "preprint"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "meetingName": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "presentation"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "runningTime": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "radioBroadcast"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "seriesTitle": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "report"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "authority": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "committee": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "numPages": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "partNumber": {
-              "type": "string"
-            },
-            "partTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "status": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "versionNumber": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "standard"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "code": {
-              "type": "string"
-            },
-            "codeNumber": {
-              "type": "string"
-            },
-            "history": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "section": {
-              "type": "string"
-            },
-            "session": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "statute"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "numPages": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "series": {
-              "type": "string"
-            },
-            "seriesNumber": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "thesis"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "number": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "runningTime": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "tvBroadcast"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "archive": {
-              "type": "string"
-            },
-            "archiveLocation": {
-              "type": "string"
-            },
-            "callNumber": {
-              "type": "string"
-            },
-            "libraryCatalog": {
-              "type": "string"
-            },
-            "medium": {
-              "type": "string"
-            },
-            "numberOfVolumes": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "runningTime": {
-              "type": "string"
-            },
-            "seriesTitle": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "videoRecording"
-            }
-          }
-        },
-        {
-          "properties": {
-            "abstractNote": {
-              "type": "string"
-            },
-            "accessDate": {
-              "type": "string"
-            },
-            "publicationTitle": {
-              "type": "string"
-            },
-            "rights": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            },
-            "itemType": {
-              "const": "webpage"
-            }
-          }
-        }
-      ],
-      "unevaluatedProperties": false
     }
   }
 }

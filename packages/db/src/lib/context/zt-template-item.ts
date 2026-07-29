@@ -1,6 +1,7 @@
 import { type Temporal } from "@zotlit/shared/temporal";
 import { FIELD_ALIASES } from "@zotlit/zotero-types";
 
+import { ZT_FIELD_ALIASES } from "@/lib/context/zt-field-aliases";
 import { defineToString } from "@/lib/to-string";
 import { type TemplateCollection } from "@/lib/zt-collection";
 import { parseItemDate, type ItemDate } from "@/lib/zt-date";
@@ -235,10 +236,10 @@ export function itemToTemplateBaseData({
     title: allFields.title ?? null,
     // CSL-inspired aliases: the canonical source field stays accessible via the
     // `...allFields` spread, and these expose the CSL name alongside it.
-    abstract: allFields.abstractNote ?? null, // ← abstractNote
-    containerTitle: allFields.publicationTitle ?? null, // ← publicationTitle
+    abstract: allFields[ZT_FIELD_ALIASES.abstract] ?? null,
+    containerTitle: allFields[ZT_FIELD_ALIASES.containerTitle] ?? null,
     citationKey: allFields.citationKey ?? null,
-    citekey: allFields.citationKey ?? null, // ← citationKey
+    citekey: allFields[ZT_FIELD_ALIASES.citekey] ?? null,
     date: parseItemDate(allFields.date),
     shortTitle: allFields.shortTitle ?? null,
     DOI: allFields.DOI ?? null,

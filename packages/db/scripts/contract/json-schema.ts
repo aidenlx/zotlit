@@ -18,12 +18,16 @@ interface SchemaContext {
   itemTypes: ContractIR["itemTypes"];
   references: readonly ContractReference[];
   owner: string;
+  matchedReferences: Set<ContractReference>;
+  /** True only for the members directly on a `$defs` entry's own object — never for a nested inline object it contains. */
+  atOwnerRoot: boolean;
 }
 
 export function toJsonSchema(ir: ContractIR, root: ContractRoot): JsonSchema {
   const rootIR = ir.roots[root];
   if (!rootIR) throw new Error(`Contract IR carries no ${root} root`);
-  return {
+  const matchedReferences = new Set<ContractReference>();
+  const schema = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: `urn:zotlit:template-contract:v${ir.contractVersion}:${root}`,
     $comment: ir.$comment,
@@ -33,20 +37,70 @@ export function toJsonSchema(ir: ContractIR, root: ContractRoot): JsonSchema {
     }.`,
     $ref: defRef(rootIR.type),
     $defs: Object.fromEntries(
-      Object.entries(ir.types).map(([name, type]) => [
+      reachableTypes(ir, rootIR.type).map(([name, type]) => [
         name,
         schemaFor(type, {
           itemTypes: ir.itemTypes,
           references: rootIR.references,
           owner: name,
+          matchedReferences,
+          atOwnerRoot: true,
         }),
       ]),
     ),
   };
+  const unmatched = rootIR.references.filter(
+    (reference) => !matchedReferences.has(reference),
+  );
+  if (unmatched.length > 0) {
+    throw new Error(
+      `Contract reference never matched a member: ${unmatched
+        .map(({ owner, member }) => `${owner}.${member}`)
+        .join(", ")}`,
+    );
+  }
+  return schema;
 }
 
 function defRef(name: string): string {
   return `#/$defs/${name}`;
+}
+
+function reachableTypes(
+  ir: ContractIR,
+  root: string,
+): Array<readonly [string, ContractIR["types"][string]]> {
+  const names = new Set<string>();
+  const visit = (type: ContractType): void => {
+    switch (type.kind) {
+      case "ref": {
+        if (names.has(type.name)) return;
+        names.add(type.name);
+        visit(ir.types[type.name]!);
+        return;
+      }
+      case "array":
+        visit(type.items);
+        return;
+      case "record":
+        visit(type.values);
+        return;
+      case "helper":
+        visit(type.value);
+        return;
+      case "object":
+        for (const member of type.members) visit(member.type);
+        if (type.additional) visit(type.additional.type);
+        return;
+      case "union":
+        for (const option of type.options) visit(option);
+        return;
+      default:
+        return;
+    }
+  };
+  visit({ kind: "ref", name: root });
+  return [...names].map((name) => [name, ir.types[name]!] as const);
 }
 
 function schemaFor(type: ContractType, context: SchemaContext): JsonSchema {
@@ -130,12 +184,20 @@ function memberSchema(
   member: ContractMember,
   context: SchemaContext,
 ): JsonSchema {
-  const reference = context.references.find(
-    ({ owner, member: name }) =>
-      owner === context.owner && name === member.name,
+  const reference =
+    context.atOwnerRoot &&
+    context.references.find(
+      ({ owner, member: name }) =>
+        owner === context.owner && name === member.name,
+    );
+  if (reference) {
+    context.matchedReferences.add(reference);
+    return referenceMarkerSchema(reference.path);
+  }
+  return withDescription(
+    schemaFor(member.type, { ...context, atOwnerRoot: false }),
+    member.description,
   );
-  if (reference) return referenceMarkerSchema(reference.path);
-  return withDescription(schemaFor(member.type, context), member.description);
 }
 
 /** A member's own doc wins over any note the emitted type carries. */
@@ -200,6 +262,7 @@ function itemTypeSchema(
         ),
         itemType: { const: itemType },
       },
+      required: ["itemType"],
     })),
     unevaluatedProperties: false,
   };

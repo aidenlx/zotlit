@@ -119,14 +119,37 @@ export class ContractExtractor {
 
   /** A function-valued member serializes as a helper marker; every other member as its own value. */
   #memberType(name: string, type: Type, location: Node): ContractType {
-    const [signature] = type.getCallSignatures();
-    if (!signature) return this.#walk(type, location);
-    return {
+    const options = type.isUnion() ? type.getUnionTypes() : [type];
+    const callable = options.filter(
+      (option) => option.getCallSignatures().length > 0,
+    );
+    if (callable.length === 0) return this.#walk(type, location);
+    if (callable.length > 1) {
+      throw new Error(
+        `A contract helper has multiple callable options in its union: ${type.getText()}`,
+      );
+    }
+    const signatures = callable[0]!.getCallSignatures();
+    if (signatures.length > 1) {
+      throw new Error(
+        `A contract helper has multiple overload signatures: ${type.getText()}`,
+      );
+    }
+    const [signature] = signatures;
+    const helper: ContractType = {
       kind: "helper",
       name,
-      signature: renderSignature(signature),
-      value: this.#walk(signature.getReturnType(), location),
+      signature: renderSignature(signature!),
+      value: this.#walk(signature!.getReturnType(), location),
     };
+    const values = options
+      .filter(
+        (option) =>
+          !option.isUndefined() && option.getCallSignatures().length === 0,
+      )
+      .map((option) => this.#walk(option, location));
+    if (values.length === 0) return helper;
+    return { kind: "union", options: [helper, ...sortNullsLast(values)] };
   }
 
   #walk(type: Type, location: Node): ContractType {
@@ -152,9 +175,6 @@ export class ContractExtractor {
     const stringified = temporalOf(type);
     if (stringified) return stringified;
 
-    const named = this.#nameOf(type);
-    if (named) return this.#register(type, named);
-
     // A helper marker needs the member name, which only #memberType holds, so a
     // function reached any deeper has no truthful serialized form.
     if (type.getCallSignatures().length > 0) {
@@ -162,6 +182,9 @@ export class ContractExtractor {
         `A function is only a contract helper as a direct member: ${type.getText()}`,
       );
     }
+
+    const named = this.#nameOf(type);
+    if (named) return this.#register(type, named);
 
     if (type.isUnion()) {
       const options = this.#options(type, location);
@@ -178,14 +201,13 @@ export class ContractExtractor {
     throw new Error(`Unsupported contract type: ${type.getText()}`);
   }
 
-  /** `undefined` never survives JSON serialization; a nullable union reads best with `null` last. */
+  /** `undefined` never survives JSON serialization. */
   #options(type: Type, location: Node): ContractType[] {
     const options = type
       .getUnionTypes()
       .filter((option) => !option.isUndefined())
       .map((option) => this.#walk(option, location));
-    const nulls = options.filter(isNullOption);
-    return [...options.filter((option) => !isNullOption(option)), ...nulls];
+    return sortNullsLast(options);
   }
 
   #additional(
@@ -217,6 +239,12 @@ export class ContractExtractor {
 
 function isNullOption(option: ContractType): boolean {
   return option.kind === "primitive" && option.type === "null";
+}
+
+/** A nullable union reads best with `null` last. */
+function sortNullsLast(options: ContractType[]): ContractType[] {
+  const nulls = options.filter(isNullOption);
+  return [...options.filter((option) => !isNullOption(option)), ...nulls];
 }
 
 function extendsInterface(type: Type, name: string): boolean {

@@ -66,7 +66,7 @@ describe("per-item-type fields", () => {
     )!;
 
   it("emits one closed branch per regular upstream Zotero item type", () => {
-    expect(branches).toHaveLength(37);
+    expect(branches).toHaveLength(Object.keys(ir.itemTypes).length);
     expect(
       filenameSchema.$defs.TemplateFilenameItemData.unevaluatedProperties,
     ).toBe(false);
@@ -118,6 +118,10 @@ describe("serialized forms", () => {
       required: ["$inert"],
       additionalProperties: false,
     });
+    expect(
+      annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
+        .anyOf![0]!.oneOf![0]!.properties.$helper,
+    ).toEqual({ const: "imgLink" });
   });
 
   it("serializes Temporal values as strings and shared cycles as ref paths", () => {
@@ -130,7 +134,7 @@ describe("serialized forms", () => {
     });
     expect(
       JSON.stringify(
-        annotationSchema.$defs.TemplateAnnotation.properties.parentItem,
+        annotationSchema.$defs.AnnotationTemplateContext.properties.parentItem,
       ),
     ).not.toContain('"$ref":{"const":"zt"}');
   });

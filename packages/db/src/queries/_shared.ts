@@ -9,6 +9,8 @@ import {
 import { type NodeDatabaseClient } from "@/client/node";
 import { type SQLocalDatabaseClient } from "@/client/web";
 
+export { CHILD_ITEM_TYPES, type ChildItemType } from "@/lib/item-types";
+
 /**
  * Schema-aware shape of an RQB v2 `findMany` config bound to a specific
  * table in our {@link relations} graph. Pair with `satisfies` so per-key
@@ -19,15 +21,6 @@ import { type SQLocalDatabaseClient } from "@/client/web";
  */
 export type FindManyOptions<TName extends keyof typeof relations> =
   DBQueryConfig<"many", typeof relations, (typeof relations)[TName]>;
-
-/**
- * Zotero item types that are excluded from regular-item queries because
- * they represent child rows (file attachments, notes, PDF annotations)
- * rather than first-class library entries.
- */
-export const CHILD_ITEM_TYPES = ["attachment", "note", "annotation"] as const;
-
-export type ChildItemType = (typeof CHILD_ITEM_TYPES)[number];
 
 /**
  * Swap the result-kind generic of a Drizzle builder so a query authored

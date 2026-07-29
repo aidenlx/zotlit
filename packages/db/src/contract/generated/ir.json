@@ -1596,8 +1596,13 @@
             "kind": "union",
             "options": [
               {
-                "kind": "ref",
-                "name": "TemplateLink"
+                "kind": "helper",
+                "name": "imgLink",
+                "signature": "(alias?: string, subpath?: string) => string",
+                "value": {
+                  "kind": "primitive",
+                  "type": "string"
+                }
               },
               {
                 "kind": "primitive",
@@ -1917,11 +1922,6 @@
           }
         }
       ]
-    },
-    "TemplateLink": {
-      "kind": "object",
-      "description": "A lazy Markdown-link helper exposed on the template context. Called with no\nargs it renders the default link with its display text already filled in (so\nMarkdown links are never blank); pass `alias` to override the display text and\n`subpath` to append a `#`-fragment (heading / block / `page=N`).",
-      "members": []
     },
     "TemplateParentItemData": {
       "kind": "object",
@@ -3805,8 +3805,13 @@
             "kind": "union",
             "options": [
               {
-                "kind": "ref",
-                "name": "TemplateLink"
+                "kind": "helper",
+                "name": "imgLink",
+                "signature": "(alias?: string, subpath?: string) => string",
+                "value": {
+                  "kind": "primitive",
+                  "type": "string"
+                }
               },
               {
                 "kind": "primitive",

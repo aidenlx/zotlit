@@ -19,6 +19,8 @@ import {
   templateSlotsForRoot,
   type ContractRoot,
 } from "../src/contract/roots.ts";
+import { ZT_FIELD_ALIASES } from "../src/lib/context/zt-field-aliases.ts";
+import { CHILD_ITEM_TYPES } from "../src/lib/item-types.ts";
 import { ContractExtractor } from "./contract/extract.ts";
 import {
   type ContractIR,
@@ -58,11 +60,7 @@ const ROOT_DECLARATIONS = {
   }
 >;
 
-const EMITTED_ROOTS = [
-  "note",
-  "annotation",
-  "filename",
-] as const satisfies readonly ContractRoot[];
+const EMITTED_ROOTS = Object.keys(ROOT_DECLARATIONS) as ContractRoot[];
 
 interface ZoteroSchema {
   readonly itemTypes: readonly {
@@ -71,12 +69,7 @@ interface ZoteroSchema {
   }[];
 }
 
-const CHILD_ITEM_TYPES = new Set(["annotation", "attachment", "note"]);
-const ZT_FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = {
-  abstractNote: ["abstract"],
-  publicationTitle: ["containerTitle"],
-  citationKey: ["citekey"],
-};
+const CHILD_ITEM_TYPE_NAMES: ReadonlySet<string> = new Set(CHILD_ITEM_TYPES);
 
 const project = new Project({ tsConfigFilePath: "tsconfig.lib.json" });
 const extractor = new ContractExtractor(resolve("src"));
@@ -126,14 +119,15 @@ function extractItemTypes(
 ): Record<string, readonly string[]> {
   return Object.fromEntries(
     schema.itemTypes
-      .filter(({ itemType }) => !CHILD_ITEM_TYPES.has(itemType))
+      .filter(({ itemType }) => !CHILD_ITEM_TYPE_NAMES.has(itemType))
       .map(({ itemType, fields }) => {
         const names = new Set<string>();
         for (const { field } of fields) {
           const canonical = FIELD_ALIASES[field] ?? field;
           names.add(canonical);
-          for (const alias of ZT_FIELD_ALIASES[canonical] ?? [])
-            names.add(alias);
+          for (const [alias, source] of Object.entries(ZT_FIELD_ALIASES)) {
+            if (source === canonical) names.add(alias);
+          }
         }
         return [itemType, [...names].sort()] as const;
       }),
