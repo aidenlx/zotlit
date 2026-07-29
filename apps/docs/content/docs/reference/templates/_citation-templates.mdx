@@ -48,14 +48,9 @@ A cited item uses the same field vocabulary as the note template, narrowed to fi
 | `item.place`              | `string \| null`                    |
 | `item.edition`            | `string \| null`                    |
 | `item.language`           | `string \| null`                    |
-| `item.extra`              | `string \| null`                    |
+| `item.extra`              | `ItemExtra \| null`                 |
 
 Note-tier fields (`key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, `noteLink`) are not available on cited items.
-
-<Callout type="info" title="extra is a raw string here">
-  In the citation context, `item.extra` is a raw `string | null`. It is not the
-  parsed `ItemExtra` object available in note templates.
-</Callout>
 
 ### Locator label abbreviations [#locator-label-abbreviations]
 

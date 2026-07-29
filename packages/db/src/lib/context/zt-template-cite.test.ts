@@ -165,6 +165,22 @@ describe("citekeysToCiteTemplateData", () => {
       expect(items[0]).not.toHaveProperty("collections");
     });
 
+    it("exposes parsed Extra data from the live DB item", () => {
+      const item = makeItem({
+        itemType: "journalArticle",
+        extra: "DOI: 10.1/example\nFreeform note",
+      });
+
+      const { items } = citekeysToCiteTemplateData([
+        { citationKey: "Example2024", item },
+      ]);
+
+      expect(items[0]?.extra).toMatchObject({
+        raw: "DOI: 10.1/example\nFreeform note",
+        fields: { DOI: "10.1/example" },
+      });
+    });
+
     it("keeps the ref's resolved citekey even when the item itself has none (mixed legs: DB item + embedded-snapshot key)", () => {
       const item = makeItem({
         itemType: "journalArticle",
@@ -209,13 +225,21 @@ describe("resolveCitedItem (three-tier Citation policy)", () => {
   });
 
   it("tier 2 — the embedded snapshot resolves when no DB row, ref citekey overrides the snapshot's own", () => {
-    const resolved = resolveCitedItem(undefined, snapshot, "RefKey");
+    const resolved = resolveCitedItem(
+      undefined,
+      { ...snapshot, note: "DOI: 10.1/example\nFreeform note" },
+      "RefKey",
+    );
 
     expect(resolved).toMatchObject({
       title: "Embedded title",
       itemType: "journalArticle",
       citationKey: "RefKey",
       citekey: "RefKey",
+      extra: {
+        raw: "DOI: 10.1/example\nFreeform note",
+        fields: { DOI: "10.1/example" },
+      },
     });
   });
 

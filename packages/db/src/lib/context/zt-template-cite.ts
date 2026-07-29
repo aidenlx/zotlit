@@ -1,5 +1,6 @@
 // Cite-template contract: narrowed cited-item data and the Citation Item wrapper.
 import { type ItemDate } from "@/lib/zt-date";
+import { type ItemExtra } from "@/lib/zt-extra";
 import { type Item } from "@/queries/items";
 
 import { emptyToNull } from "./normalize";
@@ -41,7 +42,7 @@ export interface TemplateCiteItemData {
   place: string | null;
   edition: string | null;
   language: string | null;
-  extra: string | null;
+  extra: ItemExtra | null;
   /** Additional Zotero fields beyond the explicitly typed ones above. */
   [field: string]: unknown;
 }
@@ -171,15 +172,11 @@ export function narrowBaseDataToCiteItemData(
     // the annotation-citation leg); excluded like the other vault/DB context.
     notePath: _notePath,
     noteLink: _noteLink,
-    // Cite/CSL output feeds the raw CSL `note` variable, so the parsed
-    // ItemExtra is flattened back to its verbatim raw string here.
-    extra,
     ...rest
   } = base;
   const key = emptyToNull(citationKey);
   return {
     ...rest,
-    extra: extra?.raw ?? null,
     citationKey: key,
     citekey: key,
   };

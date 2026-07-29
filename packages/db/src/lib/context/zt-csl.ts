@@ -14,6 +14,7 @@ import {
   yearOnly,
   type ItemDate,
 } from "@/lib/zt-date";
+import { parseItemExtra } from "@/lib/zt-extra";
 
 import { type TemplateCiteItemData } from "./zt-template-cite";
 import { type TemplateCreator } from "./zt-template-item";
@@ -148,6 +149,6 @@ export function cslToTemplateItem(
     place: fields.place ?? null,
     edition: fields.edition ?? null,
     language: fields.language ?? null,
-    extra: fields.extra ?? null,
+    extra: parseItemExtra(fields.extra),
   };
 }
