@@ -20,9 +20,8 @@ describe("contract IR", () => {
 });
 
 describe("filename root schema", () => {
-  const properties =
-    filenameSchema.$defs[ir.roots.filename.type as "TemplateFilenameItemData"]
-      .properties;
+  const root = filenameSchema.$defs.TemplateFilenameItemData;
+  const properties = root.properties;
 
   it("compiles as a draft 2020-12 schema", () => {
     const ajv = new Ajv2020({ strict: true });
@@ -55,13 +54,17 @@ describe("filename root schema", () => {
   });
 
   it("keeps the item-field index signature open", () => {
-    expect(
-      filenameSchema.$defs.TemplateFilenameItemData.additionalProperties,
-    ).not.toBe(false);
+    expect(root.additionalProperties).not.toBe(false);
   });
 
   it("drops the non-enumerable toString from every shape", () => {
-    const names = JSON.stringify(filenameSchema.$defs);
-    expect(names).not.toContain('"toString"');
+    expect(JSON.stringify(filenameSchema.$defs)).not.toContain('"toString"');
+  });
+
+  it("resolves JSDoc link tags into plain prose", () => {
+    expect(JSON.stringify(filenameSchema)).not.toContain("{@link");
+    expect(properties.indexedKey.description).toBe(
+      "`key` for the personal library, `KEYgGROUPID` for a group library.",
+    );
   });
 });

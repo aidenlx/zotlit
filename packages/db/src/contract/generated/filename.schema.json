@@ -8,11 +8,11 @@
   "$defs": {
     "TemplateFilenameItemData": {
       "type": "object",
-      "description": "The `zt` root of the `filename` template: an item's own {@link TemplateItemBaseData}, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.",
+      "description": "The `zt` root of the `filename` template: an item's own `TemplateItemBaseData`, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.",
       "properties": {
         "notePath": {
           "type": ["string", "null"],
-          "description": "Always `\"\"` — the note does not exist yet when a filename is resolved. Stubbed (rather than omitted) so a filename template that references {@link TemplateItemData.notePath} does not throw; matches {@link TemplateItemData.notePath}'s `string | null` contract."
+          "description": "Always `\"\"` — the note does not exist yet when a filename is resolved. Stubbed (rather than omitted) so a filename template that references `TemplateItemData.notePath` does not throw; matches `TemplateItemData.notePath`'s `string | null` contract."
         },
         "noteLink": {
           "type": "object",
@@ -29,7 +29,7 @@
           },
           "required": ["$helper", "signature", "value"],
           "additionalProperties": false,
-          "description": "Always returns `\"\"`; matches {@link TemplateItemData.noteLink}'s signature."
+          "description": "Always returns `\"\"`; matches `TemplateItemData.noteLink`'s signature."
         },
         "collections": {
           "type": "array",
@@ -52,7 +52,7 @@
         },
         "indexedKey": {
           "type": "string",
-          "description": "{@link key} for the personal library, `KEYgGROUPID` for a group library."
+          "description": "`key` for the personal library, `KEYgGROUPID` for a group library."
         },
         "itemType": {
           "type": "string",
@@ -64,7 +64,7 @@
         },
         "dateModified": {
           "type": "string",
-          "description": "When the item was last modified in Zotero; same precision and rendering as {@link TemplateItemBaseData.dateAdded}."
+          "description": "When the item was last modified in Zotero; same precision and rendering as `TemplateItemBaseData.dateAdded`."
         },
         "creators": {
           "type": "array",
@@ -102,7 +102,7 @@
         },
         "citekey": {
           "type": ["string", "null"],
-          "description": "Alias for {@link citationKey}; both stay accessible on `zt.*`."
+          "description": "Alias for `citationKey`; both stay accessible on `zt.*`."
         },
         "date": {
           "anyOf": [
@@ -247,7 +247,7 @@
     },
     "TemplateCreator": {
       "type": "object",
-      "description": "One creator of an item, in the template vocabulary. Coerces to {@link TemplateCreator.fullName} in string contexts.",
+      "description": "One creator of an item, in the template vocabulary. Coerces to `TemplateCreator.fullName` in string contexts.",
       "properties": {
         "family": {
           "type": "string",
@@ -275,7 +275,7 @@
     },
     "TemplateTag": {
       "type": "object",
-      "description": "A Tag in the template vocabulary. Coerces to `name` in string contexts (like a collection coerces to its name), so `{{ zt.tags | join: \", \" }}` renders tag names directly. Zotero-internal IDs are dropped; `type` is the resolved name rather than {@link ItemTag}'s raw int.",
+      "description": "A Tag in the template vocabulary. Coerces to `name` in string contexts (like a collection coerces to its name), so `{{ zt.tags | join: \", \" }}` renders tag names directly. Zotero-internal IDs are dropped; `type` is the resolved name rather than `ItemTag`'s raw int.",
       "properties": {
         "name": {
           "type": "string",
@@ -403,7 +403,7 @@
         },
         "year": {
           "type": ["number", "null"],
-          "description": "Year extracted from {@link ItemDateText.text} when it holds a standalone 4-digit year in the 1000-2999 range, else `null`."
+          "description": "Year extracted from `ItemDateText.text` when it holds a standalone 4-digit year in the 1000-2999 range, else `null`."
         },
         "month": {
           "type": "null",
@@ -441,7 +441,7 @@
           "items": {
             "$ref": "#/$defs/ExtraLine"
           },
-          "description": "Every source row in order, the source of truth {@link ItemExtra.fields} derives from. Scan it to recover every value of a repeated key."
+          "description": "Every source row in order, the source of truth `ItemExtra.fields` derives from. Scan it to recover every value of a repeated key."
         }
       },
       "required": ["raw", "fields", "lines"],
@@ -484,7 +484,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "One source row of an Extra field, in document order: a parsed pair (`key` plus trimmed `value`) or a non-pair text/blank row (`key: null`). `raw` is the verbatim line so interleaved prose is never dropped.\n\nA line splits on its first `:` or `=`, and is a pair only when the key starts with an ASCII letter and otherwise holds ASCII letters, digits, spaces, dots, hyphens, or underscores. A line that does not match, and one whose value is empty, becomes a text row.\n\nA non-enumerable `toString` returns `raw`, same mechanism as {@link ItemExtra}."
+      "description": "One source row of an Extra field, in document order: a parsed pair (`key` plus trimmed `value`) or a non-pair text/blank row (`key: null`). `raw` is the verbatim line so interleaved prose is never dropped.\n\nA line splits on its first `:` or `=`, and is a pair only when the key starts with an ASCII letter and otherwise holds ASCII letters, digits, spaces, dots, hyphens, or underscores. A line that does not match, and one whose value is empty, becomes a text row.\n\nA non-enumerable `toString` returns `raw`, same mechanism as `ItemExtra`."
     }
   }
 }

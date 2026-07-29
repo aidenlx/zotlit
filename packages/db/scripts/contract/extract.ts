@@ -40,6 +40,7 @@ interface NamedType {
 export class ContractExtractor {
   readonly #srcDir: string;
   readonly #types = new Map<string, ContractNamedType>();
+  readonly #registered = new Map<string, string>();
 
   /** @param srcDir Absolute path below which a declaration counts as part of the contract. */
   constructor(srcDir: string) {
@@ -59,10 +60,22 @@ export class ContractExtractor {
     }).name;
   }
 
+  /**
+   * A `$defs` key is the bare TypeScript name, so two same-named declarations —
+   * or two instantiations of one generic — would silently collapse into
+   * whichever arrived first. Fail instead, per ADR 0015.
+   */
   #register(type: Type, named: NamedType): ContractRef {
-    if (!this.#types.has(named.name)) {
+    const identity = type.getText();
+    const registered = this.#registered.get(named.name);
+    if (registered === undefined) {
+      this.#registered.set(named.name, identity);
       this.#types.set(named.name, WALKING);
       this.#types.set(named.name, this.#define(type, named.declaration));
+    } else if (registered !== identity) {
+      throw new Error(
+        `Two contract types claim the name ${named.name}: ${registered} and ${identity}`,
+      );
     }
     return { kind: "ref", name: named.name };
   }
@@ -93,15 +106,14 @@ export class ContractExtractor {
 
   #member(property: TypeSymbol, location: Node): ContractMember {
     const name = property.getName();
+    const type = property.getTypeAtLocation(location);
     return {
       name,
       description: jsDocOf(property.getValueDeclaration()),
-      optional: property.isOptional(),
-      type: this.#memberType(
-        name,
-        property.getTypeAtLocation(location),
-        location,
-      ),
+      // A member that can hold `undefined` disappears from JSON output, which
+      // is what an absent property means to a schema.
+      optional: property.isOptional() || carriesUndefined(type),
+      type: this.#memberType(name, type, location),
     };
   }
 
@@ -143,8 +155,18 @@ export class ContractExtractor {
     const named = this.#nameOf(type);
     if (named) return this.#register(type, named);
 
+    // A helper marker needs the member name, which only #memberType holds, so a
+    // function reached any deeper has no truthful serialized form.
+    if (type.getCallSignatures().length > 0) {
+      throw new Error(
+        `A function is only a contract helper as a direct member: ${type.getText()}`,
+      );
+    }
+
     if (type.isUnion()) {
-      return { kind: "union", options: this.#options(type, location) };
+      const options = this.#options(type, location);
+      // Dropping `undefined` can leave one option; that is no longer a union.
+      return options.length === 1 ? options[0]! : { kind: "union", options };
     }
     if (type.isObject() || type.isIntersection()) {
       const values = type.getStringIndexType();
@@ -192,6 +214,12 @@ export class ContractExtractor {
 
 function isNullOption(option: ContractType): boolean {
   return option.kind === "primitive" && option.type === "null";
+}
+
+function carriesUndefined(type: Type): boolean {
+  return (
+    type.isUndefined() || type.getUnionTypes().some((o) => o.isUndefined())
+  );
 }
 
 function jsDocOf(declaration: Node | undefined): string | undefined {

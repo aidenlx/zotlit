@@ -14,7 +14,7 @@ import {
 export interface ContractIR {
   /** Generated-file banner; JSON carries no comment syntax. */
   $comment: string;
-  /** {@link CONTRACT_VERSION} at extraction time. */
+  /** The `CONTRACT_VERSION` of `src/contract/roots.ts` at extraction time. */
   contractVersion: number;
   roots: Readonly<Partial<Record<ContractRoot, ContractRootIR>>>;
   /** Every named type reachable from {@link ContractIR.roots}, keyed by TS name. */

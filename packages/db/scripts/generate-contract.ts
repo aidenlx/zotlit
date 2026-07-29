@@ -6,7 +6,7 @@
 // parse error in the CI regeneration check, never as silently wrong output.
 //
 // @see docs/adr/0015-template-contract-artifacts-generate-from-ts-types.md
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Project, ts } from "ts-morph";
 
@@ -63,6 +63,9 @@ const ir: ContractIR = {
   types: extractor.types,
 };
 
+// Emptied first, so dropping a root deletes its committed schema instead of
+// leaving one the regeneration check would never notice.
+await rm(OUT_DIR, { recursive: true, force: true });
 await mkdir(OUT_DIR, { recursive: true });
 await writeJson("ir.json", ir);
 for (const root of EMITTED_ROOTS) {

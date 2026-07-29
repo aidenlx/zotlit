@@ -1,5 +1,6 @@
-import { type ContractRoot } from "../../src/contract/roots.ts";
 // Emits one contract root's JSON Schema (draft 2020-12) from the contract IR.
+
+import { type ContractRoot } from "../../src/contract/roots.ts";
 import {
   type ContractIR,
   type ContractMember,
@@ -121,13 +122,19 @@ function unionSchema(union: ContractUnion): JsonSchema {
   return { anyOf: options, description };
 }
 
+/** Every contract doc comment writes the plain `{@link Target}` form. */
+const LINK_TAG = /\{@link\s+([^}\s]+)\}/g;
+
 /**
- * JSDoc wraps at the source's column limit. Rejoin each paragraph so the
- * description reads as prose, and keep the paragraph breaks.
+ * JSDoc wraps at the source's column limit and links its own symbols. Rejoin
+ * each paragraph so the description reads as prose, keep the paragraph breaks,
+ * and render a link tag as the code-formatted target a schema reader can search
+ * for.
  */
 function normalizeDoc(text: string | undefined): string | undefined {
   return text
     ?.trim()
+    .replaceAll(LINK_TAG, "`$1`")
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.replaceAll(/\s+/g, " ").trim())
     .join("\n\n");
