@@ -16,7 +16,7 @@
     "lint:repo": "oxlint",
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
-    "quality": "turbo run //#lint:repo //#format",
+    "quality": "pnpm lint && pnpm format",
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true"
   },

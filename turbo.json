@@ -35,23 +35,7 @@
       ]
     },
     "//#lint:repo": {
-      "dependsOn": ["//#lint:repo:deps"],
-      "inputs": [
-        "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
-        "oxlint.config.ts",
-        "**/oxlint.config.ts",
-        "packages/config/oxlint.base.ts",
-        "tsconfig*.json",
-        "**/tsconfig*.json"
-      ]
-    },
-    "//#format": {
-      "inputs": [
-        "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,md,mdx,yml,yaml,html,css,scss}",
-        "oxfmt.config.ts",
-        "**/oxfmt.config.ts",
-        "packages/config/oxfmt.base.ts"
-      ]
+      "dependsOn": ["//#lint:repo:deps"]
     }
   }
 }

@@ -22,7 +22,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 ## Commands
 
-**Prefer turbo for `build` / `test` / `lint`.** Going through turbo resolves the workspace dependency graph and caches outputs, so repeat runs are near-instant. The root scripts below already delegate to `turbo run` — run them from the repo root:
+**Prefer turbo for `build` / `test` / `lint`.** Going through turbo resolves the workspace dependency graph and caches outputs, so repeat runs are near-instant. Those root scripts delegate to `turbo run` — run them from the repo root:
 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -30,8 +30,8 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
 | `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
 | `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks + lints in one pass. **A clean run verifies types — no separate `tsgo`/`turbo run typecheck` pass.** |
-| `pnpm format` / `pnpm format:fix` | Root-level `oxfmt`.                                                                                                         |
-| `pnpm quality[:fix]`              | Lint + format together via turbo.                                                                                           |
+| `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
+| `pnpm quality[:fix]`              | Runs lint, then format.                                                                                                     |
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 
