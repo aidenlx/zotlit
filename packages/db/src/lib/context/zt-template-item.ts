@@ -9,10 +9,19 @@ import { toTemplateTag, type ItemTag, type TemplateTag } from "@/lib/zt-tag";
 import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
 import { type Creator, type Item } from "@/queries/items";
 
+/**
+ * One creator of an item, in the template vocabulary. Coerces to
+ * {@link TemplateCreator.fullName} in string contexts.
+ */
 export interface TemplateCreator {
+  /** Family / last name; empty for institutional creators. */
   family: string;
+  /** Given / first name; empty for institutional creators. */
   given: string;
-  /** Full name for institutional / single-name authors (Zotero `fieldMode=1`). */
+  /**
+   * Full name for institutional / single-name authors (Zotero `fieldMode=1`);
+   * `null` for personal names.
+   */
   literal: string | null;
   /** Zotero creator type: `"author"`, `"editor"`, `"translator"`, etc. */
   role: string;
@@ -24,49 +33,98 @@ export interface TemplateCreator {
  * Core item data in the v2 template vocabulary, without app-layer resolvers.
  *
  * All Zotero fields are direct properties — `zt.title`, `zt.DOI`,
- * `zt.numPages`, etc. Item-type-specific aliases (e.g. `blogTitle`, `studio`)
- * are normalized to their canonical form. Two CSL-inspired renames:
- * - `abstractNote` → `abstract`
- * - `publicationTitle` → `containerTitle`
- *
- * An empty-string field value is normalized away (absent / `null`).
+ * `zt.numPages`, etc. An empty-string field value is normalized away
+ * (absent / `null`).
  */
 export interface TemplateItemBaseData {
+  /** Zotero item key, e.g. `"ABC12345"`; unique within its library. */
   key: string;
+  /** Group library ID; `null` for the personal library. */
   groupID: number | null;
+  /** Zotero library ID holding the item. */
   libraryID: number;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
   indexedKey: string;
+  /** Zotero item type, e.g. `"journalArticle"`, `"book"`. */
   itemType: string;
+  /**
+   * When the item was added to Zotero. Second precision — Zotero stores the
+   * timestamp as a UTC string with no sub-second component. Renders as the
+   * local date (e.g. `2026-06-21`) in `{{ }}` output.
+   */
   dateAdded: Temporal.Instant;
+  /**
+   * When the item was last modified in Zotero; same precision and rendering as
+   * {@link TemplateItemBaseData.dateAdded}.
+   */
   dateModified: Temporal.Instant;
 
+  /** Every creator on the item, in Zotero's own order. */
   creators: readonly TemplateCreator[];
+  /**
+   * The creator role Zotero treats as primary for this item type, e.g.
+   * `"author"` for a journal article, `"director"` for a film; `null` when the
+   * type defines none.
+   */
   primaryCreatorType: string | null;
+  /** Tags applied to the item. */
   tags: readonly TemplateTag[];
 
+  /** Item title. */
   title: string | null;
+  /**
+   * Abstract text. The CSL-inspired rename of Zotero's `abstractNote`, which
+   * stays accessible — both `zt.abstract` and `zt.abstractNote` work.
+   */
   abstract: string | null;
+  /**
+   * Journal or container title. The CSL-inspired rename of Zotero's
+   * `publicationTitle`, which stays accessible — both names work.
+   */
   containerTitle: string | null;
+  /** Citation key, from Better BibTeX or Zotero's native citation key. */
   citationKey: string | null;
   /** Alias for {@link citationKey}; both stay accessible on `zt.*`. */
   citekey: string | null;
+  /** Publication date, parsed from Zotero's multipart `date` field. */
   date: ItemDate | null;
+  /** Short title. */
   shortTitle: string | null;
+  /** Digital Object Identifier. */
   DOI: string | null;
+  /** Item URL. */
   url: string | null;
+  /** ISBN. */
   ISBN: string | null;
+  /** ISSN. */
   ISSN: string | null;
+  /** Volume. */
   volume: string | null;
+  /** Issue. */
   issue: string | null;
+  /** Page range. */
   pages: string | null;
+  /** Publisher. */
   publisher: string | null;
+  /** Place of publication. */
   place: string | null;
+  /** Edition. */
   edition: string | null;
+  /** Language, verbatim as Zotero stores it, e.g. `"en-US"`, `"English"`. */
   language: string | null;
-  /** Parsed best-effort from Zotero's free-text `extra` field; prints `raw`. */
+  /**
+   * Parsed best-effort from Zotero's free-text `extra` field; prints `raw`.
+   * `null` when the field is empty or absent.
+   */
   extra: ItemExtra | null;
 
-  /** Additional Zotero fields beyond the explicitly typed ones above. */
+  /**
+   * Item-type-specific Zotero fields beyond the typed ones above, each under
+   * its canonical name — e.g. `zt.conferenceName`, `zt.numPages`. A field
+   * Zotero maps to a base field is reachable through that base name alone:
+   * read `blogTitle` as `zt.publicationTitle`, `studio` as `zt.publisher`,
+   * `reportNumber` as `zt.number`, `thesisType` as `zt.type`.
+   */
   [field: string]: unknown;
 }
 
@@ -74,11 +132,24 @@ export interface TemplateItemBaseData {
 export interface TemplateItemData extends TemplateItemBaseData {
   /** Full vault-relative literature note path, including `.md`. `null` when unresolvable. */
   get notePath(): string | null;
-  /** Obsidian Markdown link to this item's literature note. See {@link FallibleTemplateLink}. */
+  /**
+   * Obsidian Markdown link to this item's literature note. In Liquid it
+   * renders on plain access (`{{ zt.noteLink }}`); pipe the item itself
+   * through the `note_link` filter to override the alias or subpath. In Eta
+   * call it with those arguments. See {@link FallibleTemplateLink}.
+   */
   noteLink: FallibleTemplateLink;
+  /** Collections the item belongs to, sorted by name; trashed collections excluded. */
   collections: readonly TemplateCollection[];
 }
 
+/**
+ * The `zt` root of the `filename` template: an item's own
+ * {@link TemplateItemBaseData}, its collections, and inert `notePath` /
+ * `noteLink` stubs. The note-body context is absent — no `backlink`,
+ * `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`,
+ * `authorsShort`, or `notes` — so naming a note stays a single-item read.
+ */
 export interface TemplateFilenameItemData extends TemplateItemBaseData {
   /**
    * Always `""` — the note does not exist yet when a filename is resolved.
@@ -89,6 +160,7 @@ export interface TemplateFilenameItemData extends TemplateItemBaseData {
   notePath: string | null;
   /** Always returns `""`; matches {@link TemplateItemData.noteLink}'s signature. */
   noteLink: FallibleTemplateLink;
+  /** Collections the item belongs to, sorted by name; trashed collections excluded. */
   collections: readonly TemplateCollection[];
 }
 
@@ -239,7 +311,7 @@ function selectPrimaryAuthors(data: TemplateItemBaseData): TemplateCreator[] {
 export interface ResolvedItemCore {
   /** Zotero desktop deep link (`zotero://select/...`). */
   backlink: string;
-  /** Zotero web library URL; `null` for a never-synced personal library. */
+  /** Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library. */
   weblink: string | null;
   /** Creators filtered to {@link TemplateItemBaseData.primaryCreatorType}; all when none. */
   authors: TemplateCreator[];
@@ -272,10 +344,12 @@ export function resolveItemCore(input: {
 export interface TemplateParentItemData
   extends TemplateItemBaseData, ResolvedItemCore {
   /**
-   * Always `null` — resolving the parent's real literature-note path would
-   * require app-layer vault-index I/O, which the annotation path (synchronous
-   * on `dragstart`) intentionally avoids. Stubbed rather than omitted so
-   * `zt.parentItem.notePath` reads as "unresolved" instead of `undefined`.
+   * Always `null` on a standalone annotation render (annotation-view
+   * drag/insert, note import) — resolving the parent's real literature-note
+   * path would require app-layer vault-index I/O, which the annotation path
+   * (synchronous on `dragstart`) intentionally avoids. Stubbed rather than
+   * omitted so `zt.parentItem.notePath` reads as "unresolved" instead of
+   * `undefined`.
    */
   notePath: string | null;
   /** Always returns `null`, for the same reason as {@link notePath}. */

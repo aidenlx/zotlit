@@ -12,12 +12,16 @@ import { defineToString } from "./to-string";
  * to `name` in string contexts (like a tag coerces to its name).
  */
 export interface TemplateCollection {
+  /** Zotero collection key. */
   key: string;
+  /** Collection name. */
   name: string;
   /**
    * Ancestor chain from top-level root to this collection: `path[0]` is the
    * top-level ancestor, `path[path.length - 1]` is this collection. A plain
-   * array — render with `path.join(" > ")` (or `"/"` for filename folders).
+   * array — render with `path.join(" > ")` (or `"/"` for filename folders), or
+   * pipe the collection list through the `collection_paths` filter, which
+   * joins each full ancestor path by a separator (`"/"` by default).
    */
   path: readonly string[];
 }

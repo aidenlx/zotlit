@@ -27,12 +27,24 @@ import {
  *
  * Drops DB-internal fields (`itemID`, `parentItemID`, `parentKey`, `sortIndex`,
  * `position`) — `parentAttachment.key` carries the parent reference, and the
- * position survives only as the derived 1-based {@link TemplateAnnotation.page}.
+ * position survives only as the derived {@link TemplateAnnotation.page}.
  */
 export interface TemplateAnnotationBaseData {
+  /** Zotero item key of the annotation. */
   key: string;
+  /** Zotero library ID holding the annotation. */
   libraryID: number;
+  /**
+   * Annotation kind: `"highlight"`, `"note"`, `"image"`, `"ink"`,
+   * `"underline"`, or `"text"`; `"unknown"` for a type Zotero added after this
+   * release.
+   */
   type: ResolvedAnnotationTypeName;
+  /**
+   * The highlighted or underlined excerpt; `null` when the type carries none.
+   * Verbatim as Zotero stores it, so it can hold the attribute-free inline tags
+   * the reader's editor allows (`<i>`, `<b>`, `<sub>`, `<sup>`).
+   */
   text: string | null;
   /**
    * Raw comment HTML as stored by Zotero — "plain text flavored with some HTML
@@ -42,8 +54,14 @@ export interface TemplateAnnotationBaseData {
   commentHtml: string | null;
   /** Hex color, e.g. `"#ffd400"`. */
   colorHex: string | null;
-  /** Color name, e.g. `"yellow"`. */
+  /**
+   * Zotero palette name — `"yellow"`, `"red"`, `"green"`, `"blue"`,
+   * `"purple"`, `"magenta"`, `"orange"`, `"gray"`, or `"plum"`; `null` when
+   * {@link TemplateAnnotationBaseData.colorHex} is absent or holds a custom
+   * color outside the palette.
+   */
   colorName: AnnotationColorName | null;
+  /** Page label as the document itself shows it, e.g. `"42"`, `"iv"`. */
   pageLabel: string | null;
   /**
    * 1-based page number derived from the PDF position (`pageIndex + 1`); `null`
@@ -51,18 +69,24 @@ export interface TemplateAnnotationBaseData {
    * {@link pageLabel} this ignores the document's own page labelling.
    */
   page: number | null;
+  /** Annotation author as stored on the annotation row; `null` when the row records none. */
   authorName: string | null;
+  /** Whether Zotero marks the annotation as external. */
   isExternal: boolean;
+  /** When the annotation was created. Second precision, like an item's timestamps. */
   dateAdded: Temporal.Instant;
+  /** When the annotation was last modified; same precision as {@link dateAdded}. */
   dateModified: Temporal.Instant;
+  /** Tags applied to this annotation. */
   tags: readonly TemplateTag[];
 }
 
 export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   /**
    * Markdown link to the excerpt image, or `null` for annotation types with no
-   * cached excerpt image (everything but `image` and `ink`). Call it to render
-   * and prefix `!` for an embed — `![...]` becomes the image. With image import
+   * cached excerpt image (everything but `image` and `ink`), which resolves
+   * empty. Call it to render and pipe it through the `embed` filter (or prefix
+   * `!` yourself) for an Obsidian embed. With image import
    * disabled it links the cached image's `file://` URI; with import enabled it
    * links the in-vault copy, formatted per the vault's wikilink preference. Pass
    * `alias` to override the display text (defaults to the image filename). See
@@ -85,6 +109,9 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * Parent literature item; shared across annotations from the same item.
    * `null` for an annotation on a standalone attachment (a file with no
    * parent bibliographic item).
+   *
+   * Its `collections` are populated when the annotation renders as part of a
+   * note; see {@link TemplateParentItemData} for the standalone case.
    */
   parentItem: TemplateParentItemData | null;
   /** Source attachment; shared across annotations from the same attachment. */
