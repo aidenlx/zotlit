@@ -14,6 +14,13 @@ const SPECS: readonly SectionSpec[] = [
     prefix: "zt.",
   },
   { id: "leaf", title: "Leaf", level: 2, types: ["Leaf"], sample: "leaf" },
+  {
+    id: "pair",
+    title: "Pair",
+    level: 2,
+    types: ["First", "Second"],
+    captions: ["First", "Second"],
+  },
 ];
 
 const IR: ContractIR = {
@@ -41,7 +48,7 @@ const IR: ContractIR = {
         },
         {
           name: "label",
-          description: "The label.",
+          description: "The label; see {@link Second.year}.",
           optional: true,
           type: {
             kind: "union",
@@ -86,7 +93,7 @@ const IR: ContractIR = {
           name: "link",
           description: "Wiki-link to the leaf.",
           optional: false,
-          examples: [{ lang: "liquid", code: "{{ leaf.link }}" }],
+          examples: [{ lang: "liquid", code: "{{ zt.link }}" }],
           type: {
             kind: "union",
             options: [
@@ -100,6 +107,29 @@ const IR: ContractIR = {
               { kind: "primitive", type: "null" },
             ],
           },
+        },
+      ],
+    },
+    First: {
+      kind: "object",
+      description: "The first variant.",
+      members: [
+        {
+          name: "year",
+          description: "Year.",
+          optional: false,
+          type: { kind: "primitive", type: "number" },
+        },
+      ],
+    },
+    Second: {
+      kind: "object",
+      members: [
+        {
+          name: "year",
+          description: "Year.",
+          optional: false,
+          type: { kind: "primitive", type: "number" },
         },
       ],
     },
@@ -144,8 +174,14 @@ describe("doc normalization", () => {
   it("warns on an undocumented member and leaves its description empty", () => {
     const { warnings } = buildPageModel(IR, SPECS);
 
-    expect(warnings).toEqual(["Root.name has no description"]);
+    expect(warnings).toContain("Root.name has no description");
     expect(rowOf("root", "name").description).toEqual([]);
+  });
+
+  it("warns on any undocumented type, not only a section's first", () => {
+    expect(buildPageModel(IR, SPECS).warnings).toContain(
+      "Second has no type description",
+    );
   });
 });
 
@@ -181,6 +217,15 @@ describe("link resolution", () => {
     });
   });
 
+  it("numbers a member link by the table's place in its whole section", () => {
+    expect(rowOf("root", "label").description[0]![1]).toEqual({
+      kind: "link",
+      href: "#pair-2-year",
+      text: "year",
+      code: true,
+    });
+  });
+
   it("degrades a target the IR does not carry to code text", () => {
     const [, paragraph] = buildPageModel(IR, SPECS).sections[0]!.description;
 
@@ -208,7 +253,7 @@ describe("helper presentation", () => {
     });
   });
 
-  it("collapses a helper to its plain-access type and keeps its examples", () => {
+  it("retargets a root-authored example at the shape the section documents", () => {
     const row = rowOf("leaf", "link");
 
     expect(row.shortType).toBe("string | null");

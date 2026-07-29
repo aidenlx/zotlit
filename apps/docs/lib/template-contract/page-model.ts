@@ -161,25 +161,12 @@ function assertEveryTypeIsPlaced(
 }
 
 function buildSection(spec: SectionSpec, context: BuildContext): PageSection {
-  const types = (spec.types ?? []).map((name) => {
-    const type = context.ir.types[name];
-    if (!type) throw new Error(`Contract IR carries no ${name} type`);
-    return [name, type] as const;
-  });
+  const types = (spec.types ?? []).map(
+    (name) => [name, namedType(context.ir, name)] as const,
+  );
   const [firstName, firstType] = types[0] ?? [];
-  const objects = types.flatMap(([name, type]) => variantsOf(name, type));
-  const tables = objects.map(([owner, object], index) =>
-    buildTable(
-      {
-        owner,
-        object,
-        index,
-        total: objects.length,
-        describeHere: types.length > 1,
-      },
-      spec,
-      context,
-    ),
+  const tables = sectionTables(spec, context.ir).map((slot) =>
+    buildTable({ ...slot, describeHere: types.length > 1 }, spec, context),
   );
   if (spec.captions && spec.captions.length !== tables.length) {
     throw new Error(
@@ -191,8 +178,9 @@ function buildSection(spec: SectionSpec, context: BuildContext): PageSection {
       `Section ${spec.id} holds ${tables.length} tables and no captions`,
     );
   }
-  if (firstType && !firstType.description) {
-    context.warnings.push(`${firstName} has no type description`);
+  for (const [name, type] of types) {
+    if (!type.description)
+      context.warnings.push(`${name} has no type description`);
   }
   return {
     id: spec.id,
@@ -208,6 +196,29 @@ function buildSection(spec: SectionSpec, context: BuildContext): PageSection {
     values: types.flatMap(([, type]) => literalOptionsOf(type)),
     itemTypes: spec.itemTypes ? itemTypeRows(context.ir) : [],
   };
+}
+
+function namedType(ir: ContractIR, name: string): ContractNamedType {
+  const type = ir.types[name];
+  if (!type) throw new Error(`Contract IR carries no ${name} type`);
+  return type;
+}
+
+/**
+ * The tables a section holds, in order: one per object type it documents, plus
+ * one per object variant of a union it documents. The emitter and the link
+ * resolver both number rows off these ids, so they agree by construction.
+ */
+function sectionTables(spec: SectionSpec, ir: ContractIR): TableSlot[] {
+  const objects = (spec.types ?? []).flatMap((name) =>
+    variantsOf(name, namedType(ir, name)),
+  );
+  return objects.map(([owner, object], index) => ({
+    owner,
+    object,
+    id: objects.length > 1 ? `${spec.id}-${index + 1}` : spec.id,
+    index,
+  }));
 }
 
 /** A union of objects documents one table per variant; every other type documents one. */
@@ -235,22 +246,27 @@ function itemTypeRows(ir: ContractIR): ItemTypeRow[] {
   }));
 }
 
-/** One table's slot in its section: which type, which variant, and whether the type is described here. */
-interface TableInput {
+/** One table's place in its section: which type, which variant, under which id. */
+interface TableSlot {
   owner: string;
   object: ContractObject;
+  id: string;
   index: number;
-  total: number;
-  describeHere: boolean;
 }
 
 function buildTable(
-  { owner, object, index, total, describeHere }: TableInput,
+  {
+    owner,
+    object,
+    id,
+    index,
+    describeHere,
+  }: TableSlot & { describeHere: boolean },
   spec: SectionSpec,
   context: BuildContext,
 ): TableModel {
   return {
-    id: total > 1 ? `${spec.id}-${index + 1}` : spec.id,
+    id,
     caption: spec.captions?.[index],
     description: describeHere
       ? normalizeDoc(context.ir.types[owner]?.description, owner, context)
@@ -288,12 +304,31 @@ function buildRow(
     optional: member.optional,
     ...type,
     description: normalizeDoc(member.description, owner, context),
-    examples: member.examples ?? [],
+    examples: retarget(member.examples ?? [], member.name, spec),
     helper:
       helper && !reference
         ? presentHelper(helper, member.name, spec)
         : undefined,
   };
+}
+
+/**
+ * A doc comment writes its `@example` against the `zt` root, but the IR flattens
+ * an inherited member into every shape that carries it. Point the member's own
+ * accessor at this section's sample so a nested shape's example reads the
+ * property the row documents; everything else in the sample stays verbatim.
+ */
+function retarget(
+  examples: readonly ContractExample[],
+  name: string,
+  spec: SectionSpec,
+): readonly ContractExample[] {
+  const sample = spec.sample ?? "zt";
+  if (sample === "zt") return examples;
+  return examples.map((example) => ({
+    ...example,
+    code: example.code.replaceAll(`zt.${name}`, `${sample}.${name}`),
+  }));
 }
 
 /** A link helper reaches the page either bare or as one option of `helper | null`. */
@@ -486,19 +521,17 @@ function memberLink(
   member: string,
   { ir, specs }: Pick<BuildContext, "ir" | "specs">,
 ): InlineNode | undefined {
-  const type = ir.types[owner];
   const section = sectionForType(specs, owner);
-  if (!type || !section) return undefined;
-  const objects = variantsOf(owner, type);
-  const index = objects.findIndex(([, object]) =>
-    object.members.some((entry) => entry.name === member),
+  if (!section || !ir.types[owner]) return undefined;
+  const slot = sectionTables(section, ir).find(
+    (entry) =>
+      entry.owner === owner &&
+      entry.object.members.some((candidate) => candidate.name === member),
   );
-  if (index < 0) return undefined;
-  const tableId =
-    objects.length > 1 ? `${section.id}-${index + 1}` : section.id;
+  if (!slot) return undefined;
   return {
     kind: "link",
-    href: `#${tableId}-${member}`,
+    href: `#${slot.id}-${member}`,
     text: member,
     code: true,
   };
