@@ -108,7 +108,7 @@ function schemaFor(type: ContractType, context: SchemaContext): JsonSchema {
     case "primitive":
       return { type: type.type };
     case "literal":
-      return { const: type.value };
+      return withDescription({ const: type.value }, type.description);
     case "unknown":
       return {};
     case "array":
@@ -213,7 +213,13 @@ function unionSchema(union: ContractUnion, context: SchemaContext): JsonSchema {
     option.kind === "literal" ? option.value : undefined,
   );
   if (enumValues.every((value) => value !== undefined)) {
-    return { enum: enumValues, description };
+    // A documented option needs a schema of its own to hold its description.
+    const documented = union.options.some(
+      (option) => option.kind === "literal" && option.description,
+    );
+    return documented
+      ? { oneOf: options, description }
+      : { enum: enumValues, description };
   }
   const primitives = options.map((option) =>
     Object.keys(option).length === 1 && typeof option.type === "string"

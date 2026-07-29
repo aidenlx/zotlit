@@ -226,15 +226,19 @@ describe("annotation root schema", () => {
     expect(root.required).toContain("citation");
   });
 
-  it("literalizes every resolved annotation type", () => {
-    expect(annotationSchema.$defs.ResolvedAnnotationTypeName.enum).toEqual([
-      "unknown",
-      "text",
+  it("literalizes every resolved annotation type, documented and in declaration order", () => {
+    const options = annotationSchema.$defs.ResolvedAnnotationTypeName.oneOf;
+    expect(options.map(({ const: value }) => value)).toEqual([
       "highlight",
       "note",
       "image",
       "ink",
       "underline",
+      "text",
+      "unknown",
     ]);
+    for (const option of options) {
+      expect(option.description).toMatch(/\S/);
+    }
   });
 });

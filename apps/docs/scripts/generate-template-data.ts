@@ -15,6 +15,7 @@ import {
   buildPageModel,
   type Doc,
   type PageSection,
+  type SectionValue,
 } from "../lib/template-contract/page-model.ts";
 
 const SOURCE_IR = join(
@@ -84,8 +85,13 @@ function renderSection(section: PageSection): string {
 }
 
 /** A union of string literals has no properties, so it renders as its options. */
-function renderValues(values: readonly string[]): string {
-  return values.map((value) => `- \`"${value}"\``).join("\n");
+function renderValues(values: readonly SectionValue[]): string {
+  return values
+    .map(({ value, description }) => {
+      const doc = renderDoc(description).join(" ");
+      return `- \`"${value}"\`${doc ? `: ${doc}` : ""}`;
+    })
+    .join("\n");
 }
 
 /** One Markdown paragraph per normalized paragraph. */

@@ -13,6 +13,7 @@ import {
 import {
   type ContractAdditionalMembers,
   type ContractExample,
+  type ContractLiteral,
   type ContractMember,
   type ContractNamedType,
   type ContractObject,
@@ -108,7 +109,9 @@ export class ContractExtractor {
       return {
         kind: "union",
         description,
-        options: this.#options(type, declaration),
+        options:
+          declaredLiteralOptions(declaration) ??
+          this.#options(type, declaration),
       };
     }
     const { members, additional } = this.#object(type, declaration);
@@ -283,6 +286,56 @@ export class ContractExtractor {
       ? { name, declaration }
       : undefined;
   }
+}
+
+/**
+ * A union alias written out as literal members reads back in declaration order,
+ * each option carrying the doc comment written above it. The checker normalizes
+ * union member order, so the declaration is the only faithful source for both.
+ * Any other union shape returns `undefined` and extracts from the checker type.
+ */
+function declaredLiteralOptions(
+  declaration: Node,
+): ContractLiteral[] | undefined {
+  if (!Node.isTypeAliasDeclaration(declaration)) return undefined;
+  const union = declaration.getTypeNode();
+  if (!Node.isUnionTypeNode(union)) return undefined;
+  const text = declaration.getSourceFile().getFullText();
+  const options: ContractLiteral[] = [];
+  let cursor = union.getFullStart();
+  for (const member of union.getTypeNodes()) {
+    if (!Node.isLiteralTypeNode(member)) return undefined;
+    const literal = member.getLiteral();
+    if (!Node.isStringLiteral(literal) && !Node.isNumericLiteral(literal)) {
+      return undefined;
+    }
+    // The option's doc comment precedes its `|`, which owns that trivia — so
+    // read the raw text between the previous option and this one.
+    const description = blockDocIn(text.slice(cursor, member.getStart()));
+    cursor = member.getEnd();
+    options.push({
+      kind: "literal",
+      value: literal.getLiteralValue(),
+      description,
+    });
+  }
+  return options;
+}
+
+const BLOCK_DOC = regex(`/\\*\\*(?<body>.*?)\\*/`, "gs");
+
+/** The last doc block in a slice of source text, unwrapped to its prose. */
+function blockDocIn(slice: string): string | undefined {
+  const bodies = [...slice.matchAll(BLOCK_DOC)];
+  const body = bodies.at(-1)?.groups?.body;
+  if (body === undefined) return undefined;
+  return (
+    body
+      .split("\n")
+      .map((line) => line.replace(/^\s*\*? ?/, ""))
+      .join("\n")
+      .trim() || undefined
+  );
 }
 
 function isNullOption(option: ContractType): boolean {

@@ -14,6 +14,7 @@ const SPECS: readonly SectionSpec[] = [
     prefix: "zt.",
   },
   { id: "leaf", title: "Leaf", level: 2, types: ["Leaf"], sample: "leaf" },
+  { id: "kinds", title: "Kinds", level: 2, types: ["Kind"] },
   {
     id: "pair",
     title: "Pair",
@@ -110,6 +111,18 @@ const IR: ContractIR = {
         },
       ],
     },
+    Kind: {
+      kind: "union",
+      description: "Kind of a leaf.",
+      options: [
+        {
+          kind: "literal",
+          value: "apex",
+          description: "The topmost {@link Leaf}.",
+        },
+        { kind: "literal", value: "stray" },
+      ],
+    },
     First: {
       kind: "object",
       description: "The first variant.",
@@ -182,6 +195,31 @@ describe("doc normalization", () => {
     expect(buildPageModel(IR, SPECS).warnings).toContain(
       "Second has no type description",
     );
+  });
+});
+
+describe("literal union options", () => {
+  const section = () =>
+    buildPageModel(IR, SPECS).sections.find((entry) => entry.id === "kinds")!;
+
+  it("lists the options in declaration order with resolved descriptions", () => {
+    const { values } = section();
+
+    expect(values.map(({ value }) => value)).toEqual(["apex", "stray"]);
+    expect(values[0]!.description).toEqual([
+      [
+        { kind: "text", value: "The topmost " },
+        { kind: "link", href: "#leaf", text: "Leaf", code: true },
+        { kind: "text", value: "." },
+      ],
+    ]);
+  });
+
+  it("warns on an undocumented option and leaves its description empty", () => {
+    expect(buildPageModel(IR, SPECS).warnings).toContain(
+      "Kind option stray has no description",
+    );
+    expect(section().values[1]!.description).toEqual([]);
   });
 });
 

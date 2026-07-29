@@ -3121,31 +3121,38 @@
       "options": [
         {
           "kind": "literal",
-          "value": "unknown"
+          "value": "highlight",
+          "description": "Text marked with a highlight color."
         },
         {
           "kind": "literal",
-          "value": "text"
+          "value": "note",
+          "description": "A note pinned to a spot on the page."
         },
         {
           "kind": "literal",
-          "value": "highlight"
+          "value": "image",
+          "description": "A rectangular area selection, saved with an excerpt image."
         },
         {
           "kind": "literal",
-          "value": "note"
+          "value": "ink",
+          "description": "A freehand drawing, saved with an excerpt image."
         },
         {
           "kind": "literal",
-          "value": "image"
+          "value": "underline",
+          "description": "Underlined text."
         },
         {
           "kind": "literal",
-          "value": "ink"
+          "value": "text",
+          "description": "Free text typed onto the page."
         },
         {
           "kind": "literal",
-          "value": "underline"
+          "value": "unknown",
+          "description": "A type id Zotero added after this mapping was written."
         }
       ]
     },

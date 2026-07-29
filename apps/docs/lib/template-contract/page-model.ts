@@ -42,9 +42,15 @@ export interface PageSection {
   description: Doc;
   tables: readonly TableModel[];
   /** Options of a section documenting a union of string literals. */
-  values: readonly string[];
+  values: readonly SectionValue[];
   /** Rows of the item-type → `zt` field map. */
   itemTypes: readonly ItemTypeRow[];
+}
+
+/** One option of a documented union of string literals. */
+export interface SectionValue {
+  value: string;
+  description: Doc;
 }
 
 export interface TableModel {
@@ -193,7 +199,9 @@ function buildSection(spec: SectionSpec, context: BuildContext): PageSection {
         ? []
         : normalizeDoc(firstType?.description, firstName, context),
     tables,
-    values: types.flatMap(([, type]) => literalOptionsOf(type)),
+    values: types.flatMap(([name, type]) =>
+      literalOptionsOf(name, type, context),
+    ),
     itemTypes: spec.itemTypes ? itemTypeRows(context.ir) : [],
   };
 }
@@ -232,11 +240,26 @@ function variantsOf(
     .map((option) => [name, option] as const);
 }
 
-function literalOptionsOf(type: ContractNamedType): string[] {
+function literalOptionsOf(
+  name: string,
+  type: ContractNamedType,
+  context: BuildContext,
+): SectionValue[] {
   if (type.kind !== "union") return [];
-  return type.options.flatMap((option) =>
-    option.kind === "literal" ? [String(option.value)] : [],
-  );
+  return type.options.flatMap((option) => {
+    if (option.kind !== "literal") return [];
+    if (!option.description) {
+      context.warnings.push(
+        `${name} option ${option.value} has no description`,
+      );
+    }
+    return [
+      {
+        value: String(option.value),
+        description: normalizeDoc(option.description, name, context),
+      },
+    ];
+  });
 }
 
 function itemTypeRows(ir: ContractIR): ItemTypeRow[] {

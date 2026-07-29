@@ -25,7 +25,37 @@ export type AnnotationTypeName = (typeof ANNOT_TYPE)[AnnotationType];
  * A resolved annotation type name: one Zotero declares, or `"unknown"` for a
  * type id Zotero added after this mapping was written.
  */
-export type ResolvedAnnotationTypeName = AnnotationTypeName | "unknown";
+export type ResolvedAnnotationTypeName =
+  /** Text marked with a highlight color. */
+  | "highlight"
+  /** A note pinned to a spot on the page. */
+  | "note"
+  /** A rectangular area selection, saved with an excerpt image. */
+  | "image"
+  /** A freehand drawing, saved with an excerpt image. */
+  | "ink"
+  /** Underlined text. */
+  | "underline"
+  /** Free text typed onto the page. */
+  | "text"
+  /** A type id Zotero added after this mapping was written. */
+  | "unknown";
+
+/** Compile-time assert: `T` must be `true`. */
+type Expect<T extends true> = T;
+/** Mutual assignability, exact enough for unions of literals. */
+type Equals<A, B> = [A, B] extends [B, A] ? true : false;
+
+/**
+ * {@link ResolvedAnnotationTypeName} is written out literal by literal so the
+ * contract extractor reads a doc comment per option. This pins it to the
+ * construction it restates: `(typeof ANNOT_TYPE)[AnnotationType] | "unknown"`.
+ * Adding, removing, or renaming an entry on either side fails to compile until
+ * both sides agree.
+ */
+type _ResolvedNameStaysDerived = Expect<
+  Equals<ResolvedAnnotationTypeName, AnnotationTypeName | "unknown">
+>;
 
 export interface Annotation {
   groupID: number | null;

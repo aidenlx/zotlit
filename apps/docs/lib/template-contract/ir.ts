@@ -58,6 +58,8 @@ export interface ContractPrimitive {
 export interface ContractLiteral {
   kind: "literal";
   value: string | number | boolean;
+  /** Doc comment written above this option in a declared literal union. */
+  description?: string;
 }
 
 /** An open value the contract does not narrow, e.g. an index signature's `unknown`. */
