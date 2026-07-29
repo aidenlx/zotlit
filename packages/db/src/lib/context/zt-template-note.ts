@@ -28,8 +28,7 @@ import { type ChildNote } from "@/queries/notes";
 
 /**
  * A single entry in {@link NoteTemplateContext.relatedItems}: the related
- * item's own {@link TemplateItemData}, flattened with its backlink and author
- * conveniences. Depth-1 — its own `annotations`, `attachments`, and
+ * item's own fields, flattened with its backlink and author conveniences. Depth-1 — its own `annotations`, `attachments`, and
  * `relatedItems` are deliberately absent (resolving them would require a
  * per-related-item DB fan-out), marking the boundary of the relation graph.
  */
@@ -67,7 +66,7 @@ export function withNotePreview(note: TemplateNoteLink): TemplateNoteLink {
 }
 
 /**
- * The `zt` root for the `note` template: {@link TemplateItemData} plus the
+ * The `zt` root for the `note` template: every item field plus the
  * runtime-computed fields assembled at the app layer (backlinks, resolved
  * attachment links, flattened annotations, author conveniences).
  */

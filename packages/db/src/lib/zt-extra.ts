@@ -13,7 +13,7 @@ import { defineToString } from "./to-string";
  * hyphens, or underscores. A line that does not match, and one whose value is
  * empty, becomes a text row.
  *
- * A non-enumerable `toString` returns `raw`, same mechanism as {@link ItemExtra}.
+ * A non-enumerable `toString` returns `raw`, as on the extra field itself.
  */
 export type ExtraLine = (
   | {

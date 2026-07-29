@@ -22,8 +22,8 @@ const ANNOT_TYPE = {
 export type AnnotationType = keyof typeof ANNOT_TYPE;
 export type AnnotationTypeName = (typeof ANNOT_TYPE)[AnnotationType];
 /**
- * {@link annotationTypeToName}'s output: a known {@link AnnotationTypeName}, or
- * `"unknown"` for a type id Zotero added after this mapping was written.
+ * A resolved annotation type name: one Zotero declares, or `"unknown"` for a
+ * type id Zotero added after this mapping was written.
  */
 export type ResolvedAnnotationTypeName = AnnotationTypeName | "unknown";
 

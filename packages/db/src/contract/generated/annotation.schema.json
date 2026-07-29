@@ -7,12 +7,12 @@
   "$ref": "#/$defs/AnnotationTemplateContext",
   "$defs": {
     "AnnotationTemplateContext": {
-      "description": "The `zt` root of the `annotation` template: a `TemplateAnnotation` plus `AnnotationTemplateContext.citation`. Entries of `zt.annotations` on the note root are plain `TemplateAnnotation`s — only the single-annotation render carries a citation.",
+      "description": "The `zt` root of the `annotation` template: one annotation (`TemplateAnnotation`) plus `citation`. Entries of `zt.annotations` on the note root carry no citation — only the single-annotation render resolves one.",
       "type": "object",
       "properties": {
         "citation": {
           "type": ["string", "null"],
-          "description": "Page-pinned citation of `TemplateAnnotation.parentItem`, rendered through the `cite` template with this annotation's `TemplateAnnotationBaseData.pageLabel` as locator; `null` when there is no parent item or it carries no citation key. Computed at the app layer."
+          "description": "Page-pinned citation of `TemplateAnnotation.parentItem`, rendered through the `cite` template with this annotation's `pageLabel` as locator; `null` when there is no parent item or it carries no citation key. Computed at the app layer."
         },
         "imgLink": {
           "anyOf": [
@@ -50,7 +50,7 @@
               "type": "null"
             }
           ],
-          "description": "Markdown link to the excerpt image, or `null` for annotation types with no cached excerpt image (everything but `image` and `ink`), which resolves empty. Call it to render and pipe it through the `embed` filter (or prefix `!` yourself) for an Obsidian embed. With image import disabled it links the cached image's `file://` URI; with import enabled it links the in-vault copy, formatted per the vault's wikilink preference. Pass `alias` to override the display text (defaults to the image filename). See `TemplateLink`. Computed at the app layer."
+          "description": "Markdown link to the excerpt image, or `null` for annotation types with no cached excerpt image (everything but `image` and `ink`), which resolves empty. Call it to render and pipe it through the `embed` filter (or prefix `!` yourself) for an Obsidian embed. With image import disabled it links the cached image's `file://` URI; with import enabled it links the in-vault copy, formatted per the vault's wikilink preference. Pass `alias` to override the display text (defaults to the image filename). Computed at the app layer."
         },
         "comment": {
           "type": ["string", "null"],
@@ -85,7 +85,7 @@
               "additionalProperties": false
             }
           ],
-          "description": "Markdown link to the parent attachment file, deep-linked to this annotation's `page` (`#page=N`); `null` when the file is unresolvable. Call it to render — pass `alias`/`subpath` to override the display text or the `#`-fragment. See `FallibleTemplateLink`. Computed at the app layer."
+          "description": "Markdown link to the parent attachment file, deep-linked to this annotation's `page` (`#page=N`); `null` when the file is unresolvable. Call it to render — pass `alias`/`subpath` to override the display text or the `#`-fragment. Computed at the app layer."
         },
         "backlink": {
           "type": "string",
@@ -167,7 +167,7 @@
               "type": "null"
             }
           ],
-          "description": "Zotero palette name — `\"yellow\"`, `\"red\"`, `\"green\"`, `\"blue\"`, `\"purple\"`, `\"magenta\"`, `\"orange\"`, `\"gray\"`, or `\"plum\"`; `null` when `TemplateAnnotationBaseData.colorHex` is absent or holds a custom color outside the palette."
+          "description": "Zotero palette name — `\"yellow\"`, `\"red\"`, `\"green\"`, `\"blue\"`, `\"purple\"`, `\"magenta\"`, `\"orange\"`, `\"gray\"`, or `\"plum\"`; `null` when `colorHex` is absent or holds a custom color outside the palette."
         },
         "pageLabel": {
           "type": ["string", "null"],
@@ -228,7 +228,7 @@
       "additionalProperties": false
     },
     "TemplateParentItemData": {
-      "description": "Parent literature item as seen from the standalone `annotation` template. The annot-view drag-insert resolves the item's tags but omits collection rows entirely — `collections` lives only on `TemplateItemData`. Read them through the full `note` template (`zt.collections`).",
+      "description": "Parent literature item as seen from the standalone `annotation` template. The annot-view drag-insert resolves the item's tags but omits collection rows entirely — `collections` lives only on the note root. Read them there (`zt.collections`).",
       "type": "object",
       "properties": {
         "notePath": {
@@ -292,7 +292,7 @@
         },
         "dateModified": {
           "type": "string",
-          "description": "When the item was last modified in Zotero; same precision and rendering as `TemplateItemBaseData.dateAdded`."
+          "description": "When the item was last modified in Zotero; same precision and rendering as `dateAdded`."
         },
         "creators": {
           "type": "array",
@@ -424,7 +424,7 @@
           "items": {
             "$ref": "#/$defs/TemplateCreator"
           },
-          "description": "Creators filtered to `TemplateItemBaseData.primaryCreatorType`; all when none."
+          "description": "Creators filtered to the item's primary creator type; all when none matches."
         },
         "authorsShort": {
           "type": "string",
@@ -1880,7 +1880,7 @@
       "additionalProperties": false
     },
     "TemplateTag": {
-      "description": "A Tag in the template vocabulary. Coerces to `name` in string contexts (like a collection coerces to its name), so `{{ zt.tags | join: \", \" }}` renders tag names directly. Zotero-internal IDs are dropped; `type` is the resolved name rather than `ItemTag`'s raw int.",
+      "description": "A Tag in the template vocabulary. Coerces to `name` in string contexts (like a collection coerces to its name), so `{{ zt.tags | join: \", \" }}` renders tag names directly. Zotero-internal IDs are dropped; `type` is the resolved name rather than Zotero's raw int.",
       "type": "object",
       "properties": {
         "name": {
@@ -2090,7 +2090,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "One source row of an Extra field, in document order: a parsed pair (`key` plus trimmed `value`) or a non-pair text/blank row (`key: null`). `raw` is the verbatim line so interleaved prose is never dropped.\n\nA line splits on its first `:` or `=`, and is a pair only when the key starts with an ASCII letter and otherwise holds ASCII letters, digits, spaces, dots, hyphens, or underscores. A line that does not match, and one whose value is empty, becomes a text row.\n\nA non-enumerable `toString` returns `raw`, same mechanism as `ItemExtra`."
+      "description": "One source row of an Extra field, in document order: a parsed pair (`key` plus trimmed `value`) or a non-pair text/blank row (`key: null`). `raw` is the verbatim line so interleaved prose is never dropped.\n\nA line splits on its first `:` or `=`, and is a pair only when the key starts with an ASCII letter and otherwise holds ASCII letters, digits, spaces, dots, hyphens, or underscores. A line that does not match, and one whose value is empty, becomes a text row.\n\nA non-enumerable `toString` returns `raw`, as on the extra field itself."
     },
     "TemplateAttachment": {
       "description": "Attachment data in the v2 template vocabulary. Exposed on `zt.attachments` and as `parentAttachment` on each annotation.",
@@ -2114,7 +2114,7 @@
         },
         "linkMode": {
           "type": "string",
-          "description": "Resolved `linkModeToName` name — `\"imported_file\"`, `\"imported_url\"`, `\"linked_file\"`, `\"linked_url\"`, or `\"embedded_image\"`; `\"unknown\"` when the raw mode is null or unrecognized."
+          "description": "Resolved link mode — `\"imported_file\"`, `\"imported_url\"`, `\"linked_file\"`, `\"linked_url\"`, or `\"embedded_image\"`; `\"unknown\"` when the raw mode is null or unrecognized."
         },
         "backlink": {
           "type": "string",
@@ -2153,7 +2153,7 @@
               "additionalProperties": false
             }
           ],
-          "description": "Markdown link to the on-disk attachment file. In Liquid it renders on plain access (`{{ a.fileLink }}`); pipe the attachment itself through the `file_link` filter to override the alias or subpath. In Eta call it — `<%= a.fileLink() %>` — passing `alias` to override the display text (defaults to the filename) and `subpath` to append a `#`-fragment. `null` when the file is unresolvable. See `FallibleTemplateLink`. Computed at the app layer."
+          "description": "Markdown link to the on-disk attachment file. In Liquid it renders on plain access (`{{ a.fileLink }}`); pipe the attachment itself through the `file_link` filter to override the alias or subpath. In Eta call it — `<%= a.fileLink() %>` — passing `alias` to override the display text (defaults to the filename) and `subpath` to append a `#`-fragment. `null` when the file is unresolvable. Computed at the app layer."
         }
       },
       "required": [
@@ -2178,7 +2178,7 @@
         "ink",
         "underline"
       ],
-      "description": "`annotationTypeToName`'s output: a known `AnnotationTypeName`, or `\"unknown\"` for a type id Zotero added after this mapping was written."
+      "description": "A resolved annotation type name: one Zotero declares, or `\"unknown\"` for a type id Zotero added after this mapping was written."
     }
   }
 }

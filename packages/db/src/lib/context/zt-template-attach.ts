@@ -24,7 +24,7 @@ export interface TemplateAttachment {
   /** MIME type, e.g. `"application/pdf"`. */
   contentType: string | null;
   /**
-   * Resolved {@link linkModeToName} name — `"imported_file"`, `"imported_url"`,
+   * Resolved link mode — `"imported_file"`, `"imported_url"`,
    * `"linked_file"`, `"linked_url"`, or `"embedded_image"`; `"unknown"` when
    * the raw mode is null or unrecognized.
    */
@@ -39,8 +39,7 @@ export interface TemplateAttachment {
    * `file_link` filter to override the alias or subpath. In Eta call it —
    * `<%= a.fileLink() %>` — passing `alias` to override the display text
    * (defaults to the filename) and `subpath` to append a `#`-fragment. `null`
-   * when the file is unresolvable. See {@link FallibleTemplateLink}. Computed
-   * at the app layer.
+   * when the file is unresolvable. Computed at the app layer.
    *
    * @ztFilter file_link
    */

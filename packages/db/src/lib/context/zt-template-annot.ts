@@ -59,8 +59,7 @@ export interface TemplateAnnotationBaseData {
   /**
    * Zotero palette name — `"yellow"`, `"red"`, `"green"`, `"blue"`,
    * `"purple"`, `"magenta"`, `"orange"`, `"gray"`, or `"plum"`; `null` when
-   * {@link TemplateAnnotationBaseData.colorHex} is absent or holds a custom
-   * color outside the palette.
+   * {@link colorHex} is absent or holds a custom color outside the palette.
    */
   colorName: AnnotationColorName | null;
   /** Page label as the document itself shows it, e.g. `"42"`, `"iv"`. */
@@ -96,8 +95,8 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * `!` yourself) for an Obsidian embed. With image import
    * disabled it links the cached image's `file://` URI; with import enabled it
    * links the in-vault copy, formatted per the vault's wikilink preference. Pass
-   * `alias` to override the display text (defaults to the image filename). See
-   * {@link TemplateLink}. Computed at the app layer.
+   * `alias` to override the display text (defaults to the image filename).
+   * Computed at the app layer.
    *
    * @ztFilter img_link
    * @example
@@ -112,7 +111,7 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * Markdown link to the parent attachment file, deep-linked to this
    * annotation's {@link page} (`#page=N`); `null` when the file is unresolvable.
    * Call it to render — pass `alias`/`subpath` to override the display text or
-   * the `#`-fragment. See {@link FallibleTemplateLink}. Computed at the app layer.
+   * the `#`-fragment. Computed at the app layer.
    *
    * @ztFilter file_link
    */
@@ -134,17 +133,17 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
 }
 
 /**
- * The `zt` root of the `annotation` template: a {@link TemplateAnnotation} plus
- * {@link AnnotationTemplateContext.citation}. Entries of `zt.annotations` on the
- * note root are plain {@link TemplateAnnotation}s — only the single-annotation
- * render carries a citation.
+ * The `zt` root of the `annotation` template: one annotation
+ * ({@link TemplateAnnotation}) plus {@link citation}. Entries of
+ * `zt.annotations` on the note root carry no citation — only the
+ * single-annotation render resolves one.
  */
 export interface AnnotationTemplateContext extends TemplateAnnotation {
   /**
    * Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered
-   * through the `cite` template with this annotation's
-   * {@link TemplateAnnotationBaseData.pageLabel} as locator; `null` when there
-   * is no parent item or it carries no citation key. Computed at the app layer.
+   * through the `cite` template with this annotation's {@link pageLabel} as
+   * locator; `null` when there is no parent item or it carries no citation key.
+   * Computed at the app layer.
    */
   citation: string | null;
 }

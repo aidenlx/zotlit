@@ -957,7 +957,7 @@
   "types": {
     "NoteTemplateContext": {
       "kind": "object",
-      "description": "The `zt` root for the `note` template: {@link TemplateItemData} plus the\nruntime-computed fields assembled at the app layer (backlinks, resolved\nattachment links, flattened annotations, author conveniences).",
+      "description": "The `zt` root for the `note` template: every item field plus the\nruntime-computed fields assembled at the app layer (backlinks, resolved\nattachment links, flattened annotations, author conveniences).",
       "members": [
         {
           "name": "annotations",
@@ -1033,7 +1033,7 @@
         },
         {
           "name": "noteLink",
-          "description": "Obsidian Markdown link to this item's literature note. In Liquid it\nrenders on plain access (`{{ zt.noteLink }}`); pipe the item itself\nthrough the `note_link` filter to override the alias or subpath. In Eta\ncall it with those arguments. See {@link FallibleTemplateLink}.",
+          "description": "Obsidian Markdown link to this item's literature note. In Liquid it\nrenders on plain access (`{{ zt.noteLink }}`); pipe the item itself\nthrough the `note_link` filter to override the alias or subpath. In Eta\ncall it with those arguments.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -1144,7 +1144,7 @@
         },
         {
           "name": "dateModified",
-          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link TemplateItemBaseData.dateAdded}.",
+          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link dateAdded}.",
           "optional": false,
           "type": {
             "kind": "stringified",
@@ -1582,7 +1582,7 @@
         },
         {
           "name": "authors",
-          "description": "Creators filtered to {@link TemplateItemBaseData.primaryCreatorType}; all when none.",
+          "description": "Creators filtered to the item's primary creator type; all when none matches.",
           "optional": false,
           "type": {
             "kind": "array",
@@ -1616,7 +1616,7 @@
       "members": [
         {
           "name": "imgLink",
-          "description": "Markdown link to the excerpt image, or `null` for annotation types with no\ncached excerpt image (everything but `image` and `ink`), which resolves\nempty. Call it to render and pipe it through the `embed` filter (or prefix\n`!` yourself) for an Obsidian embed. With image import\ndisabled it links the cached image's `file://` URI; with import enabled it\nlinks the in-vault copy, formatted per the vault's wikilink preference. Pass\n`alias` to override the display text (defaults to the image filename). See\n{@link TemplateLink}. Computed at the app layer.",
+          "description": "Markdown link to the excerpt image, or `null` for annotation types with no\ncached excerpt image (everything but `image` and `ink`), which resolves\nempty. Call it to render and pipe it through the `embed` filter (or prefix\n`!` yourself) for an Obsidian embed. With image import\ndisabled it links the cached image's `file://` URI; with import enabled it\nlinks the in-vault copy, formatted per the vault's wikilink preference. Pass\n`alias` to override the display text (defaults to the image filename).\nComputed at the app layer.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -1664,7 +1664,7 @@
         },
         {
           "name": "fileLink",
-          "description": "Markdown link to the parent attachment file, deep-linked to this\nannotation's {@link page} (`#page=N`); `null` when the file is unresolvable.\nCall it to render — pass `alias`/`subpath` to override the display text or\nthe `#`-fragment. See {@link FallibleTemplateLink}. Computed at the app layer.",
+          "description": "Markdown link to the parent attachment file, deep-linked to this\nannotation's {@link page} (`#page=N`); `null` when the file is unresolvable.\nCall it to render — pass `alias`/`subpath` to override the display text or\nthe `#`-fragment. Computed at the app layer.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -1814,7 +1814,7 @@
         },
         {
           "name": "colorName",
-          "description": "Zotero palette name — `\"yellow\"`, `\"red\"`, `\"green\"`, `\"blue\"`,\n`\"purple\"`, `\"magenta\"`, `\"orange\"`, `\"gray\"`, or `\"plum\"`; `null` when\n{@link TemplateAnnotationBaseData.colorHex} is absent or holds a custom\ncolor outside the palette.",
+          "description": "Zotero palette name — `\"yellow\"`, `\"red\"`, `\"green\"`, `\"blue\"`,\n`\"purple\"`, `\"magenta\"`, `\"orange\"`, `\"gray\"`, or `\"plum\"`; `null` when\n{@link colorHex} is absent or holds a custom color outside the palette.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -1959,7 +1959,7 @@
     },
     "TemplateParentItemData": {
       "kind": "object",
-      "description": "Parent literature item as seen from the standalone `annotation` template. The\nannot-view drag-insert resolves the item's tags but omits collection rows\nentirely — `collections` lives only on {@link TemplateItemData}. Read them\nthrough the full `note` template (`zt.collections`).",
+      "description": "Parent literature item as seen from the standalone `annotation` template. The\nannot-view drag-insert resolves the item's tags but omits collection rows\nentirely — `collections` lives only on the note root. Read them there\n(`zt.collections`).",
       "members": [
         {
           "name": "notePath",
@@ -2074,7 +2074,7 @@
         },
         {
           "name": "dateModified",
-          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link TemplateItemBaseData.dateAdded}.",
+          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link dateAdded}.",
           "optional": false,
           "type": {
             "kind": "stringified",
@@ -2512,7 +2512,7 @@
         },
         {
           "name": "authors",
-          "description": "Creators filtered to {@link TemplateItemBaseData.primaryCreatorType}; all when none.",
+          "description": "Creators filtered to the item's primary creator type; all when none matches.",
           "optional": false,
           "type": {
             "kind": "array",
@@ -2602,7 +2602,7 @@
     },
     "TemplateTag": {
       "kind": "object",
-      "description": "A Tag in the template vocabulary. Coerces to `name` in string contexts (like a\ncollection coerces to its name), so `{{ zt.tags | join: \", \" }}` renders tag\nnames directly. Zotero-internal IDs are dropped; `type` is the resolved name\nrather than {@link ItemTag}'s raw int.",
+      "description": "A Tag in the template vocabulary. Coerces to `name` in string contexts (like a\ncollection coerces to its name), so `{{ zt.tags | join: \", \" }}` renders tag\nnames directly. Zotero-internal IDs are dropped; `type` is the resolved name\nrather than Zotero's raw int.",
       "members": [
         {
           "name": "name",
@@ -2936,7 +2936,7 @@
     },
     "ExtraLine": {
       "kind": "union",
-      "description": "One source row of an Extra field, in document order: a parsed pair (`key`\nplus trimmed `value`) or a non-pair text/blank row (`key: null`). `raw` is the\nverbatim line so interleaved prose is never dropped.\n\nA line splits on its first `:` or `=`, and is a pair only when the key starts\nwith an ASCII letter and otherwise holds ASCII letters, digits, spaces, dots,\nhyphens, or underscores. A line that does not match, and one whose value is\nempty, becomes a text row.\n\nA non-enumerable `toString` returns `raw`, same mechanism as {@link ItemExtra}.",
+      "description": "One source row of an Extra field, in document order: a parsed pair (`key`\nplus trimmed `value`) or a non-pair text/blank row (`key: null`). `raw` is the\nverbatim line so interleaved prose is never dropped.\n\nA line splits on its first `:` or `=`, and is a pair only when the key starts\nwith an ASCII letter and otherwise holds ASCII letters, digits, spaces, dots,\nhyphens, or underscores. A line that does not match, and one whose value is\nempty, becomes a text row.\n\nA non-enumerable `toString` returns `raw`, as on the extra field itself.",
       "options": [
         {
           "kind": "object",
@@ -3055,7 +3055,7 @@
         },
         {
           "name": "linkMode",
-          "description": "Resolved {@link linkModeToName} name — `\"imported_file\"`, `\"imported_url\"`,\n`\"linked_file\"`, `\"linked_url\"`, or `\"embedded_image\"`; `\"unknown\"` when\nthe raw mode is null or unrecognized.",
+          "description": "Resolved link mode — `\"imported_file\"`, `\"imported_url\"`,\n`\"linked_file\"`, `\"linked_url\"`, or `\"embedded_image\"`; `\"unknown\"` when\nthe raw mode is null or unrecognized.",
           "optional": false,
           "type": {
             "kind": "primitive",
@@ -3091,7 +3091,7 @@
         },
         {
           "name": "fileLink",
-          "description": "Markdown link to the on-disk attachment file. In Liquid it renders on\nplain access (`{{ a.fileLink }}`); pipe the attachment itself through the\n`file_link` filter to override the alias or subpath. In Eta call it —\n`<%= a.fileLink() %>` — passing `alias` to override the display text\n(defaults to the filename) and `subpath` to append a `#`-fragment. `null`\nwhen the file is unresolvable. See {@link FallibleTemplateLink}. Computed\nat the app layer.",
+          "description": "Markdown link to the on-disk attachment file. In Liquid it renders on\nplain access (`{{ a.fileLink }}`); pipe the attachment itself through the\n`file_link` filter to override the alias or subpath. In Eta call it —\n`<%= a.fileLink() %>` — passing `alias` to override the display text\n(defaults to the filename) and `subpath` to append a `#`-fragment. `null`\nwhen the file is unresolvable. Computed at the app layer.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -3117,7 +3117,7 @@
     },
     "ResolvedAnnotationTypeName": {
       "kind": "union",
-      "description": "{@link annotationTypeToName}'s output: a known {@link AnnotationTypeName}, or\n`\"unknown\"` for a type id Zotero added after this mapping was written.",
+      "description": "A resolved annotation type name: one Zotero declares, or `\"unknown\"` for a\ntype id Zotero added after this mapping was written.",
       "options": [
         {
           "kind": "literal",
@@ -3151,7 +3151,7 @@
     },
     "TemplateRelatedItem": {
       "kind": "object",
-      "description": "A single entry in {@link NoteTemplateContext.relatedItems}: the related\nitem's own {@link TemplateItemData}, flattened with its backlink and author\nconveniences. Depth-1 — its own `annotations`, `attachments`, and\n`relatedItems` are deliberately absent (resolving them would require a\nper-related-item DB fan-out), marking the boundary of the relation graph.",
+      "description": "A single entry in {@link NoteTemplateContext.relatedItems}: the related\nitem's own fields, flattened with its backlink and author conveniences. Depth-1 — its own `annotations`, `attachments`, and\n`relatedItems` are deliberately absent (resolving them would require a\nper-related-item DB fan-out), marking the boundary of the relation graph.",
       "members": [
         {
           "name": "notePath",
@@ -3173,7 +3173,7 @@
         },
         {
           "name": "noteLink",
-          "description": "Obsidian Markdown link to this item's literature note. In Liquid it\nrenders on plain access (`{{ zt.noteLink }}`); pipe the item itself\nthrough the `note_link` filter to override the alias or subpath. In Eta\ncall it with those arguments. See {@link FallibleTemplateLink}.",
+          "description": "Obsidian Markdown link to this item's literature note. In Liquid it\nrenders on plain access (`{{ zt.noteLink }}`); pipe the item itself\nthrough the `note_link` filter to override the alias or subpath. In Eta\ncall it with those arguments.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -3284,7 +3284,7 @@
         },
         {
           "name": "dateModified",
-          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link TemplateItemBaseData.dateAdded}.",
+          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link dateAdded}.",
           "optional": false,
           "type": {
             "kind": "stringified",
@@ -3722,7 +3722,7 @@
         },
         {
           "name": "authors",
-          "description": "Creators filtered to {@link TemplateItemBaseData.primaryCreatorType}; all when none.",
+          "description": "Creators filtered to the item's primary creator type; all when none matches.",
           "optional": false,
           "type": {
             "kind": "array",
@@ -3845,11 +3845,11 @@
     },
     "AnnotationTemplateContext": {
       "kind": "object",
-      "description": "The `zt` root of the `annotation` template: a {@link TemplateAnnotation} plus\n{@link AnnotationTemplateContext.citation}. Entries of `zt.annotations` on the\nnote root are plain {@link TemplateAnnotation}s — only the single-annotation\nrender carries a citation.",
+      "description": "The `zt` root of the `annotation` template: one annotation\n({@link TemplateAnnotation}) plus {@link citation}. Entries of\n`zt.annotations` on the note root carry no citation — only the\nsingle-annotation render resolves one.",
       "members": [
         {
           "name": "citation",
-          "description": "Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered\nthrough the `cite` template with this annotation's\n{@link TemplateAnnotationBaseData.pageLabel} as locator; `null` when there\nis no parent item or it carries no citation key. Computed at the app layer.",
+          "description": "Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered\nthrough the `cite` template with this annotation's {@link pageLabel} as\nlocator; `null` when there is no parent item or it carries no citation key.\nComputed at the app layer.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -3867,7 +3867,7 @@
         },
         {
           "name": "imgLink",
-          "description": "Markdown link to the excerpt image, or `null` for annotation types with no\ncached excerpt image (everything but `image` and `ink`), which resolves\nempty. Call it to render and pipe it through the `embed` filter (or prefix\n`!` yourself) for an Obsidian embed. With image import\ndisabled it links the cached image's `file://` URI; with import enabled it\nlinks the in-vault copy, formatted per the vault's wikilink preference. Pass\n`alias` to override the display text (defaults to the image filename). See\n{@link TemplateLink}. Computed at the app layer.",
+          "description": "Markdown link to the excerpt image, or `null` for annotation types with no\ncached excerpt image (everything but `image` and `ink`), which resolves\nempty. Call it to render and pipe it through the `embed` filter (or prefix\n`!` yourself) for an Obsidian embed. With image import\ndisabled it links the cached image's `file://` URI; with import enabled it\nlinks the in-vault copy, formatted per the vault's wikilink preference. Pass\n`alias` to override the display text (defaults to the image filename).\nComputed at the app layer.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -3915,7 +3915,7 @@
         },
         {
           "name": "fileLink",
-          "description": "Markdown link to the parent attachment file, deep-linked to this\nannotation's {@link page} (`#page=N`); `null` when the file is unresolvable.\nCall it to render — pass `alias`/`subpath` to override the display text or\nthe `#`-fragment. See {@link FallibleTemplateLink}. Computed at the app layer.",
+          "description": "Markdown link to the parent attachment file, deep-linked to this\nannotation's {@link page} (`#page=N`); `null` when the file is unresolvable.\nCall it to render — pass `alias`/`subpath` to override the display text or\nthe `#`-fragment. Computed at the app layer.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -4065,7 +4065,7 @@
         },
         {
           "name": "colorName",
-          "description": "Zotero palette name — `\"yellow\"`, `\"red\"`, `\"green\"`, `\"blue\"`,\n`\"purple\"`, `\"magenta\"`, `\"orange\"`, `\"gray\"`, or `\"plum\"`; `null` when\n{@link TemplateAnnotationBaseData.colorHex} is absent or holds a custom\ncolor outside the palette.",
+          "description": "Zotero palette name — `\"yellow\"`, `\"red\"`, `\"green\"`, `\"blue\"`,\n`\"purple\"`, `\"magenta\"`, `\"orange\"`, `\"gray\"`, or `\"plum\"`; `null` when\n{@link colorHex} is absent or holds a custom color outside the palette.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -4210,11 +4210,11 @@
     },
     "TemplateFilenameItemData": {
       "kind": "object",
-      "description": "The `zt` root of the `filename` template: an item's own\n{@link TemplateItemBaseData}, its collections, and inert `notePath` /\n`noteLink` stubs. The note-body context is absent — no `backlink`,\n`weblink`, `annotations`, `attachments`, `relatedItems`, `authors`,\n`authorsShort`, or `notes` — so naming a note stays a single-item read.",
+      "description": "The `zt` root of the `filename` template: an item's own fields, its\ncollections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`,\n`weblink`, `annotations`, `attachments`, `relatedItems`, `authors`,\n`authorsShort`, or `notes` — so naming a note stays a single-item read.",
       "members": [
         {
           "name": "notePath",
-          "description": "Always `\"\"` — the note does not exist yet when a filename is resolved.\nStubbed (rather than omitted) so a filename template that references\n{@link TemplateItemData.notePath} does not throw; matches\n{@link TemplateItemData.notePath}'s `string | null` contract.",
+          "description": "Always `\"\"` — the note does not exist yet when a filename is resolved.\nStubbed (rather than omitted) so a filename template reading `notePath`\ndoes not throw; it keeps the `string | null` type the note root gives.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -4232,7 +4232,7 @@
         },
         {
           "name": "noteLink",
-          "description": "Always returns `\"\"`; matches {@link TemplateItemData.noteLink}'s signature.",
+          "description": "Always returns `\"\"`; matches the note root's `noteLink` signature.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -4343,7 +4343,7 @@
         },
         {
           "name": "dateModified",
-          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link TemplateItemBaseData.dateAdded}.",
+          "description": "When the item was last modified in Zotero; same precision and rendering as\n{@link dateAdded}.",
           "optional": false,
           "type": {
             "kind": "stringified",

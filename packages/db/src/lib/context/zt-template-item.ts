@@ -61,7 +61,7 @@ export interface TemplateItemBaseData {
   dateAdded: Temporal.Instant;
   /**
    * When the item was last modified in Zotero; same precision and rendering as
-   * {@link TemplateItemBaseData.dateAdded}.
+   * {@link dateAdded}.
    */
   dateModified: Temporal.Instant;
 
@@ -149,7 +149,7 @@ export interface TemplateItemData extends TemplateItemBaseData {
    * Obsidian Markdown link to this item's literature note. In Liquid it
    * renders on plain access (`{{ zt.noteLink }}`); pipe the item itself
    * through the `note_link` filter to override the alias or subpath. In Eta
-   * call it with those arguments. See {@link FallibleTemplateLink}.
+   * call it with those arguments.
    *
    * @ztFilter note_link
    */
@@ -167,22 +167,20 @@ export interface TemplateItemData extends TemplateItemBaseData {
 }
 
 /**
- * The `zt` root of the `filename` template: an item's own
- * {@link TemplateItemBaseData}, its collections, and inert `notePath` /
- * `noteLink` stubs. The note-body context is absent — no `backlink`,
+ * The `zt` root of the `filename` template: an item's own fields, its
+ * collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`,
  * `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`,
  * `authorsShort`, or `notes` — so naming a note stays a single-item read.
  */
 export interface TemplateFilenameItemData extends TemplateItemBaseData {
   /**
    * Always `""` — the note does not exist yet when a filename is resolved.
-   * Stubbed (rather than omitted) so a filename template that references
-   * {@link TemplateItemData.notePath} does not throw; matches
-   * {@link TemplateItemData.notePath}'s `string | null` contract.
+   * Stubbed (rather than omitted) so a filename template reading `notePath`
+   * does not throw; it keeps the `string | null` type the note root gives.
    */
   notePath: string | null;
   /**
-   * Always returns `""`; matches {@link TemplateItemData.noteLink}'s signature.
+   * Always returns `""`; matches the note root's `noteLink` signature.
    *
    * @ztFilter note_link
    */
@@ -348,7 +346,7 @@ export interface ResolvedItemCore {
   backlink: string;
   /** Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library. */
   weblink: string | null;
-  /** Creators filtered to {@link TemplateItemBaseData.primaryCreatorType}; all when none. */
+  /** Creators filtered to the item's primary creator type; all when none matches. */
   authors: TemplateCreator[];
   /** Formatted short author string, e.g. `"Smith et al."`. */
   authorsShort: string;
@@ -373,8 +371,8 @@ export function resolveItemCore(input: {
 /**
  * Parent literature item as seen from the standalone `annotation` template. The
  * annot-view drag-insert resolves the item's tags but omits collection rows
- * entirely — `collections` lives only on {@link TemplateItemData}. Read them
- * through the full `note` template (`zt.collections`).
+ * entirely — `collections` lives only on the note root. Read them there
+ * (`zt.collections`).
  */
 export interface TemplateParentItemData
   extends TemplateItemBaseData, ResolvedItemCore {

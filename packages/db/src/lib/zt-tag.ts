@@ -41,7 +41,7 @@ export function tagTypeToName(type: TagType): TagTypeName | "unknown" {
  * A Tag in the template vocabulary. Coerces to `name` in string contexts (like a
  * collection coerces to its name), so `{{ zt.tags | join: ", " }}` renders tag
  * names directly. Zotero-internal IDs are dropped; `type` is the resolved name
- * rather than {@link ItemTag}'s raw int.
+ * rather than Zotero's raw int.
  */
 export interface TemplateTag {
   /** Tag name as shown in Zotero. */

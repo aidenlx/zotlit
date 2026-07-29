@@ -15,7 +15,7 @@ This page lists every property available on `zt` in each template type. Use the 
 
 ## Note and content templates [#note-and-content-templates]
 
-The `zt` root for the `note` template: `TemplateItemData` plus the runtime-computed fields assembled at the app layer (backlinks, resolved attachment links, flattened annotations, author conveniences).
+The `zt` root for the `note` template: every item field plus the runtime-computed fields assembled at the app layer (backlinks, resolved attachment links, flattened annotations, author conveniences).
 
 The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-content.liquid.md`) share this context.
 
@@ -23,7 +23,7 @@ The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-co
 
 ## Annotation template [#annotation-template]
 
-The `zt` root of the `annotation` template: a [`TemplateAnnotation`](#annotation-entry) plus [`citation`](#annotation-template-citation). Entries of `zt.annotations` on the note root are plain [`TemplateAnnotation`](#annotation-entry)s — only the single-annotation render carries a citation.
+The `zt` root of the `annotation` template: one annotation ([`TemplateAnnotation`](#annotation-entry)) plus [`citation`](#annotation-template-citation). Entries of `zt.annotations` on the note root carry no citation — only the single-annotation render resolves one.
 
 The annotation template (`zotlit-annotation.liquid.md`) receives a single annotation as `zt`.
 
@@ -31,7 +31,7 @@ The annotation template (`zotlit-annotation.liquid.md`) receives a single annota
 
 ## Filename template [#filename-template]
 
-The `zt` root of the `filename` template: an item's own `TemplateItemBaseData`, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.
+The `zt` root of the `filename` template: an item's own fields, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.
 
 The filename template (`zotlit-filename.liquid.md`) receives exactly the properties below.
 
@@ -63,7 +63,7 @@ Loop over them with `{% for annotation in zt.annotations %}`.
 
 ## Annotation types [#annotation-types]
 
-`annotationTypeToName`'s output: a known `AnnotationTypeName`, or `"unknown"` for a type id Zotero added after this mapping was written.
+A resolved annotation type name: one Zotero declares, or `"unknown"` for a type id Zotero added after this mapping was written.
 
 - `"unknown"`
 - `"text"`
@@ -75,7 +75,7 @@ Loop over them with `{% for annotation in zt.annotations %}`.
 
 ## Parent item [#parent-item]
 
-Parent literature item as seen from the standalone `annotation` template. The annot-view drag-insert resolves the item's tags but omits collection rows entirely — `collections` lives only on `TemplateItemData`. Read them through the full `note` template (`zt.collections`).
+Parent literature item as seen from the standalone `annotation` template. The annot-view drag-insert resolves the item's tags but omits collection rows entirely — `collections` lives only on the note root. Read them there (`zt.collections`).
 
 <ContractTable section="parent-item" />
 
@@ -89,7 +89,7 @@ One creator of an item, in the template vocabulary. Coerces to [`fullName`](#cre
 
 ## Tags [#tags]
 
-A Tag in the template vocabulary. Coerces to `name` in string contexts (like a collection coerces to its name), so `{{ zt.tags | join: ", " }}` renders tag names directly. Zotero-internal IDs are dropped; `type` is the resolved name rather than `ItemTag`'s raw int.
+A Tag in the template vocabulary. Coerces to `name` in string contexts (like a collection coerces to its name), so `{{ zt.tags | join: ", " }}` renders tag names directly. Zotero-internal IDs are dropped; `type` is the resolved name rather than Zotero's raw int.
 
 <ContractTable section="tags" />
 
@@ -123,7 +123,7 @@ One source row of an Extra field, in document order: a parsed pair (`key` plus t
 
 A line splits on its first `:` or `=`, and is a pair only when the key starts with an ASCII letter and otherwise holds ASCII letters, digits, spaces, dots, hyphens, or underscores. A line that does not match, and one whose value is empty, becomes a text row.
 
-A non-enumerable `toString` returns `raw`, same mechanism as [`ItemExtra`](#extra-field).
+A non-enumerable `toString` returns `raw`, as on the extra field itself.
 
 Each entry of `zt.extra.lines`.
 
@@ -137,7 +137,7 @@ Attachment data in the v2 template vocabulary. Exposed on `zt.attachments` and a
 
 ## Related items [#related-items]
 
-A single entry in [`relatedItems`](#note-and-content-templates-relatedItems): the related item's own `TemplateItemData`, flattened with its backlink and author conveniences. Depth-1 — its own `annotations`, `attachments`, and `relatedItems` are deliberately absent (resolving them would require a per-related-item DB fan-out), marking the boundary of the relation graph.
+A single entry in [`relatedItems`](#note-and-content-templates-relatedItems): the related item's own fields, flattened with its backlink and author conveniences. Depth-1 — its own `annotations`, `attachments`, and `relatedItems` are deliberately absent (resolving them would require a per-related-item DB fan-out), marking the boundary of the relation graph.
 
 Each entry also carries every [item field](#item-fields).
 
