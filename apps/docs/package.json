@@ -9,6 +9,7 @@
     "test": "vitest run",
     "start": "next start",
     "codegen": "fumadocs-mdx && _FUMADOCS_MDX=1 next typegen",
+    "generate:template-data": "node scripts/generate-template-data.ts && oxfmt lib/template-contract/generated",
     "types:check": "pnpm run codegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx",
     "lint": "oxlint"
