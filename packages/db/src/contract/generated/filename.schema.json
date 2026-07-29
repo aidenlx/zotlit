@@ -1689,28 +1689,13 @@
         "parentItem": {
           "anyOf": [
             {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/TemplateParentItemData"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Parent literature item; shared across annotations from the same item. `null` for an annotation on a standalone attachment (a file with no parent bibliographic item).\n\nIts `collections` are populated when the annotation renders as part of a note; see `TemplateParentItemData` for the standalone case."
+              "$ref": "#/$defs/TemplateParentItemData"
             },
             {
-              "type": "object",
-              "properties": {
-                "$ref": {
-                  "type": "string",
-                  "description": "Path to the first serialized occurrence, starting at `zt`."
-                }
-              },
-              "required": ["$ref"],
-              "additionalProperties": false
+              "type": "null"
             }
-          ]
+          ],
+          "description": "Parent literature item; shared across annotations from the same item. `null` for an annotation on a standalone attachment (a file with no parent bibliographic item).\n\nIts `collections` are populated when the annotation renders as part of a note; see `TemplateParentItemData` for the standalone case."
         },
         "parentAttachment": {
           "$ref": "#/$defs/TemplateAttachment",
@@ -5488,28 +5473,13 @@
         "parentItem": {
           "anyOf": [
             {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/TemplateParentItemData"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Parent literature item; shared across annotations from the same item. `null` for an annotation on a standalone attachment (a file with no parent bibliographic item).\n\nIts `collections` are populated when the annotation renders as part of a note; see `TemplateParentItemData` for the standalone case."
+              "$ref": "#/$defs/TemplateParentItemData"
             },
             {
-              "type": "object",
-              "properties": {
-                "$ref": {
-                  "type": "string",
-                  "description": "Path to the first serialized occurrence, starting at `zt`."
-                }
-              },
-              "required": ["$ref"],
-              "additionalProperties": false
+              "type": "null"
             }
-          ]
+          ],
+          "description": "Parent literature item; shared across annotations from the same item. `null` for an annotation on a standalone attachment (a file with no parent bibliographic item).\n\nIts `collections` are populated when the annotation renders as part of a note; see `TemplateParentItemData` for the standalone case."
         },
         "parentAttachment": {
           "$ref": "#/$defs/TemplateAttachment",

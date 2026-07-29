@@ -197,7 +197,9 @@ export class ContractExtractor {
     return {
       description: indexSignatureDoc(type),
       type: this.#walk(values, location),
-      itemFields: extendsInterface(type, "TemplateItemBaseData"),
+      schema: extendsInterface(type, "TemplateItemBaseData")
+        ? "item-fields"
+        : "open",
     };
   }
 

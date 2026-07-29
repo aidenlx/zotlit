@@ -4,15 +4,24 @@
   "roots": {
     "note": {
       "type": "NoteTemplateContext",
-      "templates": ["note", "content"]
+      "templates": ["note", "content"],
+      "references": [
+        {
+          "owner": "TemplateAnnotation",
+          "member": "parentItem",
+          "path": "zt"
+        }
+      ]
     },
     "annotation": {
       "type": "AnnotationTemplateContext",
-      "templates": ["annotation"]
+      "templates": ["annotation"],
+      "references": []
     },
     "filename": {
       "type": "TemplateFilenameItemData",
-      "templates": ["filename"]
+      "templates": ["filename"],
+      "references": []
     }
   },
   "itemTypes": {
@@ -1573,7 +1582,7 @@
         "type": {
           "kind": "unknown"
         },
-        "itemFields": true
+        "schema": "item-fields"
       }
     },
     "TemplateAnnotation": {
@@ -2481,7 +2490,7 @@
         "type": {
           "kind": "unknown"
         },
-        "itemFields": true
+        "schema": "item-fields"
       }
     },
     "TemplateCreator": {
@@ -3671,7 +3680,7 @@
         "type": {
           "kind": "unknown"
         },
-        "itemFields": true
+        "schema": "item-fields"
       }
     },
     "TemplateCollection": {
@@ -4649,7 +4658,7 @@
         "type": {
           "kind": "unknown"
         },
-        "itemFields": true
+        "schema": "item-fields"
       }
     }
   }

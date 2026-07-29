@@ -20,14 +20,19 @@ describe("contract artifacts", () => {
       note: {
         type: "NoteTemplateContext",
         templates: templateSlotsForRoot("note"),
+        references: [
+          { owner: "TemplateAnnotation", member: "parentItem", path: "zt" },
+        ],
       },
       annotation: {
         type: "AnnotationTemplateContext",
         templates: templateSlotsForRoot("annotation"),
+        references: [],
       },
       filename: {
         type: "TemplateFilenameItemData",
         templates: templateSlotsForRoot("filename"),
+        references: [],
       },
     });
     for (const [root, schema] of Object.entries(schemas)) {
@@ -117,13 +122,17 @@ describe("serialized forms", () => {
 
   it("serializes Temporal values as strings and shared cycles as ref paths", () => {
     expect(properties.dateAdded).toMatchObject({ type: "string" });
-    expect(
-      noteSchema.$defs.TemplateAnnotation.properties.parentItem.anyOf[1],
-    ).toMatchObject({
-      properties: { $ref: { type: "string" } },
+    expect(noteSchema.$defs.TemplateAnnotation.properties.parentItem).toEqual({
+      type: "object",
+      properties: { $ref: { const: "zt" } },
       required: ["$ref"],
       additionalProperties: false,
     });
+    expect(
+      JSON.stringify(
+        annotationSchema.$defs.TemplateAnnotation.properties.parentItem,
+      ),
+    ).not.toContain('"$ref":{"const":"zt"}');
   });
 
   it("drops the non-enumerable toString from every shape", () => {

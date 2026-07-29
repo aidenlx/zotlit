@@ -28,6 +28,16 @@ export interface ContractRootIR {
   type: string;
   /** Template names rendering against this root. */
   templates: readonly TemplateSlot[];
+  /** Members serialized as paths back to an object already emitted in this root. */
+  references: readonly ContractReference[];
+}
+
+export interface ContractReference {
+  /** Named type that owns the member. */
+  owner: string;
+  member: string;
+  /** Serialized path to the first occurrence. */
+  path: string;
 }
 
 /** A type that earns its own {@link ContractIR.types} entry: declared in this package and referenced by name. */
@@ -114,8 +124,8 @@ export interface ContractObject {
 export interface ContractAdditionalMembers {
   description?: string;
   type: ContractType;
-  /** Replace the open TS index signature with generated per-item-type fields. */
-  itemFields?: boolean;
+  /** How the JSON Schema represents this TypeScript index signature. */
+  schema: "open" | "item-fields";
 }
 
 export interface ContractUnion {
