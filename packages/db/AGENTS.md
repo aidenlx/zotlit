@@ -29,6 +29,13 @@ Field naming follows type-specific names — `BookSectionFields.bookTitle`, not 
 
 Read `src/lib/context/note-context.ts` for the public seam and `src/lib/context/` for the assembly pipeline.
 
+### Generated contract artifacts
+
+The `zt` types plus their doc comments are the single source of truth for the template contract. `scripts/generate-contract.ts` extracts them into a contract IR and emits one JSON Schema per data root, both committed under `src/contract/generated/`. `src/contract/roots.ts` holds the Template-slot → root registry the emitter and the Template Workbench CLI share.
+
+- Regenerate with `pnpm --filter @zotlit/db generate:contract` after any contract type or doc-comment change; CI fails on a stale artifact.
+- The extractor parses with ts-morph's vendored frozen TypeScript 6, not the repo's TypeScript 7. See [ADR 0015](../../docs/adr/0015-template-contract-artifacts-generate-from-ts-types.md).
+
 ## Logging
 
 Import `getLogger` directly from `@logtape/logtape` — libraries must stay app-agnostic.

@@ -20,7 +20,8 @@
     "build": "tsdown",
     "db:pull": "drizzle-kit pull",
     "dev": "tsdown --watch",
-    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "generate:contract": "node scripts/generate-contract.ts && oxfmt src/contract/generated",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json && tsc --noEmit -p tsconfig.node.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
     "test": "vitest run"
@@ -38,8 +39,10 @@
     "@types/node-22": "npm:@types/node@^22.9.0",
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@zotlit/config": "workspace:*",
+    "ajv": "^8.20.0",
     "drizzle-kit": "catalog:",
     "oxlint": "catalog:",
+    "ts-morph": "^28.0.0",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

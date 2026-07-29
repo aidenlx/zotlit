@@ -55,6 +55,25 @@ jobs:
             exit 1
           fi
 
+      # The `zt` template contract generates from the TS types (ADR 0015), so a
+      # contract change that lands without regenerated artifacts must fail here.
+      - name: Contract artifacts check
+        run: |
+          pnpm --filter @zotlit/db generate:contract
+          # --porcelain also reports a regenerated file the commit deleted,
+          # which `git diff` leaves untracked and therefore silent.
+          stale=$(git status --porcelain -- packages/db/src/contract/generated)
+          if [ -n "$stale" ]; then
+            {
+              echo "### Stale contract artifacts"
+              echo 'Run `pnpm --filter @zotlit/db generate:contract` and commit the result.'
+              echo '```'
+              echo "$stale"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       # oxlint.base.ts sets typeAware + typeCheck, so `-f github` emits ::error
       # workflow commands → inline annotations on the diff, type errors included.
       # turbo's dependsOn handles transitive builds (no explicit build step).

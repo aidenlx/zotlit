@@ -127,3 +127,10 @@ export {
   type AnnotationResolvers,
   type NoteResolvers,
 } from "./lib/context/note-context";
+export {
+  CONTRACT_VERSION,
+  TEMPLATE_SLOT_ROOTS,
+  templateSlotsForRoot,
+  type ContractRoot,
+  type TemplateSlot,
+} from "./contract/roots";
