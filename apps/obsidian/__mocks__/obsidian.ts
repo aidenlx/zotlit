@@ -196,6 +196,7 @@ export function requireApiVersion(_version: string): boolean {
  * registered handler. */
 export class MenuItem {
   #title = "";
+  #section = "";
   #onClick: ((evt: MouseEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
@@ -205,12 +206,22 @@ export class MenuItem {
     return this.#title;
   }
 
+  /** `""` for an unsectioned item, as in Obsidian. */
+  get section(): string {
+    return this.#section;
+  }
+
   setTitle(title: string): this {
     this.#title = title;
     return this;
   }
 
   setIcon(_icon: string | null): this {
+    return this;
+  }
+
+  setSection(section: string): this {
+    this.#section = section;
     return this;
   }
 
@@ -234,6 +245,12 @@ export class MenuItem {
  * Minimal stand-in for `Menu`. Records every constructed instance on
  * `Menu.instances` so tests can inspect the menu built by code under test
  * without the production code needing to return it.
+ *
+ * `items` stays in insertion order: Obsidian's section grouping runs in
+ * `sort()` from `show()`, which this mock never performs, and a faithful
+ * `sort()` would materialize separators into `items`, which {@link
+ * Menu.addSeparator} deliberately keeps out. Assert
+ * {@link MenuItem.section} instead of inferring grouping from position.
  */
 export class Menu {
   static instances: Menu[] = [];

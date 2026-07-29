@@ -39,13 +39,32 @@ In the annotation sidebar, open the more-options menu on any annotation row and 
 
 ### From Zotero (item)
 
-The companion adds these entry points in Zotero. Right-click a single item, open the **ZotLit** submenu, and select **Explore Template Data**. Zotero opens the explorer in Obsidian via a protocol link.
+The ZotLit companion adds these entry points in Zotero. Right-click a single item, open the **ZotLit** submenu, and select **Explore Template Data**. Zotero opens the explorer in Obsidian via a protocol link.
 
 ### From Zotero (annotation)
 
-In Zotero's PDF reader, right-click an annotation. Under the **ZotLit** submenu (added by the companion), select **Explore Annotation in Obsidian**. The explorer opens in Obsidian anchored at that annotation.
+In Zotero's PDF reader, right-click an annotation and select **Explore Annotation in Obsidian**, added by the companion. The explorer opens in Obsidian anchored at that annotation.
 
 <include>./_security-prompt-callout.mdx</include>
+
+## Copy an Indexed Key [#indexed-key]
+
+An Indexed Key names one Zotero object: an item, an attachment, an annotation, or a note. Copy one when a tool asks you which object to work on.
+
+In Obsidian:
+
+- For the active literature note, run <Command inline>ZotLit: Copy item key</Command>, or select **Copy item key** from the file menu.
+- On an annotation row, open the more-options menu and select **Copy annotation key**.
+- In the explorer, open the more-options menu on the tab and select **Copy item key** or **Copy annotation key**. The label follows the current root.
+
+If a literature note is already open, you can also copy its `zotero-key` frontmatter value by hand.
+
+In Zotero, the companion adds two more entry points:
+
+- Right-click one or more library rows and open the **ZotLit** submenu. The entry names the kind you selected, such as **Copy Item Key** or **Copy Attachment Key**. Multiple rows copy one key per line.
+- In the PDF reader, right-click an annotation and select **Copy Annotation Key**.
+
+One key is always enough. The [root you choose](#roots) — note or annotation — selects the view on that object.
 
 ## Browse the data tree
 
@@ -55,7 +74,7 @@ The explorer displays a collapsible tree of every property available under the `
 
 Type in the filter box (placeholder: "Filter properties...") to narrow the tree. Filtering matches key names and stringified primitive values by case-insensitive substring. Matching nodes and their ancestor chains auto-expand.
 
-### Switch between note root and annotation root
+### Switch between note root and annotation root [#roots]
 
 By default the tree shows the full `zt` object (note root). To view the data available inside annotation templates, open the more-options menu on an annotation node in the tree and select **Explore as annotation template data**. The tree re-anchors to that annotation's data shape.
 

@@ -9,6 +9,7 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
+import { formatObjectKeys, identityForObject } from "@/lib/indexed-key";
 import { formatValue, registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 import { notifyUrl } from "@/notify/shared";
@@ -202,14 +203,9 @@ export async function registerNoteStatus(
     width: "32",
     pluginID,
     dataProvider: (item) => {
-      const library = Zotero.Libraries.get(item.libraryID);
-      return notedKeys.has(
-        library && library.isGroup
-          ? `${item.key}g${library.libraryTypeID}`
-          : item.key,
-      )
-        ? "1"
-        : "";
+      const identity = identityForObject(item);
+      if (identity === null) return "";
+      return notedKeys.has(formatObjectKeys([identity])) ? "1" : "";
     },
     renderCell,
     zoteroPersist: ["width", "hidden", "sortDirection"],

@@ -12,6 +12,8 @@ import { resolveAnnotCachePath } from "@zotlit/db/path";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
+import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
+import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import { type NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
@@ -111,6 +113,14 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
           });
       });
     }
+
+    addCopyIndexedKeyMenuItem(menu, {
+      indexedKey: indexedKeyForClipboard({
+        key: annot.key,
+        groupID: deps.getGroupID(),
+      }),
+      kind: "annotation",
+    });
 
     menu.addItem((item) => {
       item

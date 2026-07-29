@@ -30,6 +30,10 @@ function makeActions(overrides?: {
   annotationKeyAt?: (node: DisplayNode) => string | null;
   onAnchorAnnotation?: (key: string) => void;
   isEtaEnabled?: () => boolean;
+  copyTarget?: () => {
+    indexedKey: string;
+    kind: "item" | "annotation";
+  } | null;
 }) {
   return createExplorerActions({
     onChooseItem: vi.fn(),
@@ -40,6 +44,7 @@ function makeActions(overrides?: {
     onBackToNoteRoot: vi.fn(),
     onRefresh: vi.fn(),
     isEtaEnabled: overrides?.isEtaEnabled ?? (() => false),
+    copyTarget: overrides?.copyTarget ?? (() => null),
   });
 }
 
@@ -127,5 +132,30 @@ describe("onTemplateMenu — annotation anchor", () => {
 
     menu.items.at(-1)!.click();
     expect(onAnchorAnnotation).toHaveBeenCalledWith("ANNO0001");
+  });
+});
+
+describe("pane menu — copy key", () => {
+  it("offers the object displayed by the current root", () => {
+    const menu = new Menu();
+    const actions = makeActions({
+      copyTarget: () => ({ indexedKey: "ANNO2345g42", kind: "annotation" }),
+    });
+
+    expect(actions.addCopyKeyMenuItem(menu as never)).toBe(true);
+    expect(menu.items[0]!.title).toBe("Copy annotation key");
+    // The pane menu groups by section, alongside Obsidian's own entries.
+    expect(menu.items[0]!.section).toBe("zotlit");
+
+    menu.items[0]!.click();
+    expect(writeText).toHaveBeenCalledWith("ANNO2345g42");
+  });
+
+  it("adds nothing when no object is displayed", () => {
+    const menu = new Menu();
+    const actions = makeActions({ copyTarget: () => null });
+
+    expect(actions.addCopyKeyMenuItem(menu as never)).toBe(false);
+    expect(menu.items).toHaveLength(0);
   });
 });

@@ -1,6 +1,7 @@
-import { formatValue } from "@/lib/l10n";
+import { requireLabel } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
+import { copyObjectKeys } from "./copy-key.js";
 import { exploreInObsidian, readerTopLevelItem } from "./obsidian.js";
 
 const logger = appLogger.getChild(["menus", "reader-annot"]);
@@ -13,11 +14,8 @@ export async function registerReaderAnnotationMenu(
 ): Promise<Disposable> {
   logger.debug("registering reader-annot menu", { pluginID });
 
-  const exploreLabel = await formatValue("zotlit-menu-reader-annot-explore");
-  if (exploreLabel === null) {
-    logger.error("missing FTL message for reader annotation explore menu");
-    throw new Error("missing FTL message for reader annotation explore menu");
-  }
+  const exploreLabel = await requireLabel("zotlit-menu-reader-annot-explore");
+  const copyLabel = await requireLabel("zotlit-menu-reader-annot-copy-key");
 
   const handler = ({ reader, params, append }: AnnotationEvent): void => {
     append({
@@ -26,6 +24,14 @@ export async function registerReaderAnnotationMenu(
         const item = readerTopLevelItem(reader);
         if (item === null) return;
         exploreInObsidian(item, params.currentID);
+      },
+    });
+    append({
+      label: copyLabel,
+      onCommand: () => {
+        const item = readerTopLevelItem(reader);
+        if (item === null) return;
+        copyObjectKeys([{ key: params.currentID, libraryID: item.libraryID }]);
       },
     });
   };

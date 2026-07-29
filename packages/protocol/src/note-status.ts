@@ -5,8 +5,8 @@ import * as v from "valibot";
  * An Indexed Key: an 8-char base-32 Zotero item key, optionally suffixed
  * `g<groupID>` for group-library items.
  *
- * @see `PATTERN_INDEXED_KEY` in `@zotlit/db` — the canonical pattern this
- *   mirrors (this package stays dependency-free)
+ * @see `PATTERN_INDEXED_KEY` in `@zotlit/shared/indexed-key` — the canonical
+ *   pattern this mirrors (this package stays dependency-free)
  */
 const indexedKeyValue = v.pipe(
   v.string(),

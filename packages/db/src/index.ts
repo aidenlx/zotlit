@@ -28,6 +28,7 @@ export {
   formatIndexedKey,
   isIndexedKey,
   parseIndexedKey,
+  type ParsedIndexedKey,
   resolveIndexedKeyLibrary,
 } from "./lib/zt-key";
 export { annotationOpenUri } from "./lib/zt-uri";

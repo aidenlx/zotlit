@@ -4,6 +4,8 @@ import { createContext } from "react";
 
 import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
+import { type IndexedKeyCopyTarget } from "@/services/indexed-key/actions";
+import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 
 import { copyValue, formatPath, type DisplayNode } from "./display-tree";
 import {
@@ -47,6 +49,7 @@ export interface ExplorerActions {
   onBackToNoteRoot(): void;
   onFilter(query: string): void;
   onRefresh(): void;
+  addCopyKeyMenuItem(menu: Menu): boolean;
 }
 
 export function createExplorerActions(deps: {
@@ -60,6 +63,7 @@ export function createExplorerActions(deps: {
   onRefresh(this: void): void;
   /** Whether Eta is permitted on this device; read live per menu-open so it tracks the JavaScript Templates gate. */
   isEtaEnabled(this: void): boolean;
+  copyTarget(this: void): IndexedKeyCopyTarget | null;
 }): ExplorerActions {
   const copyToClipboard = (
     text: string,
@@ -156,6 +160,11 @@ export function createExplorerActions(deps: {
     onBackToNoteRoot: deps.onBackToNoteRoot,
     onFilter: deps.onFilter,
     onRefresh: deps.onRefresh,
+    addCopyKeyMenuItem(menu) {
+      return addCopyIndexedKeyMenuItem(menu, deps.copyTarget(), {
+        section: "zotlit",
+      });
+    },
   };
 }
 
@@ -167,6 +176,7 @@ const NOOP_ACTIONS: ExplorerActions = {
   onBackToNoteRoot: () => {},
   onFilter: () => {},
   onRefresh: () => {},
+  addCopyKeyMenuItem: () => false,
 };
 
 export const ExplorerActionsContext =

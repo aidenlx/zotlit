@@ -1,4 +1,4 @@
-import { formatValue } from "@/lib/l10n";
+import { requireLabel } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
 import { openInObsidian, readerTopLevelItem } from "./obsidian.js";
@@ -11,11 +11,7 @@ export async function registerReaderPageMenu(
   pluginID: string,
 ): Promise<Disposable> {
   logger.debug("registering reader-page menu", { pluginID });
-  const label = await formatValue("zotlit-menu-reader-page-open");
-  if (label === null) {
-    logger.error("missing FTL message for reader page menu");
-    throw new Error("missing FTL message for reader page menu");
-  }
+  const label = await requireLabel("zotlit-menu-reader-page-open");
   logger.debug("loaded reader-page label", { label });
 
   const handler = ({ reader, append }: ViewEvent): void => {

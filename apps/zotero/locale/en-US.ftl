@@ -45,7 +45,24 @@ zotlit-menu-item-import-notes =
     }
 zotlit-menu-item-explore =
     .label = Explore Template Data
+zotlit-menu-item-copy-key =
+    .label = { $count ->
+        [one] { $kind ->
+            [attachment] Copy Attachment Key
+            [childNote] Copy Child Note Key
+            [note] Copy Note Key
+           *[item] Copy Item Key
+        }
+       *[other] { $kind ->
+            [attachment] Copy Attachment Keys
+            [childNote] Copy Child Note Keys
+            [note] Copy Note Keys
+            [item] Copy Item Keys
+           *[mixed] Copy Selected Keys
+        }
+    }
 zotlit-menu-reader-annot-explore = Explore Annotation in Obsidian
+zotlit-menu-reader-annot-copy-key = Copy Annotation Key
 zotlit-menu-reader-page-open = Open Literature Note in Obsidian
 
 zotlit-batch-update-server-needed-title = Can't update literature notes in Obsidian

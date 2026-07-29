@@ -735,6 +735,9 @@ importers:
       '@logtape/logtape':
         specifier: '>=2.0.0'
         version: 2.1.0
+      arkregex:
+        specifier: 'catalog:'
+        version: 0.0.5
     devDependencies:
       '@types/node-25':
         specifier: npm:@types/node@^25.6.2
