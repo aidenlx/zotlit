@@ -5,8 +5,12 @@ import { glob } from "tinyglobby";
 import { build } from "vite";
 import { type InlineConfig, type LibraryFormats, type Plugin } from "vite";
 
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+
 import { parseManifest } from "./manifest.js";
 import { parseRepository, updateUrl } from "./release-constants.js";
+
+const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
 type BuildResult = Awaited<ReturnType<typeof build>>;
 // build() can return a watcher when build.watch is set; we don't set that
@@ -110,7 +114,7 @@ export function zoteroBuildPlugin({
 }: ZoteroBuildPluginOpts): Plugin {
   const { addonStaging, xpiOutDir, isProd } = env;
   const pkgPath = join(root, "package.json");
-  const rootPkgPath = join(root, "..", "..", "package.json");
+  const rootPkgPath = join(workspaceRoot, "package.json");
   const addonSrcDir = join(root, "addon");
   const addonDistDir = join(root, addonStaging);
   const bootstrapEntryPath = resolve(root, bootstrapBundle.entry);
@@ -147,9 +151,9 @@ export function zoteroBuildPlugin({
         await readFile(pkgPath, "utf-8"),
       ) as typeof import("../package.json");
 
-      const rootPkg = JSON.parse(
-        await readFile(rootPkgPath, "utf-8"),
-      ) as typeof import("../../../package.json");
+      const rootPkg = JSON.parse(await readFile(rootPkgPath, "utf-8")) as {
+        repository?: unknown;
+      };
 
       const repo = parseRepository(rootPkg.repository);
       const manifest = parseManifest(pkg, updateUrl(repo, pkg.version));

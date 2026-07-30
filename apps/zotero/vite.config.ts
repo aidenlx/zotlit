@@ -13,7 +13,7 @@ import {
   MAIN_BUNDLE_NAME,
 } from "./src/constant.js";
 
-const here = import.meta.dirname;
+const packageRoot = import.meta.dirname;
 
 const FLUENT_PREFIX = "zotlit";
 const PREF_PREFIX = "extensions.zotlit.";
@@ -52,7 +52,7 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
   const env = resolveEnv(mode);
 
   return {
-    ...zoteroSandboxConfig(here, env, {
+    ...zoteroSandboxConfig(packageRoot, env, {
       entry: "src/main.ts",
       iifeName: MAIN_IIFE_NAME,
       fileName: MAIN_BUNDLE_NAME,
@@ -65,7 +65,7 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
       // Runs before zoteroBuildPlugin: validates + writes locale FTLs and
       // codegens `src/types/fluent.d.ts` before the zip step picks them up.
       fluentPlugin({
-        root: here,
+        root: packageRoot,
         env,
         prefix: FLUENT_PREFIX,
         localeDir: "locale",
@@ -75,14 +75,14 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
         primaryLocale: "en-US",
       }),
       prefsPlugin({
-        root: here,
+        root: packageRoot,
         prefix: PREF_PREFIX,
         prefsFile: "addon/prefs.js",
         addonDir: "addon",
         typesOutput: "src/types/prefs.ts",
       }),
       zoteroBuildPlugin({
-        root: here,
+        root: packageRoot,
         env,
         bootstrapBundle,
       }),

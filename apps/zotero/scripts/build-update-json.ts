@@ -4,6 +4,8 @@ import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { gt, prerelease } from "semver";
 
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+
 import {
   HOST_NOTES,
   parseRepository,
@@ -59,13 +61,12 @@ interface UpdateManifest {
   >;
 }
 
-const scriptDir = import.meta.dirname;
-const appRoot = resolve(scriptDir, "..");
-const distDir = join(appRoot, "dist");
+const packageRoot = resolve(import.meta.dirname, "..");
+const packageJsonPath = join(packageRoot, "package.json");
+const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+const distDir = join(packageRoot, "dist");
 
-const pkg = JSON.parse(
-  await readFile(join(appRoot, "package.json"), "utf-8"),
-) as {
+const pkg = JSON.parse(await readFile(packageJsonPath, "utf-8")) as {
   version: string;
   zotero: {
     id: string;
@@ -74,7 +75,7 @@ const pkg = JSON.parse(
   };
 };
 const rootPkg = JSON.parse(
-  await readFile(resolve(appRoot, "..", "..", "package.json"), "utf-8"),
+  await readFile(join(workspaceRoot, "package.json"), "utf-8"),
 ) as { repository?: unknown };
 
 const { version, zotero } = pkg;
@@ -183,7 +184,7 @@ function isErrno(err: unknown, code: string): boolean {
 async function renderHostNotes(rewritten: string[]): Promise<string> {
   const eta = new Eta();
   const template = await readFile(
-    join(scriptDir, "release-host-notes.eta"),
+    join(packageRoot, "scripts", "release-host-notes.eta"),
     "utf-8",
   );
   const refreshed = rewritten.length

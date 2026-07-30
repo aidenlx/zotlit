@@ -96,18 +96,9 @@ importers:
 
   .:
     devDependencies:
-      '@clack/prompts':
-        specifier: ^0.11.0
-        version: 0.11.0
       '@electron/asar':
         specifier: ^4.2.0
         version: 4.2.0
-      '@pnpm/find-workspace-dir':
-        specifier: 'catalog:'
-        version: 1000.1.5
-      '@types/semver':
-        specifier: ^7.7.1
-        version: 7.7.1
       '@zotlit/config':
         specifier: workspace:*
         version: link:packages/config
@@ -123,15 +114,9 @@ importers:
       oxlint-tsgolint:
         specifier: ^0.23.0
         version: 0.23.0
-      semver:
-        specifier: ^7.8.0
-        version: 7.8.0
       turbo:
         specifier: ^2.9.18
         version: 2.9.18
-      zx:
-        specifier: ^8.3.0
-        version: 8.8.5
 
   apps/docs:
     dependencies:
@@ -144,12 +129,12 @@ importers:
       '@giscus/react':
         specifier: ^3.1.0
         version: 3.1.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@pnpm/find-workspace-dir':
-        specifier: 'catalog:'
-        version: 1000.1.5
       '@vercel/analytics':
         specifier: ^2.0.1
         version: 2.0.1(next@16.2.11(@babel/core@7.29.7)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
+      '@zotlit/scripts':
+        specifier: workspace:*
+        version: link:../../packages/scripts
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -344,9 +329,6 @@ importers:
       '@logtape/logtape':
         specifier: 'catalog:'
         version: 2.1.0
-      '@pnpm/find-workspace-dir':
-        specifier: 'catalog:'
-        version: 1000.1.5
       '@preact/preset-vite':
         specifier: ^2.10.6
         version: 2.10.6(@babel/core@7.29.7)(preact@10.29.7)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0))
@@ -377,6 +359,9 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@zotlit/scripts':
+        specifier: workspace:*
+        version: link:../../packages/scripts
       ajv:
         specifier: 'catalog:'
         version: 8.20.0
@@ -511,9 +496,6 @@ importers:
       '@fluent/syntax':
         specifier: ^0.19.0
         version: 0.19.0
-      '@pnpm/find-workspace-dir':
-        specifier: 'catalog:'
-        version: 1000.1.5
       '@types/adm-zip':
         specifier: ^0.5.7
         version: 0.5.8
@@ -526,6 +508,9 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@zotlit/scripts':
+        specifier: workspace:*
+        version: link:../../packages/scripts
       adm-zip:
         specifier: ^0.6.0
         version: 0.6.0
@@ -691,15 +676,15 @@ importers:
         specifier: 'catalog:'
         version: 0.5.1
     devDependencies:
-      '@pnpm/find-workspace-dir':
-        specifier: 'catalog:'
-        version: 1000.1.5
       '@types/node-25':
         specifier: npm:@types/node@^25.6.2
         version: '@types/node@25.8.0'
       '@zotlit/config':
         specifier: workspace:*
         version: link:../config
+      '@zotlit/scripts':
+        specifier: workspace:*
+        version: link:../scripts
       oxlint:
         specifier: 'catalog:'
         version: 1.70.0(oxlint-tsgolint@0.23.0)
@@ -744,15 +729,30 @@ importers:
 
   packages/scripts:
     devDependencies:
+      '@clack/prompts':
+        specifier: ^0.11.0
+        version: 0.11.0
+      '@pnpm/find-workspace-dir':
+        specifier: 'catalog:'
+        version: 1000.1.5
       '@types/node-25':
         specifier: npm:@types/node@^25.6.2
         version: '@types/node@25.8.0'
+      '@types/semver':
+        specifier: ^7.7.1
+        version: 7.7.1
       '@zotlit/config':
         specifier: workspace:*
         version: link:../config
+      semver:
+        specifier: ^7.8.0
+        version: 7.8.5
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.0(typescript@7.0.2)
       zx:
         specifier: ^8.8.5
         version: 8.8.5

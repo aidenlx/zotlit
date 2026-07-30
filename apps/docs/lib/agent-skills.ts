@@ -1,10 +1,11 @@
 // Builds the ZotLit Template Agent Skill archive and discovery index.
 
-import { findWorkspaceDir } from "@pnpm/find-workspace-dir";
 import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { baseURL } from "./shared";
 
@@ -14,12 +15,13 @@ export const SKILL_NAME = "zotlit-template";
 export const SKILL_REPOSITORY_PATH = `skills/${SKILL_NAME}/SKILL.md`;
 export const OPENAI_METADATA_REPOSITORY_PATH = `skills/${SKILL_NAME}/agents/openai.yaml`;
 
-const workspaceDir = await findWorkspaceDir(process.cwd());
-if (!workspaceDir) throw new Error("Could not find the pnpm workspace root.");
-const repoRoot = workspaceDir;
+const workspaceRoot = await getWorkspaceRoot(process.cwd());
 
-const SKILL_PATH = join(repoRoot, SKILL_REPOSITORY_PATH);
-const OPENAI_METADATA_PATH = join(repoRoot, OPENAI_METADATA_REPOSITORY_PATH);
+const SKILL_PATH = join(workspaceRoot, SKILL_REPOSITORY_PATH);
+const OPENAI_METADATA_PATH = join(
+  workspaceRoot,
+  OPENAI_METADATA_REPOSITORY_PATH,
+);
 
 interface CreateAgentSkillsIndexOptions {
   skill: Uint8Array;

@@ -1,5 +1,3 @@
-// @ts-check
-
 import { valid } from "semver";
 import * as v from "valibot";
 
@@ -31,18 +29,12 @@ export const PluginManifestSchema = v.object({
  * `obsidian` block in package.json; not part of the Obsidian manifest, so it is
  * validated separately and injected at build time rather than emitted to
  * manifest.json.
- *
- * @param {any} data
- * @returns {string}
  */
-export function parseMinElectronVersion(data) {
+export function parseMinElectronVersion(data: any): string {
   return v.parse(semverSchema, data?.obsidian?.minElectronVersion);
 }
 
-/**
- * @param {any} data
- */
-export function parseManifest(data) {
+export function parseManifest(data: any) {
   const {
     obsidian: { id, name, minAppVersion, fundingUrl, isDesktopOnly } = {},
     version,

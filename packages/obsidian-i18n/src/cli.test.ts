@@ -11,7 +11,8 @@ import {
   writeCatalog,
 } from "./test-fixtures.js";
 
-const cliMainPath = resolve(import.meta.dirname, "..", "dist", "cli-main.mjs");
+const packageRoot = resolve(import.meta.dirname, "..");
+const cliMainPath = resolve(packageRoot, "dist", "cli-main.mjs");
 const execFileAsync = promisify(execFile);
 
 describe("runCli", () => {

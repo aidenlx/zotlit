@@ -1,10 +1,11 @@
 import * as p from "@clack/prompts";
 import { readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { inc, prerelease, valid } from "semver";
 import { $ } from "zx";
 
-import { parseManifest as parseObsidianManifest } from "../apps/obsidian/scripts/manifest.js";
+import { parseManifest as parseObsidianManifest } from "#obsidian-manifest";
+import { getWorkspaceRoot } from "#package-roots";
 
 /**
  * Phase 1 of the release pipeline: local, interactive version bump.
@@ -24,7 +25,7 @@ import { parseManifest as parseObsidianManifest } from "../apps/obsidian/scripts
  * @see CONTRIBUTING.md "Branching model"
  */
 
-const repoRoot = resolve(import.meta.dirname, "..");
+const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
 type AppName = "obsidian" | "zotero";
 
@@ -38,12 +39,12 @@ const APPS: Record<AppName, AppMeta> = {
   obsidian: {
     name: "obsidian",
     display: "@zotlit/obsidian",
-    pkgPath: join(repoRoot, "apps/obsidian/package.json"),
+    pkgPath: join(workspaceRoot, "apps/obsidian/package.json"),
   },
   zotero: {
     name: "zotero",
     display: "@zotlit/zotero",
-    pkgPath: join(repoRoot, "apps/zotero/package.json"),
+    pkgPath: join(workspaceRoot, "apps/zotero/package.json"),
   },
 };
 
@@ -58,7 +59,7 @@ p.intro("ZotLit release");
 await assertCleanWorkingTree();
 
 const currentBranch = (
-  await $({ cwd: repoRoot })`git rev-parse --abbrev-ref HEAD`
+  await $({ cwd: workspaceRoot })`git rev-parse --abbrev-ref HEAD`
 ).stdout.trim();
 
 if (currentBranch !== "main" && currentBranch !== "next") {
@@ -116,12 +117,12 @@ await syncObsidian(bumps, stagedPaths);
 await syncTestVaultPrevVersion(bumps, stagedPaths);
 
 s.start("Refreshing lockfile");
-await $({ cwd: repoRoot })`pnpm install --lockfile-only`;
-stagedPaths.add(join(repoRoot, "pnpm-lock.yaml"));
+await $({ cwd: workspaceRoot })`pnpm install --lockfile-only`;
+stagedPaths.add(join(workspaceRoot, "pnpm-lock.yaml"));
 s.stop("Lockfile refreshed");
 
 s.start("Quality check");
-const quality = await $({ cwd: repoRoot, nothrow: true })`pnpm quality`;
+const quality = await $({ cwd: workspaceRoot, nothrow: true })`pnpm quality`;
 if (quality.exitCode !== 0) {
   s.stop("Quality check failed", 1);
   p.cancel(
@@ -148,16 +149,16 @@ if (p.isCancel(gitConfirm) || !gitConfirm) {
 }
 
 s.start(`Creating branch ${branchName}`);
-await $({ cwd: repoRoot })`git checkout -b ${branchName} ${baseRef}`;
+await $({ cwd: workspaceRoot })`git checkout -b ${branchName} ${baseRef}`;
 s.stop(`On branch ${branchName}`);
 
 s.start("Committing");
-await $({ cwd: repoRoot })`git add ${[...stagedPaths]}`;
-await $({ cwd: repoRoot })`git commit -m ${commitMsg}`;
+await $({ cwd: workspaceRoot })`git add ${[...stagedPaths]}`;
+await $({ cwd: workspaceRoot })`git commit -m ${commitMsg}`;
 s.stop("Committed");
 
 s.start("Pushing");
-await $({ cwd: repoRoot })`git push -u origin ${branchName}`;
+await $({ cwd: workspaceRoot })`git push -u origin ${branchName}`;
 s.stop("Pushed");
 
 const openPr = await p.confirm({ message: `Open a PR to ${currentBranch}?` });
@@ -169,8 +170,8 @@ if (!p.isCancel(openPr) && openPr) {
 // copy and return to the working branch. `-D` because its release commit is not
 // merged into `${currentBranch}` locally.
 s.start(`Returning to ${currentBranch}`);
-await $({ cwd: repoRoot })`git checkout ${currentBranch}`;
-await $({ cwd: repoRoot })`git branch -D ${branchName}`;
+await $({ cwd: workspaceRoot })`git checkout ${currentBranch}`;
+await $({ cwd: workspaceRoot })`git branch -D ${branchName}`;
 s.stop(`Back on ${currentBranch}, removed local ${branchName}`);
 
 p.outro(
@@ -185,23 +186,24 @@ async function openPR(
   title: string,
   base: string,
 ): Promise<void> {
-  const hasGh = await $({ cwd: repoRoot, nothrow: true })`gh --version`.then(
-    (r) => r.exitCode === 0,
-  );
+  const hasGh = await $({
+    cwd: workspaceRoot,
+    nothrow: true,
+  })`gh --version`.then((r) => r.exitCode === 0);
 
   if (hasGh) {
     const s = p.spinner();
     s.start("Creating PR via gh");
     // `gh pr create` prints the new PR's URL to stdout.
     const created = await $({
-      cwd: repoRoot,
+      cwd: workspaceRoot,
     })`gh pr create --title ${title} --body "" --head ${branch} --base ${base}`;
     s.stop("PR created");
     const prUrl = created.stdout.trim();
     if (prUrl) p.log.info(`PR: ${prUrl}`);
   } else {
     const rootPkg = JSON.parse(
-      await readFile(join(repoRoot, "package.json"), "utf-8"),
+      await readFile(join(workspaceRoot, "package.json"), "utf-8"),
     ) as { repository?: { url?: string } | string };
     const repoUrl =
       typeof rootPkg.repository === "string"
@@ -288,11 +290,11 @@ async function syncObsidian(
   pkg.version = obsidian.next;
 
   const manifest = parseObsidianManifest(pkg);
-  const manifestPath = join(repoRoot, "manifest.json");
+  const manifestPath = join(workspaceRoot, "manifest.json");
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   staged.add(manifestPath);
 
-  const versionsPath = join(repoRoot, "versions.json");
+  const versionsPath = join(workspaceRoot, "versions.json");
   const versions = JSON.parse(await readFile(versionsPath, "utf-8")) as Record<
     string,
     string
@@ -317,7 +319,7 @@ async function syncTestVaultPrevVersion(
   if (!obsidian) return;
 
   const dataPath = join(
-    repoRoot,
+    workspaceRoot,
     "tests/zt-vault/.obsidian/plugins/zotlit/data.json",
   );
 
@@ -360,7 +362,7 @@ async function writePackageVersion(
 
 async function assertCleanWorkingTree(): Promise<void> {
   const status = (
-    await $({ cwd: repoRoot })`git status --porcelain`
+    await $({ cwd: workspaceRoot })`git status --porcelain`
   ).stdout.trim();
   if (status.length === 0) return;
   p.cancel(
@@ -380,7 +382,7 @@ async function assertCleanWorkingTree(): Promise<void> {
  */
 async function assertBranchSynced(branch: string): Promise<boolean> {
   const fetched = await $({
-    cwd: repoRoot,
+    cwd: workspaceRoot,
     nothrow: true,
   })`git fetch origin ${branch}`;
   if (fetched.exitCode !== 0) {
@@ -390,10 +392,10 @@ async function assertBranchSynced(branch: string): Promise<boolean> {
 
   const counts = (
     await $({
-      cwd: repoRoot,
+      cwd: workspaceRoot,
     })`git rev-list --left-right --count origin/${branch}...HEAD`
   ).stdout.trim();
-  const [behind, ahead] = counts.split(/\s+/).map(Number);
+  const [behind, ahead] = counts.split(/\s+/).map(Number) as [number, number];
 
   if (behind > 0 && ahead > 0) {
     p.cancel(
@@ -414,7 +416,7 @@ async function assertBranchSynced(branch: string): Promise<boolean> {
     if (p.isCancel(push) || !push) cancel();
     const s = p.spinner();
     s.start(`Pushing ${branch} to origin`);
-    await $({ cwd: repoRoot })`git push origin ${branch}`;
+    await $({ cwd: workspaceRoot })`git push origin ${branch}`;
     s.stop(`Pushed ${branch}`);
   }
 

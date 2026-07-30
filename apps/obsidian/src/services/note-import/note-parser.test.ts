@@ -12,6 +12,7 @@ import {
   getLibraryByGroupID,
 } from "@zotlit/db";
 import { makeItem } from "@zotlit/db/test-utils";
+import { getPackageRoot } from "@zotlit/scripts/package-roots";
 import { TemplateEngine } from "@zotlit/templates";
 import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -20,6 +21,8 @@ import { renderAnnotations } from "@/lib/annotation-render";
 import { type ResolveLinkOptions } from "@/services/attachment-import/service";
 
 import { parseNote, type ParseNoteDeps } from "./note-parser";
+
+const packageRoot = getPackageRoot();
 
 // Keep the real DOM-free parsers; only the DB-backed legs are stubbed per test.
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -1024,7 +1027,7 @@ describe("citation resolution — embedded item data (9.2-CSL #04)", () => {
 describe("fixtures (resolving)", () => {
   function fixture(name: string): string {
     return readFileSync(
-      join(import.meta.dirname, "../../lib/turndown/__fixtures__", name),
+      join(packageRoot, "src/lib/turndown/__fixtures__", name),
       "utf8",
     );
   }
