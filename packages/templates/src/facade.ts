@@ -202,22 +202,32 @@ export class TemplateFacade {
     return this.#transform(name, out);
   }
 
+  /**
+   * In-memory `fs` every liquid `{% render %}` / `{% include %}` resolves
+   * through. `readSource` is the single existence authority: `existsSync` and
+   * `exists` answer `true` for every name, so `Loader.lookup` always reaches
+   * `readFileSync`, and an unregistered target fails with a named
+   * {@link TemplateError} instead of liquidjs's own unstructured
+   * `ENOENT: Failed to lookup "<name>" in "<roots>"` message.
+   *
+   * @see liquidjs 10.27.1 `Loader.lookup` — returns the first candidate its
+   *   `exists` check accepts, then the parser reads it through `readFileSync`.
+   */
   #makeFs(): FS {
     const registry = this.#registry;
-    const exists = (name: string): boolean => registry.has(name);
     // Shared by readFileSync/readFile (liquidjs's `FS.exists`/`readFile` are
     // required, not optional — see fs.d.ts — so both sync and async paths
     // must be implemented, not just the sync one).
     const readSource = (name: string): string => {
-      if (!exists(name)) {
+      if (!registry.has(name)) {
         throw new TemplateError(`Template "${name}" not found`, name);
       }
       return bridgeSource(name);
     };
     return {
-      existsSync: exists,
+      existsSync: () => true,
       readFileSync: readSource,
-      exists: async (name) => exists(name),
+      exists: async () => true,
       readFile: async (name) => readSource(name),
       resolve: (_dir, file, ext) => file + ext,
     };

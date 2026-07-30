@@ -1,4 +1,4 @@
-// Display-only NoteResolvers for the Template Data Explorer: side-effect-free helpers resolve for real; the two write-triggering helpers (excerpt-image copy, child-note import) resolve to their existing target when already imported, and to an inert placeholder otherwise, so browsing never queues a vault write (ADR 0005).
+// Side-effect-free NoteResolvers shared by the Template Data Explorer and Template Workbench (ADR 0005).
 import {
   normalizePath,
   type App,
@@ -34,9 +34,9 @@ import { type NoteIndex } from "@/services/note-index/service";
 import { type Settings } from "@/services/settings/schema";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { markInertPlaceholder } from "./display-tree";
+import { markInertPlaceholder } from "./inert-placeholder";
 
-/** Which excerpt-image rendering path applies for the current item, resolved once per `#buildTree`. */
+/** Which side-effect-free excerpt-image rendering path applies for the current item. */
 export type ExcerptImageContext =
   | { kind: "file-url" }
   | { kind: "not-imported" }

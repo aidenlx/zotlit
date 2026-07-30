@@ -61,6 +61,7 @@
     "@types/semver": "^7.7.1",
     "@types/turndown": "^5.0.6",
     "@zotlit/config": "workspace:*",
+    "ajv": "catalog:",
     "electron": "^39.8.10",
     "happy-dom": "^20.9.0",
     "obsidian": "workspace:*",

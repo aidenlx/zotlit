@@ -17,6 +17,7 @@ import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
+import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
@@ -208,6 +209,15 @@ export default class ZotLitPlugin extends Plugin {
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
+    });
+
+    registerTemplateWorkbench(this, {
+      app: this.app,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      settings: services.settings,
+      templates: services.template,
+      zoteroPref: services.zoteroPref,
     });
 
     registerWelcomeView(this, {

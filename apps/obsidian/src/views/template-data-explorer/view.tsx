@@ -32,6 +32,11 @@ import { type ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
+import {
+  buildInertNoteResolvers,
+  findExistingLitNote,
+  resolveExcerptImageContext,
+} from "@/services/template/inert-resolvers";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -47,11 +52,6 @@ import {
   findAnnotationRoot,
 } from "./display-tree";
 import { Explorer } from "./Explorer";
-import {
-  buildInertNoteResolvers,
-  findExistingLitNote,
-  resolveExcerptImageContext,
-} from "./inert-resolvers";
 import { pickItem } from "./item-picker";
 import {
   createExplorerStore,

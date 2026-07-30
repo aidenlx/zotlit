@@ -15,6 +15,12 @@ export default defineConfig({
   exports: {
     customExports: {
       "./contract/ir.json": "./src/contract/generated/ir.json",
+      "./contract/annotation.schema.json":
+        "./src/contract/generated/annotation.schema.json",
+      "./contract/filename.schema.json":
+        "./src/contract/generated/filename.schema.json",
+      "./contract/note.schema.json":
+        "./src/contract/generated/note.schema.json",
     },
   },
   unbundle: true,

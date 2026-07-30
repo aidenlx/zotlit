@@ -19,7 +19,10 @@
     "./path": "./dist/path.mjs",
     "./test-utils": "./dist/test-utils.mjs",
     "./package.json": "./package.json",
-    "./contract/ir.json": "./src/contract/generated/ir.json"
+    "./contract/ir.json": "./src/contract/generated/ir.json",
+    "./contract/annotation.schema.json": "./src/contract/generated/annotation.schema.json",
+    "./contract/filename.schema.json": "./src/contract/generated/filename.schema.json",
+    "./contract/note.schema.json": "./src/contract/generated/note.schema.json"
   },
   "scripts": {
     "build": "tsdown",
@@ -44,7 +47,7 @@
     "@types/node-22": "npm:@types/node@^22.9.0",
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@zotlit/config": "workspace:*",
-    "ajv": "^8.20.0",
+    "ajv": "catalog:",
     "drizzle-kit": "catalog:",
     "oxlint": "catalog:",
     "ts-morph": "^28.0.0",

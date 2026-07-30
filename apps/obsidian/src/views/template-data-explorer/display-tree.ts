@@ -1,5 +1,7 @@
 // Pure value-walker mapping an anchor root object + expansion set to typed display nodes.
 
+import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
+
 export type PathSegment = string | number;
 
 export type DisplayValueType =
@@ -55,28 +57,6 @@ export type DisplayNode = ValueNode | HelperNode | PlaceholderNode;
 
 export interface BuildDisplayTreeOptions {
   readonly expanded: ReadonlySet<string>;
-}
-
-const INERT_PLACEHOLDER = Symbol("zotlit-inert-placeholder");
-
-/** Brand `fn` in place as an inert placeholder carrying `reason` (via `defineProperty` on the passed function), so {@link classifyValue} emits a {@link PlaceholderNode} instead of a {@link HelperNode}. Returns the same reference. */
-export function markInertPlaceholder<T extends (...args: never[]) => unknown>(
-  fn: T,
-  reason: string,
-): T {
-  Object.defineProperty(fn, INERT_PLACEHOLDER, {
-    value: reason,
-    enumerable: false,
-  });
-  return fn;
-}
-
-/** Read back the reason attached by {@link markInertPlaceholder}, if any. */
-export function inertPlaceholderReason(value: unknown): string | undefined {
-  if (typeof value !== "function") return undefined;
-  return (value as unknown as Record<symbol, unknown>)[INERT_PLACEHOLDER] as
-    | string
-    | undefined;
 }
 
 /** `null` when `annotationKey` matches no annotation (e.g. the annotation vanished since the tree was last built). */

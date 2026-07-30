@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { markInertPlaceholder } from "@/services/template/inert-placeholder";
+
 import {
   annotationKeyAtPath,
   buildDisplayTree,
@@ -7,8 +9,6 @@ import {
   copyValue,
   findAnnotationRoot,
   formatPath,
-  inertPlaceholderReason,
-  markInertPlaceholder,
   type DisplayNode,
 } from "./display-tree";
 
@@ -273,13 +273,6 @@ describe("buildDisplayTree — inert placeholder nodes", () => {
         reason: "Not imported",
       },
     ]);
-  });
-
-  it("round-trips the reason through inertPlaceholderReason", () => {
-    const placeholder = markInertPlaceholder(() => "", "Not imported");
-    expect(inertPlaceholderReason(placeholder)).toBe("Not imported");
-    expect(inertPlaceholderReason(() => "")).toBeUndefined();
-    expect(inertPlaceholderReason("not a function")).toBeUndefined();
   });
 });
 

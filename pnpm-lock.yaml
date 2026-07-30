@@ -33,6 +33,9 @@ catalogs:
     '@types/react-dom':
       specifier: ^19.2.0
       version: 19.2.3
+    ajv:
+      specifier: ^8.20.0
+      version: 8.20.0
     arkregex:
       specifier: ^0.0.5
       version: 0.0.5
@@ -356,6 +359,9 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../../packages/config
+      ajv:
+        specifier: 'catalog:'
+        version: 8.20.0
       electron:
         specifier: ^39.8.10
         version: 39.8.10
@@ -579,7 +585,7 @@ importers:
         specifier: workspace:*
         version: link:../config
       ajv:
-        specifier: ^8.20.0
+        specifier: 'catalog:'
         version: 8.20.0
       drizzle-kit:
         specifier: 'catalog:'

@@ -22,7 +22,7 @@ import { type ItemFields } from "@zotlit/zotero-types";
 import { creatorSummary } from "@/lib/item-summary";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 
-import { inertPlaceholderReason } from "./display-tree";
+import { inertPlaceholderReason } from "./inert-placeholder";
 import {
   buildInertNoteResolvers,
   resolveExcerptImageContext,

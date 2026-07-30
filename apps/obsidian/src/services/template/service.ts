@@ -14,6 +14,7 @@ import {
   type FrontmatterLanguage,
 } from "@zotlit/templates/constants";
 import {
+  TemplateError,
   TemplateFacade,
   type TemplateLanguage,
 } from "@zotlit/templates/facade";
@@ -37,6 +38,7 @@ import {
   templateFileFromPath,
   templatePath,
   TEMPLATE_NAMES,
+  type TemplateName,
 } from "./defaults";
 import { bracketExtension } from "./editor/bracket";
 import { EtaSuggest } from "./editor/suggest";
@@ -49,6 +51,12 @@ const FLUSH_DEBOUNCE_MS = 500;
 /** localStorage key for the per-device JavaScript Templates consent flag. */
 const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
 
+/** The winner of a name with no vault file: its packaged Liquid default. */
+const EMBEDDED_DEFAULT_WINNER = {
+  language: "liquid",
+  source: { kind: "embedded-default" },
+} as const satisfies TemplateWinner;
+
 export interface TemplateServiceEvents {
   "compile-status-changed": () => void;
 }
@@ -59,6 +67,36 @@ export interface TemplateServiceOptions {
   settings: SettingsService;
 }
 
+/**
+ * The template a name currently resolves to, as the reconciler computed it.
+ * `source.kind: "none"` means no compiled template backs the name at all: its
+ * `.eta.md` file would win, but the JavaScript Templates gate keeps it inert,
+ * so {@link TemplateService.render} raises {@link InertTemplateError} for it.
+ */
+export interface TemplateWinner {
+  language: TemplateLanguage;
+  source:
+    | { kind: "vault"; path: string }
+    | { kind: "embedded-default" }
+    | { kind: "none" };
+}
+
+export interface TemplateFileStatus {
+  name: TemplateName;
+  winner: TemplateWinner;
+  editablePath: string;
+  shadowedFiles: readonly string[];
+  inertFiles: readonly string[];
+  compileError: string | null;
+}
+
+interface SettledWaiter {
+  resolve: () => void;
+}
+
+/** Outcome of {@link TemplateService.waitUntilSettled}. */
+export type SettleOutcome = "settled" | "timeout" | "init-failed";
+
 export class TemplateService extends Service<void> {
   readonly #plugin;
   readonly #app;
@@ -68,9 +106,15 @@ export class TemplateService extends Service<void> {
   });
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
   readonly #compileErrors = new Map<string, string>();
+  /** Name → the winner {@link #reconcileName} last resolved it to, with the
+   *  JavaScript Templates gate already applied. Read by
+   *  {@link getTemplateFileStatuses}, so status reports the winner the
+   *  reconciler computed instead of re-deriving one from the vault. */
+  readonly #winners = new Map<string, TemplateWinner>();
   readonly #shadowed = new Map<string, string>();
   readonly #inertEta = new Map<string, string>();
   readonly #pendingFlush = new Set<string>();
+  readonly #settledWaiters = new Set<SettledWaiter>();
   readonly #autoPairExtensions: Extension[] = [];
 
   #javascriptTemplatesEnabled: boolean;
@@ -82,6 +126,7 @@ export class TemplateService extends Service<void> {
   #inertFrontmatterKeys: readonly string[] = [];
 
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
+  #settlingTasks = 0;
   #folderGeneration = 0;
   #loaded = false;
 
@@ -126,6 +171,72 @@ export class TemplateService extends Service<void> {
     return this.#loaded;
   }
 
+  getTemplateFileStatuses(): readonly TemplateFileStatus[] {
+    this.#requireLoaded("getTemplateFileStatuses");
+    const folder = this.#currentTemplateFolder();
+
+    return TEMPLATE_NAMES.map((name) => {
+      const liquidPath = templatePath(folder, name, "liquid");
+      // Every canonical name is written while a folder rebuild walks it; the
+      // fallback covers a read taken inside that walk, before the name's own
+      // reconcile resolved.
+      const winner = this.#winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
+
+      const shadowed = this.#shadowed.get(name);
+      const inert = this.#inertEta.get(name);
+      return {
+        name,
+        winner,
+        editablePath:
+          winner.source.kind === "vault" ? winner.source.path : liquidPath,
+        shadowedFiles: shadowed ? [shadowed] : [],
+        inertFiles: inert ? [inert] : [],
+        compileError: this.#compileErrors.get(name) ?? null,
+      };
+    });
+  }
+
+  /**
+   * Wait until every template edit **Obsidian has observed** before or during
+   * this call has passed through the debounced compiler. The predicate reads
+   * three in-memory counters, and Obsidian owns observation: an edit reaches
+   * the service through a vault event, so a write made outside Obsidian
+   * settles only once Obsidian notices the file.
+   *
+   * @returns `"timeout"` when the bounded wait expires, `"init-failed"` when
+   *   service startup itself failed, and `"settled"` otherwise.
+   */
+  async waitUntilSettled(timeoutMs: number): Promise<SettleOutcome> {
+    if (timeoutMs <= 0) return "timeout";
+
+    return await new Promise<SettleOutcome>((resolve) => {
+      let waiter: SettledWaiter | null = null;
+      let finished = false;
+      const finish = (outcome: SettleOutcome): void => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        if (waiter) this.#settledWaiters.delete(waiter);
+        resolve(outcome);
+      };
+      const timeout = setTimeout(() => finish("timeout"), timeoutMs);
+
+      void this.ready.then(
+        () => {
+          if (finished) return;
+          if (this.#isSettled()) {
+            finish("settled");
+            return;
+          }
+          waiter = { resolve: () => finish("settled") };
+          this.#settledWaiters.add(waiter);
+          this.#resolveSettledWaiters();
+        },
+        () => finish("init-failed"),
+      );
+    });
+  }
+
   /**
    * Managed-frontmatter fields compiled from `note.frontmatter-fields`,
    * recompiled on settings change. Consumed by the note feature when writing a
@@ -168,15 +279,18 @@ export class TemplateService extends Service<void> {
     if (inertPath !== undefined) {
       throw new InertTemplateError(
         m.settings_template_inert_eta({ path: inertPath }),
+        name,
       );
     }
     const compileError = this.#compileErrors.get(name);
     if (compileError !== undefined) {
-      throw new Error(
-        `Template '${name}' has a compile error:\n${compileError}`,
-      );
+      throw new TemplateError(compileErrorMessage(name, compileError), name);
     }
-    return this.#facade.render(name, data);
+    try {
+      return this.#facade.render(name, data);
+    } catch (error) {
+      throw classifyRenderFailure(error, this.#compileErrors, this.#inertEta);
+    }
   }
 
   /**
@@ -243,9 +357,13 @@ export class TemplateService extends Service<void> {
     this.#compileFrontmatter(snapshot["note.frontmatter-fields"]);
 
     await using stack = new AsyncDisposableStack();
+    // Registered before the initial scan, so an edit landing while the scan
+    // runs queues instead of being dropped: #rebuildFolder clears
+    // #pendingFlush before it walks the folder, so anything queued during the
+    // walk survives into the debounced flush that follows.
+    stack.defer(this.#registerVaultEvents());
     await this.#rebuildFolder(this.#lastTemplateFolder);
 
-    stack.defer(this.#registerVaultEvents());
     stack.defer(this.#registerAutoPair());
     stack.defer(this.#registerEtaSuggest());
     stack.defer(
@@ -328,47 +446,54 @@ export class TemplateService extends Service<void> {
   }
 
   async #rebuildFolder(folder: string): Promise<void> {
-    const generation = ++this.#folderGeneration;
-    this.#cancelFlush();
-    this.#pendingFlush.clear();
-    this.#shadowed.clear();
-    this.#inertEta.clear();
-    this.#facade.reset();
-    this.#compileErrors.clear();
+    this.#settlingTasks += 1;
+    try {
+      const generation = ++this.#folderGeneration;
+      this.#cancelFlush();
+      this.#pendingFlush.clear();
+      this.#shadowed.clear();
+      this.#inertEta.clear();
+      this.#winners.clear();
+      this.#facade.reset();
+      this.#compileErrors.clear();
 
-    const root =
-      folder === ""
-        ? this.#app.vault.getRoot()
-        : this.#app.vault.getFolderByPath(folder);
+      const root =
+        folder === ""
+          ? this.#app.vault.getRoot()
+          : this.#app.vault.getFolderByPath(folder);
 
-    const names = new Set<string>();
-    if (root) {
-      for (const child of root.children) {
-        if (child instanceof TFile) {
-          const parsed = templateFileFromPath(child.path);
-          if (parsed) names.add(parsed.name);
+      const names = new Set<string>();
+      if (root) {
+        for (const child of root.children) {
+          if (child instanceof TFile) {
+            const parsed = templateFileFromPath(child.path);
+            if (parsed) names.add(parsed.name);
+          }
         }
+      } else {
+        logger.debug("Template folder not found; embedded defaults remain", {
+          folder,
+        });
       }
-    } else {
-      logger.debug("Template folder not found; embedded defaults remain", {
+
+      for (const name of TEMPLATE_NAMES) {
+        if (!names.has(name)) this.#useDefault(name);
+      }
+
+      await Promise.all(
+        [...names].map((name) => this.#reconcileName(name, generation)),
+      );
+      if (generation !== this.#folderGeneration) return;
+
+      this.#emitter.emit("compile-status-changed");
+      logger.debug("Template folder rebuilt", {
         folder,
+        count: names.size,
       });
+    } finally {
+      this.#settlingTasks -= 1;
+      this.#resolveSettledWaiters();
     }
-
-    for (const name of TEMPLATE_NAMES) {
-      if (!names.has(name)) this.#useDefault(name);
-    }
-
-    await Promise.all(
-      [...names].map((name) => this.#reconcileName(name, generation)),
-    );
-    if (generation !== this.#folderGeneration) return;
-
-    this.#emitter.emit("compile-status-changed");
-    logger.debug("Template folder rebuilt", {
-      folder,
-      count: names.size,
-    });
   }
 
   #onCreateOrModify(file: TAbstractFile): void {
@@ -403,17 +528,23 @@ export class TemplateService extends Service<void> {
   }
 
   async #flushPending(): Promise<void> {
-    const generation = this.#folderGeneration;
-    const names = [...this.#pendingFlush];
-    this.#pendingFlush.clear();
-    await Promise.all(
-      names.map((name) => this.#reconcileName(name, generation)),
-    );
+    this.#settlingTasks += 1;
+    try {
+      const generation = this.#folderGeneration;
+      const names = [...this.#pendingFlush];
+      this.#pendingFlush.clear();
+      await Promise.all(
+        names.map((name) => this.#reconcileName(name, generation)),
+      );
 
-    if (generation !== this.#folderGeneration) return;
+      if (generation !== this.#folderGeneration) return;
 
-    this.#emitter.emit("compile-status-changed");
-    logger.debug("Template flush completed", { count: names.length });
+      this.#emitter.emit("compile-status-changed");
+      logger.debug("Template flush completed", { count: names.length });
+    } finally {
+      this.#settlingTasks -= 1;
+      this.#resolveSettledWaiters();
+    }
   }
 
   /**
@@ -461,6 +592,10 @@ export class TemplateService extends Service<void> {
         );
       }
       this.#inertEta.set(name, etaFile.path);
+      this.#winners.set(name, {
+        language: "eta",
+        source: { kind: "none" },
+      });
       this.#compileErrors.delete(name);
       this.#facade.remove(name, "liquid");
       this.#facade.remove(name, "eta");
@@ -497,6 +632,10 @@ export class TemplateService extends Service<void> {
     if (generation !== this.#folderGeneration) return;
     this.#facade.remove(name, winner.language === "liquid" ? "eta" : "liquid");
     this.#defineTemplate(name, content, winner.language);
+    this.#winners.set(name, {
+      language: winner.language,
+      source: { kind: "vault", path: winner.file.path },
+    });
   }
 
   /**
@@ -525,8 +664,10 @@ export class TemplateService extends Service<void> {
     this.#facade.remove(name, "eta");
     if (!isTemplateName(name)) {
       this.#facade.remove(name, "liquid");
+      this.#winners.delete(name);
       return;
     }
+    this.#winners.set(name, EMBEDDED_DEFAULT_WINNER);
     try {
       this.#facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
       this.#compileErrors.delete(name);
@@ -580,10 +721,30 @@ export class TemplateService extends Service<void> {
     }
   }
 
+  /** Drop a scheduled flush, then release any waiter the drop settled — on
+   *  unload a waiter is answered at once rather than after its full budget. */
   #cancelFlush(): void {
-    if (this.#flushTimer === null) return;
-    clearTimeout(this.#flushTimer);
-    this.#flushTimer = null;
+    if (this.#flushTimer !== null) {
+      clearTimeout(this.#flushTimer);
+      this.#flushTimer = null;
+    }
+    this.#resolveSettledWaiters();
+  }
+
+  #isSettled(): boolean {
+    return (
+      this.#settlingTasks === 0 &&
+      this.#flushTimer === null &&
+      this.#pendingFlush.size === 0
+    );
+  }
+
+  #resolveSettledWaiters(): void {
+    if (!this.#isSettled()) return;
+    for (const waiter of this.#settledWaiters) {
+      waiter.resolve();
+    }
+    this.#settledWaiters.clear();
   }
 
   #requireLoaded(method: string): void {
@@ -591,6 +752,96 @@ export class TemplateService extends Service<void> {
       throw new Error(`TemplateService.${method}(): service is not ready`);
     }
   }
+}
+
+/**
+ * Name the artifact a render failure belongs to, reading structured error
+ * fields only. Message text names nothing: `#facade.render` evaluates lazy
+ * data getters (`zt.citation`, `imgLink`, `noteLink`), so the chain routinely
+ * carries application errors whose messages mention arbitrary paths — a
+ * message holding an inert template's own path must not turn that failure
+ * into an {@link InertTemplateError}.
+ *
+ * @returns the first {@link InertTemplateError} in the chain unchanged (it
+ *   already carries the localized message, including the nameless
+ *   managed-frontmatter case); otherwise the failure named by the first
+ *   {@link TemplateError}, re-raised with the localized inert message or the
+ *   recorded compile detail when that name has one; otherwise `error` itself.
+ */
+function classifyRenderFailure(
+  error: unknown,
+  compileErrors: ReadonlyMap<string, string>,
+  inertTemplates: ReadonlyMap<string, string>,
+): Error {
+  const chain = errorChain(error);
+  const inertFailure = chain.find(
+    (candidate) => candidate instanceof InertTemplateError,
+  );
+  if (inertFailure) return inertFailure;
+
+  const namedFailure = chain.find(
+    (candidate): candidate is TemplateError =>
+      candidate instanceof TemplateError,
+  );
+  if (!namedFailure) {
+    return Error.isError(error) ? error : new Error(errorMessage(error));
+  }
+
+  const name = namedFailure.templateName;
+  const inertPath = inertTemplates.get(name);
+  if (inertPath !== undefined) {
+    return new InertTemplateError(
+      m.settings_template_inert_eta({ path: inertPath }),
+      name,
+      { cause: error },
+    );
+  }
+
+  const compileError = compileErrors.get(name);
+  if (compileError !== undefined) {
+    return new TemplateError(compileErrorMessage(name, compileError), name, {
+      cause: error,
+    });
+  }
+  return namedFailure;
+}
+
+/** The failure message for a name with a recorded compile error, identical
+ *  whether a caller requested that name directly or reached it by include. */
+function compileErrorMessage(name: string, detail: string): string {
+  return `Template '${name}' has a compile error:\n${detail}`;
+}
+
+/**
+ * Every `Error` reachable from `error`, breadth-first, so "the first typed
+ * error" is the one nearest the thrown surface. Three link kinds carry a
+ * template failure out of the engines:
+ *
+ * - `cause` — eta wraps rather than subclasses (`EtaRuntimeError` copies
+ *   `originalError.name`, so an `instanceof` check on the wrapper fails);
+ * - `originalError` — liquidjs defines it non-enumerably on its render errors;
+ * - `errors` when it is an array — one duck-typed check covering both
+ *   `AggregateError` and liquidjs's `LiquidErrors` batch.
+ */
+function errorChain(error: unknown): readonly Error[] {
+  const errors: Error[] = [];
+  const pending = [error];
+  const seen = new Set<unknown>();
+
+  while (pending.length > 0) {
+    const candidate = pending.shift();
+    if (!Error.isError(candidate) || seen.has(candidate)) continue;
+    seen.add(candidate);
+    errors.push(candidate);
+    pending.push(candidate.cause);
+    if ("originalError" in candidate) {
+      pending.push(candidate.originalError);
+    }
+    if ("errors" in candidate && Array.isArray(candidate.errors)) {
+      pending.push(...(candidate.errors as unknown[]));
+    }
+  }
+  return errors;
 }
 
 /** Extract a human-readable message from an unknown thrown value. */

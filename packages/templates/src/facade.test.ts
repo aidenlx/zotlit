@@ -4,8 +4,22 @@ import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { TemplateFacade } from "./facade";
+import { TemplateError, TemplateFacade } from "./facade";
 import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
+
+/** Every error reachable from `error` through the links liquidjs and eta use. */
+function errorLinks(error: unknown): Error[] {
+  const links: Error[] = [];
+  const pending = [error];
+  while (pending.length > 0) {
+    const candidate = pending.shift();
+    if (!Error.isError(candidate) || links.includes(candidate)) continue;
+    links.push(candidate);
+    pending.push(candidate.cause);
+    if ("originalError" in candidate) pending.push(candidate.originalError);
+  }
+  return links;
+}
 
 describe("eta suite through the facade", () => {
   it("renders templates registered by name", () => {
@@ -265,6 +279,25 @@ describe("errors", () => {
     facade.define("parent", '{% render "nope" %}', "liquid");
 
     expect(() => facade.render("parent", {})).toThrow(/nope/);
+  });
+
+  it("carries a named TemplateError in the chain for an unregistered liquid include", () => {
+    const facade = new TemplateFacade();
+    facade.define("parent", '{% render "nope" %}', "liquid");
+
+    let failure: unknown;
+    try {
+      facade.render("parent", {});
+    } catch (error) {
+      failure = error;
+    }
+
+    const named = errorLinks(failure).find(
+      (candidate): candidate is TemplateError =>
+        candidate instanceof TemplateError,
+    );
+    expect(named).toBeInstanceOf(TemplateError);
+    expect(named?.templateName).toBe("nope");
   });
 
   it("throws naming the template when an eta parent includes an unregistered name", () => {
