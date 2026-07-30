@@ -14,6 +14,23 @@ invocations.
 
 For every structured response, test `ok`. When it is `false`, follow `diagnostic.hint`.
 
+## Vault targeting
+
+Obsidian routes each CLI invocation to exactly one vault before ZotLit runs; a command never
+reaches more than one vault, even when several vaults have ZotLit installed.
+
+Select the vault with `vault=<vault-name>` as the **first** token:
+`obsidian-cli vault=MyVault zotlit:template-status`. Without `vault=`, the vault whose folder
+contains the working directory handles the command; when the working directory is outside
+every vault, the most recently focused vault window handles it.
+
+When more than one vault is open, run commands from inside the vault folder or pass `vault=`.
+Confirm the target once with `obsidian-cli zotlit:template-status` — `identity.vault` echoes
+the answering vault's name and absolute path — then keep the same `vault=` prefix for the
+whole loop.
+
+`docs/obsidian-cli-vault-routing.md` records the full routing behavior.
+
 ## Safety model
 
 Keep rendered output in memory.
@@ -50,7 +67,7 @@ want in template terms — guide them there.
    [Explore template data](https://zotlit.aidenlx.site/docs/how-to/explore-template-data#indexed-key)
    guide for copy instructions.
 2. Run `obsidian-cli zotlit:template-status`. Confirm the vault and Zotero source paths.
-3. Record the vault and source IDs (see Identity assertions).
+3. Record the source ID (see Identity assertions).
 4. **Drill** the contract with `obsidian-cli zotlit:template-schema` (see Schema drilling).
 5. Inspect item-backed data with `obsidian-cli zotlit:template-data` until each field the edit depends on is
    accounted for.
@@ -86,11 +103,12 @@ to avoid repeated CLI round-trips, then drill with `echo "$schema" | jq '…'`.
 
 ## Identity assertions
 
-Record both IDs once at the start of the loop. Assert both recorded IDs on every
-`obsidian-cli zotlit:template-data` and `obsidian-cli zotlit:template-render` request thereafter.
+Record the Zotero source ID once at the start of the loop. Assert it with
+`expect-source=<source-id>` on every `obsidian-cli zotlit:template-data` and
+`obsidian-cli zotlit:template-render` request thereafter.
 
 Treat an identity mismatch as a hard stop. Run `obsidian-cli zotlit:template-status` again, confirm the new
-paths, and record the new IDs before continuing.
+source path, and record the new ID before continuing.
 
 ## Language policy
 

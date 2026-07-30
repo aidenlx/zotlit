@@ -331,7 +331,6 @@
   "cli_flag_format_desc": "Output format",
   "cli_flag_template_desc": "Template to render",
   "cli_flag_topic_desc": "Guide topic",
-  "cli_flag_expect_vault_desc": "Required vault ID",
   "cli_flag_expect_source_desc": "Required Zotero source ID",
   "settings_attachment_import_name": "Import attachments",
   "settings_attachment_import_desc": "Copy annotation images and embedded attachments into the vault.",

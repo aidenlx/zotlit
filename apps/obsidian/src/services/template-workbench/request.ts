@@ -119,27 +119,14 @@ export function parseGuideRequest(
 }
 
 /**
- * Report the vault or Zotero source the caller asserted when it differs from
- * the connected one, so an authoring loop stops before it reads or renders
+ * Report the Zotero source the caller asserted when it differs from the
+ * connected one, so an authoring loop stops before it reads or renders
  * against the wrong target.
  */
 export function targetMismatch(
   params: CliData,
   identity: WorkbenchIdentity,
 ): Diagnostic | null {
-  const expectedVault = params["expect-vault"];
-  if (expectedVault !== undefined && expectedVault !== identity.vault.id) {
-    return diagnostic(
-      "TARGET_MISMATCH",
-      `Expected vault '${expectedVault}', connected to '${identity.vault.id}'.`,
-      {
-        target: "vault",
-        expected: expectedVault,
-        actual: identity.vault.id,
-      },
-    );
-  }
-
   const expectedSource = params["expect-source"];
   if (expectedSource !== undefined && expectedSource !== identity.source.id) {
     return diagnostic(
@@ -172,10 +159,8 @@ function bareFlag(params: CliData, parameter: string): boolean {
 
 /** Reject a bare identity assertion, which would assert nothing. */
 function withExpectations<T>(params: CliData, value: T): ParsedRequest<T> {
-  for (const parameter of ["expect-vault", "expect-source"] as const) {
-    if (bareFlag(params, parameter)) {
-      return invalid(parameter, `${parameter} requires a value.`);
-    }
+  if (bareFlag(params, "expect-source")) {
+    return invalid("expect-source", "expect-source requires a value.");
   }
   return { kind: "valid", value };
 }

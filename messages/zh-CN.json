@@ -331,7 +331,6 @@
   "cli_flag_format_desc": "输出格式",
   "cli_flag_template_desc": "要渲染的模板",
   "cli_flag_topic_desc": "指南主题",
-  "cli_flag_expect_vault_desc": "要求匹配的仓库 ID",
   "cli_flag_expect_source_desc": "要求匹配的 Zotero 源 ID",
   "settings_attachment_import_name": "导入附件",
   "settings_attachment_import_desc": "将标注图像和嵌入附件复制到仓库。",

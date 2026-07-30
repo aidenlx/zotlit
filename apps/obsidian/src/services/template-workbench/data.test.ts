@@ -79,7 +79,7 @@ describe("zotlit:template-data with the real loader", () => {
         format: "json",
       },
       identity: {
-        vault: { id: "Test Vault" },
+        vault: { name: "Test Vault" },
         source: { id: "a1b2c3d4" },
       },
       zt: {
@@ -123,7 +123,7 @@ describe("zotlit:template-data with the real loader", () => {
           format: "json",
         },
         identity: {
-          vault: { id: "Test Vault" },
+          vault: { name: "Test Vault" },
           source: { id: "a1b2c3d4" },
         },
         diagnostic: {
@@ -236,7 +236,7 @@ describe("zotlit:template-data with the real loader", () => {
         format: "json",
       },
       identity: {
-        vault: { id: "Test Vault" },
+        vault: { name: "Test Vault" },
         source: { id: "a1b2c3d4" },
       },
       zt: {
@@ -442,8 +442,9 @@ async function runTemplateData(
   root: "note" | "annotation" | "filename" = "note",
 ): Promise<Record<string, unknown>> {
   const handlers = createTemplateWorkbenchHandlers({
+    pluginVersion: "1.2.3",
     getIdentity: () => ({
-      vault: { id: "Test Vault", path: "/vaults/test" },
+      vault: { name: "Test Vault", path: "/vaults/test" },
       source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
     }),
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
@@ -472,8 +473,9 @@ async function runTemplateRender(
   key: string,
 ): Promise<Record<string, unknown>> {
   const handlers = createTemplateWorkbenchHandlers({
+    pluginVersion: "1.2.3",
     getIdentity: () => ({
-      vault: { id: "Test Vault", path: "/vaults/test" },
+      vault: { name: "Test Vault", path: "/vaults/test" },
       source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
     }),
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),

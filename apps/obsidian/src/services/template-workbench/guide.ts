@@ -132,8 +132,8 @@ const TOPIC_INDEX = GUIDE_TOPIC_NAMES.map(
 const QUICKSTART = `ZotLit Template Workbench quickstart
 
 1. obsidian zotlit:template-status
-   Confirm the connected vault and Zotero source, and each Template's active file
-   and language.
+   Confirm the answering vault and connected Zotero source, and each Template's
+   active file and language.
 2. obsidian zotlit:template-schema root=<${CONTRACT_ROOT_NAMES.join("|")}>
    Read the bundled JSON Schema for one data root.
 3. obsidian zotlit:template-data key=<indexed-key> root=<${CONTRACT_ROOT_NAMES.join("|")}> format=json

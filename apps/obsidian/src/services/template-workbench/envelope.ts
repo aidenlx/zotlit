@@ -20,7 +20,8 @@ import { type TemplateDataLoadResult } from "./data";
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
   vault: {
-    id: string;
+    name: string;
+    /** Absolute path of the vault folder on this device. */
     path: string;
   };
   source: {
@@ -38,7 +39,7 @@ export const DIAGNOSTIC_HINTS = {
   INVALID_SELECTOR:
     "Correct the parameter named in details.parameter, then run the command again.",
   TARGET_MISMATCH:
-    "Confirm the intended vault and Zotero source with the user before you read or render again.",
+    "Confirm the intended Zotero source with the user before you read or render again.",
   TEMPLATE_NOT_READY:
     "Run the command again after a short wait; when the message reports a failed start, ask the user to check the plugin log.",
   KEY_NOT_FOUND:
@@ -66,7 +67,7 @@ export interface Diagnostic {
   hint: string;
   details?:
     | { parameter: string }
-    | { target: "vault" | "source"; expected: string; actual: string | null }
+    | { target: "source"; expected: string; actual: string | null }
     | { key: string }
     /** `context` is the liquidjs caret-annotated source excerpt, present when
      *  the underlying error carried one. */
@@ -113,6 +114,8 @@ export type EnvelopeTail =
   | (EnvelopeFacts & { ok: false; diagnostic: Diagnostic })
   | (EnvelopeFacts & {
       ok: true;
+      /** The installed ZotLit version that answered the status command. */
+      pluginVersion?: string;
       javascriptTemplatesEnabled?: boolean;
       templates?: readonly TemplateFileStatus[];
       /** The object a Template reads as `zt`. */

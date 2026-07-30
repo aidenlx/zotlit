@@ -8,7 +8,7 @@ import {
   type App,
   type CliFlag,
   type CliFlags,
-  FileSystemAdapter,
+  type FileSystemAdapter,
   type Plugin,
 } from "obsidian";
 
@@ -32,8 +32,6 @@ import { loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import { TEMPLATE_SLOT_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
-
-const VAULT_ID_STORAGE_KEY = "zotlit-template-workbench-vault-id";
 
 interface TemplateWorkbenchRegistrationDeps {
   app: App;
@@ -61,13 +59,9 @@ function keyFlag(): CliFlag {
   };
 }
 
-/** The identity assertions both item-backed commands take, listed last. */
+/** The identity assertion both item-backed commands take, listed last. */
 function expectationFlags(): CliFlags {
   return {
-    "expect-vault": {
-      value: "<vault-id>",
-      description: m.cli_flag_expect_vault_desc(),
-    },
     "expect-source": {
       value: "<source-id>",
       description: m.cli_flag_expect_source_desc(),
@@ -136,30 +130,19 @@ function sourceFlags(): CliFlags {
   };
 }
 
-/** Return the opaque Workbench id persisted in Obsidian's vault-local storage. */
-function vaultId(app: App): string {
-  const stored: unknown = app.loadLocalStorage(VAULT_ID_STORAGE_KEY);
-  if (typeof stored === "string" && stored.length > 0) return stored;
-
-  const created = crypto.randomUUID();
-  app.saveLocalStorage(VAULT_ID_STORAGE_KEY, created);
-  return created;
-}
-
 export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
 ): void {
   const handlers = createTemplateWorkbenchHandlers({
+    pluginVersion: plugin.manifest.version,
     getIdentity: async () => {
       await deps.zoteroPref.ready;
       return {
         vault: {
-          id: vaultId(deps.app),
-          path:
-            deps.app.vault.adapter instanceof FileSystemAdapter
-              ? deps.app.vault.adapter.getBasePath()
-              : deps.app.vault.getName(),
+          name: deps.app.vault.getName(),
+          // Desktop-only plugin: the adapter is always a FileSystemAdapter.
+          path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
         },
         source: {
           id: deps.zoteroPref.sourceId,

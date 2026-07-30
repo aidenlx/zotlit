@@ -60,6 +60,8 @@ const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 const logger = getLogger("template-workbench");
 
 interface TemplateWorkbenchDeps {
+  /** The installed ZotLit version, reported by the status command. */
+  pluginVersion: string;
   getIdentity: () => WorkbenchIdentity | Promise<WorkbenchIdentity>;
   loadData: (
     indexedKey: string,
@@ -168,6 +170,7 @@ export function createTemplateWorkbenchHandlers(
 
       return envelope(TEMPLATE_STATUS_COMMAND, {
         ok: true,
+        pluginVersion: deps.pluginVersion,
         identity: await deps.getIdentity(),
         javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
         templates: deps.templates.getTemplateFileStatuses(),

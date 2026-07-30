@@ -24,8 +24,9 @@ import { TEMPLATE_SLOT_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import { ContractMetadataError } from "./serialize";
 
+const PLUGIN_VERSION = "1.2.3";
 const IDENTITY = {
-  vault: { id: "Test Vault", path: "/vaults/test" },
+  vault: { name: "Test Vault", path: "/vaults/test" },
   source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
 } as const;
 const NO_COMPILE_ERRORS = new Map<string, CompileError>();
@@ -115,6 +116,7 @@ describe("Template Workbench CLI", () => {
   it("reports template and target state after compilation settles", async () => {
     const callOrder: string[] = [];
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       loadData: async () => ({ kind: "not-found" }),
       getIdentity: () => {
         callOrder.push("identity");
@@ -145,6 +147,7 @@ describe("Template Workbench CLI", () => {
       contractVersion: 1,
       command: "zotlit:template-status",
       ok: true,
+      pluginVersion: PLUGIN_VERSION,
       identity: IDENTITY,
       javascriptTemplatesEnabled: false,
       templates: TEMPLATE_FILES,
@@ -155,6 +158,7 @@ describe("Template Workbench CLI", () => {
     const getIdentity = vi.fn(() => IDENTITY);
     const getTemplateFileStatuses = vi.fn(() => TEMPLATE_FILES);
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       loadData: async () => ({ kind: "not-found" }),
       getIdentity,
       settleTimeoutMs: 25,
@@ -191,6 +195,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const waitUntilSettled = vi.fn(async () => "timeout" as const);
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity,
       loadData,
       settleTimeoutMs: 25,
@@ -250,6 +255,7 @@ describe("Template Workbench CLI", () => {
     root.annotations = [{ parentItem: root }];
     const loadData = vi.fn(async () => ({ kind: "data", data: root }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData,
       templates: {
@@ -268,7 +274,6 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       root: "note",
       format: "json",
-      "expect-vault": "Test Vault",
       "expect-source": "a1b2c3d4",
     });
 
@@ -303,6 +308,7 @@ describe("Template Workbench CLI", () => {
 
   it("preserves a helper evaluation error in its marker", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({
         kind: "data",
@@ -344,6 +350,7 @@ describe("Template Workbench CLI", () => {
 
   it("names no template for a note-root data fault", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({
         kind: "data",
@@ -384,6 +391,7 @@ describe("Template Workbench CLI", () => {
 
   it("re-throws a stale contract IR instead of reporting a diagnostic", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({
         kind: "data",
@@ -412,6 +420,7 @@ describe("Template Workbench CLI", () => {
 
   it("reports TEMPLATE_NOT_READY when template startup itself failed", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
@@ -442,6 +451,7 @@ describe("Template Workbench CLI", () => {
 
   it("prints the quickstart and topic index as literal text", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
@@ -474,6 +484,7 @@ describe("Template Workbench CLI", () => {
     ["liquid", ["liquidjs", "zt", "bq"]],
   ] as const)("prints the %s guide topic", async (topic, facts) => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
@@ -496,6 +507,7 @@ describe("Template Workbench CLI", () => {
 
   it("rejects an invalid guide topic", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
@@ -536,15 +548,6 @@ describe("Template Workbench CLI", () => {
         key: "ITEM2345",
         root: "note",
         format: "json",
-        "expect-vault": "true",
-      },
-      "expect-vault",
-    ],
-    [
-      {
-        key: "ITEM2345",
-        root: "note",
-        format: "json",
         "expect-source": "true",
       },
       "expect-source",
@@ -552,6 +555,7 @@ describe("Template Workbench CLI", () => {
   ])("rejects an invalid selector %#", async (params, parameter) => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData,
       templates: {
@@ -588,6 +592,7 @@ describe("Template Workbench CLI", () => {
     ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind }),
       templates: {
@@ -624,12 +629,6 @@ describe("Template Workbench CLI", () => {
 
   it.each([
     {
-      argument: "expect-vault",
-      expected: "Wrong Vault",
-      target: "vault",
-      actual: "Test Vault",
-    },
-    {
       argument: "expect-source",
       expected: "ffffffff",
       target: "source",
@@ -640,6 +639,7 @@ describe("Template Workbench CLI", () => {
     async ({ argument, expected, target, actual }) => {
       const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData,
         templates: {
@@ -687,6 +687,7 @@ describe("Template Workbench CLI", () => {
       const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
       const waitUntilSettled = vi.fn(async () => "settled" as const);
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity,
         loadData,
         templates: {
@@ -715,6 +716,7 @@ describe("Template Workbench CLI", () => {
     "rejects an invalid schema root %#",
     async (params) => {
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
@@ -747,6 +749,7 @@ describe("Template Workbench CLI", () => {
 
   it("rejects an item selector for template-schema", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
@@ -791,6 +794,7 @@ describe("Template Workbench CLI", () => {
       const loadData = vi.fn(async () => ({ kind: "data", data }) as const);
       const render = vi.fn(() => markdown);
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData,
         templates: {
@@ -825,6 +829,7 @@ describe("Template Workbench CLI", () => {
       const render = vi.fn(() => "# multi\nline\n");
       const renderFilename = vi.fn(() => "Paper 2024");
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData,
         templates: {
@@ -857,6 +862,7 @@ describe("Template Workbench CLI", () => {
   it("wraps the same Markdown and active template identity as JSON", async () => {
     const markdown = "# Paper\n";
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
@@ -875,7 +881,6 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       template: "note",
       format: "json",
-      "expect-vault": IDENTITY.vault.id,
       "expect-source": IDENTITY.source.id,
     });
 
@@ -911,6 +916,7 @@ describe("Template Workbench CLI", () => {
     );
     templates.define("content", "BODY {{ zt.title }}", "liquid");
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
@@ -938,6 +944,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const render = vi.fn(() => "");
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData,
       settleTimeoutMs: 25,
@@ -1029,6 +1036,7 @@ describe("Template Workbench CLI", () => {
     "returns $code for a render failure",
     async ({ error, compileErrors, code, message, template }) => {
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
@@ -1072,6 +1080,7 @@ describe("Template Workbench CLI", () => {
     ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps render data result %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData: async () => ({ kind }),
       templates: {
@@ -1108,6 +1117,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const render = vi.fn(() => "");
     const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadData,
       templates: {
@@ -1126,7 +1136,7 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       template: "note",
       format: "json",
-      "expect-vault": "Wrong Vault",
+      "expect-source": "ffffffff",
     });
 
     expect(JSON.parse(output)).toMatchObject({
@@ -1136,7 +1146,7 @@ describe("Template Workbench CLI", () => {
       diagnostic: {
         code: "TARGET_MISMATCH",
         hint: DIAGNOSTIC_HINTS.TARGET_MISMATCH,
-        details: { target: "vault" },
+        details: { target: "source" },
       },
     });
     expect(loadData).not.toHaveBeenCalled();
@@ -1165,6 +1175,7 @@ describe("Template Workbench CLI", () => {
       const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
       const render = vi.fn(() => "");
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData,
         templates: {
@@ -1201,6 +1212,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
@@ -1233,6 +1245,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ zt.title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
@@ -1260,6 +1273,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ zt.title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
@@ -1288,6 +1302,7 @@ describe("Template Workbench CLI", () => {
     it("returns the winning vault file body", async () => {
       const getTemplateSource = vi.fn(async () => "vault body for note");
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
@@ -1323,6 +1338,7 @@ describe("Template Workbench CLI", () => {
 
     it("returns the embedded default body when no vault file exists", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
@@ -1348,6 +1364,7 @@ describe("Template Workbench CLI", () => {
 
     it("rejects an unknown template name", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
@@ -1386,6 +1403,7 @@ describe("Template Workbench CLI", () => {
       };
       error.context = "1| {{ zt.title | bogus }}\n         ^^^^^";
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
@@ -1420,6 +1438,7 @@ describe("Template Workbench CLI", () => {
     it("surfaces a recorded compile error's caret excerpt in details.context", async () => {
       const context = "1| {{ zt.title\n         ^";
       const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
