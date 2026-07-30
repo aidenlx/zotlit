@@ -6,7 +6,7 @@ import {
   createAgentSkillArchive,
   AGENT_SKILLS_SCHEMA,
   createAgentSkillsIndex,
-  readAgentSkill,
+  readAgentSkillFiles,
   SKILL_NAME,
   SKILL_REPOSITORY_PATH,
 } from "./agent-skills";
@@ -70,7 +70,7 @@ describe("Agent Skill distribution", () => {
   });
 
   it("keeps the root skill directory, frontmatter, and index aligned", async () => {
-    const skill = await readAgentSkill();
+    const { skill } = await readAgentSkillFiles();
     const archive = createAgentSkillArchive({
       skill,
       openAiMetadata: OPENAI_METADATA,

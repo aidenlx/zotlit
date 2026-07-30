@@ -1,56 +1,92 @@
 import { strFromU8, unzipSync } from "fflate";
+import { createHash } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 
-import {
-  OPENAI_METADATA_REPOSITORY_PATH,
-  SKILL_REPOSITORY_PATH,
-} from "@/lib/agent-skills";
+import { GET as getIndex } from "@/app/.well-known/agent-skills/index.json/route";
+import { readAgentSkillFiles } from "@/lib/agent-skills";
 
-import { GET } from "./route";
+import { GET, generateStaticParams } from "./route";
+
+const { execFileSync } = vi.hoisted(() => ({ execFileSync: vi.fn() }));
+
+vi.mock("node:child_process", () => ({ execFileSync }));
 
 const COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567";
-const SKILL = `---
-name: zotlit-template
-description: "Author and debug ZotLit templates."
----
-
-# ZotLit Template Workbench
-`;
-const OPENAI_METADATA = `interface:
-  display_name: "ZotLit Template Workbench"
-`;
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
 });
 
-it("serves the complete skill archive for a pinned commit", async () => {
-  const fetch = vi.fn(async (url: string) => {
-    if (url.endsWith(SKILL_REPOSITORY_PATH)) return new Response(SKILL);
-    if (url.endsWith(OPENAI_METADATA_REPOSITORY_PATH)) {
-      return new Response(OPENAI_METADATA);
-    }
-    return new Response(null, { status: 404 });
+function getArchive(commitSha: string) {
+  return GET(new Request("https://example.com"), {
+    params: Promise.resolve({ commitSha }),
   });
-  vi.stubGlobal("fetch", fetch);
+}
 
-  const response = await GET(new Request("https://example.com"), {
-    params: Promise.resolve({ commitSha: COMMIT_SHA }),
-  });
+it("serves the deploy commit's archive from the checked-out files", async () => {
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", COMMIT_SHA);
+
+  const response = await getArchive(COMMIT_SHA);
   const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
+  const { skill, openAiMetadata } = await readAgentSkillFiles();
 
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toBe("application/zip");
   expect(response.headers.get("cache-control")).toBe(
     "public, max-age=31536000, immutable",
   );
-  expect(strFromU8(files["SKILL.md"]!)).toBe(SKILL);
-  expect(strFromU8(files["agents/openai.yaml"]!)).toBe(OPENAI_METADATA);
-  expect(fetch).toHaveBeenCalledTimes(2);
-  expect(fetch).toHaveBeenCalledWith(
-    `https://raw.githubusercontent.com/aidenlx/zotlit/${COMMIT_SHA}/${SKILL_REPOSITORY_PATH}`,
+  expect(strFromU8(files["SKILL.md"]!)).toBe(Buffer.from(skill).toString());
+  expect(strFromU8(files["agents/openai.yaml"]!)).toBe(
+    Buffer.from(openAiMetadata).toString(),
   );
-  expect(fetch).toHaveBeenCalledWith(
-    `https://raw.githubusercontent.com/aidenlx/zotlit/${COMMIT_SHA}/${OPENAI_METADATA_REPOSITORY_PATH}`,
+  expect(execFileSync).not.toHaveBeenCalled();
+});
+
+it("serves bytes matching the discovery index digest", async () => {
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", COMMIT_SHA);
+
+  const index = await (await getIndex()).json();
+  const archive = new Uint8Array(
+    await (await getArchive(COMMIT_SHA)).arrayBuffer(),
   );
+  const digest = createHash("sha256").update(archive).digest("hex");
+
+  expect(index.skills[0].url).toContain(`/${COMMIT_SHA}/archive.zip`);
+  expect(index.skills[0].digest).toBe(`sha256:${digest}`);
+});
+
+it("pins to the local HEAD outside Vercel", async () => {
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", undefined);
+  execFileSync.mockReturnValue(`${COMMIT_SHA}\n`);
+
+  const response = await getArchive(COMMIT_SHA);
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("application/zip");
+});
+
+it("returns 404 for commits other than the pinned commit", async () => {
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", COMMIT_SHA);
+
+  const response = await getArchive("f".repeat(40));
+
+  expect(response.status).toBe(404);
+});
+
+it("returns 404 when no pinned commit resolves", async () => {
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", undefined);
+  execFileSync.mockImplementation(() => {
+    throw new Error("git unavailable");
+  });
+
+  const response = await getArchive(COMMIT_SHA);
+
+  expect(response.status).toBe(404);
+});
+
+it("prerenders the archive for the pinned commit", () => {
+  vi.stubEnv("VERCEL_GIT_COMMIT_SHA", COMMIT_SHA);
+
+  expect(generateStaticParams()).toEqual([{ commitSha: COMMIT_SHA }]);
 });

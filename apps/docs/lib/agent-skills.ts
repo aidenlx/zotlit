@@ -1,6 +1,7 @@
 // Builds the ZotLit Template Agent Skill archive and discovery index.
 
 import { zipSync } from "fflate";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,29 +16,42 @@ export const SKILL_NAME = "zotlit-template";
 export const SKILL_REPOSITORY_PATH = `skills/${SKILL_NAME}/SKILL.md`;
 export const OPENAI_METADATA_REPOSITORY_PATH = `skills/${SKILL_NAME}/agents/openai.yaml`;
 
-const workspaceRoot = await getWorkspaceRoot(process.cwd());
-
-const SKILL_PATH = join(workspaceRoot, SKILL_REPOSITORY_PATH);
-const OPENAI_METADATA_PATH = join(
-  workspaceRoot,
-  OPENAI_METADATA_REPOSITORY_PATH,
-);
-
 interface CreateAgentSkillsIndexOptions {
   skill: Uint8Array;
   archive: Uint8Array;
   commitSha: string;
 }
 
-interface CreateAgentSkillArchiveOptions {
+export interface AgentSkillFiles {
   skill: Uint8Array;
   openAiMetadata: Uint8Array;
+}
+
+/** Commit this build publishes: the Vercel deploy commit, else local HEAD. */
+export function resolvePinnedCommitSha(): string {
+  return (
+    process.env.VERCEL_GIT_COMMIT_SHA ??
+    execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()
+  );
+}
+
+/**
+ * The skill files this deployment publishes, read from the checked-out
+ * repository. Both the discovery index and the archive route render from
+ * these same bytes at build time, so the digest always matches.
+ */
+export async function readAgentSkillFiles(): Promise<AgentSkillFiles> {
+  const [skill, openAiMetadata] = await Promise.all([
+    readWorkspaceFile(SKILL_REPOSITORY_PATH),
+    readWorkspaceFile(OPENAI_METADATA_REPOSITORY_PATH),
+  ]);
+  return { skill, openAiMetadata };
 }
 
 export function createAgentSkillArchive({
   skill,
   openAiMetadata,
-}: CreateAgentSkillArchiveOptions): Uint8Array<ArrayBuffer> {
+}: AgentSkillFiles): Uint8Array<ArrayBuffer> {
   return zipSync(
     {
       "SKILL.md": skill,
@@ -79,12 +93,12 @@ export function createAgentSkillsIndex({
   )}\n`;
 }
 
-export function readAgentSkill(): Promise<Buffer> {
-  return readFile(SKILL_PATH);
-}
-
-export function readOpenAiMetadata(): Promise<Buffer> {
-  return readFile(OPENAI_METADATA_PATH);
+// Resolved lazily so importing this module stays side-effect free — the
+// archive route's serverless bundle has no pnpm-workspace.yaml, and an
+// import-time lookup would crash every request with a 500.
+async function readWorkspaceFile(repositoryPath: string): Promise<Buffer> {
+  const workspaceRoot = await getWorkspaceRoot(process.cwd());
+  return readFile(join(workspaceRoot, repositoryPath));
 }
 
 function digest(content: Uint8Array): string {

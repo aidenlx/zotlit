@@ -1,31 +1,30 @@
-// Serves a complete ZotLit Template skill archive pinned to a Git commit.
+// Serves the ZotLit Template skill archive for this deployment. The zip is
+// built at deploy time from the same checked-out files the discovery index
+// digests, so the bytes always match the published digest — including for
+// deploy commits that are never pushed to GitHub. The commit segment pins
+// the immutable URL to one deployment.
 
 import {
   createAgentSkillArchive,
-  OPENAI_METADATA_REPOSITORY_PATH,
-  SKILL_REPOSITORY_PATH,
+  readAgentSkillFiles,
+  resolvePinnedCommitSha,
 } from "@/lib/agent-skills";
-import { gitConfig } from "@/lib/shared";
 
-const REPOSITORY_RAW_URL = `https://raw.githubusercontent.com/${gitConfig.user}/${gitConfig.repo}`;
 const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
+
+// Prerender the archive for the commit the discovery index links to.
+export function generateStaticParams() {
+  return [{ commitSha: resolvePinnedCommitSha() }];
+}
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ commitSha: string }> },
 ) {
   const { commitSha } = await params;
-  if (!isCommitSha(commitSha)) return new Response(null, { status: 404 });
+  if (!isPinnedCommitSha(commitSha)) return new Response(null, { status: 404 });
 
-  const [skill, openAiMetadata] = await Promise.all([
-    readPublishedFile(commitSha, SKILL_REPOSITORY_PATH),
-    readPublishedFile(commitSha, OPENAI_METADATA_REPOSITORY_PATH),
-  ]);
-  if (skill === null || openAiMetadata === null) {
-    return new Response(null, { status: 404 });
-  }
-
-  return new Response(createAgentSkillArchive({ skill, openAiMetadata }), {
+  return new Response(createAgentSkillArchive(await readAgentSkillFiles()), {
     headers: {
       "Cache-Control": IMMUTABLE_CACHE,
       "Content-Type": "application/zip",
@@ -33,21 +32,10 @@ export async function GET(
   });
 }
 
-function isCommitSha(value: string): boolean {
-  if (value.length !== 40) return false;
-  for (const character of value) {
-    if (!"0123456789abcdef".includes(character)) return false;
+function isPinnedCommitSha(value: string): boolean {
+  try {
+    return value === resolvePinnedCommitSha();
+  } catch {
+    return false;
   }
-  return true;
-}
-
-async function readPublishedFile(
-  commitSha: string,
-  repositoryPath: string,
-): Promise<Uint8Array | null> {
-  const response = await fetch(
-    `${REPOSITORY_RAW_URL}/${commitSha}/${repositoryPath}`,
-  );
-  if (!response.ok) return null;
-  return new Uint8Array(await response.arrayBuffer());
 }
