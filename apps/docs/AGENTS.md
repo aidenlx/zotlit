@@ -16,6 +16,15 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 
 - `pnpm --filter @zotlit/docs dev` — local dev server.
 - `pnpm --filter @zotlit/docs codegen` — regenerate Fumadocs MDX types.
+- `pnpm exec turbo run generate:template-data --filter=@zotlit/docs` — regenerate the template-data reference page.
+
+## Generated template-data reference
+
+`content/docs/reference/templates/data.mdx` is generated from the `zt` type comments in `packages/db/src/lib/context/`. Edit those comments, run `pnpm --filter @zotlit/db generate:contract`, then run the Turbo task above.
+
+`lib/template-contract/sections.ts` owns the section structure. The `_*.mdx` partials beside the generated page own supplementary prose.
+
+The page's Markdown edition renders each `<ContractTable>` as a GFM table through the `stringify` callback on the docs collection's `includeProcessedMarkdown` in `source.config.ts`.
 
 ## Content & writing docs
 

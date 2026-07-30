@@ -13,6 +13,7 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     key: "ATCH1234",
+    indexedKey: "ATCH1234",
     parentItemID: 2,
     path: null,
     contentType: null,
@@ -52,6 +53,26 @@ describe("attachmentToTemplateData", () => {
     );
 
     expect(result.backlink).toBe("zotero://open/groups/42/items/XYZ789");
+  });
+
+  it("passes through the bare indexedKey for the personal library", () => {
+    const result = attachmentToTemplateData(
+      makeAttachment({ key: "XYZ789", indexedKey: "XYZ789", groupID: null }),
+    );
+
+    expect(result.indexedKey).toBe("XYZ789");
+  });
+
+  it("passes through the scoped indexedKey for a group library", () => {
+    const result = attachmentToTemplateData(
+      makeAttachment({
+        key: "XYZ789",
+        indexedKey: "XYZ789g42",
+        groupID: 42,
+      }),
+    );
+
+    expect(result.indexedKey).toBe("XYZ789g42");
   });
 
   it("takes the basename of an absolute linked path", () => {

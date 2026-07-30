@@ -7,6 +7,7 @@ export {
 export { type GroupIDMemo } from "./queries/_groups";
 export {
   getItemsByID,
+  getItemTypeByKey,
   getItemsByLibrary,
   getItemsByKey,
   getItemsByLibraryAsync,
@@ -28,6 +29,7 @@ export {
   formatIndexedKey,
   isIndexedKey,
   parseIndexedKey,
+  type ParsedIndexedKey,
   resolveIndexedKeyLibrary,
 } from "./lib/zt-key";
 export { annotationOpenUri } from "./lib/zt-uri";
@@ -71,7 +73,13 @@ export {
   annotationTypeToName,
   type Annotation,
   type AnnotationType,
+  type ResolvedAnnotationTypeName,
 } from "./lib/zt-annot";
+export {
+  withAnnotationCitation,
+  type AnnotationTemplateContext,
+  type TemplateAnnotation,
+} from "./lib/context/zt-template-annot";
 export {
   type FallibleTemplateLink,
   type TemplateFilenameItemData,
@@ -121,3 +129,10 @@ export {
   type AnnotationResolvers,
   type NoteResolvers,
 } from "./lib/context/note-context";
+export {
+  CONTRACT_VERSION,
+  TEMPLATE_SLOT_ROOTS,
+  templateSlotsForRoot,
+  type ContractRoot,
+  type TemplateSlot,
+} from "./contract/roots";

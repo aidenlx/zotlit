@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { getPackageRoot } from "@zotlit/scripts/package-roots";
+
 import { parseAnnotation, parseCitation, parseNoteSchema } from "./note-marks";
 
 /** Build an element carrying `attr` set to the URL-encoded JSON of `payload`. */
@@ -18,6 +20,8 @@ function load(html: string): HTMLElement {
   root.innerHTML = html;
   return root;
 }
+
+const packageRoot = getPackageRoot();
 
 const LOCAL_USER = "http://zotero.org/users/local/BOtEiq6p/items";
 
@@ -98,10 +102,7 @@ describe("parseNoteSchema", () => {
 
 describe("zt-excerpt-note.html fixture", () => {
   const html = readFileSync(
-    join(
-      import.meta.dirname,
-      "../../lib/turndown/__fixtures__/zt-excerpt-note.html",
-    ),
+    join(packageRoot, "src/lib/turndown/__fixtures__/zt-excerpt-note.html"),
     "utf8",
   );
 

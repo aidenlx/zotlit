@@ -152,6 +152,22 @@ const itemByKeyQuery = defineQuery<{ libraryID: number; key: string }>()(
     }),
 );
 
+const itemTypeByKeyQuery = defineQuery<{
+  libraryID: number;
+  key: string;
+}>()((db, { placeholder }) =>
+  db.query.items.findMany({
+    columns: {},
+    with: { itemType: { columns: { typeName: true } } },
+    where: {
+      libraryID: placeholder("libraryID"),
+      key: placeholder("key"),
+      deletedItem: false,
+    },
+    limit: 1,
+  }),
+);
+
 type ItemRow = QueryRow<typeof itemsByLibraryQuery>;
 
 function toFields(row: Pick<ItemRow, "itemData">) {
@@ -239,6 +255,17 @@ export function getItemsByID(
       .prepared(db)
       .all({ itemID })
       .map((r) => toItem(r, resolveGroupID(db, r.libraryID, memo))),
+  );
+}
+
+export function getItemTypeByKey(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  key: string,
+): string | null {
+  return (
+    itemTypeByKeyQuery.prepared(db).all({ libraryID, key })[0]?.itemType
+      .typeName ?? null
   );
 }
 

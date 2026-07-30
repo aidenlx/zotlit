@@ -38,6 +38,7 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     key: "ATCH0001",
+    indexedKey: "ATCH0001",
     parentItemID: 1,
     path: "storage:paper.pdf",
     contentType: "application/pdf",
@@ -52,6 +53,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
   return {
     itemID: 100,
     key: "ANNO0001",
+    indexedKey: "ANNO0001",
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
@@ -612,6 +614,7 @@ describe("buildNoteContext", () => {
       childNotes: [childNote],
       resolveChildNote: (note) => ({
         key: note.key,
+        indexedKey: note.indexedKey,
         title: note.title,
         noteLink: (alias) => `[[${note.key}|${alias ?? note.title}]]`,
       }),

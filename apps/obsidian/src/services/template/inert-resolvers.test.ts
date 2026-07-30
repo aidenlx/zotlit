@@ -22,7 +22,7 @@ import { type ItemFields } from "@zotlit/zotero-types";
 import { creatorSummary } from "@/lib/item-summary";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 
-import { inertPlaceholderReason } from "./display-tree";
+import { inertPlaceholderReason } from "./inert-placeholder";
 import {
   buildInertNoteResolvers,
   resolveExcerptImageContext,
@@ -56,6 +56,7 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     key: "ATCH0001",
+    indexedKey: "ATCH0001",
     parentItemID: 1,
     path: "storage:paper.pdf",
     contentType: "application/pdf",
@@ -70,6 +71,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
   return {
     itemID: 100,
     key: "ANNO0001",
+    indexedKey: "ANNO0001",
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),

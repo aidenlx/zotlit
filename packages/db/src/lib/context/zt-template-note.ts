@@ -28,8 +28,7 @@ import { type ChildNote } from "@/queries/notes";
 
 /**
  * A single entry in {@link NoteTemplateContext.relatedItems}: the related
- * item's own {@link TemplateItemData}, flattened with its backlink and author
- * conveniences. Depth-1 — its own `annotations`, `attachments`, and
+ * item's own fields, flattened with its backlink and author conveniences. Depth-1 — its own `annotations`, `attachments`, and
  * `relatedItems` are deliberately absent (resolving them would require a
  * per-related-item DB fan-out), marking the boundary of the relation graph.
  */
@@ -45,8 +44,19 @@ export interface TemplateRelatedItem
 export interface TemplateNoteLink {
   /** Bare Zotero key (not scoped). */
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
+  /** Note title as Zotero stores it; `null` when the row carries none. */
   title: string | null;
-  /** Renders the Obsidian link; default alias is the live title. */
+  /**
+   * Renders the Obsidian link; default alias is the live title. Rendering it
+   * queues the child note for import — a link never rendered creates no file,
+   * and an already-imported note links to the existing file without
+   * re-importing.
+   *
+   * @ztFilter note_link
+   * @ztInert
+   */
   noteLink: TemplateLink;
 }
 
@@ -57,19 +67,28 @@ export function withNotePreview(note: TemplateNoteLink): TemplateNoteLink {
 }
 
 /**
- * The `zt` root for the `note` template: {@link TemplateItemData} plus the
+ * The `zt` root for the `note` template: every item field plus the
  * runtime-computed fields assembled at the app layer (backlinks, resolved
  * attachment links, flattened annotations, author conveniences).
  */
 export interface NoteTemplateContext
   extends TemplateItemData, ResolvedItemCore {
-  /** Flat annotation list across all (or scoped) attachments. */
+  /**
+   * Flat annotation list across all (or scoped) attachments. Entries carry
+   * every annotation property except `citation`, which only a single-annotation
+   * render resolves.
+   */
   annotations: TemplateAnnotation[];
   /** All attachments for the item. */
   attachments: TemplateAttachment[];
   /**
    * Items from Zotero's "Related" panel (`dc:relation`), sorted by title.
    * Same-library, forward-only, depth-1.
+   *
+   * @example
+   * ```liquid
+   * {{ zt.relatedItems | note_links | join: ", " }}
+   * ```
    */
   relatedItems: TemplateRelatedItem[];
   /** Imported child notes as link-only entries; `[]` when the item has none. */

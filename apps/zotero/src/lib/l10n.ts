@@ -16,6 +16,20 @@ export function formatValue(
 const fluentLogger = appLogger.getChild("l10n");
 
 /**
+ * {@link formatValue} for a label the caller cannot render without. A missing
+ * message means the FTL file and the code disagree, so it fails loudly instead
+ * of appending a blank menu entry.
+ */
+export async function requireLabel(id: FluentMessageId): Promise<string> {
+  const label = await formatValue(id);
+  if (label === null) {
+    fluentLogger.error("missing FTL message", { id });
+    throw new Error(`missing FTL message: ${id}`);
+  }
+  return label;
+}
+
+/**
  * Attach the plugin's FTL files to a chrome window's `document.l10n` so
  * `data-l10n-id` attributes set on DOM nodes inside that window (e.g. menu
  * items registered via {@link Zotero.MenuManager.registerMenu}) translate

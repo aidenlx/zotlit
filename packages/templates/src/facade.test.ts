@@ -4,8 +4,22 @@ import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { TemplateFacade } from "./facade";
+import { TemplateError, TemplateFacade } from "./facade";
 import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
+
+/** Every error reachable from `error` through the links liquidjs and eta use. */
+function errorLinks(error: unknown): Error[] {
+  const links: Error[] = [];
+  const pending = [error];
+  while (pending.length > 0) {
+    const candidate = pending.shift();
+    if (!Error.isError(candidate) || links.includes(candidate)) continue;
+    links.push(candidate);
+    pending.push(candidate.cause);
+    if ("originalError" in candidate) pending.push(candidate.originalError);
+  }
+  return links;
+}
 
 describe("eta suite through the facade", () => {
   it("renders templates registered by name", () => {
@@ -267,6 +281,25 @@ describe("errors", () => {
     expect(() => facade.render("parent", {})).toThrow(/nope/);
   });
 
+  it("carries a named TemplateError in the chain for an unregistered liquid include", () => {
+    const facade = new TemplateFacade();
+    facade.define("parent", '{% render "nope" %}', "liquid");
+
+    let failure: unknown;
+    try {
+      facade.render("parent", {});
+    } catch (error) {
+      failure = error;
+    }
+
+    const named = errorLinks(failure).find(
+      (candidate): candidate is TemplateError =>
+        candidate instanceof TemplateError,
+    );
+    expect(named).toBeInstanceOf(TemplateError);
+    expect(named?.templateName).toBe("nope");
+  });
+
   it("throws naming the template when an eta parent includes an unregistered name", () => {
     const facade = new TemplateFacade();
     facade.define("parent", '<%~ include("nope", zt) %>', "eta");
@@ -340,6 +373,65 @@ describe("frontmatter fields through the facade", () => {
       facade.validateFrontmatterExpr("zt.title | note_links", "liquid"),
     ).toBeNull();
     expect(facade.validateFrontmatterExpr("1 +", "liquid")).not.toBeNull();
+  });
+});
+
+describe("analyzeRootVariables", () => {
+  it("reports root variables, excluding loop vars, forloop, and assign locals", () => {
+    const facade = new TemplateFacade();
+    facade.define(
+      "tpl",
+      "{% assign x = zt.title %}{% for a in items %}{{ forloop.index }}{{ a.text }}{{ x }}{% endfor %}{{ oops.deep }}",
+      "liquid",
+    );
+
+    const uses = facade.analyzeRootVariables("tpl");
+
+    expect(uses).not.toBeNull();
+    const roots = new Set(uses!.map((u) => u.name));
+    expect(roots).toEqual(new Set(["zt", "items", "oops"]));
+
+    const oopsUse = uses!.find((u) => u.name === "oops")!;
+    expect(oopsUse.path).toBe("oops.deep");
+    expect(oopsUse.row).toBeGreaterThanOrEqual(1);
+    expect(oopsUse.col).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns null for an eta-only template", () => {
+    const facade = new TemplateFacade();
+    facade.define("etaOnly", "<%= zt.title %>", "eta");
+
+    expect(facade.analyzeRootVariables("etaOnly")).toBeNull();
+  });
+
+  it("returns null for an unregistered name", () => {
+    const facade = new TemplateFacade();
+    expect(facade.analyzeRootVariables("missing")).toBeNull();
+  });
+
+  it("does not traverse partials: an unregistered render target does not throw", () => {
+    const facade = new TemplateFacade();
+    facade.define(
+      "tpl",
+      '{{ zt.title }}{% render "not-registered" %}',
+      "liquid",
+    );
+
+    const uses = facade.analyzeRootVariables("tpl");
+
+    expect(uses).not.toBeNull();
+    expect(uses!.map((u) => u.name)).toEqual(["zt"]);
+  });
+
+  it("analyzes the liquid source when a name is defined in both languages", () => {
+    const facade = new TemplateFacade();
+    facade.define("both", "<%= zt.etaOnlyVar %>", "eta");
+    facade.define("both", "{{ zt.liquidOnlyVar }}", "liquid");
+
+    const uses = facade.analyzeRootVariables("both");
+
+    expect(uses).not.toBeNull();
+    expect(uses!.map((u) => u.path)).toEqual(["zt.liquidOnlyVar"]);
   });
 });
 

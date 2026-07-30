@@ -3,6 +3,7 @@ import { type ProtocolAction, type UpdateScope } from "@zotlit/protocol";
 import { registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
+import { copyObjectKeys } from "./copy-key.js";
 import {
   exploreInObsidian,
   importInObsidian,
@@ -17,18 +18,42 @@ const MENU_ID = "zotlit-item-menu";
 
 type LibraryMenuContext = _ZoteroTypes.MenuManager.LibraryMenuContext;
 
+function allItems(context: LibraryMenuContext): Zotero.Item[] {
+  return context.items ?? [];
+}
+
 function regularItems(context: LibraryMenuContext): Zotero.Item[] {
-  return (context.items ?? []).filter((item) => item.isRegularItem());
+  return allItems(context).filter((item) => item.isRegularItem());
 }
 
 function noteItems(context: LibraryMenuContext): Zotero.Item[] {
-  return (context.items ?? []).filter((item) => item.isNote());
+  return allItems(context).filter((item) => item.isNote());
 }
 
 function regularItemsWithChildNotes(
   context: LibraryMenuContext,
 ): Zotero.Item[] {
   return regularItems(context).filter((item) => item.getNotes().length > 0);
+}
+
+type SelectedObjectKind =
+  | "attachment"
+  | "childNote"
+  | "item"
+  | "mixed"
+  | "note";
+
+function kindOf(item: Zotero.Item): SelectedObjectKind {
+  if (item.isAttachment()) return "attachment";
+  // A standalone note is a top-level row, so it is not a Child Note.
+  if (item.isNote()) return item.isTopLevelItem() ? "note" : "childNote";
+  return "item";
+}
+
+/** The one kind every selected row shares, or `mixed`. */
+function selectedKind(items: Zotero.Item[]): SelectedObjectKind {
+  const kinds = new Set(items.map(kindOf));
+  return kinds.size === 1 ? [...kinds][0]! : "mixed";
 }
 
 /**
@@ -82,12 +107,29 @@ export function registerItemMenu(pluginID: string): Disposable {
         onCommand: onCommand("open"),
       },
       {
+        menuType: "menuitem",
+        l10nID: "zotlit-menu-item-copy-key",
+        onShowing(_event: Event, context: LibraryMenuContext): void {
+          const items = allItems(context);
+          context.setVisible(items.length >= 1);
+          context.setL10nArgs(
+            JSON.stringify({
+              count: items.length,
+              kind: selectedKind(items),
+            }),
+          );
+        },
+        onCommand(_event: Event, context: LibraryMenuContext): void {
+          const items = allItems(context);
+          if (items.length === 0) return;
+          copyObjectKeys(items);
+        },
+      },
+      {
         menuType: "submenu",
         l10nID: "zotlit-menu-submenu",
         onShowing(_event: Event, context: LibraryMenuContext): void {
-          const hasRegular = regularItems(context).length >= 1;
-          const hasNotes = noteItems(context).length >= 1;
-          context.setVisible(hasRegular || hasNotes);
+          context.setVisible(allItems(context).length >= 1);
         },
         menus: [
           {

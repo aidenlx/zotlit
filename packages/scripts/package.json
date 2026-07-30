@@ -3,13 +3,27 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#obsidian-manifest": "./lib/obsidian-manifest.ts",
+    "#package-roots": "./lib/package-roots.ts"
+  },
+  "exports": {
+    "./obsidian-manifest": "./lib/obsidian-manifest.ts",
+    "./package-roots": "./lib/package-roots.ts"
+  },
   "scripts": {
+    "release": "node scripts/release.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@clack/prompts": "^0.11.0",
+    "@pnpm/find-workspace-dir": "catalog:",
     "@types/node-25": "npm:@types/node@^25.6.2",
+    "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
+    "semver": "^7.8.0",
     "typescript": "catalog:",
+    "valibot": "catalog:",
     "zx": "^8.8.5"
   }
 }

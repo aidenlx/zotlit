@@ -199,6 +199,7 @@ describe("createNoteImporter", () => {
       title: "Methods",
       dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
     });
+    expect(link.indexedKey).toBe("NOTE1234");
     const rendered = link.noteLink();
     expect(rendered).toMatch(
       /^\[\[Imported\/Methods_[\w-]{6}\.md\|Methods\]\]$/,
@@ -240,6 +241,7 @@ describe("createNoteImporter", () => {
     const batch = await makeService(app).prepare(PREPARE);
 
     const link = batch.resolveChildNote(makeNote({ groupID: 42 }));
+    expect(link.indexedKey).toBe("NOTE1234g42");
     link.noteLink();
     await batch.flush();
     expect(create.mock.calls[0]![1]).toContain("zotero-note-key: NOTE1234g42");

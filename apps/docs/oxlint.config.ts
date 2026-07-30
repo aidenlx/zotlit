@@ -28,5 +28,15 @@ export default defineConfig({
     "nextjs/no-typos": "error",
     "nextjs/no-unwanted-polyfillio": "error",
   },
+  overrides: [
+    {
+      // Codegen scripts read `lib/` directly; the `@/` alias resolves for the
+      // bundler, not for `node scripts/*.ts`.
+      files: ["scripts/**"],
+      rules: {
+        "no-restricted-imports": "off",
+      },
+    },
+  ],
   ignorePatterns: [".source/**", ".next/**", "out/**"],
 });

@@ -10,6 +10,8 @@ import { promisify } from "node:util";
 import { createServer } from "vite";
 import { describe, expect, test } from "vitest";
 
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+
 import {
   formatCompilerWarnings,
   compile,
@@ -30,8 +32,9 @@ import {
   writeCatalog,
 } from "./test-fixtures.js";
 
-const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
-const realProjectPath = join(repoRoot, "project.inlang");
+const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+const packageRoot = resolve(import.meta.dirname, "..");
+const realProjectPath = join(workspaceRoot, "project.inlang");
 const execFileAsync = promisify(execFile);
 const TARGET_LOCALE_PREFIXES = ["notice_pack_"];
 
@@ -1200,7 +1203,7 @@ async function typecheckGeneratedOutput(
           resolveJsonModule: true,
           paths: {
             "@zotlit/obsidian-i18n": [
-              resolve(import.meta.dirname, "..", "dist", "index.d.mts"),
+              resolve(packageRoot, "dist", "index.d.mts"),
             ],
           },
         },
@@ -1218,14 +1221,7 @@ async function typecheckGeneratedOutput(
   );
   try {
     await execFileAsync(process.execPath, [
-      resolve(
-        import.meta.dirname,
-        "..",
-        "node_modules",
-        "typescript",
-        "bin",
-        "tsc",
-      ),
+      resolve(packageRoot, "node_modules", "typescript", "bin", "tsc"),
       "--project",
       configPath,
     ]);

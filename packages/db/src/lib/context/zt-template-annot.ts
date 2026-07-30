@@ -1,7 +1,11 @@
 import { type Temporal } from "@zotlit/shared/temporal";
 
 import { defineToString } from "@/lib/to-string";
-import { annotationTypeToName, type Annotation } from "@/lib/zt-annot";
+import {
+  annotationTypeToName,
+  type Annotation,
+  type ResolvedAnnotationTypeName,
+} from "@/lib/zt-annot";
 import {
   annotationColorToName,
   type AnnotationColorName,
@@ -23,13 +27,26 @@ import {
  *
  * Drops DB-internal fields (`itemID`, `parentItemID`, `parentKey`, `sortIndex`,
  * `position`) — `parentAttachment.key` carries the parent reference, and the
- * position survives only as the derived 1-based {@link TemplateAnnotation.page}.
+ * position survives only as the derived {@link TemplateAnnotation.page}.
  */
 export interface TemplateAnnotationBaseData {
+  /** Zotero item key of the annotation. */
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
+  /** Zotero library ID holding the annotation. */
   libraryID: number;
-  /** Annotation type: `"highlight"`, `"note"`, `"image"`, `"ink"`, etc. */
-  type: string;
+  /**
+   * Annotation kind: `"highlight"`, `"note"`, `"image"`, `"ink"`,
+   * `"underline"`, or `"text"`; `"unknown"` for a type Zotero added after this
+   * release.
+   */
+  type: ResolvedAnnotationTypeName;
+  /**
+   * The highlighted or underlined excerpt; `null` when the type carries none.
+   * Verbatim as Zotero stores it, so it can hold the attribute-free inline tags
+   * the reader's editor allows (`<i>`, `<b>`, `<sub>`, `<sup>`).
+   */
   text: string | null;
   /**
    * Raw comment HTML as stored by Zotero — "plain text flavored with some HTML
@@ -39,8 +56,13 @@ export interface TemplateAnnotationBaseData {
   commentHtml: string | null;
   /** Hex color, e.g. `"#ffd400"`. */
   colorHex: string | null;
-  /** Color name, e.g. `"yellow"`. */
+  /**
+   * Zotero palette name — `"yellow"`, `"red"`, `"green"`, `"blue"`,
+   * `"purple"`, `"magenta"`, `"orange"`, `"gray"`, or `"plum"`; `null` when
+   * {@link colorHex} is absent or holds a custom color outside the palette.
+   */
   colorName: AnnotationColorName | null;
+  /** Page label as the document itself shows it, e.g. `"42"`, `"iv"`. */
   pageLabel: string | null;
   /**
    * 1-based page number derived from the PDF position (`pageIndex + 1`); `null`
@@ -48,22 +70,40 @@ export interface TemplateAnnotationBaseData {
    * {@link pageLabel} this ignores the document's own page labelling.
    */
   page: number | null;
+  /** Annotation author as stored on the annotation row; `null` when the row records none. */
   authorName: string | null;
+  /** Whether Zotero marks the annotation as external. */
   isExternal: boolean;
+  /** When the annotation was created. Second precision, like an item's timestamps. */
   dateAdded: Temporal.Instant;
+  /** When the annotation was last modified; same precision as {@link dateAdded}. */
   dateModified: Temporal.Instant;
+  /** Tags applied to this annotation. */
   tags: readonly TemplateTag[];
 }
 
+/**
+ * One annotation with its app-layer links resolved: an entry of
+ * `zt.annotations` on the note root, and the base of the single-annotation
+ * root {@link AnnotationTemplateContext}.
+ */
 export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   /**
    * Markdown link to the excerpt image, or `null` for annotation types with no
-   * cached excerpt image (everything but `image` and `ink`). Call it to render
-   * and prefix `!` for an embed — `![...]` becomes the image. With image import
+   * cached excerpt image (everything but `image` and `ink`), which resolves
+   * empty. Call it to render and pipe it through the `embed` filter (or prefix
+   * `!` yourself) for an Obsidian embed. With image import
    * disabled it links the cached image's `file://` URI; with import enabled it
    * links the in-vault copy, formatted per the vault's wikilink preference. Pass
-   * `alias` to override the display text (defaults to the image filename). See
-   * {@link TemplateLink}. Computed at the app layer.
+   * `alias` to override the display text (defaults to the image filename).
+   * Computed at the app layer.
+   *
+   * @ztFilter img_link
+   * @ztInert
+   * @example
+   * ```liquid
+   * {% for annot in zt.annotations %}{{ annot | img_link | embed }}{% endfor %}
+   * ```
    */
   imgLink: TemplateLink | null;
   /** {@link commentHtml} converted to Markdown; `null` when there is no comment. Computed at the app layer. */
@@ -72,7 +112,9 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * Markdown link to the parent attachment file, deep-linked to this
    * annotation's {@link page} (`#page=N`); `null` when the file is unresolvable.
    * Call it to render — pass `alias`/`subpath` to override the display text or
-   * the `#`-fragment. See {@link FallibleTemplateLink}. Computed at the app layer.
+   * the `#`-fragment. Computed at the app layer.
+   *
+   * @ztFilter file_link
    */
   fileLink: FallibleTemplateLink;
   /** Zotero deep link to this annotation. Computed at the app layer. */
@@ -82,10 +124,47 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * Parent literature item; shared across annotations from the same item.
    * `null` for an annotation on a standalone attachment (a file with no
    * parent bibliographic item).
+   *
+   * Its `collections` are populated when the annotation renders as part of a
+   * note; see {@link TemplateParentItemData} for the standalone case.
    */
   parentItem: TemplateParentItemData | null;
   /** Source attachment; shared across annotations from the same attachment. */
   parentAttachment: TemplateAttachment;
+}
+
+/**
+ * The `zt` root of the `annotation` template: one annotation
+ * ({@link TemplateAnnotation}) plus {@link citation}. Entries of
+ * `zt.annotations` on the note root carry no citation — only the
+ * single-annotation render resolves one.
+ */
+export interface AnnotationTemplateContext extends TemplateAnnotation {
+  /**
+   * Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered
+   * through the `cite` template with this annotation's {@link pageLabel} as
+   * locator; `null` when there is no parent item or it carries no citation key.
+   * Computed at the app layer.
+   */
+  citation: string | null;
+}
+
+/**
+ * Attach {@link AnnotationTemplateContext.citation} to an annotation's template
+ * data, promoting it to the annotation root.
+ *
+ * @param renderCitation - Called lazily, only when a template reads
+ *   `zt.citation`, so the `cite` render is skipped otherwise.
+ * @returns `data` itself, redeclared as the annotation root.
+ */
+export function withAnnotationCitation(
+  data: TemplateAnnotation,
+  renderCitation: (this: void) => string | null,
+): AnnotationTemplateContext {
+  return Object.defineProperty(data, "citation", {
+    enumerable: true,
+    get: renderCitation,
+  }) as AnnotationTemplateContext;
 }
 
 /**
@@ -100,6 +179,7 @@ function annotationToTemplateBaseData(
   const pageIndex = annotation.position.pageIndex;
   return {
     key: annotation.key,
+    indexedKey: annotation.indexedKey,
     libraryID: annotation.libraryID,
     type: annotationTypeToName(annotation.type),
     text: emptyToNull(annotation.text),

@@ -12,9 +12,12 @@ import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
 import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
+import { addIndexedKeyActions } from "./services/indexed-key/actions";
+import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
+import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
@@ -152,6 +155,8 @@ export default class ZotLitPlugin extends Plugin {
 
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
+    addIndexedKeyActions(this);
+    registerIndexedKeyFileMenu(this);
     addNoteFeatureActions(this, {
       app: this.app,
       noteFeature: services.noteFeature,
@@ -204,6 +209,15 @@ export default class ZotLitPlugin extends Plugin {
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
+    });
+
+    registerTemplateWorkbench(this, {
+      app: this.app,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      settings: services.settings,
+      templates: services.template,
+      zoteroPref: services.zoteroPref,
     });
 
     registerWelcomeView(this, {

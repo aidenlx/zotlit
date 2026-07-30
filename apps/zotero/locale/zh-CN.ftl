@@ -33,7 +33,16 @@ zotlit-menu-item-import-notes =
     .label = 导入所选笔记
 zotlit-menu-item-explore =
     .label = 探索模板数据
+zotlit-menu-item-copy-key =
+    .label = { $kind ->
+        [attachment] 复制附件键
+        [childNote] 复制子笔记键
+        [note] 复制笔记键
+        [item] 复制条目键
+       *[mixed] 复制所选键
+    }
 zotlit-menu-reader-annot-explore = 在 Obsidian 中探索标注
+zotlit-menu-reader-annot-copy-key = 复制标注键
 zotlit-menu-reader-page-open = 在 Obsidian 中打开文献笔记
 
 zotlit-batch-update-server-needed-title = 无法在 Obsidian 中更新文献笔记

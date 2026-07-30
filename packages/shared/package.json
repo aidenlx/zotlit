@@ -8,6 +8,7 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
+    "./indexed-key": "./dist/indexed-key.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",
     "./nanoevents": "./dist/nanoevents.mjs",
     "./temporal": "./dist/temporal.mjs",
@@ -19,7 +20,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@js-temporal/polyfill": "catalog:"
+    "@js-temporal/polyfill": "catalog:",
+    "arkregex": "catalog:"
   },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",

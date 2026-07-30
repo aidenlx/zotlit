@@ -1,5 +1,6 @@
 import { type NodeDatabaseClient } from "@/client/node";
 import { type Annotation } from "@/lib/zt-annot";
+import { formatIndexedKey } from "@/lib/zt-key";
 
 import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
 import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
@@ -83,7 +84,9 @@ export function getAnnotationsByKey(
     annotationsByKeyQuery
       .prepared(db)
       .all({ libraryID, key })
-      .map((r) => toAnnotation(r, groupId)),
+      .flatMap((row) =>
+        row.parentAttachment ? [toAnnotation(row, groupId)] : [],
+      ),
   );
 }
 
@@ -105,6 +108,7 @@ function toAnnotation(row: AnnotationRow, groupID: number | null): Annotation {
   return {
     itemID: row.itemID,
     key: row.item.key,
+    indexedKey: formatIndexedKey(row.item.key, groupID),
     libraryID: row.item.libraryID,
     groupID,
     dateAdded: row.item.dateAdded,

@@ -7,7 +7,7 @@
   },
   "type": "module",
   "scripts": {
-    "release": "node scripts/release.ts",
+    "release": "pnpm --filter @zotlit/scripts release",
     "build": "turbo run build --output-logs=full",
     "dev": "turbo run dev",
     "test": "turbo run test",
@@ -21,17 +21,13 @@
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true"
   },
   "devDependencies": {
-    "@clack/prompts": "^0.11.0",
     "@electron/asar": "^4.2.0",
-    "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
     "lefthook": "^2.1.1",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "^0.23.0",
-    "semver": "^7.8.0",
-    "turbo": "^2.9.18",
-    "zx": "^8.3.0"
+    "turbo": "^2.9.18"
   },
   "packageManager": "pnpm@11.1.3"
 }

@@ -6,6 +6,7 @@ import {
   citekeysToCiteTemplateData,
   fetchAnnotationsTemplateData,
   narrowBaseDataToCiteItemData,
+  withAnnotationCitation,
   type Annotation,
   type AnnotationResolvers,
   type Attachment,
@@ -116,13 +117,10 @@ export function renderAnnotations(
   });
   const result = new Map<string, string>();
   for (const [key, data] of dataByKey) {
-    // Lazy: only rendered when the `annotation` template reads `zt.citation`.
-    Object.defineProperty(data, "citation", {
-      enumerable: true,
-      get: () =>
-        annotationCitation(data.parentItem, data.pageLabel, options.template),
-    });
-    result.set(key, options.template.render("annotation", data));
+    const root = withAnnotationCitation(data, () =>
+      annotationCitation(data.parentItem, data.pageLabel, options.template),
+    );
+    result.set(key, options.template.render("annotation", root));
   }
   return result;
 }

@@ -288,6 +288,7 @@ function buildNoteLink(
 ): TemplateNoteLink {
   return {
     key: note.key,
+    indexedKey: note.indexedKey,
     title: note.title,
     noteLink: (alias, subpath) => {
       options.onFirstRender?.();

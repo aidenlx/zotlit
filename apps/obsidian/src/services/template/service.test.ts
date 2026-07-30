@@ -9,8 +9,11 @@ import {
 } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { defaults, type Settings } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
 
 import { DEFAULT_TEMPLATES, templatePath } from "./defaults";
@@ -205,6 +208,72 @@ afterEach(async () => {
 });
 
 describe("TemplateService", () => {
+  it("bounds the settle wait while initial settings are still loading", async () => {
+    const loaded = deferred<Readonly<Settings>>();
+    const vault = new MockVault();
+    const localStorage = new Map<string, unknown>();
+    const app = {
+      vault,
+      workspace: { updateOptions: vi.fn() },
+      loadLocalStorage: (key: string) => localStorage.get(key) ?? null,
+      saveLocalStorage: (key: string, data: unknown) => {
+        if (data === null) localStorage.delete(key);
+        else localStorage.set(key, data);
+      },
+    } as unknown as Harness["app"];
+    const plugin = new PluginStub(app, { __VERSION__: 1 });
+    const settings = {
+      current: null,
+      loaded: loaded.promise,
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as SettingsService;
+    await using service = new TemplateService({
+      plugin: plugin as unknown as Plugin,
+      app,
+      settings,
+    });
+    const result = vi.fn();
+
+    void service.waitUntilSettled(25).then(result);
+    await vi.advanceTimersByTimeAsync(25);
+
+    expect(result).toHaveBeenCalledWith("timeout");
+
+    loaded.resolve(defaults);
+    await service.ready;
+  });
+
+  it("distinguishes a failed startup from an expired settle wait", async () => {
+    const loaded = deferred<Readonly<Settings>>();
+    const vault = new MockVault();
+    const app = {
+      vault,
+      workspace: { updateOptions: vi.fn() },
+      loadLocalStorage: () => null,
+      saveLocalStorage: () => {},
+    } as unknown as Harness["app"];
+    const plugin = new PluginStub(app, { __VERSION__: 1 });
+    const settings = {
+      current: null,
+      loaded: loaded.promise,
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as SettingsService;
+    const service = new TemplateService({
+      plugin: plugin as unknown as Plugin,
+      app,
+      settings,
+    });
+    service.ready.catch(() => {});
+
+    const outcome = service.waitUntilSettled(25);
+    loaded.reject(new Error("settings failed to load"));
+    await flushAsync();
+
+    expect(await outcome).toBe("init-failed");
+
+    await service[Symbol.asyncDispose]();
+  });
+
   it("renders embedded defaults when no vault file exists", async () => {
     const { service } = await makeHarness();
 
@@ -238,7 +307,9 @@ describe("TemplateService", () => {
       javascriptTemplates: true,
     });
 
-    expect(() => service.render("note", { title: "Paper" })).toThrow();
+    expect(() => service.render("note", { title: "Paper" })).toThrow(
+      TemplateError,
+    );
     expect(service.compileErrors.get("note")).toBeDefined();
   });
 
@@ -250,16 +321,178 @@ describe("TemplateService", () => {
       javascriptTemplates: true,
     });
 
-    expect(() =>
+    let failure: unknown;
+    try {
       service.render("note", {
         title: "Paper",
         backlink: "zotero://select/items/1",
         attachments: [],
         annotations: [],
         notes: [],
-      }),
-    ).toThrow();
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(TemplateError);
+    expect((failure as TemplateError).templateName).toBe("content");
     expect(service.compileErrors.get("content")).toBeDefined();
+  });
+
+  it.each([
+    ["liquid", "{{ zt.citation }}"],
+    ["eta", "<%= zt.citation %>"],
+  ] as const)(
+    "preserves a cite compile failure through a %s citation getter",
+    async (language, source) => {
+      const vault = new MockVault();
+      vault.addFile("templates/zotlit-cite.liquid.md", "{% if zt.title %}");
+      vault.addFile(`templates/zotlit-note.${language}.md`, source);
+      const { service } = await makeHarness({
+        vault,
+        javascriptTemplates: true,
+      });
+      const data = {
+        get citation(): string {
+          return service.render("cite", {});
+        },
+      };
+
+      let failure: unknown;
+      try {
+        service.render("note", data);
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toBeInstanceOf(TemplateError);
+      expect((failure as TemplateError).templateName).toBe("cite");
+      expect(service.compileErrors.get("cite")).toBeDefined();
+    },
+  );
+
+  it("preserves an inert winner through a real Eta include error", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
+    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    const { service } = await makeHarness({ vault });
+    const eta = new TemplateFacade();
+    eta.define("parent", '<%~ include("cite", zt) %>', "eta");
+    const data = {
+      get citation(): string {
+        return eta.render("parent", {});
+      },
+    };
+
+    let failure: unknown;
+    try {
+      service.render("note", data);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(InertTemplateError);
+    expect((failure as InertTemplateError).templateName).toBe("cite");
+  });
+
+  it("leaves an application error untouched when its message names an inert template file", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
+    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    const { service } = await makeHarness({ vault });
+    const thrown = new Error(
+      "ENOENT: no such file or directory, open 'templates/zotlit-cite.eta.md'",
+    );
+    const data = {
+      get citation(): string {
+        throw thrown;
+      },
+    };
+
+    let failure: unknown;
+    try {
+      service.render("note", data);
+    } catch (error) {
+      failure = error;
+    }
+
+    // liquidjs wraps a throwing data getter in its own error type, so the
+    // guard is the class the batch runners read: an application error whose
+    // message happens to name an inert template file stays untyped, and the
+    // thrown object stays reachable through the chain.
+    expect(failure).not.toBeInstanceOf(InertTemplateError);
+    expect(failure).not.toBeInstanceOf(TemplateError);
+    expect((failure as { originalError?: unknown }).originalError).toBe(thrown);
+  });
+
+  it("surfaces the localized inert message for a nested inert render", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
+    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    const { service } = await makeHarness({ vault });
+    const eta = new TemplateFacade();
+    eta.define("parent", '<%~ include("cite", zt) %>', "eta");
+    const data = {
+      get citation(): string {
+        return eta.render("parent", {});
+      },
+    };
+
+    let failure: unknown;
+    try {
+      service.render("note", data);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(InertTemplateError);
+    expect((failure as InertTemplateError).message).toBe(
+      m.settings_template_inert_eta({ path: "templates/zotlit-cite.eta.md" }),
+    );
+  });
+
+  it("classifies a liquid render of an inert name as inert", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-note.liquid.md",
+      '{% render "cite" with zt as zt %}',
+    );
+    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    const { service } = await makeHarness({ vault });
+
+    let failure: unknown;
+    try {
+      service.render("note", { title: "Paper" });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(InertTemplateError);
+    expect((failure as InertTemplateError).templateName).toBe("cite");
+  });
+
+  it("finds the inert template through an aggregated error chain", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
+    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    const { service } = await makeHarness({ vault });
+    const data = {
+      get citation(): string {
+        throw new AggregateError(
+          [new TemplateError('Template "cite" not found', "cite")],
+          "render batch failed",
+        );
+      },
+    };
+
+    let failure: unknown;
+    try {
+      service.render("note", data);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(InertTemplateError);
+    expect((failure as InertTemplateError).templateName).toBe("cite");
   });
 
   it("records a compile error when a built-in default itself fails to compile", async () => {
@@ -540,6 +773,29 @@ describe("TemplateService", () => {
     ).toContain("# Paper");
   });
 
+  it("reports the winner the reconciler compiled", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.eta.md", "E <%= zt.title %>");
+    const { service } = await makeHarness({
+      vault,
+      javascriptTemplates: true,
+    });
+
+    const statuses = service.getTemplateFileStatuses();
+
+    expect(statuses.find((entry) => entry.name === "note")).toMatchObject({
+      winner: {
+        language: "eta",
+        source: { kind: "vault", path: "templates/zotlit-note.eta.md" },
+      },
+      editablePath: "templates/zotlit-note.eta.md",
+    });
+    expect(statuses.find((entry) => entry.name === "content")).toMatchObject({
+      winner: { language: "liquid", source: { kind: "embedded-default" } },
+      editablePath: "templates/zotlit-content.liquid.md",
+    });
+  });
+
   it("templatePath emits the extension for the requested language", () => {
     expect(templatePath("templates", "note")).toBe(
       "templates/zotlit-note.liquid.md",
@@ -735,6 +991,21 @@ describe("javascript templates gate", () => {
       "templates/zotlit-note.eta.md",
     );
     expect(service.compileErrors.get("note")).toBeUndefined();
+  });
+
+  it("reports no active winner for an inert eta-only name", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-note.eta.md", "custom <%= zt.title %>");
+    const { service } = await makeHarness({ vault });
+
+    expect(
+      service.getTemplateFileStatuses().find((entry) => entry.name === "note"),
+    ).toMatchObject({
+      winner: { language: "eta", source: { kind: "none" } },
+      editablePath: "templates/zotlit-note.liquid.md",
+      inertFiles: ["templates/zotlit-note.eta.md"],
+      compileError: null,
+    });
   });
 
   it("reports a shadowed eta file as shadowed, not inert, even when the gate is off", async () => {

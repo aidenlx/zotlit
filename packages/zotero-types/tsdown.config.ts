@@ -7,7 +7,11 @@ export default defineConfig({
   },
   tsconfig: "./tsconfig.lib.json",
   dts: true,
-  exports: true,
+  exports: {
+    customExports: {
+      "./schema.json": "./zotero-schema/schema.json",
+    },
+  },
   unbundle: true,
   target: "esnext",
 });

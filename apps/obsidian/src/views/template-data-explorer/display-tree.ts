@@ -1,6 +1,12 @@
 // Pure value-walker mapping an anchor root object + expansion set to typed display nodes.
 
-export type PathSegment = string | number;
+import {
+  formatAccessorPath,
+  type TemplatePathSegment,
+} from "@/services/template/accessor-path";
+import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
+
+export type PathSegment = TemplatePathSegment;
 
 export type DisplayValueType =
   | "string"
@@ -57,28 +63,6 @@ export interface BuildDisplayTreeOptions {
   readonly expanded: ReadonlySet<string>;
 }
 
-const INERT_PLACEHOLDER = Symbol("zotlit-inert-placeholder");
-
-/** Brand `fn` in place as an inert placeholder carrying `reason` (via `defineProperty` on the passed function), so {@link classifyValue} emits a {@link PlaceholderNode} instead of a {@link HelperNode}. Returns the same reference. */
-export function markInertPlaceholder<T extends (...args: never[]) => unknown>(
-  fn: T,
-  reason: string,
-): T {
-  Object.defineProperty(fn, INERT_PLACEHOLDER, {
-    value: reason,
-    enumerable: false,
-  });
-  return fn;
-}
-
-/** Read back the reason attached by {@link markInertPlaceholder}, if any. */
-export function inertPlaceholderReason(value: unknown): string | undefined {
-  if (typeof value !== "function") return undefined;
-  return (value as unknown as Record<symbol, unknown>)[INERT_PLACEHOLDER] as
-    | string
-    | undefined;
-}
-
 /** `null` when `annotationKey` matches no annotation (e.g. the annotation vanished since the tree was last built). */
 export function findAnnotationRoot<T extends { key: string }>(
   context: { annotations: readonly T[] },
@@ -106,32 +90,8 @@ export function buildDisplayTree(
   return buildChildren(root, [], options.expanded);
 }
 
-const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-/**
- * Render a data path. With no rootAlias, used as the expansion/React key; the
- * "zt" alias produces the copy-path both engines share (both bind data to `zt`).
- * Numeric segments render as [i]; identifier string segments as .name (or
- * bare when first with no root); other string segments (e.g. Zotero custom
- * field keys with dashes or spaces) as [JSON.stringify(segment)] so the
- * copied path stays paste-correct in both Liquid and Eta/JS.
- */
-export function formatPath(
-  segments: readonly PathSegment[],
-  rootAlias?: string,
-): string {
-  let out = rootAlias ?? "";
-  for (const seg of segments) {
-    if (typeof seg === "number") {
-      out += `[${seg}]`;
-    } else if (IDENTIFIER_RE.test(seg)) {
-      out += out ? `.${seg}` : seg;
-    } else {
-      out += `[${JSON.stringify(seg)}]`;
-    }
-  }
-  return out;
-}
+/** Format a display path, optionally rooted at the Template alias. */
+export const formatPath = formatAccessorPath;
 
 interface Entry {
   readonly segment: PathSegment;

@@ -15,25 +15,33 @@ import { type FallibleTemplateLink } from "./zt-template-item";
  * and as `parentAttachment` on each annotation.
  */
 export interface TemplateAttachment {
+  /** Zotero item key of the attachment. */
   key: string;
+  /** {@link key} for the personal library, `KEYgGROUPID` for a group library. */
+  indexedKey: string;
   /** Filename resolved from the attachment path; null for URL / unknown links. */
   filename: string | null;
+  /** MIME type, e.g. `"application/pdf"`. */
   contentType: string | null;
   /**
-   * Resolved {@link linkModeToName} name; `"unknown"` when the raw mode is null
-   * or unrecognized.
+   * Resolved link mode — `"imported_file"`, `"imported_url"`,
+   * `"linked_file"`, `"linked_url"`, or `"embedded_image"`; `"unknown"` when
+   * the raw mode is null or unrecognized.
    */
   linkMode: string;
-  /** Zotero deep link to open this attachment in the reader. */
+  /** Zotero deep link to open this attachment in the reader (`zotero://open/...`). */
   backlink: string;
   /** Absolute on-disk path to the attachment file; `null` for URL links, an unset base directory, or an unparseable path. Computed at the app layer. */
   filePath: string | null;
   /**
-   * Markdown link to the on-disk attachment file. Call it to render —
+   * Markdown link to the on-disk attachment file. In Liquid it renders on
+   * plain access (`{{ a.fileLink }}`); pipe the attachment itself through the
+   * `file_link` filter to override the alias or subpath. In Eta call it —
    * `<%= a.fileLink() %>` — passing `alias` to override the display text
    * (defaults to the filename) and `subpath` to append a `#`-fragment. `null`
-   * when the file is unresolvable. See {@link FallibleTemplateLink}. Computed
-   * at the app layer.
+   * when the file is unresolvable. Computed at the app layer.
+   *
+   * @ztFilter file_link
    */
   fileLink: FallibleTemplateLink;
 }
@@ -48,6 +56,7 @@ export function attachmentToTemplateData(
 ): Omit<TemplateAttachment, "filePath" | "fileLink"> {
   return {
     key: attachment.key,
+    indexedKey: attachment.indexedKey,
     filename: attachmentFilename(
       parseAttachmentPath(attachment.path, attachment.linkMode),
     ),

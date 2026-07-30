@@ -4,7 +4,11 @@ import { join } from "node:path";
 import TurndownService from "turndown";
 import { describe, expect, it } from "vitest";
 
+import { getPackageRoot } from "@zotlit/scripts/package-roots";
+
 import { createNoteTurndown } from "./index";
+
+const packageRoot = getPackageRoot();
 
 /** Convert an HTML fragment and trim the surrounding block whitespace. */
 function convert(html: string): string {
@@ -321,7 +325,7 @@ describe("Zotero embed/annotation rule routing", () => {
 describe("ZT_NOTE_EXAMPLE.html", () => {
   it("converts the full stress-test note", async () => {
     const html = readFileSync(
-      join(import.meta.dirname, "__fixtures__/zt-note-example.html"),
+      join(packageRoot, "src/lib/turndown/__fixtures__/zt-note-example.html"),
       "utf8",
     );
     await expect(convert(html)).toMatchFileSnapshot(
@@ -340,7 +344,7 @@ describe("ZT_NOTE_EXAMPLE.html", () => {
 describe("ZT_EXCERPT_NOTE.html", () => {
   it("converts an annotation excerpt note", async () => {
     const html = readFileSync(
-      join(import.meta.dirname, "__fixtures__/zt-excerpt-note.html"),
+      join(packageRoot, "src/lib/turndown/__fixtures__/zt-excerpt-note.html"),
       "utf8",
     );
     await expect(convert(html)).toMatchFileSnapshot(

@@ -39,6 +39,7 @@
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@zotlit/config": "workspace:*",
+    "@zotlit/scripts": "workspace:*",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

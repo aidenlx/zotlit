@@ -65,6 +65,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
 - [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase
 - [scratch-artifacts](policies/scratch-artifacts.md) — probe scripts and trial output go in workspace `tmp/`, not `/tmp`
+- [package and workspace roots](policies/package-roots.md) — package-root paths and pnpm workspace discovery
 - [logging](policies/logging.md) — LogTape, structured fields
 - [temporal-dates](policies/temporal-dates.md) — Temporal API, not Date/date-fns/dayjs
 

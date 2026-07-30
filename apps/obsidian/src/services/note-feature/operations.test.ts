@@ -185,6 +185,7 @@ describe("createNote", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -298,6 +299,7 @@ describe("createNote", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -401,6 +403,7 @@ describe("createNote", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -472,6 +475,7 @@ describe("createNote", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -546,6 +550,7 @@ describe("createNote", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -640,6 +645,7 @@ describe("overwriteNote", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -739,7 +745,12 @@ function makeUpdateHarness(options: {
     },
     noteImport: {
       prepare: async () => ({
-        resolveChildNote: () => ({ key: "", title: null, noteLink: () => "" }),
+        resolveChildNote: () => ({
+          key: "",
+          indexedKey: "",
+          title: null,
+          noteLink: () => "",
+        }),
         flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
       }),
     },
@@ -1125,6 +1136,7 @@ describe("renderCitation", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -1200,6 +1212,7 @@ describe("renderCitation", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -1256,6 +1269,7 @@ describe("renderAnnotation", () => {
         prepare: async () => ({
           resolveChildNote: () => ({
             key: "",
+            indexedKey: "",
             title: null,
             noteLink: () => "",
           }),
@@ -1323,6 +1337,7 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
       prepare: async () => ({
         resolveChildNote: () => ({
           key: "",
+          indexedKey: "",
           title: null,
           noteLink: () => "",
         }),

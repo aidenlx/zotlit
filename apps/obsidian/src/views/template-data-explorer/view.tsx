@@ -27,10 +27,16 @@ import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
 import { type DatabaseService } from "@/services/database/service";
+import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import { type ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
 import { type SettingsService } from "@/services/settings/service";
+import {
+  buildInertNoteResolvers,
+  findExistingLitNote,
+  resolveExcerptImageContext,
+} from "@/services/template/inert-resolvers";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -46,11 +52,6 @@ import {
   findAnnotationRoot,
 } from "./display-tree";
 import { Explorer } from "./Explorer";
-import {
-  buildInertNoteResolvers,
-  findExistingLitNote,
-  resolveExcerptImageContext,
-} from "./inert-resolvers";
 import { pickItem } from "./item-picker";
 import {
   createExplorerStore,
@@ -124,6 +125,7 @@ export class TemplateDataExplorerView extends ItemView {
 
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
+    this.#actions?.addCopyKeyMenuItem(menu);
     menu.addItem((item) =>
       item
         .setSection("zotlit")
@@ -182,6 +184,21 @@ export class TemplateDataExplorerView extends ItemView {
       onBackToNoteRoot: () => this.#setAnchor(null),
       onRefresh: () => this.#refresh(),
       isEtaEnabled: () => this.#deps.templates.javascriptTemplatesEnabled,
+      copyTarget: () => {
+        const item = this.#item;
+        if (!item) return null;
+        const annotationKey = this.#treeState.anchorKey;
+        if (annotationKey === null) {
+          return { indexedKey: item.indexedKey, kind: "item" };
+        }
+        return {
+          indexedKey: indexedKeyForClipboard({
+            key: annotationKey,
+            groupID: item.groupID,
+          }),
+          kind: "annotation",
+        };
+      },
     });
 
     this.#root = createRoot(this.contentEl);

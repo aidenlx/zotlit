@@ -1,4 +1,7 @@
-import { rehypeCodeDefaultOptions } from "fumadocs-core/mdx-plugins";
+import {
+  rehypeCodeDefaultOptions,
+  type LLMsOptions,
+} from "fumadocs-core/mdx-plugins";
 import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
 import {
   defineCollections,
@@ -9,6 +12,32 @@ import { valid as isValidSemVer } from "semver";
 import * as v from "valibot";
 
 import { etaGrammar } from "./lib/eta-grammar";
+import { CONTRACT_IR } from "./lib/template-contract/contract.ts";
+import { renderContractTableMarkdown } from "./lib/template-contract/gfm.ts";
+import { buildPageModel } from "./lib/template-contract/page-model.ts";
+
+const model = buildPageModel(CONTRACT_IR);
+
+/**
+ * The generated reference page carries its tables as `<ContractTable>`, which
+ * the Markdown edition would otherwise emit as JSX. Replace each one with the
+ * GFM table rendered from the same page model the component reads.
+ */
+const markdownEdition: LLMsOptions = {
+  stringify(node) {
+    if (node.type !== "mdxJsxFlowElement" || node.name !== "ContractTable") {
+      return undefined;
+    }
+    const attribute = node.attributes.find(
+      (entry) => entry.type === "mdxJsxAttribute" && entry.name === "section",
+    );
+    const section = attribute?.value;
+    if (typeof section !== "string") {
+      throw new Error("<ContractTable> carries no section attribute");
+    }
+    return renderContractTableMarkdown(model, section);
+  },
+};
 
 /** @see https://fumadocs.dev/docs/mdx/collections */
 export const docs = defineDocs({
@@ -17,7 +46,7 @@ export const docs = defineDocs({
     schema: pageSchema,
     files: ["**/*.mdx", "!**/_*.mdx"],
     postprocess: {
-      includeProcessedMarkdown: true,
+      includeProcessedMarkdown: markdownEdition,
     },
   },
   meta: {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZotLit Template Workbench"
+  short_description: "Author and debug ZotLit templates"
+  default_prompt: "Use $zotlit-template to author or debug a ZotLit template through the Template Workbench."

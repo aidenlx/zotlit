@@ -26,6 +26,17 @@ import {
 import { TemplateEngine } from "./index";
 import { createLiquidEngine } from "./liquid";
 
+/** One root-variable read found by static analysis of a registered Liquid template. */
+export interface RootVariableUse {
+  /** Root segment of the variable path, e.g. `"title"` for `{{ title.x }}`. */
+  name: string;
+  /** Full dotted path as read, e.g. `"title.x"`. */
+  path: string;
+  /** 1-based source position of the read: `row` is the line, `col` the column. */
+  row: number;
+  col: number;
+}
+
 export type TemplateLanguage = "liquid" | "eta";
 
 export interface TemplateFacadeOptions {
@@ -178,6 +189,42 @@ export class TemplateFacade {
     return validateFrontmatterExprImpl(expr, language, this.#liquid);
   }
 
+  /**
+   * Statically analyzes a registered Liquid template's own source and
+   * reports every root-level variable read (including `zt` — callers
+   * filter). Analysis does not traverse `{% render %}`/`{% include %}`
+   * partials: the facade's in-memory `fs` returns synthetic bridge sources
+   * for those, not the partial's real content; an included template's own
+   * reads are found by calling this method with that template's name.
+   *
+   * @returns `null` when `name` is unregistered, or registered as Eta only;
+   *   otherwise every root-variable read found in the template's own source.
+   */
+  analyzeRootVariables(name: string): RootVariableUse[] | null {
+    const slot = this.#registry.get(name);
+    if (!slot?.liquid) return null;
+
+    const { globals } = this.#liquid.analyzeSync(slot.liquid, {
+      partials: false,
+    });
+    const uses: RootVariableUse[] = [];
+    for (const entries of Object.values(globals)) {
+      for (const entry of entries) {
+        // Segments are strings/numbers for a plain dotted path, or a nested
+        // `Variable` for a computed subscript (e.g. `x[y]`); `String(...)`
+        // stringifies a nested `Variable` through its own `toString`.
+        const segments = entry.segments;
+        uses.push({
+          name: String(segments[0]),
+          path: segments.map((segment) => String(segment)).join("."),
+          row: entry.location.row,
+          col: entry.location.col,
+        });
+      }
+    }
+    return uses;
+  }
+
   #setOrDelete(name: string, slot: TemplateSlot): void {
     if (slot.liquid || slot.eta) this.#registry.set(name, slot);
     else this.#registry.delete(name);
@@ -202,22 +249,32 @@ export class TemplateFacade {
     return this.#transform(name, out);
   }
 
+  /**
+   * In-memory `fs` every liquid `{% render %}` / `{% include %}` resolves
+   * through. `readSource` is the single existence authority: `existsSync` and
+   * `exists` answer `true` for every name, so `Loader.lookup` always reaches
+   * `readFileSync`, and an unregistered target fails with a named
+   * {@link TemplateError} instead of liquidjs's own unstructured
+   * `ENOENT: Failed to lookup "<name>" in "<roots>"` message.
+   *
+   * @see liquidjs 10.27.1 `Loader.lookup` — returns the first candidate its
+   *   `exists` check accepts, then the parser reads it through `readFileSync`.
+   */
   #makeFs(): FS {
     const registry = this.#registry;
-    const exists = (name: string): boolean => registry.has(name);
     // Shared by readFileSync/readFile (liquidjs's `FS.exists`/`readFile` are
     // required, not optional — see fs.d.ts — so both sync and async paths
     // must be implemented, not just the sync one).
     const readSource = (name: string): string => {
-      if (!exists(name)) {
+      if (!registry.has(name)) {
         throw new TemplateError(`Template "${name}" not found`, name);
       }
       return bridgeSource(name);
     };
     return {
-      existsSync: exists,
+      existsSync: () => true,
       readFileSync: readSource,
-      exists: async (name) => exists(name),
+      exists: async () => true,
       readFile: async (name) => readSource(name),
       resolve: (_dir, file, ext) => file + ext,
     };

@@ -5,6 +5,7 @@ import {
   filters,
   Liquid,
   Tag,
+  tags,
   type Context,
   type Emitter,
   type FS,
@@ -33,6 +34,14 @@ interface ItemDateLike {
   day: number | null;
   toString(): string;
 }
+
+export const LIQUID_BUILTIN_FILTER_NAMES: readonly string[] = Object.freeze(
+  Object.keys(filters).sort(),
+);
+
+export const LIQUID_BUILTIN_TAG_NAMES: readonly string[] = Object.freeze(
+  Object.keys(tags).sort(),
+);
 
 const ITEM_DATE_KINDS: ReadonlySet<unknown> = new Set([
   "date",
@@ -177,6 +186,8 @@ export interface CreateLiquidEngineOptions {
  * off by default (`greedy: false`); a trailing `-%}` eats inline blanks plus
  * exactly one following newline (a blank line after it survives), while a
  * leading `{%-` eats only same-line indentation and never a bare newline.
+ * `strictFilters: true` turns an unknown filter into a render error instead
+ * of a silent pass-through.
  */
 export function createLiquidEngine({
   fs,
@@ -189,6 +200,7 @@ export function createLiquidEngine({
     greedy: false,
     relativeReference: false,
     outputEscape: coerceOutput,
+    strictFilters: true,
   });
 
   engine.registerTag("bq", BqTag);
