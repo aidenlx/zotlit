@@ -401,6 +401,26 @@ function tagsOf(declaration: Node | undefined, name: string): JSDocTag[] {
 }
 
 /**
+ * The trimmed content of a member's single occurrence of `tagName` (`""` when
+ * the tag carries no comment), or `undefined` when the member declares no
+ * such tag.
+ *
+ * @throws when the member declares the tag more than once.
+ */
+function singleTagContent(
+  declaration: Node | undefined,
+  tagName: string,
+  member: string,
+): string | undefined {
+  const tags = tagsOf(declaration, tagName);
+  if (tags.length === 0) return undefined;
+  if (tags.length > 1) {
+    throw new Error(`Member ${member} declares more than one @${tagName}`);
+  }
+  return tags[0]!.getCommentText()?.trim() ?? "";
+}
+
+/**
  * The Liquid filter a helper member names with `@ztFilter`.
  *
  * @throws when the member declares the tag more than once, or the tag holds
@@ -410,12 +430,8 @@ function filterOf(
   declaration: Node | undefined,
   member: string,
 ): string | undefined {
-  const tags = tagsOf(declaration, FILTER_TAG);
-  if (tags.length === 0) return undefined;
-  if (tags.length > 1) {
-    throw new Error(`Member ${member} declares more than one @${FILTER_TAG}`);
-  }
-  const filter = tags[0]!.getCommentText()?.trim() ?? "";
+  const filter = singleTagContent(declaration, FILTER_TAG, member);
+  if (filter === undefined) return undefined;
   if (!FILTER_NAME.test(filter)) {
     throw new Error(
       `@${FILTER_TAG} on ${member} names one snake_case filter and nothing else: ${filter}`,
@@ -433,12 +449,8 @@ function inertOf(
   declaration: Node | undefined,
   member: string,
 ): true | undefined {
-  const tags = tagsOf(declaration, INERT_TAG);
-  if (tags.length === 0) return undefined;
-  if (tags.length > 1) {
-    throw new Error(`Member ${member} declares more than one @${INERT_TAG}`);
-  }
-  const content = tags[0]!.getCommentText()?.trim() ?? "";
+  const content = singleTagContent(declaration, INERT_TAG, member);
+  if (content === undefined) return undefined;
   if (content !== "") {
     throw new Error(
       `@${INERT_TAG} on ${member} must hold no content, found: ${content}`,
