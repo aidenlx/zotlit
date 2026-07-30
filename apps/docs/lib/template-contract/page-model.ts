@@ -121,6 +121,13 @@ export function buildPageModel(
   };
 }
 
+/** The section `id` documents; both renderers resolve a section id through here, so they fail alike. */
+export function sectionOf(model: PageModel, id: string): PageSection {
+  const section = model.sections.find((entry) => entry.id === id);
+  if (!section) throw new Error(`No contract section ${id}`);
+  return section;
+}
+
 interface BuildContext {
   ir: ContractIR;
   specs: readonly SectionSpec[];

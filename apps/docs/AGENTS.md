@@ -24,6 +24,8 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 
 `lib/template-contract/sections.ts` owns the section structure. The `_*.mdx` partials beside the generated page own supplementary prose.
 
+The page's Markdown edition renders each `<ContractTable>` as a GFM table through the `stringify` callback on the docs collection's `includeProcessedMarkdown` in `source.config.ts`.
+
 ## Content & writing docs
 
 Content lives in `content/`; collections and schemas are defined in `source.config.ts`. `content/docs/` follows Diataxis. 

@@ -40,6 +40,11 @@ describe("generated template-data page", () => {
         }" />`,
       );
     }
+    for (const section of model.sections) {
+      if (section.tables.length > 0 || section.itemTypes.length > 0) {
+        expect(page).toContain(`<ContractTable section="${section.id}" />`);
+      }
+    }
   });
 
   it("inlines each hand-written partial at its own section", () => {

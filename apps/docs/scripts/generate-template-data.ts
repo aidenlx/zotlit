@@ -9,9 +9,9 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { CONTRACT_IR } from "../lib/template-contract/contract.ts";
+import { renderDocMarkdown } from "../lib/template-contract/gfm.ts";
 import {
   buildPageModel,
-  type Doc,
   type PageSection,
   type SectionValue,
 } from "../lib/template-contract/page-model.ts";
@@ -55,7 +55,7 @@ function renderPage(sections: readonly PageSection[]): string {
 function renderSection(section: PageSection): string {
   const blocks = [
     `${"#".repeat(section.level)} ${section.title} [#${section.id}]`,
-    ...renderDoc(section.description),
+    ...renderDocMarkdown(section.description, assertPlainText),
     section.lead,
     section.values.length > 0 ? renderValues(section.values) : undefined,
     section.tables.length > 0 || section.itemTypes.length > 0
@@ -70,28 +70,10 @@ function renderSection(section: PageSection): string {
 function renderValues(values: readonly SectionValue[]): string {
   return values
     .map(({ value, description }) => {
-      const doc = renderDoc(description).join(" ");
+      const doc = renderDocMarkdown(description, assertPlainText).join(" ");
       return `- \`"${value}"\`${doc ? `: ${doc}` : ""}`;
     })
     .join("\n");
-}
-
-/** One Markdown paragraph per normalized paragraph. */
-function renderDoc(doc: Doc): string[] {
-  return doc.map((paragraph) =>
-    paragraph
-      .map((node) => {
-        switch (node.kind) {
-          case "text":
-            return assertPlainText(node.value);
-          case "code":
-            return `\`${node.value}\``;
-          case "link":
-            return `[${node.code ? `\`${node.text}\`` : node.text}](${node.href})`;
-        }
-      })
-      .join(""),
-  );
 }
 
 /** MDX reads `{` and `<` as expression and element openers, so prose keeps them inside code spans. */

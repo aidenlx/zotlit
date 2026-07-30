@@ -74,6 +74,27 @@ jobs:
             exit 1
           fi
 
+      # The template-data reference page is generated from the contract IR the
+      # previous step just regenerated, so a contract change without a
+      # regenerated page must fail here. Call the generator script directly,
+      # not the turbo task, because a freshness check must always regenerate
+      # rather than restore a cached output. `mise run init` above builds the
+      # packages the script imports.
+      - name: Template data page check
+        run: |
+          pnpm --filter @zotlit/docs generate:template-data
+          stale=$(git status --porcelain -- apps/docs/content/docs/reference/templates/data.mdx)
+          if [ -n "$stale" ]; then
+            {
+              echo "### Stale template data page"
+              echo 'Run `pnpm --filter @zotlit/docs generate:template-data` and commit the result.'
+              echo '```'
+              echo "$stale"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       # oxlint.base.ts sets typeAware + typeCheck, so `-f github` emits ::error
       # workflow commands → inline annotations on the diff, type errors included.
       # turbo's dependsOn handles transitive builds (no explicit build step).

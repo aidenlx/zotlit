@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { CONTRACT_IR } from "@/lib/template-contract/contract";
 import {
   buildPageModel,
+  sectionOf,
   type Doc,
   type ItemTypeRow,
   type RowModel,
@@ -20,8 +21,7 @@ const model = buildPageModel(CONTRACT_IR);
  * restate the same contract.
  */
 export function ContractTable({ section }: { section: string }) {
-  const page = model.sections.find((entry) => entry.id === section);
-  if (!page) throw new Error(`No contract section ${section}`);
+  const page = sectionOf(model, section);
   if (page.itemTypes.length > 0) {
     return <TypeTable anchor={page.id} type={itemTypeNodes(page.itemTypes)} />;
   }
