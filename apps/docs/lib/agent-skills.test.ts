@@ -1,7 +1,9 @@
+import { strFromU8, unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
+  createAgentSkillArchive,
   AGENT_SKILLS_SCHEMA,
   createAgentSkillsIndex,
   readAgentSkill,
@@ -17,22 +19,50 @@ description: "Author and debug ZotLit templates."
 
 # ZotLit Template Workbench
 `);
+const OPENAI_METADATA = new TextEncoder().encode(`interface:
+  display_name: "ZotLit Template Workbench"
+`);
 
 describe("Agent Skill distribution", () => {
-  it("builds a pinned discovery index from the SKILL.md bytes", () => {
-    const index = JSON.parse(
-      createAgentSkillsIndex({ skill: SKILL, commitSha: COMMIT_SHA }),
+  it("packages the complete Codex skill", () => {
+    const archive = createAgentSkillArchive({
+      skill: SKILL,
+      openAiMetadata: OPENAI_METADATA,
+    });
+    const files = unzipSync(archive);
+
+    expect(Object.keys(files).sort()).toEqual([
+      "SKILL.md",
+      "agents/openai.yaml",
+    ]);
+    expect(strFromU8(files["SKILL.md"]!)).toBe(strFromU8(SKILL));
+    expect(strFromU8(files["agents/openai.yaml"]!)).toBe(
+      strFromU8(OPENAI_METADATA),
     );
-    const digest = createHash("sha256").update(SKILL).digest("hex");
+  });
+
+  it("builds a pinned discovery index from the archive bytes", () => {
+    const archive = createAgentSkillArchive({
+      skill: SKILL,
+      openAiMetadata: OPENAI_METADATA,
+    });
+    const index = JSON.parse(
+      createAgentSkillsIndex({
+        skill: SKILL,
+        archive,
+        commitSha: COMMIT_SHA,
+      }),
+    );
+    const digest = createHash("sha256").update(archive).digest("hex");
 
     expect(index).toEqual({
       $schema: AGENT_SKILLS_SCHEMA,
       skills: [
         {
           name: SKILL_NAME,
-          type: "skill-md",
+          type: "archive",
           description: "Author and debug ZotLit templates.",
-          url: `https://raw.githubusercontent.com/aidenlx/zotlit/${COMMIT_SHA}/${SKILL_REPOSITORY_PATH}`,
+          url: `https://zotlit.aidenlx.site/.well-known/agent-skills/${SKILL_NAME}/${COMMIT_SHA}/archive.zip`,
           digest: `sha256:${digest}`,
         },
       ],
@@ -41,8 +71,12 @@ describe("Agent Skill distribution", () => {
 
   it("keeps the root skill directory, frontmatter, and index aligned", async () => {
     const skill = await readAgentSkill();
+    const archive = createAgentSkillArchive({
+      skill,
+      openAiMetadata: OPENAI_METADATA,
+    });
     const index = JSON.parse(
-      createAgentSkillsIndex({ skill, commitSha: COMMIT_SHA }),
+      createAgentSkillsIndex({ skill, archive, commitSha: COMMIT_SHA }),
     );
 
     expect(SKILL_REPOSITORY_PATH).toBe(`skills/${SKILL_NAME}/SKILL.md`);

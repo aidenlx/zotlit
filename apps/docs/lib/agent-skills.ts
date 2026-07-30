@@ -1,24 +1,53 @@
-// Builds the Agent Skills discovery index from the repository skill.
+// Builds the ZotLit Template Agent Skill archive and discovery index.
 
+import { findWorkspaceDir } from "@pnpm/find-workspace-dir";
+import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join } from "node:path";
+
+import { baseURL } from "./shared";
 
 export const AGENT_SKILLS_SCHEMA =
   "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
 export const SKILL_NAME = "zotlit-template";
 export const SKILL_REPOSITORY_PATH = `skills/${SKILL_NAME}/SKILL.md`;
+export const OPENAI_METADATA_REPOSITORY_PATH = `skills/${SKILL_NAME}/agents/openai.yaml`;
 
-const REPOSITORY = "aidenlx/zotlit";
-const SKILL_PATH = resolve("..", "..", SKILL_REPOSITORY_PATH);
+const workspaceDir = await findWorkspaceDir(process.cwd());
+if (!workspaceDir) throw new Error("Could not find the pnpm workspace root.");
+const repoRoot = workspaceDir;
+
+const SKILL_PATH = join(repoRoot, SKILL_REPOSITORY_PATH);
+const OPENAI_METADATA_PATH = join(repoRoot, OPENAI_METADATA_REPOSITORY_PATH);
 
 interface CreateAgentSkillsIndexOptions {
   skill: Uint8Array;
+  archive: Uint8Array;
   commitSha: string;
+}
+
+interface CreateAgentSkillArchiveOptions {
+  skill: Uint8Array;
+  openAiMetadata: Uint8Array;
+}
+
+export function createAgentSkillArchive({
+  skill,
+  openAiMetadata,
+}: CreateAgentSkillArchiveOptions): Uint8Array<ArrayBuffer> {
+  return zipSync(
+    {
+      "SKILL.md": skill,
+      "agents/openai.yaml": openAiMetadata,
+    },
+    { level: 9, mtime: new Date(2000, 0, 1) },
+  );
 }
 
 export function createAgentSkillsIndex({
   skill,
+  archive,
   commitSha,
 }: CreateAgentSkillsIndexOptions): string {
   const { name, description } = parseSkillMetadata(
@@ -36,10 +65,10 @@ export function createAgentSkillsIndex({
       skills: [
         {
           name,
-          type: "skill-md",
+          type: "archive",
           description,
-          url: `https://raw.githubusercontent.com/${REPOSITORY}/${commitSha}/${SKILL_REPOSITORY_PATH}`,
-          digest: digest(skill),
+          url: `${baseURL}/.well-known/agent-skills/${SKILL_NAME}/${commitSha}/archive.zip`,
+          digest: digest(archive),
         },
       ],
     },
@@ -50,6 +79,10 @@ export function createAgentSkillsIndex({
 
 export function readAgentSkill(): Promise<Buffer> {
   return readFile(SKILL_PATH);
+}
+
+export function readOpenAiMetadata(): Promise<Buffer> {
+  return readFile(OPENAI_METADATA_PATH);
 }
 
 function digest(content: Uint8Array): string {

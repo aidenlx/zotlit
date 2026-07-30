@@ -14,13 +14,12 @@ safety with pointers into the CLI — it has no facts left to go stale.
 
 Distribution is dual-channel. The `skills` CLI discovers
 `skills/<name>/SKILL.md` directly from the GitHub repo. The docs site serves
-only the well-known Agent Skills index, built by a route handler at docs build
-time: the entry's `url` points at `raw.githubusercontent.com` pinned to the
-build's commit SHA, and the mandatory sha256 `digest` is computed from the
-in-repo file at that same checkout, so pin and digest can never disagree. The
-docs site hosts no artifact copy; the generator script, the committed
-`public/.well-known/` artifacts, and the CI regeneration check from #563 are
-gone.
+the well-known Agent Skills index and a commit-addressed archive route. The
+index route builds a deterministic archive from the skill files at docs build
+time. Its `url` includes the build's commit SHA, and its mandatory sha256
+`digest` covers the same archive bytes. The archive route reads the named files
+from that GitHub commit and rebuilds the archive. The archive contains the
+portable `SKILL.md` and product metadata such as `agents/openai.yaml`.
 
 ## Consequences
 
