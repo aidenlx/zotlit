@@ -1,10 +1,13 @@
 # .vercelignore — deployment target: @zotlit/docs (apps/docs)
 #
-# `next build` in apps/docs pulls in only apps/docs itself plus its lone
-# workspace dep, packages/config (tsconfig/oxlint presets, no workspace deps
-# of its own). pnpm's frozen-lockfile install derives its project scope from
-# pnpm-lock.yaml, so the sibling workspaces excluded below can be absent from
-# the upload without breaking install. Root manifests + turbo.json stay.
+# The upload keeps apps/docs plus its workspace dependency closure:
+# packages/config (presets), packages/scripts (package-roots helpers),
+# packages/db (template contract IR), and db's own deps packages/shared and
+# packages/zotero-types. The `fumadocs-mdx` postinstall resolves
+# @zotlit/db/contract/ir.json from db's committed src, so these packages must
+# be present at install time. Sibling workspaces excluded below can be absent
+# without breaking install — pnpm's frozen-lockfile install derives its
+# project scope from pnpm-lock.yaml. Root manifests + turbo.json stay.
 
 # --- Sibling apps (not in the docs dependency graph) ---
 /apps/obsidian
@@ -12,15 +15,11 @@
 /apps/website
 
 # --- Packages the docs build never imports ---
-/packages/db
 /packages/item-lookup
 /packages/obsidian-api
 /packages/pdfjs-dist
 /packages/protocol
-/packages/scripts
-/packages/shared
 /packages/templates
-/packages/zotero-types
 
 # --- Repo-level content unrelated to the build ---
 /docs
