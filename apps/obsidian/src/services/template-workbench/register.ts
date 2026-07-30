@@ -33,6 +33,8 @@ import { GUIDE_TOPIC_NAMES } from "./guide";
 import { TEMPLATE_SLOT_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 
+const VAULT_ID_STORAGE_KEY = "zotlit-template-workbench-vault-id";
+
 interface TemplateWorkbenchRegistrationDeps {
   app: App;
   db: DatabaseService;
@@ -134,6 +136,16 @@ function sourceFlags(): CliFlags {
   };
 }
 
+/** Return the opaque Workbench id persisted in Obsidian's vault-local storage. */
+function vaultId(app: App): string {
+  const stored: unknown = app.loadLocalStorage(VAULT_ID_STORAGE_KEY);
+  if (typeof stored === "string" && stored.length > 0) return stored;
+
+  const created = crypto.randomUUID();
+  app.saveLocalStorage(VAULT_ID_STORAGE_KEY, created);
+  return created;
+}
+
 export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
@@ -143,7 +155,7 @@ export function registerTemplateWorkbench(
       await deps.zoteroPref.ready;
       return {
         vault: {
-          id: deps.app.vault.getName(),
+          id: vaultId(deps.app),
           path:
             deps.app.vault.adapter instanceof FileSystemAdapter
               ? deps.app.vault.adapter.getBasePath()
