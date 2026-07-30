@@ -376,6 +376,65 @@ describe("frontmatter fields through the facade", () => {
   });
 });
 
+describe("analyzeRootVariables", () => {
+  it("reports root variables, excluding loop vars, forloop, and assign locals", () => {
+    const facade = new TemplateFacade();
+    facade.define(
+      "tpl",
+      "{% assign x = zt.title %}{% for a in items %}{{ forloop.index }}{{ a.text }}{{ x }}{% endfor %}{{ oops.deep }}",
+      "liquid",
+    );
+
+    const uses = facade.analyzeRootVariables("tpl");
+
+    expect(uses).not.toBeNull();
+    const roots = new Set(uses!.map((u) => u.name));
+    expect(roots).toEqual(new Set(["zt", "items", "oops"]));
+
+    const oopsUse = uses!.find((u) => u.name === "oops")!;
+    expect(oopsUse.path).toBe("oops.deep");
+    expect(oopsUse.row).toBeGreaterThanOrEqual(1);
+    expect(oopsUse.col).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns null for an eta-only template", () => {
+    const facade = new TemplateFacade();
+    facade.define("etaOnly", "<%= zt.title %>", "eta");
+
+    expect(facade.analyzeRootVariables("etaOnly")).toBeNull();
+  });
+
+  it("returns null for an unregistered name", () => {
+    const facade = new TemplateFacade();
+    expect(facade.analyzeRootVariables("missing")).toBeNull();
+  });
+
+  it("does not traverse partials: an unregistered render target does not throw", () => {
+    const facade = new TemplateFacade();
+    facade.define(
+      "tpl",
+      '{{ zt.title }}{% render "not-registered" %}',
+      "liquid",
+    );
+
+    const uses = facade.analyzeRootVariables("tpl");
+
+    expect(uses).not.toBeNull();
+    expect(uses!.map((u) => u.name)).toEqual(["zt"]);
+  });
+
+  it("analyzes the liquid source when a name is defined in both languages", () => {
+    const facade = new TemplateFacade();
+    facade.define("both", "<%= zt.etaOnlyVar %>", "eta");
+    facade.define("both", "{{ zt.liquidOnlyVar }}", "liquid");
+
+    const uses = facade.analyzeRootVariables("both");
+
+    expect(uses).not.toBeNull();
+    expect(uses!.map((u) => u.path)).toEqual(["zt.liquidOnlyVar"]);
+  });
+});
+
 describe("reset", () => {
   it("clears both languages' registered templates, allowing re-definition after", () => {
     const facade = new TemplateFacade();

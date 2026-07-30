@@ -6,10 +6,14 @@
 // Command and flag help text is localized (see `register.ts`).
 
 import { CONTRACT_VERSION, type TemplateSlot } from "@zotlit/db";
-import { TemplateError } from "@zotlit/templates/facade";
+import { TemplateError, type TemplateLanguage } from "@zotlit/templates/facade";
 
 import { InertTemplateError } from "@/services/template/errors";
-import { type TemplateFileStatus } from "@/services/template/service";
+import {
+  errorContext,
+  type CompileError,
+  type TemplateFileStatus,
+} from "@/services/template/service";
 
 import { type TemplateDataLoadResult } from "./data";
 
@@ -62,7 +66,9 @@ export interface Diagnostic {
     | { parameter: string }
     | { target: "vault" | "source"; expected: string; actual: string | null }
     | { key: string }
-    | { template: string };
+    /** `context` is the liquidjs caret-annotated source excerpt, present when
+     *  the underlying error carried one. */
+    | { template: string; context?: string };
 }
 
 /**
@@ -77,17 +83,14 @@ export function diagnostic(
   return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
 }
 
-/** Reserved by contract version 1: `warnings` is documented, always present on
- *  a render response, and always empty. */
-export const NO_WARNINGS: readonly string[] = [];
-
-/** The five commands the Workbench answers. */
+/** The commands the Workbench answers. */
 export type WorkbenchCommand = `zotlit:template-${
   | "status"
   | "data"
   | "schema"
   | "render"
-  | "guide"}`;
+  | "guide"
+  | "source"}`;
 
 /** The facts a command echoes back beside its result, all optional because a
  *  selector-level failure is answered before any of them is resolved. */
@@ -110,8 +113,11 @@ export type EnvelopeTail =
       ok: true;
       javascriptTemplatesEnabled?: boolean;
       templates?: readonly TemplateFileStatus[];
-      data?: unknown;
+      /** The object a Template reads as `zt`. */
+      zt?: unknown;
       markdown?: string;
+      language?: TemplateLanguage;
+      source?: string;
     });
 
 export function envelope(
@@ -172,7 +178,7 @@ export function templateFaultDiagnostic(
   error: unknown,
   options: {
     template: TemplateSlot | null;
-    compileErrors: ReadonlyMap<string, string>;
+    compileErrors: ReadonlyMap<string, CompileError>;
   },
 ): Diagnostic {
   const message = error instanceof Error ? error.message : String(error);
@@ -180,16 +186,28 @@ export function templateFaultDiagnostic(
     error instanceof TemplateError || error instanceof InertTemplateError
       ? (error.templateName ?? options.template)
       : options.template;
-  const details = named === null ? undefined : { template: named };
 
   if (error instanceof InertTemplateError) {
+    const details = named === null ? undefined : { template: named };
     return diagnostic("ETA_OPT_IN_REQUIRED", message, details);
   }
 
   const compileError =
     named === null ? undefined : options.compileErrors.get(named);
   if (compileError !== undefined) {
-    return diagnostic("TEMPLATE_COMPILE_ERROR", compileError, details);
+    return diagnostic(
+      "TEMPLATE_COMPILE_ERROR",
+      compileError.message,
+      named === null
+        ? undefined
+        : { template: named, context: compileError.context },
+    );
   }
-  return diagnostic("TEMPLATE_RENDER_ERROR", message, details);
+  return diagnostic(
+    "TEMPLATE_RENDER_ERROR",
+    message,
+    named === null
+      ? undefined
+      : { template: named, context: errorContext(error) },
+  );
 }

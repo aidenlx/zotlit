@@ -8,6 +8,7 @@ import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 
 import { InertTemplateError } from "@/services/template/errors";
 import { markInertPlaceholder } from "@/services/template/inert-placeholder";
+import { type CompileError } from "@/services/template/service";
 
 import {
   createTemplateWorkbenchHandlers,
@@ -15,6 +16,7 @@ import {
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
   TEMPLATE_SCHEMA_COMMAND,
+  TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
 import { DIAGNOSTIC_HINTS } from "./envelope";
@@ -26,8 +28,10 @@ const IDENTITY = {
   vault: { id: "Test Vault", path: "/vaults/test" },
   source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
 } as const;
-const NO_COMPILE_ERRORS = new Map<string, string>();
+const NO_COMPILE_ERRORS = new Map<string, CompileError>();
 const EMPTY_RENDER = () => "";
+const NO_ROOT_VARIABLES = () => null;
+const EMPTY_SOURCE = async () => "";
 
 const TEMPLATE_FILES = [
   {
@@ -125,6 +129,8 @@ describe("Template Workbench CLI", () => {
         },
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => {
           callOrder.push("settled");
           return "settled";
@@ -158,6 +164,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "timeout" as const,
       },
     });
@@ -192,6 +200,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled,
       },
     });
@@ -248,6 +258,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -270,7 +282,7 @@ describe("Template Workbench CLI", () => {
         format: "json",
       },
       identity: IDENTITY,
-      data: {
+      zt: {
         indexedKey: "ITEM2345",
         dateAdded: "2024-01-15T10:00:00Z",
         title: "Paper",
@@ -306,6 +318,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -340,6 +354,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -363,6 +379,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "init-failed" as const,
       },
     });
@@ -391,6 +409,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -400,7 +420,7 @@ describe("Template Workbench CLI", () => {
     expect(() => JSON.parse(output)).toThrow();
     expect(output).toContain("test ok");
     expect(output).toContain("follow diagnostic.hint");
-    for (const topic of ["data", "render", "editing", "eta"]) {
+    for (const topic of ["data", "render", "editing", "eta", "liquid"]) {
       expect(output).toContain(topic);
     }
   });
@@ -410,6 +430,7 @@ describe("Template Workbench CLI", () => {
     ["render", [...TEMPLATE_SLOT_NAMES]],
     ["editing", ["editablePath", "shadowedFiles"]],
     ["eta", ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED"]],
+    ["liquid", ["liquidjs", "zt", "bq"]],
   ] as const)("prints the %s guide topic", async (topic, facts) => {
     const handlers = createTemplateWorkbenchHandlers({
       getIdentity: () => IDENTITY,
@@ -420,6 +441,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -440,6 +463,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -494,6 +519,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -527,6 +554,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -577,6 +606,8 @@ describe("Template Workbench CLI", () => {
           getTemplateFileStatuses: () => TEMPLATE_FILES,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
       });
@@ -622,6 +653,8 @@ describe("Template Workbench CLI", () => {
           getTemplateFileStatuses: () => TEMPLATE_FILES,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled,
         },
       });
@@ -648,6 +681,8 @@ describe("Template Workbench CLI", () => {
           getTemplateFileStatuses: () => TEMPLATE_FILES,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
       });
@@ -678,6 +713,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -720,6 +757,8 @@ describe("Template Workbench CLI", () => {
           getTemplateFileStatuses: () => TEMPLATE_FILES,
           render,
           renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
       });
@@ -752,6 +791,8 @@ describe("Template Workbench CLI", () => {
           getTemplateFileStatuses: () => TEMPLATE_FILES,
           render,
           renderFilename,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
       });
@@ -782,6 +823,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: () => markdown,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -834,6 +877,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: (name, data) => templates.render(name, data),
         renderFilename: (data) => templates.render("filename", data),
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -860,6 +905,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "timeout" as const,
       },
     });
@@ -910,14 +957,14 @@ describe("Template Workbench CLI", () => {
     },
     {
       error: new Error("note cannot compile"),
-      compileErrors: new Map([["note", "Unexpected token"]]),
+      compileErrors: new Map([["note", { message: "Unexpected token" }]]),
       code: "TEMPLATE_COMPILE_ERROR",
       message: "Unexpected token",
       template: "note",
     },
     {
       error: new TemplateError('Template "content" not found', "content"),
-      compileErrors: new Map([["content", "Unknown filter"]]),
+      compileErrors: new Map([["content", { message: "Unknown filter" }]]),
       code: "TEMPLATE_COMPILE_ERROR",
       message: "Unknown filter",
       template: "content",
@@ -931,7 +978,7 @@ describe("Template Workbench CLI", () => {
     },
     {
       error: new Error("render failed: Unknown filter"),
-      compileErrors: new Map([["cite2", "Unknown filter"]]),
+      compileErrors: new Map([["cite2", { message: "Unknown filter" }]]),
       code: "TEMPLATE_RENDER_ERROR",
       message: "render failed: Unknown filter",
       template: "note",
@@ -950,6 +997,8 @@ describe("Template Workbench CLI", () => {
             throw error;
           },
           renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
       });
@@ -988,6 +1037,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render: () => "",
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -1022,6 +1073,8 @@ describe("Template Workbench CLI", () => {
         getTemplateFileStatuses: () => TEMPLATE_FILES,
         render,
         renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
     });
@@ -1077,6 +1130,8 @@ describe("Template Workbench CLI", () => {
           getTemplateFileStatuses: () => TEMPLATE_FILES,
           render,
           renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
       });
@@ -1097,4 +1152,263 @@ describe("Template Workbench CLI", () => {
       expect(render).not.toHaveBeenCalled();
     },
   );
+
+  describe("template-render root-variable warnings", () => {
+    it("reports a warning for a read of a root other than zt", async () => {
+      const templates = new TemplateFacade();
+      templates.define("note", "{{ title }}", "liquid");
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: (name, data) => templates.render(name, data),
+          renderFilename: (data) => templates.render("filename", data),
+          analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_RENDER_COMMAND]({
+        key: "ITEM2345",
+        template: "note",
+        format: "json",
+      });
+
+      const parsed = JSON.parse(output);
+      expect(parsed.ok).toBe(true);
+      expect(parsed.warnings).toHaveLength(1);
+      expect(parsed.warnings[0]).toContain("'title'");
+      expect(parsed.warnings[0]).toContain("zt.title");
+      expect(parsed.warnings[0]).toContain("line 1");
+    });
+
+    it("reports no warnings for a template reading only zt", async () => {
+      const templates = new TemplateFacade();
+      templates.define("note", "{{ zt.title }}", "liquid");
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: (name, data) => templates.render(name, data),
+          renderFilename: (data) => templates.render("filename", data),
+          analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_RENDER_COMMAND]({
+        key: "ITEM2345",
+        template: "note",
+        format: "json",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({ ok: true, warnings: [] });
+    });
+
+    it("leaves format=markdown byte-exact when a warning applies", async () => {
+      const templates = new TemplateFacade();
+      templates.define("note", "{{ zt.title }}", "liquid");
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: (name, data) => templates.render(name, data),
+          renderFilename: (data) => templates.render("filename", data),
+          analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_RENDER_COMMAND]({
+        key: "ITEM2345",
+        template: "note",
+        format: "markdown",
+      });
+
+      expect(output).toBe("Paper");
+    });
+  });
+
+  describe("template-source", () => {
+    it("returns the winning vault file body", async () => {
+      const getTemplateSource = vi.fn(async () => "vault body for note");
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_SOURCE_COMMAND]({
+        template: "note",
+      });
+
+      expect(JSON.parse(output)).toEqual({
+        contractVersion: 1,
+        command: TEMPLATE_SOURCE_COMMAND,
+        ok: true,
+        identity: IDENTITY,
+        template: {
+          name: "note",
+          language: "liquid",
+          source: { kind: "vault", path: "Templates/zotlit-note.liquid.md" },
+        },
+        source: "vault body for note",
+      });
+      expect(getTemplateSource).toHaveBeenCalledWith("note");
+    });
+
+    it("returns the embedded default body when no vault file exists", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: async () => "{{ zt.title }}",
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_SOURCE_COMMAND]({
+        template: "annotation",
+      });
+
+      const parsed = JSON.parse(output);
+      expect(parsed.ok).toBe(true);
+      expect(parsed.source).toContain("zt.");
+    });
+
+    it("rejects an unknown template name", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_SOURCE_COMMAND]({
+        template: "bogus",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 1,
+        command: TEMPLATE_SOURCE_COMMAND,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          details: { parameter: "template" },
+        },
+      });
+    });
+  });
+
+  describe("template fault .context excerpts", () => {
+    it("surfaces a render error's caret excerpt in details.context", async () => {
+      const error = new Error("Unknown filter: bogus") as Error & {
+        context: string;
+      };
+      error.context = "1| {{ zt.title | bogus }}\n         ^^^^^";
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: () => {
+            throw error;
+          },
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_RENDER_COMMAND]({
+        key: "ITEM2345",
+        template: "note",
+        format: "json",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "TEMPLATE_RENDER_ERROR",
+          details: { template: "note", context: error.context },
+        },
+      });
+    });
+
+    it("surfaces a recorded compile error's caret excerpt in details.context", async () => {
+      const context = "1| {{ zt.title\n         ^";
+      const handlers = createTemplateWorkbenchHandlers({
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: new Map([
+            ["note", { message: "Unexpected token", context }],
+          ]),
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: () => {
+            throw new Error("note cannot compile");
+          },
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_RENDER_COMMAND]({
+        key: "ITEM2345",
+        template: "note",
+        format: "json",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "TEMPLATE_COMPILE_ERROR",
+          message: "Unexpected token",
+          details: { template: "note", context },
+        },
+      });
+    });
+  });
 });

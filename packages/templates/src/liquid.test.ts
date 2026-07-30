@@ -506,3 +506,12 @@ describe("date filter", () => {
     ).toBe("15 Jun 2023");
   });
 });
+
+describe("strict filters", () => {
+  it("throws on an unknown filter, naming it with a line/col", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.parseAndRenderSync('{{ "a" | nosuchfilter }}', {}),
+    ).toThrow(/nosuchfilter.*line:\d+.*col:\d+/s);
+  });
+});

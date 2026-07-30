@@ -54,7 +54,7 @@ describe("zotlit:template-data with the real loader", () => {
 
       expect(result.ok).toBe(true);
       expect(
-        validate(result.data),
+        validate(result.zt),
         JSON.stringify(validate.errors, null, 2),
       ).toBe(true);
     },
@@ -82,7 +82,7 @@ describe("zotlit:template-data with the real loader", () => {
         vault: { id: "Test Vault" },
         source: { id: "a1b2c3d4" },
       },
-      data: {
+      zt: {
         key: "ANNA2345",
         indexedKey: "ANNA2345",
         citation: "Fixture citation",
@@ -141,7 +141,7 @@ describe("zotlit:template-data with the real loader", () => {
       await runTemplateData(fixture.deps, "GANN2345g42", "annotation"),
     ).toMatchObject({
       ok: true,
-      data: {
+      zt: {
         indexedKey: "GANN2345g42",
         parentItem: { indexedKey: "GRUP2345g42" },
       },
@@ -184,7 +184,7 @@ describe("zotlit:template-data with the real loader", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: {
+      zt: {
         key: "STAN2345",
         parentItem: null,
         citation: null,
@@ -222,7 +222,7 @@ describe("zotlit:template-data with the real loader", () => {
         vault: { id: "Test Vault" },
         source: { id: "a1b2c3d4" },
       },
-      data: {
+      zt: {
         indexedKey: "MAIN2345",
         notePath: "",
         noteLink: {
@@ -232,9 +232,7 @@ describe("zotlit:template-data with the real loader", () => {
         },
       },
     });
-    expect(
-      (result.data as Record<string, unknown>).annotations,
-    ).toBeUndefined();
+    expect((result.zt as Record<string, unknown>).annotations).toBeUndefined();
   });
 
   it.each([
@@ -251,7 +249,7 @@ describe("zotlit:template-data with the real loader", () => {
         await runTemplateData(fixture.deps, key, "filename"),
       ).toMatchObject({
         ok: true,
-        data: { indexedKey: itemKey },
+        zt: { indexedKey: itemKey },
       });
     },
   );
@@ -269,7 +267,7 @@ describe("zotlit:template-data with the real loader", () => {
     expect(result).toMatchObject({
       ok: true,
       request: { key, root: "note", format: "json" },
-      data: { indexedKey: itemKey },
+      zt: { indexedKey: itemKey },
     });
   });
 
@@ -316,7 +314,7 @@ describe("zotlit:template-data with the real loader", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: {
+      zt: {
         noteLink: {
           $helper: "noteLink",
           signature: "(alias?: string, subpath?: string) => string | null",
@@ -390,7 +388,7 @@ function createFixture(options?: {
         templates: {
           ready: Promise.resolve(),
           compileErrors: options?.compileError
-            ? new Map([["cite", options.compileError]])
+            ? new Map([["cite", { message: options.compileError }]])
             : new Map(),
           render: (name, data) => {
             if (options?.renderError) throw options.renderError;
@@ -432,6 +430,8 @@ async function runTemplateData(
       getTemplateFileStatuses: () => [],
       render: deps.templates.render,
       renderFilename: (data) => deps.templates.render("filename", data),
+      analyzeRootVariables: () => null,
+      getTemplateSource: async () => "",
       waitUntilSettled: async () => "settled" as const,
     },
   });
@@ -472,6 +472,8 @@ async function runTemplateRender(
       ],
       render: deps.templates.render,
       renderFilename: (data) => deps.templates.render("filename", data),
+      analyzeRootVariables: () => null,
+      getTemplateSource: async () => "",
       waitUntilSettled: async () => "settled" as const,
     },
   });

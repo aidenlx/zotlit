@@ -89,6 +89,23 @@ export function parseSchemaRequest(
   return { kind: "valid", value: root };
 }
 
+/** `template-source` selects a Template name and reads nothing item-backed. */
+export function parseSourceRequest(
+  params: CliData,
+): ParsedRequest<TemplateSlot> {
+  if (params.key !== undefined) {
+    return invalid("key", "template-source does not accept an item selector.");
+  }
+  const template = parseTemplateSlot(params.template);
+  if (template === null) {
+    return invalid(
+      "template",
+      `template must be ${quotedList(TEMPLATE_SLOT_NAMES)}.`,
+    );
+  }
+  return { kind: "valid", value: template };
+}
+
 /** `template-guide` prints the quickstart when `topic` is absent. */
 export function parseGuideRequest(
   params: CliData,

@@ -16,6 +16,7 @@ import {
 import {
   TemplateError,
   TemplateFacade,
+  type RootVariableUse,
   type TemplateLanguage,
 } from "@zotlit/templates/facade";
 import {
@@ -90,6 +91,23 @@ export interface TemplateFileStatus {
   compileError: string | null;
 }
 
+/** A recorded compile error: its message, and the liquidjs caret-annotated
+ *  source excerpt when the underlying error carried one. */
+export interface CompileError {
+  message: string;
+  context?: string;
+}
+
+/** The liquidjs caret-annotated source excerpt on `error`, when it carries one. */
+export function errorContext(error: unknown): string | undefined {
+  return error !== null &&
+    typeof error === "object" &&
+    "context" in error &&
+    typeof error.context === "string"
+    ? error.context
+    : undefined;
+}
+
 interface SettledWaiter {
   resolve: () => void;
 }
@@ -105,7 +123,7 @@ export class TemplateService extends Service<void> {
     transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
   });
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
-  readonly #compileErrors = new Map<string, string>();
+  readonly #compileErrors = new Map<string, CompileError>();
   /** Name → the winner {@link #reconcileName} last resolved it to, with the
    *  JavaScript Templates gate already applied. Read by
    *  {@link getTemplateFileStatuses}, so status reports the winner the
@@ -146,7 +164,7 @@ export class TemplateService extends Service<void> {
     this.ready = this.#load();
   }
 
-  get compileErrors(): ReadonlyMap<string, string> {
+  get compileErrors(): ReadonlyMap<string, CompileError> {
     return this.#compileErrors;
   }
 
@@ -191,7 +209,7 @@ export class TemplateService extends Service<void> {
           winner.source.kind === "vault" ? winner.source.path : liquidPath,
         shadowedFiles: shadowed ? [shadowed] : [],
         inertFiles: inert ? [inert] : [],
-        compileError: this.#compileErrors.get(name) ?? null,
+        compileError: this.#compileErrors.get(name)?.message ?? null,
       };
     });
   }
@@ -284,7 +302,10 @@ export class TemplateService extends Service<void> {
     }
     const compileError = this.#compileErrors.get(name);
     if (compileError !== undefined) {
-      throw new TemplateError(compileErrorMessage(name, compileError), name);
+      throw new TemplateError(
+        compileErrorMessage(name, compileError.message),
+        name,
+      );
     }
     try {
       return this.#facade.render(name, data);
@@ -305,6 +326,35 @@ export class TemplateService extends Service<void> {
    */
   renderFilename<T extends object>(data: T): string {
     return toSingleLine(this.render("filename", data));
+  }
+
+  /**
+   * Statically analyzes `name`'s own registered Liquid source and reports
+   * every root-level variable read, including `zt` — callers filter. See
+   * {@link TemplateFacade.analyzeRootVariables}.
+   *
+   * @returns `null` when `name` is unregistered or registered as Eta only.
+   */
+  analyzeRootVariables(name: string): RootVariableUse[] | null {
+    this.#requireLoaded("analyzeRootVariables");
+    return this.#facade.analyzeRootVariables(name);
+  }
+
+  /**
+   * The raw source text behind `name`'s current winner.
+   *
+   * @returns the vault file's content when a vault file wins, or the
+   *   packaged Liquid default body otherwise — the same body {@link render}
+   *   would compile.
+   */
+  async getTemplateSource(name: TemplateName): Promise<string> {
+    this.#requireLoaded("getTemplateSource");
+    const winner = this.#winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
+    if (winner.source.kind === "vault") {
+      const file = this.#app.vault.getFileByPath(winner.source.path);
+      if (file) return await this.#app.vault.cachedRead(file);
+    }
+    return DEFAULT_TEMPLATES[name];
   }
 
   /**
@@ -653,7 +703,10 @@ export class TemplateService extends Service<void> {
       this.#facade.define(name, content, language);
       this.#compileErrors.delete(name);
     } catch (error) {
-      this.#compileErrors.set(name, errorMessage(error));
+      this.#compileErrors.set(name, {
+        message: errorMessage(error),
+        context: errorContext(error),
+      });
       logger.warn("Failed to compile vault template", { error, name });
       this.#facade.remove(name, language);
     }
@@ -672,7 +725,10 @@ export class TemplateService extends Service<void> {
       this.#facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
       this.#compileErrors.delete(name);
     } catch (error) {
-      this.#compileErrors.set(name, errorMessage(error));
+      this.#compileErrors.set(name, {
+        message: errorMessage(error),
+        context: errorContext(error),
+      });
       logger.error("Built-in default template failed to compile", {
         error,
         name,
@@ -770,7 +826,7 @@ export class TemplateService extends Service<void> {
  */
 function classifyRenderFailure(
   error: unknown,
-  compileErrors: ReadonlyMap<string, string>,
+  compileErrors: ReadonlyMap<string, CompileError>,
   inertTemplates: ReadonlyMap<string, string>,
 ): Error {
   const chain = errorChain(error);
@@ -799,9 +855,11 @@ function classifyRenderFailure(
 
   const compileError = compileErrors.get(name);
   if (compileError !== undefined) {
-    return new TemplateError(compileErrorMessage(name, compileError), name, {
-      cause: error,
-    });
+    return new TemplateError(
+      compileErrorMessage(name, compileError.message),
+      name,
+      { cause: error },
+    );
   }
   return namedFailure;
 }

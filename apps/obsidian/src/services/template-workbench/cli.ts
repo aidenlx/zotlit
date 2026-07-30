@@ -1,4 +1,4 @@
-// The five Template Workbench commands and their response boundaries.
+// The Template Workbench commands and their response boundaries.
 
 import { type CliData, type CliHandler } from "obsidian";
 
@@ -7,9 +7,11 @@ import {
   type ContractRoot,
   type TemplateSlot,
 } from "@zotlit/db";
+import { type RootVariableUse } from "@zotlit/templates/facade";
 
 import { getLogger } from "@/lib/log";
 import {
+  type CompileError,
   type SettleOutcome,
   type TemplateFileStatus,
 } from "@/services/template/service";
@@ -22,7 +24,6 @@ import {
   initFailedDiagnostic,
   notSettledDiagnostic,
   templateFaultDiagnostic,
-  NO_WARNINGS,
   type Diagnostic,
   type WorkbenchCommand,
   type WorkbenchIdentity,
@@ -33,6 +34,7 @@ import {
   parseGuideRequest,
   parseRenderRequest,
   parseSchemaRequest,
+  parseSourceRequest,
   targetMismatch,
   type ParsedRequest,
 } from "./request";
@@ -51,6 +53,8 @@ export const TEMPLATE_RENDER_COMMAND =
   "zotlit:template-render" as const satisfies WorkbenchCommand;
 export const TEMPLATE_GUIDE_COMMAND =
   "zotlit:template-guide" as const satisfies WorkbenchCommand;
+export const TEMPLATE_SOURCE_COMMAND =
+  "zotlit:template-source" as const satisfies WorkbenchCommand;
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 const logger = getLogger("template-workbench");
@@ -64,11 +68,13 @@ interface TemplateWorkbenchDeps {
   settleTimeoutMs?: number;
   templates: {
     readonly javascriptTemplatesEnabled: boolean;
-    readonly compileErrors: ReadonlyMap<string, string>;
+    readonly compileErrors: ReadonlyMap<string, CompileError>;
     getTemplateFileStatuses: () => readonly TemplateFileStatus[];
     render: (name: string, data: object) => string;
     renderFilename: (data: object) => string;
     waitUntilSettled: (timeoutMs: number) => Promise<SettleOutcome>;
+    analyzeRootVariables: (name: string) => RootVariableUse[] | null;
+    getTemplateSource: (name: TemplateSlot) => Promise<string>;
   };
 }
 
@@ -77,7 +83,8 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_DATA_COMMAND
   | typeof TEMPLATE_SCHEMA_COMMAND
   | typeof TEMPLATE_RENDER_COMMAND
-  | typeof TEMPLATE_GUIDE_COMMAND,
+  | typeof TEMPLATE_GUIDE_COMMAND
+  | typeof TEMPLATE_SOURCE_COMMAND,
   CliHandler
 >;
 
@@ -207,7 +214,11 @@ export function createTemplateWorkbenchHandlers(
           });
         }
 
-        return envelope(TEMPLATE_DATA_COMMAND, { ok: true, ...echoed, data });
+        return envelope(TEMPLATE_DATA_COMMAND, {
+          ok: true,
+          ...echoed,
+          zt: data,
+        });
       },
     ),
 
@@ -222,7 +233,9 @@ export function createTemplateWorkbenchHandlers(
             deps.templates.getTemplateFileStatuses(),
             request.template,
           ),
-          warnings: NO_WARNINGS,
+          warnings: rootVariableWarnings(
+            deps.templates.analyzeRootVariables(request.template),
+          ),
         };
         const result = await deps.loadData(
           request.key,
@@ -282,7 +295,59 @@ export function createTemplateWorkbenchHandlers(
       }
       return TEMPLATE_SCHEMAS[request.value];
     },
+
+    [TEMPLATE_SOURCE_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseSourceRequest(params);
+      if (request.kind === "invalid") {
+        return envelope(TEMPLATE_SOURCE_COMMAND, {
+          ok: false,
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
+        });
+      }
+
+      const outcome = await deps.templates.waitUntilSettled(settleTimeoutMs);
+      if (outcome !== "settled") {
+        return envelope(TEMPLATE_SOURCE_COMMAND, {
+          ok: false,
+          diagnostic: settleDiagnostic(outcome),
+        });
+      }
+
+      const identity = await deps.getIdentity();
+      const template = templateIdentity(
+        deps.templates.getTemplateFileStatuses(),
+        request.value,
+      );
+      const source = await deps.templates.getTemplateSource(request.value);
+      return envelope(TEMPLATE_SOURCE_COMMAND, {
+        ok: true,
+        identity,
+        template,
+        source,
+      });
+    },
   };
+}
+
+/**
+ * The root-variable warnings a render answers with: one string per read of a
+ * root other than `zt`, the single root Template data lives under.
+ *
+ * @returns one warning string per non-`zt` root read; an empty array for
+ *   `null` (an Eta template, whose source this static analysis cannot see).
+ */
+function rootVariableWarnings(
+  uses: readonly RootVariableUse[] | null,
+): readonly string[] {
+  if (uses === null) return [];
+  return uses
+    .filter((use) => use.name !== "zt")
+    .map(
+      (use) =>
+        `line ${use.row}, col ${use.col}: '${use.path}' reads root variable '${use.name}', which is not defined — template data lives under 'zt.*' (write 'zt.${use.path}')`,
+    );
 }
 
 /**

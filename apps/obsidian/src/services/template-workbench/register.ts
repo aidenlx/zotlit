@@ -25,6 +25,7 @@ import {
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
   TEMPLATE_SCHEMA_COMMAND,
+  TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
 import { loadTemplateData } from "./data";
@@ -123,6 +124,16 @@ function renderFlags(): CliFlags {
   };
 }
 
+function sourceFlags(): CliFlags {
+  return {
+    template: {
+      value: choices(TEMPLATE_SLOT_NAMES),
+      description: m.cli_flag_template_desc(),
+      required: true,
+    },
+  };
+}
+
 export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
@@ -177,5 +188,11 @@ export function registerTemplateWorkbench(
     m.cli_template_guide_desc(),
     guideFlags(),
     handlers[TEMPLATE_GUIDE_COMMAND],
+  );
+  plugin.registerCliHandler(
+    TEMPLATE_SOURCE_COMMAND,
+    m.cli_template_source_desc(),
+    sourceFlags(),
+    handlers[TEMPLATE_SOURCE_COMMAND],
   );
 }

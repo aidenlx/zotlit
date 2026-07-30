@@ -26,6 +26,17 @@ import {
 import { TemplateEngine } from "./index";
 import { createLiquidEngine } from "./liquid";
 
+/** One root-variable read found by static analysis of a registered Liquid template. */
+export interface RootVariableUse {
+  /** Root segment of the variable path, e.g. `"title"` for `{{ title.x }}`. */
+  name: string;
+  /** Full dotted path as read, e.g. `"title.x"`. */
+  path: string;
+  /** 1-based source position of the read: `row` is the line, `col` the column. */
+  row: number;
+  col: number;
+}
+
 export type TemplateLanguage = "liquid" | "eta";
 
 export interface TemplateFacadeOptions {
@@ -176,6 +187,42 @@ export class TemplateFacade {
     language: FrontmatterLanguage,
   ): string | null {
     return validateFrontmatterExprImpl(expr, language, this.#liquid);
+  }
+
+  /**
+   * Statically analyzes a registered Liquid template's own source and
+   * reports every root-level variable read (including `zt` — callers
+   * filter). Analysis does not traverse `{% render %}`/`{% include %}`
+   * partials: the facade's in-memory `fs` returns synthetic bridge sources
+   * for those, not the partial's real content; an included template's own
+   * reads are found by calling this method with that template's name.
+   *
+   * @returns `null` when `name` is unregistered, or registered as Eta only;
+   *   otherwise every root-variable read found in the template's own source.
+   */
+  analyzeRootVariables(name: string): RootVariableUse[] | null {
+    const slot = this.#registry.get(name);
+    if (!slot?.liquid) return null;
+
+    const { globals } = this.#liquid.analyzeSync(slot.liquid, {
+      partials: false,
+    });
+    const uses: RootVariableUse[] = [];
+    for (const entries of Object.values(globals)) {
+      for (const entry of entries) {
+        // Segments are strings/numbers for a plain dotted path, or a nested
+        // `Variable` for a computed subscript (e.g. `x[y]`); `String(...)`
+        // stringifies a nested `Variable` through its own `toString`.
+        const segments = entry.segments;
+        uses.push({
+          name: String(segments[0]),
+          path: segments.map((segment) => String(segment)).join("."),
+          row: entry.location.row,
+          col: entry.location.col,
+        });
+      }
+    }
+    return uses;
   }
 
   #setOrDelete(name: string, slot: TemplateSlot): void {

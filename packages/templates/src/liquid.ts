@@ -177,6 +177,8 @@ export interface CreateLiquidEngineOptions {
  * off by default (`greedy: false`); a trailing `-%}` eats inline blanks plus
  * exactly one following newline (a blank line after it survives), while a
  * leading `{%-` eats only same-line indentation and never a bare newline.
+ * `strictFilters: true` turns an unknown filter into a render error instead
+ * of a silent pass-through.
  */
 export function createLiquidEngine({
   fs,
@@ -189,6 +191,7 @@ export function createLiquidEngine({
     greedy: false,
     relativeReference: false,
     outputEscape: coerceOutput,
+    strictFilters: true,
   });
 
   engine.registerTag("bq", BqTag);

@@ -325,6 +325,7 @@
   "cli_template_schema_desc": "返回 ZotLit 模板数据架构",
   "cli_template_render_desc": "在内存中渲染当前生效的 ZotLit 模板",
   "cli_template_guide_desc": "输出 ZotLit 模板工作台指南",
+  "cli_template_source_desc": "返回当前生效的 ZotLit 模板正文",
   "cli_flag_key_desc": "Zotero 对象的索引键",
   "cli_flag_root_desc": "模板数据根",
   "cli_flag_format_desc": "输出格式",

@@ -353,7 +353,8 @@ function renderEjectableRow(
   );
   const file = liquidFile ?? etaFile;
 
-  const compileError = ctx.plugin.services.template.compileErrors.get(name);
+  const compileError =
+    ctx.plugin.services.template.compileErrors.get(name)?.message;
   const desc = document.createDocumentFragment();
   desc.append(TEMPLATE_META[name].desc());
   desc.append(document.createElement("br"));

@@ -15,6 +15,9 @@ const ETA_OPT_IN_REQUIRED: DiagnosticCode = "ETA_OPT_IN_REQUIRED";
 
 const DATA_SECTION = `Template data
 
+Every Template reads its data under the single root variable zt: write {{ zt.title }},
+{{ zt.annotations }}. The schema for a root describes the shape of zt.
+
 Root values: ${quotedList(CONTRACT_ROOT_NAMES)}.
 
 Every value the Workbench returns is serialized JSON, not the live runtime object:
@@ -55,6 +58,8 @@ const EDITING_SECTION = `Template editing
 - winner.source.path (from template-status) is the file currently active for a
   Template name; editablePath is the vault path to edit or create when no vault file
   is active yet.
+- template-source returns the winning Template body, including the built-in default
+  when no vault file exists; start an edit from that body.
 - Read the active file before you edit it, and keep unrelated content.
 - Write with a vault-aware operation so Obsidian observes the change in process; a
   write made outside Obsidian is picked up only once Obsidian notices the file.
@@ -73,12 +78,29 @@ const ETA_SECTION = `Eta templates
 - A Liquid file wins over an Eta file for the same name; check shadowedFiles and
   inertFiles in status before assuming an Eta edit is active.`;
 
+const LIQUID_SECTION = `Liquid dialect
+
+- The engine is liquidjs with the complete standard Liquid feature set: ranges
+  ((0..8)), where, group_by, and every builtin tag and filter work.
+- All data lives under the single root zt. A Template that reads any other root
+  name renders empty output, and template-render reports each such read in
+  warnings.
+- An unknown filter is a render error.
+- ZotLit tags: {% bq %}...{% endbq %} wraps its body as a Markdown blockquote;
+  {% suffix length, prepend, append %} emits a filename-suffix placeholder.
+- ZotLit filters: embed, file_link, note_link, img_link, note_links,
+  collection_paths; the date filter also accepts Temporal values and Zotero
+  multipart dates.
+- Whitespace trimming is not greedy: a trailing -%} eats inline blanks plus
+  exactly one following newline; a leading {%- eats only same-line indentation.`;
+
 /** Canonical `topic` registry for `template-guide`. */
 export const GUIDE_TOPICS = {
   data: DATA_SECTION,
   render: RENDER_SECTION,
   editing: EDITING_SECTION,
   eta: ETA_SECTION,
+  liquid: LIQUID_SECTION,
 } as const satisfies Record<string, string>;
 
 export type GuideTopic = keyof typeof GUIDE_TOPICS;
@@ -99,6 +121,8 @@ const TOPIC_SUMMARIES = {
   render: "root inference, byte fidelity, and compile settling.",
   editing: "the editable path, read-before-edit, and vault-aware writes.",
   eta: "the JavaScript Templates gate and Eta's inert behavior.",
+  liquid:
+    "the liquidjs engine, the zt data root, and the ZotLit tags and filters.",
 } as const satisfies Record<GuideTopic, string>;
 
 const TOPIC_INDEX = GUIDE_TOPIC_NAMES.map(
@@ -114,9 +138,13 @@ const QUICKSTART = `ZotLit Template Workbench quickstart
    Read the bundled JSON Schema for one data root.
 3. obsidian zotlit:template-data key=<indexed-key> root=<${CONTRACT_ROOT_NAMES.join("|")}> format=json
    Inspect the exact serialized data for one Zotero object.
-4. Edit the active Template file, at winner.source.path or editablePath from status.
-5. obsidian zotlit:template-render key=<indexed-key> template=<${TEMPLATE_SLOT_NAMES.join("|")}> format=<markdown|json>
-   Render the edited Template in memory.
+   Templates read this object as the single root variable zt — write zt.<field>.
+4. obsidian zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
+   Read the active Template body (vault file or built-in default) before you edit.
+5. Edit the active Template file, at winner.source.path or editablePath from status.
+6. obsidian zotlit:template-render key=<indexed-key> template=<${TEMPLATE_SLOT_NAMES.join("|")}> format=<markdown|json>
+   Render the edited Template in memory. Use format=json in the edit loop: test ok
+   and read warnings.
 
 Envelope rule: test ok on every JSON response. On ok: false, follow diagnostic.hint.
 
