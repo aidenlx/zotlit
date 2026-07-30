@@ -164,6 +164,7 @@ function schemaFor(type: ContractType, context: SchemaContext): JsonSchema {
               $helper: { const: type.name },
               signature: { const: type.signature },
               value: schemaFor(type.value, context),
+              error: { type: "string" },
             },
             required: ["$helper", "signature", "value"],
             additionalProperties: false,

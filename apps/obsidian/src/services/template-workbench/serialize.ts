@@ -65,10 +65,11 @@ function serializeValue(value: unknown, context: SerializeContext): unknown {
     }
 
     let result: unknown = null;
+    let helperError: string | undefined;
     try {
       result = (value as (...args: unknown[]) => unknown)() ?? null;
-    } catch {
-      result = null;
+    } catch (error) {
+      helperError = error instanceof Error ? error.message : String(error);
     }
     return {
       $helper: contractHelper.name,
@@ -78,6 +79,7 @@ function serializeValue(value: unknown, context: SerializeContext): unknown {
         active,
         contractType: contractHelper.value,
       }),
+      ...(helperError === undefined ? {} : { error: helperError }),
     };
   }
 

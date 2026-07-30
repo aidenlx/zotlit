@@ -101,6 +101,7 @@ export interface ContractStringified {
 /**
  * A function-valued member. It serializes as
  * `{"$helper": name, "signature": signature, "value": <call result>}`.
+ * A failed zero-argument call also carries its error message in `error`.
  */
 export interface ContractHelper {
   kind: "helper";

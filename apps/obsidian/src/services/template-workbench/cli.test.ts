@@ -301,6 +301,47 @@ describe("Template Workbench CLI", () => {
     expect(wouldWrite).not.toHaveBeenCalled();
   });
 
+  it("preserves a helper evaluation error in its marker", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({
+        kind: "data",
+        data: {
+          noteLink: () => {
+            throw new Error("note lookup failed");
+          },
+        },
+      }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_DATA_COMMAND]({
+      key: "ITEM2345",
+      root: "note",
+      format: "json",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      zt: {
+        noteLink: {
+          $helper: "noteLink",
+          value: null,
+          error: "note lookup failed",
+        },
+      },
+    });
+  });
+
   it("names no template for a note-root data fault", async () => {
     const handlers = createTemplateWorkbenchHandlers({
       getIdentity: () => IDENTITY,

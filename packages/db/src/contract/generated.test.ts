@@ -108,6 +108,7 @@ describe("serialized forms", () => {
           const: "(alias?: string, subpath?: string) => string | null",
         },
         value: { type: ["string", "null"] },
+        error: { type: "string" },
       },
       required: ["$helper", "signature", "value"],
       additionalProperties: false,

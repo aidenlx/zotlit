@@ -55,6 +55,9 @@
                 },
                 "value": {
                   "type": ["string", "null"]
+                },
+                "error": {
+                  "type": "string"
                 }
               },
               "required": ["$helper", "signature", "value"],
@@ -1679,6 +1682,9 @@
                     },
                     "value": {
                       "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
                     }
                   },
                   "required": ["$helper", "signature", "value"],
@@ -1719,6 +1725,9 @@
                 },
                 "value": {
                   "type": ["string", "null"]
+                },
+                "error": {
+                  "type": "string"
                 }
               },
               "required": ["$helper", "signature", "value"],
@@ -1918,6 +1927,9 @@
                 },
                 "value": {
                   "type": ["string", "null"]
+                },
+                "error": {
+                  "type": "string"
                 }
               },
               "required": ["$helper", "signature", "value"],
@@ -2009,6 +2021,9 @@
                 },
                 "value": {
                   "type": ["string", "null"]
+                },
+                "error": {
+                  "type": "string"
                 }
               },
               "required": ["$helper", "signature", "value"],
@@ -3886,6 +3901,9 @@
                   "const": "(alias?: string, subpath?: string) => string"
                 },
                 "value": {
+                  "type": "string"
+                },
+                "error": {
                   "type": "string"
                 }
               },

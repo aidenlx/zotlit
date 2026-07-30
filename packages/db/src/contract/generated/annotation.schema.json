@@ -29,6 +29,9 @@
                     },
                     "value": {
                       "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
                     }
                   },
                   "required": ["$helper", "signature", "value"],
@@ -69,6 +72,9 @@
                 },
                 "value": {
                   "type": ["string", "null"]
+                },
+                "error": {
+                  "type": "string"
                 }
               },
               "required": ["$helper", "signature", "value"],
@@ -238,6 +244,9 @@
                 },
                 "value": {
                   "type": ["string", "null"]
+                },
+                "error": {
+                  "type": "string"
                 }
               },
               "required": ["$helper", "signature", "value"],
@@ -2117,6 +2126,9 @@
                 },
                 "value": {
                   "type": ["string", "null"]
+                },
+                "error": {
+                  "type": "string"
                 }
               },
               "required": ["$helper", "signature", "value"],
