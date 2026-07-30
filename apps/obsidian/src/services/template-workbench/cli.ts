@@ -1,4 +1,4 @@
-// The four Template Workbench commands: one selector gate, then one envelope each.
+// The five Template Workbench commands and their response boundaries.
 
 import { type CliData, type CliHandler } from "obsidian";
 
@@ -17,9 +17,9 @@ import {
 import { type TemplateDataLoadResult } from "./data";
 import {
   dataLoadDiagnostic,
+  diagnostic,
   envelope,
   initFailedDiagnostic,
-  invalidSelectorDiagnostic,
   notSettledDiagnostic,
   templateFaultDiagnostic,
   NO_WARNINGS,
@@ -27,8 +27,10 @@ import {
   type WorkbenchCommand,
   type WorkbenchIdentity,
 } from "./envelope";
+import { renderGuide } from "./guide";
 import {
   parseDataRequest,
+  parseGuideRequest,
   parseRenderRequest,
   parseSchemaRequest,
   targetMismatch,
@@ -47,6 +49,8 @@ export const TEMPLATE_SCHEMA_COMMAND =
   "zotlit:template-schema" as const satisfies WorkbenchCommand;
 export const TEMPLATE_RENDER_COMMAND =
   "zotlit:template-render" as const satisfies WorkbenchCommand;
+export const TEMPLATE_GUIDE_COMMAND =
+  "zotlit:template-guide" as const satisfies WorkbenchCommand;
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 const logger = getLogger("template-workbench");
@@ -72,7 +76,8 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_STATUS_COMMAND
   | typeof TEMPLATE_DATA_COMMAND
   | typeof TEMPLATE_SCHEMA_COMMAND
-  | typeof TEMPLATE_RENDER_COMMAND,
+  | typeof TEMPLATE_RENDER_COMMAND
+  | typeof TEMPLATE_GUIDE_COMMAND,
   CliHandler
 >;
 
@@ -105,10 +110,9 @@ export function createTemplateWorkbenchHandlers(
       if (request.kind === "invalid") {
         return envelope(command, {
           ok: false,
-          diagnostic: invalidSelectorDiagnostic(
-            request.parameter,
-            request.message,
-          ),
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
         });
       }
 
@@ -253,15 +257,27 @@ export function createTemplateWorkbenchHandlers(
       },
     ),
 
+    [TEMPLATE_GUIDE_COMMAND]: (params: CliData): string => {
+      const request = parseGuideRequest(params);
+      if (request.kind === "invalid") {
+        return envelope(TEMPLATE_GUIDE_COMMAND, {
+          ok: false,
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
+        });
+      }
+      return renderGuide(request.value);
+    },
+
     [TEMPLATE_SCHEMA_COMMAND]: (params: CliData): string => {
       const request = parseSchemaRequest(params);
       if (request.kind === "invalid") {
         return envelope(TEMPLATE_SCHEMA_COMMAND, {
           ok: false,
-          diagnostic: invalidSelectorDiagnostic(
-            request.parameter,
-            request.message,
-          ),
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
         });
       }
       return TEMPLATE_SCHEMAS[request.value];

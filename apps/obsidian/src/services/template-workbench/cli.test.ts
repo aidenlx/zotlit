@@ -12,10 +12,14 @@ import { markInertPlaceholder } from "@/services/template/inert-placeholder";
 import {
   createTemplateWorkbenchHandlers,
   TEMPLATE_DATA_COMMAND,
+  TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
   TEMPLATE_SCHEMA_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
+import { DIAGNOSTIC_HINTS } from "./envelope";
+import { TEMPLATE_SLOT_NAMES } from "./request";
+import { CONTRACT_ROOT_NAMES } from "./schema";
 import { ContractMetadataError } from "./serialize";
 
 const IDENTITY = {
@@ -167,6 +171,7 @@ describe("Template Workbench CLI", () => {
       diagnostic: {
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation did not settle within 25 ms.",
+        hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
       },
     });
     expect(getIdentity).not.toHaveBeenCalled();
@@ -210,6 +215,7 @@ describe("Template Workbench CLI", () => {
       diagnostic: {
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation did not settle within 25 ms.",
+        hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
       },
     });
     expect(waitUntilSettled).toHaveBeenCalledWith(25);
@@ -315,6 +321,7 @@ describe("Template Workbench CLI", () => {
       diagnostic: {
         code: "TEMPLATE_RENDER_ERROR",
         message: "title lookup failed",
+        hint: DIAGNOSTIC_HINTS.TEMPLATE_RENDER_ERROR,
       },
     });
     expect(JSON.parse(output).diagnostic).not.toHaveProperty("details");
@@ -369,6 +376,84 @@ describe("Template Workbench CLI", () => {
       diagnostic: {
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation failed to start; check the plugin log.",
+        hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
+      },
+    });
+  });
+
+  it("prints the quickstart and topic index as literal text", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_GUIDE_COMMAND]({});
+
+    expect(() => JSON.parse(output)).toThrow();
+    expect(output).toContain("test ok");
+    expect(output).toContain("follow diagnostic.hint");
+    for (const topic of ["data", "render", "editing", "eta"]) {
+      expect(output).toContain(topic);
+    }
+  });
+
+  it.each([
+    ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
+    ["render", [...TEMPLATE_SLOT_NAMES]],
+    ["editing", ["editablePath", "shadowedFiles"]],
+    ["eta", ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED"]],
+  ] as const)("prints the %s guide topic", async (topic, facts) => {
+    const handlers = createTemplateWorkbenchHandlers({
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic });
+
+    expect(() => JSON.parse(output)).toThrow();
+    for (const fact of facts) expect(output).toContain(fact);
+  });
+
+  it("rejects an invalid guide topic", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic: "bogus" });
+
+    expect(JSON.parse(output)).toMatchObject({
+      contractVersion: 1,
+      command: TEMPLATE_GUIDE_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+        details: { parameter: "topic" },
       },
     });
   });
@@ -421,6 +506,7 @@ describe("Template Workbench CLI", () => {
       ok: false,
       diagnostic: {
         code: "INVALID_SELECTOR",
+        hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
         details: { parameter },
       },
     });
@@ -457,7 +543,11 @@ describe("Template Workbench CLI", () => {
       ok: false,
       request: { key: "ITEM2345", root: "note", format: "json" },
       identity: IDENTITY,
-      diagnostic: { code, details: { key: "ITEM2345" } },
+      diagnostic: {
+        code,
+        hint: DIAGNOSTIC_HINTS[code],
+        details: { key: "ITEM2345" },
+      },
     });
   });
 
@@ -505,6 +595,7 @@ describe("Template Workbench CLI", () => {
         identity: IDENTITY,
         diagnostic: {
           code: "TARGET_MISMATCH",
+          hint: DIAGNOSTIC_HINTS.TARGET_MISMATCH,
           details: { target, expected, actual },
         },
       });
@@ -570,6 +661,7 @@ describe("Template Workbench CLI", () => {
         diagnostic: {
           code: "INVALID_SELECTOR",
           message: "root must be 'note', 'annotation', or 'filename'.",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter: "root" },
         },
       });
@@ -602,6 +694,7 @@ describe("Template Workbench CLI", () => {
       diagnostic: {
         code: "INVALID_SELECTOR",
         message: "template-schema does not accept an item selector.",
+        hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
         details: { parameter: "key" },
       },
     });
@@ -790,6 +883,7 @@ describe("Template Workbench CLI", () => {
       diagnostic: {
         code: "TEMPLATE_NOT_READY",
         message: "Template compilation did not settle within 25 ms.",
+        hint: DIAGNOSTIC_HINTS.TEMPLATE_NOT_READY,
       },
     });
     expect(loadData).not.toHaveBeenCalled();
@@ -873,6 +967,7 @@ describe("Template Workbench CLI", () => {
         diagnostic: {
           code,
           message,
+          hint: DIAGNOSTIC_HINTS[code],
           details: { template },
         },
       });
@@ -907,7 +1002,11 @@ describe("Template Workbench CLI", () => {
       contractVersion: 1,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
-      diagnostic: { code, details: { key: "ITEM2345" } },
+      diagnostic: {
+        code,
+        hint: DIAGNOSTIC_HINTS[code],
+        details: { key: "ITEM2345" },
+      },
     });
   });
 
@@ -940,6 +1039,7 @@ describe("Template Workbench CLI", () => {
       ok: false,
       diagnostic: {
         code: "TARGET_MISMATCH",
+        hint: DIAGNOSTIC_HINTS.TARGET_MISMATCH,
         details: { target: "vault" },
       },
     });
@@ -989,6 +1089,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter },
         },
       });

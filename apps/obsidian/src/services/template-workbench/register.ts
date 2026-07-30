@@ -1,8 +1,8 @@
 // Registers the Workbench commands with Obsidian's CLI.
 //
 // Flag and command help text is localized: it is UI text a user reads while
-// discovering the commands. Diagnostic prose inside a response stays literal
-// English, since `code` is the machine surface agent scripts read.
+// discovering the commands. Guide output and diagnostic prose inside a response
+// stay literal English, since `code` is the machine surface agent scripts read.
 
 import {
   type App,
@@ -22,11 +22,13 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import {
   createTemplateWorkbenchHandlers,
   TEMPLATE_DATA_COMMAND,
+  TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
   TEMPLATE_SCHEMA_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
 import { loadTemplateData } from "./data";
+import { GUIDE_TOPIC_NAMES } from "./guide";
 import { TEMPLATE_SLOT_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 
@@ -99,6 +101,15 @@ function schemaFlags(): CliFlags {
   return { root: rootFlag() };
 }
 
+function guideFlags(): CliFlags {
+  return {
+    topic: {
+      value: choices(GUIDE_TOPIC_NAMES),
+      description: m.cli_flag_topic_desc(),
+    },
+  };
+}
+
 function renderFlags(): CliFlags {
   return {
     key: keyFlag(),
@@ -160,5 +171,11 @@ export function registerTemplateWorkbench(
     m.cli_template_render_desc(),
     renderFlags(),
     handlers[TEMPLATE_RENDER_COMMAND],
+  );
+  plugin.registerCliHandler(
+    TEMPLATE_GUIDE_COMMAND,
+    m.cli_template_guide_desc(),
+    guideFlags(),
+    handlers[TEMPLATE_GUIDE_COMMAND],
   );
 }

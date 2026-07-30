@@ -9,8 +9,16 @@ import {
   type TemplateSlot,
 } from "@zotlit/db";
 
-import { type Diagnostic, type WorkbenchIdentity } from "./envelope";
+import {
+  diagnostic,
+  type Diagnostic,
+  type WorkbenchIdentity,
+} from "./envelope";
+import { GUIDE_TOPIC_NAMES, parseGuideTopic, type GuideTopic } from "./guide";
 import { CONTRACT_ROOT_NAMES, parseContractRoot } from "./schema";
+import { quotedList, TEMPLATE_SLOT_NAMES } from "./vocabulary";
+
+export { TEMPLATE_SLOT_NAMES };
 
 /** A parsed selector, or the one parameter that made it invalid. */
 export type ParsedRequest<T> =
@@ -28,11 +36,6 @@ export interface RenderRequest {
   template: TemplateSlot;
   format: "markdown" | "json";
 }
-
-/** The accepted `template` values, in the order selector messages list them. */
-export const TEMPLATE_SLOT_NAMES = Object.keys(
-  TEMPLATE_SLOT_ROOTS,
-) as readonly TemplateSlot[];
 
 export function parseDataRequest(params: CliData): ParsedRequest<DataRequest> {
   const key = selectorKey(params);
@@ -86,6 +89,18 @@ export function parseSchemaRequest(
   return { kind: "valid", value: root };
 }
 
+/** `template-guide` prints the quickstart when `topic` is absent. */
+export function parseGuideRequest(
+  params: CliData,
+): ParsedRequest<GuideTopic | null> {
+  if (params.topic === undefined) return { kind: "valid", value: null };
+  const topic = parseGuideTopic(params.topic);
+  if (topic === null) {
+    return invalid("topic", `topic must be ${quotedList(GUIDE_TOPIC_NAMES)}.`);
+  }
+  return { kind: "valid", value: topic };
+}
+
 /**
  * Report the vault or Zotero source the caller asserted when it differs from
  * the connected one, so an authoring loop stops before it reads or renders
@@ -97,39 +112,30 @@ export function targetMismatch(
 ): Diagnostic | null {
   const expectedVault = params["expect-vault"];
   if (expectedVault !== undefined && expectedVault !== identity.vault.id) {
-    return {
-      code: "TARGET_MISMATCH",
-      message: `Expected vault '${expectedVault}', connected to '${identity.vault.id}'.`,
-      details: {
+    return diagnostic(
+      "TARGET_MISMATCH",
+      `Expected vault '${expectedVault}', connected to '${identity.vault.id}'.`,
+      {
         target: "vault",
         expected: expectedVault,
         actual: identity.vault.id,
       },
-    };
+    );
   }
 
   const expectedSource = params["expect-source"];
   if (expectedSource !== undefined && expectedSource !== identity.source.id) {
-    return {
-      code: "TARGET_MISMATCH",
-      message: `Expected Zotero source '${expectedSource}', connected to '${identity.source.id ?? "unresolved"}'.`,
-      details: {
+    return diagnostic(
+      "TARGET_MISMATCH",
+      `Expected Zotero source '${expectedSource}', connected to '${identity.source.id ?? "unresolved"}'.`,
+      {
         target: "source",
         expected: expectedSource,
         actual: identity.source.id,
       },
-    };
+    );
   }
   return null;
-}
-
-/** `'a', 'b', or 'c'` — the phrasing every vocabulary message uses. */
-function quotedList(names: readonly string[]): string {
-  const quoted = names.map((name) => `'${name}'`);
-  const last = quoted.at(-1) ?? "";
-  return quoted.length > 1
-    ? `${quoted.slice(0, -1).join(", ")}, or ${last}`
-    : last;
 }
 
 /**

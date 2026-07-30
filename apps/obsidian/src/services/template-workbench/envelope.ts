@@ -1,8 +1,9 @@
 // The JSON envelope every Workbench command answers with, and its diagnostics.
 //
-// Diagnostic `message` text stays literal English: `code` is the stable machine
-// surface agent scripts read, and the message is context for a human reading
-// the transcript. Command and flag help text is localized (see `register.ts`).
+// Diagnostic `message` and `hint` text stays literal English: `code` is the
+// stable machine surface agent scripts read, the message is context for a human
+// reading the transcript, and the hint is the recovery action the agent acts on.
+// Command and flag help text is localized (see `register.ts`).
 
 import { CONTRACT_VERSION, type TemplateSlot } from "@zotlit/db";
 import { TemplateError } from "@zotlit/templates/facade";
@@ -24,21 +25,39 @@ export interface WorkbenchIdentity {
   };
 }
 
-/** The nine documented diagnostic codes of contract version 1. */
-export type DiagnosticCode =
-  | "INVALID_SELECTOR"
-  | "TARGET_MISMATCH"
-  | "TEMPLATE_NOT_READY"
-  | "KEY_NOT_FOUND"
-  | "NO_PARENT_ITEM"
-  | "ANNOTATION_REQUIRED"
-  | "ETA_OPT_IN_REQUIRED"
-  | "TEMPLATE_COMPILE_ERROR"
-  | "TEMPLATE_RENDER_ERROR";
+/**
+ * The nine documented diagnostic codes of contract version 1, each defined with
+ * the recovery action its diagnostic carries. This record is the single source
+ * of both, so a new code arrives with its own hint.
+ */
+export const DIAGNOSTIC_HINTS = {
+  INVALID_SELECTOR:
+    "Correct the parameter named in details.parameter, then run the command again.",
+  TARGET_MISMATCH:
+    "Confirm the intended vault and Zotero source with the user before you read or render again.",
+  TEMPLATE_NOT_READY:
+    "Run the command again after a short wait; when the message reports a failed start, ask the user to check the plugin log.",
+  KEY_NOT_FOUND:
+    "Select an Indexed Key that exists in the connected Zotero source.",
+  NO_PARENT_ITEM:
+    "Select the parent Item, or a child object that has a parent Item.",
+  ANNOTATION_REQUIRED:
+    "Select an Annotation key for the annotation root, or select another root.",
+  ETA_OPT_IN_REQUIRED:
+    "Use a Liquid Template, or ask the user to enable JavaScript Templates in ZotLit settings.",
+  TEMPLATE_COMPILE_ERROR:
+    "Correct the syntax of the Template named in details.template, then render again.",
+  TEMPLATE_RENDER_ERROR:
+    "Read the message to find the failed expression, correct the Template or the selected object, then run the command again.",
+} as const satisfies Record<string, string>;
+
+export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 
 export interface Diagnostic {
   code: DiagnosticCode;
   message: string;
+  /** The recovery action for `code`, taken from `DIAGNOSTIC_HINTS`. */
+  hint: string;
   details?:
     | { parameter: string }
     | { target: "vault" | "source"; expected: string; actual: string | null }
@@ -46,16 +65,29 @@ export interface Diagnostic {
     | { template: string };
 }
 
+/**
+ * Report a fault with the recovery action its code defines. Every diagnostic is
+ * built here, so `hint` can never disagree with `code`.
+ */
+export function diagnostic(
+  code: DiagnosticCode,
+  message: string,
+  details?: Diagnostic["details"],
+): Diagnostic {
+  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
+}
+
 /** Reserved by contract version 1: `warnings` is documented, always present on
  *  a render response, and always empty. */
 export const NO_WARNINGS: readonly string[] = [];
 
-/** The four commands the Workbench answers. */
+/** The five commands the Workbench answers. */
 export type WorkbenchCommand = `zotlit:template-${
   | "status"
   | "data"
   | "schema"
-  | "render"}`;
+  | "render"
+  | "guide"}`;
 
 /** The facts a command echoes back beside its result, all optional because a
  *  selector-level failure is answered before any of them is resolved. */
@@ -93,25 +125,18 @@ function json(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-export function invalidSelectorDiagnostic(
-  parameter: string,
-  message: string,
-): Diagnostic {
-  return { code: "INVALID_SELECTOR", message, details: { parameter } };
-}
-
 export function notSettledDiagnostic(timeoutMs: number): Diagnostic {
-  return {
-    code: "TEMPLATE_NOT_READY",
-    message: `Template compilation did not settle within ${timeoutMs} ms.`,
-  };
+  return diagnostic(
+    "TEMPLATE_NOT_READY",
+    `Template compilation did not settle within ${timeoutMs} ms.`,
+  );
 }
 
 export function initFailedDiagnostic(): Diagnostic {
-  return {
-    code: "TEMPLATE_NOT_READY",
-    message: "Template compilation failed to start; check the plugin log.",
-  };
+  return diagnostic(
+    "TEMPLATE_NOT_READY",
+    "Template compilation failed to start; check the plugin log.",
+  );
 }
 
 export function dataLoadDiagnostic(
@@ -123,16 +148,15 @@ export function dataLoadDiagnostic(
     "no-parent-item": "NO_PARENT_ITEM",
     "annotation-required": "ANNOTATION_REQUIRED",
   } as const;
-  return {
-    code: code[result.kind],
-    message:
-      result.kind === "not-found"
-        ? `No Zotero object matches '${key}'.`
-        : result.kind === "no-parent-item"
-          ? `The Zotero object '${key}' has no parent Item.`
-          : `The Zotero object '${key}' is not an Annotation.`,
-    details: { key },
-  };
+  return diagnostic(
+    code[result.kind],
+    result.kind === "not-found"
+      ? `No Zotero object matches '${key}'.`
+      : result.kind === "no-parent-item"
+        ? `The Zotero object '${key}' has no parent Item.`
+        : `The Zotero object '${key}' is not an Annotation.`,
+    { key },
+  );
 }
 
 /**
@@ -159,13 +183,13 @@ export function templateFaultDiagnostic(
   const details = named === null ? undefined : { template: named };
 
   if (error instanceof InertTemplateError) {
-    return { code: "ETA_OPT_IN_REQUIRED", message, details };
+    return diagnostic("ETA_OPT_IN_REQUIRED", message, details);
   }
 
   const compileError =
     named === null ? undefined : options.compileErrors.get(named);
   if (compileError !== undefined) {
-    return { code: "TEMPLATE_COMPILE_ERROR", message: compileError, details };
+    return diagnostic("TEMPLATE_COMPILE_ERROR", compileError, details);
   }
-  return { code: "TEMPLATE_RENDER_ERROR", message, details };
+  return diagnostic("TEMPLATE_RENDER_ERROR", message, details);
 }
