@@ -471,6 +471,9 @@ describe("Template Workbench CLI", () => {
     expect(() => JSON.parse(output)).toThrow();
     expect(output).toContain("test ok");
     expect(output).toContain("follow diagnostic.hint");
+    expect(output).toContain("expect-source=<identity.source.id>");
+    expect(output).toContain("root=note and zt.annotations");
+    expect(output).toContain("output can be very large");
     expect(output).toContain(
       "https://zotlit.aidenlx.site/docs/reference/templates",
     );
@@ -484,7 +487,7 @@ describe("Template Workbench CLI", () => {
     ["render", [...TEMPLATE_SLOT_NAMES]],
     ["editing", ["editablePath", "shadowedFiles"]],
     ["eta", ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED"]],
-    ["liquid", ["liquidjs", "zt", "bq"]],
+    ["liquid", ["liquidjs", "zt", "bq", "group_by"]],
   ] as const)("prints the %s guide topic", async (topic, facts) => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,

@@ -5,6 +5,7 @@ import {
   filters,
   Liquid,
   Tag,
+  tags,
   type Context,
   type Emitter,
   type FS,
@@ -33,6 +34,14 @@ interface ItemDateLike {
   day: number | null;
   toString(): string;
 }
+
+export const LIQUID_BUILTIN_FILTER_NAMES: readonly string[] = Object.freeze(
+  Object.keys(filters).sort(),
+);
+
+export const LIQUID_BUILTIN_TAG_NAMES: readonly string[] = Object.freeze(
+  Object.keys(tags).sort(),
+);
 
 const ITEM_DATE_KINDS: ReadonlySet<unknown> = new Set([
   "date",
