@@ -84,7 +84,9 @@ export function getAnnotationsByKey(
     annotationsByKeyQuery
       .prepared(db)
       .all({ libraryID, key })
-      .map((r) => toAnnotation(r, groupId)),
+      .flatMap((row) =>
+        row.parentAttachment ? [toAnnotation(row, groupId)] : [],
+      ),
   );
 }
 

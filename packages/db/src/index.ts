@@ -7,6 +7,7 @@ export {
 export { type GroupIDMemo } from "./queries/_groups";
 export {
   getItemsByID,
+  getItemTypeByKey,
   getItemsByLibrary,
   getItemsByKey,
   getItemsByLibraryAsync,

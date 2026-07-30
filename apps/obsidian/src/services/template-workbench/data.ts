@@ -12,6 +12,7 @@ import {
   getAttachmentByKey,
   getCurrentUsername,
   getItemsByID,
+  getItemTypeByKey,
   getItemsByKey,
   getNoteByKey,
   resolveIndexedKeyLibrary,
@@ -46,7 +47,8 @@ export type TemplateDataLoadResult =
   | { kind: "data"; data: object }
   | { kind: "not-found" }
   | { kind: "no-parent-item" }
-  | { kind: "annotation-required" };
+  | { kind: "annotation-required" }
+  | { kind: "annotation-attachment-missing" };
 
 export interface TemplateDataDeps {
   app: App;
@@ -59,7 +61,7 @@ export interface TemplateDataDeps {
     | "whenIndexed"
   >;
   settings: Pick<SettingsService, "loaded">;
-  templates: Pick<TemplateService, "ready" | "render" | "compileErrors">;
+  templates: Pick<TemplateService, "ready" | "render">;
   zoteroPref: Pick<
     ZoteroPrefService,
     "ready" | "dataDir" | "baseAttachmentPath"
@@ -186,75 +188,101 @@ async function createInertResolvers(
   });
 }
 
+type ClassifiedObject =
+  | { kind: "item"; item: Item }
+  | { kind: "annotation"; annotation: Annotation }
+  | { kind: "attachment"; parentItemID: number | null }
+  | { kind: "note"; parentItemID: number | null }
+  | { kind: "not-found" }
+  | { kind: "annotation-attachment-missing" };
+
+function classifyObject(
+  client: NodeDatabaseClient,
+  indexedKey: string,
+): ClassifiedObject {
+  const selector = resolveIndexedKeyLibrary(client, indexedKey);
+  if (!selector) return { kind: "not-found" };
+  const { key, libraryID } = selector;
+  const itemType = getItemTypeByKey(client, libraryID, key);
+  if (itemType === null) return { kind: "not-found" };
+
+  if (itemType === "annotation") {
+    const annotation = getAnnotationsByKey(client, [key], libraryID)[0];
+    return annotation
+      ? { kind: "annotation", annotation }
+      : { kind: "annotation-attachment-missing" };
+  }
+  if (itemType === "attachment") {
+    const attachment = getAttachmentByKey(client, key, libraryID);
+    return attachment
+      ? { kind: "attachment", parentItemID: attachment.parentItemID }
+      : { kind: "not-found" };
+  }
+  if (itemType === "note") {
+    const note = getNoteByKey(client, key, { libraryID });
+    return note
+      ? { kind: "note", parentItemID: note.parentItemID }
+      : { kind: "not-found" };
+  }
+
+  const item = getItemsByKey(client, libraryID, [key])[0];
+  return item ? { kind: "item", item } : { kind: "not-found" };
+}
+
 type AnnotationResult =
   | { kind: "annotation"; annotation: Annotation; item: Item | null }
   | { kind: "not-found" }
-  | { kind: "annotation-required" };
+  | { kind: "annotation-required" }
+  | { kind: "annotation-attachment-missing" };
 
 function resolveAnnotation(
   client: NodeDatabaseClient,
   indexedKey: string,
 ): AnnotationResult {
-  const selector = resolveIndexedKeyLibrary(client, indexedKey);
-  if (!selector) return { kind: "not-found" };
-  const { key, libraryID } = selector;
+  const selected = classifyObject(client, indexedKey);
+  if (selected.kind === "annotation-attachment-missing") return selected;
+  if (selected.kind === "not-found") return selected;
+  if (selected.kind !== "annotation") return { kind: "annotation-required" };
 
-  const annotation = getAnnotationsByKey(client, [key], libraryID)[0];
-  if (annotation) {
-    const attachment = getAttachmentByKey(
-      client,
-      annotation.parentKey,
-      libraryID,
-    );
-    const item = attachment?.parentItemID
-      ? (getItemsByID(client, [attachment.parentItemID])[0] ?? null)
-      : null;
-    return { kind: "annotation", annotation, item };
-  }
-
-  if (
-    getItemsByKey(client, libraryID, [key])[0] ||
-    getAttachmentByKey(client, key, libraryID) ||
-    getNoteByKey(client, key, { libraryID })
-  ) {
-    return { kind: "annotation-required" };
-  }
-  return { kind: "not-found" };
+  const attachment = getAttachmentByKey(
+    client,
+    selected.annotation.parentKey,
+    selected.annotation.libraryID,
+  );
+  const item = attachment?.parentItemID
+    ? (getItemsByID(client, [attachment.parentItemID])[0] ?? null)
+    : null;
+  return { ...selected, item };
 }
 
 type NoteItemResult =
   | { kind: "item"; item: Item }
   | { kind: "not-found" }
-  | { kind: "no-parent-item" };
+  | { kind: "no-parent-item" }
+  | { kind: "annotation-attachment-missing" };
 
 function resolveNoteItem(
   client: NodeDatabaseClient,
   indexedKey: string,
 ): NoteItemResult {
-  const selector = resolveIndexedKeyLibrary(client, indexedKey);
-  if (!selector) return { kind: "not-found" };
-  const { key, libraryID } = selector;
-
-  const item = getItemsByKey(client, libraryID, [key])[0];
-  if (item) return { kind: "item", item };
-
-  const annotation = getAnnotationsByKey(client, [key], libraryID)[0];
-  if (annotation) {
+  const selected = classifyObject(client, indexedKey);
+  if (
+    selected.kind === "not-found" ||
+    selected.kind === "annotation-attachment-missing" ||
+    selected.kind === "item"
+  ) {
+    return selected;
+  }
+  if (selected.kind === "annotation") {
     const attachment = getAttachmentByKey(
       client,
-      annotation.parentKey,
-      libraryID,
+      selected.annotation.parentKey,
+      selected.annotation.libraryID,
     );
-    return resolveParentItem(client, attachment?.parentItemID ?? null);
+    if (!attachment) return { kind: "annotation-attachment-missing" };
+    return resolveParentItem(client, attachment.parentItemID);
   }
-
-  const attachment = getAttachmentByKey(client, key, libraryID);
-  if (attachment) return resolveParentItem(client, attachment.parentItemID);
-
-  const note = getNoteByKey(client, key, { libraryID });
-  if (note) return resolveParentItem(client, note.parentItemID);
-
-  return { kind: "not-found" };
+  return resolveParentItem(client, selected.parentItemID);
 }
 
 function resolveParentItem(

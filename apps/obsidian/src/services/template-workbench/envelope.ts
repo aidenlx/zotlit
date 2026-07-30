@@ -30,7 +30,7 @@ export interface WorkbenchIdentity {
 }
 
 /**
- * The nine documented diagnostic codes of contract version 1, each defined with
+ * The documented diagnostic codes of contract version 1, each defined with
  * the recovery action its diagnostic carries. This record is the single source
  * of both, so a new code arrives with its own hint.
  */
@@ -47,6 +47,8 @@ export const DIAGNOSTIC_HINTS = {
     "Select the parent Item, or a child object that has a parent Item.",
   ANNOTATION_REQUIRED:
     "Select an Annotation key for the annotation root, or select another root.",
+  ANNOTATION_ATTACHMENT_MISSING:
+    "Open the Annotation in Zotero and confirm that its parent Attachment exists, then run the command again.",
   ETA_OPT_IN_REQUIRED:
     "Use a Liquid Template, or ask the user to enable JavaScript Templates in ZotLit settings.",
   TEMPLATE_COMPILE_ERROR:
@@ -153,6 +155,7 @@ export function dataLoadDiagnostic(
     "not-found": "KEY_NOT_FOUND",
     "no-parent-item": "NO_PARENT_ITEM",
     "annotation-required": "ANNOTATION_REQUIRED",
+    "annotation-attachment-missing": "ANNOTATION_ATTACHMENT_MISSING",
   } as const;
   return diagnostic(
     code[result.kind],
@@ -160,7 +163,9 @@ export function dataLoadDiagnostic(
       ? `No Zotero object matches '${key}'.`
       : result.kind === "no-parent-item"
         ? `The Zotero object '${key}' has no parent Item.`
-        : `The Zotero object '${key}' is not an Annotation.`,
+        : result.kind === "annotation-required"
+          ? `The Zotero object '${key}' is not an Annotation.`
+          : `The Annotation '${key}' has no parent Attachment row.`,
     { key },
   );
 }

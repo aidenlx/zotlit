@@ -544,6 +544,7 @@ describe("Template Workbench CLI", () => {
     ["not-found", "KEY_NOT_FOUND"],
     ["no-parent-item", "NO_PARENT_ITEM"],
     ["annotation-required", "ANNOTATION_REQUIRED"],
+    ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
       getIdentity: () => IDENTITY,
@@ -1027,6 +1028,7 @@ describe("Template Workbench CLI", () => {
     ["not-found", "KEY_NOT_FOUND"],
     ["no-parent-item", "NO_PARENT_ITEM"],
     ["annotation-required", "ANNOTATION_REQUIRED"],
+    ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps render data result %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
       getIdentity: () => IDENTITY,

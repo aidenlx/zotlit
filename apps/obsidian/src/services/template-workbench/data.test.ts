@@ -173,6 +173,23 @@ describe("zotlit:template-data with the real loader", () => {
     });
   });
 
+  it("reports an Annotation whose parent Attachment row is absent", async () => {
+    using fixture = createFixture();
+
+    expect(
+      await runTemplateData(fixture.deps, "RPHM2345", "annotation"),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: { code: "ANNOTATION_ATTACHMENT_MISSING" },
+    });
+    expect(
+      await runTemplateData(fixture.deps, "RPHM2345", "note"),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: { code: "ANNOTATION_ATTACHMENT_MISSING" },
+    });
+  });
+
   it("serves a standalone annotation with a null parent item", async () => {
     using fixture = createFixture();
 
@@ -333,12 +350,18 @@ describe("zotlit:template-data with the real loader", () => {
   });
 });
 
+type FixtureDeps = TemplateDataDeps & {
+  templates: TemplateDataDeps["templates"] & {
+    compileErrors: ReadonlyMap<string, { message: string }>;
+  };
+};
+
 function createFixture(options?: {
   renderError?: Error;
   compileError?: string | null;
   render?: (name: string, data: object) => string;
 }): {
-  deps: TemplateDataDeps;
+  deps: FixtureDeps;
   writeCalls: string[];
   [Symbol.dispose](): void;
 } {
@@ -414,7 +437,7 @@ function createFixture(options?: {
 }
 
 async function runTemplateData(
-  deps: TemplateDataDeps,
+  deps: FixtureDeps,
   key: string,
   root: "note" | "annotation" | "filename" = "note",
 ): Promise<Record<string, unknown>> {
@@ -445,7 +468,7 @@ async function runTemplateData(
 }
 
 async function runTemplateRender(
-  deps: TemplateDataDeps,
+  deps: FixtureDeps,
   key: string,
 ): Promise<Record<string, unknown>> {
   const handlers = createTemplateWorkbenchHandlers({
@@ -514,6 +537,7 @@ function seed(sqlite: DatabaseSync): void {
         (10, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATCH2345'),
         (20, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ANNA2345'),
         (21, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'STAN2345'),
+        (22, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'RPHM2345'),
         (30, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'NATE2345'),
         (40, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'FREE2345'),
         (50, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'LANE2345'),
@@ -542,6 +566,10 @@ function seed(sqlite: DatabaseSync): void {
       (
         62, 61, 1, null, 'group', null, '#ffd400', '3',
         '00000|000003|00000', '{"pageIndex":2,"rects":[]}', 0
+      ),
+      (
+        22, 999, 1, null, 'orphan', null, '#ffd400', '4',
+        '00000|000004|00000', '{"pageIndex":3,"rects":[]}', 0
       );
 
     insert into itemNotes (itemID, parentItemID, note, title)
