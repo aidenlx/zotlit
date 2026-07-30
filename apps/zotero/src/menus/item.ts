@@ -107,6 +107,25 @@ export function registerItemMenu(pluginID: string): Disposable {
         onCommand: onCommand("open"),
       },
       {
+        menuType: "menuitem",
+        l10nID: "zotlit-menu-item-copy-key",
+        onShowing(_event: Event, context: LibraryMenuContext): void {
+          const items = allItems(context);
+          context.setVisible(items.length >= 1);
+          context.setL10nArgs(
+            JSON.stringify({
+              count: items.length,
+              kind: selectedKind(items),
+            }),
+          );
+        },
+        onCommand(_event: Event, context: LibraryMenuContext): void {
+          const items = allItems(context);
+          if (items.length === 0) return;
+          copyObjectKeys(items);
+        },
+      },
+      {
         menuType: "submenu",
         l10nID: "zotlit-menu-submenu",
         onShowing(_event: Event, context: LibraryMenuContext): void {
@@ -177,25 +196,6 @@ export function registerItemMenu(pluginID: string): Disposable {
               const items = regularItems(context);
               if (items.length !== 1) return;
               exploreInObsidian(items[0]!);
-            },
-          },
-          {
-            menuType: "menuitem",
-            l10nID: "zotlit-menu-item-copy-key",
-            onShowing(_event: Event, context: LibraryMenuContext): void {
-              const items = allItems(context);
-              context.setVisible(items.length >= 1);
-              context.setL10nArgs(
-                JSON.stringify({
-                  count: items.length,
-                  kind: selectedKind(items),
-                }),
-              );
-            },
-            onCommand(_event: Event, context: LibraryMenuContext): void {
-              const items = allItems(context);
-              if (items.length === 0) return;
-              copyObjectKeys(items);
             },
           },
         ],
