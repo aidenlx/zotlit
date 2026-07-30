@@ -1,6 +1,11 @@
 // Pure paste-ready template-snippet generation for Template Data Explorer nodes.
 
-import { type DisplayNode, formatPath } from "./display-tree";
+import {
+  formatAccessorPath,
+  isAccessorIdentifier,
+} from "@/services/template/accessor-path";
+
+import { type DisplayNode } from "./display-tree";
 
 export type TemplateEngine = "liquid" | "eta";
 
@@ -23,7 +28,7 @@ export function renderSnippet(
   engine: TemplateEngine,
   kind: SnippetKind,
 ): string {
-  const accessor = formatPath(node.path, "zt");
+  const accessor = formatAccessorPath(node.path, "zt");
   switch (kind) {
     case "output":
       return interpolate(engine, callForm(node, engine, accessor));
@@ -68,14 +73,12 @@ function joined(engine: TemplateEngine, accessor: string): string {
     : `<%= ${accessor}.join(", ") %>`;
 }
 
-const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
 /** Element name for a loop/join: the array's key with a trailing "s" stripped (tags→tag, lines→line), falling back to "item" for an index/bracket-key/non-plural segment. */
 function loopVar(node: DisplayNode): string {
   const last = node.path.at(-1);
   if (
     typeof last === "string" &&
-    IDENTIFIER_RE.test(last) &&
+    isAccessorIdentifier(last) &&
     last.length > 1 &&
     last.endsWith("s")
   ) {

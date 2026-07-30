@@ -1,8 +1,12 @@
 // Pure value-walker mapping an anchor root object + expansion set to typed display nodes.
 
+import {
+  formatAccessorPath,
+  type TemplatePathSegment,
+} from "@/services/template/accessor-path";
 import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
 
-export type PathSegment = string | number;
+export type PathSegment = TemplatePathSegment;
 
 export type DisplayValueType =
   | "string"
@@ -86,32 +90,8 @@ export function buildDisplayTree(
   return buildChildren(root, [], options.expanded);
 }
 
-const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-/**
- * Render a data path. With no rootAlias, used as the expansion/React key; the
- * "zt" alias produces the copy-path both engines share (both bind data to `zt`).
- * Numeric segments render as [i]; identifier string segments as .name (or
- * bare when first with no root); other string segments (e.g. Zotero custom
- * field keys with dashes or spaces) as [JSON.stringify(segment)] so the
- * copied path stays paste-correct in both Liquid and Eta/JS.
- */
-export function formatPath(
-  segments: readonly PathSegment[],
-  rootAlias?: string,
-): string {
-  let out = rootAlias ?? "";
-  for (const seg of segments) {
-    if (typeof seg === "number") {
-      out += `[${seg}]`;
-    } else if (IDENTIFIER_RE.test(seg)) {
-      out += out ? `.${seg}` : seg;
-    } else {
-      out += `[${JSON.stringify(seg)}]`;
-    }
-  }
-  return out;
-}
+/** Format a display path, optionally rooted at the Template alias. */
+export const formatPath = formatAccessorPath;
 
 interface Entry {
   readonly segment: PathSegment;

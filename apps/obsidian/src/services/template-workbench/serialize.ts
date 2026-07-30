@@ -8,9 +8,11 @@ import {
 } from "@zotlit/db/contract/ir";
 import contractIRJson from "@zotlit/db/contract/ir.json";
 
+import {
+  formatAccessorPath,
+  type TemplatePathSegment,
+} from "@/services/template/accessor-path";
 import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
-
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const UNKNOWN_CONTRACT_TYPE: ContractType = { kind: "unknown" };
 const contractIR = contractIRJson as ContractIR;
 
@@ -37,15 +39,15 @@ export function serializeTemplateData(
     );
 
   return serializeValue(root, {
-    path: "zt",
+    path: [],
     active: new WeakMap(),
     contractType: { kind: "ref", name: rootIR.type },
   });
 }
 
 interface SerializeContext {
-  path: string;
-  active: WeakMap<object, string>;
+  path: readonly TemplatePathSegment[];
+  active: WeakMap<object, readonly TemplatePathSegment[]>;
   contractType: ContractType;
 }
 
@@ -58,7 +60,7 @@ function serializeValue(value: unknown, context: SerializeContext): unknown {
     const contractHelper = findContractHelper(context.contractType);
     if (!contractHelper) {
       throw new ContractMetadataError(
-        `Missing helper contract metadata for '${path}'`,
+        `Missing helper contract metadata for '${formatAccessorPath(path, "zt")}'`,
       );
     }
 
@@ -91,7 +93,9 @@ function serializeValue(value: unknown, context: SerializeContext): unknown {
   if (typeof value !== "object") return String(value);
 
   const cyclePath = active.get(value);
-  if (cyclePath !== undefined) return { $ref: cyclePath };
+  if (cyclePath !== undefined) {
+    return { $ref: formatAccessorPath(cyclePath, "zt") };
+  }
   // oxlint-disable-next-line no-base-to-string -- Template context opaque objects (for example Temporal values) define their display form.
   if (!isPlainContainer(value)) return String(value);
 
@@ -102,7 +106,7 @@ function serializeValue(value: unknown, context: SerializeContext): unknown {
       return value.map(
         (entry, index) =>
           serializeValue(entry, {
-            path: `${path}[${index}]`,
+            path: [...path, index],
             active,
             contractType: itemType,
           }) ?? null,
@@ -112,7 +116,7 @@ function serializeValue(value: unknown, context: SerializeContext): unknown {
     const serialized: Record<string, unknown> = {};
     for (const key of Object.keys(value)) {
       const entry = serializeValue((value as Record<string, unknown>)[key], {
-        path: childPath(path, key),
+        path: [...path, key],
         active,
         contractType: memberContractType(context.contractType, key),
       });
@@ -180,10 +184,4 @@ function isPlainContainer(value: object): boolean {
   if (Array.isArray(value)) return true;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
-}
-
-function childPath(parent: string, key: string): string {
-  return IDENTIFIER.test(key)
-    ? `${parent}.${key}`
-    : `${parent}[${JSON.stringify(key)}]`;
 }
