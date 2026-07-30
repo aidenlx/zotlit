@@ -2,6 +2,8 @@
 
 import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
 
+import { DOCS_SITE_URL } from "@/lib/constants";
+
 import { type DiagnosticCode } from "./envelope";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import { quotedList, TEMPLATE_SLOT_NAMES } from "./vocabulary";
@@ -34,7 +36,10 @@ Key resolution:
 - A note or filename root resolves an Item from its own key, or from a child
   Annotation, Attachment, or Child Note key by walking up to the parent Item.
 - An annotation root requires an Annotation key; a non-annotation key fails with
-  ${ANNOTATION_REQUIRED}.`;
+  ${ANNOTATION_REQUIRED}.
+
+template-data's JSON envelope carries this object under the literal key "zt"
+(jq '.zt.annotations').`;
 
 const RENDER_SECTION = `Template render
 
@@ -44,9 +49,10 @@ Each Template infers its data root; template-render does not accept a root flag:
 
 ${TEMPLATE_SLOT_NAMES.map(rootRow).join("\n")}
 
-- format=markdown returns the exact rendered bytes, unmodified.
-- format=json wraps the same bytes as markdown, plus the echoed request, identity,
-  active template, and warnings.
+- format defaults to json, the edit loop: test ok, then read warnings. Its envelope
+  carries the rendered bytes under the literal key "markdown", plus the echoed
+  request, identity, active template, and warnings.
+- format=markdown returns the exact rendered bytes, unmodified, with no envelope.
 - The filename Template is collapsed to one trimmed line, the same way note creation
   collapses it.
 - Includes resolve through the same named-template registry status reports, so an
@@ -80,14 +86,15 @@ const ETA_SECTION = `Eta templates
 
 const LIQUID_SECTION = `Liquid dialect
 
-- The engine is liquidjs with the complete standard Liquid feature set: ranges
-  ((0..8)), where, group_by, and every builtin tag and filter work.
+- The engine is liquidjs with the complete standard Liquid feature set, and every 
+  builtin tag and filter works.
 - All data lives under the single root zt. A Template that reads any other root
   name renders empty output, and template-render reports each such read in
   warnings.
 - An unknown filter is a render error.
-- ZotLit tags: {% bq %}...{% endbq %} wraps its body as a Markdown blockquote;
-  {% suffix length, prepend, append %} emits a filename-suffix placeholder.
+- ZotLit tags: 
+  - {% bq %}...{% endbq %} wraps its body as a Markdown blockquote;
+  - {% suffix length, prepend, append %} emits a filename-suffix placeholder;
 - ZotLit filters: embed, file_link, note_link, img_link, note_links,
   collection_paths; the date filter also accepts Temporal values and Zotero
   multipart dates.
@@ -131,28 +138,39 @@ const TOPIC_INDEX = GUIDE_TOPIC_NAMES.map(
 
 const QUICKSTART = `ZotLit Template Workbench quickstart
 
-1. obsidian zotlit:template-status
+1. obsidian-cli zotlit:template-status
    Confirm the answering vault and connected Zotero source, and each Template's
    active file and language.
-2. obsidian zotlit:template-schema root=<${CONTRACT_ROOT_NAMES.join("|")}>
+2. obsidian-cli zotlit:template-schema root=<${CONTRACT_ROOT_NAMES.join("|")}>
    Read the bundled JSON Schema for one data root.
-3. obsidian zotlit:template-data key=<indexed-key> root=<${CONTRACT_ROOT_NAMES.join("|")}> format=json
+3. obsidian-cli zotlit:template-data key=<indexed-key> root=<${CONTRACT_ROOT_NAMES.join("|")}>
    Inspect the exact serialized data for one Zotero object.
    Templates read this object as the single root variable zt — write zt.<field>.
-4. obsidian zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
+4. obsidian-cli zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
    Read the active Template body (vault file or built-in default) before you edit.
 5. Edit the active Template file, at winner.source.path or editablePath from status.
-6. obsidian zotlit:template-render key=<indexed-key> template=<${TEMPLATE_SLOT_NAMES.join("|")}> format=<markdown|json>
-   Render the edited Template in memory. Use format=json in the edit loop: test ok
-   and read warnings.
+6. obsidian-cli zotlit:template-render key=<indexed-key> template=<${TEMPLATE_SLOT_NAMES.join("|")}>
+   Render the edited Template in memory. The default JSON envelope is the edit loop:
+   test ok, then read warnings. format=markdown returns the raw rendered bytes instead.
 
-Envelope rule: test ok on every JSON response. On ok: false, follow diagnostic.hint.
+Envelope shape: every JSON response is { contractVersion, command, ok, ... }, plus
+the echoed request and identity where the command has them.
+
+- ok: false — follow diagnostic.hint for the recovery action.
+- template-data ok: true — the zt object lives under the literal key "zt"
+  (jq '.zt.annotations'), the same object a Template reads as zt.*.
+- template-render's JSON envelope carries the rendered bytes under "markdown", plus
+  "warnings".
+- template-source ok: true — the Template body lives under "source".
 
 Topics (topic=<name>):
 ${TOPIC_INDEX}
 
-Run 'obsidian zotlit:template-guide topic=<name>' for one section, or
-'obsidian help zotlit' for every command's flags.`;
+Run 'obsidian-cli zotlit:template-guide topic=<name>' for one section, or
+'obsidian-cli help zotlit' for every command's flags.
+
+Reference material:
+- ZotLit Template reference: ${DOCS_SITE_URL}/docs/reference/templates`;
 
 export function renderGuide(topic: GuideTopic | null): string {
   return topic === null ? QUICKSTART : GUIDE_TOPICS[topic];

@@ -471,6 +471,9 @@ describe("Template Workbench CLI", () => {
     expect(() => JSON.parse(output)).toThrow();
     expect(output).toContain("test ok");
     expect(output).toContain("follow diagnostic.hint");
+    expect(output).toContain(
+      "https://zotlit.aidenlx.site/docs/reference/templates",
+    );
     for (const topic of ["data", "render", "editing", "eta", "liquid"]) {
       expect(output).toContain(topic);
     }
@@ -541,8 +544,10 @@ describe("Template Workbench CLI", () => {
     [{ key: "bad", root: "note", format: "json" }, "key"],
     [{ key: "ITEM2345", format: "json" }, "root"],
     [{ key: "ITEM2345", root: "cite", format: "json" }, "root"],
-    [{ key: "ITEM2345", root: "note" }, "format"],
     [{ key: "ITEM2345", root: "note", format: "yaml" }, "format"],
+    [{ key: "ITEM2345", root: "note", format: "" }, "format"],
+    [{ key: "", root: "note", format: "json" }, "key"],
+    [{ key: "ITEM2345", root: "", format: "json" }, "root"],
     [
       {
         key: "ITEM2345",
@@ -552,6 +557,20 @@ describe("Template Workbench CLI", () => {
       },
       "expect-source",
     ],
+    [
+      {
+        key: "ITEM2345",
+        root: "note",
+        format: "json",
+        "expect-source": "",
+      },
+      "expect-source",
+    ],
+    [
+      { key: "ITEM2345", root: "note", format: "json", template: "note" },
+      "template",
+    ],
+    [{ key: "ITEM2345", root: "note", format: "json", topic: "data" }, "topic"],
   ])("rejects an invalid selector %#", async (params, parameter) => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
@@ -583,6 +602,170 @@ describe("Template Workbench CLI", () => {
       },
     });
     expect(loadData).not.toHaveBeenCalled();
+  });
+
+  it("defaults template-data format to json when absent", async () => {
+    const loadData = vi.fn(async () => ({ kind: "data", data: {} }) as const);
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData,
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_DATA_COMMAND]({
+      key: "ITEM2345",
+      root: "note",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      request: { key: "ITEM2345", root: "note", format: "json" },
+    });
+  });
+
+  it("ignores every --* token a CLI binary forwards", async () => {
+    const loadData = vi.fn(async () => ({ kind: "data", data: {} }) as const);
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData,
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_DATA_COMMAND]({
+      key: "ITEM2345",
+      root: "note",
+      "--help": "true",
+      "--verbose": "true",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({ ok: true });
+  });
+
+  it("reports vault= placed after the command name as INVALID_SELECTOR", async () => {
+    const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData,
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_DATA_COMMAND]({
+      key: "ITEM2345",
+      root: "note",
+      format: "json",
+      vault: "Other Vault",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: expect.stringContaining(
+          "vault must come before the command name",
+        ),
+        details: { parameter: "vault" },
+      },
+    });
+    expect(loadData).not.toHaveBeenCalled();
+  });
+
+  it("names the offending parameter and the accepted list for an unknown key", async () => {
+    const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData,
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_DATA_COMMAND]({
+      key: "ITEM2345",
+      root: "note",
+      format: "json",
+      "expect-vault": "some-vault",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: expect.stringContaining("expect-vault"),
+        details: { parameter: "expect-vault" },
+      },
+    });
+    const message = JSON.parse(output).diagnostic.message as string;
+    for (const accepted of ["key", "root", "format", "expect-source"]) {
+      expect(message).toContain(accepted);
+    }
+  });
+
+  it("cross-references template= to root= on template-data", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_DATA_COMMAND]({
+      key: "ITEM2345",
+      root: "note",
+      format: "json",
+      template: "note",
+    });
+
+    const message = JSON.parse(output).diagnostic.message as string;
+    expect(message).toContain("root=");
+    expect(message).toContain("template-render");
+    expect(message).toContain("template-source");
   });
 
   it.each([
@@ -778,6 +961,66 @@ describe("Template Workbench CLI", () => {
         message: "template-schema does not accept an item selector.",
         hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
         details: { parameter: "key" },
+      },
+    });
+  });
+
+  it("cross-references template= to root= on template-schema", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
+      root: "note",
+      template: "note",
+    });
+
+    const message = JSON.parse(output).diagnostic.message as string;
+    expect(message).toContain("root=");
+    expect(message).toContain("template-render");
+    expect(message).toContain("template-source");
+  });
+
+  it("rejects an unrecognized parameter for template-schema", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
+      root: "note",
+      "--help": "true",
+      format: "json",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "format" },
       },
     });
   });
@@ -1158,8 +1401,8 @@ describe("Template Workbench CLI", () => {
     [{ key: "bad", template: "note", format: "markdown" }, "key"],
     [{ key: "ITEM2345", format: "markdown" }, "template"],
     [{ key: "ITEM2345", template: "cite", format: "markdown" }, "template"],
-    [{ key: "ITEM2345", template: "note" }, "format"],
     [{ key: "ITEM2345", template: "note", format: "yaml" }, "format"],
+    [{ key: "ITEM2345", template: "note", format: "" }, "format"],
     [
       {
         key: "ITEM2345",
@@ -1168,6 +1411,15 @@ describe("Template Workbench CLI", () => {
         root: "note",
       },
       "root",
+    ],
+    [
+      {
+        key: "ITEM2345",
+        template: "note",
+        format: "markdown",
+        "expect-source": "",
+      },
+      "expect-source",
     ],
   ] as const)(
     "rejects an invalid render selector %#",
@@ -1206,6 +1458,67 @@ describe("Template Workbench CLI", () => {
       expect(render).not.toHaveBeenCalled();
     },
   );
+
+  it("keeps template-render's explicit root rejection message", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_RENDER_COMMAND]({
+      key: "ITEM2345",
+      template: "note",
+      format: "markdown",
+      root: "note",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        message: "template-render infers the data root from template.",
+      },
+    });
+  });
+
+  it("defaults template-render format to json when absent", async () => {
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: () => "# Paper\n",
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+    });
+
+    const output = await handlers[TEMPLATE_RENDER_COMMAND]({
+      key: "ITEM2345",
+      template: "note",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      request: { key: "ITEM2345", template: "note", format: "json" },
+      markdown: "# Paper\n",
+    });
+  });
 
   describe("template-render root-variable warnings", () => {
     it("reports a warning for a read of a root other than zt", async () => {
@@ -1391,6 +1704,125 @@ describe("Template Workbench CLI", () => {
           code: "INVALID_SELECTOR",
           hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter: "template" },
+        },
+      });
+    });
+
+    it("cross-references root= to template= on template-source", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_SOURCE_COMMAND]({
+        template: "note",
+        root: "note",
+      });
+
+      const message = JSON.parse(output).diagnostic.message as string;
+      expect(message).toContain("template=");
+      expect(message).toContain("template-schema");
+      expect(message).toContain("template-data");
+    });
+  });
+
+  describe("template-status and template-guide selectors", () => {
+    it("rejects any parameter for template-status", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_STATUS_COMMAND]({
+        root: "note",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 1,
+        command: TEMPLATE_STATUS_COMMAND,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "root" },
+        },
+      });
+    });
+
+    it("tolerates --* tokens for template-status", async () => {
+      const waitUntilSettled = vi.fn(async () => "settled" as const);
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_STATUS_COMMAND]({
+        "--help": "true",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({ ok: true });
+    });
+
+    it("rejects an unrecognized parameter for template-guide", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_GUIDE_COMMAND]({
+        root: "note",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 1,
+        command: TEMPLATE_GUIDE_COMMAND,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "root" },
         },
       });
     });

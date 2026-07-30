@@ -35,6 +35,7 @@ import {
   parseRenderRequest,
   parseSchemaRequest,
   parseSourceRequest,
+  parseStatusRequest,
   targetMismatch,
   type ParsedRequest,
 } from "./request";
@@ -159,7 +160,17 @@ export function createTemplateWorkbenchHandlers(
       : deps.templates.render(slot, data);
 
   return {
-    [TEMPLATE_STATUS_COMMAND]: async (_params: CliData): Promise<string> => {
+    [TEMPLATE_STATUS_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseStatusRequest(params);
+      if (request.kind === "invalid") {
+        return envelope(TEMPLATE_STATUS_COMMAND, {
+          ok: false,
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
+        });
+      }
+
       const outcome = await deps.templates.waitUntilSettled(settleTimeoutMs);
       if (outcome !== "settled") {
         return envelope(TEMPLATE_STATUS_COMMAND, {

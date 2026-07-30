@@ -16,3 +16,9 @@ export function quotedList(names: readonly string[]): string {
     ? `${quoted.slice(0, -1).join(", ")}, or ${last}`
     : last;
 }
+
+/** `<a|b|c>` — a flag's accepted values, read from the canonical registry so
+ *  renaming a root or a slot cannot leave the help text stale. */
+export function choices(names: readonly string[]): string {
+  return `<${names.join("|")}>`;
+}

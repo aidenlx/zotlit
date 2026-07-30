@@ -74,8 +74,8 @@ want in template terms — guide them there.
 6. Read the active Template body with `obsidian-cli zotlit:template-source` — it returns the winning
    body even when only the built-in default exists. Apply the edit and save it to the active file,
    or to `editablePath` when no vault file exists yet. The file parses without diagnostics.
-7. Render in memory with `obsidian-cli zotlit:template-render` using `format=json`; test `ok` and read
-   `warnings`. The rendered output matches the requested result; repeat from step 4 or 5 until it does.
+7. Render in memory with `obsidian-cli zotlit:template-render`; test `ok` and read `warnings`.
+   The rendered output matches the requested result; repeat from step 4 or 5 until it does.
 
 When a render is empty or wrong, shrink the Template to a minimal probe that tests one variable or
 one construct, read `warnings` in the render envelope, and test one hypothesis at a time. Restore
@@ -91,21 +91,21 @@ All template data lives under the single root variable `zt`: write `{{ zt.title 
 The schema output is large (up to ~110 KB). Load it in layers with `jq`, starting wide and
 narrowing to the fields the edit touches.
 
-1. **Map** — read the schema's own description, the `$defs` names, and the root-ref properties:
-   `obsidian-cli zotlit:template-schema root=note | jq '{ title, description, defs: (.$defs | keys), props: (.$defs[.["$ref"] | ltrimstr("#/$defs/")] | .properties | keys) }'`
-2. **Zoom** — pull one `$def` or a slice of root properties:
-   `obsidian-cli zotlit:template-schema root=note | jq '.$defs.TemplateAnnotation'`
-   `obsidian-cli zotlit:template-schema root=note | jq '.$defs.NoteTemplateContext.properties | {key, itemType, title}'`
-3. **Done** — every field the edit depends on is accounted for in the loaded slices.
+In jq, quote keys that start with `$`: write `."$defs"`. Pipe the CLI straight into `jq`
+on each drill — the command is local and fast.
 
-Cache the schema in a shell variable (`schema=$(obsidian-cli zotlit:template-schema root=…)`)
-to avoid repeated CLI round-trips, then drill with `echo "$schema" | jq '…'`.
+1. **Map** — read the schema's own description, the `$defs` names, and the root-ref properties:
+   `obsidian-cli zotlit:template-schema root=note | jq '{ title, description, defs: (."$defs" | keys), props: (."$defs"[."$ref" | ltrimstr("#/$defs/")].properties | keys) }'`
+2. **Zoom** — pull one `$def` or a slice of root properties:
+   `obsidian-cli zotlit:template-schema root=note | jq '."$defs".TemplateAnnotation'`
+   `obsidian-cli zotlit:template-schema root=note | jq '."$defs".NoteTemplateContext.properties | {key, itemType, title}'`
+3. **Done** — every field the edit depends on is accounted for in the loaded slices.
 
 ## Identity assertions
 
-Record the Zotero source ID once at the start of the loop. Assert it with
-`expect-source=<source-id>` on every `obsidian-cli zotlit:template-data` and
-`obsidian-cli zotlit:template-render` request thereafter.
+Record the Zotero source ID once at the start of the loop. Assert it on every
+`obsidian-cli zotlit:template-data` and `obsidian-cli zotlit:template-render` request
+thereafter, using the assertion flag `obsidian-cli help zotlit` lists.
 
 Treat an identity mismatch as a hard stop. Run `obsidian-cli zotlit:template-status` again, confirm the new
 source path, and record the new ID before continuing.
@@ -117,3 +117,7 @@ Liquid-first: author a Liquid Template by default.
 Use Eta only when the required behavior needs JavaScript and Liquid cannot express it clearly.
 Treat the current-device JavaScript Templates setting as the user's consent boundary. Ask the
 user to enable it when Eta is necessary, and continue only after consent is active.
+
+## Reference material
+
+- [ZotLit Template reference](https://zotlit.aidenlx.site/docs/reference/templates)

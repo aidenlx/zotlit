@@ -30,8 +30,16 @@ import {
 } from "./cli";
 import { loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
-import { TEMPLATE_SLOT_NAMES } from "./request";
+import {
+  TEMPLATE_SLOT_NAMES,
+  type DATA_PARAMS,
+  type GUIDE_PARAMS,
+  type RENDER_PARAMS,
+  type SCHEMA_PARAMS,
+  type SOURCE_PARAMS,
+} from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
+import { choices } from "./vocabulary";
 
 interface TemplateWorkbenchRegistrationDeps {
   app: App;
@@ -40,12 +48,6 @@ interface TemplateWorkbenchRegistrationDeps {
   settings: SettingsService;
   templates: TemplateService;
   zoteroPref: ZoteroPrefService;
-}
-
-/** `<a|b|c>` — a flag's accepted values, read from the canonical registry so
- *  renaming a root or a slot cannot leave the help text stale. */
-function choices(names: readonly string[]): string {
-  return `<${names.join("|")}>`;
 }
 
 /** The Indexed Key selector both item-backed commands take. Flags are built per
@@ -60,7 +62,7 @@ function keyFlag(): CliFlag {
 }
 
 /** The identity assertion both item-backed commands take, listed last. */
-function expectationFlags(): CliFlags {
+function expectationFlags(): Record<"expect-source", CliFlag> {
   return {
     "expect-source": {
       value: "<source-id>",
@@ -77,11 +79,13 @@ function rootFlag(): CliFlag {
   };
 }
 
+/** `format`'s `value` is a bare `|`-separated list, not `choices()`'s
+ *  bracketed form: Obsidian's `--json`/`--markdown` alias sugar only fires
+ *  when the declared flag value looks like that bare list. */
 function formatFlag(values: readonly string[]): CliFlag {
   return {
-    value: choices(values),
+    value: values.join("|"),
     description: m.cli_flag_format_desc(),
-    required: true,
   };
 }
 
@@ -91,11 +95,14 @@ function dataFlags(): CliFlags {
     root: rootFlag(),
     format: formatFlag(["json"]),
     ...expectationFlags(),
-  };
+  } satisfies Record<(typeof DATA_PARAMS)[number], CliFlag>;
 }
 
 function schemaFlags(): CliFlags {
-  return { root: rootFlag() };
+  return { root: rootFlag() } satisfies Record<
+    (typeof SCHEMA_PARAMS)[number],
+    CliFlag
+  >;
 }
 
 function guideFlags(): CliFlags {
@@ -104,7 +111,7 @@ function guideFlags(): CliFlags {
       value: choices(GUIDE_TOPIC_NAMES),
       description: m.cli_flag_topic_desc(),
     },
-  };
+  } satisfies Record<(typeof GUIDE_PARAMS)[number], CliFlag>;
 }
 
 function renderFlags(): CliFlags {
@@ -117,7 +124,7 @@ function renderFlags(): CliFlags {
     },
     format: formatFlag(["markdown", "json"]),
     ...expectationFlags(),
-  };
+  } satisfies Record<(typeof RENDER_PARAMS)[number], CliFlag>;
 }
 
 function sourceFlags(): CliFlags {
@@ -127,7 +134,7 @@ function sourceFlags(): CliFlags {
       description: m.cli_flag_template_desc(),
       required: true,
     },
-  };
+  } satisfies Record<(typeof SOURCE_PARAMS)[number], CliFlag>;
 }
 
 export function registerTemplateWorkbench(
