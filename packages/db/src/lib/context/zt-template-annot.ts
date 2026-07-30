@@ -99,6 +99,7 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * Computed at the app layer.
    *
    * @ztFilter img_link
+   * @ztInert
    * @example
    * ```liquid
    * {% for annot in zt.annotations %}{{ annot | img_link | embed }}{% endfor %}

@@ -1626,6 +1626,7 @@
                 "name": "imgLink",
                 "signature": "(alias?: string, subpath?: string) => string",
                 "filter": "img_link",
+                "inert": true,
                 "value": {
                   "kind": "primitive",
                   "type": "string"
@@ -3842,6 +3843,7 @@
             "name": "noteLink",
             "signature": "(alias?: string, subpath?: string) => string",
             "filter": "note_link",
+            "inert": true,
             "value": {
               "kind": "primitive",
               "type": "string"
@@ -3884,6 +3886,7 @@
                 "name": "imgLink",
                 "signature": "(alias?: string, subpath?: string) => string",
                 "filter": "img_link",
+                "inert": true,
                 "value": {
                   "kind": "primitive",
                   "type": "string"

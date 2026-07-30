@@ -55,6 +55,7 @@ export interface TemplateNoteLink {
    * re-importing.
    *
    * @ztFilter note_link
+   * @ztInert
    */
   noteLink: TemplateLink;
 }

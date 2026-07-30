@@ -110,6 +110,8 @@ export interface ContractHelper {
   signature: string;
   /** Liquid filter passing the helper its arguments, e.g. `note_link`; from the member's `@ztFilter` tag. */
   filter?: string;
+  /** Present when the member's `@ztInert` tag marks the resolver free to leave this helper inert. */
+  inert?: true;
   /** Serialized form of the zero-arg call result. */
   value: ContractType;
 }

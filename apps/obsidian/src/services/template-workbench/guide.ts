@@ -20,7 +20,8 @@ Root values: ${quotedList(CONTRACT_ROOT_NAMES)}.
 Every value the Workbench returns is serialized JSON, not the live runtime object:
 
 - $helper marks a callable helper: { "$helper": name, "signature": ..., "value": ... }.
-- $inert marks an operation the Workbench does not perform: { "$inert": reason }.
+- $inert marks an operation the Workbench does not perform: { "$inert": reason }. Only
+  helpers the schema marks inert-capable can appear this way.
 - $ref marks a repeated reference to an object already in the tree: { "$ref": path }.
 - Temporal values (dates, instants, durations) serialize as their string form, never
   as objects.

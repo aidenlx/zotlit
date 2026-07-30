@@ -7,7 +7,7 @@
   "$ref": "#/$defs/TemplateFilenameItemData",
   "$defs": {
     "TemplateFilenameItemData": {
-      "description": "The `zt` root of the `filename` template: an item's own fields, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.",
+      "description": "The `zt` root of the `filename` template: an item's own fields, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.\n\nItem-type-specific Zotero fields beyond the typed ones above, each under its canonical name — e.g. `zt.conferenceName`, `zt.numPages`. A field Zotero maps to a base field is reachable through that base name alone: read `blogTitle` as `zt.publicationTitle`, `studio` as `zt.publisher`, `reportNumber` as `zt.number`, `thesisType` as `zt.type`.",
       "type": "object",
       "properties": {
         "notePath": {
@@ -30,16 +30,6 @@
                 }
               },
               "required": ["$helper", "signature", "value"],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "$inert": {
-                  "type": "string"
-                }
-              },
-              "required": ["$inert"],
               "additionalProperties": false
             }
           ],

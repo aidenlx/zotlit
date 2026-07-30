@@ -73,16 +73,6 @@
               },
               "required": ["$helper", "signature", "value"],
               "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "$inert": {
-                  "type": "string"
-                }
-              },
-              "required": ["$inert"],
-              "additionalProperties": false
             }
           ],
           "description": "Markdown link to the parent attachment file, deep-linked to this annotation's `page` (`#page=N`); `null` when the file is unresolvable. Call it to render — pass `alias`/`subpath` to override the display text or the `#`-fragment. Computed at the app layer."
@@ -228,7 +218,7 @@
       "additionalProperties": false
     },
     "TemplateParentItemData": {
-      "description": "Parent literature item as seen from the standalone `annotation` template. The annot-view drag-insert resolves the item's tags but omits collection rows entirely — `collections` lives only on the note root. Read them there (`zt.collections`).",
+      "description": "Parent literature item as seen from the standalone `annotation` template. The annot-view drag-insert resolves the item's tags but omits collection rows entirely — `collections` lives only on the note root. Read them there (`zt.collections`).\n\nItem-type-specific Zotero fields beyond the typed ones above, each under its canonical name — e.g. `zt.conferenceName`, `zt.numPages`. A field Zotero maps to a base field is reachable through that base name alone: read `blogTitle` as `zt.publicationTitle`, `studio` as `zt.publisher`, `reportNumber` as `zt.number`, `thesisType` as `zt.type`.",
       "type": "object",
       "properties": {
         "notePath": {
@@ -251,16 +241,6 @@
                 }
               },
               "required": ["$helper", "signature", "value"],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "$inert": {
-                  "type": "string"
-                }
-              },
-              "required": ["$inert"],
               "additionalProperties": false
             }
           ],
@@ -2140,16 +2120,6 @@
                 }
               },
               "required": ["$helper", "signature", "value"],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "$inert": {
-                  "type": "string"
-                }
-              },
-              "required": ["$inert"],
               "additionalProperties": false
             }
           ],

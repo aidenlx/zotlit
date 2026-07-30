@@ -5,22 +5,6 @@ Skill scope (spec #553, tickets #557–#563). The correctness and structure tier
 landed; the items below stay open, grouped by ticket, with a file:line anchor and
 one line of rationale each.
 
-## Generator / schema (#558)
-
-- `packages/db/scripts/*` (helper emission) — `$inert` is appended to every helper
-  variant, including helpers that never carry a placeholder. The marker belongs
-  only on helpers a resolver can leave inert.
-- `packages/db/src/contract/note.schema.json` — the orphan `TemplateParentItemData`
-  `$defs` entry is 20,936 of 82,018 bytes (25.5% of the file) and nothing
-  references it. `reachableTypes` walks the IR before reference substitution, so a
-  type reachable only through a substituted reference is retained.
-- `item-fields` path — the index-signature description is dropped, so the generated
-  schema loses the prose that explains what an arbitrary field key means.
-- `references` entry — hand maintained, and it carries a `path` that no validation
-  step checks. Either validate the path or derive the entry.
-- `extendsInterface` — matches an interface by string name, so a rename in the
-  source types silently stops the extension from applying.
-
 ## Docs pipeline (#563)
 
 - `generate:agent-skills` has no turbo task entry, so its outputs are neither

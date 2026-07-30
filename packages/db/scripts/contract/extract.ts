@@ -36,6 +36,16 @@ const DROPPED_MEMBER = "toString";
 /** Namespaced doc tag naming the Liquid filter that passes a helper its arguments. */
 const FILTER_TAG = "ztFilter";
 
+/** Namespaced doc tag marking a helper the resolver is free to leave inert. Must be empty. */
+const INERT_TAG = "ztInert";
+
+/**
+ * Interface name marking a type's index signature as item-fields, not a plain
+ * open record. Exported so the driver's startup guard checks the same name
+ * `extendsInterface` resolves against below.
+ */
+export const TEMPLATE_ITEM_BASE_DATA = "TemplateItemBaseData";
+
 /**
  * Every filter of the Liquid vocabulary is snake_case.
  *
@@ -144,6 +154,7 @@ export class ContractExtractor {
         type,
         location,
         filter: filterOf(declaration, name),
+        inert: inertOf(declaration, name),
       }),
       examples: examplesOf(declaration, name),
     };
@@ -155,12 +166,15 @@ export class ContractExtractor {
     type,
     location,
     filter,
+    inert,
   }: {
     name: string;
     type: Type;
     location: Node;
     /** The member's `@ztFilter`, which only a helper can carry. */
     filter: string | undefined;
+    /** The member's `@ztInert`, which only a helper can carry. */
+    inert: true | undefined;
   }): ContractType {
     const options = type.isUnion() ? type.getUnionTypes() : [type];
     const callable = options.filter(
@@ -170,6 +184,11 @@ export class ContractExtractor {
       if (filter) {
         throw new Error(
           `@${FILTER_TAG} on a member that is no contract helper: ${name}`,
+        );
+      }
+      if (inert) {
+        throw new Error(
+          `@${INERT_TAG} on a member that is no contract helper: ${name}`,
         );
       }
       return this.#walk(type, location);
@@ -191,6 +210,7 @@ export class ContractExtractor {
       name,
       signature: renderSignature(signature!),
       filter,
+      inert,
       value: this.#walk(signature!.getReturnType(), location),
     };
     const values = options
@@ -270,7 +290,7 @@ export class ContractExtractor {
     return {
       description: indexSignatureDoc(type),
       type: this.#walk(values, location),
-      schema: extendsInterface(type, "TemplateItemBaseData")
+      schema: extendsInterface(type, TEMPLATE_ITEM_BASE_DATA)
         ? "item-fields"
         : "open",
     };
@@ -402,6 +422,29 @@ function filterOf(
     );
   }
   return filter;
+}
+
+/**
+ * Whether the member's `@ztInert` tag marks it a helper the resolver may leave inert.
+ *
+ * @throws when the member declares the tag more than once, or the tag holds any content.
+ */
+function inertOf(
+  declaration: Node | undefined,
+  member: string,
+): true | undefined {
+  const tags = tagsOf(declaration, INERT_TAG);
+  if (tags.length === 0) return undefined;
+  if (tags.length > 1) {
+    throw new Error(`Member ${member} declares more than one @${INERT_TAG}`);
+  }
+  const content = tags[0]!.getCommentText()?.trim() ?? "";
+  if (content !== "") {
+    throw new Error(
+      `@${INERT_TAG} on ${member} must hold no content, found: ${content}`,
+    );
+  }
+  return true;
 }
 
 /**

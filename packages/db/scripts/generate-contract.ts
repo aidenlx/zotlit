@@ -20,8 +20,12 @@ import {
 } from "../src/contract/roots.ts";
 import { ZT_FIELD_ALIASES } from "../src/lib/context/zt-field-aliases.ts";
 import { CHILD_ITEM_TYPES } from "../src/lib/item-types.ts";
-import { ContractExtractor } from "./contract/extract.ts";
+import {
+  ContractExtractor,
+  TEMPLATE_ITEM_BASE_DATA,
+} from "./contract/extract.ts";
 import { toJsonSchema } from "./contract/json-schema.ts";
+import { validateReferences } from "./contract/validate-references.ts";
 
 import {
   type ContractIR,
@@ -72,6 +76,19 @@ interface ZoteroSchema {
 const CHILD_ITEM_TYPE_NAMES: ReadonlySet<string> = new Set(CHILD_ITEM_TYPES);
 
 const project = new Project({ tsConfigFilePath: "tsconfig.lib.json" });
+
+// Fails loudly on a rename of the interface the item-fields detection depends on,
+// rather than silently emitting zero item-fields owners.
+if (
+  !project
+    .getSourceFiles()
+    .some((file) => file.getInterface(TEMPLATE_ITEM_BASE_DATA) !== undefined)
+) {
+  throw new Error(
+    `Contract generation requires an interface named ${TEMPLATE_ITEM_BASE_DATA}, which no longer exists`,
+  );
+}
+
 const extractor = new ContractExtractor(resolve("src"));
 
 const roots: Partial<Record<ContractRoot, ContractRootIR>> = {};
@@ -94,6 +111,22 @@ const ir: ContractIR = {
   itemTypes: extractItemTypes(zoteroSchema),
   types: extractor.types,
 };
+
+// Catches the item-fields index signature going undetected across every
+// extracted type — a symptom of `extendsInterface` losing its target, since
+// the startup check above only guards the interface's existence.
+if (
+  !Object.values(ir.types).some(
+    (type) =>
+      type.kind === "object" && type.additional?.schema === "item-fields",
+  )
+) {
+  throw new Error(
+    "Contract extraction found no item-fields index signature across any type",
+  );
+}
+
+validateReferences(ir);
 
 // Emptied first, so dropping a root deletes its committed schema instead of
 // leaving one the regeneration check would never notice.

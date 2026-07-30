@@ -98,3 +98,11 @@ _Avoid_: zt types (names the code, not the promise), template API
 **Contract Root**:
 One lens of the **Template Contract** — the complete `zt` shape a given template kind receives. Three exist: the note root (note and content templates), the annotation root, and the filename root. Citation templates sit outside the contract until a cite root is added.
 _Avoid_: template type (names the template, not the data shape)
+
+**Template Helper**:
+A **Template Contract** member that is a function the template calls to produce text — the note, file, and image link makers. Helpers interpolate differently per engine (zero-arg auto-invoke in Liquid, an explicit call in Eta) and may also expose a Liquid filter form.
+_Avoid_: link maker (names one family, not the concept), resolver (that is the code supplying the value, not the contract member)
+
+**Inert Placeholder**:
+The stand-in a side-effect-free surface substitutes for a **Template Helper** whose live implementation would queue a write or an import. Only helpers the contract marks inert-capable can go inert; the placeholder names the reason the operation was withheld. A helper documented to always return an empty value is a stub — part of the contract, not an Inert Placeholder.
+_Avoid_: stub (a documented constant result)

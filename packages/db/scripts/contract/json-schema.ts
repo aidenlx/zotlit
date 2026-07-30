@@ -38,7 +38,7 @@ export function toJsonSchema(ir: ContractIR, root: ContractRoot): JsonSchema {
     }.`,
     $ref: defRef(rootIR.type),
     $defs: Object.fromEntries(
-      reachableTypes(ir, rootIR.type).map(([name, type]) => [
+      reachableTypes(ir, rootIR.type, rootIR.references).map(([name, type]) => [
         name,
         schemaFor(type, {
           itemTypes: ir.itemTypes,
@@ -67,40 +67,69 @@ function defRef(name: string): string {
   return `#/$defs/${name}`;
 }
 
-function reachableTypes(
+/** Whether a declared reference substitutes `owner`'s `member` at its own root. */
+function referenceFor(
+  references: readonly ContractReference[],
+  owner: string | undefined,
+  member: string,
+): ContractReference | undefined {
+  return references.find(
+    (reference) => reference.owner === owner && reference.member === member,
+  );
+}
+
+/**
+ * Every named type a root reaches, skipping a member a declared reference
+ * substitutes — the same scoping {@link memberSchema} applies via
+ * `atOwnerRoot`, so a reference-only owner never drags its ref-arm type in.
+ */
+export function reachableTypes(
   ir: ContractIR,
   root: string,
+  references: readonly ContractReference[],
 ): Array<readonly [string, ContractIR["types"][string]]> {
   const names = new Set<string>();
-  const visit = (type: ContractType): void => {
+  const visit = (
+    type: ContractType,
+    owner: string | undefined,
+    atOwnerRoot: boolean,
+  ): void => {
     switch (type.kind) {
       case "ref": {
         if (names.has(type.name)) return;
         names.add(type.name);
-        visit(ir.types[type.name]!);
+        visit(ir.types[type.name]!, type.name, true);
         return;
       }
       case "array":
-        visit(type.items);
+        visit(type.items, owner, false);
         return;
       case "record":
-        visit(type.values);
+        visit(type.values, owner, false);
         return;
       case "helper":
-        visit(type.value);
+        visit(type.value, owner, false);
         return;
       case "object":
-        for (const member of type.members) visit(member.type);
-        if (type.additional) visit(type.additional.type);
+        for (const member of type.members) {
+          if (
+            atOwnerRoot &&
+            referenceFor(references, owner, member.name) !== undefined
+          ) {
+            continue;
+          }
+          visit(member.type, owner, false);
+        }
+        if (type.additional) visit(type.additional.type, owner, false);
         return;
       case "union":
-        for (const option of type.options) visit(option);
+        for (const option of type.options) visit(option, owner, atOwnerRoot);
         return;
       default:
         return;
     }
   };
-  visit({ kind: "ref", name: root });
+  visit({ kind: "ref", name: root }, undefined, false);
   return [...names].map((name) => [name, ir.types[name]!] as const);
 }
 
@@ -139,7 +168,7 @@ function schemaFor(type: ContractType, context: SchemaContext): JsonSchema {
             required: ["$helper", "signature", "value"],
             additionalProperties: false,
           },
-          inertMarkerSchema(),
+          ...(type.inert ? [inertMarkerSchema()] : []),
         ],
       };
     case "object":
@@ -173,12 +202,27 @@ function objectSchema(
         )
       : false,
   };
+  const isItemFields = object.additional?.schema === "item-fields";
   return {
-    description: normalizeDoc(object.description),
-    ...(object.additional?.schema === "item-fields"
-      ? itemTypeSchema(base, context.itemTypes)
-      : base),
+    description: isItemFields
+      ? joinDescriptions(object.description, object.additional?.description)
+      : normalizeDoc(object.description),
+    ...(isItemFields ? itemTypeSchema(base, context.itemTypes) : base),
   };
+}
+
+/**
+ * An item-fields owner's own description plus its dropped index-signature
+ * description, since {@link itemTypeSchema} rebuilds the object without an
+ * `additionalProperties` keyword to carry the latter.
+ */
+function joinDescriptions(
+  ...parts: (string | undefined)[]
+): string | undefined {
+  const normalized = parts
+    .map(normalizeDoc)
+    .filter((part): part is string => Boolean(part));
+  return normalized.length > 0 ? normalized.join("\n\n") : undefined;
 }
 
 function memberSchema(
@@ -187,17 +231,45 @@ function memberSchema(
 ): JsonSchema {
   const reference =
     context.atOwnerRoot &&
-    context.references.find(
-      ({ owner, member: name }) =>
-        owner === context.owner && name === member.name,
-    );
+    referenceFor(context.references, context.owner, member.name);
   if (reference) {
     context.matchedReferences.add(reference);
-    return referenceMarkerSchema(reference.path);
+    return withDescription(
+      substituteReference(member.type, reference.path, {
+        ...context,
+        atOwnerRoot: false,
+      }),
+      member.description,
+    );
   }
   return withDescription(
     schemaFor(member.type, { ...context, atOwnerRoot: false }),
     member.description,
+  );
+}
+
+/**
+ * Replace only the ref arm of a reference-substituted member with the
+ * reference marker, keeping any other union options (e.g. `null`) as
+ * themselves.
+ */
+function substituteReference(
+  type: ContractType,
+  path: string,
+  context: SchemaContext,
+): JsonSchema {
+  if (type.kind === "ref") return referenceMarkerSchema(path);
+  if (type.kind === "union") {
+    return {
+      oneOf: type.options.map((option) =>
+        option.kind === "ref"
+          ? referenceMarkerSchema(path)
+          : schemaFor(option, context),
+      ),
+    };
+  }
+  throw new Error(
+    `Contract reference targets a member with no ref arm: ${JSON.stringify(type)}`,
   );
 }
 
