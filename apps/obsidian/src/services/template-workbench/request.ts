@@ -8,7 +8,10 @@ import {
   type ContractRoot,
   type TemplateSlot,
 } from "@zotlit/db";
-import { type FrontmatterLanguage } from "@zotlit/templates/constants";
+import {
+  type FrontmatterLanguage,
+  type FrontmatterMergeStrategy,
+} from "@zotlit/templates/constants";
 
 import {
   diagnostic,
@@ -40,11 +43,23 @@ export const FRONTMATTER_EVAL_PARAMS = [
   "format",
   "expect-source",
 ] as const;
+export const FRONTMATTER_SET_PARAMS = [
+  "field",
+  "expr",
+  "language",
+  "merge",
+] as const;
 /** Accepted `language` values, in the order selector messages list them. */
 export const FRONTMATTER_LANGUAGE_NAMES = [
   "liquid",
   "javascript",
 ] as const satisfies readonly FrontmatterLanguage[];
+/** Accepted `merge` values, in the order selector messages list them. */
+export const FRONTMATTER_MERGE_NAMES = [
+  "replace",
+  "append",
+  "keep",
+] as const satisfies readonly FrontmatterMergeStrategy[];
 export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
 export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
@@ -250,6 +265,89 @@ function parseFrontmatterLanguage(
   const language = value ?? "liquid";
   return (FRONTMATTER_LANGUAGE_NAMES as readonly string[]).includes(language)
     ? (language as FrontmatterLanguage)
+    : null;
+}
+
+/**
+ * `frontmatter-set`'s parsed selector: the field key to upsert, plus whichever
+ * of `expr`/`language`/`merge` the caller supplied. An absent property means
+ * "omitted" — the handler resolves it against the field's current
+ * configuration (patch) or a default (new field), so parsing never fills one
+ * in itself.
+ */
+export interface FrontmatterSetRequest {
+  field: string;
+  expr?: string;
+  language?: FrontmatterLanguage;
+  merge?: FrontmatterMergeStrategy;
+}
+
+/** `frontmatter-set` upserts one Managed Frontmatter field by key. */
+export function parseFrontmatterSetRequest(
+  params: CliData,
+): ParsedRequest<FrontmatterSetRequest> {
+  const rejected = rejectAccepted(params, {
+    command: "frontmatter-set",
+    accepted: FRONTMATTER_SET_PARAMS,
+  });
+  if (rejected) return invalid(rejected.parameter, rejected.message);
+
+  if (params.field === undefined) {
+    return invalid("field", "field is required.");
+  }
+  const field = params.field.trim();
+  if (field === "") return invalid("field", "field must not be empty.");
+
+  let expr: string | undefined;
+  if (params.expr !== undefined) {
+    expr = params.expr.trim();
+    if (expr === "") return invalid("expr", "expr must not be empty.");
+  }
+
+  let language: FrontmatterLanguage | undefined;
+  if (params.language !== undefined) {
+    const parsed = parseFrontmatterLanguageStrict(params.language);
+    if (parsed === null) {
+      return invalid(
+        "language",
+        `language must be ${quotedList(FRONTMATTER_LANGUAGE_NAMES)}.`,
+      );
+    }
+    language = parsed;
+  }
+
+  let merge: FrontmatterMergeStrategy | undefined;
+  if (params.merge !== undefined) {
+    if (
+      !(FRONTMATTER_MERGE_NAMES as readonly string[]).includes(params.merge)
+    ) {
+      return invalid(
+        "merge",
+        `merge must be ${quotedList(FRONTMATTER_MERGE_NAMES)}.`,
+      );
+    }
+    merge = params.merge as FrontmatterMergeStrategy;
+  }
+
+  return {
+    kind: "valid",
+    value: {
+      field,
+      ...(expr !== undefined ? { expr } : {}),
+      ...(language !== undefined ? { language } : {}),
+      ...(merge !== undefined ? { merge } : {}),
+    },
+  };
+}
+
+/** Unlike {@link parseFrontmatterLanguage}, an absent value stays absent
+ *  instead of defaulting to `"liquid"` — `frontmatter-set` only defaults a
+ *  new field's language, which the handler decides, not the parser. */
+function parseFrontmatterLanguageStrict(
+  value: string,
+): FrontmatterLanguage | null {
+  return (FRONTMATTER_LANGUAGE_NAMES as readonly string[]).includes(value)
+    ? (value as FrontmatterLanguage)
     : null;
 }
 

@@ -10,6 +10,7 @@ import { type CompileError } from "@/services/template/service";
 import {
   createTemplateWorkbenchHandlers,
   FRONTMATTER_EVAL_COMMAND,
+  FRONTMATTER_SET_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
@@ -43,6 +44,7 @@ const FRONTMATTER_EVALUATE_EMPTY = () => ({
   inertKeys: [],
 });
 const FRONTMATTER_VALIDATE_EMPTY = () => null;
+const FRONTMATTER_WRITE_NOOP = () => {};
 
 const TEMPLATE_FILES = [
   {
@@ -152,6 +154,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -191,6 +194,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -233,6 +237,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -297,6 +302,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -362,6 +368,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -409,6 +416,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -451,6 +459,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -482,6 +491,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -518,6 +528,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -563,6 +574,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -591,6 +603,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -660,6 +673,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -698,6 +712,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -732,6 +747,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -765,6 +781,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -808,6 +825,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -851,6 +869,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -891,6 +910,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -943,6 +963,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -990,6 +1011,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1036,6 +1058,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1077,6 +1100,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1116,6 +1140,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1162,6 +1187,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1202,6 +1228,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1240,6 +1267,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1299,6 +1327,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1333,6 +1362,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1431,6 +1461,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1478,6 +1509,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1520,6 +1552,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1592,6 +1625,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1631,6 +1665,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1668,6 +1703,7 @@ describe("Template Workbench CLI", () => {
         read: FRONTMATTER_READ_EMPTY,
         evaluate: FRONTMATTER_EVALUATE_EMPTY,
         validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
       },
     });
 
@@ -1705,6 +1741,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1743,6 +1780,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1776,6 +1814,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1810,6 +1849,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1851,6 +1891,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1882,6 +1923,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1920,6 +1962,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1954,6 +1997,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -1992,6 +2036,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2021,6 +2066,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2066,6 +2112,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2108,6 +2155,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2167,6 +2215,7 @@ describe("Template Workbench CLI", () => {
           }),
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2226,6 +2275,7 @@ describe("Template Workbench CLI", () => {
           }),
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2260,6 +2310,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2297,6 +2348,7 @@ describe("Template Workbench CLI", () => {
           read: FRONTMATTER_READ_EMPTY,
           evaluate: FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
 
@@ -2361,6 +2413,7 @@ describe("Template Workbench CLI", () => {
           read: overrides.read ?? FRONTMATTER_READ_EMPTY,
           evaluate: overrides.evaluate ?? FRONTMATTER_EVALUATE_EMPTY,
           validateExpr: overrides.validateExpr ?? FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
         },
       });
     }
@@ -2758,6 +2811,420 @@ describe("Template Workbench CLI", () => {
         diagnostic: { code: "TARGET_MISMATCH" },
       });
       expect(loadData).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("frontmatter-set", () => {
+    const EXISTING_FIELD = {
+      key: "summary",
+      expr: "{{ zt.title }}",
+      language: "liquid",
+      merge: "append",
+    } as const;
+
+    function makeHandlers(
+      overrides: {
+        fields?: readonly (typeof EXISTING_FIELD)[];
+        javascriptTemplatesEnabled?: boolean;
+        validateExpr?: (expr: string, language: string) => string | null;
+        /** Spy hook: called with the same array `write` stores, so a test can
+         *  assert on it while `read()` keeps reflecting the latest write, the
+         *  way the real settings service does. */
+        write?: (fields: readonly { key: string }[]) => void;
+      } = {},
+    ) {
+      let stored: readonly (typeof EXISTING_FIELD)[] = overrides.fields ?? [
+        EXISTING_FIELD,
+      ];
+      return createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled:
+            overrides.javascriptTemplatesEnabled ?? false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: () => ({
+            fields: stored,
+            inertKeys: [],
+            javascriptTemplatesEnabled:
+              overrides.javascriptTemplatesEnabled ?? false,
+          }),
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: overrides.validateExpr ?? FRONTMATTER_VALIDATE_EMPTY,
+          write: (fields) => {
+            stored = fields as readonly (typeof EXISTING_FIELD)[];
+            overrides.write?.(fields);
+          },
+        },
+      });
+    }
+
+    it("adds a new field, defaulting omitted language and merge", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "word-count",
+        expr: "{{ zt.title | size }}",
+      });
+
+      expect(write).toHaveBeenCalledWith([
+        EXISTING_FIELD,
+        {
+          key: "word-count",
+          expr: "{{ zt.title | size }}",
+          language: "liquid",
+          merge: "replace",
+        },
+      ]);
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 1,
+        command: FRONTMATTER_SET_COMMAND,
+        ok: true,
+        identity: IDENTITY,
+        request: { field: "word-count", expr: "{{ zt.title | size }}" },
+        fields: [
+          { key: "summary", inert: false },
+          {
+            key: "word-count",
+            expr: "{{ zt.title | size }}",
+            language: "liquid",
+            merge: "replace",
+            inert: false,
+          },
+        ],
+      });
+    });
+
+    it("patches an existing field, keeping its current language and merge", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        expr: "{{ zt.title | upcase }}",
+      });
+
+      expect(write).toHaveBeenCalledWith([
+        {
+          key: "summary",
+          expr: "{{ zt.title | upcase }}",
+          language: "liquid",
+          merge: "append",
+        },
+      ]);
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        fields: [
+          {
+            key: "summary",
+            expr: "{{ zt.title | upcase }}",
+            language: "liquid",
+            merge: "append",
+          },
+        ],
+      });
+    });
+
+    it("patches an existing field's merge strategy alone, keeping its expr", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        merge: "keep",
+      });
+
+      expect(write).toHaveBeenCalledWith([
+        {
+          key: "summary",
+          expr: "{{ zt.title }}",
+          language: "liquid",
+          merge: "keep",
+        },
+      ]);
+      expect(JSON.parse(output)).toMatchObject({ ok: true });
+    });
+
+    it("rejects a reserved key without writing", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "zotero-key",
+        expr: "anything",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        request: { field: "zotero-key", expr: "anything" },
+        identity: IDENTITY,
+        diagnostic: {
+          code: "RESERVED_KEY",
+          hint: DIAGNOSTIC_HINTS.RESERVED_KEY,
+          details: { key: "zotero-key" },
+        },
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("rejects a bare field flag", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "field requires a value.",
+          details: { parameter: "field" },
+        },
+      });
+    });
+
+    it("rejects a missing field parameter", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        expr: "anything",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "field" },
+        },
+      });
+    });
+
+    it("rejects a whitespace-only field", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "   ",
+        expr: "x",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "field must not be empty.",
+          details: { parameter: "field" },
+        },
+      });
+    });
+
+    it("rejects a new field with no expr", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "word-count",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        request: { field: "word-count" },
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "expr is required for a new field.",
+          details: { parameter: "expr" },
+        },
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("rejects a bare expr flag", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        expr: "",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "expr requires a value.",
+          details: { parameter: "expr" },
+        },
+      });
+    });
+
+    it("rejects a whitespace-only expr", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        expr: "   ",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "expr must not be empty.",
+          details: { parameter: "expr" },
+        },
+      });
+    });
+
+    it("rejects an invalid language value", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        language: "bogus",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "language" },
+        },
+      });
+    });
+
+    it("rejects an invalid merge value", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        merge: "bogus",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "merge" },
+        },
+      });
+    });
+
+    it("rejects a non-compiling expression without writing", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({
+        write,
+        validateExpr: () => "Unexpected token '+'",
+      });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        expr: "{{ zt.title + }}",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "EXPRESSION_COMPILE_ERROR",
+          message: "Unexpected token '+'",
+          hint: DIAGNOSTIC_HINTS.EXPRESSION_COMPILE_ERROR,
+        },
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("rejects writing a javascript field while the gate is off", async () => {
+      const write = vi.fn();
+      const validateExpr = vi.fn();
+      const handlers = makeHandlers({
+        write,
+        validateExpr,
+        javascriptTemplatesEnabled: false,
+      });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "word-count",
+        expr: "return 1;",
+        language: "javascript",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "ETA_OPT_IN_REQUIRED",
+          hint: DIAGNOSTIC_HINTS.ETA_OPT_IN_REQUIRED,
+        },
+      });
+      expect(validateExpr).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("writes a javascript field once the gate is on", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({
+        write,
+        javascriptTemplatesEnabled: true,
+      });
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "word-count",
+        expr: "return 1;",
+        language: "javascript",
+      });
+
+      expect(write).toHaveBeenCalledWith([
+        EXISTING_FIELD,
+        {
+          key: "word-count",
+          expr: "return 1;",
+          language: "javascript",
+          merge: "replace",
+        },
+      ]);
+      expect(JSON.parse(output)).toMatchObject({ ok: true });
+    });
+
+    it("rejects an unrecognized parameter", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "summary",
+        expr: "x",
+        key: "ITEM2345",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "key" },
+        },
+      });
+    });
+
+    it("echoes the field list read back after the write, inert flags included", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_SET_COMMAND]({
+        field: "word-count",
+        expr: "{{ zt.title | size }}",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        fields: [
+          { key: "summary", inert: false },
+          { key: "word-count", inert: false },
+        ],
+      });
     });
   });
 });

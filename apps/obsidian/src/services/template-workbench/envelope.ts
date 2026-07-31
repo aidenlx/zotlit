@@ -68,6 +68,8 @@ export const DIAGNOSTIC_HINTS = {
     "Read the message to find the failed expression, correct the Template or the selected object, then run the command again.",
   EXPRESSION_COMPILE_ERROR:
     "Correct the syntax of the expression named in expr, then evaluate it again.",
+  RESERVED_KEY:
+    "Choose a field key ZotLit does not manage; the reservedKeys list from frontmatter-status names every key that is off limits.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -107,7 +109,7 @@ export type WorkbenchCommand =
       | "render"
       | "guide"
       | "source"}`
-  | `zotlit:frontmatter-${"status" | "eval"}`;
+  | `zotlit:frontmatter-${"status" | "eval" | "set"}`;
 
 /** One configured Managed Frontmatter field, as `frontmatter-status` reports
  *  it: the raw configuration plus whether the JavaScript Templates gate
