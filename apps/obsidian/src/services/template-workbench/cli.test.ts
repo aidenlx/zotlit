@@ -547,6 +547,11 @@ describe("Template Workbench CLI", () => {
     expect(output).toContain(
       "https://zotlit.aidenlx.site/docs/reference/templates",
     );
+    expect(output).toContain("frontmatter-status");
+    expect(output).toContain("frontmatter-eval");
+    expect(output).toContain("frontmatter-set");
+    expect(output).toContain("frontmatter-remove");
+    expect(output).toContain("frontmatter-reorder");
     for (const topic of [
       "data",
       "render",

@@ -55,6 +55,12 @@ const FRONTMATTER_SET_SYNOPSIS = `obsidian-cli zotlit:frontmatter-set field=<key
     [expr=<expression>] [language=<${FRONTMATTER_LANGUAGE_NAMES.join("|")}>] \\
     [merge=<${FRONTMATTER_MERGE_NAMES.join("|")}>]`;
 
+const FRONTMATTER_SYNOPSIS = `obsidian-cli zotlit:frontmatter-status
+  ${FRONTMATTER_EVAL_SYNOPSIS}
+  ${FRONTMATTER_SET_SYNOPSIS}
+  obsidian-cli zotlit:frontmatter-remove field=<key>
+  obsidian-cli zotlit:frontmatter-reorder order=<k1,k2,...>`;
+
 const SIZE_SECTION = `SIZE
   template-data output and the downloaded schema can be very large. Pipe JSON
   directly to jq and select only the definitions, fields, or array entries
@@ -221,11 +227,7 @@ WHITESPACE
 const FRONTMATTER_SECTION = `MANAGED FRONTMATTER
 
 SYNOPSIS
-  obsidian-cli zotlit:frontmatter-status
-  ${FRONTMATTER_EVAL_SYNOPSIS}
-  ${FRONTMATTER_SET_SYNOPSIS}
-  obsidian-cli zotlit:frontmatter-remove field=<key>
-  obsidian-cli zotlit:frontmatter-reorder order=<k1,k2,...>
+  ${FRONTMATTER_SYNOPSIS}
 
 DESCRIPTION
   A Managed Frontmatter field is configuration, not a vault file. This family
@@ -327,6 +329,7 @@ const QUICKSTART = `ZOTLIT-TEMPLATE-WORKBENCH(1)
 
 NAME
   zotlit-template-workbench - inspect, edit, and test ZotLit templates
+                              and managed frontmatter
 
 SYNOPSIS
   obsidian-cli zotlit:template-status
@@ -334,11 +337,12 @@ SYNOPSIS
   ${TEMPLATE_DATA_SYNOPSIS}
   obsidian-cli zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
   ${TEMPLATE_RENDER_SYNOPSIS}
+  ${FRONTMATTER_SYNOPSIS}
   obsidian-cli zotlit:template-guide [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DESCRIPTION
-  The Template Workbench inspects template state and data, reads active source, and
-  renders changes in memory.
+  The Template Workbench inspects template state and data, reads active source,
+  renders changes in memory, and manages Managed Frontmatter field configuration.
 
 NAMESPACES
   root=<name> Selects a CLI data shape. It does not select a field.
@@ -358,6 +362,16 @@ WORKFLOW
   5. Edit winner.source.path, or editablePath when no vault file is active.
   6. Run template-render with expect-source=<identity.source.id>; test ok, then read
      warnings. Use format=markdown for raw bytes.
+
+MANAGED FRONTMATTER
+  Configured expressions evaluated per item during note creation and sync.
+  The frontmatter-* commands inspect, evaluate, and mutate field configuration
+  through the settings service.
+
+  1. Run frontmatter-status. Review configured fields and gate state.
+  2. Run frontmatter-eval key=<indexed-key> to test evaluation against an item.
+  3. Use frontmatter-set, frontmatter-remove, frontmatter-reorder to edit the
+     field set. Each command echoes the resulting field list.
 
 OUTPUT
   JSON responses have { contractVersion, command, ok, ... }. Commands add the echoed
