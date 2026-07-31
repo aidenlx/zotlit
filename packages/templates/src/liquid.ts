@@ -20,6 +20,7 @@ import { Temporal } from "@zotlit/shared/temporal";
 import { formatBlockquote } from "./blockquote";
 import { coerceOutput } from "./coerce";
 import { filenameSuffix } from "./filename-suffix";
+import { normalizeObsidianTag } from "./obsidian-tag";
 
 /**
  * Minimal structural view of a Zotero multipart date, duck-typed so this
@@ -42,6 +43,19 @@ export const LIQUID_BUILTIN_FILTER_NAMES: readonly string[] = Object.freeze(
 export const LIQUID_BUILTIN_TAG_NAMES: readonly string[] = Object.freeze(
   Object.keys(tags).sort(),
 );
+
+export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
+  "embed",
+  "file_link",
+  "note_link",
+  "img_link",
+  "note_links",
+  "collection_paths",
+  "arr_prefix",
+  "arr_suffix",
+  "arr_replace",
+  "obsidian_tag",
+]);
 
 const ITEM_DATE_KINDS: ReadonlySet<unknown> = new Set([
   "date",
@@ -85,6 +99,20 @@ function registerLinkFilter(
         : null;
     },
   );
+}
+
+/**
+ * Reads the text to normalize from one `obsidian_tag` input. A Zotero tag
+ * arrives as `{ name }`, so reading it here lets a template pipe `zt.tags`
+ * straight in without `map: "name"` first. An object with no string `name`
+ * yields `""`, which the filter then drops — `[object Object]` is never a tag
+ * the author meant.
+ */
+function tagName(item: unknown): string {
+  if (typeof item === "string") return item;
+  if (typeof item === "number") return String(item);
+  const name = (item as { name?: unknown } | null | undefined)?.name;
+  return typeof name === "string" ? name : "";
 }
 
 /**
@@ -225,6 +253,41 @@ export function createLiquidEngine({
           )
         : [],
   );
+
+  engine.registerFilter("arr_prefix", (items: unknown, str?: string) => {
+    if (!Array.isArray(items))
+      throw new TypeError("arr_prefix requires an array");
+    return items.map((item) => `${str ?? ""}${String(item)}`);
+  });
+
+  engine.registerFilter("arr_suffix", (items: unknown, str?: string) => {
+    if (!Array.isArray(items))
+      throw new TypeError("arr_suffix requires an array");
+    return items.map((item) => `${String(item)}${str ?? ""}`);
+  });
+
+  engine.registerFilter(
+    "arr_replace",
+    (items: unknown, search?: string, replacement?: string) => {
+      if (!Array.isArray(items))
+        throw new TypeError("arr_replace requires an array");
+      // An empty search would insert the replacement between every character.
+      if (!search) throw new TypeError("arr_replace requires a search string");
+      return items.map((item) =>
+        String(item).replaceAll(search, replacement ?? ""),
+      );
+    },
+  );
+
+  engine.registerFilter("obsidian_tag", (value: unknown, prefix?: string) => {
+    const prefixed = (item: unknown): string => {
+      const body = normalizeObsidianTag(tagName(item));
+      return body === "" ? "" : `${prefix ?? ""}${body}`;
+    };
+    return Array.isArray(value)
+      ? value.map(prefixed).filter((tag) => tag !== "")
+      : prefixed(value);
+  });
 
   engine.registerTag("suffix", SuffixTag);
 

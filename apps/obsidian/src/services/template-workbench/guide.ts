@@ -4,6 +4,7 @@ import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
 import {
   LIQUID_BUILTIN_FILTER_NAMES,
   LIQUID_BUILTIN_TAG_NAMES,
+  ZOTLIT_FILTER_NAMES,
 } from "@zotlit/templates/liquid";
 
 import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
@@ -216,7 +217,27 @@ ZOTLIT TAGS
               Emit a filename-suffix placeholder.
 
 ZOTLIT FILTERS
-  embed, file_link, note_link, img_link, note_links, collection_paths
+  ${ZOTLIT_FILTER_NAMES.join(", ")}
+
+  arr_prefix  Prepend a string to every element of an array.
+              {{ zt.creators | map: "lastName" | arr_prefix: "@" }}
+  arr_suffix  Append a string to every element of an array.
+              {{ zt.creators | map: "lastName" | arr_suffix: "!" }}
+  arr_replace Replace every occurrence of a substring in every element.
+              The replacement defaults to an empty string, which deletes it.
+              {{ zt.collections | collection_paths | arr_replace: "/", " > " }}
+  obsidian_tag
+              Convert text into a valid Obsidian tag, with an optional prefix.
+              Accepts an array or one value, and reads the name of a Zotero
+              tag object, so map is not needed.
+              {{ zt.tags | obsidian_tag: "#" }}
+
+  obsidian_tag replaces each run of characters Obsidian rejects with one
+  underscore, collapses and trims slashes, and prefixes an all-digit name,
+  which Obsidian rejects on its own. A name that keeps nothing is dropped from
+  an array. The prefix is added last and stays verbatim, so it can be "#" for
+  the note body or "zotero/" for a nested tag. Use obsidian_tag for every tag,
+  and arr_replace for free text.
 
   The date filter also accepts Temporal values and Zotero multipart dates.
 
@@ -235,6 +256,12 @@ DESCRIPTION
   family inspects, evaluates, and mutates that configuration through the
   settings service, so the settings modal, compilation, and sync all observe
   the same change.
+
+EXPRESSIONS
+  Field expressions are value expressions (filter chains), not template blocks.
+  Tags such as {% assign %}, {% for %}, and {% if %} are not supported.
+  Use filters to transform data: where, map, arr_prefix, arr_suffix,
+  arr_replace, obsidian_tag, join, etc.
 
 COMMANDS
   frontmatter-status

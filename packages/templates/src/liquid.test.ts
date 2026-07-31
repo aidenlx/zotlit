@@ -315,6 +315,226 @@ describe("collection_paths filter", () => {
   });
 });
 
+describe("arr_prefix filter", () => {
+  it("prepends a string to every element", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_prefix: "#"', {
+        zt: { items: ["foo", "bar"] },
+      }),
+    ).toEqual(["#foo", "#bar"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_prefix: "#"', {
+        zt: { items: [] },
+      }),
+    ).toEqual([]);
+  });
+
+  it("throws for non-array input", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync('zt.items | arr_prefix: "#"', {
+        zt: { items: null },
+      }),
+    ).toThrow("arr_prefix requires an array");
+  });
+
+  it("uses empty string when prefix argument is omitted", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | arr_prefix", {
+        zt: { items: ["a", "b"] },
+      }),
+    ).toEqual(["a", "b"]);
+  });
+});
+
+describe("arr_suffix filter", () => {
+  it("appends a string to every element", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_suffix: "!"', {
+        zt: { items: ["foo", "bar"] },
+      }),
+    ).toEqual(["foo!", "bar!"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_suffix: "!"', {
+        zt: { items: [] },
+      }),
+    ).toEqual([]);
+  });
+
+  it("throws for non-array input", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync('zt.items | arr_suffix: "!"', {
+        zt: { items: "not-array" },
+      }),
+    ).toThrow("arr_suffix requires an array");
+  });
+});
+
+describe("arr_replace filter", () => {
+  it("replaces every occurrence in every element", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_replace: "/", " > "', {
+        zt: { items: ["a/b/c", "d/e"] },
+      }),
+    ).toEqual(["a > b > c", "d > e"]);
+  });
+
+  it("deletes the search string when the replacement is omitted", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_replace: "."', {
+        zt: { items: ["a.b", "c."] },
+      }),
+    ).toEqual(["ab", "c"]);
+  });
+
+  it("coerces every element to a string", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_replace: "0", "-"', {
+        zt: { items: [101, 20] },
+      }),
+    ).toEqual(["1-1", "2-"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | arr_replace: "a", "b"', {
+        zt: { items: [] },
+      }),
+    ).toEqual([]);
+  });
+
+  it("throws for non-array input", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync('zt.items | arr_replace: "a", "b"', {
+        zt: { items: "not-array" },
+      }),
+    ).toThrow("arr_replace requires an array");
+  });
+
+  it("throws when the search string is missing", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync("zt.items | arr_replace", {
+        zt: { items: ["a"] },
+      }),
+    ).toThrow("arr_replace requires a search string");
+  });
+
+  it("throws for an empty search string, which would match between every character", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync('zt.items | arr_replace: "", "-"', {
+        zt: { items: ["abc"] },
+      }),
+    ).toThrow("arr_replace requires a search string");
+  });
+});
+
+describe("obsidian_tag filter", () => {
+  it("normalizes every element of an array", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | obsidian_tag", {
+        zt: { items: ["Machine Learning", "R & D"] },
+      }),
+    ).toEqual(["Machine_Learning", "R_D"]);
+  });
+
+  it("normalizes a scalar to a scalar", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.name | obsidian_tag", {
+        zt: { name: "Machine Learning" },
+      }),
+    ).toBe("Machine_Learning");
+  });
+
+  it("reads the name of a tag object, so map is not needed", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.tags | obsidian_tag", {
+        zt: { tags: [{ name: "Machine Learning" }, { name: "Open Access" }] },
+      }),
+    ).toEqual(["Machine_Learning", "Open_Access"]);
+  });
+
+  it("adds the prefix verbatim, after normalizing", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | obsidian_tag: "#"', {
+        zt: { items: ["Machine Learning"] },
+      }),
+    ).toEqual(["#Machine_Learning"]);
+    expect(
+      engine.evalValueSync('zt.items | obsidian_tag: "zotero/"', {
+        zt: { items: ["Machine Learning"] },
+      }),
+    ).toEqual(["zotero/Machine_Learning"]);
+  });
+
+  it("stays idempotent under a # prefix", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | obsidian_tag: "#"', {
+        zt: { items: ["#todo"] },
+      }),
+    ).toEqual(["#todo"]);
+  });
+
+  it("drops an element that normalizes to nothing", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.items | obsidian_tag: "#"', {
+        zt: { items: ["ok", "!!!", "   "] },
+      }),
+    ).toEqual(["#ok"]);
+  });
+
+  it("normalizes a number, so a year tag stays usable", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | obsidian_tag", {
+        zt: { items: [1984] },
+      }),
+    ).toEqual(["_1984"]);
+  });
+
+  it("drops an object that carries no name", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | obsidian_tag", {
+        zt: { items: [{ other: "x" }, "ok"] },
+      }),
+    ).toEqual(["ok"]);
+  });
+
+  it("returns an empty string for a scalar that normalizes to nothing", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync('zt.name | obsidian_tag: "#"', {
+        zt: { name: "!!!" },
+      }),
+    ).toBe("");
+  });
+});
+
 describe("suffix tag", () => {
   it("emits the default marker", () => {
     const engine = createLiquidEngine();
