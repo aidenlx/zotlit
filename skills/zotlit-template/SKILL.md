@@ -1,13 +1,13 @@
 ---
 name: zotlit-template
-description: "Create, edit, diagnose, and verify ZotLit templates in an Obsidian vault. Use whenever a user wants to change template output or troubleshoot a template, including when they describe only the desired result."
+description: "Create, edit, diagnose, and verify ZotLit templates and managed frontmatter in an Obsidian vault. Use whenever a user wants to change template output, configure literature note frontmatter fields, or troubleshoot, including when they describe only the desired result."
 ---
 
 # ZotLit Template Workbench
 
 ## Start
 
-Follow these steps in order before writing or editing any template.
+Follow these steps in order before editing any template or frontmatter configuration.
 
 1. `obsidian-cli help zotlit` — commands reject unrecognized parameters; never guess a name.
 2. `obsidian-cli zotlit:template-status` — pass `expect-source=<identity.source.id>` to every later command.
@@ -34,11 +34,6 @@ current system, and reuse it for every later question about the same schema.
 ## Choose the language
 
 Prefer Liquid. Use Eta only when the required behavior is absent from the supported Liquid tags and filters. Ask the user to enable JavaScript Templates in ZotLit settings before using Eta.
-
-## Managed Frontmatter
-
-The Workbench also inspects, evaluates, and mutates Managed Frontmatter fields — the `zotlit:frontmatter-*` commands. Run `obsidian-cli zotlit:template-guide topic=frontmatter` before using them.
-
 
 ## Tone
 
