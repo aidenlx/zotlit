@@ -1,6 +1,6 @@
 ---
 name: zotlit-template
-description: "Create, edit, diagnose, and verify ZotLit templates. Use whenever a user wants to change literature-note bodies, managed content, annotations, filenames, or citation rendering in an Obsidian vault, even when they describe the desired output without naming ZotLit templates."
+description: "Create, edit, diagnose, and verify ZotLit templates in an Obsidian vault. Use whenever a user wants to change template output or troubleshoot a template, including when they describe only the desired result."
 ---
 
 # ZotLit Template Workbench

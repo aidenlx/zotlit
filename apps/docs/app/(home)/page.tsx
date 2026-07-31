@@ -53,6 +53,13 @@ const features: Array<{
     description:
       "Bring Zotero child notes and standalone notes into your vault as Markdown.",
   },
+  {
+    term: "Agent-assisted templates",
+    href: "/docs/install-skill",
+    ref: "How-to →",
+    description:
+      "Describe the note you want. Your agent edits and tests its templates against your Zotero library.",
+  },
 ];
 
 export default function HomePage() {

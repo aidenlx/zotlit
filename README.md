@@ -48,6 +48,7 @@ ZotLit connects your Zotero library to Obsidian. One command turns a Zotero item
 | **Keep notes updated** | Re-render notes and refresh their metadata as items change in Zotero. |
 | **Live updates** | Push changes from Zotero to Obsidian as they happen. *Requires the [companion](https://zotlit.aidenlx.site/docs/install-companion).* |
 | **Templates** | Customize note, citation, and filename output with Liquid or Eta templates. |
+| **Agent-assisted templates** | [Describe the note you want](https://zotlit.aidenlx.site/docs/install-skill). Your agent edits and tests its templates against your Zotero library. |
 
 Full guides live in the [documentation](https://zotlit.aidenlx.site/docs).
 
