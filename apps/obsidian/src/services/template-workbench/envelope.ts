@@ -5,7 +5,11 @@
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
 
-import { CONTRACT_VERSION, type TemplateSlot } from "@zotlit/db";
+import {
+  CONTRACT_VERSION,
+  type ContractRoot,
+  type TemplateSlot,
+} from "@zotlit/db";
 import { TemplateError, type TemplateLanguage } from "@zotlit/templates/facade";
 
 import { InertTemplateError } from "@/services/template/errors";
@@ -16,6 +20,7 @@ import {
 } from "@/services/template/service";
 
 import { type TemplateDataLoadResult } from "./data";
+import { type SchemaAsset } from "./schema";
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
@@ -114,8 +119,10 @@ export type EnvelopeTail =
   | (EnvelopeFacts & { ok: false; diagnostic: Diagnostic })
   | (EnvelopeFacts & {
       ok: true;
-      /** The installed ZotLit version that answered the status command. */
+      /** The installed ZotLit version that answered the command. */
       pluginVersion?: string;
+      /** Where each root's contract schema is published, keyed by root. */
+      schemas?: Readonly<Record<ContractRoot, SchemaAsset>>;
       javascriptTemplatesEnabled?: boolean;
       templates?: readonly TemplateFileStatus[];
       /** The object a Template reads as `zt`. */

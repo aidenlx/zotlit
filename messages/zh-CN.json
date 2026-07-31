@@ -322,7 +322,7 @@
   "settings_template_desc_filename": "新文献笔记的文件名。使用正斜杠 (/) 可将笔记放入文献笔记文件夹下的子文件夹。",
   "cli_template_status_desc": "报告 ZotLit 模板工作台状态",
   "cli_template_data_desc": "返回序列化的 ZotLit 模板数据",
-  "cli_template_schema_desc": "返回 ZotLit 模板数据架构",
+  "cli_template_schema_desc": "返回所有 ZotLit 模板数据架构的下载链接",
   "cli_template_render_desc": "在内存中渲染当前生效的 ZotLit 模板",
   "cli_template_guide_desc": "输出 ZotLit 模板工作台指南",
   "cli_template_source_desc": "返回当前生效的 ZotLit 模板正文",

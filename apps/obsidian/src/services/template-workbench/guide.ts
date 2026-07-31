@@ -35,12 +35,23 @@ function manList(names: readonly string[]): string {
 const ANNOTATION_REQUIRED: DiagnosticCode = "ANNOTATION_REQUIRED";
 const ETA_OPT_IN_REQUIRED: DiagnosticCode = "ETA_OPT_IN_REQUIRED";
 
+const TEMPLATE_DATA_SYNOPSIS = `obsidian-cli zotlit:template-data key=<indexed-key> \\
+    root=<${CONTRACT_ROOT_NAMES.join("|")}> expect-source=<source-id>`;
+
+const TEMPLATE_RENDER_SYNOPSIS = `obsidian-cli zotlit:template-render key=<indexed-key> \\
+    template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
+    [format=<json|markdown>]`;
+
+const SIZE_SECTION = `SIZE
+  template-data output and the downloaded schema can be very large. Pipe JSON
+  directly to jq and select only the definitions, fields, or array entries
+  needed.`;
+
 const DATA_SECTION = `TEMPLATE DATA
 
 SYNOPSIS
-  obsidian-cli zotlit:template-schema root=<${CONTRACT_ROOT_NAMES.join("|")}>
-  obsidian-cli zotlit:template-data key=<indexed-key> \\
-    root=<${CONTRACT_ROOT_NAMES.join("|")}> expect-source=<source-id>
+  obsidian-cli zotlit:template-schema
+  ${TEMPLATE_DATA_SYNOPSIS}
 
 DESCRIPTION
   All template data is under zt. The root selects the shape of zt, not the field
@@ -77,16 +88,17 @@ OUTPUT
   template-data stores the template object under the literal key "zt".
   Example: jq '.zt.annotations'.
 
-SIZE
-  template-schema and template-data output can be very large. Pipe JSON directly
-  to jq and select only the definitions, fields, or array entries needed.`;
+  template-schema takes no parameters. It answers with schemas.<root>.url and
+  schemas.<root>.fileName for every root. Each schema file is a release asset of
+  the installed version. Download the one root the edit needs to a temporary
+  folder under its fileName, then read the local copy.
+
+${SIZE_SECTION}`;
 
 const RENDER_SECTION = `TEMPLATE RENDER
 
 SYNOPSIS
-  obsidian-cli zotlit:template-render key=<indexed-key> \\
-    template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
-    [format=<json|markdown>]
+  ${TEMPLATE_RENDER_SYNOPSIS}
 
 TEMPLATES
   ${quotedList(TEMPLATE_SLOT_NAMES)}
@@ -100,7 +112,7 @@ TEMPLATES
 
 DATA ROOTS
   template-render infers the root from the template. It has no root option. For
-  template-data and template-schema, select the root shown below.
+  template-data, select the root shown below.
 
 ${TEMPLATE_SLOT_NAMES.map(rootRow).join("\n")}
 
@@ -234,13 +246,10 @@ NAME
 
 SYNOPSIS
   obsidian-cli zotlit:template-status
-  obsidian-cli zotlit:template-schema root=<${CONTRACT_ROOT_NAMES.join("|")}>
-  obsidian-cli zotlit:template-data key=<indexed-key> \\
-    root=<${CONTRACT_ROOT_NAMES.join("|")}> expect-source=<source-id>
+  obsidian-cli zotlit:template-schema
+  ${TEMPLATE_DATA_SYNOPSIS}
   obsidian-cli zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
-  obsidian-cli zotlit:template-render key=<indexed-key> \\
-    template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
-    [format=<json|markdown>]
+  ${TEMPLATE_RENDER_SYNOPSIS}
   obsidian-cli zotlit:template-guide [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DESCRIPTION
@@ -273,14 +282,15 @@ OUTPUT
   ok=false    On failure, follow diagnostic.hint.
   template-data
               The template object is under "zt". Example: jq '.zt.annotations'.
+  template-schema
+              Download URLs are under "schemas.<root>.url", each with the file
+              name to save it as under "schemas.<root>.fileName".
   template-render
               Rendered bytes are under "markdown"; diagnostics are under "warnings".
   template-source
               Active template text is under "source".
 
-SIZE
-  template-schema and template-data output can be very large. Pipe JSON directly
-  to jq and select only the definitions, fields, or array entries needed.
+${SIZE_SECTION}
 
 TOPICS
 ${TOPIC_INDEX}

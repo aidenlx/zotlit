@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import annotationSchema from "@zotlit/db/contract/annotation.schema.json?raw";
-import filenameSchema from "@zotlit/db/contract/filename.schema.json?raw";
-import noteSchema from "@zotlit/db/contract/note.schema.json?raw";
 import { Temporal } from "@zotlit/shared/temporal";
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 
@@ -473,7 +470,8 @@ describe("Template Workbench CLI", () => {
     expect(output).toContain("follow diagnostic.hint");
     expect(output).toContain("expect-source=<identity.source.id>");
     expect(output).toContain("root=note and zt.annotations");
-    expect(output).toContain("output can be very large");
+    expect(output).toContain("can be very large");
+    expect(output).toContain("schemas.<root>.url");
     expect(output).toContain(
       "https://zotlit.aidenlx.site/docs/reference/templates",
     );
@@ -862,45 +860,51 @@ describe("Template Workbench CLI", () => {
     },
   );
 
-  it.each([
-    ["note", noteSchema],
-    ["annotation", annotationSchema],
-    ["filename", filenameSchema],
-  ] as const)(
-    "returns the bundled %s schema verbatim",
-    async (root, schema) => {
-      const getIdentity = vi.fn(() => IDENTITY);
-      const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
-      const waitUntilSettled = vi.fn(async () => "settled" as const);
-      const handlers = createTemplateWorkbenchHandlers({
-        pluginVersion: PLUGIN_VERSION,
-        getIdentity,
-        loadData,
-        templates: {
-          javascriptTemplatesEnabled: false,
-          compileErrors: NO_COMPILE_ERRORS,
-          getTemplateFileStatuses: () => TEMPLATE_FILES,
-          render: EMPTY_RENDER,
-          renderFilename: EMPTY_RENDER,
-          analyzeRootVariables: NO_ROOT_VARIABLES,
-          getTemplateSource: EMPTY_SOURCE,
-          waitUntilSettled,
-        },
-      });
+  it("points at every published schema for the installed version", async () => {
+    const getIdentity = vi.fn(() => IDENTITY);
+    const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+    const waitUntilSettled = vi.fn(async () => "settled" as const);
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity,
+      loadData,
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled,
+      },
+    });
 
-      const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({ root });
+    const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({});
 
-      expect(output).toBe(schema);
-      expect(JSON.parse(output).$id).toContain(`:v1:${root}`);
-      expect(getIdentity).not.toHaveBeenCalled();
-      expect(loadData).not.toHaveBeenCalled();
-      expect(waitUntilSettled).not.toHaveBeenCalled();
-    },
-  );
+    expect(JSON.parse(output)).toEqual({
+      contractVersion: 1,
+      command: TEMPLATE_SCHEMA_COMMAND,
+      ok: true,
+      pluginVersion: PLUGIN_VERSION,
+      schemas: Object.fromEntries(
+        CONTRACT_ROOT_NAMES.map((root) => [
+          root,
+          {
+            url: `https://github.com/aidenlx/zotlit/releases/download/${PLUGIN_VERSION}/${root}.schema.json`,
+            fileName: `zotlit-${root}-${PLUGIN_VERSION}.schema.json`,
+          },
+        ]),
+      ),
+    });
+    expect(getIdentity).not.toHaveBeenCalled();
+    expect(loadData).not.toHaveBeenCalled();
+    expect(waitUntilSettled).not.toHaveBeenCalled();
+  });
 
-  it.each([{}, { root: "true" }, { root: "cite" }] as Record<string, string>[])(
-    "rejects an invalid schema root %#",
-    async (params) => {
+  it.each(["root", "template"])(
+    "rejects a %s selector for template-schema",
+    async (parameter) => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
@@ -917,7 +921,9 @@ describe("Template Workbench CLI", () => {
         },
       });
 
-      const output = await handlers[TEMPLATE_SCHEMA_COMMAND](params);
+      const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
+        [parameter]: "note",
+      });
 
       expect(JSON.parse(output)).toEqual({
         contractVersion: 1,
@@ -925,9 +931,10 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
-          message: "root must be 'note', 'annotation', or 'filename'.",
+          message:
+            "template-schema takes no parameters; it answers with the schema of every data root, keyed by root under 'schemas'.",
           hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
-          details: { parameter: "root" },
+          details: { parameter },
         },
       });
     },
@@ -951,7 +958,6 @@ describe("Template Workbench CLI", () => {
     });
 
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
-      root: "note",
       key: "ITEM2345",
     });
 
@@ -966,34 +972,6 @@ describe("Template Workbench CLI", () => {
         details: { parameter: "key" },
       },
     });
-  });
-
-  it("cross-references template= to root= on template-schema", async () => {
-    const handlers = createTemplateWorkbenchHandlers({
-      pluginVersion: PLUGIN_VERSION,
-      getIdentity: () => IDENTITY,
-      loadData: async () => ({ kind: "not-found" }),
-      templates: {
-        javascriptTemplatesEnabled: false,
-        compileErrors: NO_COMPILE_ERRORS,
-        getTemplateFileStatuses: () => TEMPLATE_FILES,
-        render: EMPTY_RENDER,
-        renderFilename: EMPTY_RENDER,
-        analyzeRootVariables: NO_ROOT_VARIABLES,
-        getTemplateSource: EMPTY_SOURCE,
-        waitUntilSettled: async () => "settled" as const,
-      },
-    });
-
-    const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
-      root: "note",
-      template: "note",
-    });
-
-    const message = JSON.parse(output).diagnostic.message as string;
-    expect(message).toContain("root=");
-    expect(message).toContain("template-render");
-    expect(message).toContain("template-source");
   });
 
   it("rejects an unrecognized parameter for template-schema", async () => {
@@ -1014,7 +992,6 @@ describe("Template Workbench CLI", () => {
     });
 
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
-      root: "note",
       "--help": "true",
       format: "json",
     });
@@ -1735,7 +1712,6 @@ describe("Template Workbench CLI", () => {
 
       const message = JSON.parse(output).diagnostic.message as string;
       expect(message).toContain("template=");
-      expect(message).toContain("template-schema");
       expect(message).toContain("template-data");
     });
   });

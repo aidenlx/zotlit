@@ -32,7 +32,7 @@ export type ParsedRequest<T> =
  */
 export const STATUS_PARAMS = [] as const;
 export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
-export const SCHEMA_PARAMS = ["root"] as const;
+export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
   "key",
   "template",
@@ -58,7 +58,7 @@ export function parseDataRequest(params: CliData): ParsedRequest<DataRequest> {
   const rejected = rejectAccepted(params, {
     command: "template-data",
     accepted: DATA_PARAMS,
-    hints: { template: rootCommandTemplateHint("template-data") },
+    hints: { template: dataCommandTemplateHint() },
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
 
@@ -103,23 +103,19 @@ export function parseRenderRequest(
   return withExpectations(params, { key, template, format });
 }
 
-/** `template-schema` selects a bundled schema and reads nothing item-backed. */
-export function parseSchemaRequest(
-  params: CliData,
-): ParsedRequest<ContractRoot> {
+/** `template-schema` lists every published schema and reads no selector at all. */
+export function parseSchemaRequest(params: CliData): ParsedRequest<null> {
   const rejected = rejectAccepted(params, {
     command: "template-schema",
     accepted: SCHEMA_PARAMS,
     hints: {
       key: "template-schema does not accept an item selector.",
-      template: rootCommandTemplateHint("template-schema"),
+      root: SCHEMA_LISTS_EVERY_ROOT_MESSAGE,
+      template: SCHEMA_LISTS_EVERY_ROOT_MESSAGE,
     },
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  const root = parseContractRoot(params.root);
-  if (root === null) return invalid("root", rootVocabulary());
-  return { kind: "valid", value: root };
+  return { kind: "valid", value: null };
 }
 
 /** `template-source` selects a Template name and reads nothing item-backed. */
@@ -272,23 +268,25 @@ function rejectAccepted(
 const VAULT_AFTER_COMMAND_MESSAGE =
   "vault must come before the command name (obsidian-cli vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
 
-/** `template-source` reads a `root=` swap meant for a data-root command. */
+/** `template-source` reads a `root=` swap meant for the data-root command. */
 function slotCommandRootHint(): string {
   return (
     `template-source selects a Template slot; use template=${choices(TEMPLATE_SLOT_NAMES)}. ` +
-    `root=${choices(CONTRACT_ROOT_NAMES)} selects a data root, on template-schema or template-data.`
+    `root=${choices(CONTRACT_ROOT_NAMES)} selects a data root, on template-data.`
   );
 }
 
-/** `template-schema`/`template-data` read a `template=` swap meant for a slot command. */
-function rootCommandTemplateHint(
-  command: "template-schema" | "template-data",
-): string {
+/** `template-data` reads a `template=` swap meant for a slot command. */
+function dataCommandTemplateHint(): string {
   return (
-    `${command} selects a data root; use root=${choices(CONTRACT_ROOT_NAMES)}. ` +
+    `template-data selects a data root; use root=${choices(CONTRACT_ROOT_NAMES)}. ` +
     `template=${choices(TEMPLATE_SLOT_NAMES)} selects a Template slot, on template-render or template-source.`
   );
 }
+
+/** `template-schema` reads a selector left over from its earlier per-root form. */
+const SCHEMA_LISTS_EVERY_ROOT_MESSAGE =
+  "template-schema takes no parameters; it answers with the schema of every data root, keyed by root under 'schemas'.";
 
 function invalid<T>(parameter: string, message: string): ParsedRequest<T> {
   return { kind: "invalid", parameter, message };

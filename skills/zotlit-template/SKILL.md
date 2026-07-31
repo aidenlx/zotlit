@@ -18,11 +18,18 @@ Follow these steps in order before writing or editing any template.
 
 Complete **Start** steps 1–3 before running `zotlit:template-data` or `zotlit:template-schema`.
 
-Their output can be very large. Pipe directly to `jq` and select only the fields,
-definitions, or array entries needed. Data lives under `.zt` — use `.zt.<field>`,
-not `.<field>`. Start with `zotlit:template-data`; use `zotlit:template-schema` only when a
+Data output can be very large. Pipe directly to `jq` and select only the fields,
+definitions, or array entries needed. 
+
+Data lives under `.zt` — use `.zt.<field>`,
+not `.<field>`. 
+
+Start with `zotlit:template-data`; use `zotlit:template-schema` only when a
 required field or nested shape is unclear. Quote keys such as `."$defs"` that
-start with `$`.
+start with `$`. Before the first `zotlit:template-schema` call, run `obsidian-cli zotlit:template-guide topic=data`.
+
+Save the downloaded schema file wherever temporary files belong on the
+current system, and reuse it for every later question about the same schema.
 
 ## Choose the language
 

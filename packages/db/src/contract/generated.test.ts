@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import annotationSchema from "./generated/annotation.schema.json";
 import filenameSchema from "./generated/filename.schema.json";
 import ir from "./generated/ir.json";
+import runtimeIr from "./generated/ir.runtime.json";
 import noteSchema from "./generated/note.schema.json";
 import { CONTRACT_VERSION, templateSlotsForRoot } from "./roots";
 
@@ -55,6 +56,26 @@ describe("contract artifacts", () => {
       expect(JSON.stringify(schema)).not.toContain("{@link");
       expect(schema.$comment).toMatch(/DO NOT EDIT/);
     }
+  });
+
+  it("projects the runtime IR from the full IR with doc payloads pruned", () => {
+    expect(runtimeIr).not.toHaveProperty("itemTypes");
+    const text = JSON.stringify(runtimeIr);
+    expect(text).not.toMatch(/"(description|examples)":/);
+    // Same structure otherwise: pruning the full IR the same way must land on
+    // the committed runtime artifact byte for byte.
+    const prune = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(prune)
+        : typeof value === "object" && value !== null
+          ? Object.fromEntries(
+              Object.entries(value)
+                .filter(([key]) => key !== "description" && key !== "examples")
+                .map(([key, entry]) => [key, prune(entry)]),
+            )
+          : value;
+    const { itemTypes: _itemTypes, ...rest } = ir;
+    expect(runtimeIr).toEqual(prune(rest));
   });
 });
 

@@ -322,7 +322,7 @@
   "settings_template_desc_filename": "Filename of a new literature note. Use a forward slash (/) to route the note into subfolders under the literature note folder.",
   "cli_template_status_desc": "Report ZotLit Template Workbench state",
   "cli_template_data_desc": "Return serialized ZotLit Template data, payload under 'zt'",
-  "cli_template_schema_desc": "Return the ZotLit Template data schema",
+  "cli_template_schema_desc": "Return download URLs for every ZotLit Template data schema",
   "cli_template_render_desc": "Render an active ZotLit Template in memory, rendered bytes under 'markdown'",
   "cli_template_guide_desc": "Print the ZotLit Template Workbench guide",
   "cli_template_source_desc": "Return the active ZotLit Template body, under 'source'",

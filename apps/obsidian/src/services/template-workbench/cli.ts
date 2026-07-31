@@ -39,7 +39,7 @@ import {
   targetMismatch,
   type ParsedRequest,
 } from "./request";
-import { TEMPLATE_SCHEMAS } from "./schema";
+import { schemaAssets } from "./schema";
 import { ContractMetadataError, serializeTemplateData } from "./serialize";
 
 export type { WorkbenchIdentity } from "./envelope";
@@ -307,7 +307,11 @@ export function createTemplateWorkbenchHandlers(
           }),
         });
       }
-      return TEMPLATE_SCHEMAS[request.value];
+      return envelope(TEMPLATE_SCHEMA_COMMAND, {
+        ok: true,
+        pluginVersion: deps.pluginVersion,
+        schemas: schemaAssets(deps.pluginVersion),
+      });
     },
 
     [TEMPLATE_SOURCE_COMMAND]: async (params: CliData): Promise<string> => {

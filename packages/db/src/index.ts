@@ -130,6 +130,7 @@ export {
   type NoteResolvers,
 } from "./lib/context/note-context";
 export {
+  CONTRACT_ROOTS,
   CONTRACT_VERSION,
   TEMPLATE_SLOT_ROOTS,
   templateSlotsForRoot,

@@ -35,7 +35,6 @@ import {
   type DATA_PARAMS,
   type GUIDE_PARAMS,
   type RENDER_PARAMS,
-  type SCHEMA_PARAMS,
   type SOURCE_PARAMS,
 } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
@@ -96,13 +95,6 @@ function dataFlags(): CliFlags {
     format: formatFlag(["json"]),
     ...expectationFlags(),
   } satisfies Record<(typeof DATA_PARAMS)[number], CliFlag>;
-}
-
-function schemaFlags(): CliFlags {
-  return { root: rootFlag() } satisfies Record<
-    (typeof SCHEMA_PARAMS)[number],
-    CliFlag
-  >;
 }
 
 function guideFlags(): CliFlags {
@@ -176,7 +168,7 @@ export function registerTemplateWorkbench(
   plugin.registerCliHandler(
     TEMPLATE_SCHEMA_COMMAND,
     m.cli_template_schema_desc(),
-    schemaFlags(),
+    null,
     handlers[TEMPLATE_SCHEMA_COMMAND],
   );
   plugin.registerCliHandler(

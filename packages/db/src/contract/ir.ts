@@ -20,6 +20,15 @@ export interface ContractIR {
   types: Readonly<Record<string, ContractNamedType>>;
 }
 
+/**
+ * The runtime projection of {@link ContractIR}, committed as `ir.runtime.json`:
+ * the same tree with every `description` and `examples` field pruned and the
+ * schema-emitter-only `itemTypes` table dropped. This is the artifact a
+ * serializer ships — the full IR carries ~34 KB of doc text only the emitters
+ * read.
+ */
+export type RuntimeContractIR = Omit<ContractIR, "itemTypes">;
+
 export interface ContractRootIR {
   /** Key into {@link ContractIR.types} holding this root's `zt` shape. */
   type: string;

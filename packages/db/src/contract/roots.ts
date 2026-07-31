@@ -6,8 +6,11 @@
  */
 export const CONTRACT_VERSION = 1;
 
+/** Every emitted `zt` data root, in the order the contract documents them. */
+export const CONTRACT_ROOTS = ["note", "annotation", "filename"] as const;
+
 /** A `zt` data root a Template renders against. */
-export type ContractRoot = "note" | "annotation" | "filename";
+export type ContractRoot = (typeof CONTRACT_ROOTS)[number];
 
 /**
  * The contract root each Template name's `zt` resolves to. `cite` / `cite2` are

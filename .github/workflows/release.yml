@@ -73,7 +73,8 @@ jobs:
             ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }} \
             apps/obsidian/dist/main.js \
             apps/obsidian/dist/manifest.json \
-            apps/obsidian/dist/styles.css
+            apps/obsidian/dist/styles.css \
+            packages/db/src/contract/generated/*.schema.json
 
       - name: Generate Language Packs
         run: pnpm turbo run generate:language-packs --filter=@zotlit/obsidian
@@ -127,6 +128,7 @@ jobs:
             apps/obsidian/dist/main.js
             apps/obsidian/dist/manifest.json
             apps/obsidian/dist/styles.css
+            packages/db/src/contract/generated/*.schema.json
 
   zotero:
     runs-on: ubuntu-latest

@@ -3,10 +3,10 @@
 import { type ContractRoot } from "@zotlit/db";
 import {
   type ContractHelper,
-  type ContractIR,
   type ContractType,
+  type RuntimeContractIR,
 } from "@zotlit/db/contract/ir";
-import contractIRJson from "@zotlit/db/contract/ir.json";
+import contractIRJson from "@zotlit/db/contract/ir.runtime.json";
 
 import {
   formatAccessorPath,
@@ -14,7 +14,7 @@ import {
 } from "@/services/template/accessor-path";
 import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
 const UNKNOWN_CONTRACT_TYPE: ContractType = { kind: "unknown" };
-const contractIR = contractIRJson as ContractIR;
+const contractIR = contractIRJson as RuntimeContractIR;
 
 /**
  * The committed contract IR lacks an entry this build's data shapes need — a
