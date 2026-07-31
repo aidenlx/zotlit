@@ -3,6 +3,7 @@
 import {
   createLanguagePackLifecycle,
   type LanguagePackLifecyclePorts,
+  type PackSource,
 } from "@zotlit/obsidian-i18n";
 
 import { catalog } from "./i18n/generated/catalog.js";
@@ -11,19 +12,23 @@ import { getLogger } from "./log.js";
 
 const logger = getLogger("i18n");
 
-/** ZotLit's release policy: Language Packs ship as GitHub release assets. */
-const ZOTLIT_PACK_SOURCE = {
-  baseUrl: "https://github.com/aidenlx/zotlit/releases/download/language-packs",
-  origin: "github.com/aidenlx/zotlit",
-};
-
-const source =
+/**
+ * ZotLit's release policy: Language Packs are assets of the plugin's own
+ * release tag, which is the version verbatim, so a build downloads the pack
+ * compiled from its own message set.
+ *
+ * @see docs/adr/0018-language-packs-ship-as-version-pinned-release-assets.md
+ */
+const packSource = (pluginVersion: string): PackSource =>
   typeof __LANGUAGE_PACK_DEV_SERVER__ === "string"
     ? {
         baseUrl: __LANGUAGE_PACK_DEV_SERVER__,
         origin: new URL(__LANGUAGE_PACK_DEV_SERVER__).host,
       }
-    : ZOTLIT_PACK_SOURCE;
+    : {
+        baseUrl: `https://github.com/aidenlx/zotlit/releases/download/${pluginVersion}`,
+        origin: "github.com/aidenlx/zotlit",
+      };
 
 export type LanguagePackLifecycle = ReturnType<typeof initI18n>;
 
@@ -38,7 +43,7 @@ export function initI18n({ pluginVersion, ports }: InitI18nOptions) {
     pluginVersion,
     namespace: "zotlit",
     catalog,
-    source,
+    source: packSource(pluginVersion),
     aliases: { zh: "zh-CN" },
     ports,
     logger,

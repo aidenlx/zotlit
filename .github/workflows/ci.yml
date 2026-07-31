@@ -19,10 +19,9 @@ jobs:
         with:
           submodules: recursive
 
-      # `mise run init` installs deps (frozen lockfile), builds packages/*, and
-      # compiles Paraglide messages — so no separate install step is needed.
-      # `--no-submodules` skips checkout since actions/checkout already fetched
-      # them above.
+      # `mise run init` installs deps (frozen lockfile) and builds packages/* —
+      # so no separate install step is needed. `--no-submodules` skips checkout
+      # since actions/checkout already fetched them above.
       - uses: jdx/mise-action@v4
       # Restores the pnpm store (keyed on pnpm-lock.yaml) before the install
       # inside `mise run init`. pnpm itself is activated by mise's corepack

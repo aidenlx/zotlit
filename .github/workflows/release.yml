@@ -24,9 +24,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-      # `mise run init` installs deps (frozen lockfile), builds packages/*, and
-      # compiles Paraglide messages. `--no-submodules` skips checkout since
-      # actions/checkout already fetched them.
+      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
+      # `--no-submodules` skips checkout since actions/checkout already fetched
+      # them.
       - uses: jdx/mise-action@v4
       # pnpm is activated by mise's corepack post-install; this step is only
       # here for the store cache.
@@ -61,6 +61,20 @@ jobs:
         if: steps.gate.outputs.exists == 'false'
         run: pnpm turbo run build --filter=@zotlit/obsidian
 
+      # Language Packs are assets of the plugin's own release tag, so an
+      # installed build downloads the pack compiled from its own message set.
+      # Staged into one directory so the base locale — which ships bundled
+      # inside main.js — is skipped once and every later step globs one place.
+      - name: Stage Language Packs
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          pnpm turbo run generate:language-packs --filter=@zotlit/obsidian
+          mkdir -p apps/obsidian/dist/language-packs
+          for pack in apps/obsidian/src/lib/i18n/generated/*.json; do
+            [ "${pack##*/}" = "en.json" ] && continue
+            cp "$pack" apps/obsidian/dist/language-packs/
+          done
+
       - name: Create release
         if: steps.gate.outputs.exists == 'false'
         run: |
@@ -74,36 +88,18 @@ jobs:
             apps/obsidian/dist/main.js \
             apps/obsidian/dist/manifest.json \
             apps/obsidian/dist/styles.css \
+            apps/obsidian/dist/language-packs/*.json \
             packages/db/src/contract/generated/*.schema.json
 
-      - name: Generate Language Packs
-        run: pnpm turbo run generate:language-packs --filter=@zotlit/obsidian
-
-      - name: Refresh Language Packs
-        run: |
-          if ! gh release view language-packs >/dev/null 2>&1; then
-            gh release create language-packs \
-              --title "Language Packs" \
-              --notes "Rolling JSON Language Packs for the ZotLit Obsidian plugin." \
-              --prerelease \
-              --latest=false
-          fi
-          remote_packs=()
-          for pack in apps/obsidian/src/lib/i18n/generated/*.json; do
-            [ "${pack##*/}" = "en.json" ] && continue
-            remote_packs+=("$pack")
-          done
-          gh release upload language-packs \
-            "${remote_packs[@]}" \
-            --clobber
-
+      # Downloads each pack anonymously from the versioned URL the plugin
+      # composes, so a missed or corrupted upload fails the release loudly.
       - name: Verify Language Packs
+        if: steps.gate.outputs.exists == 'false'
         run: |
           download_dir="$(mktemp -d)"
-          for pack in apps/obsidian/src/lib/i18n/generated/*.json; do
+          for pack in apps/obsidian/dist/language-packs/*.json; do
             file_name="${pack##*/}"
-            [ "$file_name" = "en.json" ] && continue
-            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/language-packs/$file_name"
+            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.meta.outputs.tag }}/$file_name"
             for attempt in 1 2 3 4 5; do
               if curl --fail --silent --show-error --location \
                 --header "Cache-Control: no-cache" \
@@ -128,6 +124,7 @@ jobs:
             apps/obsidian/dist/main.js
             apps/obsidian/dist/manifest.json
             apps/obsidian/dist/styles.css
+            apps/obsidian/dist/language-packs/*.json
             packages/db/src/contract/generated/*.schema.json
 
   zotero:
@@ -138,9 +135,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-      # `mise run init` installs deps (frozen lockfile), builds packages/*, and
-      # compiles Paraglide messages. `--no-submodules` skips checkout since
-      # actions/checkout already fetched them.
+      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
+      # `--no-submodules` skips checkout since actions/checkout already fetched
+      # them.
       - uses: jdx/mise-action@v4
       # pnpm is activated by mise's corepack post-install; this step is only
       # here for the store cache.
