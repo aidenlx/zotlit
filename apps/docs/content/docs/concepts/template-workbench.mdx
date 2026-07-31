@@ -1,6 +1,6 @@
 ---
 title: "Template Workbench"
-description: "How agents inspect, edit, and test ZotLit templates without requiring you to write Liquid or Eta."
+description: "How agents inspect, edit, and test ZotLit templates and configure managed frontmatter without writing Liquid or Eta."
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -14,7 +14,7 @@ Use the Template Workbench when you know how the rendered Markdown should look. 
 
 ## How the parts fit together
 
-The **Template Workbench** is a set of ZotLit commands in the Obsidian CLI. It lets an agent inspect current template state and source. The agent can also inspect template data from your Zotero library and render changes in memory.
+The **Template Workbench** is a set of ZotLit commands in the Obsidian CLI. It lets an agent inspect current template state and source. The agent can also inspect template data from your Zotero library and render changes in memory. The Workbench also configures managed frontmatter through the same CLI.
 
 The **ZotLit skill** is published with the identifier `zotlit-template`. Its current template workflow uses the Workbench to inspect, edit, and test templates. Claude Code, Codex, and pi can use it.
 
@@ -33,6 +33,8 @@ The Workbench inspects Zotero data and renders templates in memory. These operat
 
 Your agent edits template files through its vault-aware file tools. Those edits change files in the selected vault. You can ask the agent to show the rendered Markdown before it finishes.
 
+Frontmatter commands write to plugin settings, not vault files or Zotero data.
+
 <Callout type="warn" title="Agent data access">
   The selected agent can receive Zotero metadata and annotation text returned by
   the Workbench. The agent's own data-handling policies apply.
@@ -40,9 +42,21 @@ Your agent edits template files through its vault-aware file tools. Those edits 
 
 ## JavaScript templates keep their consent boundary
 
-Liquid remains available without extra consent. Eta templates and JavaScript Managed Frontmatter require the JavaScript Templates gate.
+Liquid remains available without extra consent. Eta templates and JavaScript managed frontmatter fields require the JavaScript Templates gate.
 
 You enable this gate explicitly on each device. The Workbench does not change this setting. An agent must ask you to enable it in ZotLit settings.
+
+## Managed frontmatter configuration
+
+Managed frontmatter fields are YAML properties in literature note frontmatter whose values come from template expressions. ZotLit re-evaluates them on every note update. The Workbench can manage these field templates through CLI commands: an agent can list configured fields, evaluate them against a Zotero item, and add, patch, reorder, or remove entries.
+
+These commands write to the plugin's settings service. The settings modal, template compilation, and frontmatter sync all observe the same change. For manual configuration in the UI, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties). For field mechanics and merge strategies, see [Frontmatter reference](/docs/reference/templates/frontmatter).
+
+For the full command reference, use the built-in guide:
+
+```bash
+obsidian-cli zotlit:template-guide topic=frontmatter
+```
 
 ## Template Workbench and Template Data Explorer
 
@@ -69,6 +83,11 @@ Both use the same side-effect-free data resolution. Browsing and rendering do no
     title="Explore template data"
     description="Browse template fields in the visual Template Data Explorer."
     href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="Configure frontmatter properties"
+    description="Add and edit managed frontmatter field templates in ZotLit settings."
+    href="/docs/how-to/configure-frontmatter-properties"
   />
   <Card
     title="JavaScript templates"
