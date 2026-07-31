@@ -2988,6 +2988,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           message: "field requires a value.",
           details: { parameter: "field" },
         },
@@ -3005,6 +3006,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter: "field" },
         },
       });
@@ -3022,6 +3024,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           message: "field must not be empty.",
           details: { parameter: "field" },
         },
@@ -3041,6 +3044,7 @@ describe("Template Workbench CLI", () => {
         request: { field: "word-count" },
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           message: "expr is required for a new field.",
           details: { parameter: "expr" },
         },
@@ -3060,6 +3064,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           message: "expr requires a value.",
           details: { parameter: "expr" },
         },
@@ -3078,6 +3083,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           message: "expr must not be empty.",
           details: { parameter: "expr" },
         },
@@ -3096,6 +3102,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter: "language" },
         },
       });
@@ -3113,6 +3120,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter: "merge" },
         },
       });
@@ -3205,6 +3213,7 @@ describe("Template Workbench CLI", () => {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
           details: { parameter: "key" },
         },
       });
