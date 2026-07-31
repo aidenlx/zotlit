@@ -1,13 +1,13 @@
 #!/usr/bin/env zx
 
-import { mkdir, copyFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { writeFile } from "node:fs/promises";
 // only for the type checker
 import type {} from "zx/globals";
 
 $.verbose = true;
 
-// for copying .env* files from the primary worktree
+// path to the primary worktree, recorded for reference; wt itself copies
+// gitignored files matched by .worktreeinclude when creating the worktree
 const primary = argv._[0];
 
 // `--no-submodules` skips checkout when the caller already has them — e.g. CI
@@ -23,26 +23,6 @@ if (primary) {
 }
 
 if (primary) {
-  for (const rel of await glob("**/.env*", {
-    cwd: primary,
-    dot: true,
-    ignore: ["**/node_modules/**", "**/.git/**", "**/*.example"],
-  })) {
-    const dest = join(".", rel);
-    await mkdir(dirname(dest), { recursive: true });
-    await copyFile(join(primary, rel), dest);
-    echo(`Copied ${rel}`);
-  }
-
-  const appCss = ".agents/skills/obsidian-css/references/app.css";
-  try {
-    await mkdir(dirname(appCss), { recursive: true });
-    await copyFile(join(primary, appCss), appCss);
-    echo(`Copied ${appCss}`);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-  }
-
   await writeFile(".primary-worktree", primary);
   echo(`Wrote .primary-worktree → ${primary}`);
 }
