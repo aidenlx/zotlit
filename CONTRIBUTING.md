@@ -43,7 +43,9 @@ counterpart line before merging a release PR.
 2. Run `pnpm release` — the interactive script bumps the version, syncs
    manifests, commits, pushes, and opens a PR.
 3. CI runs format check → lint → test on the PR. Merge when green.
-4. On merge, `release.yml` auto-creates the GitHub release and uploads assets.
+4. On merge, `release.yml` auto-creates the GitHub release and uploads assets,
+   the version's Language Packs among them — so a translation fix reaches users
+   with the next plugin release.
 
 ### Beta cycle
 

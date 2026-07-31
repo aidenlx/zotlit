@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi, type Mock } from "vitest";
 
 import { type LanguagePackLifecyclePorts } from "@zotlit/obsidian-i18n";
 
@@ -97,6 +97,20 @@ describe("ZotLit Language Pack setting integration", () => {
     expect(m.hello()).toBe(PACK_MESSAGE);
   });
 
+  test("downloads the pack from the release tag of the running plugin version", async () => {
+    const harness = makePorts({ language: "zh", response: CHINESE_PACK });
+    const lifecycle = initI18n({
+      pluginVersion: "2.0.0-beta.4",
+      ports: harness.ports,
+    });
+
+    await lifecycle.install();
+
+    expect(harness.requestUrl).toHaveBeenCalledWith({
+      url: "https://github.com/aidenlx/zotlit/releases/download/2.0.0-beta.4/zh-CN.json",
+    });
+  });
+
   test("disables the install button while ZotLit's consented refresh is in flight", async () => {
     const harness = makePorts({ language: "zh", response: CHINESE_PACK });
     await initI18n({
@@ -141,9 +155,15 @@ describe("ZotLit Language Pack setting integration", () => {
 
 function makePorts(options: { language: string; response?: string }): {
   ports: LanguagePackLifecyclePorts;
+  requestUrl: Mock<LanguagePackLifecyclePorts["requestUrl"]>;
 } {
   const storage = new Map<string, unknown>();
+  const requestUrl = vi.fn(async () => ({
+    status: 200,
+    text: options.response ?? CHINESE_PACK,
+  }));
   return {
+    requestUrl,
     ports: {
       getLanguage: () => options.language,
       loadLocalStorage: (key) => storage.get(key) ?? null,
@@ -151,10 +171,7 @@ function makePorts(options: { language: string; response?: string }): {
         if (value === null) storage.delete(key);
         else storage.set(key, value);
       },
-      requestUrl: vi.fn(async () => ({
-        status: 200,
-        text: options.response ?? CHINESE_PACK,
-      })),
+      requestUrl,
     },
   };
 }

@@ -30,3 +30,6 @@ restart.
 - Translations update only with plugin releases; there is no independent
   translation release channel and no version pointer — the pack cache is
   keyed by plugin version, so an update triggers one refetch per device.
+- The rolling release named here is superseded by ADR 0018: each plugin release
+  tag now carries its own Language Pack assets. The rest of this decision —
+  remote, consent-gated, eval-free data packs — stands.
