@@ -2,12 +2,15 @@
   "$schema": "https://www.schemastore.org/tsconfig",
   "compilerOptions": {
     "target": "es2025",
-    // for electron 39, chrome 142
+    // for electron 43, chrome 150
     "lib": [
       "es2025",
       "esnext.error",
       "esnext.array",
       "esnext.disposable",
+      "esnext.temporal",
+      "esnext.date",
+      "esnext.intl",
       "DOM"
     ]
   }

@@ -33,8 +33,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@inlang/sdk": "2.9.3",
-    "@js-temporal/polyfill": "catalog:"
+    "@inlang/sdk": "2.9.3"
   },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",

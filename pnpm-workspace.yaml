@@ -12,7 +12,6 @@ allowBuilds:
 
 catalog:
   "@logtape/logtape": ^2.0.7
-  "@js-temporal/polyfill": ^0.5.1
   "@pnpm/find-workspace-dir": ^1000.1.5
   "@std/collections": jsr:1.2.0
   "@std/async": jsr:1.4.0

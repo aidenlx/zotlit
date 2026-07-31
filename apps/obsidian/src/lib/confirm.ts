@@ -1,16 +1,6 @@
-import { type App, ConfirmationModal, requireApiVersion } from "obsidian";
+import { type App, ConfirmationModal } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-
-import { CompatConfirmationModal } from "./confirm-modal-compat";
-
-// ConfirmationModal was added in Obsidian 1.13.0; older builds get the
-// standalone polyfill. Drop this line and its import once minAppVersion is 1.13.0.
-const ConfirmationModalImpl: typeof ConfirmationModal = requireApiVersion(
-  "1.13.0",
-)
-  ? ConfirmationModal
-  : (CompatConfirmationModal as unknown as typeof ConfirmationModal);
 
 export interface ConfirmOptions {
   title: string;
@@ -24,7 +14,7 @@ export interface ConfirmOptions {
 export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
   const { action, cancel, title, content, destructive, cta } = options;
   const { resolve, promise } = Promise.withResolvers<boolean>();
-  const modal = new ConfirmationModalImpl(app);
+  const modal = new ConfirmationModal(app);
   modal.setTitle(title);
   if (content) {
     modal.setContent(content);

@@ -1,7 +1,5 @@
 // Synchronous, eval-free interpreter for generated JSON Language Packs.
 
-import { Temporal } from "@js-temporal/polyfill";
-
 import {
   parseNumericLiteral,
   type Expression,

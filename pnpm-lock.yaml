@@ -6,9 +6,6 @@ settings:
 
 catalogs:
   default:
-    '@js-temporal/polyfill':
-      specifier: ^0.5.1
-      version: 0.5.1
     '@logtape/logtape':
       specifier: ^2.0.7
       version: 2.1.0
@@ -672,9 +669,6 @@ importers:
       '@inlang/sdk':
         specifier: 2.9.3
         version: 2.9.3
-      '@js-temporal/polyfill':
-        specifier: 'catalog:'
-        version: 0.5.1
     devDependencies:
       '@types/node-25':
         specifier: npm:@types/node@^25.6.2
@@ -759,9 +753,6 @@ importers:
 
   packages/shared:
     dependencies:
-      '@js-temporal/polyfill':
-        specifier: 'catalog:'
-        version: 0.5.1
       '@logtape/logtape':
         specifier: '>=2.0.0'
         version: 2.1.0
