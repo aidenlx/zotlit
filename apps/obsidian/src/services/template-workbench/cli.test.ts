@@ -547,7 +547,14 @@ describe("Template Workbench CLI", () => {
     expect(output).toContain(
       "https://zotlit.aidenlx.site/docs/reference/templates",
     );
-    for (const topic of ["data", "render", "editing", "eta", "liquid"]) {
+    for (const topic of [
+      "data",
+      "render",
+      "editing",
+      "eta",
+      "liquid",
+      "frontmatter",
+    ]) {
       expect(output).toContain(topic);
     }
   });
@@ -558,6 +565,25 @@ describe("Template Workbench CLI", () => {
     ["editing", ["editablePath", "shadowedFiles"]],
     ["eta", ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED"]],
     ["liquid", ["liquidjs", "zt", "bq", "group_by"]],
+    [
+      "frontmatter",
+      [
+        "frontmatter-status",
+        "frontmatter-eval",
+        "frontmatter-set",
+        "frontmatter-remove",
+        "frontmatter-reorder",
+        "field=",
+        "key=",
+        "'liquid'",
+        "'javascript'",
+        "'replace'",
+        "'append'",
+        "'keep'",
+        "zotero-key",
+        "citekey",
+      ],
+    ],
   ] as const)("prints the %s guide topic", async (topic, facts) => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,

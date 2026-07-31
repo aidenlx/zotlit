@@ -20,9 +20,19 @@ import {
 } from "./envelope";
 import { GUIDE_TOPIC_NAMES, parseGuideTopic, type GuideTopic } from "./guide";
 import { CONTRACT_ROOT_NAMES, parseContractRoot } from "./schema";
-import { choices, quotedList, TEMPLATE_SLOT_NAMES } from "./vocabulary";
+import {
+  choices,
+  FRONTMATTER_LANGUAGE_NAMES,
+  FRONTMATTER_MERGE_NAMES,
+  quotedList,
+  TEMPLATE_SLOT_NAMES,
+} from "./vocabulary";
 
-export { TEMPLATE_SLOT_NAMES };
+export {
+  FRONTMATTER_LANGUAGE_NAMES,
+  FRONTMATTER_MERGE_NAMES,
+  TEMPLATE_SLOT_NAMES,
+};
 
 /** A parsed selector, or the one parameter that made it invalid. */
 export type ParsedRequest<T> =
@@ -51,17 +61,6 @@ export const FRONTMATTER_SET_PARAMS = [
 ] as const;
 export const FRONTMATTER_REMOVE_PARAMS = ["field"] as const;
 export const FRONTMATTER_REORDER_PARAMS = ["order"] as const;
-/** Accepted `language` values, in the order selector messages list them. */
-export const FRONTMATTER_LANGUAGE_NAMES = [
-  "liquid",
-  "javascript",
-] as const satisfies readonly FrontmatterLanguage[];
-/** Accepted `merge` values, in the order selector messages list them. */
-export const FRONTMATTER_MERGE_NAMES = [
-  "replace",
-  "append",
-  "keep",
-] as const satisfies readonly FrontmatterMergeStrategy[];
 export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
 export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
