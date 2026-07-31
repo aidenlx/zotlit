@@ -3,20 +3,19 @@
 // vitest as a test suite itself.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { onTestFinished } from "vitest";
 
-import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
-
-const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
-
-/** A fresh `tmp/<prefix>*` directory, removed automatically when the test finishes. */
+/**
+ * A fresh `<os-tmpdir>/<prefix>*` directory, removed automatically when the
+ * test finishes. Fixtures stay out of the repository tree so an interrupted
+ * run leaves no artifacts in the workspace.
+ */
 export async function createTemporaryDirectory(
   prefix = "zotlit-language-packs-",
 ): Promise<string> {
-  const temporaryRoot = join(workspaceRoot, "tmp");
-  await mkdir(temporaryRoot, { recursive: true });
-  const directory = await mkdtemp(join(temporaryRoot, prefix));
+  const directory = await mkdtemp(join(tmpdir(), prefix));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   return directory;
 }

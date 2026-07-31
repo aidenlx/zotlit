@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
@@ -59,9 +60,7 @@ async function compileRealProject(): Promise<{
   [Symbol.asyncDispose](): Promise<void>;
 }> {
   await using resources = new AsyncDisposableStack();
-  const temporaryRoot = join(workspaceRoot, "tmp");
-  await mkdir(temporaryRoot, { recursive: true });
-  const output = await mkdtemp(join(temporaryRoot, "zotlit-i18n-contract-"));
+  const output = await mkdtemp(join(tmpdir(), "zotlit-i18n-contract-"));
   resources.defer(() => rm(output, { recursive: true, force: true }));
 
   const result = await compile({
