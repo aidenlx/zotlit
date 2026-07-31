@@ -9,6 +9,7 @@ import { type CompileError } from "@/services/template/service";
 
 import {
   createTemplateWorkbenchHandlers,
+  FRONTMATTER_EVAL_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
@@ -36,6 +37,12 @@ const FRONTMATTER_READ_EMPTY = () => ({
   inertKeys: [],
   javascriptTemplatesEnabled: false,
 });
+const FRONTMATTER_EVALUATE_EMPTY = () => ({
+  values: {},
+  errors: {},
+  inertKeys: [],
+});
+const FRONTMATTER_VALIDATE_EMPTY = () => null;
 
 const TEMPLATE_FILES = [
   {
@@ -143,6 +150,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -180,6 +189,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -220,6 +231,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -282,6 +295,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -345,6 +360,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -390,6 +407,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -430,6 +449,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -459,6 +480,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -493,6 +516,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -536,6 +561,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -562,6 +589,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -629,6 +658,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -665,6 +696,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -697,6 +730,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -728,6 +763,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -769,6 +806,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -810,6 +849,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -848,6 +889,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -898,6 +941,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -943,6 +988,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -987,6 +1034,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1026,6 +1075,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1063,6 +1114,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1107,6 +1160,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1145,6 +1200,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1181,6 +1238,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1238,6 +1297,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1270,6 +1331,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1366,6 +1429,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1411,6 +1476,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1451,6 +1518,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1521,6 +1590,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1558,6 +1629,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1593,6 +1666,8 @@ describe("Template Workbench CLI", () => {
       },
       frontmatter: {
         read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
       },
     });
 
@@ -1628,6 +1703,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1664,6 +1741,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1695,6 +1774,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1727,6 +1808,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1766,6 +1849,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1795,6 +1880,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1831,6 +1918,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1863,6 +1952,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1899,6 +1990,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1926,6 +2019,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -1969,6 +2064,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -2009,6 +2106,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -2066,6 +2165,8 @@ describe("Template Workbench CLI", () => {
             inertKeys: ["custom-js"],
             javascriptTemplatesEnabled: false,
           }),
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -2123,6 +2224,8 @@ describe("Template Workbench CLI", () => {
             inertKeys: [],
             javascriptTemplatesEnabled: true,
           }),
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -2155,6 +2258,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -2190,6 +2295,8 @@ describe("Template Workbench CLI", () => {
         },
         frontmatter: {
           read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
         },
       });
 
@@ -2198,6 +2305,459 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({ ok: true });
+    });
+  });
+
+  describe("frontmatter-eval", () => {
+    const NOTE_DATA = {
+      indexedKey: "ITEM2345",
+      citationKey: "smith2024",
+      title: "A Study",
+    };
+
+    function makeHandlers(
+      overrides: {
+        loadData?: () => Promise<
+          { kind: "data"; data: object } | { kind: "not-found" }
+        >;
+        javascriptTemplatesEnabled?: boolean;
+        read?: () => {
+          fields: readonly {
+            key: string;
+            expr: string;
+            language: "liquid" | "javascript";
+            merge: "replace" | "append" | "keep";
+          }[];
+          inertKeys: readonly string[];
+          javascriptTemplatesEnabled: boolean;
+        };
+        evaluate?: (
+          fields: readonly { key: string }[],
+          zt: object,
+        ) => {
+          values: Record<string, unknown>;
+          errors: Record<string, string>;
+          inertKeys: readonly string[];
+        };
+        validateExpr?: (expr: string, language: string) => string | null;
+      } = {},
+    ) {
+      return createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: overrides.loadData ?? (async () => ({ kind: "not-found" })),
+        templates: {
+          javascriptTemplatesEnabled:
+            overrides.javascriptTemplatesEnabled ?? false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: overrides.read ?? FRONTMATTER_READ_EMPTY,
+          evaluate: overrides.evaluate ?? FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: overrides.validateExpr ?? FRONTMATTER_VALIDATE_EMPTY,
+        },
+      });
+    }
+
+    it("reports configured fields then system rows in YAML write order", async () => {
+      const handlers = makeHandlers({
+        loadData: async () => ({ kind: "data", data: NOTE_DATA }),
+        read: () => ({
+          fields: [
+            {
+              key: "summary",
+              expr: "{{ zt.title }}",
+              language: "liquid",
+              merge: "replace",
+            },
+          ],
+          inertKeys: [],
+          javascriptTemplatesEnabled: false,
+        }),
+        evaluate: () => ({
+          values: { summary: "A Study" },
+          errors: {},
+          inertKeys: [],
+        }),
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+      });
+
+      expect(JSON.parse(output)).toEqual({
+        contractVersion: 1,
+        command: FRONTMATTER_EVAL_COMMAND,
+        ok: true,
+        request: { key: "ITEM2345", format: "json", adhoc: null },
+        identity: IDENTITY,
+        warnings: [],
+        entries: [
+          {
+            key: "summary",
+            value: "A Study",
+            source: "user",
+            language: "liquid",
+            merge: "replace",
+          },
+          {
+            key: "zotero-key",
+            value: "ITEM2345",
+            source: "system",
+            language: null,
+            merge: null,
+          },
+          {
+            key: "citekey",
+            value: "smith2024",
+            source: "system",
+            language: null,
+            merge: null,
+          },
+        ],
+      });
+    });
+
+    it("omits the citekey row when the item has no citation key", async () => {
+      const handlers = makeHandlers({
+        loadData: async () => ({
+          kind: "data",
+          data: { ...NOTE_DATA, citationKey: null },
+        }),
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+      });
+
+      const parsed = JSON.parse(output);
+      expect(parsed.entries).toEqual([
+        {
+          key: "zotero-key",
+          value: "ITEM2345",
+          source: "system",
+          language: null,
+          merge: null,
+        },
+      ]);
+    });
+
+    it("carries a field's runtime error on its own row, evaluating siblings", async () => {
+      const handlers = makeHandlers({
+        loadData: async () => ({ kind: "data", data: NOTE_DATA }),
+        read: () => ({
+          fields: [
+            {
+              key: "good",
+              expr: "{{ zt.title }}",
+              language: "liquid",
+              merge: "replace",
+            },
+            {
+              key: "bad",
+              expr: "{{ zt.missing.x }}",
+              language: "liquid",
+              merge: "replace",
+            },
+          ],
+          inertKeys: [],
+          javascriptTemplatesEnabled: false,
+        }),
+        evaluate: () => ({
+          values: { good: "A Study" },
+          errors: { bad: "boom" },
+          inertKeys: [],
+        }),
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+      });
+
+      const parsed = JSON.parse(output);
+      expect(parsed.entries).toEqual([
+        {
+          key: "good",
+          value: "A Study",
+          source: "user",
+          language: "liquid",
+          merge: "replace",
+        },
+        {
+          key: "bad",
+          source: "user",
+          language: "liquid",
+          merge: "replace",
+          error: { message: "boom" },
+        },
+        {
+          key: "zotero-key",
+          value: "ITEM2345",
+          source: "system",
+          language: null,
+          merge: null,
+        },
+        {
+          key: "citekey",
+          value: "smith2024",
+          source: "system",
+          language: null,
+          merge: null,
+        },
+      ]);
+    });
+
+    it("flags a javascript field inert with the gate off and warns it would fail on a real note", async () => {
+      const handlers = makeHandlers({
+        loadData: async () => ({ kind: "data", data: NOTE_DATA }),
+        read: () => ({
+          fields: [
+            {
+              key: "custom-js",
+              expr: "return 1;",
+              language: "javascript",
+              merge: "replace",
+            },
+          ],
+          inertKeys: ["custom-js"],
+          javascriptTemplatesEnabled: false,
+        }),
+        evaluate: () => ({
+          values: {},
+          errors: {},
+          inertKeys: ["custom-js"],
+        }),
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+      });
+
+      const parsed = JSON.parse(output);
+      expect(parsed.entries[0]).toEqual({
+        key: "custom-js",
+        source: "user",
+        language: "javascript",
+        merge: "replace",
+        inert: true,
+      });
+      expect(parsed.warnings).toHaveLength(1);
+      expect(parsed.warnings[0]).toContain("custom-js");
+      expect(parsed.warnings[0]).toContain("JavaScript Templates are disabled");
+    });
+
+    it("returns the single evaluated value for an ad-hoc expression, defaulting language to liquid", async () => {
+      const validateExpr = vi.fn(() => null);
+      const evaluate = vi.fn(
+        (fields: readonly { key: string }[], _zt: object) => ({
+          values: { [fields[0]!.key]: "Paper" },
+          errors: {},
+          inertKeys: [],
+        }),
+      );
+      const handlers = makeHandlers({
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        validateExpr,
+        evaluate,
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        expr: "zt.title",
+      });
+
+      expect(JSON.parse(output)).toEqual({
+        contractVersion: 1,
+        command: FRONTMATTER_EVAL_COMMAND,
+        ok: true,
+        request: {
+          key: "ITEM2345",
+          format: "json",
+          adhoc: { expr: "zt.title", language: "liquid" },
+        },
+        identity: IDENTITY,
+        value: "Paper",
+      });
+      expect(validateExpr).toHaveBeenCalledWith("zt.title", "liquid");
+    });
+
+    it("fails a non-compiling ad-hoc expression with EXPRESSION_COMPILE_ERROR", async () => {
+      const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+      const handlers = makeHandlers({
+        loadData,
+        validateExpr: () => "Unexpected token '+'",
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        expr: "1 +",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "EXPRESSION_COMPILE_ERROR",
+          message: "Unexpected token '+'",
+          hint: DIAGNOSTIC_HINTS.EXPRESSION_COMPILE_ERROR,
+        },
+      });
+      expect(loadData).not.toHaveBeenCalled();
+    });
+
+    it("rejects an ad-hoc javascript expression with the JavaScript Templates gate off", async () => {
+      const validateExpr = vi.fn(() => null);
+      const handlers = makeHandlers({
+        javascriptTemplatesEnabled: false,
+        validateExpr,
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        expr: "1",
+        language: "javascript",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "ETA_OPT_IN_REQUIRED",
+          hint: DIAGNOSTIC_HINTS.ETA_OPT_IN_REQUIRED,
+        },
+      });
+      expect(validateExpr).not.toHaveBeenCalled();
+    });
+
+    it("evaluates an ad-hoc javascript expression once the gate is on", async () => {
+      const handlers = makeHandlers({
+        javascriptTemplatesEnabled: true,
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        validateExpr: () => null,
+        evaluate: (fields) => ({
+          values: { [fields[0]!.key]: 1 },
+          errors: {},
+          inertKeys: [],
+        }),
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        expr: "1",
+        language: "javascript",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({ ok: true, value: 1 });
+    });
+
+    it("reports an ad-hoc expression's runtime error without failing the request", async () => {
+      const handlers = makeHandlers({
+        loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+        validateExpr: () => null,
+        evaluate: (fields) => ({
+          values: {},
+          errors: { [fields[0]!.key]: "boom" },
+          inertKeys: [],
+        }),
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        expr: "zt.missing.x",
+      });
+
+      const parsed = JSON.parse(output);
+      expect(parsed.ok).toBe(true);
+      expect(parsed.error).toEqual({ message: "boom" });
+      expect(parsed.value).toBeUndefined();
+    });
+
+    it("rejects language without expr", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        language: "liquid",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "language requires expr.",
+          details: { parameter: "language" },
+        },
+      });
+    });
+
+    it("rejects an invalid language value", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        expr: "1",
+        language: "bogus",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "language" },
+        },
+      });
+    });
+
+    it("rejects an unrecognized parameter", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        root: "note",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "root" },
+        },
+      });
+    });
+
+    it("reports the shared key-not-found diagnostic through the gated preamble", async () => {
+      const handlers = makeHandlers({
+        loadData: async () => ({ kind: "not-found" }),
+      });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: { code: "KEY_NOT_FOUND" },
+      });
+    });
+
+    it("reports a target mismatch before loading data", async () => {
+      const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+      const handlers = makeHandlers({ loadData });
+
+      const output = await handlers[FRONTMATTER_EVAL_COMMAND]({
+        key: "ITEM2345",
+        "expect-source": "wrong-source",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: { code: "TARGET_MISMATCH" },
+      });
+      expect(loadData).not.toHaveBeenCalled();
     });
   });
 });

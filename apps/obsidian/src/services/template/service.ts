@@ -20,6 +20,7 @@ import {
   type TemplateLanguage,
 } from "@zotlit/templates/facade";
 import {
+  evalFrontmatterFields,
   type CompiledFrontmatterField,
   type FrontmatterField,
 } from "@zotlit/templates/frontmatter";
@@ -296,6 +297,34 @@ export class TemplateService extends Service<void> {
       fields: this.#lastFrontmatterFields ?? [],
       inertKeys: this.#inertFrontmatterKeys,
     };
+  }
+
+  /**
+   * Evaluate `fields` over `zt`, gate-aware: a `"javascript"` field is
+   * skipped (never compiled) while the JavaScript Templates gate is off, its
+   * key reported in `inertKeys` rather than `values`/`errors`. A field whose
+   * evaluator throws is reported in `errors` rather than aborting the rest.
+   * Non-throwing counterpart to the plugin's frontmatter write path, for the
+   * Template Workbench's `frontmatter-eval` command.
+   */
+  evaluateFrontmatterFields(
+    fields: readonly FrontmatterField[],
+    zt: object,
+  ): {
+    values: Readonly<Record<string, unknown>>;
+    errors: Readonly<Record<string, string>>;
+    inertKeys: readonly string[];
+  } {
+    this.#requireLoaded("evaluateFrontmatterFields");
+    const { compiled, inertKeys } = this.#facade.compileFrontmatterFields(
+      fields,
+      { javascript: this.#javascriptTemplatesEnabled },
+    );
+    const errors: Record<string, string> = {};
+    const values = evalFrontmatterFields(compiled, zt, (key, error) => {
+      errors[key] = error instanceof Error ? error.message : String(error);
+    });
+    return { values, errors, inertKeys };
   }
 
   on<K extends keyof TemplateServiceEvents>(

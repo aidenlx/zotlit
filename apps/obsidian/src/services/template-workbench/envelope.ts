@@ -10,6 +10,10 @@ import {
   type ContractRoot,
   type TemplateSlot,
 } from "@zotlit/db";
+import {
+  type FrontmatterLanguage,
+  type FrontmatterMergeStrategy,
+} from "@zotlit/templates/constants";
 import { TemplateError, type TemplateLanguage } from "@zotlit/templates/facade";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
@@ -62,6 +66,8 @@ export const DIAGNOSTIC_HINTS = {
     "Correct the syntax of the Template named in details.template, then render again.",
   TEMPLATE_RENDER_ERROR:
     "Read the message to find the failed expression, correct the Template or the selected object, then run the command again.",
+  EXPRESSION_COMPILE_ERROR:
+    "Correct the syntax of the expression named in expr, then evaluate it again.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -101,7 +107,7 @@ export type WorkbenchCommand =
       | "render"
       | "guide"
       | "source"}`
-  | `zotlit:frontmatter-status`;
+  | `zotlit:frontmatter-${"status" | "eval"}`;
 
 /** One configured Managed Frontmatter field, as `frontmatter-status` reports
  *  it: the raw configuration plus whether the JavaScript Templates gate
@@ -110,6 +116,26 @@ export type FrontmatterFieldRow = Pick<
   FrontmatterField,
   "key" | "expr" | "language" | "merge"
 > & { inert: boolean };
+
+/**
+ * One frontmatter entry as `frontmatter-eval` reports it, in YAML write order:
+ * a configured field's evaluated value, or a system field's item-derived
+ * value. `language` and `merge` are `null` for a system field, which has
+ * neither.
+ */
+export interface FrontmatterEvalRow {
+  key: string;
+  /** Absent when `error` is present, or when the field is `inert`. */
+  value?: unknown;
+  source: "system" | "user";
+  language: FrontmatterLanguage | null;
+  merge: FrontmatterMergeStrategy | null;
+  /** `true` for a `"javascript"` field left uncompiled by the JavaScript
+   *  Templates gate — the same marker `frontmatter-status` reports. */
+  inert?: boolean;
+  /** The field's expression raised this at evaluation time, in place of `value`. */
+  error?: { message: string };
+}
 
 /** The facts a command echoes back beside its result, all optional because a
  *  selector-level failure is answered before any of them is resolved. */
@@ -145,6 +171,12 @@ export type EnvelopeTail =
       fields?: readonly FrontmatterFieldRow[];
       /** Frontmatter keys the system owns; user expressions cannot target them. */
       reservedKeys?: readonly string[];
+      /** `frontmatter-eval`'s set-mode rows, in YAML write order. */
+      entries?: readonly FrontmatterEvalRow[];
+      /** `frontmatter-eval`'s ad-hoc mode result. Absent when `error` is present. */
+      value?: unknown;
+      /** `frontmatter-eval`'s ad-hoc mode runtime error, in place of `value`. */
+      error?: { message: string };
     });
 
 export function envelope(
