@@ -103,11 +103,11 @@ The following keys cannot be used in user field configuration:
 | `zotero-note-key` | Imported notes                            |
 | `zotero-lastmod`  | Imported notes                            |
 
-Attempting to use a reserved key is rejected in the settings modal.
+Attempting to use a reserved key is rejected in both the settings modal and the CLI.
 
 ## Validation
 
-The settings modal validates in this order:
+The settings modal and the Template Workbench CLI validate in this order:
 
 1. **Empty key:** "Enter a key."
 2. **Reserved key:** "'\{key\}' is managed by ZotLit and can't be used."

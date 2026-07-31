@@ -1,6 +1,6 @@
 ---
 name: zotlit-template
-description: "Create, edit, diagnose, and verify ZotLit templates and managed frontmatter in an Obsidian vault. Use whenever a user wants to change template output, configure literature note frontmatter fields, or troubleshoot, including when they describe only the desired result."
+description: "Create, edit, diagnose, and verify ZotLit templates and managed frontmatter in an Obsidian vault. Use whenever a user wants to change template output, configure managed frontmatter field templates, or troubleshoot, including when they describe only the desired result."
 ---
 
 # ZotLit Template Workbench

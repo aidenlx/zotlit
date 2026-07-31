@@ -230,8 +230,9 @@ SYNOPSIS
   ${FRONTMATTER_SYNOPSIS}
 
 DESCRIPTION
-  A Managed Frontmatter field is configuration, not a vault file. This family
-  inspects, evaluates, and mutates that configuration through the plugin's
+  Managed frontmatter fields are template expressions stored in plugin settings
+  whose values ZotLit writes into literature note YAML on every update. This
+  family inspects, evaluates, and mutates that configuration through the
   settings service, so the settings modal, compilation, and sync all observe
   the same change.
 
@@ -364,9 +365,9 @@ WORKFLOW
      warnings. Use format=markdown for raw bytes.
 
 MANAGED FRONTMATTER
-  Configured expressions evaluated per item during note creation and sync.
-  The frontmatter-* commands inspect, evaluate, and mutate field configuration
-  through the settings service.
+  Template expressions stored in plugin settings whose values ZotLit writes
+  into literature note YAML on every update. The frontmatter-* commands
+  inspect, evaluate, and mutate this configuration through the settings service.
 
   1. Run frontmatter-status. Review configured fields and gate state.
   2. Run frontmatter-eval key=<indexed-key> to test evaluation against an item.

@@ -72,6 +72,10 @@ After changing frontmatter configuration, run:
 
 This re-evaluates all field expressions and writes the results to the active note's frontmatter according to each field's merge strategy.
 
+## Agent-based configuration
+
+An agent with the ZotLit skill can configure managed frontmatter field templates through the Template Workbench CLI. See [Template Workbench](/docs/concepts/template-workbench) for details.
+
 <Callout type="info" title="JavaScript fields and the gate">
   A frontmatter field with Language set to JavaScript is inert when the
   JavaScript Templates gate is off on that device. The settings page shows:
@@ -97,5 +101,10 @@ This re-evaluates all field expressions and writes the results to the active not
     title="Enable JavaScript templates"
     description="Turn on the gate to use Eta expressions in frontmatter fields."
     href="/docs/how-to/enable-javascript-templates"
+  />
+  <Card
+    title="Template Workbench"
+    description="Configure managed frontmatter field templates through the Obsidian CLI."
+    href="/docs/concepts/template-workbench"
   />
 </Cards>
