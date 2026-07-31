@@ -21,6 +21,7 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
   createTemplateWorkbenchHandlers,
+  FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
@@ -151,6 +152,16 @@ export function registerTemplateWorkbench(
     },
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
     templates: deps.templates,
+    frontmatter: {
+      read: () => {
+        const status = deps.templates.getFrontmatterFieldStatus();
+        return {
+          fields: status.fields,
+          inertKeys: status.inertKeys,
+          javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
+        };
+      },
+    },
   });
 
   plugin.registerCliHandler(
@@ -188,5 +199,11 @@ export function registerTemplateWorkbench(
     m.cli_template_source_desc(),
     sourceFlags(),
     handlers[TEMPLATE_SOURCE_COMMAND],
+  );
+  plugin.registerCliHandler(
+    FRONTMATTER_STATUS_COMMAND,
+    m.cli_frontmatter_status_desc(),
+    null,
+    handlers[FRONTMATTER_STATUS_COMMAND],
   );
 }

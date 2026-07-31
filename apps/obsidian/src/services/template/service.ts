@@ -98,6 +98,15 @@ export interface CompileError {
   context?: string;
 }
 
+/** Managed-frontmatter field configuration and inert-key state, as
+ *  {@link TemplateService.getFrontmatterFieldStatus} reports it. */
+export interface FrontmatterFieldStatus {
+  /** Configured fields in `note.frontmatter-fields` order. */
+  fields: readonly FrontmatterField[];
+  /** Keys of `"javascript"` fields skipped because the gate is off. */
+  inertKeys: readonly string[];
+}
+
 /** The liquidjs caret-annotated source excerpt on `error`, when it carries one. */
 export function errorContext(error: unknown): string | undefined {
   return error !== null &&
@@ -274,6 +283,19 @@ export class TemplateService extends Service<void> {
       );
     }
     return this.#compiledFrontmatterFields;
+  }
+
+  /**
+   * Managed-frontmatter field configuration in configuration order, and which
+   * keys are inert because the JavaScript Templates gate is off. Non-throwing
+   * counterpart to {@link frontmatterFields}, for read-only inspection (the
+   * Template Workbench's `frontmatter-status` command).
+   */
+  getFrontmatterFieldStatus(): FrontmatterFieldStatus {
+    return {
+      fields: this.#lastFrontmatterFields ?? [],
+      inertKeys: this.#inertFrontmatterKeys,
+    };
   }
 
   on<K extends keyof TemplateServiceEvents>(

@@ -11,6 +11,7 @@ import {
   type TemplateSlot,
 } from "@zotlit/db";
 import { TemplateError, type TemplateLanguage } from "@zotlit/templates/facade";
+import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { InertTemplateError } from "@/services/template/errors";
 import {
@@ -92,13 +93,23 @@ export function diagnostic(
 }
 
 /** The commands the Workbench answers. */
-export type WorkbenchCommand = `zotlit:template-${
-  | "status"
-  | "data"
-  | "schema"
-  | "render"
-  | "guide"
-  | "source"}`;
+export type WorkbenchCommand =
+  | `zotlit:template-${
+      | "status"
+      | "data"
+      | "schema"
+      | "render"
+      | "guide"
+      | "source"}`
+  | `zotlit:frontmatter-status`;
+
+/** One configured Managed Frontmatter field, as `frontmatter-status` reports
+ *  it: the raw configuration plus whether the JavaScript Templates gate
+ *  currently leaves it inert. */
+export type FrontmatterFieldRow = Pick<
+  FrontmatterField,
+  "key" | "expr" | "language" | "merge"
+> & { inert: boolean };
 
 /** The facts a command echoes back beside its result, all optional because a
  *  selector-level failure is answered before any of them is resolved. */
@@ -130,6 +141,10 @@ export type EnvelopeTail =
       markdown?: string;
       language?: TemplateLanguage;
       source?: string;
+      /** Configured Managed Frontmatter fields, in configuration order. */
+      fields?: readonly FrontmatterFieldRow[];
+      /** Frontmatter keys the system owns; user expressions cannot target them. */
+      reservedKeys?: readonly string[];
     });
 
 export function envelope(

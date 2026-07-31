@@ -326,6 +326,7 @@
   "cli_template_render_desc": "Render an active ZotLit Template in memory, rendered bytes under 'markdown'",
   "cli_template_guide_desc": "Print the ZotLit Template Workbench guide",
   "cli_template_source_desc": "Return the active ZotLit Template body, under 'source'",
+  "cli_frontmatter_status_desc": "Report the configured ZotLit Managed Frontmatter fields",
   "cli_flag_key_desc": "Indexed Key of a Zotero object",
   "cli_flag_root_desc": "Template data root",
   "cli_flag_format_desc": "Output format, default json",
