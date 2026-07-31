@@ -8,7 +8,9 @@ import {
   type TemplateSlot,
 } from "@zotlit/db";
 import { type RootVariableUse } from "@zotlit/templates/facade";
+import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
+import { RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import {
   type CompileError,
@@ -25,12 +27,14 @@ import {
   notSettledDiagnostic,
   templateFaultDiagnostic,
   type Diagnostic,
+  type FrontmatterFieldRow,
   type WorkbenchCommand,
   type WorkbenchIdentity,
 } from "./envelope";
 import { renderGuide } from "./guide";
 import {
   parseDataRequest,
+  parseFrontmatterStatusRequest,
   parseGuideRequest,
   parseRenderRequest,
   parseSchemaRequest,
@@ -56,6 +60,8 @@ export const TEMPLATE_GUIDE_COMMAND =
   "zotlit:template-guide" as const satisfies WorkbenchCommand;
 export const TEMPLATE_SOURCE_COMMAND =
   "zotlit:template-source" as const satisfies WorkbenchCommand;
+export const FRONTMATTER_STATUS_COMMAND =
+  "zotlit:frontmatter-status" as const satisfies WorkbenchCommand;
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 const logger = getLogger("template-workbench");
@@ -79,6 +85,19 @@ interface TemplateWorkbenchDeps {
     analyzeRootVariables: (name: string) => RootVariableUse[] | null;
     getTemplateSource: (name: TemplateSlot) => Promise<string>;
   };
+  frontmatter: {
+    /**
+     * Configured Managed Frontmatter fields in configuration order, the keys
+     * left inert by the JavaScript Templates gate, and the gate's current
+     * state. Non-throwing counterpart to the plugin's compiled-fields
+     * accessor, which throws when any field is inert.
+     */
+    read: () => {
+      fields: readonly FrontmatterField[];
+      inertKeys: readonly string[];
+      javascriptTemplatesEnabled: boolean;
+    };
+  };
 }
 
 export type TemplateWorkbenchHandlers = Record<
@@ -87,7 +106,8 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_SCHEMA_COMMAND
   | typeof TEMPLATE_RENDER_COMMAND
   | typeof TEMPLATE_GUIDE_COMMAND
-  | typeof TEMPLATE_SOURCE_COMMAND,
+  | typeof TEMPLATE_SOURCE_COMMAND
+  | typeof FRONTMATTER_STATUS_COMMAND,
   CliHandler
 >;
 
@@ -346,6 +366,44 @@ export function createTemplateWorkbenchHandlers(
         source,
       });
     },
+
+    [FRONTMATTER_STATUS_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseFrontmatterStatusRequest(params);
+      if (request.kind === "invalid") {
+        return envelope(FRONTMATTER_STATUS_COMMAND, {
+          ok: false,
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
+        });
+      }
+
+      const { fields, inertKeys, javascriptTemplatesEnabled } =
+        deps.frontmatter.read();
+
+      return envelope(FRONTMATTER_STATUS_COMMAND, {
+        ok: true,
+        identity: await deps.getIdentity(),
+        javascriptTemplatesEnabled,
+        fields: fields.map((field) => frontmatterFieldRow(field, inertKeys)),
+        reservedKeys: [...RESERVED_KEYS],
+      });
+    },
+  };
+}
+
+/** A configured field's status row: its configuration, plus whether the
+ *  JavaScript Templates gate currently leaves it inert. */
+function frontmatterFieldRow(
+  field: FrontmatterField,
+  inertKeys: readonly string[],
+): FrontmatterFieldRow {
+  return {
+    key: field.key,
+    expr: field.expr,
+    language: field.language,
+    merge: field.merge,
+    inert: inertKeys.includes(field.key),
   };
 }
 

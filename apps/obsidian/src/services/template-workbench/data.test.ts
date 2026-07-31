@@ -458,6 +458,13 @@ async function runTemplateData(
       getTemplateSource: async () => "",
       waitUntilSettled: async () => "settled" as const,
     },
+    frontmatter: {
+      read: () => ({
+        fields: [],
+        inertKeys: [],
+        javascriptTemplatesEnabled: false,
+      }),
+    },
   });
   return JSON.parse(
     await handlers[TEMPLATE_DATA_COMMAND]({
@@ -500,6 +507,13 @@ async function runTemplateRender(
       analyzeRootVariables: () => null,
       getTemplateSource: async () => "",
       waitUntilSettled: async () => "settled" as const,
+    },
+    frontmatter: {
+      read: () => ({
+        fields: [],
+        inertKeys: [],
+        javascriptTemplatesEnabled: false,
+      }),
     },
   });
   return JSON.parse(

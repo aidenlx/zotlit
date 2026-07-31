@@ -31,6 +31,7 @@ export type ParsedRequest<T> =
  * against, so the declared flags and this allowlist cannot drift apart.
  */
 export const STATUS_PARAMS = [] as const;
+export const FRONTMATTER_STATUS_PARAMS = [] as const;
 export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
 export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
@@ -165,6 +166,18 @@ export function parseStatusRequest(params: CliData): ParsedRequest<null> {
   const rejected = rejectAccepted(params, {
     command: "template-status",
     accepted: STATUS_PARAMS,
+  });
+  if (rejected) return invalid(rejected.parameter, rejected.message);
+  return { kind: "valid", value: null };
+}
+
+/** `frontmatter-status` reads no selector at all. */
+export function parseFrontmatterStatusRequest(
+  params: CliData,
+): ParsedRequest<null> {
+  const rejected = rejectAccepted(params, {
+    command: "frontmatter-status",
+    accepted: FRONTMATTER_STATUS_PARAMS,
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
   return { kind: "valid", value: null };

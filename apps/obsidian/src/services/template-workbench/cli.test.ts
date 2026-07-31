@@ -9,6 +9,7 @@ import { type CompileError } from "@/services/template/service";
 
 import {
   createTemplateWorkbenchHandlers,
+  FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
@@ -30,6 +31,11 @@ const NO_COMPILE_ERRORS = new Map<string, CompileError>();
 const EMPTY_RENDER = () => "";
 const NO_ROOT_VARIABLES = () => null;
 const EMPTY_SOURCE = async () => "";
+const FRONTMATTER_READ_EMPTY = () => ({
+  fields: [],
+  inertKeys: [],
+  javascriptTemplatesEnabled: false,
+});
 
 const TEMPLATE_FILES = [
   {
@@ -135,6 +141,9 @@ describe("Template Workbench CLI", () => {
           return "settled";
         },
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers["zotlit:template-status"]({});
@@ -168,6 +177,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "timeout" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -205,6 +217,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -264,6 +279,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -325,6 +343,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_DATA_COMMAND]({
@@ -367,6 +388,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_DATA_COMMAND]({
@@ -404,6 +428,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     await expect(
@@ -429,6 +456,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "init-failed" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -460,6 +490,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -501,6 +534,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic });
@@ -523,6 +559,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -588,6 +627,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_DATA_COMMAND](params);
@@ -621,6 +663,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_DATA_COMMAND]({
@@ -650,6 +695,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_DATA_COMMAND]({
@@ -677,6 +725,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -716,6 +767,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_DATA_COMMAND]({
@@ -754,6 +808,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_DATA_COMMAND]({
@@ -788,6 +845,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -836,6 +896,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_DATA_COMMAND]({
@@ -878,6 +941,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({});
@@ -919,6 +985,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
@@ -955,6 +1024,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({
@@ -988,6 +1060,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -1030,6 +1105,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1065,6 +1143,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1097,6 +1178,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -1152,6 +1236,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1180,6 +1267,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "timeout" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -1274,6 +1364,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1316,6 +1409,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1352,6 +1448,9 @@ describe("Template Workbench CLI", () => {
         analyzeRootVariables: NO_ROOT_VARIABLES,
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
       },
     });
 
@@ -1420,6 +1519,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_RENDER_COMMAND](params);
@@ -1454,6 +1556,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1486,6 +1591,9 @@ describe("Template Workbench CLI", () => {
         getTemplateSource: EMPTY_SOURCE,
         waitUntilSettled: async () => "settled" as const,
       },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+      },
     });
 
     const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1517,6 +1625,9 @@ describe("Template Workbench CLI", () => {
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
         },
       });
 
@@ -1551,6 +1662,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1578,6 +1692,9 @@ describe("Template Workbench CLI", () => {
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
         },
       });
 
@@ -1607,6 +1724,9 @@ describe("Template Workbench CLI", () => {
           analyzeRootVariables: NO_ROOT_VARIABLES,
           getTemplateSource,
           waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
         },
       });
 
@@ -1644,6 +1764,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: async () => "{{ zt.title }}",
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_SOURCE_COMMAND]({
@@ -1669,6 +1792,9 @@ describe("Template Workbench CLI", () => {
           analyzeRootVariables: NO_ROOT_VARIABLES,
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
         },
       });
 
@@ -1703,6 +1829,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_SOURCE_COMMAND]({
@@ -1731,6 +1860,9 @@ describe("Template Workbench CLI", () => {
           analyzeRootVariables: NO_ROOT_VARIABLES,
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
         },
       });
 
@@ -1765,6 +1897,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_STATUS_COMMAND]({
@@ -1788,6 +1923,9 @@ describe("Template Workbench CLI", () => {
           analyzeRootVariables: NO_ROOT_VARIABLES,
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
         },
       });
 
@@ -1829,6 +1967,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1866,6 +2007,9 @@ describe("Template Workbench CLI", () => {
           getTemplateSource: EMPTY_SOURCE,
           waitUntilSettled: async () => "settled" as const,
         },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
       });
 
       const output = await handlers[TEMPLATE_RENDER_COMMAND]({
@@ -1882,6 +2026,178 @@ describe("Template Workbench CLI", () => {
           details: { template: "note", context },
         },
       });
+    });
+  });
+
+  describe("frontmatter-status", () => {
+    const FRONTMATTER_FIELDS = [
+      {
+        key: "summary",
+        expr: "{{ zt.title }}",
+        merge: "replace",
+        language: "liquid",
+      },
+      {
+        key: "custom-js",
+        expr: "return 1;",
+        merge: "append",
+        language: "javascript",
+      },
+    ] as const;
+
+    it("reports each configured field, the reserved keys, and the gate state", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: () => ({
+            fields: FRONTMATTER_FIELDS,
+            inertKeys: ["custom-js"],
+            javascriptTemplatesEnabled: false,
+          }),
+        },
+      });
+
+      const output = await handlers[FRONTMATTER_STATUS_COMMAND]({});
+
+      expect(JSON.parse(output)).toEqual({
+        contractVersion: 1,
+        command: FRONTMATTER_STATUS_COMMAND,
+        ok: true,
+        identity: IDENTITY,
+        javascriptTemplatesEnabled: false,
+        fields: [
+          {
+            key: "summary",
+            expr: "{{ zt.title }}",
+            merge: "replace",
+            language: "liquid",
+            inert: false,
+          },
+          {
+            key: "custom-js",
+            expr: "return 1;",
+            merge: "append",
+            language: "javascript",
+            inert: true,
+          },
+        ],
+        reservedKeys: [
+          "zotero-key",
+          "citekey",
+          "zotero-note-key",
+          "zotero-lastmod",
+        ],
+      });
+    });
+
+    it("flags no field inert once the JavaScript Templates gate is on", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: true,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: () => ({
+            fields: FRONTMATTER_FIELDS,
+            inertKeys: [],
+            javascriptTemplatesEnabled: true,
+          }),
+        },
+      });
+
+      const output = await handlers[FRONTMATTER_STATUS_COMMAND]({});
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        javascriptTemplatesEnabled: true,
+        fields: [
+          { key: "summary", inert: false },
+          { key: "custom-js", inert: false },
+        ],
+      });
+    });
+
+    it("rejects an unrecognized parameter", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
+      });
+
+      const output = await handlers[FRONTMATTER_STATUS_COMMAND]({
+        key: "ITEM2345",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 1,
+        command: FRONTMATTER_STATUS_COMMAND,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "key" },
+        },
+      });
+    });
+
+    it("tolerates --* tokens", async () => {
+      const handlers = createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+        },
+      });
+
+      const output = await handlers[FRONTMATTER_STATUS_COMMAND]({
+        "--help": "true",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({ ok: true });
     });
   });
 });
