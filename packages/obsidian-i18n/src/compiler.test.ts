@@ -3,20 +3,20 @@
 import { loadProjectFromDirectory } from "@inlang/sdk";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
-import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, utimes, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createServer } from "vite";
 import { describe, expect, test } from "vitest";
 
-import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
-
 import {
   formatCompilerWarnings,
   compile,
   compileProject,
   type CompileResult,
+  type GeneratedArtifacts,
+  writeOutput,
 } from "./compiler.js";
 import {
   LanguagePackSchemaVersionError,
@@ -32,14 +32,37 @@ import {
   writeCatalog,
 } from "./test-fixtures.js";
 
-const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const packageRoot = resolve(import.meta.dirname, "..");
-const realProjectPath = join(workspaceRoot, "project.inlang");
 const execFileAsync = promisify(execFile);
 const TARGET_LOCALE_PREFIXES = ["notice_pack_"];
 
+describe("writeOutput", () => {
+  test("preserves unchanged artifact mtimes", async () => {
+    const outputDirectory = await createTemporaryDirectory();
+    const generated: GeneratedArtifacts = {
+      artifacts: [{ fileName: "messages.ts", contents: "export {};\n" }],
+      baseLocale: "en",
+      sourcePaths: [],
+      messageCount: 0,
+      untranslated: [],
+      undeclaredInputs: [],
+      missingBaseLocale: undefined,
+    };
+    const artifactPath = join(outputDirectory, "messages.ts");
+    const unchangedTime = new Date("2000-01-01T00:00:00.000Z");
+
+    const first = await writeOutput(generated, outputDirectory);
+    await utimes(artifactPath, unchangedTime, unchangedTime);
+    const second = await writeOutput(generated, outputDirectory);
+
+    expect(first.writtenPaths).toEqual([artifactPath]);
+    expect(second.writtenPaths).toEqual([]);
+    expect((await stat(artifactPath)).mtimeMs).toBe(unchangedTime.getTime());
+  });
+});
+
 describe("generateLanguagePacks", () => {
-  test("emits a stable partial-safe pack for each configured remote locale", async () => {
+  test("emits stable partial-safe artifacts for each configured remote locale", async () => {
     const projectPath = await createFixtureProject({
       hello: "world",
       creator_summary: [
@@ -77,12 +100,6 @@ describe("generateLanguagePacks", () => {
     });
     const chinesePackPath = join(firstOutputDirectory, "zh-CN.json");
     const englishPackPath = join(firstOutputDirectory, "en.json");
-    const beforeMtime = (await stat(chinesePackPath)).mtimeMs;
-
-    await generateLanguagePacks({
-      projectPath,
-      outputDirectory: firstOutputDirectory,
-    });
     await generateLanguagePacks({
       projectPath,
       outputDirectory: secondOutputDirectory,
@@ -108,11 +125,15 @@ describe("generateLanguagePacks", () => {
     expect(
       validateLanguagePack(chinesePackText, { expectedLocale: "zh-CN" }),
     ).toEqual(chinesePack);
-    // Repeating the same generation is a byte-identical write-skip.
-    expect((await stat(chinesePackPath)).mtimeMs).toBe(beforeMtime);
-    expect(chinesePackText).toBe(
-      await readFile(join(secondOutputDirectory, "zh-CN.json"), "utf8"),
+    const artifactNames = (await readdir(firstOutputDirectory)).sort();
+    expect((await readdir(secondOutputDirectory)).sort()).toEqual(
+      artifactNames,
     );
+    for (const artifactName of artifactNames) {
+      expect(
+        await readFile(join(secondOutputDirectory, artifactName), "utf8"),
+      ).toBe(await readFile(join(firstOutputDirectory, artifactName), "utf8"));
+    }
   });
 
   test("emits a byte-deterministic catalog listing only remote locales", async () => {
@@ -564,40 +585,6 @@ describe("generateLanguagePacks", () => {
         },
       ],
     });
-  });
-
-  test("produces byte-identical output and preserves unchanged mtimes", async () => {
-    const firstOutputDirectory = await createTemporaryDirectory();
-    const secondOutputDirectory = await createTemporaryDirectory();
-
-    await generateLanguagePacks({
-      projectPath: realProjectPath,
-      outputDirectory: firstOutputDirectory,
-    });
-    const facadePath = join(firstOutputDirectory, "messages.ts");
-    const packPath = join(firstOutputDirectory, "en.json");
-    const before = {
-      facade: (await stat(facadePath)).mtimeMs,
-      pack: (await stat(packPath)).mtimeMs,
-    };
-
-    await generateLanguagePacks({
-      projectPath: realProjectPath,
-      outputDirectory: firstOutputDirectory,
-    });
-    await generateLanguagePacks({
-      projectPath: realProjectPath,
-      outputDirectory: secondOutputDirectory,
-    });
-
-    expect((await stat(facadePath)).mtimeMs).toBe(before.facade);
-    expect((await stat(packPath)).mtimeMs).toBe(before.pack);
-    expect(await readFile(facadePath, "utf8")).toBe(
-      await readFile(join(secondOutputDirectory, "messages.ts"), "utf8"),
-    );
-    expect(await readFile(packPath, "utf8")).toBe(
-      await readFile(join(secondOutputDirectory, "en.json"), "utf8"),
-    );
   });
 
   test("removes stale locale packs after a successful compile", async () => {
