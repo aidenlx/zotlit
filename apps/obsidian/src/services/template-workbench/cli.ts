@@ -443,26 +443,17 @@ export function createTemplateWorkbenchHandlers(
 
         if (request.adhoc) {
           const { expr, language } = request.adhoc;
-          if (
-            language === "javascript" &&
-            !deps.templates.javascriptTemplatesEnabled
-          ) {
+          const gateOrCompileError = validateGateAndCompile(deps, {
+            expr,
+            language,
+            gateMessage:
+              "Evaluating a javascript expression requires the JavaScript Templates gate; this device has it disabled.",
+          });
+          if (gateOrCompileError) {
             return envelope(FRONTMATTER_EVAL_COMMAND, {
               ok: false,
               ...echoed,
-              diagnostic: diagnostic(
-                "ETA_OPT_IN_REQUIRED",
-                "Evaluating a javascript expression requires the JavaScript Templates gate; this device has it disabled.",
-              ),
-            });
-          }
-
-          const compileError = deps.frontmatter.validateExpr(expr, language);
-          if (compileError !== null) {
-            return envelope(FRONTMATTER_EVAL_COMMAND, {
-              ok: false,
-              ...echoed,
-              diagnostic: diagnostic("EXPRESSION_COMPILE_ERROR", compileError),
+              diagnostic: gateOrCompileError,
             });
           }
 
@@ -567,26 +558,17 @@ export function createTemplateWorkbenchHandlers(
       const language = request.value.language ?? existing?.language ?? "liquid";
       const merge = request.value.merge ?? existing?.merge ?? "replace";
 
-      if (
-        language === "javascript" &&
-        !deps.templates.javascriptTemplatesEnabled
-      ) {
+      const gateOrCompileError = validateGateAndCompile(deps, {
+        expr,
+        language,
+        gateMessage:
+          "Writing a javascript field requires the JavaScript Templates gate; this device has it disabled.",
+      });
+      if (gateOrCompileError) {
         return envelope(FRONTMATTER_SET_COMMAND, {
           ok: false,
           ...echoed,
-          diagnostic: diagnostic(
-            "ETA_OPT_IN_REQUIRED",
-            "Writing a javascript field requires the JavaScript Templates gate; this device has it disabled.",
-          ),
-        });
-      }
-
-      const compileError = deps.frontmatter.validateExpr(expr, language);
-      if (compileError !== null) {
-        return envelope(FRONTMATTER_SET_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: diagnostic("EXPRESSION_COMPILE_ERROR", compileError),
+          diagnostic: gateOrCompileError,
         });
       }
 
@@ -608,6 +590,27 @@ export function createTemplateWorkbenchHandlers(
       });
     },
   };
+}
+
+/**
+ * The JS-gate check and compile-check `frontmatter-eval`'s ad-hoc branch and
+ * `frontmatter-set` both run before evaluating or writing an expression:
+ * refuse a `"javascript"` expression while the gate is off, then compile-check
+ * whatever language is left. Returns the diagnostic to report, or `null` when
+ * `expr` is safe to evaluate or write.
+ */
+function validateGateAndCompile(
+  deps: TemplateWorkbenchDeps,
+  options: { expr: string; language: FrontmatterLanguage; gateMessage: string },
+): Diagnostic | null {
+  const { expr, language, gateMessage } = options;
+  if (language === "javascript" && !deps.templates.javascriptTemplatesEnabled) {
+    return diagnostic("ETA_OPT_IN_REQUIRED", gateMessage);
+  }
+  const compileError = deps.frontmatter.validateExpr(expr, language);
+  return compileError === null
+    ? null
+    : diagnostic("EXPRESSION_COMPILE_ERROR", compileError);
 }
 
 /** A configured field's status row: its configuration, plus whether the
