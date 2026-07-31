@@ -7,10 +7,15 @@ import {
   type ContractRoot,
   type TemplateSlot,
 } from "@zotlit/db";
+import { type FrontmatterLanguage } from "@zotlit/templates/constants";
 import { type RootVariableUse } from "@zotlit/templates/facade";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
-import { RESERVED_KEYS } from "@/lib/constants";
+import {
+  FIELD_CITEKEY,
+  FIELD_ZOTERO_KEY,
+  RESERVED_KEYS,
+} from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import {
   type CompileError,
@@ -27,6 +32,7 @@ import {
   notSettledDiagnostic,
   templateFaultDiagnostic,
   type Diagnostic,
+  type FrontmatterEvalRow,
   type FrontmatterFieldRow,
   type WorkbenchCommand,
   type WorkbenchIdentity,
@@ -34,6 +40,7 @@ import {
 import { renderGuide } from "./guide";
 import {
   parseDataRequest,
+  parseFrontmatterEvalRequest,
   parseFrontmatterStatusRequest,
   parseGuideRequest,
   parseRenderRequest,
@@ -62,6 +69,12 @@ export const TEMPLATE_SOURCE_COMMAND =
   "zotlit:template-source" as const satisfies WorkbenchCommand;
 export const FRONTMATTER_STATUS_COMMAND =
   "zotlit:frontmatter-status" as const satisfies WorkbenchCommand;
+export const FRONTMATTER_EVAL_COMMAND =
+  "zotlit:frontmatter-eval" as const satisfies WorkbenchCommand;
+
+/** The ad-hoc mode's single synthetic field key: `frontmatter-eval` never
+ *  reports this key back, so any literal never collides with it. */
+const ADHOC_FIELD_KEY = "zotlit:frontmatter-eval/adhoc";
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 const logger = getLogger("template-workbench");
@@ -97,6 +110,25 @@ interface TemplateWorkbenchDeps {
       inertKeys: readonly string[];
       javascriptTemplatesEnabled: boolean;
     };
+    /**
+     * Evaluate `fields` over `zt`, gate-aware: a `"javascript"` field is
+     * skipped (never compiled) while the gate is off, its key reported in
+     * `inertKeys` rather than `values`/`errors`. Non-throwing counterpart to
+     * the plugin's frontmatter write path, for `frontmatter-eval`.
+     */
+    evaluate: (
+      fields: readonly FrontmatterField[],
+      zt: object,
+    ) => {
+      values: Readonly<Record<string, unknown>>;
+      errors: Readonly<Record<string, string>>;
+      inertKeys: readonly string[];
+    };
+    /** Compile-check a single ad-hoc expression; `null` when it compiles. */
+    validateExpr: (
+      expr: string,
+      language: FrontmatterLanguage,
+    ) => string | null;
   };
 }
 
@@ -107,7 +139,8 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_RENDER_COMMAND
   | typeof TEMPLATE_GUIDE_COMMAND
   | typeof TEMPLATE_SOURCE_COMMAND
-  | typeof FRONTMATTER_STATUS_COMMAND,
+  | typeof FRONTMATTER_STATUS_COMMAND
+  | typeof FRONTMATTER_EVAL_COMMAND,
   CliHandler
 >;
 
@@ -389,6 +422,92 @@ export function createTemplateWorkbenchHandlers(
         reservedKeys: [...RESERVED_KEYS],
       });
     },
+
+    [FRONTMATTER_EVAL_COMMAND]: gated(
+      FRONTMATTER_EVAL_COMMAND,
+      parseFrontmatterEvalRequest,
+      async (request, identity) => {
+        const echoed = { request, identity };
+
+        if (request.adhoc) {
+          const { expr, language } = request.adhoc;
+          if (
+            language === "javascript" &&
+            !deps.templates.javascriptTemplatesEnabled
+          ) {
+            return envelope(FRONTMATTER_EVAL_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: diagnostic(
+                "ETA_OPT_IN_REQUIRED",
+                "Evaluating a javascript expression requires the JavaScript Templates gate; this device has it disabled.",
+              ),
+            });
+          }
+
+          const compileError = deps.frontmatter.validateExpr(expr, language);
+          if (compileError !== null) {
+            return envelope(FRONTMATTER_EVAL_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: diagnostic("EXPRESSION_COMPILE_ERROR", compileError),
+            });
+          }
+
+          const result = await deps.loadData(request.key, "note");
+          if (result.kind !== "data") {
+            return envelope(FRONTMATTER_EVAL_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: dataLoadDiagnostic(result, request.key),
+            });
+          }
+
+          const { values, errors } = deps.frontmatter.evaluate(
+            [{ key: ADHOC_FIELD_KEY, expr, language, merge: "replace" }],
+            result.data,
+          );
+          const error = errors[ADHOC_FIELD_KEY];
+          return envelope(FRONTMATTER_EVAL_COMMAND, {
+            ok: true,
+            ...echoed,
+            ...(error === undefined
+              ? { value: values[ADHOC_FIELD_KEY] }
+              : { error: { message: error } }),
+          });
+        }
+
+        const result = await deps.loadData(request.key, "note");
+        if (result.kind !== "data") {
+          return envelope(FRONTMATTER_EVAL_COMMAND, {
+            ok: false,
+            ...echoed,
+            diagnostic: dataLoadDiagnostic(result, request.key),
+          });
+        }
+
+        const { fields } = deps.frontmatter.read();
+        const configured = fields.filter(
+          (field) => !RESERVED_KEYS.has(field.key),
+        );
+        const { values, errors, inertKeys } = deps.frontmatter.evaluate(
+          configured,
+          result.data,
+        );
+
+        const entries = configured.map((field) =>
+          frontmatterEvalRow(field, { values, errors, inertKeys }),
+        );
+        entries.push(...systemFrontmatterRows(result.data));
+
+        return envelope(FRONTMATTER_EVAL_COMMAND, {
+          ok: true,
+          ...echoed,
+          warnings: gateWarnings(inertKeys),
+          entries,
+        });
+      },
+    ),
   };
 }
 
@@ -405,6 +524,73 @@ function frontmatterFieldRow(
     merge: field.merge,
     inert: inertKeys.includes(field.key),
   };
+}
+
+/**
+ * A configured field's `frontmatter-eval` row: its evaluated value, its own
+ * runtime error, or `inert` when the JavaScript Templates gate left it
+ * uncompiled — evaluating never reports more than one of those three.
+ */
+function frontmatterEvalRow(
+  field: FrontmatterField,
+  evaluated: {
+    values: Readonly<Record<string, unknown>>;
+    errors: Readonly<Record<string, string>>;
+    inertKeys: readonly string[];
+  },
+): FrontmatterEvalRow {
+  const base = {
+    key: field.key,
+    source: "user" as const,
+    language: field.language,
+    merge: field.merge,
+  };
+  if (evaluated.inertKeys.includes(field.key)) return { ...base, inert: true };
+  const error = evaluated.errors[field.key];
+  if (error !== undefined) return { ...base, error: { message: error } };
+  return { ...base, value: evaluated.values[field.key] };
+}
+
+/**
+ * The system rows every literature note carries: `zotero-key` always, and
+ * `citekey` only when the item has a citation key — the same write order the
+ * note feature's managed-frontmatter write path uses.
+ */
+function systemFrontmatterRows(zt: object): FrontmatterEvalRow[] {
+  const { indexedKey, citationKey } = zt as {
+    indexedKey: string;
+    citationKey: string | null;
+  };
+  const rows: FrontmatterEvalRow[] = [
+    {
+      key: FIELD_ZOTERO_KEY,
+      source: "system",
+      language: null,
+      merge: null,
+      value: indexedKey,
+    },
+  ];
+  if (citationKey) {
+    rows.push({
+      key: FIELD_CITEKEY,
+      source: "system",
+      language: null,
+      merge: null,
+      value: citationKey,
+    });
+  }
+  return rows;
+}
+
+/** The one warning `frontmatter-eval` answers with when the JavaScript
+ *  Templates gate leaves fields inert: a real note operation would skip the
+ *  same keys, so this warns before a caller drafts a field expression that
+ *  would silently do nothing on this device. */
+function gateWarnings(inertKeys: readonly string[]): readonly string[] {
+  if (inertKeys.length === 0) return [];
+  return [
+    `JavaScript Templates are disabled on this device; these fields are inert and a real note operation would fail to write them: ${inertKeys.join(", ")}.`,
+  ];
 }
 
 /**

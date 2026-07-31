@@ -8,6 +8,7 @@ import {
   type ContractRoot,
   type TemplateSlot,
 } from "@zotlit/db";
+import { type FrontmatterLanguage } from "@zotlit/templates/constants";
 
 import {
   diagnostic,
@@ -32,6 +33,18 @@ export type ParsedRequest<T> =
  */
 export const STATUS_PARAMS = [] as const;
 export const FRONTMATTER_STATUS_PARAMS = [] as const;
+export const FRONTMATTER_EVAL_PARAMS = [
+  "key",
+  "expr",
+  "language",
+  "format",
+  "expect-source",
+] as const;
+/** Accepted `language` values, in the order selector messages list them. */
+export const FRONTMATTER_LANGUAGE_NAMES = [
+  "liquid",
+  "javascript",
+] as const satisfies readonly FrontmatterLanguage[];
 export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
 export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
@@ -181,6 +194,63 @@ export function parseFrontmatterStatusRequest(
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
   return { kind: "valid", value: null };
+}
+
+/** `frontmatter-eval`'s parsed selector: the configured set (`adhoc: null`),
+ *  or one ad-hoc expression to evaluate instead. */
+export interface FrontmatterEvalRequest {
+  key: string;
+  format: "json";
+  adhoc: { expr: string; language: FrontmatterLanguage } | null;
+}
+
+/** `frontmatter-eval` selects an Item and, with `expr=`, one ad-hoc
+ *  expression to evaluate in place of the configured field set. */
+export function parseFrontmatterEvalRequest(
+  params: CliData,
+): ParsedRequest<FrontmatterEvalRequest> {
+  const rejected = rejectAccepted(params, {
+    command: "frontmatter-eval",
+    accepted: FRONTMATTER_EVAL_PARAMS,
+  });
+  if (rejected) return invalid(rejected.parameter, rejected.message);
+
+  const key = selectorKey(params);
+  if (key === null) return invalid("key", "key must be an Indexed Key.");
+
+  const format = params.format ?? "json";
+  if (format !== "json") {
+    return invalid("format", "format must be 'json'.");
+  }
+
+  if (params.expr === undefined) {
+    if (params.language !== undefined) {
+      return invalid("language", "language requires expr.");
+    }
+    return withExpectations(params, { key, format: "json", adhoc: null });
+  }
+
+  const language = parseFrontmatterLanguage(params.language);
+  if (language === null) {
+    return invalid(
+      "language",
+      `language must be ${quotedList(FRONTMATTER_LANGUAGE_NAMES)}.`,
+    );
+  }
+  return withExpectations(params, {
+    key,
+    format: "json",
+    adhoc: { expr: params.expr, language },
+  });
+}
+
+function parseFrontmatterLanguage(
+  value: string | undefined,
+): FrontmatterLanguage | null {
+  const language = value ?? "liquid";
+  return (FRONTMATTER_LANGUAGE_NAMES as readonly string[]).includes(language)
+    ? (language as FrontmatterLanguage)
+    : null;
 }
 
 /**

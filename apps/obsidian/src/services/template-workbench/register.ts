@@ -21,6 +21,7 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
   createTemplateWorkbenchHandlers,
+  FRONTMATTER_EVAL_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
@@ -32,8 +33,10 @@ import {
 import { loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
+  FRONTMATTER_LANGUAGE_NAMES,
   TEMPLATE_SLOT_NAMES,
   type DATA_PARAMS,
+  type FRONTMATTER_EVAL_PARAMS,
   type GUIDE_PARAMS,
   type RENDER_PARAMS,
   type SOURCE_PARAMS,
@@ -130,6 +133,22 @@ function sourceFlags(): CliFlags {
   } satisfies Record<(typeof SOURCE_PARAMS)[number], CliFlag>;
 }
 
+function frontmatterEvalFlags(): CliFlags {
+  return {
+    key: keyFlag(),
+    expr: {
+      value: "<expression>",
+      description: m.cli_flag_expr_desc(),
+    },
+    language: {
+      value: choices(FRONTMATTER_LANGUAGE_NAMES),
+      description: m.cli_flag_language_desc(),
+    },
+    format: formatFlag(["json"]),
+    ...expectationFlags(),
+  } satisfies Record<(typeof FRONTMATTER_EVAL_PARAMS)[number], CliFlag>;
+}
+
 export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
@@ -161,6 +180,10 @@ export function registerTemplateWorkbench(
           javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
         };
       },
+      evaluate: (fields, zt) =>
+        deps.templates.evaluateFrontmatterFields(fields, zt),
+      validateExpr: (expr, language) =>
+        deps.templates.validateFrontmatterExpr(expr, language),
     },
   });
 
@@ -205,5 +228,11 @@ export function registerTemplateWorkbench(
     m.cli_frontmatter_status_desc(),
     null,
     handlers[FRONTMATTER_STATUS_COMMAND],
+  );
+  plugin.registerCliHandler(
+    FRONTMATTER_EVAL_COMMAND,
+    m.cli_frontmatter_eval_desc(),
+    frontmatterEvalFlags(),
+    handlers[FRONTMATTER_EVAL_COMMAND],
   );
 }
