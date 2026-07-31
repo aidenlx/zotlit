@@ -6,11 +6,16 @@ import {
   LIQUID_BUILTIN_TAG_NAMES,
 } from "@zotlit/templates/liquid";
 
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
 
 import { type DiagnosticCode } from "./envelope";
 import { CONTRACT_ROOT_NAMES } from "./schema";
-import { quotedList, TEMPLATE_SLOT_NAMES } from "./vocabulary";
+import {
+  FRONTMATTER_LANGUAGE_NAMES,
+  FRONTMATTER_MERGE_NAMES,
+  quotedList,
+  TEMPLATE_SLOT_NAMES,
+} from "./vocabulary";
 
 function rootRow(slot: keyof typeof TEMPLATE_SLOT_ROOTS): string {
   return `  ${slot.padEnd(12)} ${TEMPLATE_SLOT_ROOTS[slot]}`;
@@ -41,6 +46,14 @@ const TEMPLATE_DATA_SYNOPSIS = `obsidian-cli zotlit:template-data key=<indexed-k
 const TEMPLATE_RENDER_SYNOPSIS = `obsidian-cli zotlit:template-render key=<indexed-key> \\
     template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
     [format=<json|markdown>]`;
+
+const FRONTMATTER_EVAL_SYNOPSIS = `obsidian-cli zotlit:frontmatter-eval key=<indexed-key> \\
+    [expr=<expression> [language=<${FRONTMATTER_LANGUAGE_NAMES.join("|")}>]] \\
+    [expect-source=<source-id>]`;
+
+const FRONTMATTER_SET_SYNOPSIS = `obsidian-cli zotlit:frontmatter-set field=<key> \\
+    [expr=<expression>] [language=<${FRONTMATTER_LANGUAGE_NAMES.join("|")}>] \\
+    [merge=<${FRONTMATTER_MERGE_NAMES.join("|")}>]`;
 
 const SIZE_SECTION = `SIZE
   template-data output and the downloaded schema can be very large. Pipe JSON
@@ -205,6 +218,75 @@ WHITESPACE
   A trailing -%} removes inline blanks and exactly one following newline.
   A leading {%- removes same-line indentation only.`;
 
+const FRONTMATTER_SECTION = `MANAGED FRONTMATTER
+
+SYNOPSIS
+  obsidian-cli zotlit:frontmatter-status
+  ${FRONTMATTER_EVAL_SYNOPSIS}
+  ${FRONTMATTER_SET_SYNOPSIS}
+  obsidian-cli zotlit:frontmatter-remove field=<key>
+  obsidian-cli zotlit:frontmatter-reorder order=<k1,k2,...>
+
+DESCRIPTION
+  A Managed Frontmatter field is configuration, not a vault file. This family
+  inspects, evaluates, and mutates that configuration through the plugin's
+  settings service, so the settings modal, compilation, and sync all observe
+  the same change.
+
+COMMANDS
+  frontmatter-status
+              List the configured fields, the reserved keys, and the
+              JavaScript Templates gate state. Takes no parameters.
+  frontmatter-eval
+              Evaluate the configured field set against key=<indexed-key>.
+              With expr=, evaluate that one ad-hoc expression instead, in
+              language= (default liquid); language= without expr= is rejected.
+  frontmatter-set
+              Add a field, or patch an existing one, by field=<key>. Omitted
+              expr=/language=/merge= keep an existing field's current values;
+              a new field defaults to liquid and replace.
+  frontmatter-remove
+              Delete the field named field=<key>.
+  frontmatter-reorder
+              Arrange the configured fields into order=<k1,k2,...>, a
+              complete permutation of every configured key.
+
+KEYS
+  field=      A Managed Frontmatter field key. Used by frontmatter-set,
+              frontmatter-remove, and each entry of frontmatter-reorder's
+              order=.
+  key=        The CLI-wide Indexed Key. Used by frontmatter-eval to select
+              the item to evaluate against. See
+              ${DOCS_SITE_URL}/docs/how-to/explore-template-data#indexed-key.
+
+VALUES
+  language=   ${quotedList(FRONTMATTER_LANGUAGE_NAMES)}
+  merge=      ${quotedList(FRONTMATTER_MERGE_NAMES)}
+  reserved keys
+              ${quotedList([...RESERVED_KEYS])}. A field= naming one of these
+              is rejected; frontmatter-status echoes this same list.
+
+GATE
+  The JavaScript Templates gate (see ADR 0004) treats evaluation and writes
+  differently while it is off:
+
+  evaluate    Partial. liquid fields evaluate; javascript fields report
+              inert instead of a value, and a warning names them and states
+              that a real note operation would fail to write them.
+  write       Refused. frontmatter-set, and frontmatter-eval's ad-hoc mode,
+              reject a language=javascript expression outright: with the
+              gate off nothing can be compiled, so nothing can be validated.
+
+FIELD ROWS
+  frontmatter-status and every mutation echo the resulting fields as
+  { key, expr, language, merge, inert }.
+
+  frontmatter-eval reports one row per entry, in YAML write order, as
+  { key, value, source, language, merge, inert?, error? }. value is absent
+  when error or inert is present instead. source is "system" for the
+  zotero-key row (always present) and the citekey row (present only when the
+  item has a citation key); every configured field reports "user".`;
+
 /** Canonical `topic` registry for `template-guide`. */
 export const GUIDE_TOPICS = {
   data: DATA_SECTION,
@@ -212,6 +294,7 @@ export const GUIDE_TOPICS = {
   editing: EDITING_SECTION,
   eta: ETA_SECTION,
   liquid: LIQUID_SECTION,
+  frontmatter: FRONTMATTER_SECTION,
 } as const satisfies Record<string, string>;
 
 export type GuideTopic = keyof typeof GUIDE_TOPICS;
@@ -233,10 +316,11 @@ const TOPIC_SUMMARIES = {
   editing: "Active source, edit procedure, and file status",
   eta: "JavaScript Templates gate, precedence, and security",
   liquid: "Engine, data root, tags, filters, and whitespace",
+  frontmatter: "Commands, field= vs key=, value lists, and gate behavior",
 } as const satisfies Record<GuideTopic, string>;
 
 const TOPIC_INDEX = GUIDE_TOPIC_NAMES.map(
-  (topic) => `  ${topic.padEnd(9)} ${TOPIC_SUMMARIES[topic]}`,
+  (topic) => `  ${topic.padEnd(12)} ${TOPIC_SUMMARIES[topic]}`,
 ).join("\n");
 
 const QUICKSTART = `ZOTLIT-TEMPLATE-WORKBENCH(1)

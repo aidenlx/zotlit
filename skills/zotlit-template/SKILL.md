@@ -35,6 +35,10 @@ current system, and reuse it for every later question about the same schema.
 
 Prefer Liquid. Use Eta only when the required behavior is absent from the supported Liquid tags and filters. Ask the user to enable JavaScript Templates in ZotLit settings before using Eta.
 
+## Managed Frontmatter
+
+The Workbench also inspects, evaluates, and mutates Managed Frontmatter fields — the `zotlit:frontmatter-*` commands. Run `obsidian-cli zotlit:template-guide topic=frontmatter` before using them.
+
 
 ## Tone
 
