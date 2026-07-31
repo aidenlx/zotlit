@@ -54,6 +54,18 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
 
 Click a field's row to reopen the edit modal and change its settings. To remove a field, use the delete control on its row in the Frontmatter list.
 
+## Reorder fields
+
+The order of fields in the Frontmatter list determines the order of frontmatter keys when ZotLit creates a new literature note. On a new note, system fields (`zotero-key` and `citekey`) follow the user-configured fields.
+
+To change the order, drag a field by the handle on its row in **Settings > ZotLit > Templates > Frontmatter**.
+
+### Existing notes
+
+Reordering the list does not change property order in notes that already exist. When ZotLit updates an existing note, a key already present in that note's YAML keeps its current position.
+
+To reorder properties within a single note, use Obsidian's properties panel: drag the property type icon to the left of a property name to move that row. Obsidian writes the new key order back into the note's YAML. The note must have two or more properties for this to work.
+
 ## Validation rules
 
 The modal rejects invalid configurations:

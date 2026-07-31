@@ -3,6 +3,7 @@ import { type SettingDefinitionItem } from "obsidian";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { confirm } from "@/lib/confirm";
+import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
@@ -14,6 +15,10 @@ export function frontmatterPageItems(
 ): SettingDefinitionItem<SettingsKey>[] {
   const fields = ctx.settings.current?.["note.frontmatter-fields"] ?? [];
   return [
+    {
+      name: m.settings_note_frontmatter_order_name(),
+      desc: m.settings_note_frontmatter_order_desc(),
+    },
     {
       type: "list",
       heading: m.settings_note_frontmatter_heading(),
@@ -42,6 +47,7 @@ export function frontmatterPageItems(
         action: () => openFieldModal(ctx, null),
       },
       onDelete: (index) => deleteField(ctx, index),
+      onReorder: (oldIndex, newIndex) => moveField(ctx, oldIndex, newIndex),
       items: fields.map((field) => ({
         name: frontmatterFieldLabel(field),
         desc: describeField(ctx, field),
@@ -49,7 +55,33 @@ export function frontmatterPageItems(
         action: (_el, index) => openFieldModal(ctx, index),
       })),
     },
+    systemFieldsList(),
   ];
+}
+
+/**
+ * The system fields, listed after the user fields to mirror the order they are
+ * written in on a new note. Read-only: no add, delete, or reorder affordance.
+ *
+ * `RESERVED_KEYS` also covers `zotero-note-key` and `zotero-lastmod`, which
+ * belong to Imported Notes and never appear on a Literature Note — listing
+ * them on this page would describe frontmatter the user will never see here.
+ */
+function systemFieldsList(): SettingDefinitionItem<SettingsKey> {
+  return {
+    type: "list",
+    heading: m.settings_note_frontmatter_system_heading(),
+    items: [
+      {
+        name: FIELD_ZOTERO_KEY,
+        desc: m.settings_note_frontmatter_system_zotero_key(),
+      },
+      {
+        name: FIELD_CITEKEY,
+        desc: m.settings_note_frontmatter_system_citekey(),
+      },
+    ],
+  };
 }
 
 /**
@@ -104,6 +136,21 @@ function openFieldModal(ctx: SettingTabContext, index: number | null): void {
     },
     () => {},
   );
+}
+
+/**
+ * Field order is the write order for the fields on a newly created note; notes
+ * that already exist keep the key positions they have.
+ * @see `applyManagedFrontmatter` in `services/note-feature/frontmatter.ts`
+ */
+function moveField(
+  ctx: SettingTabContext,
+  oldIndex: number,
+  newIndex: number,
+): void {
+  const fields = [...(ctx.settings.current?.["note.frontmatter-fields"] ?? [])];
+  fields.splice(newIndex, 0, ...fields.splice(oldIndex, 1));
+  ctx.settings.update({ "note.frontmatter-fields": fields });
 }
 
 function deleteField(ctx: SettingTabContext, index: number): void {
