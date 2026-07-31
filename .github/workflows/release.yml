@@ -83,6 +83,7 @@ jobs:
             "Release notes: https://zotlit.aidenlx.site/changelog/${{ steps.meta.outputs.version }}")
           gh release create "${{ steps.meta.outputs.tag }}" \
             --title "${{ steps.meta.outputs.tag }}" \
+            --target "${{ github.sha }}" \
             --notes "$notes" \
             ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }} \
             apps/obsidian/dist/main.js \
@@ -202,6 +203,7 @@ jobs:
             "Release notes: https://zotlit.aidenlx.site/changelog/${{ steps.meta.outputs.changelog }}")
           gh release create "${{ steps.meta.outputs.tag }}" \
             --title "${{ steps.meta.outputs.tag }}" \
+            --target "${{ github.sha }}" \
             --notes "$notes" \
             ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest=false' }} \
             "${{ steps.meta.outputs.xpi }}"
