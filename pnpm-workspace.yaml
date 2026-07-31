@@ -44,6 +44,9 @@ catalog:
 overrides:
   "zotero-types>epubjs": 0.3.93
   "zotero-types>pdfjs-dist": workspace:*
+  # next@16.2.11 hard-pins its internal postcss to 8.4.31 (GHSA-r28c-9q8g-f849);
+  # force the patched version until upstream bumps its own pin.
+  "next>postcss": ">=8.5.18"
 
 # delay 3 day to reduce the risk of installing compromised packages
 minimumReleaseAge: 4320
