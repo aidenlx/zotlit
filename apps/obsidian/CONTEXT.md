@@ -19,7 +19,7 @@ The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered 
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
-Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. Includes system fields (`zotero-key`, `citekey`) and user-configured `{key, expression, language}` entries. Each expression declares its own language — Liquid (the default) or JavaScript — and always evaluates in that language; JavaScript fields run only while JavaScript Templates is enabled on the device, and are otherwise inert — a note write that consumes the field set fails with an error naming them, existing notes untouched. Unmanaged keys are preserved.
+Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. Includes system fields (`zotero-key`, `citekey`) and user-configured `{key, expression, language, merge strategy}` entries. Each expression declares its own language — Liquid (the default) or JavaScript — and always evaluates in that language; each field's merge strategy (replace, append arrays, keep existing) governs how the re-evaluated value combines with the value already on the note; JavaScript fields run only while JavaScript Templates is enabled on the device, and are otherwise inert — a note write that consumes the field set fails with an error naming them, existing notes untouched. Unmanaged keys are preserved.
 
 ### Templates
 
@@ -42,7 +42,7 @@ The `filename` Template, evaluated to determine a new Literature Note's filename
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
 **Template Workbench** _(Obsidian)_:
-The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, and renders templates entirely in memory. Inspection and rendering are side-effect-free and reuse the Template Data Explorer's inert resolver behavior. Selection takes one Indexed Key naming any Zotero object, with the data root as the lens on it. Every diagnostic carries its own recovery hint, so corrective guidance arrives with the failure it belongs to.
+The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, renders templates entirely in memory, and manages Managed Frontmatter configuration. Inspection, rendering, and frontmatter evaluation are side-effect-free and reuse the Template Data Explorer's inert resolver behavior; mutation is scoped to Managed Frontmatter configuration only — never vault files, never note content. Selection takes one Indexed Key naming any Zotero object, with the data root as the lens on it. Every diagnostic carries its own recovery hint, so corrective guidance arrives with the failure it belongs to.
 _Avoid_: agent template workbench (names the audience, not the thing), template CLI (names the mechanism), template preview (implies rendered visual output)
 
 **Workbench Guide**:
