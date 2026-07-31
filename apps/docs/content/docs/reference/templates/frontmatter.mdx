@@ -48,7 +48,8 @@ Liquid expressions use the same filter vocabulary as templates (see [Template sy
 ```
 zt.title                              -> "My Paper Title"
 zt.authors | join: ", "               -> "Jane Smith, Bob Jones"
-zt.tags | map: "name"                 -> ["methodology", "review"]
+zt.tags | map: "name"                 -> ["methodology", "open access"]
+zt.tags | obsidian_tag                -> ["methodology", "open_access"]
 zt.collections | collection_paths     -> ["Project/Reading", "Research"]
 zt.date.year                          -> 2023
 ```

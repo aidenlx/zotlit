@@ -249,6 +249,78 @@ Maps an array of collections to their joined path strings. The default separator
 {{ zt.collections | collection_paths: " > " }}
 ```
 
+### `arr_prefix`: prepend to every element [#arr-prefix]
+
+Prepends a string to every element of an array. Non-array input raises a render error.
+
+```liquid
+{{ zt.creators | map: "lastName" | arr_prefix: "@" }}
+```
+
+The prefix argument defaults to an empty string when omitted.
+
+### `arr_suffix`: append to every element [#arr-suffix]
+
+Appends a string to every element of an array. Non-array input raises a render error.
+
+```liquid
+{{ zt.creators | map: "lastName" | arr_suffix: "!" }}
+```
+
+The suffix argument defaults to an empty string when omitted.
+
+### `arr_replace`: replace in every element [#arr-replace]
+
+Replaces every occurrence of a literal substring in every element of an array.
+
+```liquid
+{{ zt.collections | collection_paths | arr_replace: "/", " > " }}
+```
+
+| Argument      | Required | Default | Description                                        |
+| ------------- | -------- | ------- | -------------------------------------------------- |
+| `search`      | Yes      | —       | Literal substring to find. Must not be empty       |
+| `replacement` | No       | `""`    | Replacement text. Omit to delete the search string |
+
+Non-array input raises a render error. An empty or missing search string raises a render error (an empty search would insert the replacement between every character).
+
+### `obsidian_tag`: convert to Obsidian tag [#obsidian-tag]
+
+Converts arbitrary text into a valid [Obsidian tag](https://obsidian.md/help/tags#Tag+format), with an optional prefix.
+
+```liquid
+{{ zt.tags | obsidian_tag: "#" }}
+{{ zt.tags | obsidian_tag: "zotero/" }}
+```
+
+Accepts an array (maps element-wise) or a single value (returns a single value). Reads the `name` property of a Zotero tag object, so `zt.tags` can be piped in without `map: "name"` first.
+
+**Normalization rules:**
+
+- Each run of characters Obsidian rejects is replaced with one underscore.
+- Repeated `/` collapses to a single `/`. Leading and trailing `_` and `/` are trimmed.
+- A name that is entirely digits gets a leading underscore (`1984` becomes `_1984`), because Obsidian rejects an all-digit tag.
+- A value that keeps nothing after normalization is dropped from an array, or returns an empty string for a single value.
+- The optional prefix is added after normalization and stays verbatim. Use `"#"` for a tag in the note body, or `"zotero/"` for a nested tag. Because a leading `#` in the input is stripped during normalization, `obsidian_tag: "#"` is safe to apply more than once.
+- Case is preserved. Obsidian matches tags case-insensitively but displays the casing a tag was first created with.
+
+**Character handling:** Obsidian defines valid tag characters as a reject-list, not an allow-list. Characters outside the rejected set are left as-is. This includes CJK text and CJK punctuation, fullwidth forms, symbols such as `©`, and emoji. A zero-width-joiner emoji such as `👩‍💻` becomes `👩_💻`, because the joiner is one of the characters Obsidian rejects.
+
+| Input (name)         | Output             | Notes                                      |
+| -------------------- | ------------------ | ------------------------------------------ |
+| `Machine Learning`   | `Machine_Learning` | Space replaced                             |
+| `(draft) papers`     | `draft_papers`     | Parentheses and space collapsed            |
+| `R & D`              | `R_D`              | Punctuation run collapsed                  |
+| `文献、综述`         | `文献、综述`       | CJK text and punctuation kept              |
+| `/Reading/`          | `Reading`          | Edge slashes trimmed                       |
+| `a//b`               | `a/b`              | Repeated slash collapsed                   |
+| `1984`               | `_1984`            | All-digit name prefixed                    |
+| `a/1984`             | `a/1984`           | Non-digit present, no prefix needed        |
+| `#todo` (prefix `#`) | `#todo`            | Leading `#` stripped, then prefix re-added |
+| `!!!`                | _(dropped)_        | Nothing survives normalization             |
+
+`obsidian_tag` normalizes for Obsidian's tag rules. For free-text array transformations that do not need tag-specific normalization, use `arr_replace`.
+
 ### `{% suffix %}`: filename collision guard [#suffix-filename-collision-guard]
 
 Meaningful only in the `filename` template. Emits nothing when the generated filename is unique. When it would collide with an existing note, it appends a random string.
