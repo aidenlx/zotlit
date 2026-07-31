@@ -70,6 +70,8 @@ export const DIAGNOSTIC_HINTS = {
     "Correct the syntax of the expression named in expr, then evaluate it again.",
   RESERVED_KEY:
     "Choose a field key ZotLit does not manage; the reservedKeys list from frontmatter-status names every key that is off limits.",
+  FIELD_NOT_FOUND:
+    "Run frontmatter-status to see the configured keys, then use one of them.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -109,7 +111,7 @@ export type WorkbenchCommand =
       | "render"
       | "guide"
       | "source"}`
-  | `zotlit:frontmatter-${"status" | "eval" | "set"}`;
+  | `zotlit:frontmatter-${"status" | "eval" | "set" | "remove" | "reorder"}`;
 
 /** One configured Managed Frontmatter field, as `frontmatter-status` reports
  *  it: the raw configuration plus whether the JavaScript Templates gate

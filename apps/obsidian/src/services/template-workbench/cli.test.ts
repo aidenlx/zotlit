@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
+import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { InertTemplateError } from "@/services/template/errors";
 import { markInertPlaceholder } from "@/services/template/inert-placeholder";
@@ -10,6 +11,8 @@ import { type CompileError } from "@/services/template/service";
 import {
   createTemplateWorkbenchHandlers,
   FRONTMATTER_EVAL_COMMAND,
+  FRONTMATTER_REMOVE_COMMAND,
+  FRONTMATTER_REORDER_COMMAND,
   FRONTMATTER_SET_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
@@ -3233,6 +3236,423 @@ describe("Template Workbench CLI", () => {
           { key: "summary", inert: false },
           { key: "word-count", inert: false },
         ],
+      });
+    });
+  });
+
+  describe("frontmatter-remove", () => {
+    const FIELD_A = {
+      key: "summary",
+      expr: "{{ zt.title }}",
+      language: "liquid",
+      merge: "append",
+    } as const;
+    const FIELD_B = {
+      key: "word-count",
+      expr: "{{ zt.title | size }}",
+      language: "liquid",
+      merge: "replace",
+    } as const;
+
+    function makeHandlers(
+      overrides: {
+        fields?: readonly FrontmatterField[];
+        write?: (fields: readonly { key: string }[]) => void;
+      } = {},
+    ) {
+      let stored: readonly FrontmatterField[] = overrides.fields ?? [
+        FIELD_A,
+        FIELD_B,
+      ];
+      return createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: () => ({
+            fields: stored,
+            inertKeys: [],
+            javascriptTemplatesEnabled: false,
+          }),
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: (fields) => {
+            stored = fields as readonly FrontmatterField[];
+            overrides.write?.(fields);
+          },
+        },
+      });
+    }
+
+    it("deletes the named field, persisting through the settings service", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_REMOVE_COMMAND]({
+        field: "summary",
+      });
+
+      expect(write).toHaveBeenCalledWith([FIELD_B]);
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 1,
+        command: FRONTMATTER_REMOVE_COMMAND,
+        ok: true,
+        identity: IDENTITY,
+        request: { field: "summary" },
+        fields: [{ key: "word-count", inert: false }],
+      });
+    });
+
+    it("deletes a shipped default field", async () => {
+      const DEFAULT_FIELD = {
+        key: "citation-count",
+        expr: "0",
+        language: "liquid",
+        merge: "keep",
+      } as const;
+      const write = vi.fn();
+      const handlers = makeHandlers({ fields: [DEFAULT_FIELD], write });
+
+      const output = await handlers[FRONTMATTER_REMOVE_COMMAND]({
+        field: "citation-count",
+      });
+
+      expect(write).toHaveBeenCalledWith([]);
+      expect(JSON.parse(output)).toMatchObject({ ok: true, fields: [] });
+    });
+
+    it("rejects a key that is not configured, without writing", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_REMOVE_COMMAND]({
+        field: "not-configured",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        request: { field: "not-configured" },
+        identity: IDENTITY,
+        diagnostic: {
+          code: "FIELD_NOT_FOUND",
+          hint: DIAGNOSTIC_HINTS.FIELD_NOT_FOUND,
+          details: { key: "not-configured" },
+        },
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("rejects a missing field parameter", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REMOVE_COMMAND]({});
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          details: { parameter: "field" },
+        },
+      });
+    });
+
+    it("rejects a bare field flag", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REMOVE_COMMAND]({
+        field: "",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          message: "field requires a value.",
+          details: { parameter: "field" },
+        },
+      });
+    });
+
+    it("rejects a whitespace-only field", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REMOVE_COMMAND]({
+        field: "   ",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          message: "field must not be empty.",
+          details: { parameter: "field" },
+        },
+      });
+    });
+
+    it("rejects an unrecognized parameter", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REMOVE_COMMAND]({
+        field: "summary",
+        expr: "x",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          details: { parameter: "expr" },
+        },
+      });
+    });
+  });
+
+  describe("frontmatter-reorder", () => {
+    const FIELD_A = {
+      key: "summary",
+      expr: "{{ zt.title }}",
+      language: "liquid",
+      merge: "append",
+    } as const;
+    const FIELD_B = {
+      key: "word-count",
+      expr: "{{ zt.title | size }}",
+      language: "liquid",
+      merge: "replace",
+    } as const;
+    const FIELD_C = {
+      key: "tags",
+      expr: "{{ zt.tags }}",
+      language: "liquid",
+      merge: "keep",
+    } as const;
+
+    function makeHandlers(
+      overrides: {
+        fields?: readonly FrontmatterField[];
+        write?: (fields: readonly { key: string }[]) => void;
+      } = {},
+    ) {
+      let stored: readonly FrontmatterField[] = overrides.fields ?? [
+        FIELD_A,
+        FIELD_B,
+        FIELD_C,
+      ];
+      return createTemplateWorkbenchHandlers({
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: () => ({
+            fields: stored,
+            inertKeys: [],
+            javascriptTemplatesEnabled: false,
+          }),
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: (fields) => {
+            stored = fields as readonly FrontmatterField[];
+            overrides.write?.(fields);
+          },
+        },
+      });
+    }
+
+    it("arranges the configured fields into the given order", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "tags,summary,word-count",
+      });
+
+      expect(write).toHaveBeenCalledWith([FIELD_C, FIELD_A, FIELD_B]);
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 1,
+        command: FRONTMATTER_REORDER_COMMAND,
+        ok: true,
+        identity: IDENTITY,
+        request: { order: ["tags", "summary", "word-count"] },
+        fields: [{ key: "tags" }, { key: "summary" }, { key: "word-count" }],
+      });
+    });
+
+    it("trims whitespace around each key in order", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: " tags , summary , word-count ",
+      });
+
+      expect(write).toHaveBeenCalledWith([FIELD_C, FIELD_A, FIELD_B]);
+      expect(JSON.parse(output)).toMatchObject({ ok: true });
+    });
+
+    it("rejects a key that is not configured, without writing", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "summary,word-count,not-configured",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "FIELD_NOT_FOUND",
+          hint: DIAGNOSTIC_HINTS.FIELD_NOT_FOUND,
+          details: { key: "not-configured" },
+        },
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("rejects an order missing a configured key, without writing", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "summary,word-count",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          message: "order is missing configured key 'tags'.",
+          details: { parameter: "order" },
+        },
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("rejects an order that repeats a key, without writing", async () => {
+      const write = vi.fn();
+      const handlers = makeHandlers({ write });
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "summary,summary,word-count,tags",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          message: "order lists 'summary' more than once.",
+          details: { parameter: "order" },
+        },
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("rejects a missing order parameter", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({});
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          details: { parameter: "order" },
+        },
+      });
+    });
+
+    it("rejects a bare order flag", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          message: "order requires a value.",
+          details: { parameter: "order" },
+        },
+      });
+    });
+
+    it("rejects an order with an empty entry", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "summary,,word-count",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          message:
+            "order must be a comma-separated list of field keys, with no empty entries.",
+          details: { parameter: "order" },
+        },
+      });
+    });
+
+    it("rejects an unrecognized parameter", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "summary,word-count,tags",
+        key: "ITEM2345",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          details: { parameter: "key" },
+        },
+      });
+    });
+
+    it("echoes the resulting field list, order verifying the reorder", async () => {
+      const handlers = makeHandlers();
+
+      const output = await handlers[FRONTMATTER_REORDER_COMMAND]({
+        order: "word-count,tags,summary",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        fields: [{ key: "word-count" }, { key: "tags" }, { key: "summary" }],
       });
     });
   });

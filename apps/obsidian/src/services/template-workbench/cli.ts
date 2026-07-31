@@ -41,6 +41,8 @@ import { renderGuide } from "./guide";
 import {
   parseDataRequest,
   parseFrontmatterEvalRequest,
+  parseFrontmatterRemoveRequest,
+  parseFrontmatterReorderRequest,
   parseFrontmatterSetRequest,
   parseFrontmatterStatusRequest,
   parseGuideRequest,
@@ -74,6 +76,10 @@ export const FRONTMATTER_EVAL_COMMAND =
   "zotlit:frontmatter-eval" as const satisfies WorkbenchCommand;
 export const FRONTMATTER_SET_COMMAND =
   "zotlit:frontmatter-set" as const satisfies WorkbenchCommand;
+export const FRONTMATTER_REMOVE_COMMAND =
+  "zotlit:frontmatter-remove" as const satisfies WorkbenchCommand;
+export const FRONTMATTER_REORDER_COMMAND =
+  "zotlit:frontmatter-reorder" as const satisfies WorkbenchCommand;
 
 /** The ad-hoc mode's single synthetic field key: `frontmatter-eval` never
  *  reports this key back, so any literal never collides with it. */
@@ -152,7 +158,9 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_SOURCE_COMMAND
   | typeof FRONTMATTER_STATUS_COMMAND
   | typeof FRONTMATTER_EVAL_COMMAND
-  | typeof FRONTMATTER_SET_COMMAND,
+  | typeof FRONTMATTER_SET_COMMAND
+  | typeof FRONTMATTER_REMOVE_COMMAND
+  | typeof FRONTMATTER_REORDER_COMMAND,
   CliHandler
 >;
 
@@ -589,6 +597,95 @@ export function createTemplateWorkbenchHandlers(
         ),
       });
     },
+
+    [FRONTMATTER_REMOVE_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseFrontmatterRemoveRequest(params);
+      if (request.kind === "invalid") {
+        return envelope(FRONTMATTER_REMOVE_COMMAND, {
+          ok: false,
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
+        });
+      }
+      const { field } = request.value;
+      const echoed = {
+        request: request.value,
+        identity: await deps.getIdentity(),
+      };
+
+      const { fields } = deps.frontmatter.read();
+      if (!fields.some((candidate) => candidate.key === field)) {
+        return envelope(FRONTMATTER_REMOVE_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: fieldNotFoundDiagnostic(field),
+        });
+      }
+
+      deps.frontmatter.write(
+        fields.filter((candidate) => candidate.key !== field),
+      );
+
+      const after = deps.frontmatter.read();
+      return envelope(FRONTMATTER_REMOVE_COMMAND, {
+        ok: true,
+        ...echoed,
+        fields: after.fields.map((f) =>
+          frontmatterFieldRow(f, after.inertKeys),
+        ),
+      });
+    },
+
+    [FRONTMATTER_REORDER_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseFrontmatterReorderRequest(params);
+      if (request.kind === "invalid") {
+        return envelope(FRONTMATTER_REORDER_COMMAND, {
+          ok: false,
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
+        });
+      }
+      const { order } = request.value;
+      const echoed = {
+        request: request.value,
+        identity: await deps.getIdentity(),
+      };
+
+      const { fields } = deps.frontmatter.read();
+      const byKey = new Map(fields.map((field) => [field.key, field]));
+
+      const unknownKey = order.find((key) => !byKey.has(key));
+      if (unknownKey !== undefined) {
+        return envelope(FRONTMATTER_REORDER_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: fieldNotFoundDiagnostic(unknownKey),
+        });
+      }
+
+      const permutationError = permutationDiagnostic([...byKey.keys()], order);
+      if (permutationError) {
+        return envelope(FRONTMATTER_REORDER_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: permutationError,
+        });
+      }
+
+      // Every key in `order` was confirmed present in `byKey` above.
+      deps.frontmatter.write(order.map((key) => byKey.get(key)!));
+
+      const after = deps.frontmatter.read();
+      return envelope(FRONTMATTER_REORDER_COMMAND, {
+        ok: true,
+        ...echoed,
+        fields: after.fields.map((f) =>
+          frontmatterFieldRow(f, after.inertKeys),
+        ),
+      });
+    },
   };
 }
 
@@ -611,6 +708,59 @@ function validateGateAndCompile(
   return compileError === null
     ? null
     : diagnostic("EXPRESSION_COMPILE_ERROR", compileError);
+}
+
+/** `frontmatter-remove` and `frontmatter-reorder` both report this when a key
+ *  they were given is not in the configured field set. */
+function fieldNotFoundDiagnostic(key: string): Diagnostic {
+  return diagnostic(
+    "FIELD_NOT_FOUND",
+    `'${key}' is not a configured Managed Frontmatter field.`,
+    { key },
+  );
+}
+
+/**
+ * `frontmatter-reorder`'s permutation check: every configured key exactly
+ * once. The caller has already confirmed every entry of `order` names a
+ * configured key, so what remains to reject is a key `order` repeats, or a
+ * configured key `order` omits. Returns `null` when `order` is an exact
+ * permutation of `configuredKeys`.
+ */
+function permutationDiagnostic(
+  configuredKeys: readonly string[],
+  order: readonly string[],
+): Diagnostic | null {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const key of order) {
+    if (seen.has(key)) duplicates.add(key);
+    seen.add(key);
+  }
+  if (duplicates.size > 0) {
+    return diagnostic(
+      "INVALID_SELECTOR",
+      `order lists ${quotedCommaList([...duplicates])} more than once.`,
+      { parameter: "order" },
+    );
+  }
+
+  const missing = configuredKeys.filter((key) => !order.includes(key));
+  if (missing.length > 0) {
+    return diagnostic(
+      "INVALID_SELECTOR",
+      `order is missing configured key${missing.length > 1 ? "s" : ""} ${quotedCommaList(missing)}.`,
+      { parameter: "order" },
+    );
+  }
+  return null;
+}
+
+/** `'a', 'b', 'c'` — a plain enumeration, unlike {@link quotedList}'s
+ *  alternatives phrasing (`'a', 'b', or 'c'`): the keys named here are all
+ *  present together (every duplicate, every missing key), not alternatives. */
+function quotedCommaList(names: readonly string[]): string {
+  return names.map((name) => `'${name}'`).join(", ");
 }
 
 /** A configured field's status row: its configuration, plus whether the
