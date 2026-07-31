@@ -466,6 +466,7 @@ async function runTemplateData(
       }),
       evaluate: () => ({ values: {}, errors: {}, inertKeys: [] }),
       validateExpr: () => null,
+      write: () => {},
     },
   });
   return JSON.parse(
@@ -518,6 +519,7 @@ async function runTemplateRender(
       }),
       evaluate: () => ({ values: {}, errors: {}, inertKeys: [] }),
       validateExpr: () => null,
+      write: () => {},
     },
   });
   return JSON.parse(

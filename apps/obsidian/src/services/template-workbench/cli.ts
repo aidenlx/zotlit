@@ -41,6 +41,7 @@ import { renderGuide } from "./guide";
 import {
   parseDataRequest,
   parseFrontmatterEvalRequest,
+  parseFrontmatterSetRequest,
   parseFrontmatterStatusRequest,
   parseGuideRequest,
   parseRenderRequest,
@@ -71,6 +72,8 @@ export const FRONTMATTER_STATUS_COMMAND =
   "zotlit:frontmatter-status" as const satisfies WorkbenchCommand;
 export const FRONTMATTER_EVAL_COMMAND =
   "zotlit:frontmatter-eval" as const satisfies WorkbenchCommand;
+export const FRONTMATTER_SET_COMMAND =
+  "zotlit:frontmatter-set" as const satisfies WorkbenchCommand;
 
 /** The ad-hoc mode's single synthetic field key: `frontmatter-eval` never
  *  reports this key back, so any literal never collides with it. */
@@ -129,6 +132,14 @@ interface TemplateWorkbenchDeps {
       expr: string,
       language: FrontmatterLanguage,
     ) => string | null;
+    /**
+     * Upsert `fields` through the plugin's settings service, so the settings
+     * modal, compilation lifecycle, and sync all observe the change. Callers
+     * validate the candidate list (reserved keys, non-empty, compile-checked)
+     * before calling; this never receives — and so never stores — a field the
+     * settings modal would have refused.
+     */
+    write: (fields: readonly FrontmatterField[]) => void;
   };
 }
 
@@ -140,7 +151,8 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_GUIDE_COMMAND
   | typeof TEMPLATE_SOURCE_COMMAND
   | typeof FRONTMATTER_STATUS_COMMAND
-  | typeof FRONTMATTER_EVAL_COMMAND,
+  | typeof FRONTMATTER_EVAL_COMMAND
+  | typeof FRONTMATTER_SET_COMMAND,
   CliHandler
 >;
 
@@ -508,6 +520,93 @@ export function createTemplateWorkbenchHandlers(
         });
       },
     ),
+
+    [FRONTMATTER_SET_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseFrontmatterSetRequest(params);
+      if (request.kind === "invalid") {
+        return envelope(FRONTMATTER_SET_COMMAND, {
+          ok: false,
+          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+            parameter: request.parameter,
+          }),
+        });
+      }
+      const { field } = request.value;
+      const echoed = {
+        request: request.value,
+        identity: await deps.getIdentity(),
+      };
+
+      if (RESERVED_KEYS.has(field)) {
+        return envelope(FRONTMATTER_SET_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: diagnostic(
+            "RESERVED_KEY",
+            `'${field}' is managed by ZotLit and cannot be used as a Managed Frontmatter field key.`,
+            { key: field },
+          ),
+        });
+      }
+
+      const { fields } = deps.frontmatter.read();
+      const existing = fields.find((candidate) => candidate.key === field);
+
+      const expr = request.value.expr ?? existing?.expr;
+      if (expr === undefined) {
+        return envelope(FRONTMATTER_SET_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: diagnostic(
+            "INVALID_SELECTOR",
+            "expr is required for a new field.",
+            { parameter: "expr" },
+          ),
+        });
+      }
+      const language = request.value.language ?? existing?.language ?? "liquid";
+      const merge = request.value.merge ?? existing?.merge ?? "replace";
+
+      if (
+        language === "javascript" &&
+        !deps.templates.javascriptTemplatesEnabled
+      ) {
+        return envelope(FRONTMATTER_SET_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: diagnostic(
+            "ETA_OPT_IN_REQUIRED",
+            "Writing a javascript field requires the JavaScript Templates gate; this device has it disabled.",
+          ),
+        });
+      }
+
+      const compileError = deps.frontmatter.validateExpr(expr, language);
+      if (compileError !== null) {
+        return envelope(FRONTMATTER_SET_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: diagnostic("EXPRESSION_COMPILE_ERROR", compileError),
+        });
+      }
+
+      const nextField: FrontmatterField = { key: field, expr, language, merge };
+      const nextFields = existing
+        ? fields.map((candidate) =>
+            candidate.key === field ? nextField : candidate,
+          )
+        : [...fields, nextField];
+      deps.frontmatter.write(nextFields);
+
+      const after = deps.frontmatter.read();
+      return envelope(FRONTMATTER_SET_COMMAND, {
+        ok: true,
+        ...echoed,
+        fields: after.fields.map((f) =>
+          frontmatterFieldRow(f, after.inertKeys),
+        ),
+      });
+    },
   };
 }
 

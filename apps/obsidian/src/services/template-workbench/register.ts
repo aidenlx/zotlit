@@ -22,6 +22,7 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import {
   createTemplateWorkbenchHandlers,
   FRONTMATTER_EVAL_COMMAND,
+  FRONTMATTER_SET_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
@@ -34,9 +35,11 @@ import { loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
   FRONTMATTER_LANGUAGE_NAMES,
+  FRONTMATTER_MERGE_NAMES,
   TEMPLATE_SLOT_NAMES,
   type DATA_PARAMS,
   type FRONTMATTER_EVAL_PARAMS,
+  type FRONTMATTER_SET_PARAMS,
   type GUIDE_PARAMS,
   type RENDER_PARAMS,
   type SOURCE_PARAMS,
@@ -149,6 +152,28 @@ function frontmatterEvalFlags(): CliFlags {
   } satisfies Record<(typeof FRONTMATTER_EVAL_PARAMS)[number], CliFlag>;
 }
 
+function frontmatterSetFlags(): CliFlags {
+  return {
+    field: {
+      value: "<key>",
+      description: m.cli_flag_field_desc(),
+      required: true,
+    },
+    expr: {
+      value: "<expression>",
+      description: m.cli_flag_frontmatter_set_expr_desc(),
+    },
+    language: {
+      value: choices(FRONTMATTER_LANGUAGE_NAMES),
+      description: m.cli_flag_frontmatter_set_language_desc(),
+    },
+    merge: {
+      value: choices(FRONTMATTER_MERGE_NAMES),
+      description: m.cli_flag_frontmatter_set_merge_desc(),
+    },
+  } satisfies Record<(typeof FRONTMATTER_SET_PARAMS)[number], CliFlag>;
+}
+
 export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
@@ -184,6 +209,9 @@ export function registerTemplateWorkbench(
         deps.templates.evaluateFrontmatterFields(fields, zt),
       validateExpr: (expr, language) =>
         deps.templates.validateFrontmatterExpr(expr, language),
+      write: (fields) => {
+        deps.settings.update({ "note.frontmatter-fields": [...fields] });
+      },
     },
   });
 
@@ -234,5 +262,11 @@ export function registerTemplateWorkbench(
     m.cli_frontmatter_eval_desc(),
     frontmatterEvalFlags(),
     handlers[FRONTMATTER_EVAL_COMMAND],
+  );
+  plugin.registerCliHandler(
+    FRONTMATTER_SET_COMMAND,
+    m.cli_frontmatter_set_desc(),
+    frontmatterSetFlags(),
+    handlers[FRONTMATTER_SET_COMMAND],
   );
 }
