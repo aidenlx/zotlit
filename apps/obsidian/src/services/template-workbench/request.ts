@@ -49,6 +49,8 @@ export const FRONTMATTER_SET_PARAMS = [
   "language",
   "merge",
 ] as const;
+export const FRONTMATTER_REMOVE_PARAMS = ["field"] as const;
+export const FRONTMATTER_REORDER_PARAMS = ["order"] as const;
 /** Accepted `language` values, in the order selector messages list them. */
 export const FRONTMATTER_LANGUAGE_NAMES = [
   "liquid",
@@ -349,6 +351,64 @@ function parseFrontmatterLanguageStrict(
   return (FRONTMATTER_LANGUAGE_NAMES as readonly string[]).includes(value)
     ? (value as FrontmatterLanguage)
     : null;
+}
+
+/** `frontmatter-remove`'s parsed selector: the field key to delete. Whether
+ *  it is actually configured is a handler concern (`FIELD_NOT_FOUND`), not a
+ *  selector-level one. */
+export interface FrontmatterRemoveRequest {
+  field: string;
+}
+
+/** `frontmatter-remove` deletes one Managed Frontmatter field by key. */
+export function parseFrontmatterRemoveRequest(
+  params: CliData,
+): ParsedRequest<FrontmatterRemoveRequest> {
+  const rejected = rejectAccepted(params, {
+    command: "frontmatter-remove",
+    accepted: FRONTMATTER_REMOVE_PARAMS,
+  });
+  if (rejected) return invalid(rejected.parameter, rejected.message);
+
+  if (params.field === undefined) {
+    return invalid("field", "field is required.");
+  }
+  const field = params.field.trim();
+  if (field === "") return invalid("field", "field must not be empty.");
+
+  return { kind: "valid", value: { field } };
+}
+
+/** `frontmatter-reorder`'s parsed selector: the candidate key order, split on
+ *  commas and trimmed. Whether it is an exact permutation of the configured
+ *  keys is a handler concern (it needs the current configuration), not a
+ *  selector-level one. */
+export interface FrontmatterReorderRequest {
+  order: readonly string[];
+}
+
+/** `frontmatter-reorder` arranges the configured Managed Frontmatter fields;
+ *  `order` must list every configured key exactly once. */
+export function parseFrontmatterReorderRequest(
+  params: CliData,
+): ParsedRequest<FrontmatterReorderRequest> {
+  const rejected = rejectAccepted(params, {
+    command: "frontmatter-reorder",
+    accepted: FRONTMATTER_REORDER_PARAMS,
+  });
+  if (rejected) return invalid(rejected.parameter, rejected.message);
+
+  if (params.order === undefined) {
+    return invalid("order", "order is required.");
+  }
+  const order = params.order.split(",").map((key) => key.trim());
+  if (order.some((key) => key === "")) {
+    return invalid(
+      "order",
+      "order must be a comma-separated list of field keys, with no empty entries.",
+    );
+  }
+  return { kind: "valid", value: { order } };
 }
 
 /**

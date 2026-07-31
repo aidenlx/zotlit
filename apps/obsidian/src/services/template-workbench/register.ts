@@ -22,6 +22,8 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import {
   createTemplateWorkbenchHandlers,
   FRONTMATTER_EVAL_COMMAND,
+  FRONTMATTER_REMOVE_COMMAND,
+  FRONTMATTER_REORDER_COMMAND,
   FRONTMATTER_SET_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
@@ -39,6 +41,8 @@ import {
   TEMPLATE_SLOT_NAMES,
   type DATA_PARAMS,
   type FRONTMATTER_EVAL_PARAMS,
+  type FRONTMATTER_REMOVE_PARAMS,
+  type FRONTMATTER_REORDER_PARAMS,
   type FRONTMATTER_SET_PARAMS,
   type GUIDE_PARAMS,
   type RENDER_PARAMS,
@@ -174,6 +178,26 @@ function frontmatterSetFlags(): CliFlags {
   } satisfies Record<(typeof FRONTMATTER_SET_PARAMS)[number], CliFlag>;
 }
 
+function frontmatterRemoveFlags(): CliFlags {
+  return {
+    field: {
+      value: "<key>",
+      description: m.cli_flag_frontmatter_remove_field_desc(),
+      required: true,
+    },
+  } satisfies Record<(typeof FRONTMATTER_REMOVE_PARAMS)[number], CliFlag>;
+}
+
+function frontmatterReorderFlags(): CliFlags {
+  return {
+    order: {
+      value: "<k1,k2,...>",
+      description: m.cli_flag_order_desc(),
+      required: true,
+    },
+  } satisfies Record<(typeof FRONTMATTER_REORDER_PARAMS)[number], CliFlag>;
+}
+
 export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
@@ -268,5 +292,17 @@ export function registerTemplateWorkbench(
     m.cli_frontmatter_set_desc(),
     frontmatterSetFlags(),
     handlers[FRONTMATTER_SET_COMMAND],
+  );
+  plugin.registerCliHandler(
+    FRONTMATTER_REMOVE_COMMAND,
+    m.cli_frontmatter_remove_desc(),
+    frontmatterRemoveFlags(),
+    handlers[FRONTMATTER_REMOVE_COMMAND],
+  );
+  plugin.registerCliHandler(
+    FRONTMATTER_REORDER_COMMAND,
+    m.cli_frontmatter_reorder_desc(),
+    frontmatterReorderFlags(),
+    handlers[FRONTMATTER_REORDER_COMMAND],
   );
 }
