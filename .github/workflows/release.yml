@@ -41,11 +41,9 @@ jobs:
           version="$(node -p "require('./apps/obsidian/package.json').version")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$version" >> "$GITHUB_OUTPUT"
-          if node -e "process.exit(require('semver').prerelease('$version') ? 0 : 1)"; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
+            "require('semver').prerelease('$version') !== null")"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       # Tag existence is the idempotency gate: re-running on the same version is a no-op.
       - name: Check release exists
@@ -157,11 +155,9 @@ jobs:
           # The changelog is keyed on the Obsidian plugin version (the headline
           # product); this companion release points at that same entry.
           echo "changelog=$(node -p "require('./apps/obsidian/package.json').version")" >> "$GITHUB_OUTPUT"
-          if node -e "process.exit(require('semver').prerelease('$version') ? 0 : 1)"; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
+            "require('semver').prerelease('$version') !== null")"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Check release exists
         id: gate
