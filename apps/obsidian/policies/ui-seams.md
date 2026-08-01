@@ -5,6 +5,10 @@ events; a UI module at the seam owns rendering. Use `BaseNotice` from
 `@/lib/notice` and `toast.promise` from `@/lib/toast`, never raw
 `new Notice(...)`.
 
+Conditional flows decide when to show UI; a dedicated function at the seam
+owns what to render and stays callable independently of the trigger. This also
+lets `/obsidian-debug` inspect the UI without falsifying trigger state.
+
 Reach for the lowest rung that fits:
 
 1. Pure function returns the message/outcome; the caller renders it

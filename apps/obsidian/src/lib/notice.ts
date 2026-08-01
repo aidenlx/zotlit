@@ -43,6 +43,15 @@ class NoticeRenderer {
     return this;
   }
 
+  addSteps(items: readonly string[]): this {
+    const list = this.containerEl.createEl("ol");
+    list.addClasses(["zt:m-0", "zt:pl-5"]);
+    for (const item of items) {
+      list.createEl("li", { text: item });
+    }
+    return this;
+  }
+
   addList(label: string, items: readonly string[]): this {
     const section = this.containerEl.createDiv("zt-notice-list");
     section.addClasses(["zt:flex", "zt:flex-col", "zt:gap-1"]);

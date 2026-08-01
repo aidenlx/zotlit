@@ -1,0 +1,50 @@
+---
+title: "How to update the Obsidian installer"
+description: "Update Obsidian's bundled Electron version when ZotLit asks you to run the latest installer."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+
+Use this guide when ZotLit shows the persistent **Update Obsidian to use ZotLit** notice.
+
+Obsidian's automatic updates can update the app version, but they cannot replace the Electron component bundled with the desktop app. ZotLit needs a newer Electron version. An installer update means downloading and running the current Obsidian installer over your existing installation.
+
+<Callout type="info" title="Keep your current installation">
+  You do not need to uninstall Obsidian first.
+</Callout>
+
+## Update the installer
+
+<Steps>
+  <Step>
+    ### Download the current installer
+
+    Select **Download Obsidian** in the ZotLit notice. You can also open the [Obsidian download page](https://obsidian.md/download). Download the installer for your operating system.
+
+  </Step>
+  <Step>
+    ### Close Obsidian
+
+    Close every Obsidian window and wait for the app to exit.
+
+  </Step>
+  <Step>
+    ### Run the installer
+
+    Open the downloaded installer and follow the normal installation steps. Install it in the same location as your current Obsidian installation.
+
+  </Step>
+  <Step>
+    ### Reopen Obsidian and enable ZotLit
+
+    Open Obsidian. Go to **Settings > Community plugins**, find ZotLit, and select **Enable**.
+
+  </Step>
+</Steps>
+
+ZotLit now enables without the installer update notice.
+
+## See also
+
+Read [installer update guide](https://obsidian.md/help/updates#installer-updates) from Obsidian Help.

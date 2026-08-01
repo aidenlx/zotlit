@@ -1,6 +1,7 @@
 import { getLanguage, Plugin, requestUrl } from "obsidian";
 import semverGte from "semver/functions/gte";
 
+import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { initI18n, type LanguagePackLifecycle } from "./lib/i18n";
@@ -27,6 +28,39 @@ import { registerTemplateDataExplorer } from "./views/template-data-explorer/reg
 import { registerWelcomeView } from "./views/welcome/register";
 import "./zt-main.css";
 
+function showInstallerUpdateNotice(): BaseNotice {
+  return new BaseNotice(
+    BaseNotice.render((renderer) => {
+      renderer.setTitle(m.notice_installer_update_needed());
+      renderer.addText(m.notice_installer_update_explanation());
+      renderer.addSteps([
+        m.notice_installer_update_step_download(),
+        m.notice_installer_update_step_close(),
+        m.notice_installer_update_step_run(),
+      ]);
+      renderer.addText(m.notice_installer_update_no_uninstall());
+      renderer.addAction((button) => {
+        button
+          .setButtonText(m.notice_installer_update_learn_more())
+          .onClick(() => {
+            window.open(
+              `${DOCS_SITE_URL}/docs/how-to/update-obsidian-installer`,
+            );
+          });
+      });
+      renderer.addAction((button) => {
+        button
+          .setButtonText(m.notice_installer_update_download())
+          .setCta()
+          .onClick(() => {
+            window.open("https://obsidian.md/download");
+          });
+      });
+    }),
+    0,
+  );
+}
+
 /**
  * Block startup on Obsidian installers whose bundled Electron predates the
  * `minElectronVersion` declared in package.json (injected at build time as
@@ -39,19 +73,7 @@ function assertElectronVersion(): void {
   if (!version) return;
   if (semverGte(version, __MIN_ELECTRON_VERSION__)) return;
 
-  new BaseNotice(
-    BaseNotice.render((renderer) => {
-      renderer.setTitle(m.notice_installer_update_needed());
-      renderer.addAction((button) => {
-        button
-          .setButtonText(m.notice_installer_update_learn_more())
-          .onClick(() => {
-            window.open("https://obsidian.md/help/updates#Installer+updates");
-          });
-      });
-    }),
-    0,
-  );
+  showInstallerUpdateNotice();
   throw new Error(
     `Obsidian installer is too old (Electron v${version}, required >=v${__MIN_ELECTRON_VERSION__})`,
   );
@@ -115,6 +137,11 @@ export default class ZotLitPlugin extends Plugin {
   get services(): ReturnType<typeof buildServices>["services"] {
     if (!this.#services) throw new Error("Plugin not loaded");
     return this.#services;
+  }
+
+  /** Show the installer notice independently of the version check. */
+  showInstallerUpdateNotice(): BaseNotice {
+    return showInstallerUpdateNotice();
   }
 
   override async onload(): Promise<void> {
