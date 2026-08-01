@@ -28,11 +28,11 @@ export {
 export {
   formatIndexedKey,
   isIndexedKey,
-  isItemKey,
   parseIndexedKey,
   type ParsedIndexedKey,
   resolveIndexedKeyLibrary,
 } from "./lib/zt-key";
+export { isItemKey } from "./lib/zt-item-key";
 export { annotationOpenUri } from "./lib/zt-uri";
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {

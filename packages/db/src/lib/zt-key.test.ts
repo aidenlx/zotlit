@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  formatIndexedKey,
-  isIndexedKey,
-  isItemKey,
-  parseIndexedKey,
-} from "./zt-key";
+import { isItemKey } from "./zt-item-key";
+import { formatIndexedKey, isIndexedKey, parseIndexedKey } from "./zt-key";
 
 describe("isItemKey", () => {
   it("accepts valid bare item keys", () => {
