@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "codegen": {
+      "inputs": ["src/filter-expression.grammar"],
+      "outputs": ["src/generated/**"]
+    },
+    "build": {
+      "dependsOn": ["$TURBO_EXTENDS$", "codegen"]
+    },
+    "typecheck": {
+      "dependsOn": ["$TURBO_EXTENDS$", "codegen"]
+    },
+    "typecheck:test": {
+      "dependsOn": ["$TURBO_EXTENDS$", "codegen"]
+    },
+    "test": {
+      "dependsOn": ["$TURBO_EXTENDS$", "codegen"]
+    }
+  }
+}

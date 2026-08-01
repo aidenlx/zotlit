@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@lezer/common':
+      specifier: ^1.2.3
+      version: 1.5.2
     '@logtape/logtape':
       specifier: ^2.0.7
       version: 2.1.0
@@ -603,6 +606,37 @@ importers:
       ts-morph:
         specifier: ^28.0.0
         version: 28.0.0
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.5(typescript@7.0.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.6(@types/node@26.1.1)(happy-dom@20.9.0)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0))
+
+  packages/filter-expression:
+    dependencies:
+      '@lezer/common':
+        specifier: 'catalog:'
+        version: 1.5.2
+      '@lezer/lr':
+        specifier: ^1.4.2
+        version: 1.4.10
+    devDependencies:
+      '@lezer/generator':
+        specifier: ^1.8.0
+        version: 1.8.0
+      '@types/node-25':
+        specifier: npm:@types/node@^25.6.2
+        version: '@types/node@25.8.0'
+      '@zotlit/config':
+        specifier: workspace:*
+        version: link:../config
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.70.0(oxlint-tsgolint@0.23.0)
       tsdown:
         specifier: 'catalog:'
         version: 0.22.5(typescript@7.0.2)
@@ -2071,6 +2105,16 @@ packages:
 
   '@jsr/std__internal@1.0.13':
     resolution: {integrity: sha512-FIyYlSZkAwdupuTybRiU53MnrQUsyulhf6bPZ4bBILl1KqHCkKUlJ5TnLIATNezA5Yg7fAn64EE4vuHep2Urog==, tarball: https://npm.jsr.io/~/11/@jsr/std__internal/1.0.13.tgz}
+
+  '@lezer/common@1.5.2':
+    resolution: {integrity: sha512-sxQE460fPZyU3sdc8lafxiPwJHBzZRy/udNFynGQky1SePYBdhkBl1kOagA9uT3pxR8K09bOrmTUqA9wb/PjSQ==}
+
+  '@lezer/generator@1.8.0':
+    resolution: {integrity: sha512-/SF4EDWowPqV1jOgoGSGTIFsE7Ezdr7ZYxyihl5eMKVO5tlnpIhFcDavgm1hHY5GEonoOAEnJ0CU0x+tvuAuUg==}
+    hasBin: true
+
+  '@lezer/lr@1.4.10':
+    resolution: {integrity: sha512-rnCpTIBafOx4mRp43xOxDJbFipJm/c0cia/V5TiGlhmMa+wsSdoGmUN3w5Bqrks/09Q/D4tNAmWaT8p6NRi77A==}
 
   '@lit-labs/ssr-dom-shim@1.6.0':
     resolution: {integrity: sha512-VHb0ALPMTlgKjM6yIxxoQNnpKyUKLD04VzeQdsiXkMqkvYlAHxq9glGLmgbb889/1GsohSOAjvQYoiBppXFqrQ==}
@@ -7952,6 +7996,17 @@ snapshots:
   '@jsr/std__ini@0.225.2': {}
 
   '@jsr/std__internal@1.0.13': {}
+
+  '@lezer/common@1.5.2': {}
+
+  '@lezer/generator@1.8.0':
+    dependencies:
+      '@lezer/common': 1.5.2
+      '@lezer/lr': 1.4.10
+
+  '@lezer/lr@1.4.10':
+    dependencies:
+      '@lezer/common': 1.5.2
 
   '@lit-labs/ssr-dom-shim@1.6.0': {}
 
