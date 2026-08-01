@@ -1,5 +1,5 @@
-// Annotation-render leaf: attachment file links, annotation resolvers, and the
-// batch annotation-template render, shared by note-feature and note-import.
+// Annotation-render leaf: direct attachment file links, import-capable
+// annotation image links, and the batch annotation-template render.
 import { basename } from "node:path";
 
 import {
@@ -38,7 +38,8 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
  * (`[name](file://…)`). Rendered with no override it shows the filename and, for
  * annotation-level links, anchors to `#page=N` when `page` is a number; pass
  * `alias` / `subpath` to override either. The helper returns `null` when the
- * path cannot be resolved.
+ * path cannot be resolved. This direct source link never queues Attachment
+ * Import.
  */
 export function attachmentFileLink(
   attachment: Attachment,
@@ -52,14 +53,14 @@ export function attachmentFileLink(
 }
 
 /**
- * Resolvers for attachment file paths and annotation rendering (comment
- * conversion, excerpt images). Shared by the full note context
+ * Resolvers for direct attachment file paths and annotation rendering (comment
+ * conversion, import-capable excerpt images). Shared by the full note context
  * (`buildNoteResolvers`) and the single-annotation drag/paragraph paths
  * ({@link renderAnnotations}), so both render annotations identically.
  */
 export function buildAnnotationResolvers(options: {
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  attachmentImport: Pick<AttachmentImport, "resolveLink">;
+  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
 }): AnnotationResolvers {
   const dataDir = options.zoteroPref.dataDir;
   const baseAttachmentPath = options.zoteroPref.baseAttachmentPath;
@@ -82,7 +83,7 @@ export function buildAnnotationResolvers(options: {
       });
       if (cachePath == null) return null;
       return attachmentImport.resolveLink({
-        sourcePath: cachePath,
+        source: attachmentImport.decide(cachePath, "annotation-cache"),
         vaultName: `${annotation.key}.png`,
       });
     },
@@ -92,8 +93,8 @@ export function buildAnnotationResolvers(options: {
 /**
  * Resolve already-fetched annotations to their template data and render each
  * through the `annotation` template, returning a `key → rendered string` map.
- * `resolveLink` copies any excerpt-cache image into the target note's
- * attachment folder.
+ * `attachmentImport` decides each excerpt-cache image and copies an approved
+ * one into the target note's attachment folder.
  */
 export function renderAnnotations(
   client: NodeDatabaseClient,
@@ -101,14 +102,14 @@ export function renderAnnotations(
   options: {
     template: Pick<TemplateService, "render">;
     zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-    resolveLink: AttachmentImport["resolveLink"];
+    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     groupIdMemo?: GroupIDMemo;
     tagMemo?: TagMemo;
   },
 ): Map<string, string> {
   const resolvers = buildAnnotationResolvers({
     zoteroPref: options.zoteroPref,
-    attachmentImport: { resolveLink: options.resolveLink },
+    attachmentImport: options.attachmentImport,
   });
   const dataByKey = fetchAnnotationsTemplateData(client, annotations, {
     resolvers,

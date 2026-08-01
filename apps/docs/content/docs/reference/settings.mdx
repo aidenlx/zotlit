@@ -119,13 +119,28 @@ Actions: **Add field**, **Reset to default** (reverts the full list).
 
 ## Attachments
 
-| Label                  | Key                      | Control       | Default            |
-| ---------------------- | ------------------------ | ------------- | ------------------ |
-| **Import attachments** | `attachment.import`      | Toggle        | On                 |
-| **Attachment folder**  | `attachment.folder-path` | Folder picker | (Obsidian default) |
+| Label                  | Key                      | Control                                                       | Default            |
+| ---------------------- | ------------------------ | ------------------------------------------------------------- | ------------------ |
+| **Import attachments** | `attachment.import`      | Toggle                                                        | On                 |
+| **Attachment folder**  | `attachment.folder-path` | Folder picker                                                 | (Obsidian default) |
+| **Approved folders**   | (device-local)           | Sub-page listing the folders attachments may be imported from | Empty              |
 
 <Callout type="info">
   **Attachment folder** is visible only when **Import attachments** is on.
+</Callout>
+
+### Approved folders
+
+The folders ZotLit may copy attachments from, beyond Zotero's own storage folder, its annotation cache, and the linked-attachment base folder you set in Zotero. This approval applies to imported content such as annotation images and images embedded in Child Notes. The ordinary attachment links in a Literature Note point to the original files and do not copy them.
+
+When imported content is outside all approved locations, ZotLit uses a `file://` URI. A notice reports how many files it skipped, lists the unapproved source folders, and links to ZotLit settings.
+
+Actions: **Add folder** (opens a folder picker), and delete on each row. Approval applies to future imports. Re-import previously imported notes to copy attachments that were skipped.
+
+<Callout type="info" title="Device Overrides">
+  Approved folders are stored per device and never sync through the vault.
+  Approving a folder on one computer grants nothing on another computer, and
+  nothing in another vault.
 </Callout>
 
 ## Live updates

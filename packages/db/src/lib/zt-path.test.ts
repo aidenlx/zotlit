@@ -12,8 +12,8 @@ function attachment(overrides: Partial<Attachment>): Attachment {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
     groupID: null,
-    key: "ATTACH1",
-    indexedKey: "ATTACH1",
+    key: "ATTACH23",
+    indexedKey: "ATTACH23",
     parentItemID: 2,
     path: null,
     contentType: null,
@@ -65,11 +65,49 @@ describe("attachmentAbsPath", () => {
   it("resolves embedded-image storage attachments", () => {
     expect(
       attachmentAbsPath(
-        attachment({ key: "IMGKEY", path: "storage:image.png", linkMode: 4 }),
+        attachment({
+          key: "IMGKEY23",
+          path: "storage:image.png",
+          linkMode: 4,
+        }),
         { dataDir: "/zotero", baseAttachmentPath: null },
       ),
-    ).toBe("/zotero/storage/IMGKEY/image.png");
+    ).toBe("/zotero/storage/IMGKEY23/image.png");
   });
+
+  it.each([
+    ["a forward slash", "storage:sub/image.png"],
+    ["a backslash", "storage:sub\\image.png"],
+    ["a parent segment", "storage:.."],
+    ["a Windows drive-absolute form", "storage:C:\\image.png"],
+    ["a UNC form", "storage:\\\\server\\share\\image.png"],
+  ])(
+    "resolves to no path for a stored-file location with %s",
+    (_name, path) => {
+      expect(
+        attachmentAbsPath(attachment({ key: "IMGKEY23", path, linkMode: 4 }), {
+          dataDir: "/zotero",
+          baseAttachmentPath: null,
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    ["empty", ""],
+    ["malformed", "IMG"],
+    ["containing a path separator", "IMG/KEY2"],
+  ])(
+    "resolves to no path for a stored-file row with an %s item key",
+    (_name, key) => {
+      expect(
+        attachmentAbsPath(
+          attachment({ key, path: "storage:image.png", linkMode: 4 }),
+          { dataDir: "/zotero", baseAttachmentPath: null },
+        ),
+      ).toBeNull();
+    },
+  );
 
   it("returns absolute linked-file paths verbatim", () => {
     expect(

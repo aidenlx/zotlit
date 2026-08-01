@@ -13,13 +13,18 @@ import {
   getItemsByKey,
   getLibraryByGroupID,
   resolveCitedItem,
+  type Attachment,
   type CitationItem,
   type Item,
   type ResolvedCiteRef,
   type ZoteroRef,
 } from "@zotlit/db";
 import { type NodeDatabaseClient } from "@zotlit/db/client/node";
-import { attachmentAbsPath, type AttachmentPathContext } from "@zotlit/db/path";
+import {
+  attachmentAbsPath,
+  parseAttachmentPath,
+  type AttachmentPathContext,
+} from "@zotlit/db/path";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -29,7 +34,10 @@ import {
   encodeCalloutAttr,
 } from "@/lib/turndown";
 import { renderColorMark, type ColorMarkKind } from "@/lib/turndown/color-mark";
-import { type AttachmentImport } from "@/services/attachment-import/service";
+import {
+  type AttachmentImport,
+  type SourceOrigin,
+} from "@/services/attachment-import/service";
 
 import {
   findAnnotationParagraphs,
@@ -65,8 +73,11 @@ export interface NoteParserDeps {
   renderCite: RenderCite;
   /** Resolves `storage:` / linked attachment paths to absolute filesystem paths. */
   pathContext: AttachmentPathContext;
-  /** Copies a resolved image into the vault and returns its embed link. */
-  resolveLink: AttachmentImport["resolveLink"];
+  /**
+   * Decides each resolved image against the canonical roots, copies an
+   * approved one into the vault, and returns its embed link.
+   */
+  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
 }
 
 /** Render cited items through the user's `cite` template. */
@@ -84,8 +95,8 @@ export type ParseNoteDeps = Omit<
   /**
    * Render this note's clean single-annotation paragraphs through the user's
    * `annotation` template in one batch. The service supplies this with the
-   * per-note `resolveLink` already bound, so any excerpt-cache image copies into
-   * that note's attachment folder. A key absent from the result declines (the
+   * per-note attachment-import batch already bound, so any excerpt-cache image
+   * copies into that note's attachment folder. A key absent from the result declines (the
    * annotation is gone from the DB); a present-but-blank callout is dropped by
    * the prepass. A declined paragraph falls to inline conversion —
    * highlight/underline to linked marks, an image excerpt to a bare embed.
@@ -422,12 +433,40 @@ function resolveEmbeddedImage(
 
     const filename =
       attachmentToTemplateData(attachment).filename ?? attachment.key;
-    const link = deps.resolveLink({
-      sourcePath,
+    const link = deps.attachmentImport.resolveLink({
+      source: deps.attachmentImport.decide(
+        sourcePath,
+        attachmentPathOrigin(attachment),
+      ),
       vaultName: `${attachment.key}-${filename}`,
     });
     return `!${link()}`;
   };
+}
+
+/**
+ * Classify an embedded image's resolved path into the {@link SourceOrigin}
+ * the source decision carries. Only called once `attachmentAbsPath`
+ * has already returned a resolvable path, so the URL/unknown kinds — the only
+ * ones `attachmentAbsPath` doesn't resolve to a path — are unreachable here.
+ */
+function attachmentPathOrigin(attachment: Attachment): SourceOrigin {
+  const { kind } = parseAttachmentPath(
+    attachment.path,
+    attachment.linkMode,
+    attachment.key,
+  );
+  switch (kind) {
+    case "storage":
+    case "linked-base":
+    case "linked-absolute":
+      return kind;
+    case "linked-url":
+    case "unknown":
+      throw new Error(
+        `Embedded image attachment has no resolvable origin: ${kind}`,
+      );
+  }
 }
 
 /**

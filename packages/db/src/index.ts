@@ -28,6 +28,7 @@ export {
 export {
   formatIndexedKey,
   isIndexedKey,
+  isItemKey,
   parseIndexedKey,
   type ParsedIndexedKey,
   resolveIndexedKeyLibrary,

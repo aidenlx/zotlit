@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { formatIndexedKey, isIndexedKey, parseIndexedKey } from "./zt-key";
+import {
+  formatIndexedKey,
+  isIndexedKey,
+  isItemKey,
+  parseIndexedKey,
+} from "./zt-key";
+
+describe("isItemKey", () => {
+  it("accepts valid bare item keys", () => {
+    expect(isItemKey("ABCD2345")).toBe(true);
+  });
+
+  it.each(["ABC123", "abcd2345", "ABCD01O5", "ABCD2345g42"])(
+    "rejects %s",
+    (key) => {
+      expect(isItemKey(key)).toBe(false);
+    },
+  );
+});
 
 describe("formatIndexedKey", () => {
   it("returns the bare key for personal-library items", () => {
@@ -31,6 +49,13 @@ describe("parseIndexedKey", () => {
   it("returns null for a malformed key", () => {
     expect(parseIndexedKey("not-a-key")).toBeNull();
   });
+
+  it.each(["ABCD2345g", "ABCD2345gfoo", "ABCD2345g42g1"])(
+    "returns null for an invalid group suffix %s",
+    (key) => {
+      expect(parseIndexedKey(key)).toBeNull();
+    },
+  );
 });
 
 describe("isIndexedKey", () => {

@@ -58,7 +58,7 @@ export function attachmentToTemplateData(
     key: attachment.key,
     indexedKey: attachment.indexedKey,
     filename: attachmentFilename(
-      parseAttachmentPath(attachment.path, attachment.linkMode),
+      parseAttachmentPath(attachment.path, attachment.linkMode, attachment.key),
     ),
     contentType: emptyToNull(attachment.contentType),
     linkMode:

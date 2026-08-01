@@ -145,7 +145,9 @@ export interface NoteFeature {
   /** @see renderAnnotation */
   renderAnnotation(
     annotationItemId: number,
-    options: { attachmentImport: Pick<AttachmentImport, "resolveLink"> },
+    options: {
+      attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+    },
   ): string | null;
   /** @see renderAnnotationCitation */
   renderAnnotationCitation(annotationItemId: number): string | null;
@@ -518,7 +520,9 @@ function renderCitation(
 function renderAnnotation(
   ctx: SyncRenderDeps,
   annotationItemId: number,
-  options: { attachmentImport: Pick<AttachmentImport, "resolveLink"> },
+  options: {
+    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  },
 ): string | null {
   const { db } = ctx;
   if (db.state !== "ready") return null;
@@ -531,7 +535,7 @@ function renderAnnotation(
     renderAnnotations(db.client, [annotation], {
       template: ctx.template,
       zoteroPref: ctx.zoteroPref,
-      resolveLink: options.attachmentImport.resolveLink,
+      attachmentImport: options.attachmentImport,
     }).get(annotation.key) ?? null
   );
 }
@@ -540,7 +544,7 @@ function renderAnnotation(
  * Render an annotation's page-pinned citation for the annot view's "Copy
  * citation" action: the same `cite`-template path {@link renderAnnotation}'s
  * `zt.citation` field uses, called directly (no excerpt image import needed
- * for a citation string, so `attachmentImport.resolveLink` is stubbed).
+ * for a citation string, so the `attachmentImport` port is stubbed).
  * Returns `null` when the annotation, its parent item, or the parent's
  * citation key can't be resolved, or the database/template isn't ready.
  */
@@ -557,7 +561,15 @@ function renderAnnotationCitation(
 
   const resolvers = buildAnnotationResolvers({
     zoteroPref: ctx.zoteroPref,
-    attachmentImport: { resolveLink: () => () => "" },
+    attachmentImport: {
+      decide: (path, origin) => ({
+        approved: false,
+        path,
+        origin,
+        reason: "no-trusted-root",
+      }),
+      resolveLink: () => () => "",
+    },
   });
   const data = fetchAnnotationsTemplateData(db.client, [annotation], {
     resolvers,
@@ -580,7 +592,7 @@ async function contextForIndexedKey(
   indexedKey: string,
   options: {
     client: NodeDatabaseClient;
-    attachmentImport: Pick<AttachmentImport, "resolveLink">;
+    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     sourcePath: string;
   },
 ): Promise<{ context: NoteTemplateContext; noteImport: NoteImport }> {

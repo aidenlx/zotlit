@@ -1,19 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { type Attachment } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import { attachmentAbsPath } from "@zotlit/db/path";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { attachmentFileLink } from "./annotation-render";
+import {
+  type AttachmentSource,
+  type SourceOrigin,
+} from "@/services/attachment-import/service";
+
+import {
+  attachmentFileLink,
+  buildAnnotationResolvers,
+} from "./annotation-render";
+
+/** Stand-in decision port: every source blocks, so no test copies a file. */
+const blockedDecide = (
+  path: string,
+  origin: SourceOrigin,
+): AttachmentSource => ({
+  approved: false,
+  path,
+  origin,
+  reason: "no-trusted-root",
+});
 
 function makeAttachment(overrides: Partial<Attachment>): Attachment {
   return {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
     groupID: null,
-    key: "ATCH1234",
-    indexedKey: "ATCH1234",
+    key: "ATCH2345",
+    indexedKey: "ATCH2345",
     parentItemID: 2,
     path: null,
     contentType: null,
@@ -33,7 +52,7 @@ describe("attachmentAbsPath", () => {
         makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
         ctx,
       ),
-    ).toBe("/data/storage/ATCH1234/paper.pdf");
+    ).toBe("/data/storage/ATCH2345/paper.pdf");
   });
 
   it("passes an absolute linked path through", () => {
@@ -71,6 +90,28 @@ describe("attachmentAbsPath", () => {
       ),
     ).toBeNull();
   });
+
+  it("returns null for a malformed stored-file location", () => {
+    expect(
+      attachmentAbsPath(
+        makeAttachment({ path: "storage:sub/paper.pdf", linkMode: 0 }),
+        ctx,
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null for a malformed item key", () => {
+    expect(
+      attachmentAbsPath(
+        makeAttachment({
+          path: "storage:paper.pdf",
+          linkMode: 0,
+          key: "not-a-key",
+        }),
+        ctx,
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("attachmentFileLink", () => {
@@ -80,7 +121,7 @@ describe("attachmentFileLink", () => {
         makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
         ctx,
       )(),
-    ).toBe("[paper.pdf](file:///data/storage/ATCH1234/paper.pdf)");
+    ).toBe("[paper.pdf](file:///data/storage/ATCH2345/paper.pdf)");
   });
 
   it("overrides the display text and subpath when given", () => {
@@ -91,15 +132,15 @@ describe("attachmentFileLink", () => {
     );
     // default anchors to the page
     expect(link()).toBe(
-      "[paper.pdf](file:///data/storage/ATCH1234/paper.pdf#page=3)",
+      "[paper.pdf](file:///data/storage/ATCH2345/paper.pdf#page=3)",
     );
     // alias override keeps the default page anchor
     expect(link("The PDF")).toBe(
-      "[The PDF](file:///data/storage/ATCH1234/paper.pdf#page=3)",
+      "[The PDF](file:///data/storage/ATCH2345/paper.pdf#page=3)",
     );
     // subpath override replaces the page anchor
     expect(link("The PDF", "#section")).toBe(
-      "[The PDF](file:///data/storage/ATCH1234/paper.pdf#section)",
+      "[The PDF](file:///data/storage/ATCH2345/paper.pdf#section)",
     );
   });
 
@@ -110,5 +151,45 @@ describe("attachmentFileLink", () => {
         ctx,
       )(),
     ).toBeNull();
+  });
+
+  it("returns null for a malformed stored-file location", () => {
+    expect(
+      attachmentFileLink(
+        makeAttachment({ path: "storage:sub/paper.pdf", linkMode: 0 }),
+        ctx,
+      )(),
+    ).toBeNull();
+  });
+
+  it("returns null for a malformed item key", () => {
+    expect(
+      attachmentFileLink(
+        makeAttachment({
+          path: "storage:paper.pdf",
+          linkMode: 0,
+          key: "not-a-key",
+        }),
+        ctx,
+      )(),
+    ).toBeNull();
+  });
+});
+
+describe("buildAnnotationResolvers", () => {
+  it("resolves no filePath/fileLink for a malformed row and attempts no copy", () => {
+    const resolveLink = vi.fn();
+    const resolvers = buildAnnotationResolvers({
+      zoteroPref: ctx,
+      attachmentImport: { decide: blockedDecide, resolveLink },
+    });
+    const malformed = makeAttachment({
+      path: "storage:sub/paper.pdf",
+      linkMode: 0,
+    });
+
+    expect(resolvers.filePath(malformed)).toBeNull();
+    expect(resolvers.fileLink(malformed)()).toBeNull();
+    expect(resolveLink).not.toHaveBeenCalled();
   });
 });

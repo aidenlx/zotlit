@@ -18,7 +18,11 @@ import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { renderAnnotations } from "@/lib/annotation-render";
-import { type ResolveLinkOptions } from "@/services/attachment-import/service";
+import {
+  type AttachmentSource,
+  type ResolveLinkOptions,
+  type SourceOrigin,
+} from "@/services/attachment-import/service";
 
 import { parseNote, type ParseNoteDeps } from "./note-parser";
 
@@ -82,6 +86,16 @@ const renderCite = (
     })
     .join("; ")}]`;
 
+/** Stand-in decision port: every source blocks, so no test copies a file. */
+const blockedDecide = vi.fn(
+  (path: string, origin: SourceOrigin): AttachmentSource => ({
+    approved: false,
+    path,
+    origin,
+    reason: "no-trusted-root",
+  }),
+);
+
 /** A resolveLink stub echoing the requested vault name as a wikilink embed body. */
 const echoResolveLink = vi.fn(
   (opts: ResolveLinkOptions) => () => `[[${opts.vaultName}]]`,
@@ -93,7 +107,7 @@ const deps: ParseNoteDeps = {
   libraryID: 1,
   renderCite,
   pathContext: { dataDir: "/data", baseAttachmentPath: null },
-  resolveLink: echoResolveLink,
+  attachmentImport: { decide: blockedDecide, resolveLink: echoResolveLink },
 };
 
 /** A storage-mode (linkMode 4) attachment row; the common case for note images. */
@@ -357,8 +371,19 @@ describe("embedded image resolution", () => {
     );
     const md = parseNote(TurndownService, note(img("U5WTYIJK")), deps);
     expect(md).toBe("![[U5WTYIJK-diagram.png]]");
+    // The parser classifies the origin and hands the location to the decision
+    // port; approving it is the import service's job, not the parser's.
+    expect(blockedDecide).toHaveBeenCalledWith(
+      "/data/storage/U5WTYIJK/diagram.png",
+      "storage",
+    );
     expect(echoResolveLink).toHaveBeenCalledWith({
-      sourcePath: "/data/storage/U5WTYIJK/diagram.png",
+      source: {
+        approved: false,
+        path: "/data/storage/U5WTYIJK/diagram.png",
+        origin: "storage",
+        reason: "no-trusted-root",
+      },
       vaultName: "U5WTYIJK-diagram.png",
     });
   });
@@ -590,7 +615,10 @@ describe("annotation template mode", () => {
         {
           template: facade as never,
           zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-          resolveLink: echoResolveLink,
+          attachmentImport: {
+            decide: blockedDecide,
+            resolveLink: echoResolveLink,
+          },
         },
       );
     const md = parseNote(TurndownService, note(spanPara("highlight", "K1")), {

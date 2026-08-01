@@ -20,7 +20,11 @@ export async function reflink(
     return;
   }
   if (process.platform === "linux") {
-    await copyFile(sourcePath, targetPath, constants.COPYFILE_FICLONE_FORCE);
+    await copyFile(
+      sourcePath,
+      targetPath,
+      constants.COPYFILE_FICLONE_FORCE | constants.COPYFILE_EXCL,
+    );
     return;
   }
   throw new ReflinkUnsupportedError();
@@ -28,7 +32,9 @@ export async function reflink(
 
 /**
  * Uses `cp -c` because Node's macOS copy-file flags do not expose a dependable
- * clonefile primitive.
+ * clonefile primitive. `-n` makes the clone exclusive: `cp` fails rather than
+ * replacing an existing `targetPath`, matching the `COPYFILE_EXCL` guarantee
+ * the plain-copy fallback gets from Node directly.
  *
  * @see https://github.com/libuv/libuv/pull/2578
  * @see https://github.com/libuv/libuv/pull/3654
@@ -38,5 +44,5 @@ async function reflinkMac(
   sourcePath: string,
   targetPath: string,
 ): Promise<void> {
-  await execFileAsync("cp", ["-c", sourcePath, targetPath]);
+  await execFileAsync("cp", ["-c", "-n", sourcePath, targetPath]);
 }

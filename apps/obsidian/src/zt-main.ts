@@ -10,6 +10,7 @@ import {
 } from "./lib/i18n/install-toast";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
+import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
 import { addDatabaseActions } from "./services/database/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
@@ -147,6 +148,7 @@ export default class ZotLitPlugin extends Plugin {
         settings: services.settings,
         db: services.db,
         zoteroPref: services.zoteroPref,
+        attachmentImport: services.attachmentImport,
         template: services.template,
         release: services.release,
         languagePack,
@@ -226,6 +228,16 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
       settings: services.settings,
     });
+
+    stack.defer(
+      registerAttachmentSkipNotice({
+        attachmentImport: services.attachmentImport,
+        openSettings: () => {
+          this.app.setting.open();
+          this.app.setting.openTabById(this.manifest.id);
+        },
+      }),
+    );
 
     // A Zotero item add/modify/trash push means the database changed; feed it
     // into the same coalesced refresh lane as the filesystem watchers.

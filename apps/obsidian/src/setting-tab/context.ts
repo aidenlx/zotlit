@@ -1,6 +1,7 @@
 import { type App } from "obsidian";
 
 import { type LanguagePackLifecycle } from "@/lib/i18n";
+import { type AttachmentImportService } from "@/services/attachment-import/service";
 import { type DatabaseService } from "@/services/database/service";
 import { type ReleaseService } from "@/services/release/service";
 import { type Settings } from "@/services/settings/schema";
@@ -17,6 +18,12 @@ export type ReleaseTabActions = Pick<
   "openReleaseNote" | "acknowledgeMigration"
 >;
 
+/** The attachment-import surface the setting tab needs: read and edit the grants. */
+export type AttachmentImportActions = Pick<
+  AttachmentImportService,
+  "approvedFolders" | "approveFolder" | "revokeFolder"
+>;
+
 /**
  * Shared dependencies every definition builder receives. Builders read services
  * lazily (inside `render`/predicate callbacks) so `getSettingDefinitions()`
@@ -29,6 +36,8 @@ export interface SettingTabContext {
   settings: SettingsService;
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
+  /** The approved-folder store the Attachments page lists and mutates. */
+  attachmentImport: AttachmentImportActions;
   release: ReleaseTabActions;
   languagePack: LanguagePackLifecycle;
   /** Rebuild the tab's definitions (e.g. after a list mutation or eject). */

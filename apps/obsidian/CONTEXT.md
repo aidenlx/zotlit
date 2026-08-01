@@ -93,8 +93,12 @@ _Avoid_: annotation block, callout
 Converting a Zotero Child Note's HTML to Obsidian Markdown and writing it as an Imported Note. Includes citation resolution, embedded-image resolution, and optional annotation-paragraph template mapping. Triggered automatically as a side effect of Literature Note create/update (skip-if-exists) or explicitly via protocol action (overwrite).
 
 **Attachment Import**:
-Copying a Zotero-managed file (PDF, annotation excerpt image, note-embedded image) into the vault's attachment folder. Uses reflink (macOS copy-on-write) with fallback to regular copy. When disabled, links use `file://` URIs to Zotero's storage instead.
+Copying an import-capable Zotero file, such as an annotation excerpt image or note-embedded image, into the vault's attachment folder. A file Zotero manages is reflinked (macOS copy-on-write) with fallback to regular copy; a linked file elsewhere is read from the file that was checked, so a swap afterwards cannot substitute another one. A source is copied once approved: automatically for Zotero's storage directory, its annotation cache, and the configured base attachment directory, or otherwise only inside an Approved Attachment Root. A blocked source, and every source while Attachment Import is disabled, instead links with a `file://` URI to its own location. An ordinary Literature Note attachment `fileLink` always links directly to the source and does not start Attachment Import.
 _Avoid_: image import (covers more than images)
+
+**Attachment Source Decision**:
+The approved-or-blocked verdict on one attachment location, which every copy consumer passes to link resolution in place of a raw path. An approved verdict names the kind of place the file came from — Zotero storage, the annotation cache, the base attachment directory, or an Approved Attachment Root — and is constructible only by the attachment import service. A blocked verdict carries its location so the `file://` fallback renders in one place. Skipped sources are reported once per operation as a count, never as a location.
+_Avoid_: approval check (names a step, not the verdict), source validation (validation is the lexical layer's job)
 
 **Citation**:
 An in-text reference to one or more Zotero Items, rendered through the `cite` template. Always a single inline line of text, wherever it renders. In editor text: an `@citekey` token. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citekey through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
@@ -134,6 +138,10 @@ A vault-wide in-memory index mapping frontmatter identifiers to Obsidian files. 
 **Device Override**:
 A device-scoped value for the Zotero profile directory or data directory — stored per vault × device, never synced — that overrides ZotLit's automatic Zotero detection (default profile from `profiles.ini`, data directory from `prefs.js`) on that device only. Clearing it returns the device to auto-detection. These two values exist solely as Device Overrides; no synced copy exists.
 _Avoid_: local setting ("local" is overloaded: local library, local attachments), per-device setting (implies a category of ordinary settings rather than an override of auto-detection)
+
+**Approved Attachment Root**:
+A canonical directory the user permitted on this device as a source for Attachment Import — stored per vault × device, never synced. User-facing copy calls it an "approved folder." Zotero's own storage directory, annotation cache, and configured base attachment directory need no such grant; only an absolute linked file outside those places requires one.
+_Avoid_: allowed folder, trusted directory (implies a broader grant than one Attachment Import source), whitelisted path
 
 ### Database access
 

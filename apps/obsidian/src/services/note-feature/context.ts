@@ -141,7 +141,7 @@ export function resolveNotePath(
 export function buildNoteResolvers(
   ctx: Omit<NoteFeatureDeps, "db">,
   options: {
-    attachmentImport: Pick<AttachmentImport, "resolveLink">;
+    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     noteImport: Pick<NoteImport, "resolveChildNote">;
     settings: Readonly<Settings> | null;
     sourcePath: string;

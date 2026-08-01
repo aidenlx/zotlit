@@ -81,8 +81,8 @@ export function buildServices(
         new DatabaseService({ settings, zoteroPref }),
     })
     .use({
-      attachmentImport: ({ settings }) =>
-        new AttachmentImportService({ app: plugin.app, settings }),
+      attachmentImport: ({ settings, zoteroPref }) =>
+        new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
     })
     .useValue({
       noteImport: ({

@@ -1,5 +1,6 @@
 import {
   mkdtemp,
+  open,
   readFile,
   rm,
   stat,
@@ -30,7 +31,9 @@ describe("copyAttachments", () => {
     const mtime = new Date("2024-01-01T00:00:00.000Z");
     await utimes(source, mtime, mtime);
 
-    await expect(copyAttachments([{ source, dest }])).resolves.toEqual({
+    await expect(
+      copyAttachments([{ source: { kind: "path", path: source }, dest }]),
+    ).resolves.toEqual({
       copied: 1,
       skipped: 0,
       missing: 0,
@@ -44,7 +47,9 @@ describe("copyAttachments", () => {
     expect(destStat.size).toBe(sourceStat.size);
     expect(destStat.mtimeMs).toBe(sourceStat.mtimeMs);
 
-    await expect(copyAttachments([{ source, dest }])).resolves.toEqual({
+    await expect(
+      copyAttachments([{ source: { kind: "path", path: source }, dest }]),
+    ).resolves.toEqual({
       copied: 0,
       skipped: 1,
       missing: 0,
@@ -59,12 +64,29 @@ describe("copyAttachments", () => {
     await expect(
       copyAttachments([
         {
-          source: join(dir, "missing.png"),
+          source: { kind: "path", path: join(dir, "missing.png") },
           dest: join(dir, "missing-dest.png"),
         },
-        { source: present, dest: presentDest },
+        { source: { kind: "path", path: present }, dest: presentDest },
       ]),
     ).resolves.toEqual({ copied: 1, skipped: 0, missing: 1 });
     expect(await readFile(presentDest, "utf8")).toBe("image");
+  });
+
+  it("copies a descriptor source, stamping the destination from the open file", async () => {
+    const source = join(dir, "source.png");
+    const dest = join(dir, "dest.png");
+    await writeFile(source, "image");
+    // Seconds since the epoch (2024-01-01T00:00:00Z), the form `utimes` takes
+    // alongside a `Date`.
+    const mtimeSeconds = 1_704_067_200;
+    await utimes(source, mtimeSeconds, mtimeSeconds);
+    await using handle = await open(source, "r");
+
+    await expect(
+      copyAttachments([{ source: { kind: "handle", handle }, dest }]),
+    ).resolves.toEqual({ copied: 1, skipped: 0, missing: 0 });
+    expect(await readFile(dest, "utf8")).toBe("image");
+    expect((await stat(dest)).mtimeMs).toBe(mtimeSeconds * 1000);
   });
 });

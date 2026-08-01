@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+import { isItemKey } from "@zotlit/db";
+
 /**
  * Obsidian protocol namespace ZotLit owns. Each action is registered as
  * `"zotlit/<action>"` following Obsidian's URI convention
@@ -333,9 +335,7 @@ const PROTOCOL_EXPLORE_ACTION = "explore";
 export const exploreProtocolActionId =
   `${PROTOCOL_NAMESPACE}/${PROTOCOL_EXPLORE_ACTION}` as const;
 
-const annotationKeyValue = v.optional(
-  v.pipe(v.string(), v.regex(/^[23456789A-NP-Z]{8}$/u)),
-);
+const annotationKeyValue = v.optional(v.pipe(v.string(), v.check(isItemKey)));
 
 export const exploreProtocolQuerySchema = v.pipe(
   v.object({

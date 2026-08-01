@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { annotationHasCacheImage, type Annotation } from "./zt-annot";
 import { parseAttachmentPath, type Attachment } from "./zt-attach";
 
+// Re-exported so a consumer resolving an absolute path can also classify it —
+// the Obsidian plugin's source-decision seam needs both.
+export { parseAttachmentPath, type AttachmentPath } from "./zt-attach";
+
 export interface AttachmentPathContext {
   /** Zotero data directory, for resolving `storage:` paths. */
   dataDir: string;
@@ -52,7 +56,11 @@ export function attachmentAbsPath(
   attachment: Attachment,
   ctx: AttachmentPathContext,
 ): string | null {
-  const parsed = parseAttachmentPath(attachment.path, attachment.linkMode);
+  const parsed = parseAttachmentPath(
+    attachment.path,
+    attachment.linkMode,
+    attachment.key,
+  );
   switch (parsed.kind) {
     // <storage-dir>/<key>/<filename>; storage dir appends the item key.
     // @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/attachments.js#L2751-L2759

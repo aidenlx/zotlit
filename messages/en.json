@@ -103,6 +103,37 @@
   "batch_import_child_confirm_intro": "Import {count} child notes?",
   "batch_import_child_confirm_none": "No child notes to import.",
   "batch_import_child_group_done": "Imported ({count})",
+  "notice_attachment_sources_skipped": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Blocked 1 attachment from import.",
+        "countPlural=*": "Blocked {count} attachments from import."
+      }
+    }
+  ],
+  "notice_attachment_sources_skipped_folders": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Unapproved source folder:",
+        "countPlural=*": "Unapproved source folders:"
+      }
+    }
+  ],
+  "notice_attachment_sources_skipped_next": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Open Attachments → Approved folders, approve this folder, then re-import the affected note.",
+        "countPlural=*": "Open Attachments → Approved folders, approve each folder you trust, then re-import the affected notes."
+      }
+    }
+  ],
+  "notice_attachment_sources_skipped_action": "Open ZotLit settings",
   "notice_imported_note": "Imported {title}.",
   "notice_updated_imported_note": "Updated imported note {title}.",
   "modal_import_overwrite_title": "Overwrite imported note",
@@ -354,6 +385,13 @@
   "settings_attachment_import_desc": "Copy annotation images and embedded attachments into the vault.",
   "settings_attachment_folder_name": "Attachment folder",
   "settings_attachment_folder_desc": "Where imported attachments are stored. Leave empty to use Obsidian's default.",
+  "settings_attachment_approved_name": "Approved folders",
+  "settings_attachment_approved_desc": "Add a folder here when Zotero uses linked attachments stored outside its storage folder, annotation cache, or configured base attachment folder. ZotLit can then copy imported attachments from that location; other sources are linked instead of copied.",
+  "settings_attachment_approved_policy_name": "Import policy",
+  "settings_attachment_approved_policy_desc": "Approval applies to future imports; re-import previously imported notes to copy attachments that were skipped.",
+  "settings_attachment_approved_empty": "No approved folders yet.",
+  "settings_attachment_approved_add": "Add folder",
+  "settings_attachment_approved_dialog_title": "Select a folder to approve",
   "settings_page_live_updates": "Live updates",
   "settings_page_live_updates_desc": "Receive live updates from Zotero as you read and annotate.",
   "settings_live_updates_enabled_name": "Receive updates from Zotero",

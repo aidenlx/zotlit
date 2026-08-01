@@ -50,7 +50,7 @@ import { type Settings } from "@/services/settings/schema";
 import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { parseNote, type NoteParserDeps } from "./note-parser";
+import { parseNote } from "./note-parser";
 
 const logger = getLogger(["note-import", "service"]);
 
@@ -371,8 +371,6 @@ async function writeNote(
       folderCache: run.attachmentFolderCache,
     });
     attachmentBatch = batch;
-    const resolveLink: NoteParserDeps["resolveLink"] = (opts) =>
-      batch.resolveLink(opts);
     const renderAnnotationParagraph = run.settings[
       "note.import-annotations-as-template"
     ]
@@ -383,7 +381,7 @@ async function writeNote(
             {
               template: ctx.template,
               zoteroPref: ctx.zoteroPref,
-              resolveLink,
+              attachmentImport: batch,
               groupIdMemo: run.groupIdMemo,
               tagMemo: run.tagMemo,
             },
@@ -400,7 +398,7 @@ async function writeNote(
         dataDir: ctx.zoteroPref.dataDir,
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
       },
-      resolveLink,
+      attachmentImport: batch,
       renderAnnotationParagraph,
     });
   }

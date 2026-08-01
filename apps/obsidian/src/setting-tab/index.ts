@@ -11,7 +11,9 @@ import { type TemplateService } from "@/services/template/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
+import { attachmentPageItems } from "./attachments";
 import {
+  type AttachmentImportActions,
   type ReleaseTabActions,
   type SettingsKey,
   type SettingTabContext,
@@ -39,6 +41,7 @@ export interface ZotLitSettingTabOptions {
   settings: SettingsService;
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
+  attachmentImport: AttachmentImportActions;
   template: TemplateService;
   release: ReleaseTabActions;
   languagePack: LanguagePackLifecycle;
@@ -49,6 +52,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #settings: SettingsService;
   readonly #db: DatabaseService;
   readonly #zoteroPref: ZoteroPrefService;
+  readonly #attachmentImport: AttachmentImportActions;
   readonly #release: ReleaseTabActions;
   readonly #languagePack: LanguagePackLifecycle;
 
@@ -57,6 +61,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     settings,
     db,
     zoteroPref,
+    attachmentImport,
     template,
     release,
     languagePack,
@@ -66,6 +71,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#settings = settings;
     this.#db = db;
     this.#zoteroPref = zoteroPref;
+    this.#attachmentImport = attachmentImport;
     this.#release = release;
     this.#languagePack = languagePack;
 
@@ -128,6 +134,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       settings: this.#settings,
       db: this.#db,
       zoteroPref: this.#zoteroPref,
+      attachmentImport: this.#attachmentImport,
       release: this.#release,
       languagePack: this.#languagePack,
       requestUpdate: () => this.update(),
@@ -220,27 +227,4 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
     return items;
   }
-}
-
-function attachmentPageItems(
-  ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
-  return [
-    {
-      name: m.settings_attachment_import_name(),
-      desc: m.settings_attachment_import_desc(),
-      control: { type: "toggle", key: "attachment.import" },
-    },
-    {
-      name: m.settings_attachment_folder_name(),
-      desc: m.settings_attachment_folder_desc(),
-      visible: () => ctx.settings.current?.["attachment.import"] ?? true,
-      // Empty value falls back to Obsidian's default attachment folder.
-      control: {
-        type: "folder",
-        key: "attachment.folder-path",
-        defaultValue: "",
-      },
-    },
-  ];
 }

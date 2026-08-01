@@ -1,17 +1,15 @@
 // Response schema for GET {host}/literature-notes, the note-status query action.
 import * as v from "valibot";
 
+import { isIndexedKey } from "@zotlit/db";
+
 /**
  * An Indexed Key: an 8-char base-32 Zotero item key, optionally suffixed
  * `g<groupID>` for group-library items.
  *
- * @see `PATTERN_INDEXED_KEY` in `@zotlit/shared/indexed-key` — the canonical
- *   pattern this mirrors (this package stays dependency-free)
+ * @see `isIndexedKey` in `@zotlit/db` — the canonical validator
  */
-const indexedKeyValue = v.pipe(
-  v.string(),
-  v.regex(/^[23456789A-NP-Z]{8}(?:g\d+)?$/u),
-);
+const indexedKeyValue = v.pipe(v.string(), v.check(isIndexedKey));
 
 /**
  * Body of the `200` response to `GET {host}/literature-notes` — the set of

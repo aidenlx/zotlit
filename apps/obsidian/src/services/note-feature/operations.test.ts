@@ -36,6 +36,10 @@ import {
 import { type ItemFields } from "@zotlit/zotero-types";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import {
+  type AttachmentSource,
+  type SourceOrigin,
+} from "@/services/attachment-import/service";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 
 import { type NoteFeatureDeps, type SyncRenderDeps } from "./context";
@@ -44,6 +48,32 @@ import {
   type NoteFeature,
   type UpdateScope,
 } from "./operations";
+
+/** Stand-in decision port: every source blocks, so no test copies a file. */
+const blockedDecide = (
+  path: string,
+  origin: SourceOrigin,
+): AttachmentSource => ({
+  approved: false,
+  path,
+  origin,
+  reason: "no-trusted-root",
+});
+
+/** The `attachmentImport` port every note-feature test runs against. */
+const blockedAttachmentImport = {
+  prepare: async () => ({
+    decide: blockedDecide,
+    resolveLink: () => () => "",
+    flush: async () => ({
+      copied: 0,
+      skipped: 0,
+      missing: 0,
+      blocked: 0,
+      refused: 0,
+    }),
+  }),
+};
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
@@ -175,12 +205,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -289,12 +314,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -393,12 +413,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -465,12 +480,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -540,12 +550,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -635,12 +640,7 @@ describe("overwriteNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -737,12 +737,7 @@ function makeUpdateHarness(options: {
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: makeSettings(),
-    attachmentImport: {
-      prepare: async () => ({
-        resolveLink: () => () => "",
-        flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-      }),
-    },
+    attachmentImport: blockedAttachmentImport,
     noteImport: {
       prepare: async () => ({
         resolveChildNote: () => ({
@@ -1126,12 +1121,7 @@ describe("renderCitation", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -1202,12 +1192,7 @@ describe("renderCitation", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -1259,12 +1244,7 @@ describe("renderAnnotation", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
-      attachmentImport: {
-        prepare: async () => ({
-          resolveLink: () => () => "",
-          flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-        }),
-      },
+      attachmentImport: blockedAttachmentImport,
       noteImport: {
         prepare: async () => ({
           resolveChildNote: () => ({
@@ -1279,7 +1259,7 @@ describe("renderAnnotation", () => {
     };
 
     const result = createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { resolveLink: () => () => "" },
+      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
     });
 
     expect(result).toBeNull();
@@ -1327,12 +1307,7 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: makeSettings(),
-    attachmentImport: {
-      prepare: async () => ({
-        resolveLink: () => () => "",
-        flush: async () => ({ copied: 0, skipped: 0, missing: 0 }),
-      }),
-    },
+    attachmentImport: blockedAttachmentImport,
     noteImport: {
       prepare: async () => ({
         resolveChildNote: () => ({
@@ -1350,7 +1325,7 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
 describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
   const render = (deps: SyncRenderDeps) =>
     createNoteFeature(deps).renderAnnotation(1, {
-      attachmentImport: { resolveLink: () => () => "" },
+      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
     });
 
   it("renders a page-pinned Pandoc cite from the parent item + page label", () => {

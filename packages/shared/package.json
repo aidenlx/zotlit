@@ -8,7 +8,6 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./indexed-key": "./dist/indexed-key.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",
     "./nanoevents": "./dist/nanoevents.mjs",
     "./temporal": "./dist/temporal.mjs",
@@ -18,9 +17,6 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "arkregex": "catalog:"
   },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",

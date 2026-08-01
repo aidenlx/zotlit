@@ -2,6 +2,8 @@ import { getLogger } from "@logtape/logtape";
 
 import { type Temporal } from "@zotlit/shared/temporal";
 
+import { isItemKey } from "./zt-key";
+
 const logger = getLogger(["zotlit", "db", "attachments"]);
 
 /**
@@ -117,26 +119,72 @@ export type AttachmentPath =
   | UnknownPath;
 
 /**
- * Narrow an `itemAttachments.(path, linkMode)` pair into Zotero's path
- * semantics. Pure string-level parsing — does not resolve the storage
- * directory or base-attachment pref, since both are runtime values held by
- * the Obsidian-side ZoteroDB service, not the query layer.
+/**
+ * A `/` or `\` anywhere in a value signals a path separator or a UNC form
+ * (`\\server\share\...`). Matching both slash characters rather than the
+ * platform separator matters: a value from group-library sync can carry
+ * either on any platform, and Zotero's own server-side fix deliberately
+ * still permits a bare backslash.
+ */
+const PATH_SEPARATOR_RE = /[/\\]/;
+
+/**
+ * A Windows drive letter followed by `:` at the very start of a value — the
+ * drive-relative (`C:paper.pdf`) and drive-absolute (`C:\paper.pdf`) forms.
+ * Scoped to the leading position so a plain colon elsewhere in a POSIX
+ * filename (`notes:final.pdf`) still resolves.
+ */
+const DRIVE_PREFIX_RE = /^[A-Za-z]:/;
+
+/**
+ * Whether `value` is safe to join as a single path segment: no separator of
+ * either slash flavor, no leading drive-letter colon, and not a `..` parent
+ * segment.
+ */
+function isSingleSegment(value: string): boolean {
+  return (
+    !PATH_SEPARATOR_RE.test(value) &&
+    !DRIVE_PREFIX_RE.test(value) &&
+    value !== ".."
+  );
+}
+
+/**
+ * Narrow an `itemAttachments.(path, linkMode)` pair, plus the row's item
+ * key, into Zotero's path semantics. Pure string-level parsing — does not
+ * resolve the storage directory or base-attachment pref, since both are
+ * runtime values held by the Obsidian-side ZoteroDB service, not the query
+ * layer.
+ *
+ * Every row parses as `unknown` when `key` does not match Zotero's key
+ * format — an attachment identified by a corrupt key is not trusted for any
+ * link mode, since the row itself is not a genuine Zotero row. A
+ * storage-mode row additionally parses as `unknown` when its filename
+ * carries a path separator or a `..` segment: Zotero's storage path joins
+ * both the key and the filename into the item's storage directory, so either
+ * one escaping its single-segment role can traverse outside it.
  *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/data/item.js#L2640-L2730
  */
 export function parseAttachmentPath(
   path: string | null,
   linkMode: LinkMode | null,
+  key: string,
 ): AttachmentPath {
   if (!path || linkMode === null) return { kind: "unknown", raw: path };
+  if (!isItemKey(key)) return { kind: "unknown", raw: path };
 
   switch (linkModeToName(linkMode)) {
     case "imported_file":
     case "imported_url":
-    case "embedded_image":
-      return path.startsWith(STORAGE_PREFIX)
-        ? { kind: "storage", filename: path.slice(STORAGE_PREFIX.length) }
+    case "embedded_image": {
+      if (!path.startsWith(STORAGE_PREFIX))
+        return { kind: "unknown", raw: path };
+      const filename = path.slice(STORAGE_PREFIX.length);
+      return isSingleSegment(filename)
+        ? { kind: "storage", filename }
         : { kind: "unknown", raw: path };
+    }
     case "linked_file":
       return path.startsWith(BASE_PATH_PLACEHOLDER)
         ? {

@@ -10,7 +10,6 @@ import { getLibraries, type Library } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { requireDialog } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import {
   type ConfiguredReadMode,
@@ -24,6 +23,7 @@ import {
 import { type ZoteroProfileInfo } from "@/services/zotero-pref/service";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
+import { appendDeviceOverrideNote, browseForDir } from "./device-override";
 
 const logger = getLogger(["setting-tab", "database"]);
 
@@ -32,7 +32,10 @@ const PICKER_AUTO = "";
 /** Folder-picker dropdown sentinel that opens the folder picker; NUL can't be in a path. */
 const PICKER_BROWSE = "\0browse";
 
-/** Items for the "Zotero database" sub-page: connection, status, read mode. */
+/**
+ * Items for the "Zotero database" sub-page: connection, status, read mode, and
+ * advanced device-scoped database state.
+ */
 export function databasePageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
@@ -498,28 +501,6 @@ function ensureLibraryOption(
 }
 
 /**
- * Open a folder picker and hand the chosen directory to `onPick`. `startPath`
- * seeds the dialog when the bound setting is unset.
- */
-async function browseForDir(opts: {
-  title: string;
-  startPath: string | undefined;
-  onPick: (path: string) => void;
-}): Promise<void> {
-  try {
-    const result = await requireDialog().showOpenDialog({
-      title: opts.title,
-      defaultPath: opts.startPath,
-      properties: ["openDirectory"],
-    });
-    if (result.canceled || result.filePaths.length === 0) return;
-    opts.onPick(result.filePaths[0]!);
-  } catch (error) {
-    logger.error("Failed to open folder dialog", { error });
-  }
-}
-
-/**
  * Advanced data-directory override (auto-detect / a chosen folder). Wins over
  * the profile-derived data dir in {@link ZoteroPrefService.dataDir}; the resolved
  * path is echoed live so the user sees the effective value either way.
@@ -634,14 +615,6 @@ function renderSourceIdRow(
   stack.defer(pref.on("data-dir-changed", refresh));
 
   return () => stack.dispose();
-}
-
-/** Append the "stored on this device only" Device Override note as a fresh description line. */
-function appendDeviceOverrideNote(frag: DocumentFragment): void {
-  frag.append(document.createElement("br"));
-  const note = document.createElement("small");
-  note.textContent = m.settings_db_device_override_note();
-  frag.append(note);
 }
 
 /** Append a `label: <code/>` line to `frag`, returning the `<code>` to fill in. */

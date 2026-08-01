@@ -23,12 +23,12 @@ Filename: `zotlit-note.liquid.md`
 {% render "content" with zt as zt %}
 ```
 
-| Line                                                              | What it renders                                                                                                                                                        |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `# {{ zt.title }}`                                                | Item title as an H1 heading.                                                                                                                                           |
-| `[Zotero]({{ zt.backlink }})`                                     | Markdown link to the item in Zotero (deep link).                                                                                                                       |
-| `{{ zt.attachments \| map: "fileLink" \| compact \| join: " " }}` | Wiki-links to every resolvable attachment. `map` extracts each attachment's file link, `compact` drops attachments without a link, `join` separates them with a space. |
-| `{% render "content" with zt as zt %}`                            | Includes the `content` template, passing the full item context.                                                                                                        |
+| Line                                                              | What it renders                                                                                                                                                                                       |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `# {{ zt.title }}`                                                | Item title as an H1 heading.                                                                                                                                                                          |
+| `[Zotero]({{ zt.backlink }})`                                     | Markdown link to the item in Zotero (deep link).                                                                                                                                                      |
+| `{{ zt.attachments \| map: "fileLink" \| compact \| join: " " }}` | Direct `file://` links to every resolvable attachment. These links do not copy files into the vault. `map` extracts each link, `compact` drops missing links, and `join` separates them with a space. |
+| `{% render "content" with zt as zt %}`                            | Includes the `content` template, passing the full item context.                                                                                                                                       |
 
 ## Content template
 
@@ -86,13 +86,13 @@ Rendered output for an annotation on page 42 with an image excerpt, highlighted 
 > My thoughts on this
 ```
 
-| Element      | Source                                                                                                                           |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                              |
-| Page label   | `{{ zt.pageLabel }}` in the callout title.                                                                                       |
-| Image        | `{{ zt.imgLink \| embed }}`: the `embed` filter prefixes `!` for an Obsidian embed. Collapses to `""` for non-image annotations. |
-| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                        |
-| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                        |
+| Element      | Source                                                                                                                                                                                   |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                                                                                      |
+| Page label   | `{{ zt.pageLabel }}` in the callout title.                                                                                                                                               |
+| Image        | `{{ zt.imgLink \| embed }}`: imports an approved annotation image and embeds its vault link. A blocked image keeps a direct `file://` link. Collapses to `""` for non-image annotations. |
+| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                |
+| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                |
 
 The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line and collapses consecutive blank lines into a single bare `>`.
 

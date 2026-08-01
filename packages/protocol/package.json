@@ -18,6 +18,9 @@
     "lint": "oxlint",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@zotlit/db": "workspace:*"
+  },
   "devDependencies": {
     "@types/node-25": "npm:@types/node@^25.6.2",
     "@zotlit/config": "workspace:*",

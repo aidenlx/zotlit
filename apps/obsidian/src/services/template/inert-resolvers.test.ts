@@ -55,8 +55,8 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
     itemID: 10,
     libraryID: USER_LIBRARY_ID,
     groupID: null,
-    key: "ATCH0001",
-    indexedKey: "ATCH0001",
+    key: "ATCH2345",
+    indexedKey: "ATCH2345",
     parentItemID: 1,
     path: "storage:paper.pdf",
     contentType: "application/pdf",
@@ -86,7 +86,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     authorName: null,
     isExternal: false,
     parentItemID: 10,
-    parentKey: "ATCH0001",
+    parentKey: "ATCH2345",
     ...overrides,
   };
 }
@@ -149,7 +149,7 @@ describe("buildInertNoteResolvers", () => {
     const resolvers = buildResolvers();
     const attachment = makeAttachment({ path: "storage:paper.pdf" });
     expect(resolvers.annotation.filePath(attachment)).toBe(
-      "/data/storage/ATCH0001/paper.pdf",
+      "/data/storage/ATCH2345/paper.pdf",
     );
   });
 
@@ -160,7 +160,7 @@ describe("buildInertNoteResolvers", () => {
     expect(link).toContain("#page=5");
     expect(link).toContain("paper.pdf");
     expect(link).toBe(
-      "[paper.pdf](file:///data/storage/ATCH0001/paper.pdf#page=5)",
+      "[paper.pdf](file:///data/storage/ATCH2345/paper.pdf#page=5)",
     );
   });
 

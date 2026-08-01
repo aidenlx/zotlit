@@ -1,4 +1,4 @@
-import { TFile, TFolder } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,7 +10,13 @@ import {
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { renderAnnotations } from "@/lib/annotation-render";
+import {
+  AttachmentImportService,
+  type AttachmentSource,
+  type SourceOrigin,
+} from "@/services/attachment-import/service";
 import { defaults, type Settings } from "@/services/settings/schema";
+import { type SettingsService } from "@/services/settings/service";
 import { type TemplateService } from "@/services/template/service";
 
 import { parseNote } from "./note-parser";
@@ -129,17 +135,57 @@ function makeApp(): AppStub {
 
 /** Per-note attachment batch stub; `flush` records whether copies were committed. */
 function makeAttachmentImport() {
-  const flush = vi.fn(async () => ({ copied: 0, skipped: 0, missing: 0 }));
+  const flush = vi.fn(async () => ({
+    copied: 0,
+    skipped: 0,
+    missing: 0,
+    blocked: 0,
+    refused: 0,
+  }));
+  const decide = vi.fn(
+    (path: string, origin: SourceOrigin): AttachmentSource => ({
+      approved: false,
+      path,
+      origin,
+      reason: "no-trusted-root",
+    }),
+  );
   const resolveLink = vi.fn(() => () => "[[image.png]]");
-  const prepare = vi.fn(async () => ({ resolveLink, flush }));
-  return { prepare, flush, resolveLink };
+  const prepare = vi.fn(async () => ({ decide, resolveLink, flush }));
+  return { prepare, flush, decide, resolveLink };
+}
+
+/**
+ * The real decision service over a Zotero data directory that does not resolve
+ * and no approved folder, so every source it judges blocks. Lets a test observe
+ * the `file://` fallback the production seam renders, rather than a stub's.
+ */
+function makeBlockingAttachmentImport(): AttachmentImportService {
+  return new AttachmentImportService({
+    app: {
+      loadLocalStorage: () => null,
+      saveLocalStorage: () => undefined,
+    } as unknown as App,
+    settings: {
+      loaded: Promise.resolve({
+        "attachment.import": true,
+        "attachment.folder-path": "Attachments",
+      }),
+      subscribe: () => () => undefined,
+    } as unknown as SettingsService,
+    zoteroPref: {
+      dataDir: "/nonexistent-zotero-data",
+      baseAttachmentPath: null,
+      on: () => () => undefined,
+    },
+  });
 }
 
 function makeService(
   app: ImportVaultApp,
   options: {
     existing?: TFile[];
-    attachmentImport?: ReturnType<typeof makeAttachmentImport>;
+    attachmentImport?: Pick<AttachmentImportService, "prepare">;
   } = {},
 ): NoteImporter {
   return createNoteImporter({
@@ -405,11 +451,16 @@ describe("createNoteImporter", () => {
     // The template-rendered callout lands in the written file.
     expect(create.mock.calls[0]![1]).toContain("> [!note]\n>\n> callout");
 
-    // The resolveLink handed to the renderer delegates to the note's batch.
+    // The attachment-import port handed to the renderer is the note's batch.
     const opts = vi.mocked(renderAnnotations).mock.calls[0]![2];
-    opts.resolveLink({ sourcePath: "/a.png", vaultName: "a.png" });
+    const source = opts.attachmentImport.decide("/a.png", "annotation-cache");
+    opts.attachmentImport.resolveLink({ source, vaultName: "a.png" });
+    expect(attachmentImport.decide).toHaveBeenCalledWith(
+      "/a.png",
+      "annotation-cache",
+    );
     expect(attachmentImport.resolveLink).toHaveBeenCalledWith({
-      sourcePath: "/a.png",
+      source,
       vaultName: "a.png",
     });
   });
@@ -425,6 +476,40 @@ describe("createNoteImporter", () => {
       vi.mocked(parseNote).mock.calls[0]![2].renderAnnotationParagraph,
     ).toBeUndefined();
     expect(renderAnnotations).not.toHaveBeenCalled();
+  });
+
+  it("still writes a note whose embedded images are all blocked, as file:// embeds", async () => {
+    const { app, create } = makeApp();
+    const attachmentImport = makeBlockingAttachmentImport();
+    await attachmentImport.ready;
+    // Stand in for the parser's embedded-image rule: decide each image, then
+    // embed whatever link resolution hands back.
+    vi.mocked(parseNote).mockImplementationOnce((_td, _html, deps) =>
+      ["/elsewhere/one.png", "/elsewhere/two.png"]
+        .map((path) => {
+          const source = deps.attachmentImport.decide(path, "linked-absolute");
+          const link = deps.attachmentImport.resolveLink({
+            source,
+            vaultName: "image.png",
+          });
+          return `!${link()}`;
+        })
+        .join("\n"),
+    );
+    const batch = await makeService(app, { attachmentImport }).prepare(PREPARE);
+
+    batch.resolveChildNote(makeNote()).noteLink();
+    await expect(batch.flush()).resolves.toEqual({
+      created: 1,
+      skipped: 0,
+      failed: 0,
+    });
+
+    const content = create.mock.calls[0]![1] as string;
+    expect(content).toContain("![image.png](file:///elsewhere/one.png)");
+    expect(content).toContain("![image.png](file:///elsewhere/two.png)");
+    // No embed claims a vault file that was never written.
+    expect(content).not.toContain("[[");
   });
 
   it("overwrites an existing note without creating the import folder", async () => {

@@ -38,6 +38,24 @@ class NoticeRenderer {
     return this;
   }
 
+  addText(text: string): this {
+    this.containerEl.createDiv("zt-notice-text").setText(text);
+    return this;
+  }
+
+  addList(label: string, items: readonly string[]): this {
+    const section = this.containerEl.createDiv("zt-notice-list");
+    section.addClasses(["zt:flex", "zt:flex-col", "zt:gap-1"]);
+    section.createDiv("zt-notice-text").setText(label);
+    const list = section.createEl("ul");
+    list.addClasses(["zt:m-0", "zt:pl-5"]);
+    for (const item of items) {
+      const code = list.createEl("li").createEl("code", { text: item });
+      code.addClass("zt:break-all");
+    }
+    return this;
+  }
+
   addAction(cb: (component: ButtonComponent) => void): this {
     if (!this.actionsEl) {
       this.actionsEl = this.containerEl.createDiv("zt-notice-actions");

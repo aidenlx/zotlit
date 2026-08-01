@@ -12,8 +12,8 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
     groupID: null,
-    key: "ATCH1234",
-    indexedKey: "ATCH1234",
+    key: "ATCH2345",
+    indexedKey: "ATCH2345",
     parentItemID: 2,
     path: null,
     contentType: null,
@@ -102,6 +102,18 @@ describe("attachmentToTemplateData", () => {
 
     expect(result.filename).toBeNull();
     expect(result.linkMode).toBe("linked_url");
+  });
+
+  it("yields a null filename for a malformed item key", () => {
+    const result = attachmentToTemplateData(
+      makeAttachment({
+        path: "storage:paper.pdf",
+        linkMode: 0,
+        key: "not-a-key",
+      }),
+    );
+
+    expect(result.filename).toBeNull();
   });
 
   it("marks an unknown link mode", () => {
