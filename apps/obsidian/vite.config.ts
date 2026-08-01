@@ -78,7 +78,7 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       sourcemap: isProd ? false : "inline",
       minify: isProd,
-      target: "es2022",
+      target: "es2025",
       copyPublicDir: false,
       rolldownOptions: {
         external: [
