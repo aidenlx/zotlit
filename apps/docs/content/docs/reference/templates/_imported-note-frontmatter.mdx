@@ -2,8 +2,8 @@
 
 Each imported child-note file carries three frontmatter fields:
 
-| Field             | Description                                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `date`            | When the note was added to Zotero. Local datetime with offset at second precision (e.g. `2025-03-15T10:30:00-04:00`)     |
-| `zotero-note-key` | Identity key matching the imported file to the Zotero note. For group libraries, this is the indexed key (`KEYgGROUPID`) |
-| `zotero-lastmod`  | Source note's `dateModified` timestamp (same format as `date`). Used by batch re-import to skip unchanged notes          |
+| Field             | Description                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `date`            | When the note was added to Zotero. Local datetime with offset at second precision (e.g. `2025-03-15T10:30:00-04:00`)                        |
+| `zotero-note-key` | Identity key matching the imported file to the Zotero note. For group libraries, this includes the group library identifier (`KEYgGROUPID`) |
+| `zotero-lastmod`  | Source note's `dateModified` timestamp (same format as `date`). Used by batch re-import to skip unchanged notes                             |

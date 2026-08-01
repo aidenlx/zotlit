@@ -367,7 +367,7 @@
   "cli_frontmatter_set_desc": "Add or update one ZotLit Managed Frontmatter field; omitted parameters on an existing field keep their current values",
   "cli_frontmatter_remove_desc": "Delete one ZotLit Managed Frontmatter field",
   "cli_frontmatter_reorder_desc": "Arrange the configured ZotLit Managed Frontmatter fields into a new order",
-  "cli_flag_key_desc": "Indexed Key of a Zotero object",
+  "cli_flag_key_desc": "Zotero key for an object",
   "cli_flag_root_desc": "Template data root",
   "cli_flag_format_desc": "Output format, default json",
   "cli_flag_template_desc": "Template to render",

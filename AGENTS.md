@@ -73,6 +73,8 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 
 User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics.
 
+User- and agent-facing copy has four sources: MDX under `apps/docs/content/`, i18n messages under `messages/`, Zotero companion locale files under `apps/zotero/locale/`, and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`. Use **Zotero key** in English public copy and **Zotero 标识符** in Chinese public copy; distinguish both from the citation key (`citekey`). `Indexed Key` is internal domain vocabulary. See `packages/db/CONTEXT.md`.
+
 ## Conventions worth knowing
 
 - Dependency versions shared by multiple packages go in the **catalog** in `pnpm-workspace.yaml`; package-local dependencies stay in that package's `package.json`. Catalog users reference shared entries as `"oxlint": "catalog:"`.

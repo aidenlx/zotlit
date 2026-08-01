@@ -50,6 +50,56 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
   </Step>
 </Steps>
 
+## Add Zotero tags to note frontmatter [#zotero-tags]
+
+Create a managed `tags` field with the `obsidian_tag` filter. The filter reads
+Zotero tag objects from `zt.tags` and returns an array of Obsidian tag values.
+
+<Steps>
+  <Step>
+    ### Add the `tags` field
+
+    In **Settings > ZotLit > Templates > Frontmatter**, add a field with these values:
+
+    | Input | Value |
+    | ----- | ----- |
+    | **Key** | `tags` |
+    | **Language** | **Liquid** |
+    | **Expression** | `zt.tags \| obsidian_tag` |
+    | **Merge strategy** | **Replace** |
+
+    The `Replace` strategy keeps the note's Zotero tags in sync. Choose
+    **Append arrays** when you want to keep manual Obsidian tags too.
+
+  </Step>
+  <Step>
+    ### Update the note
+
+    Run <Command inline>ZotLit: Update literature note metadata</Command> on an
+    existing literature note. ZotLit evaluates the field and writes the result
+    to its frontmatter.
+
+  </Step>
+</Steps>
+
+For example, Zotero tags named `Methodology` and `Open Access` become:
+
+```yaml
+tags:
+  - Methodology
+  - Open_Access
+```
+
+The filter normalizes spaces and other characters according to Obsidian's tag
+rules. Frontmatter tag values do not need a leading `#`. See the [`obsidian_tag`
+filter reference](/docs/reference/templates/syntax#obsidian-tag) for all
+normalization rules.
+
+For agent-assisted setup, install the [ZotLit skill](/docs/install-skill) and
+ask the agent to add a managed `tags` field with the expression
+`zt.tags | obsidian_tag`. The [Template Workbench](/docs/concepts/template-workbench)
+lets the agent configure the field and test the rendered result.
+
 ## Edit or remove a field
 
 Click a field's row to reopen the edit modal and change its settings. To remove a field, use the delete control on its row in the Frontmatter list.
@@ -99,6 +149,11 @@ An agent with the ZotLit skill can configure managed frontmatter field templates
 ## See also
 
 <Cards>
+  <Card
+    title="Install the ZotLit skill"
+    description="Let an agent configure and test managed frontmatter fields."
+    href="/docs/install-skill"
+  />
   <Card
     title="How templates work"
     description="Template types, languages, and the data model."

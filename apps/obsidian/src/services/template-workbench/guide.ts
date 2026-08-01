@@ -41,14 +41,14 @@ function manList(names: readonly string[]): string {
 const ANNOTATION_REQUIRED: DiagnosticCode = "ANNOTATION_REQUIRED";
 const ETA_OPT_IN_REQUIRED: DiagnosticCode = "ETA_OPT_IN_REQUIRED";
 
-const TEMPLATE_DATA_SYNOPSIS = `obsidian-cli zotlit:template-data key=<indexed-key> \\
+const TEMPLATE_DATA_SYNOPSIS = `obsidian-cli zotlit:template-data key=<zotero-key> \\
     root=<${CONTRACT_ROOT_NAMES.join("|")}> expect-source=<source-id>`;
 
-const TEMPLATE_RENDER_SYNOPSIS = `obsidian-cli zotlit:template-render key=<indexed-key> \\
+const TEMPLATE_RENDER_SYNOPSIS = `obsidian-cli zotlit:template-render key=<zotero-key> \\
     template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
     [format=<json|markdown>]`;
 
-const FRONTMATTER_EVAL_SYNOPSIS = `obsidian-cli zotlit:frontmatter-eval key=<indexed-key> \\
+const FRONTMATTER_EVAL_SYNOPSIS = `obsidian-cli zotlit:frontmatter-eval key=<zotero-key> \\
     [expr=<expression> [language=<${FRONTMATTER_LANGUAGE_NAMES.join("|")}>]] \\
     [expect-source=<source-id>]`;
 
@@ -102,7 +102,7 @@ KEY RESOLUTION
            ${ANNOTATION_REQUIRED}.
 
   See ${DOCS_SITE_URL}/docs/how-to/explore-template-data#indexed-key for how to
-  obtain an indexed key.
+  obtain a Zotero key.
 
 OUTPUT
   template-data stores the template object under the literal key "zt".
@@ -268,7 +268,7 @@ COMMANDS
               List the configured fields, the reserved keys, and the
               JavaScript Templates gate state. Takes no parameters.
   frontmatter-eval
-              Evaluate the configured field set against key=<indexed-key>.
+              Evaluate the configured field set against key=<zotero-key>.
               With expr=, evaluate that one ad-hoc expression instead, in
               language= (default liquid); language= without expr= is rejected.
   frontmatter-set
@@ -285,7 +285,7 @@ KEYS
   field=      A Managed Frontmatter field key. Used by frontmatter-set,
               frontmatter-remove, and each entry of frontmatter-reorder's
               order=.
-  key=        The CLI-wide Indexed Key. Used by frontmatter-eval to select
+  key=        The CLI-wide Zotero key. Used by frontmatter-eval to select
               the item to evaluate against. See
               ${DOCS_SITE_URL}/docs/how-to/explore-template-data#indexed-key.
 
@@ -397,7 +397,7 @@ MANAGED FRONTMATTER
   inspect, evaluate, and mutate this configuration through the settings service.
 
   1. Run frontmatter-status. Review configured fields and gate state.
-  2. Run frontmatter-eval key=<indexed-key> to test evaluation against an item.
+  2. Run frontmatter-eval key=<zotero-key> to test evaluation against an item.
   3. Use frontmatter-set, frontmatter-remove, frontmatter-reorder to edit the
      field set. Each command echoes the resulting field list.
 

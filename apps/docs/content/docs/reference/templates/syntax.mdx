@@ -234,7 +234,7 @@ When the link cannot be resolved, the filter returns `null` (which `compact` dro
 
 ### `note_links`: batch note links
 
-Maps an array of items to their note links. Items whose link cannot be resolved render as a `zt-error:<indexedKey>` marker instead of being dropped silently.
+Maps an array of items to their note links. Items whose link cannot be resolved render as a `zt-error:` marker containing the object's key instead of being dropped silently.
 
 ```liquid
 {{ zt.relatedItems | note_links | join: ", " }}
@@ -320,6 +320,7 @@ Accepts an array (maps element-wise) or a single value (returns a single value).
 | `!!!`                | _(dropped)_        | Nothing survives normalization             |
 
 `obsidian_tag` normalizes for Obsidian's tag rules. For free-text array transformations that do not need tag-specific normalization, use `arr_replace`.
+For a managed `tags` frontmatter field, see [Add Zotero tags to note frontmatter](/docs/how-to/configure-frontmatter-properties#zotero-tags).
 
 ### `{% suffix %}`: filename collision guard [#suffix-filename-collision-guard]
 
@@ -422,6 +423,11 @@ This is the only shadowing rule. There is no priority between different canonica
 ## See also
 
 <Cards>
+  <Card
+    title="Add Zotero tags to frontmatter"
+    description="Map Zotero tags to an Obsidian tags property with Liquid."
+    href="/docs/how-to/configure-frontmatter-properties#zotero-tags"
+  />
   <Card
     title="Data reference"
     description="Properties available on zt for each template type."
