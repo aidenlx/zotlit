@@ -42,9 +42,9 @@ Section rules:
 - Bullets restate the user-facing change in one or two sentences. Keep template variable names and command names in backticks.
 - No `@everyone` or `@here` unless the user explicitly asks for a ping.
 
-### 4. Write to file
+### 4. Write and validate the message
 
-Write the draft to `/tmp/discord-<version>.md`.
+Write the draft to `/tmp/discord-<version>.md`. The complete Discord message must be at most 2,000 characters, including whitespace, Markdown, links, headings, and the companion line. Count the file contents after drafting. If it exceeds the limit, shorten the summary and bullets while keeping every changelog section represented. Verify the final count is at most 2,000 characters before reporting the file.
 
 ### 5. Slop check
 
