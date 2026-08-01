@@ -32,7 +32,7 @@ export default function Comments({ className }: { className?: string }) {
         <Giscus
           repo="aidenlx/zotlit"
           repoId="R_kgDOGy2_uA"
-          category="Docs/v2 Comments"
+          category="Docs Comments"
           categoryId="DIC_kwDOGy2_uM4DBbqz"
           mapping="specific"
           // compat with mapping="pathname"
