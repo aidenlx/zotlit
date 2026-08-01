@@ -15,10 +15,10 @@ For step-by-step configuration, see [Configure frontmatter properties](/docs/how
 
 ZotLit always writes these fields. They cannot be overridden by user configuration.
 
-| Field        | Source           | Description                                                                      |
-| ------------ | ---------------- | -------------------------------------------------------------------------------- |
-| `zotero-key` | `zt.indexedKey`  | Item identity key: `KEY` for the user library, `KEYgGROUPID` for group libraries |
-| `citekey`    | `zt.citationKey` | Citation key. Written only when the item has one; deleted otherwise              |
+| Field        | Source           | Description                                                                                               |
+| ------------ | ---------------- | --------------------------------------------------------------------------------------------------------- |
+| `zotero-key` | `zt.indexedKey`  | Item identity key: `KEY` for the user library, `KEYgGROUPID` for group libraries                          |
+| `citekey`    | `zt.citationKey` | Compatibility frontmatter key for the citation key. Written only when the item has one; deleted otherwise |
 
 ## User-configured fields
 
@@ -97,12 +97,12 @@ The `Append arrays` strategy preserves existing items verbatim (including any du
 
 The following keys cannot be used in user field configuration:
 
-| Key               | Owner                                     |
-| ----------------- | ----------------------------------------- |
-| `zotero-key`      | System-managed (literature note identity) |
-| `citekey`         | System-managed (literature note identity) |
-| `zotero-note-key` | Imported notes                            |
-| `zotero-lastmod`  | Imported notes                            |
+| Key               | Owner                                                                    |
+| ----------------- | ------------------------------------------------------------------------ |
+| `zotero-key`      | System-managed (literature note identity)                                |
+| `citekey`         | Compatibility frontmatter key; system-managed (literature note identity) |
+| `zotero-note-key` | Imported notes                                                           |
+| `zotero-lastmod`  | Imported notes                                                           |
 
 Attempting to use a reserved key is rejected in both the settings modal and the CLI.
 
@@ -121,7 +121,7 @@ Expression syntax errors are detected when saving. Runtime errors (e.g. accessin
 
 When you run <Command inline>ZotLit: Update literature note</Command> or <Command inline>ZotLit: Update literature note metadata</Command>, ZotLit refreshes frontmatter:
 
-1. **System fields** (`zotero-key`, `citekey`) are refreshed.
+1. **System fields** (`zotero-key`, compatibility frontmatter key `citekey`) are refreshed.
 2. **User-configured fields** are re-evaluated and applied using their merge strategy.
 3. **Unmanaged keys:** any frontmatter key not in the managed set (e.g. `aliases`, `tags`, `cssclasses`) is preserved. ZotLit never touches keys it does not own.
 

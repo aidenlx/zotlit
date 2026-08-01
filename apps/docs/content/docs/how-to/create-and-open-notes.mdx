@@ -1,6 +1,6 @@
 ---
 title: "Create and open literature notes"
-description: "Open or create a literature note from a Zotero item using the quick switcher, a clickable citekey, or the Zotero right-click menu for bulk operations."
+description: "Open or create a literature note from a Zotero item using the quick switcher, a clickable citation key, or the Zotero right-click menu for bulk operations."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -37,15 +37,15 @@ The quick switcher searches your Zotero library and opens or creates a literatur
   </Step>
 </Steps>
 
-## Open a note from a citekey
+## Open a note from a citation key
 
-When you type or paste a bracketed citation like `[@citekey]` in the editor, ZotLit makes the citekey clickable. Click it to open or create the corresponding literature note.
+When you type or paste a bracketed citation like `[@key]` in the editor, ZotLit makes the citation key clickable. Click it to open or create the corresponding literature note.
 
 ZotLit recognizes bracketed Pandoc citations: `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`. A bare `@key` outside brackets stays plain text.
 
-If the item is not found in your Zotero library, a notice appears: "No Zotero item with citekey `@{citekey}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up `@{citekey}`."
+If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
 
-Citekey clicks resolve against the **Default library** setting at the top of **Settings > ZotLit**. For details on how citekey links work under the hood, including hover preview and the Reading mode limitation, see [How citekey links work](/docs/concepts/how-citekey-links-work).
+Citation key clicks resolve against the **Default library** setting at the top of **Settings > ZotLit**. For details on how citation key links work under the hood, including hover preview and the Reading mode limitation, see [How citation key links work](/docs/concepts/how-citekey-links-work).
 
 ## Create or update notes in bulk [#bulk]
 

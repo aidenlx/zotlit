@@ -44,14 +44,14 @@ _Avoid_: id, itemID (the integer DB primary key — not exposed to users)
 
 **Indexed Key**:
 A disambiguated Key string used as the canonical cross-library identity: bare `key` for the personal library, `key + "g" + groupID` for group libraries. Identifies any Zotero object — Item, Attachment, Annotation, or Child Note — since all four share one keyed table. Stored in literature-note frontmatter as `zotero-key`.
-Public English documentation and user-facing copy call this a **Zotero key**; Chinese copy uses **Zotero 标识符**. Both are distinct from the **Citation Key** (`citekey`). Use **Indexed Key** for the internal domain term.
+See [policies/vocabulary.md](../../policies/vocabulary.md) for its public and internal names.
 The name is a historical convention. The format was originally introduced as an internal storage-key format for the Obsidian Note Index, then became the shared identity format for more ZotLit features and both apps. It is therefore broader than the name suggests.
 The format rule is pure and shared by both apps, so `formatIndexedKey`, `parseIndexedKey`, and `isIndexedKey` live in `src/lib/zt-key.ts`. `resolveIndexedKeyLibrary` stays beside them because it queries the database.
 _Avoid_: item key, scoped key
 
 **Citation Key**:
 A human-readable identifier for an Item (e.g., `smith2024`). Stored in Zotero's native `citationKey` field — originally a Better BibTeX feature, now an official Zotero field. The frontmatter field name `citekey` is a legacy abbreviation from before Zotero adopted the field.
-_Avoid_: BBT key, BibTeX key, citekey (legacy; use Citation Key in prose)
+_Avoid_: BBT key, BibTeX key
 
 ### Links
 

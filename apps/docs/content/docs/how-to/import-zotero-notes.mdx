@@ -150,13 +150,13 @@ Imported notes are saved to the folder configured in **Settings > Note import > 
 
 The imported note's body is the Zotero note's HTML converted to Markdown. Citations within it render through your `cite` template.
 
-Each cited reference resolves its citekey in this order:
+Each cited reference resolves its citation key in this order:
 
 1. The live Zotero item's own citation key.
 2. The citation snapshot embedded in the Zotero note.
 3. A visible sentinel: the Zotero item key with `?` appended (e.g. `-@ABC123?` in the default cite template). The trailing `?` makes unresolved citations greppable in your vault.
 
-If every cited reference within a single citation is unresolvable (no citekey from any source), ZotLit keeps that citation's original HTML verbatim. Nothing is lost.
+If every cited reference within a single citation is unresolvable (no citation key from any source), ZotLit keeps that citation's original HTML verbatim. Nothing is lost.
 
 ## Render annotations from template
 

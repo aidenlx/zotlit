@@ -153,7 +153,7 @@ function ItemTable({ rows }: { rows: Item[] }) {
       <table className="w-full border-collapse text-left text-sm">
         <thead className="bg-neutral-50 text-neutral-700">
           <tr>
-            <th className="px-3 py-2 font-medium">Citekey</th>
+            <th className="px-3 py-2 font-medium">Citation key</th>
             <th className="px-3 py-2 font-medium">Title</th>
             <th className="px-3 py-2 font-medium">Author</th>
             <th className="px-3 py-2 font-medium">Date</th>

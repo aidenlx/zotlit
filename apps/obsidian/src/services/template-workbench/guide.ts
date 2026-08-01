@@ -314,8 +314,9 @@ FIELD ROWS
   frontmatter-eval reports one row per entry, in YAML write order, as
   { key, value, source, language, merge, inert?, error? }. value is absent
   when error or inert is present instead. source is "system" for the
-  zotero-key row (always present) and the citekey row (present only when the
-  item has a citation key); every configured field reports "user".`;
+  zotero-key row (always present) and the citation key row (the compatibility
+  frontmatter key 'citekey', present only when the item has one); every
+  configured field reports "user".`;
 
 /** Canonical `topic` registry for `template-guide`. */
 export const GUIDE_TOPICS = {

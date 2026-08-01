@@ -1,53 +1,53 @@
 ---
-title: "How citekey links work"
-description: "How ZotLit makes bracketed [@citekey] citations behave as clickable, hoverable links in the editor, and why they only work in Live Preview and Source mode."
+title: "How citation key links work"
+description: "How ZotLit makes bracketed [@key] citations behave as clickable, hoverable links in the editor, and why they only work in Live Preview and Source mode."
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-ZotLit makes bracketed `[@citekey]` citations in your notes behave like internal links. It does this by hooking into Obsidian's editor so that the citekey is classified as an internal link, the same kind of link a `[[wikilink]]` produces.
+ZotLit makes bracketed `[@key]` citations in your notes behave like internal links. It does this by hooking into Obsidian's editor so that the citation key is classified as an internal link, the same kind of link a `[[wikilink]]` produces.
 
 ## What happens in the editor
 
-When a bracketed citation such as `[@citekey]` appears in Live Preview or Source mode, ZotLit tells Obsidian's editor to treat the citekey as an internal link. From that point on, Obsidian's own link machinery handles everything:
+When a bracketed citation such as `[@key]` appears in Live Preview or Source mode, ZotLit tells Obsidian's editor to treat the citation key as an internal link. From that point on, Obsidian's own link machinery handles everything:
 
-- **Hover preview.** Hovering over the citekey triggers Obsidian's built-in page preview, the same popup you see when hovering a wikilink.
-- **Click navigation.** Clicking the citekey opens the corresponding literature note, the same way clicking a wikilink opens the linked note.
+- **Hover preview.** Hovering over the citation key triggers Obsidian's built-in page preview, the same popup you see when hovering a wikilink.
+- **Click navigation.** Clicking the citation key opens the corresponding literature note, the same way clicking a wikilink opens the linked note.
 
-ZotLit does not reimplement hover preview or click navigation. It registers the citekey as an internal link, and Obsidian's existing behavior takes over.
+ZotLit does not reimplement hover preview or click navigation. It registers the citation key as an internal link, and Obsidian's existing behavior takes over.
 
 ## What gets recognized
 
-A citekey becomes a link only when it sits inside square brackets. The recognized forms are:
+A citation key becomes a link only when it sits inside square brackets. The recognized forms are:
 
 - `[@key]` (single cite)
 - `[@key, p. 3]` (cite with a locator)
-- `[@a; @b]` (multi-cite; each citekey is its own link)
+- `[@a; @b]` (multi-cite; each citation key is its own link)
 
 The brackets matter because Obsidian's editor already displays bracketed text as a link, and that display is what ZotLit's hook builds on. A bare `@key` outside brackets is ordinary text to the editor. It gets no hover preview and no click navigation, even though Pandoc accepts the bare form as a citation.
 
 ## What happens when you click
 
-If a literature note already exists for the citekey, clicking opens that note directly. If no note exists yet, ZotLit creates one from the matching Zotero item and then opens it.
+If a literature note already exists for the citation key, clicking opens that note directly. If no note exists yet, ZotLit creates one from the matching Zotero item and then opens it.
 
-For the full step-by-step details, including error messages and library resolution, see [Open a note from a citekey](/docs/how-to/create-and-open-notes#open-a-note-from-a-citekey).
+For the full step-by-step details, including error messages and library resolution, see [Open a note from a citation key](/docs/how-to/create-and-open-notes#open-a-note-from-a-citation-key).
 
 ## Reading mode limitation [#reading-mode]
 
 <Callout type="warn" title="Live Preview and Source mode only">
-  Citekey links work only in Live Preview and Source mode. They do not work in
-  Reading (Preview) mode.
+  Citation key links work only in Live Preview and Source mode. They do not work
+  in Reading (Preview) mode.
 </Callout>
 
-The citekey hook applies to Obsidian's live editor view, which is backed by the CodeMirror 6 text editor. Reading mode uses a separate rendering path: it converts Markdown to HTML through a post-processor pipeline that never passes through the live editor. Because the editor is not involved, there is nothing for ZotLit's hook to attach to, and citekey spans render as plain text.
+The citation key hook applies to Obsidian's live editor view, which is backed by the CodeMirror 6 text editor. Reading mode uses a separate rendering path: it converts Markdown to HTML through a post-processor pipeline that never passes through the live editor. Because the editor is not involved, there is nothing for ZotLit's hook to attach to, and citation key spans render as plain text.
 
 ## See also
 
 <Cards>
   <Card
     title="Create and open literature notes"
-    description="Open or create a literature note from a citekey click, the quick switcher, or the Zotero context menu."
+    description="Open or create a literature note from a citation key click, the quick switcher, or the Zotero context menu."
     href="/docs/how-to/create-and-open-notes"
   />
   <Card

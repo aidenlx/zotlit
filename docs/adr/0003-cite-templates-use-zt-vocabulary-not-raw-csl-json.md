@@ -10,4 +10,4 @@ POST_ALPHA §1.4 recommended CSL-JSON field names for the cite-template vocabula
 ## Considered options
 
 - **Raw CSL-JSON item data in cite templates** (hyphenated keys, zero mapping on the embedded leg, `itemToCSLJSON` for the DB leg): rejected — splits the user-facing template vocabulary in two (`zt.containerTitle` in note.eta vs `c["container-title"]` in cite.eta) and hyphenated keys are hostile in Eta.
-- **Citekey-only embedded leg** (no reverse mapping): rejected — cross-library and degraded-DB cites would silently render blanks in data-driven cite templates.
+- **Citation-key-only embedded leg** (no reverse mapping): rejected — cross-library and degraded-DB cites would silently render blanks in data-driven cite templates.
