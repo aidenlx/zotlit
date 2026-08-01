@@ -15,12 +15,6 @@ ZotLit now requires Obsidian 1.13.4 or newer. This release also requires the new
 
 `item.extra` in citation templates now uses the same parsed `ItemExtra` shape as note templates. If a template reads the raw text, use `item.extra.raw`. See the [template data reference](/docs/reference/templates/data#extra-field).
 
-### Attachment import approvals
-
-Zotero linked files stay in an external folder instead of being copied into Zotero storage. ZotLit now copies imported attachments only from trusted locations, so it checks these external paths before copying files into your vault. See [Zotero's guide to linked files](https://www.zotero.org/support/attaching_files#adding_linked_files).
-
-Zotero storage, the annotation cache, and the linked-attachment folder remain available automatically. To import from another folder, add it under **Settings > ZotLit > Attachments > Approved folders**. When a folder is not approved, ZotLit keeps a direct `file://` link and reports the skipped file. Approve the folder and re-import the note to copy it into the vault.
-
 ## What's New
 
 ### Template Workbench
@@ -41,10 +35,8 @@ The Liquid syntax now includes `arr_prefix`, `arr_suffix`, and `arr_replace` for
 
 Zotero context menus can copy the keys of selected items, attachments, notes, and annotations. Reader annotation menus also provide a copy action. In Obsidian, use **ZotLit: Copy item key** from a literature note's command or file menu.
 
-### Other improvements
-
-- Language packs now match the ZotLit version that downloads them, so translations stay aligned with the installed plugin.
-
 ## Bug Fixes
 
 - Fixed inconsistent item summaries between the Annotation View, Template Data Explorer, and Citation Suggester. These views now use the same title, creator, and date formatting.
+- Attachments now copy from approved folders. Only Zotero storage, the annotation cache, and linked-attachment folders are approved by default. Add other folders under **Settings > ZotLit > Attachments > Approved folders**.
+- Language packs now match the installed ZotLit version.
