@@ -4,6 +4,12 @@ import { Temporal } from "@zotlit/shared/temporal";
 export const DOCS_SITE_URL = "https://zotlit.aidenlx.site";
 
 /**
+ * Host and repository ZotLit's releases are served from, as shown to the user
+ * when a download is attributed to its source.
+ */
+export const RELEASE_ORIGIN = "github.com/aidenlx/zotlit";
+
+/**
  * Base URL of the Resource Release serving a plugin version — the `res-<version>`
  * release carrying the Language Packs and template data JSON Schemas a build
  * downloads at runtime. The plugin's own release tag carries only `main.js`,
@@ -12,7 +18,7 @@ export const DOCS_SITE_URL = "https://zotlit.aidenlx.site";
  * @see docs/adr/0019-runtime-assets-ship-on-a-parallel-resource-release.md
  */
 export const resourceReleaseUrl = (pluginVersion: string): string =>
-  `https://github.com/aidenlx/zotlit/releases/download/res-${pluginVersion}`;
+  `https://${RELEASE_ORIGIN}/releases/download/res-${pluginVersion}`;
 
 export const FIELD_ZOTERO_KEY = "zotero-key";
 export const FIELD_CITEKEY = "citekey";

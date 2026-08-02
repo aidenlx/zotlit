@@ -6,7 +6,7 @@ import {
   type PackSource,
 } from "@zotlit/obsidian-i18n";
 
-import { resourceReleaseUrl } from "./constants.js";
+import { RELEASE_ORIGIN, resourceReleaseUrl } from "./constants.js";
 import { catalog } from "./i18n/generated/catalog.js";
 import { runtime } from "./i18n/generated/runtime.js";
 import { getLogger } from "./log.js";
@@ -28,7 +28,7 @@ const packSource = (pluginVersion: string): PackSource =>
       }
     : {
         baseUrl: resourceReleaseUrl(pluginVersion),
-        origin: "github.com/aidenlx/zotlit",
+        origin: RELEASE_ORIGIN,
       };
 
 export type LanguagePackLifecycle = ReturnType<typeof initI18n>;
