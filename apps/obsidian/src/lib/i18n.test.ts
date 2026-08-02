@@ -97,7 +97,7 @@ describe("ZotLit Language Pack setting integration", () => {
     expect(m.hello()).toBe(PACK_MESSAGE);
   });
 
-  test("downloads the pack from the release tag of the running plugin version", async () => {
+  test("downloads the pack from the Resource Release of the running plugin version", async () => {
     const harness = makePorts({ language: "zh", response: CHINESE_PACK });
     const lifecycle = initI18n({
       pluginVersion: "2.0.0-beta.4",
@@ -107,7 +107,7 @@ describe("ZotLit Language Pack setting integration", () => {
     await lifecycle.install();
 
     expect(harness.requestUrl).toHaveBeenCalledWith({
-      url: "https://github.com/aidenlx/zotlit/releases/download/2.0.0-beta.4/zh-CN.json",
+      url: "https://github.com/aidenlx/zotlit/releases/download/res-2.0.0-beta.4/zh-CN.json",
     });
   });
 

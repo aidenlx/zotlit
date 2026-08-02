@@ -41,6 +41,7 @@ jobs:
           version="$(node -p "require('./apps/obsidian/package.json').version")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$version" >> "$GITHUB_OUTPUT"
+          echo "res_tag=res-$version" >> "$GITHUB_OUTPUT"
           prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
             "require('semver').prerelease('$version') !== null")"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
@@ -59,18 +60,67 @@ jobs:
         if: steps.gate.outputs.exists == 'false'
         run: pnpm turbo run build --filter=@zotlit/obsidian
 
-      # Language Packs are assets of the plugin's own release tag, so an
-      # installed build downloads the pack compiled from its own message set.
-      # Staged into one directory so the base locale — which ships bundled
-      # inside main.js — is skipped once and every later step globs one place.
-      - name: Stage Language Packs
+      # Everything the installed plugin downloads at runtime, staged into one
+      # directory so the base locale — which ships bundled inside main.js — is
+      # skipped once and every later step globs one place.
+      - name: Stage resources
         if: steps.gate.outputs.exists == 'false'
         run: |
           pnpm turbo run generate:language-packs --filter=@zotlit/obsidian
-          mkdir -p apps/obsidian/dist/language-packs
+          mkdir -p apps/obsidian/dist/resources
           for pack in apps/obsidian/src/lib/i18n/generated/*.json; do
             [ "${pack##*/}" = "en.json" ] && continue
-            cp "$pack" apps/obsidian/dist/language-packs/
+            cp "$pack" apps/obsidian/dist/resources/
+          done
+          cp packages/db/src/contract/generated/*.schema.json apps/obsidian/dist/resources/
+
+      # The plugin release carries only the three files the Obsidian community
+      # scanner accepts, so everything else lives on a Resource Release pinned to
+      # the same version. Created before the plugin release, which is the sole
+      # gate: while the plugin tag is absent no installed build can name this
+      # version, so a retry may re-upload assets over a partial earlier run.
+      - name: Create Resource Release
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          if ! gh release view "${{ steps.meta.outputs.res_tag }}" >/dev/null 2>&1; then
+            notes=$(printf '%s\n\n%s\n%s' \
+              "Runtime resources for ZotLit Obsidian plugin v${{ steps.meta.outputs.version }}: Language Packs and template data JSON Schemas." \
+              "The installed plugin downloads these on its own — there is nothing to install by hand." \
+              "Get the plugin from the ${{ steps.meta.outputs.tag }} release.")
+            gh release create "${{ steps.meta.outputs.res_tag }}" \
+              --title "${{ steps.meta.outputs.res_tag }}" \
+              --target "${{ github.sha }}" \
+              --notes "$notes" \
+              ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '' }} \
+              --latest=false
+          fi
+          gh release upload "${{ steps.meta.outputs.res_tag }}" \
+            apps/obsidian/dist/resources/* --clobber
+
+      # Downloads each resource anonymously from the versioned URL the plugin
+      # composes, so a missed or corrupted upload fails the run loudly — before
+      # the plugin release exists, which keeps the failure free of cleanup.
+      - name: Verify resources
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          download_dir="$(mktemp -d)"
+          for resource in apps/obsidian/dist/resources/*; do
+            file_name="${resource##*/}"
+            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.meta.outputs.res_tag }}/$file_name"
+            for attempt in 1 2 3 4 5; do
+              if curl --fail --silent --show-error --location \
+                --header "Cache-Control: no-cache" \
+                --output "$download_dir/$file_name" \
+                "$url" &&
+                cmp --silent "$resource" "$download_dir/$file_name"; then
+                break
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error file=$resource::Anonymous download did not match the staged resource"
+                exit 1
+              fi
+              sleep 2
+            done
           done
 
       - name: Create release
@@ -86,34 +136,7 @@ jobs:
             ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }} \
             apps/obsidian/dist/main.js \
             apps/obsidian/dist/manifest.json \
-            apps/obsidian/dist/styles.css \
-            apps/obsidian/dist/language-packs/*.json \
-            packages/db/src/contract/generated/*.schema.json
-
-      # Downloads each pack anonymously from the versioned URL the plugin
-      # composes, so a missed or corrupted upload fails the release loudly.
-      - name: Verify Language Packs
-        if: steps.gate.outputs.exists == 'false'
-        run: |
-          download_dir="$(mktemp -d)"
-          for pack in apps/obsidian/dist/language-packs/*.json; do
-            file_name="${pack##*/}"
-            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.meta.outputs.tag }}/$file_name"
-            for attempt in 1 2 3 4 5; do
-              if curl --fail --silent --show-error --location \
-                --header "Cache-Control: no-cache" \
-                --output "$download_dir/$file_name" \
-                "$url" &&
-                cmp --silent "$pack" "$download_dir/$file_name"; then
-                break
-              fi
-              if [ "$attempt" -eq 5 ]; then
-                echo "::error file=$pack::Anonymous download did not match the generated Language Pack"
-                exit 1
-              fi
-              sleep 2
-            done
-          done
+            apps/obsidian/dist/styles.css
 
       - name: Attest provenance
         if: steps.gate.outputs.exists == 'false'
@@ -123,8 +146,7 @@ jobs:
             apps/obsidian/dist/main.js
             apps/obsidian/dist/manifest.json
             apps/obsidian/dist/styles.css
-            apps/obsidian/dist/language-packs/*.json
-            packages/db/src/contract/generated/*.schema.json
+            apps/obsidian/dist/resources/*
 
   zotero:
     runs-on: ubuntu-latest

@@ -1060,7 +1060,7 @@ describe("Template Workbench CLI", () => {
         CONTRACT_ROOT_NAMES.map((root) => [
           root,
           {
-            url: `https://github.com/aidenlx/zotlit/releases/download/${PLUGIN_VERSION}/${root}.schema.json`,
+            url: `https://github.com/aidenlx/zotlit/releases/download/res-${PLUGIN_VERSION}/${root}.schema.json`,
             fileName: `zotlit-${root}-${PLUGIN_VERSION}.schema.json`,
           },
         ]),

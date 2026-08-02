@@ -1,5 +1,10 @@
 # Language Packs ship as version-pinned release assets
 
+> **Status: superseded by ADR-0019**
+> ([Runtime assets ship on a parallel Resource Release](./0019-runtime-assets-ship-on-a-parallel-resource-release.md)),
+> which keeps the version pinning below but moves the assets off the plugin
+> release onto a parallel Resource Release. Kept for the record.
+
 Each plugin release tag carries its own Language Pack assets, uploaded from the
 release commit inside the same tag-gated steps as the plugin binaries. ZotLit's
 release policy composes the Pack Source base URL from the plugin version it

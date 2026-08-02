@@ -43,9 +43,12 @@ counterpart line before merging a release PR.
 2. Run `pnpm release` — the interactive script bumps the version, syncs
    manifests, commits, pushes, and opens a PR.
 3. CI runs format check → lint → test on the PR. Merge when green.
-4. On merge, `release.yml` auto-creates the GitHub release and uploads assets,
-   the version's Language Packs among them — so a translation fix reaches users
-   with the next plugin release.
+4. On merge, `release.yml` auto-creates the GitHub release and uploads assets.
+   The Obsidian job cuts **two** releases per version: `<version>` with the three
+   files the community-plugin scanner accepts, and `res-<version>` with the
+   version's Language Packs and template data JSON Schemas — so a translation fix
+   reaches users with the next plugin release. See
+   [docs/CI_SETUP.md](docs/CI_SETUP.md#the-resource-release-res-version).
 
 ### Beta cycle
 

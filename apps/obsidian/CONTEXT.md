@@ -162,6 +162,10 @@ _Avoid_: direct read, read-only mode (all modes are read-only)
 
 ### Releases and onboarding
 
+**Resource Release**:
+The release that carries what an installed build downloads at runtime — the Language Packs of every locale except the bundled base one, and the template data JSON Schemas. One exists per plugin release, named for that version, holding the assets built from the same commit; the plugin's own release carries only the three files the Obsidian community-plugin scanner accepts.
+_Avoid_: pack release, asset release
+
 **Welcome View** _(Obsidian)_:
 The onboarding tab opened directly in the active leaf on the plugin's first launch in a vault — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. Combines quick-start steps, live setup actions, a Zotero connection status readout, documentation links, and (in the upgraded state) the Migration Prompt.
 

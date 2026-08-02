@@ -3,6 +3,17 @@ import { Temporal } from "@zotlit/shared/temporal";
 /** @see https://zotlit.aidenlx.site — the v2 documentation site. */
 export const DOCS_SITE_URL = "https://zotlit.aidenlx.site";
 
+/**
+ * Base URL of the Resource Release serving a plugin version — the `res-<version>`
+ * release carrying the Language Packs and template data JSON Schemas a build
+ * downloads at runtime. The plugin's own release tag carries only `main.js`,
+ * `manifest.json`, and `styles.css`.
+ *
+ * @see docs/adr/0019-runtime-assets-ship-on-a-parallel-resource-release.md
+ */
+export const resourceReleaseUrl = (pluginVersion: string): string =>
+  `https://github.com/aidenlx/zotlit/releases/download/res-${pluginVersion}`;
+
 export const FIELD_ZOTERO_KEY = "zotero-key";
 export const FIELD_CITEKEY = "citekey";
 /**

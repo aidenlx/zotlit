@@ -6,6 +6,7 @@ import {
   type PackSource,
 } from "@zotlit/obsidian-i18n";
 
+import { resourceReleaseUrl } from "./constants.js";
 import { catalog } from "./i18n/generated/catalog.js";
 import { runtime } from "./i18n/generated/runtime.js";
 import { getLogger } from "./log.js";
@@ -13,11 +14,11 @@ import { getLogger } from "./log.js";
 const logger = getLogger("i18n");
 
 /**
- * ZotLit's release policy: Language Packs are assets of the plugin's own
- * release tag, which is the version verbatim, so a build downloads the pack
- * compiled from its own message set.
+ * ZotLit's release policy: Language Packs are assets of the Resource Release
+ * pinned to the running plugin version, so a build downloads the pack compiled
+ * from its own message set.
  *
- * @see docs/adr/0018-language-packs-ship-as-version-pinned-release-assets.md
+ * @see docs/adr/0019-runtime-assets-ship-on-a-parallel-resource-release.md
  */
 const packSource = (pluginVersion: string): PackSource =>
   typeof __LANGUAGE_PACK_DEV_SERVER__ === "string"
@@ -26,7 +27,7 @@ const packSource = (pluginVersion: string): PackSource =>
         origin: new URL(__LANGUAGE_PACK_DEV_SERVER__).host,
       }
     : {
-        baseUrl: `https://github.com/aidenlx/zotlit/releases/download/${pluginVersion}`,
+        baseUrl: resourceReleaseUrl(pluginVersion),
         origin: "github.com/aidenlx/zotlit",
       };
 

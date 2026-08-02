@@ -2,13 +2,7 @@
 
 import { CONTRACT_ROOTS, type ContractRoot } from "@zotlit/db";
 
-/**
- * Release CI uploads one `<root>.schema.json` per contract root to the plugin's
- * own version tag, next to `main.js`. A build therefore reaches the schema its
- * own contract emitted by naming `manifest.version` in the path.
- */
-const SCHEMA_RELEASE_BASE_URL =
-  "https://github.com/aidenlx/zotlit/releases/download";
+import { resourceReleaseUrl } from "@/lib/constants";
 
 /** The accepted `root` values, in the order the contract declares them. */
 export const CONTRACT_ROOT_NAMES: readonly ContractRoot[] = CONTRACT_ROOTS;
@@ -30,7 +24,12 @@ export interface SchemaAsset {
   fileName: string;
 }
 
-/** Published schema of every root, as `template-schema` reports them. */
+/**
+ * Published schema of every root, as `template-schema` reports them. Release CI
+ * uploads one `<root>.schema.json` per contract root to the Resource Release of
+ * the version it built, so a build reaches the schema its own contract emitted
+ * by naming `manifest.version`.
+ */
 export function schemaAssets(
   pluginVersion: string,
 ): Record<ContractRoot, SchemaAsset> {
@@ -38,7 +37,7 @@ export function schemaAssets(
     CONTRACT_ROOTS.map((root) => [
       root,
       {
-        url: `${SCHEMA_RELEASE_BASE_URL}/${pluginVersion}/${root}.schema.json`,
+        url: `${resourceReleaseUrl(pluginVersion)}/${root}.schema.json`,
         fileName: `zotlit-${root}-${pluginVersion}.schema.json`,
       },
     ]),
