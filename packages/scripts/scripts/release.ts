@@ -332,7 +332,7 @@ async function syncTestVaultPrevVersion(
   }
 
   const data = JSON.parse(raw) as Record<string, unknown>;
-  data["release.previous-version"] = obsidian.current;
+  data["release.previous-version"] = obsidian.next;
   await writeFile(dataPath, JSON.stringify(data, null, 2));
   staged.add(dataPath);
 }
