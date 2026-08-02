@@ -8,6 +8,7 @@
 - [ZotLit Protocol](./packages/protocol/CONTEXT.md) — the wire format between the Zotero companion and the Obsidian plugin: permanent `obsidian://` URIs versus ephemeral version-gated HTTP requests
 - [ZotLit Documentation](./apps/docs/CONTEXT.md) — user-facing naming and framing rules for the docs site (zotlit.aidenlx.site)
 - [Filter Expression](./packages/filter-expression/CONTEXT.md) — the ZotLit-owned language of filter expressions
+- [Item Query](./packages/item-query/CONTEXT.md) — field-oriented queries over top-level Zotero Items
 
 ## Relationships
 
@@ -16,4 +17,6 @@
 - **templates ↔ obsidian**: `@zotlit/templates` provides the Eta rendering engine and managed-region helpers; the plugin owns template discovery, compilation caching, and the `zt.*` data contract
 - **obsidian-i18n → obsidian**: `@zotlit/obsidian-i18n` owns Message and Language Pack semantics; ZotLit supplies its English base locale, release locations, Locale Aliases, ports, logging, consent copy, notices, and settings UI
 - **obsidian → docs**: the docs site documents the plugin's user-facing surface using the Obsidian Plugin context's vocabulary verbatim; docs-only naming (e.g. "the companion") lives in the Documentation context
-- **filter-expression → bases-query**: the language defines ZotLit Filter Expression syntax; the query engine consumes its parse results and owns evaluation semantics
+- **filter-expression → item-query**: the language defines ZotLit Filter Expression syntax; Item Query consumes its parse results and owns evaluation semantics
+- **db → item-query**: the data model supplies Items and relation data; Item Query filters, sorts, and projects them
+- **item-query → obsidian**: the query core supplies one result set; the plugin exposes it through the Obsidian CLI

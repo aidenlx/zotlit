@@ -10,4 +10,4 @@ _Avoid_: Obsidian expression, Bases expression
 
 ## Vocabulary migration
 
-`@zotlit/bases-query` still uses Bases vocabulary in its package name, its source comments, and its context document. That package owns that rename. Use **Filter Expression** for the language in this package and in new consumer code.
+The former `@zotlit/bases-query` proof of concept used Bases vocabulary in its package name, source comments, and context document. Its production successor is **Item Query**. Use **Filter Expression** for the language in this package and in consumer code.

@@ -1,0 +1,7 @@
+# Item Query is a deep module with two operations
+
+`@zotlit/item-query` exposes `queryItems(db, query, { signal })` and `describeItemQuery(db, { signal })`. The first operation hides parsing, validation, planning, SQL candidate narrowing, hydration, evaluation, sorting, projection, cancellation, and truncation behind one interface. The second returns the Item Query Schema from the same registries that execution uses. Compilation stages, evaluator values, SQL fragments, relation loaders, and scheduler controls remain implementation details.
+
+The module accepts `NodeDatabaseClient` directly because Zotero SQLite is a local-substitutable dependency and fixture SQLite tests cross the same interface. A repository port would expose internal query choreography without a second real adapter. The Obsidian adapter owns source leases, Target Library resolution, CLI decoding, its 100-row default, Temporal wire serialization, and the versioned envelope.
+
+A successful Query Result includes the normalized Item Query, Query Rows, `returnedCount`, and `truncated`. Projection values use one recursive `ProjectionValue` type. Invalid requests reject with one typed `ItemQueryError` carrying a stable code, location, message, and recovery hint; cancellation, database failures, and implementation failures remain distinct. Scalar fields may sort in memory when SQL cannot reproduce their exact order, so SQL ordering is an optimization rather than a requirement of the public sort contract.
