@@ -12,6 +12,7 @@ import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
 import { attachmentPageItems } from "./attachments";
+import { citationsPageItems } from "./citations";
 import {
   type AttachmentImportActions,
   type ReleaseTabActions,
@@ -158,23 +159,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
         },
       },
       {
-        name: m.settings_citation_suggester_name(),
-        desc: m.settings_citation_suggester_desc(),
-        control: { type: "toggle", key: "citation.editor-suggester" },
-      },
-      {
-        name: m.settings_citation_at_trigger_name(),
-        desc: m.settings_citation_at_trigger_desc(),
-        visible: () =>
-          ctx.settings.current?.["citation.editor-suggester"] ?? true,
-        control: { type: "toggle", key: "citation.at-trigger" },
-      },
-      {
-        name: m.settings_citation_show_citekey_name(),
-        desc: m.settings_citation_show_citekey_desc(),
-        control: { type: "toggle", key: "citation.show-citekey-in-suggester" },
-      },
-      {
         name: m.settings_update_notices_name(),
         desc: m.settings_update_notices_desc(),
         control: { type: "toggle", key: "release.notices-enabled" },
@@ -185,6 +169,12 @@ export class ZotLitSettingTab extends PluginSettingTab {
       {
         type: "group",
         items: [
+          {
+            type: "page",
+            name: m.settings_page_citations(),
+            desc: m.settings_page_citations_desc(),
+            items: citationsPageItems(ctx),
+          },
           {
             type: "page",
             name: m.settings_page_database(),

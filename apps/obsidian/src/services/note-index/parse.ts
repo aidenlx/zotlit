@@ -4,7 +4,6 @@ import { isIndexedKey } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import {
-  FIELD_CITEKEY,
   FIELD_ZOTERO_KEY,
   FIELD_ZOTERO_LASTMOD,
   FIELD_ZOTERO_NOTE_KEY,
@@ -12,27 +11,34 @@ import {
 
 export interface FileContributions {
   itemKey: string | null;
-  citekey: string | null;
+  citationKey: string | null;
   noteKey: string | null;
 }
 
 export interface ContribDiff {
   empty: boolean;
   itemKey: { remove: string | null; add: string | null };
-  citekey: { remove: string | null; add: string | null };
+  citationKey: { remove: string | null; add: string | null };
   noteKey: { remove: string | null; add: string | null };
 }
 
 export const EMPTY_CONTRIBUTIONS: FileContributions = {
   itemKey: null,
-  citekey: null,
+  citationKey: null,
   noteKey: null,
 };
 
-export function fileContributions(cache: CachedMetadata): FileContributions {
+export function fileContributions(
+  cache: CachedMetadata,
+  citationKeyProperty: string | null,
+): FileContributions {
+  const itemKey = itemKeyFromFrontmatter(cache);
   return {
-    itemKey: itemKeyFromFrontmatter(cache),
-    citekey: citekeyFromFrontmatter(cache),
+    itemKey,
+    citationKey:
+      itemKey === null
+        ? null
+        : citationKeyFromFrontmatter(cache, citationKeyProperty),
     noteKey: noteKeyFromFrontmatter(cache),
   };
 }
@@ -58,18 +64,18 @@ export function diffContributions(
   next: FileContributions,
 ): ContribDiff {
   const itemKeyChanged = prev.itemKey !== next.itemKey;
-  const citekeyChanged = prev.citekey !== next.citekey;
+  const citationKeyChanged = prev.citationKey !== next.citationKey;
   const noteKeyChanged = prev.noteKey !== next.noteKey;
 
   return {
-    empty: !itemKeyChanged && !citekeyChanged && !noteKeyChanged,
+    empty: !itemKeyChanged && !citationKeyChanged && !noteKeyChanged,
     itemKey: {
       remove: itemKeyChanged ? prev.itemKey : null,
       add: itemKeyChanged ? next.itemKey : null,
     },
-    citekey: {
-      remove: citekeyChanged ? prev.citekey : null,
-      add: citekeyChanged ? next.citekey : null,
+    citationKey: {
+      remove: citationKeyChanged ? prev.citationKey : null,
+      add: citationKeyChanged ? next.citationKey : null,
     },
     noteKey: {
       remove: noteKeyChanged ? prev.noteKey : null,
@@ -78,8 +84,12 @@ export function diffContributions(
   };
 }
 
-function citekeyFromFrontmatter(cache: CachedMetadata): string | null {
-  const value = cache.frontmatter?.[FIELD_CITEKEY];
+function citationKeyFromFrontmatter(
+  cache: CachedMetadata,
+  property: string | null,
+): string | null {
+  if (property === null) return null;
+  const value = cache.frontmatter?.[property];
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 

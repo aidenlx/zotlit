@@ -19,7 +19,7 @@ The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered 
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
-Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. Includes system fields (`zotero-key`, `citekey`) and user-configured `{key, expression, language, merge strategy}` entries. Each expression declares its own language — Liquid (the default) or JavaScript — and always evaluates in that language; each field's merge strategy (replace, append arrays, keep existing) governs how the re-evaluated value combines with the value already on the note; JavaScript fields run only while JavaScript Templates is enabled on the device, and are otherwise inert — a note write that consumes the field set fails with an error naming them, existing notes untouched. Unmanaged keys are preserved. The user-configured entries are ordered, and that order is the write order for the fields on a newly created note; on an update, keys already on the note keep their position.
+Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. `zotero-key` is the system field; the ordered user-configured entries each declare `{key, expression, language, merge strategy}`, and the defaults include a `citekey` field sourced from `zt.citationKey`. Each expression declares its own language — Liquid (the default) or JavaScript — and always evaluates in that language; each field's merge strategy (replace, append arrays, keep existing) governs how the re-evaluated value combines with the value already on the note; JavaScript fields run only while JavaScript Templates is enabled on the device, and are otherwise inert — a note write that consumes the field set fails with an error naming them, existing notes untouched. Unmanaged keys are preserved. The user-configured entries are ordered, and that order is the write order for the fields on a newly created note; on an update, keys already on the note keep their position.
 
 ### Templates
 
@@ -128,10 +128,18 @@ _Avoid_: default trigger
 The opt-in Citation Suggester trigger: a bare ASCII `@` typed at a word boundary, never mid-word. Off by default. Having no closing delimiter, its query ends at the first space; an underscore in the query stands for a space in the search.
 _Avoid_: mention trigger, @-suggester
 
+**Citation Key Links** _(Obsidian)_:
+An optional editor feature that makes bracketed citation keys act as Obsidian internal links in Live Preview and Source mode, using the configured Citation Key Property to find Literature Notes. It starts off for new users and stays on when earlier settings migrate.
+_Avoid_: citekey click, citation click
+
 ### Index and identity
 
+**Citation Key Property**:
+The configurable Literature Note frontmatter property whose non-empty string value Citation Key Links use to map a citation key to a Literature Note. It defaults to `citekey` and is an ordinary Managed Frontmatter field.
+_Avoid_: citekey frontmatter (names only the default property), resolver key
+
 **Note Index**:
-A vault-wide in-memory index mapping frontmatter identifiers to Obsidian files. Three maps keyed on `zotero-key` (Literature Notes), the compatibility frontmatter key `citekey`, and `zotero-note-key` (Imported Notes). Rebuilt from Obsidian's metadata cache on startup and kept current via cache-change events. Its Literature-Note key set also answers the companion's `GET /literature-notes` note-status query, after the first full scan settles.
+A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. While Citation Key Links are enabled, it also maps each Literature Note's Citation Key Property value; metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
 
 ### Zotero connection
 

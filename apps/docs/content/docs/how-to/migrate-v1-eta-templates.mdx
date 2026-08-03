@@ -102,8 +102,8 @@ Two migration paths:
     | Aspect | v1 | v2 |
     |--------|----|----|
     | `path` order | leaf → root | root → leaf |
-    | `path` rendering | auto-rendered `"A > B > C"` | plain `string[]` — use `c.path.join(" > ")` |
-    | Singular alias | `it.collection` | removed — use `zt.collections` array |
+    | `path` rendering | auto-rendered `"A > B > C"` | plain `string[]`; use `c.path.join(" > ")` |
+    | Singular alias | `it.collection` | removed; use the `zt.collections` array |
 
     ```eta
     <%/* Collections coerce to their name in string contexts */%>
@@ -140,7 +140,7 @@ Two migration paths:
 
     | v1 | v2 |
     |----|-----|
-    | `it.notes` — array of `{title, content}` | `zt.notes` — array of `{key, title, noteLink()}` |
+    | `it.notes`: array of `{title, content}` | `zt.notes`: array of `{key, title, noteLink()}` |
     | Note content inlined | Content in a separate file; `noteLink()` links to it |
 
     The default content template renders child notes as a bulleted list of links:
@@ -291,7 +291,7 @@ Two migration paths:
 
     YAML escaping is handled automatically.
 
-    ZotLit manages reserved frontmatter keys that you cannot target from a user field. For literature notes: `zotero-key` and `citekey`. For imported notes: `zotero-note-key` and `zotero-lastmod`. See [Frontmatter reference](/docs/reference/templates/frontmatter) for details.
+    ZotLit manages reserved frontmatter keys that you cannot target from a user field. For Literature Notes, only `zotero-key` is reserved. For imported notes, `zotero-note-key` and `zotero-lastmod` are reserved. The default `citekey` entry is an ordinary Managed Frontmatter field. See [Frontmatter reference](/docs/reference/templates/frontmatter) for details.
 
     <Callout type="info" title="Language selector">
       JavaScript expressions (like `zt.authors.map(...)`) require selecting **JavaScript** in the Language dropdown for that field. The JavaScript Templates gate must be on.

@@ -14,17 +14,43 @@ Open settings from **Settings > Community plugins > ZotLit**.
 
 The hub page shows when you first open ZotLit settings.
 
-| Label                                | Key                                  | Control                                | Default       |
-| ------------------------------------ | ------------------------------------ | -------------------------------------- | ------------- |
-| **Default library**                  | `zotero.citation-library`            | Dropdown (lists your Zotero libraries) | My Library    |
-| **Literature note folder**           | `note.literature-folder`             | Folder picker                          | `literatures` |
-| **Citation suggester**               | `citation.editor-suggester`          | Toggle                                 | On            |
-| **At trigger**                       | `citation.at-trigger`                | Toggle                                 | Off           |
-| **Show citation key in suggestions** | `citation.show-citekey-in-suggester` | Toggle                                 | Off           |
+| Label                      | Key                       | Control                                | Default       |
+| -------------------------- | ------------------------- | -------------------------------------- | ------------- |
+| **Default library**        | `zotero.citation-library` | Dropdown (lists your Zotero libraries) | My Library    |
+| **Literature note folder** | `note.literature-folder`  | Folder picker                          | `literatures` |
+
+## Citations
+
+Open this page from **Settings → ZotLit → Citations**.
+
+### Citation suggestions
+
+| Label                                | Key                                  | Control | Default |
+| ------------------------------------ | ------------------------------------ | ------- | ------- |
+| **Citation suggester**               | `citation.editor-suggester`          | Toggle  | On      |
+| **`@` trigger**                      | `citation.at-trigger`                | Toggle  | Off     |
+| **Show citation key in suggestions** | `citation.show-citekey-in-suggester` | Toggle  | Off     |
 
 <Callout type="info">
-  **At trigger** is visible only when **Citation suggester** is on.
+  **`@` trigger** is visible only when **Citation suggester** is on.
 </Callout>
+
+### Citation key links
+
+| Label                     | Key                                  | Control | Default   |
+| ------------------------- | ------------------------------------ | ------- | --------- |
+| **Citation key links**    | `citation.key-links`                 | Toggle  | Off       |
+| **Citation key property** | `citation.key-links-frontmatter-key` | Text    | `citekey` |
+
+<Callout type="info">
+  **Citation key property** is visible only when **Citation key links** is on.
+  Earlier settings migrations keep **Citation key links** on. New installs use
+  the off default.
+</Callout>
+
+**Citation key links** opens bracketed citation keys in Live Preview and Source mode. The setting description links to [How citation key links work](/docs/concepts/how-citekey-links-work) and notes that the feature uses an internal Obsidian editor integration.
+
+**Citation key property** names the Literature Note frontmatter property used for citation key lookup. The value must be non-empty and cannot start or end with spaces.
 
 ## Zotero database
 

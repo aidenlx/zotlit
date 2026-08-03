@@ -16,6 +16,7 @@ import {
   USER_LIBRARY_ID,
   type Item,
 } from "@zotlit/db";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
@@ -26,6 +27,7 @@ import { type NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
 import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
 
 import { citationAtOffset } from "./parse";
@@ -41,6 +43,11 @@ export interface CitekeyClickDeps {
   noteFeature: NoteFeature;
   db: DatabaseService;
   settings: SettingsService;
+  install?: () => Promise<(() => void) | null>;
+}
+
+interface CitekeyClickEvents {
+  "missing-property": (property: string) => void;
 }
 
 /**
@@ -56,10 +63,14 @@ export class CitekeyClick extends Service<void> {
   readonly #noteFeature;
   readonly #db;
   readonly #settings;
+  readonly #install;
+  readonly #emitter = createNanoEvents<CitekeyClickEvents>();
 
   #uninstall: (() => void) | null = null;
   #installing = false;
   #disposed = false;
+  #enabled = false;
+  #missingProperty: string | null = null;
 
   ready: Promise<void>;
 
@@ -70,11 +81,25 @@ export class CitekeyClick extends Service<void> {
     this.#noteFeature = deps.noteFeature;
     this.#db = deps.db;
     this.#settings = deps.settings;
+    this.#install =
+      deps.install ??
+      (async () => {
+        const view = await firstLoadedMarkdownView(this.#app.workspace);
+        return view?.editMode ? this.#patch(view.editor, view.editMode) : null;
+      });
     this.ready = this.#load();
+  }
+
+  on<K extends keyof CitekeyClickEvents>(
+    event: K,
+    cb: CitekeyClickEvents[K],
+  ): () => void {
+    return this.#emitter.on(event, cb);
   }
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
+    await this.#settings.ready;
     const { workspace } = this.#app;
 
     stack.defer(() => {
@@ -91,21 +116,57 @@ export class CitekeyClick extends Service<void> {
       ),
     );
     workspace.onLayoutReady(() => void this.#tryInstall());
+    stack.defer(
+      this.#settings.subscribe((settings) => {
+        if (settings) this.#applySettings(settings);
+      }),
+    );
 
     this.commit(stack.move());
   }
 
   async #tryInstall(): Promise<void> {
-    if (this.#disposed || this.#uninstall || this.#installing) return;
+    if (!this.#enabled || this.#disposed || this.#uninstall || this.#installing)
+      return;
     this.#installing = true;
     try {
-      const view = await firstLoadedMarkdownView(this.#app.workspace);
-      if (!view?.editMode || this.#disposed || this.#uninstall) return;
-      this.#uninstall = this.#patch(view.editor, view.editMode);
-      logger.info("Citekey click patched");
+      const uninstall = await this.#install();
+      if (!uninstall) return;
+      if (!this.#enabled || this.#disposed || this.#uninstall) {
+        uninstall();
+        return;
+      }
+      this.#uninstall = uninstall;
+      logger.info("Citation key links patched");
     } finally {
       this.#installing = false;
     }
+  }
+
+  #applySettings(settings: Readonly<Settings>): void {
+    const enabled = settings["citation.key-links"];
+    const property = settings["citation.key-links-frontmatter-key"];
+    const missingProperty =
+      enabled &&
+      !settings["note.frontmatter-fields"].some(
+        (field) => field.key === property,
+      )
+        ? property
+        : null;
+    if (missingProperty !== null && missingProperty !== this.#missingProperty) {
+      this.#emitter.emit("missing-property", property);
+    }
+    this.#missingProperty = missingProperty;
+
+    if (enabled === this.#enabled) return;
+    this.#enabled = enabled;
+    if (enabled) {
+      void this.#tryInstall();
+      return;
+    }
+    this.#uninstall?.();
+    this.#uninstall = null;
+    logger.info("Citation key links unpatched");
   }
 
   /** Wrap both prototype methods; returns a combined uninstaller. */
@@ -149,10 +210,12 @@ export class CitekeyClick extends Service<void> {
     newLeaf: boolean | PaneType,
   ): Promise<void> {
     const { workspace } = this.#app;
+    await this.#noteIndex.whenIndexed();
 
     // A note may have appeared between building the token and the click.
-    const existing = this.#noteIndex.getNotesByCitekey(citekey)[0];
-    if (existing) {
+    const directMatches = this.#noteIndex.getNotesByCitationKey(citekey);
+    if (directMatches.length === 1) {
+      const existing = directMatches[0]!;
       await workspace.openLinkText(existing.path, "", newLeaf, {
         active: true,
       });
@@ -166,6 +229,14 @@ export class CitekeyClick extends Service<void> {
     const item = this.#resolveItem(citekey);
     if (!item) {
       new BaseNotice(m.notice_citekey_not_found({ citekey }));
+      return;
+    }
+
+    const authoritative = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
+    if (authoritative) {
+      await workspace.openLinkText(authoritative.path, "", newLeaf, {
+        active: true,
+      });
       return;
     }
 
@@ -190,10 +261,11 @@ type CreateToken = ClickableToken & { citekey?: string };
 
 /**
  * Build a clickable token for the `@citekey` at `pos`, or `null` when there is
- * none. An indexed citekey resolves straight to its note path; an unindexed one
- * carries the {@link CREATE_MARKER} so the trigger patch creates the note.
+ * none. Exactly one indexed citation-key match resolves straight to its note
+ * path; zero or multiple matches carry the {@link CREATE_MARKER} so the click
+ * can resolve the Zotero item and authoritative item-key index.
  */
-function findCitekeyToken(
+export function findCitekeyToken(
   editor: Editor,
   pos: EditorPosition,
   noteIndex: NoteIndex,
@@ -205,8 +277,9 @@ function findCitekeyToken(
     start: { line: pos.line, ch: token.start },
     end: { line: pos.line, ch: token.end },
   };
-  const existing = noteIndex.getNotesByCitekey(token.citekey)[0];
-  if (existing) {
+  const matches = noteIndex.getNotesByCitationKey(token.citekey);
+  if (matches.length === 1) {
+    const existing = matches[0]!;
     return { type: "internal-link", text: existing.path, ...range };
   }
   const createToken: CreateToken = {

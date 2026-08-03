@@ -37,6 +37,12 @@ export const DEFAULT_FRONTMATTER_FIELDS = freezeAll([
     merge: "replace",
     language: "liquid",
   },
+  {
+    key: "citekey",
+    expr: "zt.citationKey",
+    merge: "replace",
+    language: "liquid",
+  },
 ]) satisfies readonly FrontmatterField[];
 
 const TEMPLATE_FILE = regex(

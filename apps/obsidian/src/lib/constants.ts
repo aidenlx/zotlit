@@ -56,7 +56,6 @@ export function stringifyInstant(
  */
 export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   FIELD_ZOTERO_KEY,
-  FIELD_CITEKEY,
   FIELD_ZOTERO_NOTE_KEY,
   FIELD_ZOTERO_LASTMOD,
 ]);

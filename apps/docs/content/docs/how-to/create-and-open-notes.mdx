@@ -1,6 +1,6 @@
 ---
 title: "Create and open literature notes"
-description: "Open or create a literature note from a Zotero item using the quick switcher, a clickable citation key, or the Zotero right-click menu for bulk operations."
+description: "Open or create a literature note with the quick switcher, Citation Key Links, or the Zotero menu."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -39,13 +39,21 @@ The quick switcher searches your Zotero library and opens or creates a literatur
 
 ## Open a note from a citation key
 
-When you type or paste a bracketed citation like `[@key]` in the editor, ZotLit makes the citation key clickable. Click it to open or create the corresponding literature note.
+Enable **Citation key links** in **Settings → ZotLit → Citations**. New installs start with this setting off. ZotLit keeps it on when migrating earlier settings.
+
+Type or paste a bracketed citation like `[@key]` in Live Preview or Source mode. Click its citation key to open or create the corresponding Literature Note.
 
 ZotLit recognizes bracketed Pandoc citations: `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`. A bare `@key` outside brackets stays plain text.
 
+The **Citation key property** setting controls direct lookup and defaults to `citekey`. Exactly one matching Literature Note supports direct opening and hover preview. Files without `zotero-key` do not count as Literature Note matches.
+
+When the property has no match or multiple matches, a click looks up the Zotero item. ZotLit then checks the item's `zotero-key` before creating a note. This check prevents a duplicate when an existing Literature Note has a missing or different citation key property.
+
 If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
 
-Citation key clicks resolve against the **Default library** setting at the top of **Settings > ZotLit**. For details on how citation key links work under the hood, including hover preview and the Reading mode limitation, see [How citation key links work](/docs/concepts/how-citekey-links-work).
+Zotero lookup uses the **Default library** setting at the top of **Settings > ZotLit**. If the selected Citation Key Property is absent from Managed Frontmatter, ZotLit shows a notice but keeps the feature active. Existing unmanaged property values can still resolve notes.
+
+For details on the internal editor integration and the Reading mode limitation, see [How citation key links work](/docs/concepts/how-citekey-links-work).
 
 ## Create or update notes in bulk [#bulk]
 

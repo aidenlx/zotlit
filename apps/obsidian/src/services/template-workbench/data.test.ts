@@ -401,7 +401,6 @@ function createFixture(options?: {
         },
         noteIndex: {
           getNotesByItemKey: () => [],
-          getNotesByCitekey: () => [],
           getImportedNoteByNoteKey: () => [],
           whenIndexed: async () => {},
         },

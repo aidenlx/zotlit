@@ -8,7 +8,7 @@ import {
   mergeFrontmatterFields,
 } from "@zotlit/templates/frontmatter-merge";
 
-import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 
 export interface ApplyManagedFrontmatterOptions {
   compiled: readonly CompiledFrontmatterField[];
@@ -33,12 +33,4 @@ export function applyManagedFrontmatter(
   for (const [key, value] of Object.entries(userPatch)) fm[key] = value;
 
   fm[FIELD_ZOTERO_KEY] = zt.indexedKey;
-  if (zt.citationKey) {
-    fm[FIELD_CITEKEY] = zt.citationKey;
-  } else {
-    // In processFrontMatter, assigning `undefined` deletes the key while
-    // `null` serializes as YAML null. Use delete for absent system fields so
-    // create and refresh share the same explicit behavior.
-    delete fm[FIELD_CITEKEY];
-  }
 }

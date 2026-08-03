@@ -68,25 +68,16 @@ export async function resolveExcerptImageContext(opts: {
   return { kind: "vault", folderPath };
 }
 
-/** Look up an item's existing literature note: by indexed key first, falling back to citation key. */
+/** Look up an item's existing literature note by its authoritative indexed key. */
 export function findExistingLitNote(
-  noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getNotesByCitekey">,
-  item: { indexedKey: string; citationKey: string | null },
+  noteIndex: Pick<NoteIndex, "getNotesByItemKey">,
+  item: { indexedKey: string },
 ): TFile | null {
-  return (
-    noteIndex.getNotesByItemKey(item.indexedKey)[0] ??
-    (item.citationKey
-      ? noteIndex.getNotesByCitekey(item.citationKey)[0]
-      : undefined) ??
-    null
-  );
+  return noteIndex.getNotesByItemKey(item.indexedKey)[0] ?? null;
 }
 
 export interface InertNoteResolverDeps {
-  noteIndex: Pick<
-    NoteIndex,
-    "getNotesByItemKey" | "getNotesByCitekey" | "getImportedNoteByNoteKey"
-  >;
+  noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getImportedNoteByNoteKey">;
   fileManager: Pick<FileManager, "generateMarkdownLink">;
   vault: Pick<Vault, "getFileByPath">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
@@ -106,10 +97,7 @@ export function buildInertNoteResolvers(
   const resolveExistingNote = (
     item: Pick<TemplateFilenameItemData, "indexedKey" | "citationKey">,
   ): TFile | null =>
-    findExistingLitNote(deps.noteIndex, {
-      indexedKey: item.indexedKey,
-      citationKey: item.citationKey ?? null,
-    });
+    findExistingLitNote(deps.noteIndex, { indexedKey: item.indexedKey });
 
   const notImportedPlaceholder = () =>
     markInertPlaceholder(() => "", m.template_data_explorer_not_imported());

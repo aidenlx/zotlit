@@ -3,7 +3,7 @@ import { type SettingDefinitionItem } from "obsidian";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { confirm } from "@/lib/confirm";
-import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
@@ -75,10 +75,6 @@ function systemFieldsList(): SettingDefinitionItem<SettingsKey> {
       {
         name: FIELD_ZOTERO_KEY,
         desc: m.settings_note_frontmatter_system_zotero_key(),
-      },
-      {
-        name: FIELD_CITEKEY,
-        desc: m.settings_note_frontmatter_system_citekey(),
       },
     ],
   };

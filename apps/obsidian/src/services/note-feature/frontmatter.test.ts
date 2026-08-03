@@ -43,7 +43,7 @@ function makeContext(
 }
 
 describe("applyManagedFrontmatter", () => {
-  it("writes system fields and evaluated user expressions", () => {
+  it("writes the system item key and evaluated user expressions", () => {
     const fm: Record<string, unknown> = {};
     applyManagedFrontmatter(fm, makeContext(), {
       compiled: compileFrontmatter([
@@ -57,17 +57,26 @@ describe("applyManagedFrontmatter", () => {
     });
     expect(fm).toEqual({
       [FIELD_ZOTERO_KEY]: "ABC12345",
-      [FIELD_CITEKEY]: "smith2024",
       title: "A Study",
     });
   });
 
-  it("omits citekey when the item has none", () => {
+  it("writes a configured citekey field as null when the item has none", () => {
     const fm: Record<string, unknown> = { [FIELD_CITEKEY]: "old" };
     applyManagedFrontmatter(fm, makeContext({ citationKey: null }), {
-      compiled: compileFrontmatter([]),
+      compiled: compileFrontmatter([
+        {
+          key: FIELD_CITEKEY,
+          expr: "zt.citationKey",
+          merge: "replace",
+          language: "liquid",
+        },
+      ]),
     });
-    expect(fm).toEqual({ [FIELD_ZOTERO_KEY]: "ABC12345" });
+    expect(fm).toEqual({
+      [FIELD_CITEKEY]: null,
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+    });
   });
 
   it("skips reserved keys", () => {
@@ -85,7 +94,6 @@ describe("applyManagedFrontmatter", () => {
     });
     expect(fm).toEqual({
       [FIELD_ZOTERO_KEY]: "ABC12345",
-      [FIELD_CITEKEY]: "smith2024",
       year: 2024,
     });
   });
@@ -240,7 +248,6 @@ describe("applyManagedFrontmatter", () => {
     expect(fm).toEqual({
       aliases: ["old", "new"],
       title: "New",
-      [FIELD_CITEKEY]: "smith2024",
       [FIELD_ZOTERO_KEY]: "ABC12345",
     });
   });

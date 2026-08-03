@@ -92,7 +92,6 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
 }
 
 const INDEXED_KEY = "ITEM2345";
-const CITATION_KEY = "smith2024";
 const NOTE_PATH = "Literature/Smith 2024.md";
 const IMPORTED_NOTE_KEY = "NOTE1234";
 const IMPORTED_NOTE_PATH = "Zotero Notes/Methods.md";
@@ -105,8 +104,6 @@ function makeFakeNoteIndex() {
   return {
     getNotesByItemKey: (indexedKey: string) =>
       indexedKey === INDEXED_KEY ? [stubFile] : [],
-    getNotesByCitekey: (citekey: string) =>
-      citekey === CITATION_KEY ? [stubFile] : [],
     getImportedNoteByNoteKey: (noteKey: string) =>
       noteKey === IMPORTED_NOTE_KEY ? [importedFile] : [],
   };
@@ -201,14 +198,14 @@ describe("buildInertNoteResolvers", () => {
     ).toBeNull();
   });
 
-  it("falls back to citekey lookup when the itemKey index misses", () => {
+  it("does not treat a matching citation key as note identity", () => {
     const resolvers = buildResolvers();
     expect(
       resolvers.item.notePath({
         indexedKey: "UNKNOWN1",
-        citationKey: CITATION_KEY,
+        citationKey: "smith2024",
       } as never),
-    ).toBe(NOTE_PATH);
+    ).toBeNull();
   });
 
   it("delegates authorsShort to the real creatorSummary helper", () => {
@@ -393,10 +390,6 @@ describe("buildInertNoteResolvers — full browse queues no vault write (ADR 000
         callLog.push("noteIndex.getNotesByItemKey");
         return indexedKey === INDEXED_KEY ? [{ path: NOTE_PATH } as never] : [];
       },
-      getNotesByCitekey: (_citekey: string) => {
-        callLog.push("noteIndex.getNotesByCitekey");
-        return [];
-      },
       getImportedNoteByNoteKey: (_noteKey: string) => {
         callLog.push("noteIndex.getImportedNoteByNoteKey");
         return [];
@@ -454,7 +447,7 @@ describe("buildInertNoteResolvers — full browse queues no vault write (ADR 000
     resolvers.resolveChildNote?.(childNote).noteLink();
 
     // The recording fakes above expose only reads/renders (getNotesByItemKey,
-    // getNotesByCitekey, getImportedNoteByNoteKey, vault.getFileByPath,
+    // getImportedNoteByNoteKey, vault.getFileByPath,
     // fileManager.generateMarkdownLink) — no queue/create/mint surface exists
     // for the resolvers to call, so a full browse cannot invoke one.
     expect(callLog).toEqual([
@@ -562,10 +555,6 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
           ? [{ path: MAIN_NOTE_PATH } as never]
           : [];
       },
-      getNotesByCitekey: (_citekey: string) => {
-        callLog.push("noteIndex.getNotesByCitekey");
-        return [];
-      },
       getImportedNoteByNoteKey: (_noteKey: string) => {
         callLog.push("noteIndex.getImportedNoteByNoteKey");
         return [];
@@ -630,7 +619,7 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
     expect(callLog.length).toBeGreaterThan(0);
     for (const call of callLog) {
       expect(call).toMatch(
-        /^(noteIndex\.(getNotesByItemKey|getNotesByCitekey|getImportedNoteByNoteKey)|vault\.getFileByPath|fileManager\.generateMarkdownLink)$/,
+        /^(noteIndex\.(getNotesByItemKey|getImportedNoteByNoteKey)|vault\.getFileByPath|fileManager\.generateMarkdownLink)$/,
       );
     }
 

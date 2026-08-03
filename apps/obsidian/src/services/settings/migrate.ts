@@ -1,6 +1,13 @@
 import { isPlainObject } from "./classify";
 import { defaults, type LogLevel, type Settings } from "./schema";
 
+const DEFAULT_CITEKEY_FIELD = {
+  key: "citekey",
+  expr: "zt.citationKey",
+  merge: "replace",
+  language: "liquid",
+} as const;
+
 /**
  * Log4js severity levels
  */
@@ -246,4 +253,26 @@ function migrateFrontmatterFieldV1ToV2(item: unknown): unknown {
     return { ...item, expr: liquidExpr, language: "liquid" };
   }
   return { ...item, language: "javascript" };
+}
+
+/**
+ * Preserve Citation Key Links for existing users while moving `citekey` into
+ * the ordinary Managed Frontmatter field list.
+ */
+export function migrateV2ToV3(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+
+  const out: Record<string, unknown> = {
+    ...raw,
+    "citation.key-links": true,
+    "citation.key-links-frontmatter-key": "citekey",
+  };
+  const fields = out["note.frontmatter-fields"];
+  if (
+    Array.isArray(fields) &&
+    !fields.some((field) => isPlainObject(field) && field.key === "citekey")
+  ) {
+    out["note.frontmatter-fields"] = [...fields, DEFAULT_CITEKEY_FIELD];
+  }
+  return out;
 }

@@ -2277,12 +2277,7 @@ describe("Template Workbench CLI", () => {
             inert: true,
           },
         ],
-        reservedKeys: [
-          "zotero-key",
-          "citekey",
-          "zotero-note-key",
-          "zotero-lastmod",
-        ],
+        reservedKeys: ["zotero-key", "zotero-note-key", "zotero-lastmod"],
       });
     });
 
@@ -2500,18 +2495,11 @@ describe("Template Workbench CLI", () => {
             language: null,
             merge: null,
           },
-          {
-            key: "citekey",
-            value: "smith2024",
-            source: "system",
-            language: null,
-            merge: null,
-          },
         ],
       });
     });
 
-    it("omits the citekey row when the item has no citation key", async () => {
+    it("returns only the system item key when no user fields are configured", async () => {
       const handlers = makeHandlers({
         loadData: async () => ({
           kind: "data",
@@ -2586,13 +2574,6 @@ describe("Template Workbench CLI", () => {
         {
           key: "zotero-key",
           value: "ITEM2345",
-          source: "system",
-          language: null,
-          merge: null,
-        },
-        {
-          key: "citekey",
-          value: "smith2024",
           source: "system",
           language: null,
           merge: null,

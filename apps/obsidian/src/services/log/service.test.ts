@@ -2,7 +2,11 @@ import { type LogRecord, type Sink } from "@logtape/logtape";
 import { type DataAdapter, type Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { migrateLegacyV0, migrateV1ToV2 } from "@/services/settings/migrate";
+import {
+  migrateLegacyV0,
+  migrateV1ToV2,
+  migrateV2ToV3,
+} from "@/services/settings/migrate";
 import { SettingsService } from "@/services/settings/service";
 
 import { LoggingService } from "./service";
@@ -52,6 +56,7 @@ async function makeLogging(initial: Record<string, unknown> | null = null) {
     plugin: stub.plugin,
     migrateLegacy: migrateLegacyV0,
     migrateV1: migrateV1ToV2,
+    migrateV2: migrateV2ToV3,
   });
   const logging = new LoggingService({ plugin: stub.plugin, settings });
   await logging.ready;

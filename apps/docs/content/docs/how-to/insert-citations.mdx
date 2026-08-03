@@ -14,7 +14,7 @@ ZotLit inserts Markdown citations from your Zotero library in two ways: an inlin
 
 The citation suggester opens when you type `[@` (or `【@`) in the editor. A dropdown appears with items from your Zotero library.
 
-With the opt-in **At trigger** enabled, a bare `@` at a word boundary (start of line, after a space, or after an opening bracket or quote) also opens the suggester.
+With the opt-in **`@` trigger** enabled, a bare `@` at a word boundary (start of line, after a space, or after an opening bracket or quote) also opens the suggester.
 
 <Steps>
   <Step>
@@ -22,7 +22,7 @@ With the opt-in **At trigger** enabled, a bare `@` at a word boundary (start of 
 
     Type `[@` in the editor. A suggestion list appears.
 
-    With **At trigger** enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
+    With **`@` trigger** enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
 
   </Step>
   <Step>
@@ -52,9 +52,9 @@ If the selected item has no citation key, nothing is inserted and a notice appea
 
 ### Suggester settings
 
-- **Citation suggester** (default: on): enables or disables the inline suggester. Find it at the top of **Settings > ZotLit**.
-- **At trigger** (default: off): also opens the suggester on a bare `@` at a word boundary. Visible only while **Citation suggester** is on. Find it at the top of **Settings > ZotLit**.
-- **Show citation key in suggestions** (default: off): shows each item's citation key beside its title in the suggester list. Find it at the top of **Settings > ZotLit**.
+- **Citation suggester** (default: on): enables or disables the inline suggester. Find it in **Settings → ZotLit → Citations**.
+- **`@` trigger** (default: off): also opens the suggester on a bare `@` at a word boundary. Visible only while **Citation suggester** is on. Find it in **Settings → ZotLit → Citations**.
+- **Show citation key in suggestions** (default: off): shows each item's citation key beside its title in the suggester list. Find it in **Settings → ZotLit → Citations**.
 
 ## Insert from the command palette
 
@@ -90,7 +90,7 @@ ZotLit ships two citation templates:
 
 These are the default outputs. You can change them by editing the **Citation** and **Alternate citation** templates in **Settings > Templates**. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
 
-Only the bracketed primary form becomes a clickable [citation key link](/docs/concepts/how-citekey-links-work) in the editor. The default secondary form is bare, so it stays plain text.
+When [Citation Key Links](/docs/concepts/how-citekey-links-work) is enabled, the bracketed primary form becomes clickable in Live Preview and Source mode. The default secondary form is bare, so it stays plain text.
 
 ## See also
 

@@ -11,11 +11,7 @@ import { type FrontmatterLanguage } from "@zotlit/templates/constants";
 import { type RootVariableUse } from "@zotlit/templates/facade";
 import { type FrontmatterField } from "@zotlit/templates/frontmatter";
 
-import {
-  FIELD_CITEKEY,
-  FIELD_ZOTERO_KEY,
-  RESERVED_KEYS,
-} from "@/lib/constants";
+import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import {
   type CompileError,
@@ -804,16 +800,11 @@ function frontmatterEvalRow(
 }
 
 /**
- * The system rows every literature note carries: `zotero-key` always, and
- * `citekey` only when the item has a citation key — the same write order the
- * note feature's managed-frontmatter write path uses.
+ * The system row every literature note carries: `zotero-key`.
  */
 function systemFrontmatterRows(zt: object): FrontmatterEvalRow[] {
-  const { indexedKey, citationKey } = zt as {
-    indexedKey: string;
-    citationKey: string | null;
-  };
-  const rows: FrontmatterEvalRow[] = [
+  const { indexedKey } = zt as { indexedKey: string };
+  return [
     {
       key: FIELD_ZOTERO_KEY,
       source: "system",
@@ -822,16 +813,6 @@ function systemFrontmatterRows(zt: object): FrontmatterEvalRow[] {
       value: indexedKey,
     },
   ];
-  if (citationKey) {
-    rows.push({
-      key: FIELD_CITEKEY,
-      source: "system",
-      language: null,
-      merge: null,
-      value: citationKey,
-    });
-  }
-  return rows;
 }
 
 /** The one warning `frontmatter-eval` answers with when the JavaScript

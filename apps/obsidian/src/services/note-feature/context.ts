@@ -65,10 +65,7 @@ export interface NoteFeatureDeps {
    * The synchronous `renderAnnotation` path takes {@link SyncRenderDeps}.
    */
   db: Pick<DatabaseService, "acquireRead">;
-  noteIndex: Pick<
-    NoteIndex,
-    "ready" | "whenIndexed" | "getNotesByItemKey" | "getNotesByCitekey"
-  >;
+  noteIndex: Pick<NoteIndex, "ready" | "whenIndexed" | "getNotesByItemKey">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   settings: Pick<SettingsService, "loaded">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
@@ -227,11 +224,6 @@ function resolveNoteTarget(
 ): NoteTarget {
   const byItemKey = ctx.noteIndex.getNotesByItemKey(item.indexedKey)[0];
   if (byItemKey) return { path: byItemKey.path, file: byItemKey };
-
-  if (item.citationKey) {
-    const byCitekey = ctx.noteIndex.getNotesByCitekey(item.citationKey)[0];
-    if (byCitekey) return { path: byCitekey.path, file: byCitekey };
-  }
 
   const { settings, resolvingFallback } = options;
   if (settings === null) {

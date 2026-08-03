@@ -1,21 +1,27 @@
 ---
 title: "How citation key links work"
-description: "How ZotLit makes bracketed [@key] citations behave as clickable, hoverable links in the editor, and why they only work in Live Preview and Source mode."
+description: "How optional citation key links resolve Literature Notes in Live Preview and Source mode."
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-ZotLit makes bracketed `[@key]` citations in your notes behave like internal links. It does this by hooking into Obsidian's editor so that the citation key is classified as an internal link, the same kind of link a `[[wikilink]]` produces.
+Citation Key Links make bracketed `[@key]` citations clickable in Obsidian's editor. The feature is off on new installs and remains on when ZotLit migrates earlier settings.
+
+The **Citation key links** setting controls the feature. It relies on an internal Obsidian editor integration, so Obsidian changes can affect its behavior.
 
 ## What happens in the editor
 
-When a bracketed citation such as `[@key]` appears in Live Preview or Source mode, ZotLit tells Obsidian's editor to treat the citation key as an internal link. From that point on, Obsidian's own link machinery handles everything:
+When a bracketed citation appears in Live Preview or Source mode, ZotLit reads its citation key. It then checks the frontmatter property selected by **Citation key property**. This setting defaults to `citekey`.
 
-- **Hover preview.** Hovering over the citation key triggers Obsidian's built-in page preview, the same popup you see when hovering a wikilink.
-- **Click navigation.** Clicking the citation key opens the corresponding literature note, the same way clicking a wikilink opens the linked note.
+Only Literature Notes count as matches. A Markdown file must have a valid `zotero-key` property before its Citation Key Property value can resolve a link.
 
-ZotLit does not reimplement hover preview or click navigation. It registers the citation key as an internal link, and Obsidian's existing behavior takes over.
+When exactly one Literature Note has the matching property value:
+
+- **Hover preview** uses Obsidian's built-in page preview.
+- **Click navigation** opens that note directly.
+
+Zero or multiple direct matches do not provide hover preview. Clicking still starts Zotero resolution.
 
 ## What gets recognized
 
@@ -27,11 +33,21 @@ A citation key becomes a link only when it sits inside square brackets. The reco
 
 The brackets matter because Obsidian's editor already displays bracketed text as a link, and that display is what ZotLit's hook builds on. A bare `@key` outside brackets is ordinary text to the editor. It gets no hover preview and no click navigation, even though Pandoc accepts the bare form as a citation.
 
-## What happens when you click
+## How click resolution works
 
-If a literature note already exists for the citation key, clicking opens that note directly. If no note exists yet, ZotLit creates one from the matching Zotero item and then opens it.
+ZotLit first opens an exact, unique property match. Otherwise, it finds the Zotero item by citation key in the **Default library**.
+
+After finding the item, ZotLit checks the authoritative `zotero-key` identity again. It opens that Literature Note when one exists. ZotLit creates a note only when no matching `zotero-key` exists.
 
 For the full step-by-step details, including error messages and library resolution, see [Open a note from a citation key](/docs/how-to/create-and-open-notes#open-a-note-from-a-citation-key).
+
+## Citation Key Property and Managed Frontmatter
+
+The default Managed Frontmatter list includes a `citekey` field backed by `zt.citationKey`. You can edit, rename, or remove this ordinary managed field.
+
+Set **Citation key property** to the property that stores citation keys in your Literature Notes. If the selected property is missing from Managed Frontmatter, ZotLit shows a notice. Citation Key Links remain active, and existing unmanaged property values can still resolve notes.
+
+Only a non-empty string value can match a citation key. The `zotero-key` property remains the system identity for Literature Notes.
 
 ## Reading mode limitation [#reading-mode]
 
@@ -40,7 +56,7 @@ For the full step-by-step details, including error messages and library resoluti
   in Reading (Preview) mode.
 </Callout>
 
-The citation key hook applies to Obsidian's live editor view, which is backed by the CodeMirror 6 text editor. Reading mode uses a separate rendering path: it converts Markdown to HTML through a post-processor pipeline that never passes through the live editor. Because the editor is not involved, there is nothing for ZotLit's hook to attach to, and citation key spans render as plain text.
+The integration applies only to Obsidian's live editor. Reading mode uses a separate rendering path, so citation key spans remain plain text there.
 
 ## See also
 

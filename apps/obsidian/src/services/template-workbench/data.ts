@@ -55,10 +55,7 @@ export interface TemplateDataDeps {
   db: Pick<DatabaseService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,
-    | "getNotesByItemKey"
-    | "getNotesByCitekey"
-    | "getImportedNoteByNoteKey"
-    | "whenIndexed"
+    "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
   settings: Pick<SettingsService, "loaded">;
   templates: Pick<TemplateService, "ready" | "render">;
@@ -162,14 +159,9 @@ async function createInertResolvers(
   settings: Readonly<Settings>,
   item: Item | null,
 ): Promise<NoteResolvers> {
-  const citationKey =
-    item && "citationKey" in item.fields
-      ? (item.fields.citationKey ?? null)
-      : null;
   const litNote = item
     ? findExistingLitNote(deps.noteIndex, {
         indexedKey: item.indexedKey,
-        citationKey,
       })
     : null;
   const excerptImages = await resolveExcerptImageContext({

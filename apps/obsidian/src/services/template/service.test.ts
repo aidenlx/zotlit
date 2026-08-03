@@ -1180,6 +1180,7 @@ describe("frontmatter fields", () => {
       "title",
       "related",
       "collections",
+      "citekey",
     ]);
 
     settings.update({
@@ -1270,6 +1271,7 @@ async function makeHarness(options?: {
     plugin,
     migrateLegacy: (raw) => raw,
     migrateV1: (raw) => raw,
+    migrateV2: (raw) => raw,
   });
   await settings.ready;
 

@@ -11,14 +11,13 @@ This page documents how ZotLit manages YAML frontmatter on literature notes: sys
 
 For step-by-step configuration, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
 
-## System-managed fields
+## System-managed field
 
-ZotLit always writes these fields. They cannot be overridden by user configuration.
+ZotLit always writes `zotero-key`. User configuration cannot override it.
 
-| Field        | Source           | Description                                                                                               |
-| ------------ | ---------------- | --------------------------------------------------------------------------------------------------------- |
-| `zotero-key` | `zt.indexedKey`  | Item identity key: `KEY` for the user library, `KEYgGROUPID` for group libraries                          |
-| `citekey`    | `zt.citationKey` | Compatibility frontmatter key for the citation key. Written only when the item has one; deleted otherwise |
+| Field        | Source          | Description                                                                         |
+| ------------ | --------------- | ----------------------------------------------------------------------------------- |
+| `zotero-key` | `zt.indexedKey` | Literature Note identity: `KEY` for My Library or `KEYgGROUPID` for group libraries |
 
 ## User-configured fields
 
@@ -40,6 +39,15 @@ Out of the box, ZotLit configures:
 | `title`       | `zt.title`                           | Liquid   | Replace |
 | `related`     | `zt.relatedItems \| note_links`      | Liquid   | Replace |
 | `collections` | `zt.collections \| collection_paths` | Liquid   | Replace |
+| `citekey`     | `zt.citationKey`                     | Liquid   | Replace |
+
+The default `citekey` field has this definition:
+
+```js
+{ key: "citekey", expr: "zt.citationKey", merge: "replace", language: "liquid" }
+```
+
+It writes `citekey: null` when the Zotero item has no citation key. The field is ordinary Managed Frontmatter. You can edit or remove it like any other user-configured field.
 
 ### Liquid expressions
 
@@ -97,12 +105,11 @@ The `Append arrays` strategy preserves existing items verbatim (including any du
 
 The following keys cannot be used in user field configuration:
 
-| Key               | Owner                                                                    |
-| ----------------- | ------------------------------------------------------------------------ |
-| `zotero-key`      | System-managed (literature note identity)                                |
-| `citekey`         | Compatibility frontmatter key; system-managed (literature note identity) |
-| `zotero-note-key` | Imported notes                                                           |
-| `zotero-lastmod`  | Imported notes                                                           |
+| Key               | Owner                                     |
+| ----------------- | ----------------------------------------- |
+| `zotero-key`      | System-managed (literature note identity) |
+| `zotero-note-key` | Imported notes                            |
+| `zotero-lastmod`  | Imported notes                            |
 
 Attempting to use a reserved key is rejected in both the settings modal and the CLI.
 
@@ -121,8 +128,8 @@ Expression syntax errors are detected when saving. Runtime errors (e.g. accessin
 
 When you run <Command inline>ZotLit: Update literature note</Command> or <Command inline>ZotLit: Update literature note metadata</Command>, ZotLit refreshes frontmatter:
 
-1. **System fields** (`zotero-key`, compatibility frontmatter key `citekey`) are refreshed.
-2. **User-configured fields** are re-evaluated and applied using their merge strategy.
+1. **User-configured fields** are re-evaluated and applied using their merge strategy.
+2. **System identity** (`zotero-key`) is refreshed.
 3. **Unmanaged keys:** any frontmatter key not in the managed set (e.g. `aliases`, `tags`, `cssclasses`) is preserved. ZotLit never touches keys it does not own.
 
 <Command inline>ZotLit: Overwrite literature note</Command> replaces the note
@@ -130,6 +137,8 @@ body but applies the same frontmatter behavior: managed keys are refreshed and
 unmanaged keys are kept.
 
 ZotLit writes frontmatter through Obsidian's `processFrontMatter` API, which preserves key ordering and formatting for unmanaged keys. On a newly created note, user-configured fields are written in the order they appear in the Frontmatter settings list, followed by system fields.
+
+Removing `citekey` or another field from the Managed Frontmatter list does not delete existing values. Those values become unmanaged and remain in the note.
 
 ## JavaScript Templates gate
 

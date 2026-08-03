@@ -21,17 +21,17 @@
  *
  * ## Disk format
  *
- * - `data.json` is sparse: `{ __VERSION__: 2, ...overrides }`. Never persist
- *   `{ __VERSION__: 2, ...current }` — defaults-filled output defeats the
+ * - `data.json` is sparse: `{ __VERSION__: 3, ...overrides }`. Never persist
+ *   `{ __VERSION__: 3, ...current }` — defaults-filled output defeats the
  *   format and bloats user files.
  * - Default-equal override values are still explicit overrides and must
  *   persist; do not auto-delete a key because its value equals the default.
- * - V2 load is non-writing: non-schema keys and bad per-key values are dropped
+ * - V3 load is non-writing: non-schema keys and bad per-key values are dropped
  *   in memory only and may disappear on the next explicit save.
  * - V1 data migrates to v2 (`migrateV1`): every `note.frontmatter-fields` item
  *   gains a required `language`, stamped `"javascript"` except for the three
  *   byte-exact v1 default exprs, which become their Liquid equivalents.
- * - Legacy (v0) and v1→v2 migration writes are best-effort cleanup; failures
+ * - Legacy, v1→v2, and v2→v3 migration writes are best-effort cleanup; failures
  *   are logged but never tracked in `pendingWrite` and never block load.
  *
  * ## Validation
@@ -75,6 +75,7 @@ import {
 import { defaults, schema, type Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
+const CURRENT_VERSION = 3;
 
 type SettingsKey = keyof typeof schema.entries;
 
@@ -109,12 +110,17 @@ export interface SettingsServiceOptions {
    * Throwing or returning a non-plain value triggers the defaults fallback.
    */
   migrateV1: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV2: (raw: unknown) => unknown;
 }
 
 export class SettingsService extends Service<void> {
   readonly #plugin;
   readonly #migrateLegacy;
   readonly #migrateV1;
+  readonly #migrateV2;
   readonly #scheduleSave;
   readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
 
@@ -130,6 +136,7 @@ export class SettingsService extends Service<void> {
     this.#plugin = options.plugin;
     this.#migrateLegacy = options.migrateLegacy;
     this.#migrateV1 = options.migrateV1;
+    this.#migrateV2 = options.migrateV2;
     this.#scheduleSave = debounce(
       () => this.#performSave(),
       SAVE_DEBOUNCE_MS,
@@ -321,8 +328,12 @@ export class SettingsService extends Service<void> {
         this.#overrides = {};
         return;
       }
+      case "v3": {
+        this.#loadV3(classification.raw);
+        return;
+      }
       case "v2": {
-        this.#loadV2(classification.raw);
+        await this.#loadV2Migration(classification.raw);
         return;
       }
       case "v1": {
@@ -335,7 +346,7 @@ export class SettingsService extends Service<void> {
       }
       case "future": {
         console.warn(
-          `data version ${classification.version} is newer than supported (2); falling back to defaults`,
+          `data version ${classification.version} is newer than supported (${CURRENT_VERSION}); falling back to defaults`,
         );
         this.#overrides = {};
         return;
@@ -351,40 +362,54 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * Permissive v2 load: drop non-schema keys and bad per-key values, then
+   * Permissive v3 load: drop non-schema keys and bad per-key values, then
    * full-schema check for cross-field constraints. Whole-object failure →
    * defaults fallback with no rewrite.
    */
-  #loadV2(raw: Record<string, unknown>): void {
-    this.#overrides = this.#validateOverrides(raw, "v2 data") ?? {};
+  #loadV3(raw: Record<string, unknown>): void {
+    this.#overrides = this.#validateOverrides(raw, "v3 data") ?? {};
+  }
+
+  /** Run the v2→v3 compatibility migration and persist the cleaned result. */
+  async #loadV2Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV2, raw, "v2 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    const cleaned = this.#validateOverrides(migrated, "v2 migration result");
+    this.#overrides = cleaned ?? {};
+    await this.#writeBestEffort({
+      [VERSION_KEY]: CURRENT_VERSION,
+      ...cleaned,
+    });
   }
 
   /**
-   * v1 → v2 migration. Runs the user hook, treats non-plain returns / thrown
-   * errors as migration failure (falling back to defaults), then funnels the
-   * result through the same permissive cleanup as v2 load. Persistence here is
-   * best-effort cleanup: write errors are logged but never block load.
+   * v1 → v2 → v3 migration. Runs the v1 hook, then delegates to the v2
+   * migration. A thrown error or non-plain result falls back to defaults.
+   * Persistence is best-effort cleanup: write errors never block load.
    */
   async #loadV1Migration(raw: Record<string, unknown>): Promise<void> {
     const migrated = runMigrationHook(this.#migrateV1, raw, "v1 migration");
     if (migrated === null) {
       this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: 2 });
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
       return;
     }
 
-    const cleaned = this.#validateOverrides(migrated, "v1 migration result");
-    this.#overrides = cleaned ?? {};
-    await this.#writeBestEffort({ [VERSION_KEY]: 2, ...cleaned });
+    await this.#loadV2Migration(migrated);
   }
 
   /**
-   * v0 → v1 → v2 migration chain. Runs the legacy hook first (v0 had no
+   * v0 → v1 → v2 → v3 migration chain. Runs the legacy hook first (v0 had no
    * frontmatter fields, so the v1→v2 stamp is a no-op there), then delegates
    * to {@link #loadV1Migration} so the rest of the chain — running
    * `migrateV1` and the permissive cleanup that follows — lives in one place.
    * The legacy hook's own failure branch (defaults + best-effort
-   * `{ [VERSION_KEY]: 2 }` write) stays here; persistence beyond that point is
+   * `{ [VERSION_KEY]: 3 }` write) stays here; persistence beyond that point is
    * `#loadV1Migration`'s.
    */
   async #loadLegacy(raw: Record<string, unknown>): Promise<void> {
@@ -395,7 +420,7 @@ export class SettingsService extends Service<void> {
     );
     if (legacyMigrated === null) {
       this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: 2 });
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
       return;
     }
 
@@ -428,7 +453,7 @@ export class SettingsService extends Service<void> {
     try {
       await this.#plugin.saveData(payload);
     } catch (error) {
-      console.error("legacy migration write failed", error);
+      console.error("settings migration write failed", error);
     }
   }
 
@@ -439,7 +464,7 @@ export class SettingsService extends Service<void> {
    * failures observable through `flush()`.
    */
   #performSave(): Promise<void> {
-    const payload = { [VERSION_KEY]: 2, ...this.#overrides };
+    const payload = { [VERSION_KEY]: CURRENT_VERSION, ...this.#overrides };
     let promise!: Promise<void>;
     promise = (async () => {
       try {

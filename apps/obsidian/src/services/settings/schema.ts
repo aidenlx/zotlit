@@ -58,6 +58,15 @@ const serverPort = v.pipe(
   v.maxValue(65535),
 );
 
+export const citationKeyPropertySchema = v.pipe(
+  v.string(),
+  v.nonEmpty("Citation key property is required"),
+  v.check(
+    (value) => value === value.trim(),
+    "Citation key property must not start or end with whitespace",
+  ),
+);
+
 export const schema = v.object({
   "log.level": logLevel,
   "log.to-file": v.boolean(),
@@ -65,6 +74,8 @@ export const schema = v.object({
   "citation.editor-suggester": v.boolean(),
   "citation.at-trigger": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
+  "citation.key-links": v.boolean(),
+  "citation.key-links-frontmatter-key": citationKeyPropertySchema,
 
   "note.literature-folder": v.string(),
   "note.frontmatter-fields": frontmatterFieldsSchema,
@@ -95,7 +106,7 @@ export const schema = v.object({
 export type Settings = v.InferOutput<typeof schema>;
 
 /**
- * v1 defaults. Host-dependent legacy defaults are represented as `null` and
+ * Current defaults. Host-dependent legacy defaults are represented as `null` and
  * resolved by the helpers below, so their effective values still match legacy
  * `getDefaultSettings()` without persisting machine-specific values.
  */
@@ -105,6 +116,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.editor-suggester": true,
   "citation.at-trigger": false,
   "citation.show-citekey-in-suggester": false,
+  "citation.key-links": false,
+  "citation.key-links-frontmatter-key": "citekey",
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",

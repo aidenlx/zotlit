@@ -73,10 +73,7 @@ const logger = getLogger(["views", "template-data-explorer"]);
 export interface ExplorerViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on" | "refresh">;
-  noteIndex: Pick<
-    NoteIndex,
-    "getNotesByItemKey" | "getNotesByCitekey" | "getImportedNoteByNoteKey"
-  >;
+  noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getImportedNoteByNoteKey">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
@@ -290,11 +287,8 @@ export class TemplateDataExplorerView extends ItemView {
     if (isChildItemFields(item.fields)) return;
 
     const settings = await this.#deps.settings.loaded;
-    const citationKey =
-      "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;
     const litNote = findExistingLitNote(this.#deps.noteIndex, {
       indexedKey: item.indexedKey,
-      citationKey,
     });
     const excerptImages = await resolveExcerptImageContext({
       app: this.#deps.app,

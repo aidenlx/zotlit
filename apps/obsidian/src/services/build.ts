@@ -18,7 +18,11 @@ import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import { migrateLegacyV0, migrateV1ToV2 } from "./settings/migrate";
+import {
+  migrateLegacyV0,
+  migrateV1ToV2,
+  migrateV2ToV3,
+} from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
 import { ZoteroPrefService } from "./zotero-pref/service";
@@ -48,6 +52,7 @@ export function buildServices(
           plugin,
           migrateLegacy: migrateLegacyV0,
           migrateV1: migrateV1ToV2,
+          migrateV2: migrateV2ToV3,
         }),
     })
     .use({
@@ -70,7 +75,8 @@ export function buildServices(
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
-      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+      noteIndex: ({ settings }) =>
+        new NoteIndex({ plugin, app: plugin.app, settings }),
     })
     .use({
       liveUpdate: ({ settings, zoteroPref, noteIndex }) =>

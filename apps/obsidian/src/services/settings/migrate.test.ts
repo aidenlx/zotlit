@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateLegacyV0, migrateV1ToV2 } from "./migrate";
+import { migrateLegacyV0, migrateV1ToV2, migrateV2ToV3 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
   it("returns an empty object for non-plain inputs", () => {
@@ -332,6 +332,76 @@ describe("migrateV1ToV2", () => {
       }),
     ).toEqual({
       "note.frontmatter-fields": ["not-an-object", 42, null],
+    });
+  });
+});
+
+describe("migrateV2ToV3", () => {
+  it("enables citation key links for migrated users", () => {
+    expect(migrateV2ToV3({ __VERSION__: 2 })).toEqual({
+      __VERSION__: 2,
+      "citation.key-links": true,
+      "citation.key-links-frontmatter-key": "citekey",
+    });
+  });
+
+  it("appends the default citekey field to a customized field list", () => {
+    expect(
+      migrateV2ToV3({
+        "note.frontmatter-fields": [
+          {
+            key: "custom",
+            expr: "zt.title",
+            merge: "replace",
+            language: "liquid",
+          },
+        ],
+      }),
+    ).toEqual({
+      "citation.key-links": true,
+      "citation.key-links-frontmatter-key": "citekey",
+      "note.frontmatter-fields": [
+        {
+          key: "custom",
+          expr: "zt.title",
+          merge: "replace",
+          language: "liquid",
+        },
+        {
+          key: "citekey",
+          expr: "zt.citationKey",
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+    });
+  });
+
+  it("preserves an existing citekey field without adding a duplicate", () => {
+    const existing = {
+      key: "citekey",
+      expr: "zt.citationKey | upcase",
+      merge: "keep",
+      language: "liquid",
+    } as const;
+    expect(migrateV2ToV3({ "note.frontmatter-fields": [existing] })).toEqual({
+      "citation.key-links": true,
+      "citation.key-links-frontmatter-key": "citekey",
+      "note.frontmatter-fields": [existing],
+    });
+  });
+
+  it("leaves absent and malformed field-list overrides for settings cleanup", () => {
+    expect(migrateV2ToV3({})).toEqual({
+      "citation.key-links": true,
+      "citation.key-links-frontmatter-key": "citekey",
+    });
+    expect(
+      migrateV2ToV3({ "note.frontmatter-fields": "not-an-array" }),
+    ).toEqual({
+      "citation.key-links": true,
+      "citation.key-links-frontmatter-key": "citekey",
+      "note.frontmatter-fields": "not-an-array",
     });
   });
 });

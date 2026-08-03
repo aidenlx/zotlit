@@ -147,7 +147,7 @@ function stubNoteContext(
 }
 
 describe("createNote", () => {
-  it("resolves note helpers by item key, citekey, then filename fallback", async () => {
+  it("resolves note helpers by item key, then filename fallback", async () => {
     const root = makeItem({
       itemID: 1,
       key: "ROOT1234",
@@ -189,7 +189,6 @@ describe("createNote", () => {
     );
 
     const existingByItemKey = makeFile("Notes/Existing by item.md");
-    const existingByCitekey = makeFile("Notes/Existing by citekey.md");
     const app = makeApp();
     const deps: SyncRenderDeps = {
       app,
@@ -200,8 +199,6 @@ describe("createNote", () => {
         whenIndexed: async () => {},
         getNotesByItemKey: (key) =>
           key === byItemKey.indexedKey ? [existingByItemKey] : [],
-        getNotesByCitekey: (citekey) =>
-          citekey === "relcite2024" ? [existingByCitekey] : [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -227,7 +224,7 @@ describe("createNote", () => {
         "root:Literature/Root.md|[[Literature/Root.md|Root alias]]",
         "A Related:Literature/A Related.md|[[Literature/A Related.md|A Related]]",
         "B Related:Notes/Existing by item.md|[[Notes/Existing by item.md|B Related]]",
-        "C Related:Notes/Existing by citekey.md|[[Notes/Existing by citekey.md|C Related]]",
+        "C Related:Literature/C Related.md|[[Literature/C Related.md|C Related]]",
       ].join("\n"),
     );
     expect(app.fileManager.links).toEqual([
@@ -247,7 +244,7 @@ describe("createNote", () => {
         alias: "B Related",
       },
       {
-        path: "Notes/Existing by citekey.md",
+        path: "Literature/C Related.md",
         sourcePath: "Literature/Root.md",
         alias: "C Related",
       },
@@ -310,7 +307,6 @@ describe("createNote", () => {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -409,7 +405,6 @@ describe("createNote", () => {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -476,7 +471,6 @@ describe("createNote", () => {
         ready: Promise.resolve(),
         whenIndexed: () => whenIndexed,
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -546,7 +540,6 @@ describe("createNote", () => {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -636,7 +629,6 @@ describe("overwriteNote", () => {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -733,7 +725,6 @@ function makeUpdateHarness(options: {
       ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
-      getNotesByCitekey: () => [],
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: makeSettings(),
@@ -860,7 +851,6 @@ describe("updateNote", () => {
     expect(harness.frontmatter()).toEqual({
       status: "reading",
       [FIELD_ZOTERO_KEY]: "ABC12345",
-      [FIELD_CITEKEY]: "smith2024",
     });
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
   });
@@ -898,7 +888,6 @@ describe("updateNote", () => {
       status: "reading",
       title: "A Study",
       [FIELD_ZOTERO_KEY]: "ABC12345",
-      [FIELD_CITEKEY]: "smith2024",
     });
   });
 
@@ -1006,7 +995,7 @@ describe("updateNote", () => {
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 2 });
   });
 
-  it("drops the citekey field when the item has no citation key", async () => {
+  it("preserves an unmanaged citekey field when the item has no citation key", async () => {
     const context = updateContext({ citationKey: null });
     stubIndexedKeyUpdate(context);
 
@@ -1020,7 +1009,7 @@ describe("updateNote", () => {
       { indexedKey: "ABC12345" },
     );
 
-    expect(FIELD_CITEKEY in harness.frontmatter()).toBe(false);
+    expect(harness.frontmatter()[FIELD_CITEKEY]).toBe("stale2020");
     expect(harness.frontmatter()[FIELD_ZOTERO_KEY]).toBe("ABC12345");
   });
 
@@ -1117,7 +1106,6 @@ describe("renderCitation", () => {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -1188,7 +1176,6 @@ describe("renderCitation", () => {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -1240,7 +1227,6 @@ describe("renderAnnotation", () => {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
-        getNotesByCitekey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
@@ -1303,7 +1289,6 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
       ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
-      getNotesByCitekey: () => [],
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: makeSettings(),
