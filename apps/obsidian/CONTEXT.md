@@ -187,8 +187,12 @@ _Avoid_: direct read, read-only mode (all modes are read-only)
 ### Releases and onboarding
 
 **Resource Release**:
-The release that carries what an installed build downloads at runtime — the Language Packs of every locale except the bundled base one, and the template data JSON Schemas. One exists per plugin release, named for that version, holding the assets built from the same commit; the plugin's own release carries only the three files the Obsidian community-plugin scanner accepts.
+The version-matched release that carries downloadable resources outside the plugin bundle: Language Packs, template data JSON Schemas, and the Pandoc integration files. One exists per plugin release, named for that version, holding assets built from the same commit; the plugin downloads Language Packs at runtime, while agents use CLI guides to download schemas and Pandoc files when needed. The plugin's own release carries only the three files the Obsidian community-plugin scanner accepts.
 _Avoid_: pack release, asset release
+
+**Pandoc CLI Guide**:
+The agent-facing guide that reports the installed ZotLit version and the exact Resource Release URLs for its matching `zotlit-cite.lua` filter and optional `zotlit.yaml` defaults file. It tells the agent to choose a user-owned workflow directory and keep both exact filenames together; the guide does not download or update the files itself.
+_Avoid_: Pandoc installer, Pandoc setup command
 
 **Welcome View** _(Obsidian)_:
 The onboarding tab opened directly in the active leaf on the plugin's first launch in a vault — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. Combines quick-start steps, live setup actions, a Zotero connection status readout, documentation links, and (in the upgraded state) the Migration Prompt.
