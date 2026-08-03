@@ -101,7 +101,23 @@ The approved-or-blocked verdict on one attachment location, which every copy con
 _Avoid_: approval check (names a step, not the verdict), source validation (validation is the lexical layer's job)
 
 **Citation**:
-An in-text reference to one or more Zotero Items, rendered through the `cite` template. Always a single inline line of text, wherever it renders. In editor text: an `@key` token. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citation key through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
+An in-text reference to one or more Zotero Items, rendered through the `cite` template. Always a single inline line of text, wherever it renders. In editor text: an `@key` token; during Pandoc export, a wikilink to a Literature Note is a normal parenthetical Citation whose current citation key comes from the associated Zotero Item. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citation key through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
+
+**Citation Fragment** _(Pandoc export)_:
+The `#cite:...` fragment of a Literature Note wikilink, carrying Pandoc-specific citation details as named key-value parameters. Parameter values use URI percent encoding so the fragment remains safe inside a Markdown wikilink; other wikilink fragments keep their heading or block-link meaning.
+_Avoid_: hash, citation hash
+
+**Citation Run** _(Pandoc export)_:
+A same-line sequence of two or more Literature Note wikilinks separated only by semicolons and optional whitespace, converted into one grouped Citation. Any other text ends the run.
+_Avoid_: citation group (the group is the resulting Citation, not the source syntax), citation list
+
+**Reference Number**:
+An active-document identifier assigned to each distinct Literature Note Citation by first occurrence. It appears only in editor and References Sidebar widgets, and repeated Citations share the same number; the Markdown source stays unchanged.
+_Avoid_: citation key, reference index
+
+**References Sidebar** _(Obsidian)_:
+The active-document view that lists each distinct Literature Note Citation once and navigates to its occurrences. Entries keep the selected CSL style's bibliography order and show their first-occurrence Reference Numbers as navigation identities; invalid references stay visible with their error state.
+_Avoid_: bibliography sidebar, reference list pane
 
 **Embedded Item Data**:
 A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
