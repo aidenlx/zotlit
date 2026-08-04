@@ -15,6 +15,13 @@ export default defineConfig({
   },
   define: {
     __DEV__: JSON.stringify(true),
+    // Resolving the real pin needs the network; a test that cares about engine
+    // metadata takes it as an argument rather than reading this placeholder.
+    __PANDOC_ENGINE__: JSON.stringify({
+      version: "0.0.0",
+      url: "https://example.invalid/pandoc.wasm.zip",
+      sha256: "0".repeat(64),
+    }),
   },
   plugins: [preact()],
   test: {
