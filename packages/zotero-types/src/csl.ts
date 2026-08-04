@@ -58,6 +58,75 @@ export const CSL_TEXT_FIELD_MAP: Readonly<Record<string, string>> = {
 };
 
 /**
+ * CSL text variable -> every Zotero field candidate from the Zotero schema's
+ * `csl.fields.text` section, in schema order, under their raw schema names.
+ * Read left to right and take the first candidate the item carries a value
+ * for, the way Zotero's `itemToCSLJSON()` does.
+ */
+export const CSL_TEXT_FIELD_CANDIDATES: Readonly<
+  Record<string, readonly string[]>
+> = {
+  abstract: ["abstractNote"],
+  archive: ["archive"],
+  archive_location: ["archiveLocation"],
+  authority: ["authority"],
+  "call-number": ["callNumber", "applicationNumber"],
+  "chapter-number": ["session"],
+  "citation-key": ["citationKey"],
+  "collection-number": ["seriesNumber"],
+  "collection-title": ["seriesTitle", "series"],
+  "container-title": ["publicationTitle", "reporter", "code"],
+  dimensions: ["artworkSize", "runningTime"],
+  DOI: ["DOI"],
+  edition: ["edition"],
+  "event-place": ["eventPlace"],
+  "event-title": ["meetingName", "conferenceName"],
+  genre: ["type", "programmingLanguage"],
+  ISBN: ["ISBN"],
+  ISSN: ["ISSN"],
+  issue: ["issue", "priorityNumbers"],
+  journalAbbreviation: ["journalAbbreviation"],
+  language: ["language"],
+  license: ["rights"],
+  medium: ["medium", "system"],
+  note: ["extra"],
+  number: ["number"],
+  "number-of-pages": ["numPages"],
+  "number-of-volumes": ["numberOfVolumes"],
+  "original-publisher": ["originalPublisher"],
+  "original-publisher-place": ["originalPlace"],
+  "part-number": ["partNumber"],
+  "part-title": ["partTitle"],
+  page: ["pages"],
+  PMID: ["PMID"],
+  PMCID: ["PMCID"],
+  publisher: ["publisher"],
+  "publisher-place": ["place"],
+  references: ["history", "references"],
+  scale: ["scale"],
+  section: ["section", "committee"],
+  shortTitle: ["shortTitle"],
+  source: ["libraryCatalog"],
+  status: ["status"],
+  title: ["title"],
+  "title-short": ["shortTitle"],
+  URL: ["url"],
+  version: ["versionNumber"],
+  volume: ["volume", "codeNumber"],
+};
+
+/**
+ * CSL date variable -> its Zotero date field, from the Zotero schema's
+ * `csl.fields.date` section.
+ */
+export const CSL_DATE_FIELD_MAP: Readonly<Record<string, string>> = {
+  accessed: "accessDate",
+  issued: "date",
+  submitted: "filingDate",
+  "original-date": "originalDate",
+};
+
+/**
  * CSL type -> its first Zotero item-type candidate, from the Zotero
  * schema's `csl.types` section.
  */
@@ -91,6 +160,53 @@ export const CSL_TYPE_MAP: Readonly<Record<string, string>> = {
   software: "computerProgram",
   song: "audioRecording",
   speech: "presentation",
+  standard: "standard",
+  thesis: "thesis",
+  webpage: "webpage",
+};
+
+/**
+ * Zotero item type -> CSL type, covering every candidate in the Zotero
+ * schema's `csl.types` section. Each Zotero item type appears under exactly
+ * one CSL type, so this inverts `csl.types` without loss.
+ */
+export const ITEM_TYPE_TO_CSL_TYPE: Readonly<Record<string, string>> = {
+  preprint: "article",
+  journalArticle: "article-journal",
+  magazineArticle: "article-magazine",
+  newspaperArticle: "article-newspaper",
+  bill: "bill",
+  book: "book",
+  podcast: "broadcast",
+  tvBroadcast: "broadcast",
+  radioBroadcast: "broadcast",
+  bookSection: "chapter",
+  dataset: "dataset",
+  document: "document",
+  attachment: "document",
+  note: "document",
+  dictionaryEntry: "entry-dictionary",
+  encyclopediaArticle: "entry-encyclopedia",
+  artwork: "graphic",
+  hearing: "hearing",
+  interview: "interview",
+  case: "legal_case",
+  statute: "legislation",
+  manuscript: "manuscript",
+  map: "map",
+  film: "motion_picture",
+  videoRecording: "motion_picture",
+  conferencePaper: "paper-conference",
+  patent: "patent",
+  letter: "personal_communication",
+  email: "personal_communication",
+  instantMessage: "personal_communication",
+  forumPost: "post",
+  blogPost: "post-weblog",
+  report: "report",
+  computerProgram: "software",
+  audioRecording: "song",
+  presentation: "speech",
   standard: "standard",
   thesis: "thesis",
   webpage: "webpage",

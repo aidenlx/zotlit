@@ -11,7 +11,7 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   CollectionCache,
   fetchNoteContext,
-  getCurrentUsername,
+  getZoteroIdentity,
   getItemsByKey,
   getLibraries,
   isChildItemFields,
@@ -313,7 +313,7 @@ export class TemplateDataExplorerView extends ItemView {
       this.#context = fetchNoteContext(this.#deps.db.client, item, {
         resolvers,
         collectionCache: new CollectionCache(),
-        username: getCurrentUsername(this.#deps.db.client),
+        username: getZoteroIdentity(this.#deps.db.client).username,
       });
     } catch (err) {
       logger.warn("Failed to build note context for {key}", {

@@ -10,7 +10,7 @@ import {
   fetchAnnotationsTemplateData,
   getAnnotationsByKey,
   getAttachmentByKey,
-  getCurrentUsername,
+  getZoteroIdentity,
   getItemsByID,
   getItemTypeByKey,
   getItemsByKey,
@@ -121,7 +121,7 @@ export async function loadTemplateData(
     data: fetchNoteContext(lease.client, item, {
       resolvers,
       collectionCache: new CollectionCache(),
-      username: getCurrentUsername(lease.client),
+      username: getZoteroIdentity(lease.client).username,
     }),
   };
 }

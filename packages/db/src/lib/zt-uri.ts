@@ -1,8 +1,10 @@
 /**
- * Zotero deep-link (`zotero://`) builders. `select` navigates the library to an
- * item; the format-agnostic `open` scheme navigates to an annotation within its
- * attachment (PDF / EPUB / snapshot).
+ * Zotero deep-link (`zotero://`) builders, the persistent `http://zotero.org/`
+ * Item URI, and the browsable web library URL. `select` navigates the library
+ * to an item; the format-agnostic `open` scheme navigates to an annotation
+ * within its attachment (PDF / EPUB / snapshot).
  */
+import { type ZoteroUserIdentity } from "@/queries/account";
 
 function libraryPath(groupID: number | null): string {
   return groupID == null ? "library" : `groups/${groupID}`;
@@ -11,6 +13,31 @@ function libraryPath(groupID: number | null): string {
 /** `zotero://select` deep link to a library item. */
 export function itemSelectUri(key: string, groupID: number | null): string {
   return `zotero://select/${libraryPath(groupID)}/items/${key}`;
+}
+
+/**
+ * Persistent Zotero Item URI (`http://zotero.org/...`) — the stable identity
+ * Zotero writes as a CSL-JSON `id` and embeds in note citation markup. It names
+ * an item rather than addressing a page; {@link itemWebUrl} builds the
+ * browsable zotero.org URL.
+ *
+ * @returns `null` for a personal-library item on an account carrying neither
+ *   id, which leaves the personal library with no URI to name it by.
+ * @see docs/adr/0009-weblink-is-the-web-url-not-the-item-uri.md
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/uri.js#L87
+ */
+export function itemUri(
+  key: string,
+  groupID: number | null,
+  user: ZoteroUserIdentity,
+): string | null {
+  const path = groupID != null ? `groups/${groupID}` : userPath(user);
+  return path && `http://zotero.org/${path}/items/${key}`;
+}
+
+function userPath({ userID, localUserKey }: ZoteroUserIdentity): string | null {
+  if (userID != null) return `users/${userID}`;
+  return localUserKey == null ? null : `users/local/${localUserKey}`;
 }
 
 /** Zotero's username→URL-slug rule: trim, lowercase, strip chars outside

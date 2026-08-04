@@ -17,7 +17,13 @@ export {
   type Creator,
   type Item,
 } from "./queries/items";
-export { getCurrentUsername } from "./queries/account";
+export {
+  itemToCsl,
+  type CslDate,
+  type CslItemData,
+  type CslName,
+} from "./lib/zt-csl-item";
+export { getZoteroIdentity, type ZoteroUserIdentity } from "./queries/account";
 export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,

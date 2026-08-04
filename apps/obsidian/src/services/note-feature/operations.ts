@@ -6,7 +6,7 @@ import {
   fetchAnnotationsTemplateData,
   fetchNoteContext,
   getAnnotationsByItemId,
-  getCurrentUsername,
+  getZoteroIdentity,
   getItemsByKey,
   resolveIndexedKeyLibrary,
   resolveItemTags,
@@ -215,7 +215,7 @@ async function createNote(
   const username =
     options.username !== undefined
       ? options.username
-      : getCurrentUsername(lease.client);
+      : getZoteroIdentity(lease.client).username;
   const itemTags = resolveItemTags(lease.client, item.itemID, tagMemo);
   const itemCollections = fetchItemCollections(
     collectionCache,
@@ -618,7 +618,7 @@ async function contextForIndexedKey(
     resolvers,
     tagMemo: new Map(),
     collectionCache: new CollectionCache(),
-    username: getCurrentUsername(client),
+    username: getZoteroIdentity(client).username,
   });
   return { context, noteImport };
 }

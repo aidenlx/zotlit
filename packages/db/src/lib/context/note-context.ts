@@ -21,7 +21,7 @@ import { type Annotation } from "@/lib/zt-annot";
 import { type Attachment } from "@/lib/zt-attach";
 import { type CollectionCache } from "@/lib/zt-collection";
 import { type GroupIDMemo } from "@/queries/_groups";
-import { getCurrentUsername } from "@/queries/account";
+import { getZoteroIdentity } from "@/queries/account";
 import { getAnnotationsByParent } from "@/queries/annotations";
 import {
   getAttachmentByItemId,
@@ -159,7 +159,7 @@ export function fetchAnnotationsTemplateData(
   const result = new Map<string, TemplateAnnotation>();
   if (annotations.length === 0) return result;
 
-  const username = getCurrentUsername(client);
+  const username = getZoteroIdentity(client).username;
   const { resolvers, groupIdMemo } = options;
   const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const memo = { memo: groupIdMemo };
