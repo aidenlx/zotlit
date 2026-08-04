@@ -34,7 +34,7 @@
     "clsx": "^2.1.1",
     "eta": "catalog:",
     "fflate": "catalog:",
-    "hono": "^4.12.31",
+    "hono": "^4.13.0",
     "monkey-around": "catalog:",
     "nanoid": "^5.1.14",
     "p-limit": "^7.3.0",

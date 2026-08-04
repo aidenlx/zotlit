@@ -48,12 +48,16 @@ overrides:
   # next@16.2.11 hard-pins its internal postcss to 8.4.31 (GHSA-r28c-9q8g-f849);
   # force the patched version until upstream bumps its own pin.
   "next>postcss": ">=8.5.18"
+  # ajv pins fast-uri to ^3.0.1; force the patched version (GHSA-7p8r-x3mc-p8w7).
+  "ajv>fast-uri": "^3.1.5"
 
 # delay 3 day to reduce the risk of installing compromised packages
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: true
 # next 16.2.11 is a security patch; exempt it from the age gate to land the fix now
+# hono@4.12.34 is a security patch (GHSA-8j4g-w8fx-2239); exempt it too
 minimumReleaseAgeExclude:
   - next
   - "@next/*"
+  - hono
