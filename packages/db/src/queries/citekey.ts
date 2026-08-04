@@ -2,7 +2,7 @@ import { type NodeDatabaseClient } from "@/client/node";
 
 import { defineQuery } from "./_shared";
 
-/** Better BibTeX's native citation-key field name in Zotero's `fieldsCombined`. */
+/** Zotero's native citation-key field name in Zotero's `fieldsCombined`. */
 const CITEKEY_FIELD = "citationKey";
 
 const itemIDByCitekeyQuery = defineQuery<{
@@ -24,7 +24,7 @@ const itemIDByCitekeyQuery = defineQuery<{
 );
 
 /**
- * Resolve the Zotero `itemID` whose Better BibTeX citation key equals `citekey`
+ * Resolve the Zotero `itemID` whose native citation key equals `citekey`
  * within `libraryID`, or `null` when no live item matches.
  */
 export function getItemIDByCitekey(
@@ -58,7 +58,7 @@ const citekeyByItemKeyQuery = defineQuery<{
 );
 
 /**
- * Resolve the Better BibTeX citation key of the live item with `key` within
+ * Resolve the native citation key of the live item with `key` within
  * `libraryID`, or `null` when no live item matches or it has no citation key.
  * The forward mirror of {@link getItemIDByCitekey}.
  */
