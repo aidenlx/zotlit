@@ -26,6 +26,7 @@ import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
+import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
 import { registerWelcomeView } from "./views/welcome/register";
 import "./zt-main.css";
@@ -241,6 +242,15 @@ export default class ZotLitPlugin extends Plugin {
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
+    });
+
+    registerReferencesView(this, {
+      app: this.app,
+      db: services.db,
+      citationScanner: services.citationScanner,
+      pandocEngine: services.pandocEngine,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
     });
 
     registerTemplateWorkbench(this, {

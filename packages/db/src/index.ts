@@ -39,13 +39,20 @@ export {
   resolveIndexedKeyLibrary,
 } from "./lib/zt-key";
 export { isItemKey } from "./lib/zt-item-key";
-export { annotationOpenUri } from "./lib/zt-uri";
+export {
+  annotationOpenUri,
+  attachmentOpenUri,
+  itemSelectUri,
+} from "./lib/zt-uri";
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
   getAnnotationsByItemId,
 } from "./queries/annotations";
-export { getAttachmentByKey } from "./queries/attachments";
+export {
+  getAttachmentByKey,
+  getAttachmentsByParents,
+} from "./queries/attachments";
 export {
   getChildNotesByParentIDs,
   getNoteByItemID,
