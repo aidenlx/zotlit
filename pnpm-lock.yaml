@@ -237,6 +237,9 @@ importers:
 
   apps/obsidian:
     dependencies:
+      '@bjorn3/browser_wasi_shim':
+        specifier: ^0.4.2
+        version: 0.4.2
       '@hono/node-server':
         specifier: ^2.0.10
         version: 2.0.10(hono@4.12.31)
@@ -379,6 +382,9 @@ importers:
       oxlint:
         specifier: 'catalog:'
         version: 1.70.0(oxlint-tsgolint@0.23.0)
+      pandoc-wasm:
+        specifier: ^1.1.0
+        version: 1.1.0
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.2
@@ -1443,6 +1449,9 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@bjorn3/browser_wasi_shim@0.4.2':
+    resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
   '@clack/core@0.5.0':
     resolution: {integrity: sha512-p3y0FIOwaYRUPRcMO7+dlmLh8PSRcrjuTndsiA0WAFbWES0mLZlrjVoBRZ9DzkPFJZG6KGkJmoEAY0ZcVWTkow==}
@@ -5710,6 +5719,9 @@ packages:
   pako@1.0.11:
     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
 
+  pandoc-wasm@1.1.0:
+    resolution: {integrity: sha512-IoWBsC/cbSZe71rcRtxXUxG+Auf8aGDHKYOQZA6OdwmUL2xdpQaqrSGhPa+6zfLdSar7cnyAmTWt6KU9n5kBjQ==}
+
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
     engines: {node: '>=6'}
@@ -7512,6 +7524,8 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.7)
     optionalDependencies:
       '@types/react': 19.2.17
+
+  '@bjorn3/browser_wasi_shim@0.4.2': {}
 
   '@clack/core@0.5.0':
     dependencies:
@@ -11447,6 +11461,10 @@ snapshots:
       p-limit: 3.1.0
 
   pako@1.0.11: {}
+
+  pandoc-wasm@1.1.0:
+    dependencies:
+      '@bjorn3/browser_wasi_shim': 0.4.2
 
   parent-module@1.0.1:
     dependencies:
