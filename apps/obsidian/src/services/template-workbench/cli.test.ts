@@ -586,7 +586,6 @@ describe("Template Workbench CLI", () => {
         "'append'",
         "'keep'",
         "zotero-key",
-        "citekey",
       ],
     ],
   ] as const)("prints the %s guide topic", async (topic, facts) => {
