@@ -19,10 +19,10 @@ export type ReleaseTabActions = Pick<
   "openReleaseNote" | "acknowledgeMigration"
 >;
 
-/** The Pandoc engine surface the setting tab needs: report and move its status. */
+/** The Pandoc engine surface the setting tab needs: report, watch, and move its status. */
 export type PandocEngineActions = Pick<
   PandocEngineService,
-  "getStatus" | "install" | "uninstall"
+  "getStatus" | "subscribe" | "install" | "uninstall"
 >;
 
 /** The attachment-import surface the setting tab needs: read and edit the grants. */

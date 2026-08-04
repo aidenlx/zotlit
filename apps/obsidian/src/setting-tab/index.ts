@@ -3,7 +3,6 @@ import { PluginSettingTab, type SettingDefinitionItem } from "obsidian";
 import { type LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import { type DatabaseService } from "@/services/database/service";
-import { type PandocEngineService } from "@/services/pandoc/service";
 import {
   type SettingsPatch,
   type SettingsService,
@@ -16,6 +15,7 @@ import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
 import {
   type AttachmentImportActions,
+  type PandocEngineActions,
   type ReleaseTabActions,
   type SettingsKey,
   type SettingTabContext,
@@ -46,7 +46,7 @@ export interface ZotLitSettingTabOptions {
   attachmentImport: AttachmentImportActions;
   template: TemplateService;
   release: ReleaseTabActions;
-  pandocEngine: PandocEngineService;
+  pandocEngine: PandocEngineActions;
   languagePack: LanguagePackLifecycle;
 }
 
@@ -57,7 +57,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #zoteroPref: ZoteroPrefService;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #release: ReleaseTabActions;
-  readonly #pandocEngine: PandocEngineService;
+  readonly #pandocEngine: PandocEngineActions;
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({

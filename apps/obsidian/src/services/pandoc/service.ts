@@ -148,7 +148,11 @@ export class PandocEngineService extends Service<void> {
     return done;
   }
 
-  /** Records the dismissal, moving `absent` to `declined`. */
+  /**
+   * Records the dismissal, moving `absent` to `declined`. The offer itself is
+   * the dismissible install hint the fallback surface carries, so the decision
+   * is remembered here and survives a restart.
+   */
   decline(): void {
     this.#consent.saveLocalStorage(DECLINED_KEY, true);
     if (this.#status.kind === "absent") this.#setStatus({ kind: "declined" });
@@ -158,8 +162,16 @@ export class PandocEngineService extends Service<void> {
    * Drops the whole cache — every vault on the device loses the binary — and
    * the running engine with it. The dismissed offer is forgotten too, so this
    * vault is offered the install again.
+   *
+   * An install in flight lands its binary and its `installed` status whenever
+   * the download arrives, so the removal waits that install out and has the
+   * last word instead of racing it.
    */
   async uninstall(): Promise<void> {
+    const current = this.#status;
+    if (current.kind === "installing") {
+      await current.done.catch(() => undefined);
+    }
     await this.#dropEngine();
     await this.#store.clear();
     this.#consent.saveLocalStorage(DECLINED_KEY, null);

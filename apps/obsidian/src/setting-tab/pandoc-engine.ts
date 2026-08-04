@@ -27,7 +27,7 @@ export function pandocEngineDefinition(
 }
 
 /** One sentence per arm, so the row never derives its own combination of flags. */
-export function statusSentence(status: PandocEngineStatus): string {
+function statusSentence(status: PandocEngineStatus): string {
   switch (status.kind) {
     case "installed":
       return m.settings_citation_engine_status_installed({

@@ -1,4 +1,5 @@
 import { zipSync } from "fflate";
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { type CitationEngine } from "./engine";
@@ -12,17 +13,11 @@ function bytes(source: Uint8Array): Uint8Array<ArrayBuffer> {
 
 const BINARY = bytes(new TextEncoder().encode("pandoc wasm bytes"));
 
-async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
+/** Node's own digest, so the pin the service verifies against is an independent oracle. */
 const PIN = {
   version: "3.10",
   url: "https://example.invalid/pandoc-3.10-wasm.zip",
-  sha256: await sha256Hex(BINARY),
+  sha256: createHash("sha256").update(BINARY).digest("hex"),
 };
 
 const CACHED_NAME = `${PIN.sha256}.wasm`;
@@ -92,16 +87,19 @@ interface HarnessOptions {
   files?: BinaryFiles;
   consent?: MemoryConsent;
   pin?: PandocEnginePorts["pin"];
-  download?: (url: string) => Promise<Uint8Array<ArrayBuffer>>;
+  /** The store comes along, so a download can act out what another vault does meanwhile. */
+  download?: (
+    url: string,
+    store: MemoryStore,
+  ) => Promise<Uint8Array<ArrayBuffer>>;
   createEngine?: (binary: Uint8Array<ArrayBuffer>) => Promise<CitationEngine>;
 }
 
 function harness(options: HarnessOptions = {}) {
   const store = memoryStore(options.files);
   const consent = options.consent ?? memoryConsent();
-  const download = vi.fn(
-    options.download ?? (() => Promise.resolve(ARCHIVE.slice())),
-  );
+  const behavior = options.download ?? (() => Promise.resolve(ARCHIVE.slice()));
+  const download = vi.fn((url: string) => behavior(url, store));
   const createEngine = vi.fn(
     options.createEngine ?? (() => Promise.resolve(fakeEngine())),
   );
@@ -220,12 +218,58 @@ describe("PandocEngineService", () => {
     await service[Symbol.asyncDispose]();
   });
 
+  it("replaces the binary another vault cached while the download ran", async () => {
+    const { service, store } = harness({
+      // The competing vault verifies the same bytes and renames onto the cache
+      // first, so this install renames onto a name that already exists.
+      download: (_url, store) => {
+        store.files.set(CACHED_NAME, BINARY);
+        return Promise.resolve(ARCHIVE.slice());
+      },
+    });
+    await service.ready;
+
+    await service.install();
+
+    expect(store.files.get(CACHED_NAME)).toEqual(BINARY);
+    expect([...store.files.keys()]).toEqual([CACHED_NAME]);
+    expect(service.getStatus()).toEqual({
+      kind: "installed",
+      version: PIN.version,
+    });
+    await service[Symbol.asyncDispose]();
+  });
+
   it("clears the whole cache on uninstall and offers the install again", async () => {
     const { service, store } = harness();
     await service.ready;
     await service.install();
 
     await service.uninstall();
+
+    expect([...store.files.keys()]).toEqual([]);
+    expect(service.getStatus()).toEqual({ kind: "absent" });
+    await service[Symbol.asyncDispose]();
+  });
+
+  it("waits out an install in flight, so the removal has the last word", async () => {
+    let arrive = () => undefined as void;
+    const arrived = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const { service, store } = harness({
+      download: async () => {
+        await arrived;
+        return ARCHIVE.slice();
+      },
+    });
+    await service.ready;
+
+    const install = service.install();
+    const uninstall = service.uninstall();
+    arrive();
+    await install;
+    await uninstall;
 
     expect([...store.files.keys()]).toEqual([]);
     expect(service.getStatus()).toEqual({ kind: "absent" });
@@ -293,7 +337,8 @@ describe("PandocEngineService", () => {
       failure: { code: "init-failed", detail: "CompileError: bad magic" },
     });
 
-    // Re-installing re-verifies the cached binary, so the engine can be tried again.
+    // Re-installing finds the content-addressed binary still cached and moves
+    // the status back to `installed`, so the engine can be tried again.
     await service.install();
     await expect(service.getEngine()).resolves.toBeDefined();
     await service[Symbol.asyncDispose]();
