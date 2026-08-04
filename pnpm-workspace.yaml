@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  agent-browser: false
   core-js: false
   electron: false
   es5-ext: false
