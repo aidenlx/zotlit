@@ -2,6 +2,21 @@
 
 Research question: GitHub issue [Choose the standalone CSL rendering architecture](https://github.com/aidenlx/zotlit/issues/606).
 
+> **Superseded.** Spec [#612](https://github.com/aidenlx/zotlit/issues/612) drops
+> citeproc-js before implementation. The References Sidebar bibliography now
+> renders through the official Pandoc WASM binary (Pandoc 3.10, WASI reactor)
+> in a persistent web worker, using `@bjorn3/browser_wasi_shim` with an
+> in-memory filesystem only.
+> The binary embeds all CSL locales and a default style
+> (`chicago-author-date`), so the omni.ja locale extraction, the `appDir`
+> Zotero-application-directory setting, and CPAL attribution below no longer
+> apply. CSL styles still come from the Zotero data directory; an unset or
+> missing style falls back to the embedded default. The plugin license
+> switches to AGPL, which clears the GPL vendoring concern that Pandoc's own
+> license would otherwise raise. Everything below this notice documents the
+> citeproc-js design as it was researched and is retained for its rationale,
+> not as the current architecture.
+
 ## Decision
 
 Add one deep Obsidian-side CSL module. Its interface lists the installed styles,

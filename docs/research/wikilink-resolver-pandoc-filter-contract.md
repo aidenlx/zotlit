@@ -1,11 +1,12 @@
 # Wikilink Resolver and Pandoc Filter Contract
 
-The contract between `zotlit:resolve` (an Obsidian CLI handler) and a Pandoc Lua filter that converts Literature Note wikilinks into Pandoc `Cite` nodes. The CLI handler owns all vault and Zotero knowledge; the filter owns all Pandoc AST knowledge. One CLI call per Pandoc run regardless of document size.
+The contract between `zotlit:resolve` (an Obsidian CLI handler) and a Pandoc Lua filter that converts Literature Note wikilinks into Pandoc `Cite` nodes. The CLI handler owns all vault and Zotero knowledge; the filter owns all Pandoc AST knowledge. One CLI call per Pandoc run regardless of document size — for the CLI filter variant. The sandbox filter variant makes no such call at run time; it reads one pre-written resolve-map file carrying the same JSON shape this CLI handler returns.
 
 Prior decisions this contract depends on:
 
 - [Choose the bibliography-data boundaries](https://github.com/aidenlx/zotlit/issues/605) — identity split (Indexed Key vs Citation Key), failure boundary, Better BibTeX optional
 - [Design the Citation Fragment grammar](https://github.com/aidenlx/zotlit/issues/609) — `#cite:` parameter grammar, Citation Runs, link classification, strict parsing
+- Spec [#612](https://github.com/aidenlx/zotlit/issues/612) — `zotlit-cite.lua` builds as two variants from one source: a CLI variant that calls `zotlit:resolve` against a live Obsidian process, and a sandbox variant that reads a pre-written resolve-map file instead. Both variants share every contract in this document below the resolution-map boundary.
 
 ## CLI Handler: `zotlit:resolve`
 
@@ -126,20 +127,29 @@ read file cache from metadataCache
 
 **Database read**: the handler acquires one read lease via `DatabaseService.acquireRead()`, runs all lookups, then releases it. One lease per invocation.
 
-**Citation Key source**: `getCitekeyByItemKey` reads the `citationKey` field from Zotero's `fieldsCombined`. This single field holds both Zotero 7's native citation key and Better BibTeX's citation key — they share the same storage. No fallback chain or priority between providers.
+**Citation Key source**: `getCitekeyByItemKey` reads the `citationKey` field from Zotero's `fieldsCombined`. This is Zotero's own native field, populated since Zotero 7.0.31 (and present by default on Zotero 8). Better BibTeX, when installed on a floor-compatible Zotero, reads and can fill this same native field, so its generated keys land in this one field — there is no separate BBT-owned field to prefer or fall back to. On a pre-8 Zotero older than 7.0.31, Better BibTeX instead keeps its keys in its own database and writes them into the Item's Extra field, outside this field and outside this contract; a Literature Note pointing at such an Item fails resolution with `citation-key-missing` until the Zotero installation meets the 7.0.31+/8 floor.
 
 ## Lua Filter: `zotlit-cite.lua`
 
+### Two variants, one source
+
+`zotlit-cite.lua` builds as two variants from one Lua source, per spec #612:
+
+- **CLI variant.** Calls `zotlit:resolve` once against a live Obsidian process and receives the JSON response over the CLI handler.
+- **Sandbox variant.** Reads a pre-written resolve-map file from the Pandoc virtual filesystem instead of calling out to Obsidian. Something outside the sandboxed Pandoc run — an agent, a script, a build step — has already produced this file by capturing one `zotlit:resolve` response (success or fatal error, same shape as below) and writing it, unmodified, to the path the filter expects. This variant serves environments that cannot reach a live `obsidian` CLI process: WASM sandboxes, CI, and other headless runs.
+
+There is no runtime fallback between the two variants. The invocation setup — which variant is on disk, and for the sandbox variant, whether the resolve-map file is present — decides which resolution path runs. Everything below this section, from AST walking through error handling, is identical between the two variants; only how the `citations`/`errors` map is obtained differs.
+
 ### Responsibilities
 
-1. Call `zotlit:resolve` once, receive the JSON response.
-2. Abort on CLI errors.
+1. Obtain the resolution map: the CLI variant calls `zotlit:resolve` once; the sandbox variant reads the pre-written resolve-map file. Both yield the same `citations`/`errors` shape defined above.
+2. Abort on errors reported in that map.
 3. Walk the document AST and transform Literature Note `Link` nodes into `Cite` nodes.
 4. Parse `#cite:` fragments per the agreed grammar.
 5. Detect Citation Runs (same-line semicolons).
 6. Report fragment parsing errors and invalid Citation Run structures.
 
-The filter does not resolve links, does not read frontmatter, does not query the database. All vault and Zotero knowledge comes from the CLI response.
+The filter does not resolve links, does not read frontmatter, does not query the database. All vault and Zotero knowledge comes from the resolution map, whichever variant produced it.
 
 ### Document-level filter
 
@@ -303,6 +313,7 @@ The filter collects all errors from its AST walk before aborting, so the user se
 | Duplicate citation key detection | CLI handler |
 | Fragment validation errors | Lua filter |
 | Percent-decode Pandoc Link targets | Lua filter |
+| Producing the resolution map at run time (CLI variant) or in advance (sandbox variant) | CLI handler, live for the CLI variant; an external producer that ran the CLI handler beforehand, for the sandbox variant |
 
 ## Invocation
 
@@ -317,6 +328,14 @@ pandoc input.md \
   --fail-if-warnings \
   -o output.pdf
 ```
+
+This example uses the CLI filter variant, which shells out to `obsidian
+zotlit:resolve` the first time it needs the resolution map. The sandbox
+variant runs the same command against the same input, but only after its
+resolve-map file has already been written into the run's virtual filesystem;
+it makes no `obsidian` call itself. See
+[the packaging note](./pandoc-integration-packaging-and-installation.md#runtime-and-compatibility)
+for which variant a given workflow directory ships.
 
 The filter must appear before `--citeproc` in the filter chain.
 

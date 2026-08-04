@@ -6,9 +6,19 @@ Research question: GitHub issue [#605, “Choose the bibliography-data boundarie
 
 Use a deliberate split:
 
-- The **References Sidebar** reads each cited Item from Zotero's local database through `@zotlit/db` and converts that Item to CSL JSON in memory. Its internal CSL `id` is the Item's **Indexed Key**.
-- **Direct Pandoc** reads an external bibliography file. Each bibliography entry is indexed by the Item's current **Citation Key**. ZotLit resolves a Literature Note from its Indexed Key, reads the current Citation Key from the database, and gives that Citation Key to Pandoc.
-- **Better BibTeX is optional.** Better CSL JSON with auto-export is the recommended external source when a user wants an automatically updated file. Zotero's native CSL JSON export is the supported manual source. ZotLit does not create, modify, cache, or merge a Pandoc bibliography file.
+- The **References Sidebar** reads each cited Item from Zotero's local database through `@zotlit/db` (`itemToCsl()`) and converts that Item to CSL JSON in memory. Its internal CSL `id` is the Item's **Indexed Key**. It works while Zotero is closed.
+- **Direct Pandoc** reads an external bibliography file the user manages. Each bibliography entry is indexed by the Item's current **Citation Key**. ZotLit resolves a Literature Note from its Indexed Key, reads the current Citation Key from the database, and gives that Citation Key to Pandoc.
+- **Better BibTeX is optional** for Direct Pandoc. Better CSL JSON with auto-export is the recommended external source when a user wants an automatically updated file. Zotero's native CSL JSON export is the supported manual source. ZotLit does not create, modify, cache, or merge a Pandoc bibliography file for this path.
+
+Spec [#612](https://github.com/aidenlx/zotlit/issues/612) adds a third
+consumer, **built-in export**, alongside these two: a ZotLit-owned command
+that resolves bibliographic data live — through Better BibTeX or Zotero's
+local HTTP API, never through an external file — and runs the conversion in
+the same WASM Pandoc worker the sidebar uses. It has its own identity rule,
+distinct from both consumers above; see
+[Built-in export](#built-in-export) below and
+[the packaging note](./pandoc-integration-packaging-and-installation.md#built-in-wasm-export)
+for its full bibliography-source chain.
 
 This split gives the sidebar current local data without an additional plugin or export setup. It also keeps the direct Pandoc contract compatible with Pandoc's normal `--bibliography` boundary. Pandoc accepts CSL JSON, CSL YAML, BibLaTeX, BibTeX, and RIS bibliography files; it does not process citations until bibliographic data is supplied ([Pandoc User's Guide, “Citation rendering” and “Specifying bibliographic data”](https://pandoc.org/MANUAL.html#citations)).
 
@@ -18,8 +28,8 @@ This split gives the sidebar current local data without an additional plugin or 
 | --- | --- | --- |
 | **Indexed Key** | ZotLit's canonical cross-library identity: the bare Zotero Key for the personal library, or `key + "g" + groupID` for a group library. | Stored as `zotero-key` on a Literature Note. Resolves the authoritative Zotero Item. Deduplicates sidebar references. Serves as the sidebar's internal CSL item `id`. See [`packages/db/CONTEXT.md`](../../packages/db/CONTEXT.md) and [`zt-key.ts`](../../packages/db/src/lib/zt-key.ts). |
 | **Citation Key** | The human-readable identifier in Zotero's `citationKey` field, such as `smith2024`. | Written into the Pandoc `Citation` produced from a Literature Note link. It can change independently of the Indexed Key. ZotLit already reads it as a normal Item field and can resolve it from a Zotero Key ([`items.ts`](../../packages/db/src/queries/items.ts), [`citekey.ts`](../../packages/db/src/queries/citekey.ts)). |
-| **CSL item `id`** | A required citeproc runtime identifier. citeproc-js calls `retrieveItem(id)`, and every returned CSL item must have an `id` and `type`. | It is a consumer-local identity, not a fixed synonym for a Zotero Key or Citation Key ([citeproc-js, “Running the Processor”](https://citeproc-js.readthedocs.io/en/latest/running.html#retrieveitem)). Use Indexed Key in the sidebar and Citation Key in the Pandoc bibliography. |
-| **Bibliography lookup identity** | The string by which a Pandoc citation finds an external bibliography entry. | For this workflow, it is the current Citation Key. A CSL JSON entry therefore needs `id = Citation Key`. Pandoc's own CSL YAML example uses the citation identifier as the reference `id` ([Pandoc User's Guide](https://pandoc.org/MANUAL.html#specifying-bibliographic-data)). |
+| **CSL item `id`** | A required citeproc runtime identifier. Every CSL item the citeproc engine consumes must have an `id` and `type`. | It is a consumer-local identity, not a fixed synonym for a Zotero Key or Citation Key. Use Indexed Key in the sidebar, Citation Key in the Direct Pandoc bibliography, and native citation key or item URI in built-in export — see [Built-in export](#built-in-export). The sidebar's engine is now the Pandoc WASM build's own citeproc, not citeproc-js; see [the standalone CSL rendering architecture note](./standalone-csl-rendering-architecture.md). |
+| **Bibliography lookup identity** | The string by which a Pandoc citation finds an external bibliography entry. | For Direct Pandoc, it is the current Citation Key. A CSL JSON entry therefore needs `id = Citation Key`. Pandoc's own CSL YAML example uses the citation identifier as the reference `id` ([Pandoc User's Guide](https://pandoc.org/MANUAL.html#specifying-bibliographic-data)). Built-in export instead joins by Zotero item key and accepts native citation key or item URI as the item's `id`; it never reads an external bibliography file. |
 
 The sidebar must not use Citation Key as entity identity. Better BibTeX generates unique keys within each library by default, with global uniqueness as a separate option ([Better BibTeX preferences, “Keeping citation keys unique”](https://retorque.re/zotero-better-bibtex/index.print.html#keeping-citation-keys-unique)). Two libraries can therefore contain the same Citation Key. Indexed Key remains unambiguous across ZotLit's supported libraries.
 
@@ -71,6 +81,35 @@ Zotero 8 stores Citation Keys in Zotero itself. Better BibTeX now reads and can 
 Pandoc owns external-file failures. A missing or unreadable bibliography file is a Pandoc input error. A Citation Key that has no matching bibliography `id` produces a citeproc warning and a bold `key?` placeholder in the citeproc implementation ([jgm/citeproc `Eval.hs`](https://github.com/jgm/citeproc/blob/c345fafc3d1c51a116dd8b2ec6bfc9fd2fbd1ff4/src/Citeproc/Eval.hs#L1289-L1296)). The documented direct command and defaults file should set `--fail-if-warnings`, which makes Pandoc exit with an error status for any warning ([Pandoc User's Guide](https://pandoc.org/MANUAL.html#option--fail-if-warnings)).
 
 This detects a missing or renamed key. It cannot detect metadata staleness when the old file still has the same `id`. The tutorial must make “update the bibliography file, then run Pandoc” an explicit verification step. ZotLit must not report an external file as fresh because it does not own or inspect that file.
+
+### Built-in export
+
+**Input and lookup.** Built-in export does not read from `@zotlit/db` or
+`itemToCsl()` at all — that adapter is Sidebar-only. It resolves
+bibliographic data live through Better BibTeX (JSON-RPC `item.citationkey`
+plus `item.export` with the Better CSL JSON translator) when Better BibTeX is
+alive, otherwise through Zotero's local HTTP API
+(`GET /api/users/0/items?itemKey=...&include=csljson`), otherwise a guided
+error. Nothing in this chain works with Zotero closed; that is an error
+state for this consumer, unlike the Sidebar. The full chain, including the
+local-API preference detection and enable prompt, is decided in
+[the packaging note](./pandoc-integration-packaging-and-installation.md#built-in-wasm-export).
+
+**Identity.** Results are re-indexed by Zotero item key, not by Citation
+Key. Each wikilink cites whatever CSL `id` the resolved item carries: its
+native Zotero citation key when populated, or its item URI otherwise. This
+is a deliberately looser rule than Direct Pandoc's, which requires a
+populated Citation Key and fails closed with `citation-key-missing`
+otherwise — built-in export instead falls back to the item URI so an
+uncited-key Item can still be exported by wikilink. The literal `@citekey`
+syntax is the one case that still requires a populated Citation Key, because
+that syntax names the key directly.
+
+**Failure behavior.** Any unresolvable citekey or missing item stops the
+export; built-in export is all-or-nothing, like the References Sidebar's
+resolver stage, but unlike Direct Pandoc, which only stops what ZotLit's own
+resolver can detect and otherwise hands the failure to Pandoc's own
+`--fail-if-warnings` check against the external file.
 
 ## Candidate assessment
 
