@@ -5,6 +5,7 @@
     "type": "git",
     "url": "https://github.com/aidenlx/zotlit"
   },
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "release": "pnpm --filter @zotlit/scripts release",

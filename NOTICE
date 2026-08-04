@@ -1,0 +1,54 @@
+ZotLit
+Copyright (C) 2022-present AidenLx
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+=========================================================================
+
+This project contains code derived from the following AGPL-3.0-licensed
+projects by the Corporation for Digital Scholarship:
+
+  Zotero — https://github.com/zotero/zotero
+  Zotero Utilities — https://github.com/zotero/utilities
+  Zotero Reader — https://github.com/zotero/reader
+  Zotero Note Editor — https://github.com/zotero/note-editor
+  Zotero Data Server — https://github.com/zotero/dataserver
+
+  Copyright (C) Corporation for Digital Scholarship
+  Licensed under the GNU Affero General Public License, version 3.
+
+Derived files include (non-exhaustive):
+
+  packages/db/src/lib/zt-csl-item.ts    — itemToCSLJSON algorithm
+  packages/db/src/lib/zt-csl-name.ts    — parseParticles algorithm
+  packages/db/src/lib/zt-extra-to-csl.ts — extraToCSL algorithm
+  packages/db/src/lib/zt-lang.ts        — languageToISO6391 algorithm
+  packages/db/src/lib/zt-annot-pos.ts   — annotation position schemas
+  packages/db/src/lib/zt-color.ts       — annotation color palettes
+  packages/db/src/lib/zt-uri.ts         — URI building and slugify rules
+  packages/db/src/lib/zt-key.ts         — object key validation
+  packages/db/src/lib/zt-note-mark.ts   — note markup handling
+  packages/item-lookup/src/format-creator.ts — creator name formatting
+
+Each file contains @see comments linking to the specific upstream source.
+
+=========================================================================
+
+This project also contains code derived from Mozilla web-ext:
+
+  apps/zotero/scripts/dev-server/remote-firefox.ts
+  apps/zotero/scripts/dev-server/rdp-client.ts
+
+  Licensed under the Mozilla Public License 2.0 (MPL-2.0).
+  See SPDX headers in those files for details.
