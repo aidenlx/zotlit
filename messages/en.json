@@ -339,6 +339,7 @@
   "pandoc_export_error_local_api": "Turn on the local API in Zotero → Settings → Advanced → Allow other applications on this computer to communicate with Zotero ({pref}), then try again.",
   "pandoc_export_error_source": "{source} refused the request: {detail}",
   "pandoc_export_error_engine": "Pandoc stopped the conversion: {detail}",
+  "pandoc_export_error_destination": "ZotLit cannot write the exported document: {detail}",
   "notice_pandoc_export_running": "Exporting the note with Pandoc…",
   "notice_pandoc_export_done": "Exported {file}.",
   "notice_pandoc_export_failed": "Nothing was exported",

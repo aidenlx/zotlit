@@ -26,8 +26,16 @@ export function showEngineMissing(openSettings: () => void): void {
   );
 }
 
+/**
+ * Everything that stops an export: the conversion's own failures, plus the
+ * destination write, which happens after the engine has already answered.
+ */
+export type ExportProblem =
+  | ExportFailure
+  | { kind: "destination-unwritable"; detail: string };
+
 /** One message per failure arm, each naming the situation and its fix. */
-export function showExportFailure(failure: ExportFailure): void {
+export function showExportFailure(failure: ExportProblem): void {
   new BaseNotice(
     BaseNotice.render((renderer) => {
       renderer.setTitle(m.notice_pandoc_export_failed());
@@ -76,6 +84,11 @@ export function showExportFailure(failure: ExportFailure): void {
         case "engine":
           renderer.addText(
             m.pandoc_export_error_engine({ detail: failure.detail }),
+          );
+          break;
+        case "destination-unwritable":
+          renderer.addText(
+            m.pandoc_export_error_destination({ detail: failure.detail }),
           );
           break;
       }

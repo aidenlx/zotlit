@@ -131,7 +131,7 @@ export async function exportCitedDocument(
     });
     return { output };
   } catch (error) {
-    return { error: { kind: "engine", detail: describe(error) } };
+    return { error: { kind: "engine", detail: describeError(error) } };
   }
 }
 
@@ -212,6 +212,7 @@ function named(
     .map((link) => link.linkpath);
 }
 
-function describe(error: unknown): string {
+/** The `detail` every failure arm carries, from whatever was thrown. */
+export function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

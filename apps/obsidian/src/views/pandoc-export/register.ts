@@ -26,6 +26,7 @@ import {
   type BibliographyTransport,
 } from "@/services/pandoc/bibliography";
 import {
+  describeError,
   exportCitedDocument,
   type ExportPorts,
 } from "@/services/pandoc/export";
@@ -91,6 +92,8 @@ export async function runPandocExport(
 
   using notice = new LazyNotice();
   notice.setMessage(m.notice_pandoc_export_running());
+
+  let output: Uint8Array;
   try {
     const result = await exportCitedDocument(
       {
@@ -108,17 +111,30 @@ export async function runPandocExport(
       showExportFailure(result.error);
       return;
     }
-    await writeFile(choices.destination, result.output);
-    new BaseNotice(
-      m.notice_pandoc_export_done({ file: basename(choices.destination) }),
-    );
+    output = result.output;
   } catch (error) {
     logger.error("The Pandoc export failed", { error });
-    showExportFailure({
-      kind: "engine",
-      detail: error instanceof Error ? error.message : String(error),
-    });
+    showExportFailure({ kind: "engine", detail: describeError(error) });
+    return;
   }
+
+  // The bytes exist by now, so a refusal here is the destination's, not Pandoc's.
+  try {
+    await writeFile(choices.destination, output);
+  } catch (error) {
+    logger.error("The exported document could not be written", {
+      error,
+      destination: choices.destination,
+    });
+    showExportFailure({
+      kind: "destination-unwritable",
+      detail: describeError(error),
+    });
+    return;
+  }
+  new BaseNotice(
+    m.notice_pandoc_export_done({ file: basename(choices.destination) }),
+  );
 }
 
 function exportPorts(

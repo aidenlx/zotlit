@@ -1,3 +1,4 @@
+import { unzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -339,6 +340,15 @@ const DEMO: Fixture = {
   ],
 };
 
+/**
+ * The body text of a docx. Only `<w:t>` elements hold text nodes, so dropping
+ * every tag joins the runs Word splits one sentence across.
+ */
+function docxText(docx: Uint8Array): string {
+  const body = unzipSync(docx)["word/document.xml"];
+  return new TextDecoder().decode(body).replaceAll(/<[^>]*>/g, "");
+}
+
 describe(
   "exportCitedDocument over the real engine",
   { timeout: 60_000 },
@@ -370,7 +380,7 @@ describe(
       expect(html).toContain(`id="ref-${ADAMS.id}"`);
     });
 
-    it("writes docx bytes for the same note", async () => {
+    it("cites the same note in the docx it writes", async () => {
       await using engine = await createCitationEngine(
         await readFile(WASM_PATH),
       );
@@ -384,10 +394,23 @@ describe(
       );
 
       expect(result).toHaveProperty("output");
+      const output = (result as { output: Uint8Array }).output;
       // docx is a zip container; its local file header starts every archive.
-      expect((result as { output: Uint8Array }).output.slice(0, 4)).toEqual(
+      expect(output.slice(0, 4)).toEqual(
         new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
       );
+
+      const text = docxText(output);
+      // Every citation shape renders, and the ordinary link stays plain text.
+      expect(text).toContain(
+        "Plain (Zeta 2020) and fragment (Adams 2018, 33).",
+      );
+      expect(text).toContain("A run (Zeta 2020; Adams 2018) here.");
+      expect(text).toContain("Literal Zeta (2020) too.");
+      expect(text).toContain("Ordinary Some Note stays a link.");
+      // Both cited Items reach the bibliography, and nothing else does.
+      expect(text).toContain("Zeta, Ann. 2020. A Study of Nothing.");
+      expect(text).toContain("Adams, Bob. 2018. Beta and Beyond.");
     });
   },
 );
