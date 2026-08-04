@@ -23,6 +23,18 @@ export interface PandocLogMessage {
 /** Files a conversion reads, keyed by the name Pandoc opens them under. */
 export type VirtualFiles = Readonly<Record<string, string | Uint8Array>>;
 
+/**
+ * Pandoc's defaults object, passed through as JSON. Only the keys this bridge
+ * itself acts on are named; the rest reach Pandoc unread.
+ *
+ * @see https://pandoc.org/MANUAL.html#defaults-files
+ */
+export interface PandocOptions {
+  /** Virtual file the conversion writes its output to, instead of stdout. */
+  "output-file"?: string;
+  [option: string]: unknown;
+}
+
 export interface PandocConvertResult {
   stdout: string;
   /** Carries the failure reason; empty when the conversion succeeded. */
@@ -41,7 +53,7 @@ export interface PandocConvertResult {
  */
 export interface PandocRuntime {
   convert(
-    options: Record<string, unknown>,
+    options: PandocOptions,
     stdin: string | null,
     files: VirtualFiles,
   ): PandocConvertResult;
@@ -126,14 +138,14 @@ export async function createPandocRuntime(
         fileSystem.set(name, new WasiFile(bytes, { readonly: true }));
       }
       const outputName = options["output-file"];
-      if (typeof outputName === "string") {
+      if (outputName !== undefined) {
         fileSystem.set(outputName, new WasiFile(new Uint8Array()));
       }
 
       exports.convert(optionsPtr, optionsBytes.length);
 
       const output =
-        typeof outputName === "string" ? fileSystem.get(outputName) : undefined;
+        outputName === undefined ? undefined : fileSystem.get(outputName);
       return {
         stdout: decoder.decode(stdout.data),
         stderr: decoder.decode(stderr.data),

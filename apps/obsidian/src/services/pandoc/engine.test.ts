@@ -5,9 +5,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { type CslItemData } from "@zotlit/db";
 
+import { yieldToMain } from "@/lib/yield-to-main";
+
 import {
   type CitationEngine,
   CitationEngineError,
+  CitationRequestSupersededError,
   createCitationEngine,
 } from "./engine";
 
@@ -174,6 +177,58 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     expect(zeta.map((entry) => entry.id)).toEqual([ZETA.id]);
     expect(adams.map((entry) => entry.id)).toEqual([ADAMS.id]);
     expect(finished).toEqual([ZETA.id, ADAMS.id]);
+  });
+
+  it("supersedes a waiting request when a newer one claims its slot", async () => {
+    const stale = engine.renderBibliography({
+      items: [ZETA],
+      supersedes: "sidebar",
+    });
+    const newest = engine.renderBibliography({
+      items: [ADAMS],
+      supersedes: "sidebar",
+    });
+
+    await expect(stale).rejects.toThrow(CitationRequestSupersededError);
+    await expect(newest).resolves.toEqual([
+      expect.objectContaining({ id: ADAMS.id }),
+    ]);
+  });
+
+  it("runs requests that claim no slot or another slot", async () => {
+    const unslotted = engine.renderBibliography({ items: [ZETA] });
+    const other = engine.renderBibliography({
+      items: [ZETA],
+      supersedes: "export",
+    });
+    const newest = engine.renderBibliography({
+      items: [ADAMS],
+      supersedes: "sidebar",
+    });
+
+    await expect(unslotted).resolves.toHaveLength(1);
+    await expect(other).resolves.toHaveLength(1);
+    await expect(newest).resolves.toHaveLength(1);
+  });
+
+  it("keeps the running request when a newer one claims its slot", async () => {
+    const running = engine.renderBibliography({
+      items: [ZETA],
+      supersedes: "sidebar",
+    });
+    // The conversion runs synchronously, so a macrotask yield lands after it.
+    await yieldToMain();
+    const newest = engine.renderBibliography({
+      items: [ADAMS],
+      supersedes: "sidebar",
+    });
+
+    await expect(running).resolves.toEqual([
+      expect.objectContaining({ id: ZETA.id }),
+    ]);
+    await expect(newest).resolves.toEqual([
+      expect.objectContaining({ id: ADAMS.id }),
+    ]);
   });
 });
 

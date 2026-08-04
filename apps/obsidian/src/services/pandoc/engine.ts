@@ -9,13 +9,24 @@ import { getLogger } from "@/lib/log";
 import {
   createPandocRuntime,
   type PandocConvertResult,
+  type PandocOptions,
   type PandocRuntime,
   type VirtualFiles,
 } from "./runtime";
 
 const logger = getLogger("pandoc");
 
-export interface BibliographyRequest {
+interface SupersedableRequest {
+  /**
+   * Names the slot this request occupies. A later request naming the same slot
+   * supersedes this one while it still waits behind a running conversion, and
+   * the superseded call rejects with {@link CitationRequestSupersededError}.
+   * A request without a slot always runs.
+   */
+  supersedes?: string;
+}
+
+export interface BibliographyRequest extends SupersedableRequest {
   items: readonly CslItemData[];
   /** CSL style XML; the engine's embedded default style when omitted. */
   styleXml?: string;
@@ -30,7 +41,7 @@ export interface BibliographyEntry {
 
 export type DocumentFormat = "docx" | "html";
 
-export interface DocumentRequest {
+export interface DocumentRequest extends SupersedableRequest {
   /** Obsidian-flavored Markdown of the document to convert. */
   markdown: string;
   format: DocumentFormat;
@@ -48,7 +59,10 @@ export interface DocumentRequest {
  * Renders CSL bibliographies and cited documents.
  *
  * Requests on one engine run one at a time, so callers share an engine without
- * coordinating. Disposal waits for the running request and refuses later ones.
+ * coordinating. A request that names a `supersedes` slot drops any request still
+ * waiting in that slot, so a consumer that re-renders on every change keeps only
+ * its newest request. Disposal waits for the running request and refuses later
+ * ones.
  */
 export interface CitationEngine extends AsyncDisposable {
   renderBibliography(
@@ -60,6 +74,11 @@ export interface CitationEngine extends AsyncDisposable {
 /** A conversion the engine could not complete. `message` is Pandoc's own text. */
 export class CitationEngineError extends Error {
   override name = "CitationEngineError";
+}
+
+/** A pending request dropped in favor of a newer one for the same slot. */
+export class CitationRequestSupersededError extends Error {
+  override name = "CitationRequestSupersededError";
 }
 
 /**
@@ -82,10 +101,19 @@ export async function createCitationEngine(
   return new PandocCitationEngine(await createPandocRuntime(wasmBinary));
 }
 
+/** One conversion as the queue carries it. */
+interface ConversionRequest extends SupersedableRequest {
+  options: PandocOptions;
+  stdin: string;
+  files: VirtualFiles;
+}
+
 class PandocCitationEngine implements CitationEngine {
   #runtime: PandocRuntime | undefined;
   /** Tail of the request queue; resolves once nothing is using the filesystem. */
   #queue: Promise<unknown> = Promise.resolve();
+  /** Newest claim per slot; a claim leaves the map once its request starts. */
+  readonly #claims = new Map<string, object>();
 
   constructor(runtime: PandocRuntime) {
     this.#runtime = runtime;
@@ -94,18 +122,21 @@ class PandocCitationEngine implements CitationEngine {
   async renderBibliography({
     items,
     styleXml,
+    supersedes,
   }: BibliographyRequest): Promise<BibliographyEntry[]> {
-    const { stdout } = await this.#convert(
-      {
+    const style = styleInput(styleXml);
+    const { stdout } = await this.#convert({
+      options: {
         from: "csljson",
         to: "html",
         standalone: false,
         filters: ["citeproc"],
-        ...styleOption(styleXml),
+        ...style.options,
       },
-      JSON.stringify(items),
-      styleFile(styleXml),
-    );
+      stdin: JSON.stringify(items),
+      files: style.files,
+      supersedes,
+    });
     return parseBibliography(stdout);
   }
 
@@ -116,29 +147,32 @@ class PandocCitationEngine implements CitationEngine {
     styleXml,
     luaFilters = [],
     files = {},
+    supersedes,
   }: DocumentRequest): Promise<Uint8Array> {
     const filterFiles = Object.fromEntries(
       luaFilters.map((source, index) => [`filter-${index}.lua`, source]),
     );
     const outputName = `output.${format}`;
-    const { outputFile } = await this.#convert(
-      {
+    const style = styleInput(styleXml);
+    const { outputFile } = await this.#convert({
+      options: {
         from: MARKDOWN_READER,
         to: format,
         standalone: true,
         filters: [...Object.keys(filterFiles), "citeproc"],
         bibliography: [BIBLIOGRAPHY_FILE],
         "output-file": outputName,
-        ...styleOption(styleXml),
+        ...style.options,
       },
-      markdown,
-      {
+      stdin: markdown,
+      files: {
         ...files,
         ...filterFiles,
         [BIBLIOGRAPHY_FILE]: JSON.stringify(bibliography),
-        ...styleFile(styleXml),
+        ...style.files,
       },
-    );
+      supersedes,
+    });
     if (!outputFile) {
       throw new CitationEngineError(`Pandoc wrote no ${format} output`);
     }
@@ -152,14 +186,30 @@ class PandocCitationEngine implements CitationEngine {
 
   /**
    * Run one conversion once the queue ahead of it has drained, so no two
-   * conversions ever share the runtime's virtual filesystem.
+   * conversions ever share the runtime's virtual filesystem. A request holds its
+   * slot only while it waits, so the conversion at the front of the queue always
+   * runs to completion.
+   *
+   * @throws {CitationRequestSupersededError} when a later request claimed the
+   * same slot first.
    */
-  #convert(
-    options: Record<string, unknown>,
-    stdin: string,
-    files: VirtualFiles,
-  ): Promise<PandocConvertResult> {
+  #convert({
+    options,
+    stdin,
+    files,
+    supersedes,
+  }: ConversionRequest): Promise<PandocConvertResult> {
+    const claim = {};
+    if (supersedes !== undefined) this.#claims.set(supersedes, claim);
+
     const result = this.#queue.then(() => {
+      if (supersedes !== undefined) {
+        if (this.#claims.get(supersedes) !== claim)
+          throw new CitationRequestSupersededError(
+            "A newer request superseded this one",
+          );
+        this.#claims.delete(supersedes);
+      }
       const runtime = this.#runtime;
       if (!runtime) throw new CitationEngineError("The engine is disposed");
 
@@ -176,12 +226,14 @@ class PandocCitationEngine implements CitationEngine {
   }
 }
 
-function styleOption(styleXml: string | undefined): Record<string, unknown> {
-  return styleXml === undefined ? {} : { csl: STYLE_FILE };
-}
-
-function styleFile(styleXml: string | undefined): VirtualFiles {
-  return styleXml === undefined ? {} : { [STYLE_FILE]: styleXml };
+/** The `csl` option and the file it names; both empty for the embedded style. */
+function styleInput(styleXml: string | undefined): {
+  options: PandocOptions;
+  files: VirtualFiles;
+} {
+  return styleXml === undefined
+    ? { options: {}, files: {} }
+    : { options: { csl: STYLE_FILE }, files: { [STYLE_FILE]: styleXml } };
 }
 
 /**
