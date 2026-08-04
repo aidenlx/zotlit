@@ -15,6 +15,9 @@ const logger = getLogger(["pandoc", "bibliography"]);
 /** Zotero's `httpServer.port` default — ascii "ZO". */
 export const ZOTERO_HTTP_PORT = 23119;
 
+/** Where Zotero's HTTP server listens. */
+const ZOTERO_ORIGIN = `http://127.0.0.1:${ZOTERO_HTTP_PORT}`;
+
 /** Pref that opens Zotero's local HTTP API; Zotero ships it off. */
 export const LOCAL_API_PREF = "httpServer.localAPI.enabled";
 
@@ -74,8 +77,6 @@ export interface BibliographyPorts {
    * refused read.
    */
   localApiEnabled: boolean;
-  /** Zotero's `httpServer.port` pref. @default ZOTERO_HTTP_PORT */
-  port?: number;
 }
 
 export type BibliographyFailure =
@@ -120,7 +121,7 @@ export async function fetchBibliography(
 
   const probe = await callJsonRpc(ports, "api.ready", []);
   if (probe.ok) return fromBetterBibtex(refs, ports);
-  if (probe.reason === "unreachable") return { error: notRunning(ports) };
+  if (probe.reason === "unreachable") return { error: notRunning() };
   logger.debug("Better BibTeX did not answer; falling back to the local API");
   return fromLocalApi(refs, ports);
 }
@@ -128,7 +129,8 @@ export async function fetchBibliography(
 /**
  * `item.citationkey` maps the item keys to citation keys, then one
  * `item.export` per library renders those keys as Better CSL JSON. The export
- * is indexed by citation key, which is the `id` Better CSL JSON writes.
+ * is indexed by library and citation key, which is the `id` Better CSL JSON
+ * writes.
  */
 async function fromBetterBibtex(
   refs: readonly BibliographyItemRef[],
@@ -137,7 +139,7 @@ async function fromBetterBibtex(
   const lookup = await callJsonRpc(ports, "item.citationkey", [
     refs.map(rpcItemKey),
   ]);
-  if (!lookup.ok) return { error: rpcFailure(lookup, ports) };
+  if (!lookup.ok) return { error: rpcFailure(lookup) };
 
   const table = asRecord(lookup.result);
   const cited: { ref: BibliographyItemRef; citationKey: string }[] = [];
@@ -161,13 +163,18 @@ async function fromBetterBibtex(
       BETTER_CSL_JSON,
       libraryID,
     ]);
-    if (!exported.ok) return { error: rpcFailure(exported, ports) };
-    for (const item of asCslItems(exported.result)) entries.set(item.id, item);
+    if (!exported.ok) return { error: rpcFailure(exported) };
+    for (const item of asCslItems(exported.result)) {
+      entries.set(citationAddress(libraryID, item.id), item);
+    }
   }
 
   return join(
     "better-bibtex",
-    cited.map((c) => [indexedKeyOf(c.ref), entries.get(c.citationKey)]),
+    cited.map((c) => [
+      indexedKeyOf(c.ref),
+      entries.get(citationAddress(c.ref.libraryID, c.citationKey)),
+    ]),
   );
 }
 
@@ -189,11 +196,11 @@ async function fromLocalApi(
     });
     const library = groupID === null ? "users/0" : `groups/${groupID}`;
     const response = await send(ports, {
-      url: `${origin(ports)}/api/${library}/items?${query.toString()}`,
+      url: `${ZOTERO_ORIGIN}/api/${library}/items?${query.toString()}`,
       method: "GET",
       headers: { ...ALLOWED_REQUEST },
     });
-    if (!response) return { error: notRunning(ports) };
+    if (!response) return { error: notRunning() };
     if (response.status === 403) return { error: localApiDisabled() };
     if (response.status !== 200) {
       return {
@@ -258,7 +265,7 @@ async function callJsonRpc(
   params: readonly unknown[],
 ): Promise<RpcOutcome> {
   const response = await send(ports, {
-    url: `${origin(ports)}${JSON_RPC_PATH}`,
+    url: `${ZOTERO_ORIGIN}${JSON_RPC_PATH}`,
     method: "POST",
     headers: { ...ALLOWED_REQUEST, "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
@@ -279,9 +286,8 @@ async function callJsonRpc(
 
 function rpcFailure(
   outcome: Extract<RpcOutcome, { ok: false }>,
-  ports: BibliographyPorts,
 ): BibliographyFailure {
-  if (outcome.reason === "unreachable") return notRunning(ports);
+  if (outcome.reason === "unreachable") return notRunning();
   return {
     code: "source-failed",
     source: "better-bibtex",
@@ -308,12 +314,8 @@ async function send(
   }
 }
 
-function origin(ports: BibliographyPorts): string {
-  return `http://127.0.0.1:${ports.port ?? ZOTERO_HTTP_PORT}`;
-}
-
-function notRunning(ports: BibliographyPorts): BibliographyFailure {
-  return { code: "zotero-not-running", port: ports.port ?? ZOTERO_HTTP_PORT };
+function notRunning(): BibliographyFailure {
+  return { code: "zotero-not-running", port: ZOTERO_HTTP_PORT };
 }
 
 function localApiDisabled(): BibliographyFailure {
@@ -323,6 +325,14 @@ function localApiDisabled(): BibliographyFailure {
 /** Better BibTeX's `[libraryID]:[itemKey]` item address. */
 function rpcItemKey(ref: BibliographyItemRef): string {
   return `${ref.libraryID}:${ref.itemKey}`;
+}
+
+/**
+ * Better BibTeX keeps a citation key unique within its library, so two
+ * libraries can hold the same one. Address an exported item by both.
+ */
+function citationAddress(libraryID: number, citationKey: string): string {
+  return `${libraryID}:${citationKey}`;
 }
 
 function indexedKeyOf(ref: BibliographyItemRef): string {
@@ -341,13 +351,14 @@ function groupBy<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {
 }
 
 /**
- * Both sources hand back a CSL translator's own output: the JSON array text it
- * wrote. An already-parsed array or single object reads too, so one helper
- * covers `item.export`'s string and the local API's `csljson` field.
+ * Both sources hand back a CSL translator's own output — the JSON array text it
+ * wrote — so one helper covers `item.export`'s result and the local API's
+ * `csljson` field.
  */
 function asCslItems(value: unknown): CslItemData[] {
-  const parsed = typeof value === "string" ? parseJson(value) : value;
-  return asArray(parsed).filter(isCslItem);
+  return typeof value === "string"
+    ? asArray(parseJson(value)).filter(isCslItem)
+    : [];
 }
 
 function isCslItem(value: unknown): value is CslItemData {
@@ -363,8 +374,7 @@ function parseJson(text: string): unknown {
 }
 
 function asArray(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value as unknown[];
-  return value === undefined || value === null ? [] : [value];
+  return Array.isArray(value) ? (value as unknown[]) : [];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

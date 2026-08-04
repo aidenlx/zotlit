@@ -1,3 +1,4 @@
+import { regex } from "arkregex";
 import { describe, expect, it, vi } from "vitest";
 
 import { type CslItemData } from "@zotlit/db";
@@ -15,6 +16,9 @@ import {
 const ORIGIN = `http://127.0.0.1:${ZOTERO_HTTP_PORT}`;
 const RPC_URL = `${ORIGIN}/better-bibtex/json-rpc`;
 
+/** The library route a local API read addresses: `users/0` or `groups/<id>`. */
+const LIBRARY_ROUTE = regex("/api/(?<library>users/0|groups/\\d+)/");
+
 const DOE: BibliographyItemRef = {
   itemKey: "AAAA1111",
   libraryID: 1,
@@ -31,7 +35,10 @@ function csl(id: string, title: string): CslItemData {
 }
 
 interface Fixture {
-  /** Better BibTeX's answers per JSON-RPC method; absent methods answer 404. */
+  /**
+   * Better BibTeX's answers per JSON-RPC method; absent methods answer 404. A
+   * function answer is called with the call's params.
+   */
   rpc?: Record<string, unknown>;
   /** Better BibTeX's JSON-RPC error message for `method`. */
   rpcError?: { method: string; message: string };
@@ -51,7 +58,10 @@ function ports(fixture: Fixture): BibliographyPorts & { calls: Call[] } {
   const request = vi.fn(async (req: BibliographyHttpRequest) => {
     if (fixture.zoteroClosed) throw new Error("ECONNREFUSED");
     if (req.url === RPC_URL) {
-      const { method } = JSON.parse(req.body ?? "{}") as { method: string };
+      const { method, params } = JSON.parse(req.body ?? "{}") as {
+        method: string;
+        params: unknown[];
+      };
       calls.push({ ...req, rpcMethod: method });
       if (fixture.rpcError?.method === method) {
         return rpcBody({
@@ -61,13 +71,19 @@ function ports(fixture: Fixture): BibliographyPorts & { calls: Call[] } {
       if (!fixture.rpc || !(method in fixture.rpc)) {
         return { status: 404, text: "Endpoint does not exist" };
       }
-      return rpcBody({ result: fixture.rpc[method] });
+      const answer = fixture.rpc[method];
+      return rpcBody({
+        result:
+          typeof answer === "function"
+            ? (answer as (params: unknown[]) => unknown)(params)
+            : answer,
+      });
     }
     calls.push({ ...req });
     if (fixture.apiStatus !== undefined) {
       return { status: fixture.apiStatus, text: "Local API is not enabled" };
     }
-    const library = /\/api\/(users\/0|groups\/\d+)\//.exec(req.url)?.[1] ?? "";
+    const library = LIBRARY_ROUTE.exec(req.url)?.groups.library ?? "";
     const entries = fixture.api?.[library] ?? [];
     const requested = new Set(
       new URL(req.url).searchParams.get("itemKey")?.split(",") ?? [],
@@ -99,6 +115,16 @@ function entries(result: BibliographyResult): [string, string][] {
   if ("error" in result)
     throw new Error(`unexpected failure: ${result.error.code}`);
   return [...result.items].map(([indexedKey, item]) => [indexedKey, item.id]);
+}
+
+/** Indexed Key to item title, for items whose `id` alone cannot tell them apart. */
+function titles(result: BibliographyResult): [string, unknown][] {
+  if ("error" in result)
+    throw new Error(`unexpected failure: ${result.error.code}`);
+  return [...result.items].map(([indexedKey, item]) => [
+    indexedKey,
+    item["title"],
+  ]);
 }
 
 function failure(result: BibliographyResult) {
@@ -150,6 +176,29 @@ describe("fetchBibliography", () => {
     expect(exports).toEqual([
       [["doe2020"], "f4b52ab0-f878-4556-85a0-c7aeedd09dfc", 1],
       [["lee2023"], "f4b52ab0-f878-4556-85a0-c7aeedd09dfc", 5],
+    ]);
+  });
+
+  it("keeps a citation key two libraries share bound to its own library", async () => {
+    const deps = ports({
+      rpc: {
+        "api.ready": {},
+        "item.citationkey": {
+          "1:AAAA1111": "doe2020",
+          "5:BBBB2222": "doe2020",
+        },
+        "item.export": (params: unknown[]) =>
+          JSON.stringify([
+            csl("doe2020", params[2] === 1 ? "On Things" : "On Others"),
+          ]),
+      },
+    });
+
+    const result = await fetchBibliography([DOE, LEE], deps);
+
+    expect(titles(result)).toEqual([
+      ["AAAA1111", "On Things"],
+      ["BBBB2222g42", "On Others"],
     ]);
   });
 
