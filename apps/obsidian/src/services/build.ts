@@ -17,6 +17,7 @@ import {
 import { createNoteImporter, type NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
+import { createPandocEngineService } from "./pandoc/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import {
@@ -155,6 +156,9 @@ export function buildServices(
     })
     .use({
       citationScanner: () => new CitationScanner({ app: plugin.app }),
+    })
+    .use({
+      pandocEngine: () => createPandocEngineService(plugin.app),
     })
     .use({
       citekeyClick: ({ noteIndex, noteFeature, db, settings }) =>

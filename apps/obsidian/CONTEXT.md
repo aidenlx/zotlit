@@ -123,6 +123,10 @@ _Avoid_: bibliography sidebar, reference list pane
 The CSL style rendered references are formatted in, stored in synced settings as a CSL style ID. Chosen from the styles Zotero installed in its data directory, which are indexed by style ID rather than filename; a dependent style renders through its independent parent. Zotero stays the style manager — ZotLit installs and updates nothing, and an unset setting or an uninstalled style renders with the citation engine's embedded default style.
 _Avoid_: citation style (that's the `cite` template's format), CSL file (names the file, not the selection)
 
+**Pandoc Engine**:
+The Pandoc WASM binary that formats references and runs the built-in export, pinned per plugin release to one upstream release asset and its SHA-256. A user starts the download from settings; ZotLit verifies the bytes against the pin before they become the cache, stores them uncompressed and content-addressed, and shares them with every vault on the device. Uninstall reaches the whole device. The engine's absence is a normal mode, and its download, checksum, and startup failures each name themselves so one fallback surface guides the user out.
+_Avoid_: Pandoc install (Pandoc CLI is a separate, user-owned install), bundled Pandoc (the plugin never ships the binary)
+
 **Embedded Item Data**:
 A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
 _Avoid_: citation map (that's the derived lookup structure)

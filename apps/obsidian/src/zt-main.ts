@@ -180,6 +180,7 @@ export default class ZotLitPlugin extends Plugin {
         attachmentImport: services.attachmentImport,
         template: services.template,
         release: services.release,
+        pandocEngine: services.pandocEngine,
         languagePack,
       }),
     );

@@ -13,6 +13,7 @@ import {
 import { RESET_SETTING } from "@/services/settings/service";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
+import { pandocEngineDefinition } from "./pandoc-engine";
 import { defaultPlaceholder } from "./placeholder";
 
 /** Items for the "Citations" sub-page. */
@@ -82,6 +83,7 @@ export function citationsPageItems(
           desc: m.settings_citation_references_style_desc(),
           render: (setting) => renderReferencesStyleRow(setting, ctx),
         },
+        pandocEngineDefinition(ctx),
       ],
     },
   ];

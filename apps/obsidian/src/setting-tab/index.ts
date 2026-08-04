@@ -3,6 +3,7 @@ import { PluginSettingTab, type SettingDefinitionItem } from "obsidian";
 import { type LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import { type DatabaseService } from "@/services/database/service";
+import { type PandocEngineService } from "@/services/pandoc/service";
 import {
   type SettingsPatch,
   type SettingsService,
@@ -45,6 +46,7 @@ export interface ZotLitSettingTabOptions {
   attachmentImport: AttachmentImportActions;
   template: TemplateService;
   release: ReleaseTabActions;
+  pandocEngine: PandocEngineService;
   languagePack: LanguagePackLifecycle;
 }
 
@@ -55,6 +57,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #zoteroPref: ZoteroPrefService;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #release: ReleaseTabActions;
+  readonly #pandocEngine: PandocEngineService;
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({
@@ -65,6 +68,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     attachmentImport,
     template,
     release,
+    pandocEngine,
     languagePack,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
@@ -74,12 +78,14 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#zoteroPref = zoteroPref;
     this.#attachmentImport = attachmentImport;
     this.#release = release;
+    this.#pandocEngine = pandocEngine;
     this.#languagePack = languagePack;
 
     plugin.register(
       template.on("compile-status-changed", () => this.#requestUpdate()),
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
+    plugin.register(pandocEngine.subscribe(() => this.#requestUpdate()));
 
     // Settings: the frontmatter list is structural — its edits add/remove rows,
     // so the tab must re-render. Reference identity changes only when that key
@@ -137,6 +143,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       zoteroPref: this.#zoteroPref,
       attachmentImport: this.#attachmentImport,
       release: this.#release,
+      pandocEngine: this.#pandocEngine,
       languagePack: this.#languagePack,
       requestUpdate: () => this.update(),
     };
