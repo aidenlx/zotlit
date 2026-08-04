@@ -77,7 +77,7 @@ weight — micro-apparatus inside the sans body rather than marketing display, b
 the same mono-uppercase register.
 
 **Running prose stays in normal case**, even in chrome: full sentences read as
-text, not labels — so the v2-beta banner notice, tooltips, and any
+text, not labels — so the v2 banner notice, tooltips, and any
 sentence-shaped copy keep their upright case and sans body voice. The Archivo
 wordmark likewise stays outside label treatment.
 

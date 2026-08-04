@@ -1,13 +1,10 @@
 # Contributing
 
-> **Alpha stage** — ZotLit v2 is not yet accepting external contributions.
-> The APIs, architecture, and plugin surface are still changing rapidly. Once
-> the project reaches stable, contribution guidelines (code style, PR process,
-> issue triage) will be added here.
+> Contribution guidelines (code style, PR process, issue triage) will be
+> added here as the project matures.
 >
 > Bug reports and feature requests via
-> [GitHub Issues](https://github.com/aidenlx/zotlit/issues) are welcome at
-> any stage.
+> [GitHub Issues](https://github.com/aidenlx/zotlit/issues) are welcome.
 
 ## Releasing
 
@@ -15,8 +12,8 @@ Each app's `apps/{app}/package.json#version` is the sole version source.
 
 | App | Tag format | Example |
 |---|---|---|
-| Obsidian (`@zotlit/obsidian`) | bare semver | `2.0.0-alpha.1`, `2.1.0` |
-| Zotero (`@zotlit/zotero`) | `zt-` prefix | `zt-2.0.0-alpha.1`, `zt-2.1.0` |
+| Obsidian (`@zotlit/obsidian`) | bare semver | `2.0.0`, `2.1.0-beta.1` |
+| Zotero (`@zotlit/zotero`) | `zt-` prefix | `zt-2.0.0`, `zt-2.1.0-beta.1` |
 
 ### Branching model
 
@@ -67,5 +64,5 @@ counterpart line before merging a release PR.
 
 | Channel | Obsidian | Zotero |
 |---|---|---|
-| Alpha / beta | [BRAT](https://github.com/TfTHacker/obsidian42-brat) | `update-beta.json` on the `release` tag |
+| Pre-release | [BRAT](https://github.com/TfTHacker/obsidian42-brat) | `update-beta.json` on the `release` tag |
 | Stable | Community plugin store + BRAT | `update.json` on the `release` tag |

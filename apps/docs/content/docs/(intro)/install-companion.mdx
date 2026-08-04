@@ -7,19 +7,14 @@ import { Tabs, Tab } from "fumadocs-ui/components/tabs";
 import { VersionLedger } from "@/components/version-ledger";
 import { XpiDownload } from "@/components/xpi-download";
 import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Callout } from "fumadocs-ui/components/callout";
 
 The companion is a Zotero add-on that lets ZotLit communicate with your library. It requires **Zotero 9** or later.
 
-The companion ships on two update channels. The v2 alpha is served on the beta channel; the stable channel has no v2 release yet. To follow the alpha, use the Beta tab below.
-
 ## Install the add-on
 
-<Tabs items={["Beta", "Stable"]}>
-  <Tab value="Beta">
-    <VersionLedger app="zotero" channel="pre-release" />
-
-    A beta install auto-updates through Zotero as new releases ship on either channel.
+<Tabs items={["Stable", "Pre-release"]} updateAnchor>
+  <Tab id="stable" value="Stable">
+    <VersionLedger app="zotero" channel="stable" />
 
     <Steps>
       <Step>
@@ -27,7 +22,7 @@ The companion ships on two update channels. The v2 alpha is served on the beta c
 
         Download the latest companion asset directly:
 
-        <XpiDownload channel="pre-release" />
+        <XpiDownload channel="stable" />
 
         If you are using Firefox, you should right click the link and choose `Save Link As...`
 
@@ -51,12 +46,39 @@ The companion ships on two update channels. The v2 alpha is served on the beta c
     </Steps>
 
   </Tab>
-  <Tab value="Stable">
-    <VersionLedger app="zotero" channel="stable" />
+  <Tab id="pre-release" value="Pre-release">
+    <VersionLedger app="zotero" channel="pre-release" />
 
-    <Callout type="info" title="The stable channel has no v2 release yet">
-      During the alpha period, use the **Beta** tab to install the companion. Beta installs move to stable releases automatically once v2 is promoted.
-    </Callout>
+    Pre-release installs auto-update through Zotero as new releases ship on either channel. Use this if you want to test upcoming changes before they reach stable.
+
+    <Steps>
+      <Step>
+        ### Download the `.xpi` file
+
+        Download the latest pre-release companion asset directly:
+
+        <XpiDownload channel="pre-release" />
+
+        If you are using Firefox, you should right click the link and choose `Save Link As...`
+
+        Prefer to pick manually? Find latest companion release from [ZotLit releases page](https://github.com/aidenlx/zotlit/releases) that starts with `zt-`.
+
+      </Step>
+      <Step>
+        ### Install in Zotero
+
+        In Zotero, open **Tools > Add-ons**. Click the gear menu and select **Install Add-on From File...**. Choose the `.xpi` file you downloaded, then confirm when prompted.
+
+      </Step>
+      <Step>
+        ### Confirm the installation
+
+        After installing, a **ZotLit** pane should appear in Zotero's settings.
+
+        You do not need to configure anything here right now. The next section explains when this matters.
+
+      </Step>
+    </Steps>
 
   </Tab>
 </Tabs>

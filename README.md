@@ -25,13 +25,13 @@
 </p>
 
 <p>
-  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Install with BRAT" src="https://custom-icon-badges.demolab.com/badge/-Install%20with%20BRAT-8b6cef?style=for-the-badge&logo=obsidian"></a>
+  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Install in Obsidian" src="https://custom-icon-badges.demolab.com/badge/-Install%20in%20Obsidian-8b6cef?style=for-the-badge&logo=obsidian"></a>
 </p>
 
 </div>
 
-> [!WARNING]
-> **ZotLit v2 is in beta.** It ships as GitHub pre-releases and installs with [BRAT](https://zotlit.aidenlx.site/docs/install-zotlit), not the Obsidian community store. The stable **v1** release lives on the [`v1` branch](https://github.com/aidenlx/zotlit/tree/v1). See the [v1 docs](https://zotlit-v1.aidenlx.site) for v1 usage.
+> [!NOTE]
+> **Coming from v1?** v2 is a major upgrade with breaking changes. Your existing literature notes and custom templates do not carry over unchanged. Read the [migration guide](https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1) before upgrading.
 
 ## Overview
 
@@ -72,7 +72,7 @@ New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/
 
 > [!IMPORTANT]
 > **Third-party project: back up your data**
-> ZotLit is a third-party project, not affiliated with Obsidian or Zotero, and may break when either updates. v2 is beta software. Back up your vault and Zotero data before using it. The stable v1 codebase remains on the [`v1` branch](https://github.com/aidenlx/zotlit/tree/v1), with [v1 docs](https://zotlit-v1.aidenlx.site).
+> ZotLit is a third-party project, not affiliated with Obsidian or Zotero, and may break when either updates. Back up your vault and Zotero data before using it. The v1 codebase remains on the [`v1` branch](https://github.com/aidenlx/zotlit/tree/v1), with [v1 docs](https://zotlit-v1.aidenlx.site).
 
 ## Support
 
