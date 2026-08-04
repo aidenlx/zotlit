@@ -1,7 +1,16 @@
-import { type SettingDefinitionItem } from "obsidian";
+import {
+  type DropdownComponent,
+  type Setting,
+  type SettingDefinitionItem,
+} from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import {
+  listInstalledStyles,
+  type InstalledCslStyle,
+} from "@/services/pandoc/styles";
+import { RESET_SETTING } from "@/services/settings/service";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
@@ -64,7 +73,81 @@ export function citationsPageItems(
         },
       ],
     },
+    {
+      type: "group",
+      heading: m.settings_citation_references_heading(),
+      items: [
+        {
+          name: m.settings_citation_references_style_name(),
+          desc: m.settings_citation_references_style_desc(),
+          render: (setting) => renderReferencesStyleRow(setting, ctx),
+        },
+      ],
+    },
   ];
+}
+
+/** Dropdown sentinel for the embedded default style; a style ID is never empty. */
+const STYLE_DEFAULT = "";
+
+/**
+ * References style picker, listing the styles installed in the Zotero data
+ * directory. Zotero owns style installation, so the list is read-only and an
+ * unavailable selection stays selected until the user picks another style.
+ */
+function renderReferencesStyleRow(
+  setting: Setting,
+  ctx: SettingTabContext,
+): () => void {
+  const stack = new DisposableStack();
+
+  let dropdown: DropdownComponent | undefined;
+  let styles: readonly InstalledCslStyle[] = [];
+
+  const selectedValue = (): string =>
+    ctx.settings.current?.["citation.references-style"] ?? STYLE_DEFAULT;
+
+  const repopulate = (): void => {
+    if (!dropdown) return;
+    const current = selectedValue();
+    dropdown.selectEl.replaceChildren();
+    dropdown.addOption(
+      STYLE_DEFAULT,
+      m.settings_citation_references_style_default(),
+    );
+    for (const style of styles) dropdown.addOption(style.id, style.title);
+    if (current !== STYLE_DEFAULT && !styles.some((s) => s.id === current)) {
+      dropdown.addOption(
+        current,
+        m.settings_citation_references_style_missing({ id: current }),
+      );
+    }
+    dropdown.setValue(current);
+  };
+
+  const reload = (): void => {
+    void listInstalledStyles(ctx.zoteroPref.dataDir).then((installed) => {
+      if (!dropdown?.selectEl.isConnected) return;
+      styles = installed;
+      repopulate();
+    });
+  };
+
+  setting.addDropdown((d) => {
+    dropdown = d;
+    d.onChange((value) => {
+      ctx.settings.update({
+        "citation.references-style":
+          value === STYLE_DEFAULT ? RESET_SETTING : value,
+      });
+    });
+    repopulate();
+  });
+
+  reload();
+  stack.defer(ctx.zoteroPref.on("resolved-changed", reload));
+
+  return () => stack.dispose();
 }
 
 function citationKeyLinksDescription(): DocumentFragment {

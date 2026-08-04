@@ -119,6 +119,10 @@ _Avoid_: citation key, reference index
 The active-document view that lists each distinct Literature Note Citation once and navigates to its occurrences. Entries keep the selected CSL style's bibliography order and show their first-occurrence Reference Numbers as navigation identities; invalid references stay visible with their error state.
 _Avoid_: bibliography sidebar, reference list pane
 
+**References Style**:
+The CSL style rendered references are formatted in, stored in synced settings as a CSL style ID. Chosen from the styles Zotero installed in its data directory, which are indexed by style ID rather than filename; a dependent style renders through its independent parent. Zotero stays the style manager — ZotLit installs and updates nothing, and an unset setting or an uninstalled style renders with the citation engine's embedded default style.
+_Avoid_: citation style (that's the `cite` template's format), CSL file (names the file, not the selection)
+
 **Embedded Item Data**:
 A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
 _Avoid_: citation map (that's the derived lookup structure)

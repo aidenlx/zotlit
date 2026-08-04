@@ -76,6 +76,8 @@ export const schema = v.object({
   "citation.show-citekey-in-suggester": v.boolean(),
   "citation.key-links": v.boolean(),
   "citation.key-links-frontmatter-key": citationKeyPropertySchema,
+  /** CSL style ID; `null` renders with the citation engine's embedded style. */
+  "citation.references-style": v.nullable(v.string()),
 
   "note.literature-folder": v.string(),
   "note.frontmatter-fields": frontmatterFieldsSchema,
@@ -118,6 +120,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.show-citekey-in-suggester": false,
   "citation.key-links": false,
   "citation.key-links-frontmatter-key": "citekey",
+  "citation.references-style": null,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",

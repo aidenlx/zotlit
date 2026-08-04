@@ -52,6 +52,20 @@ Open this page from **Settings → ZotLit → Citations**.
 
 **Citation key property** names the Literature Note frontmatter property used for citation key lookup. The value must be non-empty and cannot start or end with spaces.
 
+### References
+
+| Label                | Key                         | Control                           | Default                       |
+| -------------------- | --------------------------- | --------------------------------- | ----------------------------- |
+| **References style** | `citation.references-style` | Dropdown (lists installed styles) | Default (Chicago author-date) |
+
+**References style** picks the CSL style ZotLit renders references with. The dropdown lists the styles Zotero has installed; install, update, and remove them in Zotero → Settings → Cite. The stored value is the style ID, so renaming a style file keeps your choice.
+
+<Callout type="info">
+  ZotLit falls back to its built-in Chicago author-date style when no style is
+  selected, or when the selected style is no longer installed. A style that is
+  no longer installed stays selected in the dropdown until you pick another one.
+</Callout>
+
 ## Zotero database
 
 <Callout type="info" title="Device Overrides">
