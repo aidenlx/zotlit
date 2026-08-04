@@ -18,6 +18,7 @@ import { addDatabaseActions } from "./services/database/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
+import { registerPandocResolve } from "./services/pandoc/register";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
@@ -247,6 +248,12 @@ export default class ZotLitPlugin extends Plugin {
       noteIndex: services.noteIndex,
       settings: services.settings,
       templates: services.template,
+      zoteroPref: services.zoteroPref,
+    });
+
+    registerPandocResolve(this, {
+      app: this.app,
+      db: services.db,
       zoteroPref: services.zoteroPref,
     });
 

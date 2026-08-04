@@ -395,6 +395,8 @@
   "cli_flag_frontmatter_set_merge_desc": "Merge strategy; defaults to replace on a new field, keeps the current strategy when omitted on an existing field",
   "cli_flag_frontmatter_remove_field_desc": "Managed Frontmatter field key to delete",
   "cli_flag_order_desc": "Complete, comma-separated permutation of the configured field keys, in write order",
+  "cli_resolve_desc": "Resolve the literature note links of one file to citation keys, for the ZotLit Pandoc filter",
+  "cli_flag_file_desc": "Absolute path to the Markdown file",
   "settings_attachment_import_name": "Import attachments",
   "settings_attachment_import_desc": "Copy annotation images and embedded attachments into the vault.",
   "settings_attachment_folder_name": "Attachment folder",

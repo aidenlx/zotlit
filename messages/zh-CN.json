@@ -368,6 +368,8 @@
   "cli_flag_frontmatter_set_merge_desc": "合并策略；新增字段默认 replace，对已有字段省略时保留当前策略",
   "cli_flag_frontmatter_remove_field_desc": "要删除的托管前置元数据字段名",
   "cli_flag_order_desc": "已配置字段名的完整排列，以逗号分隔，即写入顺序",
+  "cli_resolve_desc": "将某个文件中的文献笔记链接解析为文献引用标识（citation key），供 ZotLit Pandoc 过滤器使用",
+  "cli_flag_file_desc": "Markdown 文件的绝对路径",
   "settings_attachment_import_name": "导入附件",
   "settings_attachment_import_desc": "将标注图像和嵌入附件复制到仓库。",
   "settings_attachment_folder_name": "附件文件夹",
