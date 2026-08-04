@@ -10,6 +10,7 @@ export default defineConfig({
   exports: {
     customExports: {
       "./schema.json": "./zotero-schema/schema.json",
+      "./fixtures/item-to-csl.json": "./fixtures/item-to-csl.json",
     },
   },
   unbundle: true,

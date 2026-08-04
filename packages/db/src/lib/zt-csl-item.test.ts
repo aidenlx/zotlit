@@ -1,3 +1,5 @@
+// ZotLit-specific mapper behavior. Agreement with Zotero across the whole
+// regular-item schema lives in the golden corpus, `zt-csl-item.corpus.test.ts`.
 import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
@@ -84,30 +86,6 @@ describe("itemToCsl: identity and type", () => {
     ).toBe("ABC12345");
   });
 
-  it("maps a Zotero item type to its CSL type", () => {
-    expect(itemToCsl(makeItem({ itemType: "journalArticle" }), USER).type).toBe(
-      "article-journal",
-    );
-    expect(itemToCsl(makeItem({ itemType: "bookSection" }), USER).type).toBe(
-      "chapter",
-    );
-    expect(
-      itemToCsl(makeItem({ itemType: "conferencePaper" }), USER).type,
-    ).toBe("paper-conference");
-  });
-
-  it("maps item types beyond the first candidate of each CSL type", () => {
-    expect(itemToCsl(makeItem({ itemType: "videoRecording" }), USER).type).toBe(
-      "motion_picture",
-    );
-    expect(itemToCsl(makeItem({ itemType: "tvBroadcast" }), USER).type).toBe(
-      "broadcast",
-    );
-    expect(itemToCsl(makeItem({ itemType: "email" }), USER).type).toBe(
-      "personal_communication",
-    );
-  });
-
   it("rejects an item type outside the CSL mapping", () => {
     expect(() => itemToCsl(makeItem({ itemType: "annotation" }), USER)).toThrow(
       'Unexpected Zotero Item type "annotation"',
@@ -116,72 +94,6 @@ describe("itemToCsl: identity and type", () => {
 });
 
 describe("itemToCsl: text variables", () => {
-  it("maps the core journal-article fields", () => {
-    const csl = itemToCsl(
-      makeItem({
-        itemType: "journalArticle",
-        title: "A Study",
-        abstractNote: "Lorem ipsum",
-        publicationTitle: "Nature",
-        volume: "42",
-        issue: "3",
-        pages: "100-110",
-        language: "en-US",
-      }),
-      USER,
-    );
-    expect(csl).toMatchObject({
-      title: "A Study",
-      abstract: "Lorem ipsum",
-      "container-title": "Nature",
-      volume: "42",
-      issue: "3",
-      page: "100-110",
-      language: "en-US",
-    });
-  });
-
-  it("maps the identifier fields", () => {
-    const csl = itemToCsl(
-      makeItem({
-        itemType: "journalArticle",
-        DOI: "10.1234/test",
-        ISSN: "0028-0836",
-        url: "https://example.com/a",
-        citationKey: "smith2024",
-      }),
-      USER,
-    );
-    expect(csl).toMatchObject({
-      DOI: "10.1234/test",
-      ISSN: "0028-0836",
-      URL: "https://example.com/a",
-      "citation-key": "smith2024",
-    });
-  });
-
-  it("reads a type-specific field through its base field", () => {
-    const csl = itemToCsl(
-      makeItem({ itemType: "bookSection", bookTitle: "Handbook of Things" }),
-      USER,
-    );
-    expect(csl["container-title"]).toBe("Handbook of Things");
-  });
-
-  it("falls back to a later field candidate", () => {
-    expect(
-      itemToCsl(
-        makeItem({ itemType: "conferencePaper", conferenceName: "CHI 2024" }),
-        USER,
-      )["event-title"],
-    ).toBe("CHI 2024");
-    expect(
-      itemToCsl(makeItem({ itemType: "case", reporter: "U.S." }), USER)[
-        "container-title"
-      ],
-    ).toBe("U.S.");
-  });
-
   it("falls back past an empty earlier field candidate", () => {
     const csl = itemToCsl(
       makeItem({
@@ -192,26 +104,6 @@ describe("itemToCsl: text variables", () => {
       USER,
     );
     expect(csl["collection-title"]).toBe("Series B");
-  });
-
-  it("reaches the third field candidate", () => {
-    const csl = itemToCsl(
-      makeItem({ itemType: "statute", code: "U.S. Code" }),
-      USER,
-    );
-    expect(csl["container-title"]).toBe("U.S. Code");
-  });
-
-  it("prefers the earlier field candidate when both carry a value", () => {
-    const csl = itemToCsl(
-      makeItem({
-        itemType: "journalArticle",
-        seriesTitle: "Cognitive Science Series",
-        series: "Series B",
-      }),
-      USER,
-    );
-    expect(csl["collection-title"]).toBe("Cognitive Science Series");
   });
 
   it("keeps only the first ISBN", () => {
@@ -245,33 +137,6 @@ describe("itemToCsl: text variables", () => {
     expect(title('He said "hi"')).toBe('He said "hi"');
   });
 
-  it("writes the short title as title-short only", () => {
-    const csl = itemToCsl(
-      makeItem({ itemType: "book", shortTitle: "Study" }),
-      USER,
-    );
-    expect(csl["title-short"]).toBe("Study");
-    expect(csl).not.toHaveProperty("shortTitle");
-  });
-
-  it("maps place to event-place for the event-place item types", () => {
-    const csl = itemToCsl(
-      makeItem({ itemType: "presentation", place: "Honolulu" }),
-      USER,
-    );
-    expect(csl["event-place"]).toBe("Honolulu");
-    expect(csl).not.toHaveProperty("publisher-place");
-  });
-
-  it("maps place to publisher-place for every other item type", () => {
-    const csl = itemToCsl(
-      makeItem({ itemType: "book", place: "London" }),
-      USER,
-    );
-    expect(csl["publisher-place"]).toBe("London");
-    expect(csl).not.toHaveProperty("event-place");
-  });
-
   it("omits empty and absent fields", () => {
     const csl = itemToCsl(
       makeItem({ itemType: "book", title: "", publisher: null }),
@@ -292,100 +157,49 @@ describe("itemToCsl: text variables", () => {
     );
     expect(csl["citation-key"]).toBe("smith2024");
   });
+
+  it("normalizes Extra cheater syntax on its way to the note variable", () => {
+    const csl = itemToCsl(
+      makeItem({
+        itemType: "book",
+        extra: "Publication Title: Replacement title\ndoi: 10.1234/example",
+      }),
+      USER,
+    );
+    expect(csl.note).toBe(
+      "container-title: Replacement title\nDOI: 10.1234/example",
+    );
+  });
 });
 
 describe("itemToCsl: name variables", () => {
-  it("maps creator types to their CSL name variables, in Zotero's order", () => {
+  it("splits creator particles and suffixes into CSL name parts", () => {
     const csl = itemToCsl(
       makeItem(
         { itemType: "book" },
         {
           creators: [
-            creator("author", "Hensher", { firstName: "David" }),
-            creator("author", "Rose", { firstName: "John" }),
-            creator("editor", "Greene", { firstName: "William" }),
-            creator("translator", "Li", { firstName: "Wei" }),
+            creator("author", "la Fontaine", { firstName: "Jean de, Jr." }),
+            creator("author", '"van Gogh"', { firstName: "Vincent de" }),
           ],
         },
       ),
       USER,
     );
     expect(csl.author).toEqual([
-      { family: "Hensher", given: "David" },
-      { family: "Rose", given: "John" },
+      {
+        family: "Fontaine",
+        given: "Jean",
+        "non-dropping-particle": "la",
+        "dropping-particle": "de",
+        suffix: "Jr.",
+      },
+      { family: "van Gogh", given: "Vincent de" },
     ]);
-    expect(csl.editor).toEqual([{ family: "Greene", given: "William" }]);
-    expect(csl.translator).toEqual([{ family: "Li", given: "Wei" }]);
-  });
-
-  it("maps a single-field creator to a literal name", () => {
-    const csl = itemToCsl(
-      makeItem(
-        { itemType: "report" },
-        {
-          creators: [
-            creator("author", "World Health Organization", { fieldMode: 1 }),
-          ],
-        },
-      ),
-      USER,
-    );
-    expect(csl.author).toEqual([{ literal: "World Health Organization" }]);
-  });
-
-  it("maps an unmapped primary creator type to author", () => {
-    const csl = itemToCsl(
-      makeItem(
-        { itemType: "computerProgram" },
-        {
-          primaryCreatorType: "programmer",
-          creators: [creator("programmer", "Torvalds", { firstName: "Linus" })],
-        },
-      ),
-      USER,
-    );
-    expect(csl.author).toEqual([{ family: "Torvalds", given: "Linus" }]);
-  });
-
-  it("drops an unmapped non-primary creator type", () => {
-    const csl = itemToCsl(
-      makeItem(
-        { itemType: "bill" },
-        {
-          primaryCreatorType: "sponsor",
-          creators: [creator("cosponsor", "Doe", { firstName: "Jane" })],
-        },
-      ),
-      USER,
-    );
-    expect(csl).toEqual({ id: URI, type: "bill" });
-  });
-
-  it("maps a mapped creator type by its own name variable, not author", () => {
-    const csl = itemToCsl(
-      makeItem(
-        { itemType: "podcast" },
-        {
-          primaryCreatorType: "podcaster",
-          creators: [creator("podcaster", "Gross", { firstName: "Terry" })],
-        },
-      ),
-      USER,
-    );
-    expect(csl.host).toEqual([{ family: "Gross", given: "Terry" }]);
-    expect(csl).not.toHaveProperty("author");
   });
 });
 
 describe("itemToCsl: date variables", () => {
-  it("maps a full date to a year-month-day date-parts triple", () => {
-    const csl = itemToCsl(
-      makeItem({ itemType: "book", date: "2015-04-27 April 27, 2015" }),
-      USER,
-    );
-    expect(csl.issued).toEqual({ "date-parts": [[2015, 4, 27]] });
-  });
-
   it("maps a year-month date to a date-parts pair", () => {
     const csl = itemToCsl(
       makeItem({ itemType: "book", date: "2024-06-00 June 2024" }),
@@ -408,21 +222,6 @@ describe("itemToCsl: date variables", () => {
       USER,
     );
     expect(csl.issued).toEqual({ literal: "in press" });
-  });
-
-  it("maps the remaining CSL date variables", () => {
-    const csl = itemToCsl(
-      makeItem({
-        itemType: "patent",
-        accessDate: "2024-03-01 12:30:00",
-        filingDate: "2019-11-05 November 5, 2019",
-        originalDate: "1998-00-00 1998",
-      }),
-      USER,
-    );
-    expect(csl.accessed).toEqual({ "date-parts": [[2024, 3, 1]] });
-    expect(csl.submitted).toEqual({ "date-parts": [[2019, 11, 5]] });
-    expect(csl["original-date"]).toEqual({ "date-parts": [[1998]] });
   });
 
   it("keeps the month and day of an access date stored as a bare SQL date", () => {
@@ -467,13 +266,5 @@ describe("itemToCsl: date variables", () => {
     expect(issued("2013-01-00 January 2013")).toEqual({
       "date-parts": [[2013, 1]],
     });
-  });
-
-  it("reads a type-specific date field through its base field", () => {
-    const csl = itemToCsl(
-      makeItem({ itemType: "case", dateDecided: "1954-05-17 May 17, 1954" }),
-      USER,
-    );
-    expect(csl.issued).toEqual({ "date-parts": [[1954, 5, 17]] });
   });
 });
