@@ -56,27 +56,38 @@ export function buildFilterVariant(
   return kept.join("\n");
 }
 
+const SUFFIX = "?variant=";
+
+/** Splits `<path>.lua?variant=<name>` apart; `null` for any other module id. */
+function parseVariantId(
+  id: string,
+): { path: string; variant: PandocFilterVariant } | null {
+  const at = id.indexOf(SUFFIX);
+  if (at === -1) return null;
+  const path = id.slice(0, at);
+  if (!path.endsWith(".lua")) return null;
+  return { path, variant: id.slice(at + SUFFIX.length) as PandocFilterVariant };
+}
+
 /**
  * Serves `./zotlit-cite.lua?variant=cli` and `?variant=sandbox` as string modules,
  * so the plugin bundle carries the two split variants rather than the source.
  */
 export function pandocFilterVariants(): Plugin {
-  const SUFFIX = "?variant=";
   return {
     name: "pandoc-filter-variants",
     async resolveId(id, importer) {
-      const at = id.indexOf(SUFFIX);
-      if (at === -1 || !id.slice(0, at).endsWith(".lua")) return null;
-      const resolved = await this.resolve(id.slice(0, at), importer, {
+      const parsed = parseVariantId(id);
+      if (!parsed) return null;
+      const resolved = await this.resolve(parsed.path, importer, {
         skipSelf: true,
       });
-      return resolved && `${resolved.id}${id.slice(at)}`;
+      return resolved && `${resolved.id}${SUFFIX}${parsed.variant}`;
     },
     async load(id) {
-      const at = id.indexOf(SUFFIX);
-      if (at === -1 || !id.slice(0, at).endsWith(".lua")) return null;
-      const path = id.slice(0, at);
-      const variant = id.slice(at + SUFFIX.length) as PandocFilterVariant;
+      const parsed = parseVariantId(id);
+      if (!parsed) return null;
+      const { path, variant } = parsed;
       if (!VARIANTS.includes(variant)) {
         throw new Error(`Unknown filter variant "${variant}" for ${path}`);
       }

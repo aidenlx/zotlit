@@ -153,7 +153,7 @@ The filter does not resolve links, does not read frontmatter, does not query the
 
 ### Document-level filter
 
-The filter operates as a `Pandoc(doc)` filter — it receives the full document and returns the full document. This is necessary because Citation Run detection requires scanning adjacent inline elements within each `Para` and `Plain` block.
+The filter operates as a `Pandoc(doc)` filter — it receives the full document and returns the full document. This is necessary because Citation Run detection requires scanning adjacent inline elements within each inline list.
 
 ### Link scope
 
@@ -193,7 +193,7 @@ When a Link has a `#cite:` fragment, the filter parses the five named parameters
 
 - `mode`: `normal` | `author-in-text` | `suppress-author` (default: `normal`)
 - `prefix`: percent-decoded plain text
-- `label`: one CSL Locator label (requires `locator`)
+- `label`: one of the CSL Locator labels citeproc parses — `book`, `chapter`, `column`, `figure`, `folio`, `issue`, `line`, `note`, `opus`, `page`, `paragraph`, `part`, `section`, `sub-verbo`, `verse`, `volume` (requires `locator`). The labels CSL 1.0.2 added, such as `appendix` and `table`, stay out: citeproc has no locale term for them and would leave them in the suffix as literal text.
 - `locator`: percent-decoded plain text (omitted `label` means `page`)
 - `suffix`: percent-decoded plain text
 
@@ -214,7 +214,7 @@ Each parsing error names the linkpath, the parameter, and the specific problem.
 
 ### Citation Run detection
 
-A **Citation Run** is a same-line sequence of two or more citation Links separated only by one literal semicolon and optional ASCII spaces or tabs. The filter detects runs by scanning `Para` and `Plain` inline lists. Since all inline content lives inside `Para` or `Plain` blocks — even inside blockquotes, footnotes, and tables — this covers all document locations.
+A **Citation Run** is a same-line sequence of two or more citation Links separated only by one literal semicolon and optional ASCII spaces or tabs. The filter detects runs by scanning every inline list in the document — paragraph, heading, table cell, caption, and the content of an inline container such as `Emph` — so this covers all document locations.
 
 Verified Pandoc AST patterns:
 

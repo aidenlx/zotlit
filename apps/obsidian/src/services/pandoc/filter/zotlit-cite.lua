@@ -107,7 +107,7 @@ local function load_citations()
     report_errors()
   end
 
-  if payload.errors then
+  if payload.errors and #payload.errors > 0 then
     for _, err in ipairs(payload.errors) do
       add_error(
         err.code or "resolve-failed",
@@ -191,7 +191,10 @@ local CITATION_MODES = {
 }
 
 --- CSL Locator labels, mapped to the citeproc locale term citeproc parses out of a
---- Citation suffix.
+--- Citation suffix. This is the whole set citeproc parses: the labels CSL 1.0.2
+--- added (appendix, table, elocation, article-locator, ...) stay out, because
+--- citeproc leaves them in the suffix as literal text instead of reading them as a
+--- locator.
 local LOCATOR_TERMS = {
   book = "book",
   chapter = "chapter",
@@ -369,6 +372,8 @@ end
 
 --- Rewrites one inline list, grouping same-line semicolon-separated Citations into
 --- one Cite. Only `Space` may sit around the separator: a `SoftBreak` ends the run.
+--- Every inline list in the document runs through this, so Citations convert in
+--- paragraphs, headings, table cells, captions, and inside inline containers alike.
 local function process_inlines(inlines)
   local result = pandoc.Inlines({})
   local index = 1
@@ -411,14 +416,7 @@ end
 
 function Pandoc(doc)
   citations = load_citations()
-  local converted = doc:walk({
-    Para = function(block)
-      return pandoc.Para(process_inlines(block.content))
-    end,
-    Plain = function(block)
-      return pandoc.Plain(process_inlines(block.content))
-    end,
-  })
+  local converted = doc:walk({ Inlines = process_inlines })
   if #errors > 0 then
     report_errors()
   end

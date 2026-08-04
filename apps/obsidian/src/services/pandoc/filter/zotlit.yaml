@@ -5,10 +5,13 @@
 # your workflow:
 #
 #   pandoc "input.md" --defaults "zotlit.yaml" \
-#     --bibliography "references.json" --output "output.docx"
+#     --bibliography "references.json" --fail-if-warnings --output "output.docx"
+#
+# Add --fail-if-warnings to stop the export on a bibliography lookup failure too.
+# It stays a flag, so the warnings of any other output you produce with this
+# defaults file remain yours to judge.
 
 from: markdown+wikilinks_title_after_pipe
 filters:
   - ${.}/zotlit-cite.lua
   - citeproc
-fail-if-warnings: true

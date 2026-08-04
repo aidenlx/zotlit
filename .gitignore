@@ -20,6 +20,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Scratch artifacts: probe scripts, experiments, and fixture workspaces all live
+# in a workspace tmp/ (see policies/scratch-artifacts.md).
+tmp/
+
 # Misc
 .DS_Store
 

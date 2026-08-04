@@ -6,20 +6,26 @@ import { spawnSync } from "node:child_process";
 import {
   chmod,
   mkdir,
-  mkdtemp,
   readFile,
   realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import {
+  PANDOC_DEFAULTS_FILENAME,
+  PANDOC_FILTER_FILENAME,
+  PANDOC_RESOLVE_MAP_FILENAME,
+} from "../src/services/pandoc/filter/names.ts";
 import { buildFilterVariant } from "./lua-filter.ts";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const filterDir = join(packageRoot, "src/services/pandoc/filter");
 const pandocBin = process.env.PANDOC_BIN ?? "pandoc";
+
+/** Fixtures live in the workspace tree, so a failed run leaves them to read. */
+const workspaceRoot = join(packageRoot, "tmp/lua-filter");
 
 const REFERENCES = [
   {
@@ -46,18 +52,28 @@ const RESOLVE_MAP = {
   },
 };
 
-interface Case {
-  name: string;
-  markdown: string;
+const ERROR_MAP = {
+  errors: [
+    {
+      code: "item-not-found",
+      linkpath: "Doe 2020",
+      message: 'No live Item matches Indexed Key "ABC12345".',
+    },
+  ],
+};
+
+/** Exactly one expectation per case, so the shape says which check runs. */
+type Expectation =
   /** Expected substring of the citeproc-rendered plain-text output. */
-  plain?: string;
+  | { plain: string }
   /** Substrings the plain-text output must not contain. */
-  absent?: string[];
+  | { absent: string[] }
   /** Expected substrings of the native AST, rendered without citeproc. */
-  native?: string[];
+  | { native: string[] }
   /** Expected substring of stderr; the run must also exit non-zero. */
-  error?: string;
-}
+  | { error: string };
+
+type Case = { name: string; markdown: string } & Expectation;
 
 const CASES: Case[] = [
   { name: "plain wikilink", markdown: "[[Doe 2020]]", plain: "(Doe 2020)" },
@@ -133,6 +149,21 @@ const CASES: Case[] = [
   {
     name: "citation inside a list item",
     markdown: "- item [[Doe 2020]]",
+    plain: "(Doe 2020)",
+  },
+  {
+    name: "citation inside a heading",
+    markdown: "## Background [[Doe 2020]]",
+    plain: "Background (Doe 2020)",
+  },
+  {
+    name: "citation run inside emphasis",
+    markdown: "*[[Doe 2020]]; [[Smith 2021]]*",
+    plain: "(Doe 2020; Smith 2021)",
+  },
+  {
+    name: "citation inside a table cell",
+    markdown: "| head |\n| --- |\n| [[Doe 2020]] |",
     plain: "(Doe 2020)",
   },
   {
@@ -216,6 +247,11 @@ const CASES: Case[] = [
     error: "unresolved-citation-intent",
   },
   {
+    name: "a bad fragment inside a heading stops the run",
+    markdown: "## Background [[Doe 2020#cite:page=1]]",
+    error: '"page" is not a Citation Fragment parameter',
+  },
+  {
     name: "every error in one run",
     markdown: "[[Doe 2020#cite:locator=]] and [[Doe 2020#cite:page=1]]",
     error: "stopped on 2 error(s)",
@@ -252,22 +288,50 @@ function pandoc(
 
 const failures: string[] = [];
 
+/** One per named check the run executes, so the tally follows the code. */
+let checks = 0;
+
+function fail(name: string, mismatch: string, actual: string): void {
+  failures.push(`${name}\n  ${mismatch}\n  actual: ${actual.trim()}`);
+}
+
 function check(name: string, actual: string, ...expected: string[]): void {
   for (const wanted of expected) {
     if (actual.includes(wanted)) continue;
-    failures.push(
-      `${name}\n  expected: ${wanted}\n  actual:   ${actual.trim()}`,
-    );
+    fail(name, `expected: ${wanted}`, actual);
   }
 }
 
-function checkAbsent(name: string, actual: string, unwanted: string[]): void {
+function checkAbsent(
+  name: string,
+  actual: string,
+  ...unwanted: string[]
+): void {
   for (const text of unwanted) {
     if (!actual.includes(text)) continue;
-    failures.push(
-      `${name}\n  unexpected: ${text}\n  actual:     ${actual.trim()}`,
-    );
+    fail(name, `unexpected: ${text}`, actual);
   }
+}
+
+/** The run had to succeed; `false` once the failure is recorded. */
+function checkRan(name: string, run: Run): boolean {
+  if (run.status === 0) return true;
+  failures.push(`${name}\n  pandoc failed: ${run.stderr.trim()}`);
+  return false;
+}
+
+/** The run had to stop; `false` once the failure is recorded. */
+function checkStopped(name: string, run: Run): boolean {
+  if (run.status !== 0) return true;
+  failures.push(
+    `${name}\n  expected a non-zero exit, got output: ${run.stdout.trim()}`,
+  );
+  return false;
+}
+
+/** Pandoc wraps plain output, so every assertion runs against one flat line. */
+function flatten(text: string): string {
+  return text.replaceAll(/\s+/g, " ");
 }
 
 async function main(): Promise<void> {
@@ -279,56 +343,60 @@ async function main(): Promise<void> {
   }
   console.log(version.stdout.split("\n")[0]);
 
+  await rm(workspaceRoot, { recursive: true, force: true });
+  await mkdir(workspaceRoot, { recursive: true });
   // Realpath, so the paths this script asserts on match the ones Pandoc resolves.
-  const workspace = await realpath(
-    await mkdtemp(join(tmpdir(), "zotlit-lua-filter-")),
-  );
-  try {
-    await writeFile(
-      join(workspace, "references.json"),
-      JSON.stringify(REFERENCES),
-    );
-    await writeFile(
-      join(workspace, "zotlit-resolve-map.json"),
-      JSON.stringify(RESOLVE_MAP),
-    );
-    await writeFile(
-      join(workspace, "zotlit.yaml"),
-      await readFilterFile("zotlit.yaml"),
-    );
-    await writeFile(
-      join(workspace, "zotlit-cite.lua"),
-      buildFilterVariant(await readFilterFile("zotlit-cite.lua"), "sandbox"),
-    );
+  const workspace = await realpath(workspaceRoot);
 
-    for (const testCase of CASES) await runCase(workspace, testCase);
-    await checkMapErrors(workspace);
-    await checkCliVariant(workspace);
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
+  await writeFile(
+    join(workspace, "references.json"),
+    JSON.stringify(REFERENCES),
+  );
+  await writeMap(workspace, RESOLVE_MAP);
+  await writeFile(
+    join(workspace, PANDOC_DEFAULTS_FILENAME),
+    await readFilterFile(PANDOC_DEFAULTS_FILENAME),
+  );
+  await writeFile(
+    join(workspace, PANDOC_FILTER_FILENAME),
+    buildFilterVariant(await readFilterFile(PANDOC_FILTER_FILENAME), "sandbox"),
+  );
+
+  for (const testCase of CASES) await runCase(workspace, testCase);
+  await checkEmptyErrors(workspace);
+  await checkMapErrors(workspace);
+  await checkCliVariant(workspace);
 
   if (failures.length > 0) {
     console.error(
       `\n${failures.length} failure(s):\n\n${failures.join("\n\n")}`,
     );
+    console.error(`\nfixtures kept at ${workspace}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`${CASES.length + 2} checks passed`);
+  await rm(workspace, { recursive: true, force: true });
+  console.log(`${checks} checks passed`);
 }
 
 function readFilterFile(name: string): Promise<string> {
   return readFile(join(filterDir, name), "utf8");
 }
 
+function writeMap(directory: string, payload: unknown): Promise<void> {
+  return writeFile(
+    join(directory, PANDOC_RESOLVE_MAP_FILENAME),
+    JSON.stringify(payload),
+  );
+}
+
 /** The defaults file locates the filter beside it, so the run needs no filter flag. */
-function convert(workspace: string): Run {
+function convert(workspace: string, input = "input.md"): Run {
   return pandoc(
     [
-      "input.md",
+      input,
       "--defaults",
-      join(workspace, "zotlit.yaml"),
+      join(workspace, PANDOC_DEFAULTS_FILENAME),
       "--bibliography",
       "references.json",
       "--to",
@@ -339,9 +407,10 @@ function convert(workspace: string): Run {
 }
 
 async function runCase(workspace: string, testCase: Case): Promise<void> {
+  checks += 1;
   await writeFile(join(workspace, "input.md"), `${testCase.markdown}\n`);
 
-  if (testCase.native) {
+  if ("native" in testCase) {
     // Native AST assertions skip citeproc, which would consume the Cite nodes.
     const run = pandoc(
       [
@@ -349,81 +418,70 @@ async function runCase(workspace: string, testCase: Case): Promise<void> {
         "--from",
         "markdown+wikilinks_title_after_pipe",
         "--lua-filter",
-        join(workspace, "zotlit-cite.lua"),
+        join(workspace, PANDOC_FILTER_FILENAME),
         "--to",
         "native",
       ],
       { cwd: workspace },
     );
-    if (run.status !== 0) {
-      failures.push(`${testCase.name}\n  pandoc failed: ${run.stderr.trim()}`);
-      return;
-    }
-    check(
-      testCase.name,
-      run.stdout.replaceAll(/\s+/g, " "),
-      ...testCase.native,
-    );
+    if (!checkRan(testCase.name, run)) return;
+    check(testCase.name, flatten(run.stdout), ...testCase.native);
     return;
   }
 
   const run = convert(workspace);
-  if (testCase.error) {
-    if (run.status === 0) {
-      failures.push(
-        `${testCase.name}\n  expected a non-zero exit, got output: ${run.stdout.trim()}`,
-      );
-      return;
-    }
+  if ("error" in testCase) {
+    if (!checkStopped(testCase.name, run)) return;
     check(testCase.name, run.stderr, testCase.error);
     return;
   }
-  if (run.status !== 0) {
-    failures.push(`${testCase.name}\n  pandoc failed: ${run.stderr.trim()}`);
-    return;
-  }
-  const output = run.stdout.replaceAll(/\s+/g, " ");
-  if (testCase.plain) check(testCase.name, output, testCase.plain);
-  if (testCase.absent) checkAbsent(testCase.name, output, testCase.absent);
+  if (!checkRan(testCase.name, run)) return;
+  const output = flatten(run.stdout);
+  if ("plain" in testCase) check(testCase.name, output, testCase.plain);
+  else checkAbsent(testCase.name, output, ...testCase.absent);
+}
+
+/** An empty errors array reports nothing, so the conversion goes ahead. */
+async function checkEmptyErrors(workspace: string): Promise<void> {
+  checks += 1;
+  const name = "an empty errors array converts as usual";
+  await writeFile(join(workspace, "input.md"), "[[Doe 2020]]\n");
+  await writeMap(workspace, { ...RESOLVE_MAP, errors: [] });
+  const run = convert(workspace);
+  await writeMap(workspace, RESOLVE_MAP);
+
+  if (!checkRan(name, run)) return;
+  check(name, flatten(run.stdout), "(Doe 2020)");
 }
 
 /** An error payload in the resolve map stops the run before any conversion. */
 async function checkMapErrors(workspace: string): Promise<void> {
+  checks += 1;
   const name = "resolve map errors abort the run";
   await writeFile(join(workspace, "input.md"), "[[Doe 2020]]\n");
-  await writeFile(
-    join(workspace, "zotlit-resolve-map.json"),
-    JSON.stringify({
-      errors: [
-        {
-          code: "item-not-found",
-          linkpath: "Doe 2020",
-          message: 'No live Item matches Indexed Key "ABC12345".',
-        },
-      ],
-    }),
-  );
+  await writeMap(workspace, ERROR_MAP);
   const run = convert(workspace);
-  await writeFile(
-    join(workspace, "zotlit-resolve-map.json"),
-    JSON.stringify(RESOLVE_MAP),
-  );
+  await writeMap(workspace, RESOLVE_MAP);
 
-  if (run.status === 0) {
-    failures.push(
-      `${name}\n  expected a non-zero exit, got output: ${run.stdout.trim()}`,
-    );
-    return;
-  }
+  if (!checkStopped(name, run)) return;
   check(name, run.stderr, "[item-not-found]");
 }
 
+/** Where the CLI variant runs, against a stub `obsidian` on PATH. */
+interface Cli {
+  workspace: string;
+  notes: string;
+  /** The stub answers with this file and records how it was invoked. */
+  response: string;
+  callLog: string;
+  env: NodeJS.ProcessEnv;
+}
+
 /**
- * The CLI variant against a stub `obsidian` on PATH, which records how it was
- * invoked so the vault-targeting contract stays checked.
+ * Builds a notes directory holding the CLI variant, plus a stub `obsidian` that
+ * records how it was invoked so the vault-targeting contract stays checked.
  */
-async function checkCliVariant(workspace: string): Promise<void> {
-  const name = "cli variant calls zotlit:resolve";
+async function setupCli(workspace: string): Promise<Cli> {
   const notes = join(workspace, "notes");
   const bin = join(workspace, "bin");
   const callLog = join(workspace, "obsidian-call.txt");
@@ -431,51 +489,96 @@ async function checkCliVariant(workspace: string): Promise<void> {
   await mkdir(notes, { recursive: true });
   await mkdir(bin, { recursive: true });
 
-  await writeFile(response, JSON.stringify(RESOLVE_MAP));
+  const stub = join(bin, "obsidian");
   await writeFile(
-    join(bin, "obsidian"),
+    stub,
     [
       "#!/bin/sh",
       `printf '%s|%s\\n' "$PWD" "$*" > "${callLog}"`,
-      `cat "${response}"`,
+      `exec cat "${response}"`,
       "",
     ].join("\n"),
   );
-  await chmod(join(bin, "obsidian"), 0o755);
+  await chmod(stub, 0o755);
 
   await writeFile(join(notes, "input.md"), "[[Doe 2020#cite:locator=33]]\n");
   await writeFile(
-    join(notes, "zotlit-cite.lua"),
-    buildFilterVariant(await readFilterFile("zotlit-cite.lua"), "cli"),
+    join(notes, PANDOC_FILTER_FILENAME),
+    buildFilterVariant(await readFilterFile(PANDOC_FILTER_FILENAME), "cli"),
   );
   await writeFile(
-    join(notes, "zotlit.yaml"),
-    await readFilterFile("zotlit.yaml"),
+    join(notes, PANDOC_DEFAULTS_FILENAME),
+    await readFilterFile(PANDOC_DEFAULTS_FILENAME),
   );
 
-  // Run from the workspace with a relative input, so the filter has to resolve the
-  // absolute path and switch into the input's directory itself.
-  const run = pandoc(
+  return {
+    workspace,
+    notes,
+    response,
+    callLog,
+    env: { PATH: `${bin}:${process.env.PATH ?? ""}` },
+  };
+}
+
+/**
+ * Run from the workspace with a relative input, so the filter has to resolve the
+ * absolute path and switch into the input's directory itself.
+ */
+function runCli(cli: Cli): Run {
+  return pandoc(
     [
       "notes/input.md",
       "--defaults",
-      join(notes, "zotlit.yaml"),
+      join(cli.notes, PANDOC_DEFAULTS_FILENAME),
       "--bibliography",
       "references.json",
       "--to",
       "plain",
     ],
-    { cwd: workspace, env: { PATH: `${bin}:${process.env.PATH ?? ""}` } },
+    { cwd: cli.workspace, env: cli.env },
   );
-  if (run.status !== 0) {
-    failures.push(`${name}\n  pandoc failed: ${run.stderr.trim()}`);
-    return;
-  }
-  check(name, run.stdout.replaceAll(/\s+/g, " "), "(Doe 2020, 33)");
+}
 
-  const call = await readFile(callLog, "utf8");
-  check(name, call, `zotlit:resolve file=${join(notes, "input.md")}`);
-  check(name, call, `${notes}|`);
+async function checkCliVariant(workspace: string): Promise<void> {
+  const cli = await setupCli(workspace);
+  await checkCliResolves(cli);
+  await checkCliErrorPayload(cli);
+  await checkCliCallFails(cli);
+}
+
+async function checkCliResolves(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "cli variant calls zotlit:resolve";
+  await writeFile(cli.response, JSON.stringify(RESOLVE_MAP));
+
+  const run = runCli(cli);
+  if (!checkRan(name, run)) return;
+  check(name, flatten(run.stdout), "(Doe 2020, 33)");
+
+  const call = await readFile(cli.callLog, "utf8");
+  check(name, call, `zotlit:resolve file=${join(cli.notes, "input.md")}`);
+  check(name, call, `${cli.notes}|`);
+}
+
+async function checkCliErrorPayload(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "cli variant aborts on an error payload";
+  await writeFile(cli.response, JSON.stringify(ERROR_MAP));
+
+  const run = runCli(cli);
+  if (!checkStopped(name, run)) return;
+  check(name, run.stderr, "[item-not-found]");
+}
+
+/** A non-zero `obsidian` exit is what a closed vault or disabled CLI looks like. */
+async function checkCliCallFails(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "cli variant aborts when the resolve call fails";
+  await rm(cli.response, { force: true });
+
+  const run = runCli(cli);
+  if (!checkStopped(name, run)) return;
+  check(name, run.stderr, "[resolve-call-failed]");
 }
 
 await main();

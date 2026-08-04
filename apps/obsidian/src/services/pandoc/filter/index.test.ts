@@ -17,8 +17,10 @@ describe("bundled Pandoc integration files", () => {
     expect(pandocSandboxFilter).not.toContain("pandoc.pipe");
   });
 
-  it("locates the filter by co-location", () => {
+  it("locates the filter by co-location, ahead of citeproc", () => {
     expect(pandocDefaults).toContain(`\${.}/${PANDOC_FILTER_FILENAME}`);
-    expect(pandocDefaults).toContain("fail-if-warnings: true");
+    expect(pandocDefaults.indexOf(PANDOC_FILTER_FILENAME)).toBeLessThan(
+      pandocDefaults.indexOf("citeproc"),
+    );
   });
 });

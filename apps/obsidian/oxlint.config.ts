@@ -22,5 +22,13 @@ export default defineConfig({
         "no-console": "off",
       },
     },
+    {
+      // Node runs these straight from source, where the `@/` alias the rule
+      // points at does not resolve.
+      files: ["scripts/**"],
+      rules: {
+        "no-restricted-imports": "off",
+      },
+    },
   ],
 });
