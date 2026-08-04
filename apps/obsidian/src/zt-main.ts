@@ -25,6 +25,7 @@ import { registerTemplateWorkbench } from "./services/template-workbench/registe
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
+import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
@@ -266,6 +267,18 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       zoteroPref: services.zoteroPref,
+    });
+
+    registerPandocExport(this, {
+      app: this.app,
+      db: services.db,
+      pandocEngine: services.pandocEngine,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
+      openSettings: () => {
+        this.app.setting.open();
+        this.app.setting.openTabById(this.manifest.id);
+      },
     });
 
     registerWelcomeView(this, {

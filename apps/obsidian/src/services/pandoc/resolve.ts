@@ -74,7 +74,9 @@ export interface ResolvePorts {
   };
 }
 
-interface QueuedLink {
+/** One Literature Note link of a document, in the identities a resolve map uses. */
+export interface CitationLink {
+  /** Bare decoded linkpath — the key both filter variants look up. */
   linkpath: string;
   indexedKey: string;
 }
@@ -100,14 +102,15 @@ export async function resolveCitations(
     };
   }
 
-  const { queued, errors } = collectLinks(document, ports.resolveIndexedKey);
-  if (queued.length === 0) {
+  const { links, errors } = collectCitationLinks(
+    document,
+    ports.resolveIndexedKey,
+  );
+  if (links.length === 0) {
     return errors.length > 0 ? { errors } : { citations: {} };
   }
 
-  const items = await ports.database.read(
-    queued.map((link) => link.indexedKey),
-  );
+  const items = await ports.database.read(links.map((link) => link.indexedKey));
   if (!items) {
     const { dataDir, readMode } = ports.database.describe();
     errors.push({
@@ -118,8 +121,8 @@ export async function resolveCitations(
   }
 
   const citations: Record<string, string> = {};
-  const owners = new Map<string, QueuedLink>();
-  for (const link of queued) {
+  const owners = new Map<string, CitationLink>();
+  for (const link of links) {
     const { linkpath, indexedKey } = link;
     const item = items.get(indexedKey);
     if (!item) {
@@ -158,15 +161,16 @@ export async function resolveCitations(
 }
 
 /**
- * One entry per unique decoded bare linkpath, so a note linked ten times costs
- * one database lookup. Links to ordinary notes drop out silently; only a
- * `#cite:` fragment turns an unresolved target into an error.
+ * The Literature Note links of one document, one entry per unique decoded bare
+ * linkpath, so a note linked ten times costs one lookup. Links to ordinary
+ * notes drop out silently; only a `#cite:` fragment turns an unresolved target
+ * into an error.
  */
-function collectLinks(
+export function collectCitationLinks(
   document: ResolveDocument,
   resolveIndexedKey: ResolvePorts["resolveIndexedKey"],
-): { queued: QueuedLink[]; errors: ResolveError[] } {
-  const queued: QueuedLink[] = [];
+): { links: CitationLink[]; errors: ResolveError[] } {
+  const links: CitationLink[] = [];
   const errors: ResolveError[] = [];
   const resolved = new Map<string, string | null>();
   const reported = new Set<string>();
@@ -180,7 +184,7 @@ function collectLinks(
     if (indexedKey === undefined) {
       indexedKey = resolveIndexedKey(linkpath, document.sourcePath);
       resolved.set(linkpath, indexedKey);
-      if (indexedKey !== null) queued.push({ linkpath, indexedKey });
+      if (indexedKey !== null) links.push({ linkpath, indexedKey });
     }
     if (indexedKey !== null) continue;
 
@@ -194,7 +198,7 @@ function collectLinks(
     });
   }
 
-  return { queued, errors };
+  return { links, errors };
 }
 
 /** Lenient, matching the filter: malformed percent escapes survive as written. */
