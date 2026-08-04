@@ -87,6 +87,16 @@ export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replaceAll(/\/+/g, "/").replace(/\/$/, "");
 }
 
+/** Splits a linktext at its first `#`; the subpath keeps that separator. */
+export function parseLinktext(linktext: string): {
+  path: string;
+  subpath: string;
+} {
+  const hash = linktext.indexOf("#");
+  if (hash < 0) return { path: linktext, subpath: "" };
+  return { path: linktext.slice(0, hash), subpath: linktext.slice(hash) };
+}
+
 export function stringifyYaml(data: Record<string, unknown>): string {
   return Object.entries(data)
     .map(([key, value]) => `${key}: ${String(value)}\n`)

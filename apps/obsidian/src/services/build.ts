@@ -2,6 +2,7 @@ import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
+import { CitationScanner } from "./citation-scan/service";
 import { CitekeyClick } from "./citekey-click/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
@@ -151,6 +152,9 @@ export function buildServices(
           metadataCache: plugin.app.metadataCache,
           template,
         }),
+    })
+    .use({
+      citationScanner: () => new CitationScanner({ app: plugin.app }),
     })
     .use({
       citekeyClick: ({ noteIndex, noteFeature, db, settings }) =>
