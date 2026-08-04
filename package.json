@@ -20,6 +20,9 @@
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true"
   },
+  "dependencies": {
+    "agent-browser": "^0.33.1"
+  },
   "devDependencies": {
     "@electron/asar": "^4.2.0",
     "@zotlit/config": "workspace:*",
