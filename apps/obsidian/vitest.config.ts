@@ -2,6 +2,8 @@ import preact from "@preact/preset-vite";
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
+import { pandocFilterVariants } from "./scripts/lua-filter.ts";
+
 const packageRoot = import.meta.dirname;
 
 export default defineConfig({
@@ -23,7 +25,7 @@ export default defineConfig({
       sha256: "0".repeat(64),
     }),
   },
-  plugins: [preact()],
+  plugins: [preact(), pandocFilterVariants()],
   test: {
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     environment: "node",

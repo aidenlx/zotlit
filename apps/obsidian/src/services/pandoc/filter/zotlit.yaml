@@ -1,0 +1,14 @@
+# ZotLit Pandoc defaults. Keep this file and zotlit-cite.lua together in one
+# directory: ${.} expands to the directory this file sits in.
+#
+# Bibliography, CSL style, input, and output stay out on purpose — they belong to
+# your workflow:
+#
+#   pandoc "input.md" --defaults "zotlit.yaml" \
+#     --bibliography "references.json" --output "output.docx"
+
+from: markdown+wikilinks_title_after_pipe
+filters:
+  - ${.}/zotlit-cite.lua
+  - citeproc
+fail-if-warnings: true

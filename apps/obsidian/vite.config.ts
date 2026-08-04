@@ -14,6 +14,7 @@ import {
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import packageJson from "./package.json" with { type: "json" };
+import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
 
 const builtins = [
@@ -127,6 +128,7 @@ export default defineConfig(({ mode }) => {
       }),
       preact(),
       tailwindcss(),
+      pandocFilterVariants(),
       obsidianBuildPlugin(),
       process.env.ANALYZE === "true" &&
         unstableRolldownAdapter(

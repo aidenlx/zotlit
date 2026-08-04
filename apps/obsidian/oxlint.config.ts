@@ -11,6 +11,7 @@ export default defineConfig({
     {
       files: [
         "vite.config.ts",
+        "scripts/check-lua-filter.ts",
         "src/zt-main.ts",
         "src/services/build.ts",
         "src/services/service-base.ts",

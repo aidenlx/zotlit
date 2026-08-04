@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:lua-filter": "node scripts/check-lua-filter.ts"
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
