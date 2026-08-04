@@ -255,7 +255,7 @@
   "settings_citation_key_property_required": "请输入前后没有空格的属性名称。",
   "settings_citation_references_heading": "参考文献",
   "settings_citation_references_style_name": "参考文献样式",
-  "settings_citation_references_style_desc": "渲染参考文献时使用的引用样式。ZotLit 读取 Zotero 已安装的样式；请在 Zotero → 设置 → 引用 中添加或删除样式。",
+  "settings_citation_references_style_desc": "渲染参考文献时使用的 CSL 样式。ZotLit 读取 Zotero 已安装的样式；请在 Zotero → 设置 → 引用 中添加或删除样式。",
   "settings_citation_references_style_default": "默认（Chicago author-date）",
   "settings_citation_references_style_missing": "{id}（未安装）",
   "settings_note_frontmatter_order_name": "字段顺序",

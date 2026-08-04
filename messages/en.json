@@ -282,7 +282,7 @@
   "settings_citation_key_property_required": "Enter a property name without leading or trailing spaces.",
   "settings_citation_references_heading": "References",
   "settings_citation_references_style_name": "References style",
-  "settings_citation_references_style_desc": "Citation style used to render references. ZotLit reads the styles Zotero has installed; add or remove them in Zotero → Settings → Cite.",
+  "settings_citation_references_style_desc": "CSL style used to render references. ZotLit reads the styles Zotero has installed; add or remove them in Zotero → Settings → Cite.",
   "settings_citation_references_style_default": "Default (Chicago author-date)",
   "settings_citation_references_style_missing": "{id} (not installed)",
   "settings_note_frontmatter_order_name": "Field order",

@@ -88,12 +88,44 @@ export function citationsPageItems(
 }
 
 /** Dropdown sentinel for the embedded default style; a style ID is never empty. */
-const STYLE_DEFAULT = "";
+export const STYLE_DEFAULT = "";
+
+/** One entry of the References style picker. */
+export interface ReferencesStyleOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * The picker entries: the embedded default first, then the installed styles.
+ * A selection Zotero no longer has keeps an entry of its own, so it stays
+ * selected and visible until the user picks another style.
+ */
+export function referencesStyleOptions(
+  styles: readonly InstalledCslStyle[],
+  selected: string,
+): ReferencesStyleOption[] {
+  const options: ReferencesStyleOption[] = [
+    {
+      value: STYLE_DEFAULT,
+      label: m.settings_citation_references_style_default(),
+    },
+    ...styles.map((style) => ({ value: style.id, label: style.title })),
+  ];
+  if (selected !== STYLE_DEFAULT && !styles.some((s) => s.id === selected)) {
+    options.push({
+      value: selected,
+      label: m.settings_citation_references_style_missing({ id: selected }),
+    });
+  }
+  return options;
+}
 
 /**
  * References style picker, listing the styles installed in the Zotero data
- * directory. Zotero owns style installation, so the list is read-only and an
- * unavailable selection stays selected until the user picks another style.
+ * directory. Zotero owns style installation, so the list is read-only, and the
+ * row follows both the Zotero data directory and the stored setting, which
+ * vault sync can rewrite while the tab is open.
  */
 function renderReferencesStyleRow(
   setting: Setting,
@@ -103,6 +135,10 @@ function renderReferencesStyleRow(
 
   let dropdown: DropdownComponent | undefined;
   let styles: readonly InstalledCslStyle[] = [];
+  let disposed = false;
+  stack.defer(() => {
+    disposed = true;
+  });
 
   const selectedValue = (): string =>
     ctx.settings.current?.["citation.references-style"] ?? STYLE_DEFAULT;
@@ -111,23 +147,16 @@ function renderReferencesStyleRow(
     if (!dropdown) return;
     const current = selectedValue();
     dropdown.selectEl.replaceChildren();
-    dropdown.addOption(
-      STYLE_DEFAULT,
-      m.settings_citation_references_style_default(),
-    );
-    for (const style of styles) dropdown.addOption(style.id, style.title);
-    if (current !== STYLE_DEFAULT && !styles.some((s) => s.id === current)) {
-      dropdown.addOption(
-        current,
-        m.settings_citation_references_style_missing({ id: current }),
-      );
+    for (const { value, label } of referencesStyleOptions(styles, current)) {
+      dropdown.addOption(value, label);
     }
     dropdown.setValue(current);
   };
 
+  /** The read outlives the row only until disposal, so a live row always fills. */
   const reload = (): void => {
     void listInstalledStyles(ctx.zoteroPref.dataDir).then((installed) => {
-      if (!dropdown?.selectEl.isConnected) return;
+      if (disposed) return;
       styles = installed;
       repopulate();
     });
@@ -146,6 +175,11 @@ function renderReferencesStyleRow(
 
   reload();
   stack.defer(ctx.zoteroPref.on("resolved-changed", reload));
+  stack.defer(
+    ctx.settings.subscribe(() => {
+      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
+    }),
+  );
 
   return () => stack.dispose();
 }
