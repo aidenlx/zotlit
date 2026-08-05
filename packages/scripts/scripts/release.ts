@@ -17,12 +17,13 @@ import { getWorkspaceRoot } from "#package-roots";
  * cuts tags/releases on merge to the line the PR targets (`main` = stable,
  * `next` = beta), keyed on package version.
  *
- * The release line is inferred from the branch the script runs on: a stable
- * release from `main`, a beta release from `next`. Keeping the beta line
- * strictly ahead of stable is a manual convention — see CONTRIBUTING.md
- * "Version policy"; it is not enforced here.
+ * The release line is inferred from the **version** picked, not the branch:
+ * a non-prerelease version targets `main` (stable graduation), a prerelease
+ * targets `next`. Primary development happens on `next`; `main` receives
+ * stable graduations and emergency hotfixes (patch-only).
  *
  * @see CONTRIBUTING.md "Branching model"
+ * @see docs/adr/0021-next-is-the-primary-branch.md
  */
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
@@ -68,11 +69,11 @@ if (currentBranch !== "main" && currentBranch !== "next") {
   );
 }
 
-// Sync the branch with origin before bumping so the release PR contains only the
-// version-bump commit. Basing the release branch on `origin/${currentBranch}`
-// (below) drops any unpushed local commits; pushing first lands them on the base
-// branch instead of dragging them into the PR (where a rebase-merge would replay
-// them with fresh SHAs). `HEAD` for a local-only branch with no origin counterpart.
+// Sync the current branch with origin before bumping. For pre-releases and
+// hotfixes, basing the release branch on `origin/${currentBranch}` keeps only the
+// version-bump commit in the PR. For stable graduations from next, the PR carries
+// all of next's changes to main (the promotion). Pushing first avoids dragging
+// unpushed commits into the release branch. `HEAD` for a local-only branch.
 const remoteExists = await assertBranchSynced(currentBranch);
 const baseRef = remoteExists ? `origin/${currentBranch}` : "HEAD";
 
@@ -99,8 +100,44 @@ for (const app of targets) {
   bumps.push({ app, current, next });
 }
 
+// Determine the PR target. On `next`, the version picked decides the target:
+// non-prerelease → stable graduation targeting `main`; prerelease → stays on
+// `next`. On `main` (hotfix path) and other branches, the target is the branch
+// itself.
+let prTarget: string;
+const hasStable = bumps.some((b) => prerelease(b.next) === null);
+const hasPre = bumps.some((b) => prerelease(b.next) !== null);
+const isStableGraduation = currentBranch === "next" && hasStable && !hasPre;
+
+if (currentBranch === "next") {
+  if (hasStable && hasPre) {
+    p.cancel(
+      "Cannot mix stable and pre-release versions from next — all apps must graduate together or all must stay on pre-release.",
+    );
+    process.exit(1);
+  }
+
+  if (isStableGraduation) {
+    if (bumps.length < Object.keys(APPS).length) {
+      p.cancel(
+        "Stable releases from next must include all apps — select Both.",
+      );
+      process.exit(1);
+    }
+    await assertMainAncestry();
+    prTarget = "main";
+  } else {
+    prTarget = "next";
+  }
+} else {
+  prTarget = currentBranch;
+}
+
 const summary = bumps.map((b) => `${b.app.name}@${b.next}`).join(", ");
-const confirmed = await p.confirm({ message: `Release ${summary}?` });
+const confirmMsg = isStableGraduation
+  ? `Stable release ${summary} (PR targets main). Proceed?`
+  : `Release ${summary}?`;
+const confirmed = await p.confirm({ message: confirmMsg });
 if (p.isCancel(confirmed) || !confirmed) cancel();
 
 const stagedPaths = new Set<string>();
@@ -149,7 +186,7 @@ if (bumps.some((b) => b.app.name === "obsidian")) {
   s.stop("Plugin review passed");
 }
 
-const branchName = `release/${currentBranch}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
+const branchName = `release/${prTarget}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
 const commitMsg = `chore: release ${summary}`;
 
 const gitConfirm = await p.confirm({
@@ -178,9 +215,9 @@ s.start("Pushing");
 await $({ cwd: workspaceRoot })`git push -u origin ${branchName}`;
 s.stop("Pushed");
 
-const openPr = await p.confirm({ message: `Open a PR to ${currentBranch}?` });
+const openPr = await p.confirm({ message: `Open a PR to ${prTarget}?` });
 if (!p.isCancel(openPr) && openPr) {
-  await openPR(branchName, commitMsg, currentBranch);
+  await openPR(branchName, commitMsg, prTarget);
 }
 
 // The release branch now lives on origin (the PR references it); drop the local
@@ -194,7 +231,7 @@ s.stop(`Back on ${currentBranch}, removed local ${branchName}`);
 p.outro(
   [
     `Released ${summary} on branch ${branchName}.`,
-    `On merge to ${currentBranch}, release.yml cuts the tag(s) and GitHub release(s).`,
+    `On merge to ${prTarget}, release.yml cuts the tag(s) and GitHub release(s).`,
   ].join("\n"),
 );
 
@@ -236,6 +273,11 @@ async function openPR(
 /**
  * Interactive semver picker.
  *
+ * Options are filtered by context: on `main`, only `patch` and `custom` are
+ * shown (hotfix path). On `next` with a prerelease current version, `patch`
+ * and `prepatch` are hidden (they produce nonsensical versions from a
+ * prerelease base). `custom` is always available as an escape hatch.
+ *
  * @returns the chosen version, or `null` if cancelled.
  */
 async function pickVersion(
@@ -243,31 +285,56 @@ async function pickVersion(
   current: string,
 ): Promise<string | null> {
   const preid = prerelease(current)?.[0]?.toString() ?? "beta";
+  const currentIsPrerelease = prerelease(current) !== null;
+
+  type BumpKind =
+    | "patch"
+    | "minor"
+    | "major"
+    | "prepatch"
+    | "preminor"
+    | "premajor"
+    | "prerelease"
+    | "custom";
+
+  const allOptions: { value: BumpKind; label: string }[] = [
+    { value: "patch", label: `patch (${inc(current, "patch")})` },
+    { value: "minor", label: `minor (${inc(current, "minor")})` },
+    { value: "major", label: `major (${inc(current, "major")})` },
+    {
+      value: "prepatch",
+      label: `prepatch (${inc(current, "prepatch", preid)})`,
+    },
+    {
+      value: "preminor",
+      label: `preminor (${inc(current, "preminor", preid)})`,
+    },
+    {
+      value: "premajor",
+      label: `premajor (${inc(current, "premajor", preid)})`,
+    },
+    {
+      value: "prerelease",
+      label: `prerelease (${inc(current, "prerelease", preid)})`,
+    },
+    { value: "custom", label: "custom…" },
+  ];
+
+  const hidden = new Set<BumpKind>(
+    currentBranch === "main"
+      ? // Hotfix path: patch + custom only.
+        ["minor", "major", "prepatch", "preminor", "premajor", "prerelease"]
+      : currentIsPrerelease
+        ? // On next with prerelease: patch/prepatch produce nonsensical versions.
+          ["patch", "prepatch"]
+        : [],
+  );
+  const options = allOptions.filter((o) => !hidden.has(o.value));
+
   while (true) {
     const kind = await p.select({
       message: `New version for ${app.display} (current ${current})`,
-      options: [
-        { value: "patch", label: `patch (${inc(current, "patch")})` },
-        { value: "minor", label: `minor (${inc(current, "minor")})` },
-        { value: "major", label: `major (${inc(current, "major")})` },
-        {
-          value: "prepatch",
-          label: `prepatch (${inc(current, "prepatch", preid)})`,
-        },
-        {
-          value: "preminor",
-          label: `preminor (${inc(current, "preminor", preid)})`,
-        },
-        {
-          value: "premajor",
-          label: `premajor (${inc(current, "premajor", preid)})`,
-        },
-        {
-          value: "prerelease",
-          label: `prerelease (${inc(current, "prerelease", preid)})`,
-        },
-        { value: "custom", label: "custom…" },
-      ] as const,
+      options,
     });
     if (p.isCancel(kind)) return null;
 
@@ -438,6 +505,26 @@ async function assertBranchSynced(branch: string): Promise<boolean> {
   }
 
   return true;
+}
+
+/**
+ * Guards against regressing a hotfix that landed directly on `main`: aborts if
+ * `origin/main` is not an ancestor of the current `HEAD`.
+ */
+async function assertMainAncestry(): Promise<void> {
+  await $({ cwd: workspaceRoot, nothrow: true })`git fetch origin main`;
+
+  const result = await $({
+    cwd: workspaceRoot,
+    nothrow: true,
+  })`git merge-base --is-ancestor origin/main HEAD`;
+
+  if (result.exitCode !== 0) {
+    p.cancel(
+      "main has commits not on next — merge main into next before graduating to stable.",
+    );
+    process.exit(1);
+  }
 }
 
 function cancel(): never {
