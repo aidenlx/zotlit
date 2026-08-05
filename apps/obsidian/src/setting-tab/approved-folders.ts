@@ -29,7 +29,7 @@ export function approvedFoldersPage(
 
 /** The entry's description, marked as Device Override state. */
 function approvedFoldersDesc(): DocumentFragment {
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(m.settings_attachment_approved_desc());
   appendDeviceOverrideNote(desc);
   return desc;

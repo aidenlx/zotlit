@@ -153,7 +153,7 @@ export class TemplateService extends Service<void> {
   #compiledFrontmatterFields: readonly CompiledFrontmatterField[] = [];
   #inertFrontmatterKeys: readonly string[] = [];
 
-  #flushTimer: ReturnType<typeof setTimeout> | null = null;
+  #flushTimer: number | null = null;
   #settlingTasks = 0;
   #folderGeneration = 0;
   #loaded = false;
@@ -243,11 +243,11 @@ export class TemplateService extends Service<void> {
       const finish = (outcome: SettleOutcome): void => {
         if (finished) return;
         finished = true;
-        clearTimeout(timeout);
+        window.clearTimeout(timeout);
         if (waiter) this.#settledWaiters.delete(waiter);
         resolve(outcome);
       };
-      const timeout = setTimeout(() => finish("timeout"), timeoutMs);
+      const timeout = window.setTimeout(() => finish("timeout"), timeoutMs);
 
       void this.ready.then(
         () => {
@@ -622,7 +622,7 @@ export class TemplateService extends Service<void> {
 
   #scheduleFlush(): void {
     if (this.#flushTimer !== null) return;
-    this.#flushTimer = setTimeout(() => {
+    this.#flushTimer = window.setTimeout(() => {
       this.#flushTimer = null;
       void this.#flushPending();
     }, FLUSH_DEBOUNCE_MS);
@@ -832,7 +832,7 @@ export class TemplateService extends Service<void> {
    *  unload a waiter is answered at once rather than after its full budget. */
   #cancelFlush(): void {
     if (this.#flushTimer !== null) {
-      clearTimeout(this.#flushTimer);
+      window.clearTimeout(this.#flushTimer);
       this.#flushTimer = null;
     }
     this.#resolveSettledWaiters();

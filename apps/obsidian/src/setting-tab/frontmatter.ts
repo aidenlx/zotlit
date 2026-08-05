@@ -94,16 +94,16 @@ function describeField(
   const inert =
     field.language === "javascript" && !service.javascriptTemplatesEnabled;
   if (!inert && (!expr || !compileError)) return expr;
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(expr);
   if (inert) {
-    const note = document.createElement("div");
+    const note = createDiv();
     note.className = "zt:mt-2 zt:text-(--text-warning)";
     note.textContent = m.settings_frontmatter_inert_js();
     desc.append(note);
   }
   if (expr && compileError) {
-    const note = document.createElement("div");
+    const note = createDiv();
     note.className = "zt:mt-2 zt:text-(--text-error)";
     note.textContent = m.settings_frontmatter_compile_error();
     desc.append(note);

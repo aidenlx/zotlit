@@ -61,6 +61,10 @@ export function createDragInsertHandler(deps: DragInsertDeps) {
       win.removeEventListener("dragend", onDragEnd);
       deps.onSettled();
     };
+    // Side-effect listener only (flushes the pending attachment import); the
+    // actual insertion is Obsidian's native `text/plain` drop handling above,
+    // so calling `preventDefault()` here would break it.
+    // eslint-disable-next-line obsidianmd/editor-drop-paste
     const dropRef = workspace.on("editor-drop", (dropEvt) => {
       if (dropEvt.dataTransfer?.getData(SOURCE_TAG) === timestamp) {
         void handle.flush().catch((error) => {
