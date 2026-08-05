@@ -72,10 +72,9 @@ if (currentBranch !== "main" && currentBranch !== "next") {
 // Sync the current branch with origin before bumping. For pre-releases and
 // hotfixes, basing the release branch on `origin/${currentBranch}` keeps only the
 // version-bump commit in the PR. For stable graduations from next, the PR carries
-// all of next's changes to main (the promotion). Pushing first avoids dragging
-// unpushed commits into the release branch. `HEAD` for a local-only branch.
-const remoteExists = await assertBranchSynced(currentBranch);
-const baseRef = remoteExists ? `origin/${currentBranch}` : "HEAD";
+// all of next's changes to main (the promotion). `resolveBaseRef` picks that base
+// and reconciles a branch that runs ahead of origin.
+const baseRef = await resolveBaseRef(currentBranch);
 
 const selection = await p.select({
   message: "Which app(s) to release?",
@@ -464,22 +463,27 @@ async function assertCleanWorkingTree(): Promise<void> {
 }
 
 /**
- * Fetches `origin/${branch}` and requires local to match it before releasing, so
- * the release branch (cut from the remote tip) carries only the version bump.
- * Offers to push when the branch is merely ahead; aborts on behind/diverged since
- * the base would be stale.
+ * Fetches `origin/${branch}` and resolves the ref the release branch is cut from,
+ * so that branch (cut from the remote tip) carries only the version bump. Aborts
+ * on behind/diverged since the base would be stale.
  *
- * @returns whether an origin counterpart exists — `false` for a local-only
- *   branch, whose release branch falls back to `HEAD`.
+ * A branch that is merely ahead is reconciled per branch. `main` accepts commits
+ * through pull requests only — a repository ruleset restricts it to merge commits
+ * and rejects direct pushes — so its unpushed commits ride along in the release PR
+ * from a `HEAD` base. Other branches offer a push, which keeps the PR down to the
+ * version-bump commit.
+ *
+ * @returns the git ref to cut the release branch from — `HEAD` for a local-only
+ *   branch, or for `main` carrying unpushed commits.
  */
-async function assertBranchSynced(branch: string): Promise<boolean> {
+async function resolveBaseRef(branch: string): Promise<string> {
   const fetched = await $({
     cwd: workspaceRoot,
     nothrow: true,
   })`git fetch origin ${branch}`;
   if (fetched.exitCode !== 0) {
     p.log.warn(`No origin/${branch}: basing the release branch on local HEAD.`);
-    return false;
+    return "HEAD";
   }
 
   const counts = (
@@ -501,18 +505,25 @@ async function assertBranchSynced(branch: string): Promise<boolean> {
     );
     process.exit(1);
   }
-  if (ahead > 0) {
-    const push = await p.confirm({
-      message: `"${branch}" has ${ahead} commit(s) not on origin/${branch}. Push them before bumping the version?`,
-    });
-    if (p.isCancel(push) || !push) cancel();
-    const s = p.spinner();
-    s.start(`Pushing ${branch} to origin`);
-    await $({ cwd: workspaceRoot })`git push origin ${branch}`;
-    s.stop(`Pushed ${branch}`);
+  if (ahead === 0) return `origin/${branch}`;
+
+  if (branch === "main") {
+    p.log.info(
+      `"${branch}" has ${ahead} commit(s) not on origin/${branch}: they ride along in the release PR.`,
+    );
+    return "HEAD";
   }
 
-  return true;
+  const push = await p.confirm({
+    message: `"${branch}" has ${ahead} commit(s) not on origin/${branch}. Push them before bumping the version?`,
+  });
+  if (p.isCancel(push) || !push) cancel();
+  const s = p.spinner();
+  s.start(`Pushing ${branch} to origin`);
+  await $({ cwd: workspaceRoot })`git push origin ${branch}`;
+  s.stop(`Pushed ${branch}`);
+
+  return `origin/${branch}`;
 }
 
 /**
