@@ -262,10 +262,13 @@ describe("ItemLookup", () => {
     ]);
 
     loadResolvers[1]!([fresh.indexed]);
-    await settle();
-    await expect(lookup.search("", { limit: 1 })).resolves.toMatchObject([
-      { item: { key: "B" } },
-    ]);
+    // The rebuild's chunk yields land on the message-task queue, so poll for
+    // the swapped-in index instead of counting macrotasks.
+    await vi.waitFor(async () => {
+      await expect(lookup.search("", { limit: 1 })).resolves.toMatchObject([
+        { item: { key: "B" } },
+      ]);
+    });
   });
 
   it("drops search results when the library switches mid-hydration", async () => {
@@ -318,14 +321,6 @@ async function waitForCallCount(
   // and macrotasks while waiting for an intermediate call count.
   for (let i = 0; i < 50; i++) {
     if (fn.mock.calls.length === count) return;
-    await new Promise((resolve) => setTimeout(resolve));
-  }
-}
-
-/** Flush a handful of macrotasks so a background rebuild's chunk yields and final
- * cache swap settle before asserting. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 5; i++) {
     await new Promise((resolve) => setTimeout(resolve));
   }
 }
