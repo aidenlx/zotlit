@@ -1,0 +1,33 @@
+---
+version: "2.0.0"
+companion: "2.0.0"
+date: "2026-08-05"
+description: "Batch operations on collections, Citation Key Links toggle, AGPL license"
+---
+
+This is the first public stable release of ZotLit v2. If you participated in the beta, thank you! Your feedback shaped every part of this release.
+
+The changes below cover what landed since beta.4; for the full v2 feature set, see the [release announcement](/blog/v2-release).
+
+## License
+
+ZotLit is now licensed under AGPL-3.0-or-later (previously MIT). The change covers code ported from Zotero, which is itself AGPL-licensed. This does not affect how you use the plugin.
+
+## Breaking Changes
+
+### Citation Key Links is now opt-in
+
+Citation Key Links lets you click a `[@citekey]` reference in the editor to jump to its literature note. This feature is now an optional setting, disabled by default. If you used it during the beta or migrated from v1, it will remain enabled.
+
+The feature reads the citation key from a frontmatter property on each literature note. If that property is not in your managed frontmatter fields, the plugin shows a notice explaining what to add.
+
+## What's New
+
+### Batch operations on libraries and collections
+
+You can now create or update literature notes and import Zotero notes across an entire library or a single collection (including subcollections), instead of selecting items one at a time. Right-click a library or collection in Zotero's sidebar to find **Create or Update Literature Notes** and **Import Child and Standalone Notes** in the ZotLit submenu. The same actions are available as Obsidian commands and protocol links (`update-all`, `import-all-notes`).
+
+### Other improvements
+
+- Settings actions in notices and the Welcome View now open directly to the relevant settings sub-page instead of dropping you at the tab root.
+- The "Receive updates from Zotero" toggle now shows a hint linking to the companion install guide when the Zotero companion is not yet set up.
