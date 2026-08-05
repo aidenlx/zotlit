@@ -40,12 +40,15 @@ catalog:
   vite: ^8.1.5
   vitest: ^4.0.13
 
-# zotero-types declares two transitive deps as GitHub specs, which
-# blockExoticSubdeps refuses. Scope overrides to zotero-types only so we
-# don't shadow these names anywhere else in the graph.
+# zotero-types declares two transitive deps as GitHub specs. Allow them so the
+# graph installs from git instead of a vendored workspace copy.
+blockExoticSubdeps: false
+
+# epubjs is on npm at the same version zotero-types pins by commit; the override
+# keeps that one on the registry. Scope it to zotero-types only so we don't
+# shadow the name anywhere else in the graph.
 overrides:
   "zotero-types>epubjs": 0.3.93
-  "zotero-types>pdfjs-dist": workspace:*
   # next@16.2.11 hard-pins its internal postcss to 8.4.31 (GHSA-r28c-9q8g-f849);
   # force the patched version until upstream bumps its own pin.
   "next>postcss": ">=8.5.18"

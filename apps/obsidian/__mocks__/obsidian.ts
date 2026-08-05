@@ -1,7 +1,7 @@
 /**
  * Runtime stand-in for the `obsidian` module, used by Vitest via
  * `vitest.config.ts` `resolve.alias`. The real `obsidian` package is
- * types-only (`packages/obsidian-api`), so without this alias any test
+ * types-only (`obsidianmd/obsidian-api`), so without this alias any test
  * that imports values from `"obsidian"` fails to resolve.
  *
  * Only the surface area the plugin actually touches in tests is exposed

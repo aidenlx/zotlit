@@ -65,7 +65,7 @@
     "ajv": "catalog:",
     "electron": "^39.8.10",
     "happy-dom": "^20.9.0",
-    "obsidian": "workspace:*",
+    "obsidian": "github:obsidianmd/obsidian-api#28a6b8607927249cb549ab3053f5f36f9287aab8",
     "oxlint": "catalog:",
     "tailwindcss": "catalog:",
     "turndown": "7.2.0",

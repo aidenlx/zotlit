@@ -13,12 +13,12 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `packages/protocol` — wire format (valibot schemas) for ZotLit ↔ Zotero.
 - `packages/templates` — Eta-based template rendering.
 - `packages/zotero-types` — generated item-field shapes from Zotero's upstream schema.
-- `packages/obsidian-api` — **git submodule** (`obsidianmd/obsidian-api`). Init via `mise run init`.
+- `obsidian` — Obsidian API typings, installed as a commit-pinned git dependency (`github:obsidianmd/obsidian-api#<sha>`).
 
 ## Bootstrap & toolchain
 
 - `mise` pins to Node 26 version (see `mise.toml`). It also runs `corepack enable` post-install to activate pnpm at the version declared in root `package.json`.
-- `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
+- `mise run init` initializes the `packages/zotero-types/zotero-schema` git submodule, then installs.
 
 ## Commands
 

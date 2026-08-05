@@ -37,7 +37,7 @@
     "eslint": "^10.8.0",
     "eslint-plugin-obsidianmd": "^0.4.1",
     "lefthook": "^2.1.1",
-    "obsidian": "workspace:*",
+    "obsidian": "github:obsidianmd/obsidian-api#28a6b8607927249cb549ab3053f5f36f9287aab8",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "^0.23.0",
