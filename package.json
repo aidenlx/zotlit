@@ -9,7 +9,7 @@
   "type": "module",
   "scripts": {
     "release": "pnpm --filter @zotlit/scripts release",
-    "build": "turbo run build --output-logs=full",
+    "build:plugin": "zx packages/scripts/scripts/init.ts && turbo run build --filter=@zotlit/obsidian --output-logs=full",
     "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run //#lint:repo",
