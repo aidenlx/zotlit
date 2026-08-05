@@ -1,5 +1,6 @@
 import { type SettingDefinitionItem } from "obsidian";
 
+import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { type SettingsKey, type SettingTabContext } from "./context";
@@ -14,7 +15,7 @@ export function liveUpdatesPageItems(
   return [
     {
       name: m.settings_live_updates_enabled_name(),
-      desc: m.settings_live_updates_enabled_desc(),
+      desc: enabledDescription(),
       control: { type: "toggle", key: "server.enabled" },
     },
     {
@@ -46,4 +47,28 @@ export function liveUpdatesPageItems(
       ],
     },
   ];
+}
+
+function enabledDescription(): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  frag.append(m.settings_live_updates_enabled_desc());
+
+  const hint = createDiv({ cls: "zt:mt-2 zt:text-(--text-warning)" });
+  hint.append(
+    m.settings_live_updates_companion_desc(),
+    " ",
+    createEl("a", {
+      href: `${DOCS_SITE_URL}/docs/install-companion`,
+      text: m.settings_live_updates_companion_install(),
+      attr: { target: "_blank", rel: "noopener" },
+    }),
+    " · ",
+    createEl("a", {
+      href: `${DOCS_SITE_URL}/docs/how-to/set-up-live-updates`,
+      text: m.settings_live_updates_companion_setup(),
+      attr: { target: "_blank", rel: "noopener" },
+    }),
+  );
+  frag.append(hint);
+  return frag;
 }
