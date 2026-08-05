@@ -2,7 +2,7 @@
   "__VERSION__": 3,
   "server.enabled": true,
   "note.import-annotations-as-template": true,
-  "release.previous-version": "2.0.0-beta.4",
+  "release.previous-version": "2.0.0",
   "citation.key-links": true,
   "citation.key-links-frontmatter-key": "citekey"
 }
