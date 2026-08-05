@@ -1,6 +1,5 @@
 <div align="center">
 
-<!-- TODO: replace the wordmark with a product screenshot (annotation view or a literature note) once one is captured -->
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/logo/zotlit-wordmark-dark.svg">
   <img alt="ZotLit" src="assets/logo/zotlit-wordmark.svg" width="320">
@@ -69,6 +68,10 @@ New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/
 > Live updates run a local notification server so the Zotero companion can push changes to Obsidian. Connections stay on your machine (localhost); ZotLit does not send your data to any external service.
 >
 > After you consent, ZotLit will download the `zh-CN.json` Language Pack from `github.com/aidenlx/zotlit`.
+
+> [!IMPORTANT]
+> **Shell command (macOS only)**
+> On macOS, ZotLit runs the system `cp -c` command to create zero-copy clones of files. A zero-copy clone duplicates a file instantly without using extra disk space — macOS shares the underlying data on disk until one copy is changed. ZotLit uses this for two things: snapshotting the Zotero database so it can be read safely without interfering with Zotero, and importing attachments (PDFs, images) into your vault without doubling disk usage. Node.js does not expose this macOS feature directly, so ZotLit invokes the system `cp` command. No other shell commands are executed.
 
 > [!IMPORTANT]
 > **Third-party project: back up your data**
