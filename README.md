@@ -92,6 +92,6 @@ Questions, help, and bug reports: [Community](https://zotlit.aidenlx.site/commun
 
 <div align="center">
 
-[MIT License](LICENSE) · [Credits](https://zotlit.aidenlx.site/docs/credits) · Not affiliated with Obsidian or Zotero
+[AGPL-3.0-or-later](LICENSE) · [Credits](https://zotlit.aidenlx.site/docs/credits) · Not affiliated with Obsidian or Zotero
 
 </div>
