@@ -9,7 +9,8 @@
   "type": "module",
   "scripts": {
     "release": "pnpm --filter @zotlit/scripts release",
-    "build:plugin": "zx packages/scripts/scripts/init.ts && turbo run build --filter=@zotlit/obsidian --output-logs=full",
+    "build:plugin": "turbo run build --filter=@zotlit/obsidian --output-logs=full",
+    "deploy:docs": "mise exec node@24 -- vercel deploy apps/docs",
     "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run //#lint:repo",
