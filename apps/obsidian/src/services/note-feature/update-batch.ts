@@ -20,6 +20,10 @@ import {
   classifyChunked,
   runBatchWrite,
 } from "@/services/batch-run";
+import {
+  resolveBatchScope,
+  type BatchScopeOptions,
+} from "@/services/batch-scope";
 import { type Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
@@ -60,6 +64,8 @@ interface RunContext {
 export type BatchUpdateResult =
   | { outcome: "db-unavailable" }
   | { outcome: "empty-selection" }
+  | { outcome: "library-mismatch" }
+  | { outcome: "collection-not-found" }
   | { outcome: "not-found" }
   | { outcome: "single-update" }
   | { outcome: "batch-modal" };
@@ -325,6 +331,45 @@ async function runAction(
     groupIdMemo: run.groupIdMemo,
     username: run.username,
   });
+}
+
+/**
+ * Fetch every regular item in scope — the whole configured citation library, or
+ * one collection and its descendants — and run a batch update. The modal's
+ * loading phase shows progress while items are classified, and the user can
+ * cancel before the run starts.
+ *
+ * @param opts.expectedGroupID when set, the configured library's group ID must
+ *   match — `0` means the personal library, a positive integer names a group.
+ *   A mismatch returns `library-mismatch` without scanning.
+ * @param opts.collectionKey when set, narrows the run to that collection and
+ *   every collection nested under it. A key this database doesn't hold returns
+ *   `collection-not-found`.
+ */
+export async function runBatchUpdateAll(
+  deps: SingleUpdateDeps,
+  opts?: BatchScopeOptions,
+): Promise<BatchUpdateResult> {
+  if (deps.db.state !== "ready") {
+    logger.warn("Batch update all: database not ready");
+    return { outcome: "db-unavailable" };
+  }
+
+  const settings = await deps.settings.loaded;
+
+  using lease = await deps.db.acquireRead();
+  const scope = resolveBatchScope(lease.client, "literature-items", {
+    libraryID: settings["zotero.citation-library"],
+    ...opts,
+  });
+  if (scope.outcome !== "resolved") {
+    return { outcome: scope.outcome };
+  }
+  if (scope.itemIDs.length === 0) {
+    return { outcome: "empty-selection" };
+  }
+
+  return runBatchUpdate(deps, scope.itemIDs);
 }
 
 function itemLabel(title: string | null, itemID: number): string {

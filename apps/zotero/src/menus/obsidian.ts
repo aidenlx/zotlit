@@ -2,11 +2,13 @@ import {
   type BatchUpdateRequest,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
+  buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
   type ImportMode,
   type ImportNotesRequest,
   buildProtocolUrl,
+  buildUpdateAllProtocolUrl,
   type ProtocolAction,
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
@@ -59,6 +61,49 @@ export function exploreInObsidian(
   logger.info("opening obsidian (explore)", {
     itemID: item.id,
     annotation,
+    url,
+  });
+  Zotero.launchURL(url);
+}
+
+/**
+ * Ask Obsidian to create or update literature notes for every item in scope.
+ * Obsidian checks the `groupID` against its own configured citation library and
+ * skips when they differ.
+ *
+ * @param groupID `0` for the personal library, a positive integer for a group.
+ * @param collectionKey narrows the run to that collection and every collection
+ *   nested under it; absent covers the whole library.
+ */
+export function updateAllInObsidian(
+  groupID: number,
+  collectionKey?: string,
+): void {
+  const url = buildUpdateAllProtocolUrl(sourceId(), groupID, collectionKey);
+  logger.info("opening obsidian (update-all)", { groupID, collectionKey, url });
+  Zotero.launchURL(url);
+}
+
+/**
+ * Ask Obsidian to import every Zotero note in scope — child notes of regular
+ * items and standalone notes alike.
+ *
+ * @param groupID `0` for the personal library, a positive integer for a group.
+ * @param collectionKey narrows the run to that collection and every collection
+ *   nested under it; absent covers the whole library.
+ */
+export function importAllNotesInObsidian(
+  groupID: number,
+  collectionKey?: string,
+): void {
+  const url = buildImportAllNotesProtocolUrl(
+    sourceId(),
+    groupID,
+    collectionKey,
+  );
+  logger.info("opening obsidian (import-all-notes)", {
+    groupID,
+    collectionKey,
     url,
   });
   Zotero.launchURL(url);

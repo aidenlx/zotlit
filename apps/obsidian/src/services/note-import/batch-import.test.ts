@@ -4,14 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatIndexedKey,
   getChildNotesByParentIDs,
+  getCollectionIDByKey,
   getItemDisplayRefByID,
   getItemsByKey,
+  getLibraries,
   getNoteByItemID,
   getNoteByKey,
+  getNoteItemIDsByCollection,
+  getNoteItemIDsByLibrary,
   getNoteRefsByItemIDs,
   getTrashedNoteItemIDs,
   USER_LIBRARY_ID,
   type ChildNote,
+  type Library,
   type Note,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
@@ -22,6 +27,7 @@ import {
   type BatchClassifyControls,
   type BatchModalOptions,
   type BatchRunControls,
+  type FlatTask,
 } from "@/views/batch-modal";
 
 import { createBatchImport, type NoteImportDeps } from "./batch-import";
@@ -38,6 +44,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     getNoteByItemID: vi.fn(),
     getItemsByKey: vi.fn(),
     getNoteByKey: vi.fn(),
+    getLibraries: vi.fn(),
+    getCollectionIDByKey: vi.fn(),
+    getNoteItemIDsByLibrary: vi.fn(),
+    getNoteItemIDsByCollection: vi.fn(),
   };
 });
 
@@ -126,6 +136,14 @@ function makeFile(path: string): TFile {
   return { path } as TFile;
 }
 
+/** The configured citation library in every fixture: the personal one. */
+const PERSONAL_LIBRARY: Library = {
+  libraryID: USER_LIBRARY_ID,
+  type: "user",
+  groupID: null,
+  name: null,
+};
+
 function makeDeps(
   settings: Partial<Settings>,
   options: {
@@ -182,7 +200,103 @@ beforeEach(() => {
   vi.mocked(getNoteByItemID).mockReset();
   vi.mocked(getItemsByKey).mockReset();
   vi.mocked(getNoteByKey).mockReset();
+  vi.mocked(getLibraries).mockReset().mockReturnValue([PERSONAL_LIBRARY]);
+  vi.mocked(getCollectionIDByKey).mockReset().mockReturnValue(100);
+  vi.mocked(getNoteItemIDsByLibrary).mockReset().mockReturnValue([]);
+  vi.mocked(getNoteItemIDsByCollection).mockReset().mockReturnValue([]);
   confirmMock.mockReset();
+});
+
+describe("runBatchImportAll", () => {
+  const COLLECTION = "ABCD2345";
+
+  it("returns db-unavailable when the database is closed", async () => {
+    const { deps } = makeDeps({}, { dbState: "loading" });
+
+    await expect(createBatchImport(deps).runBatchImportAll()).resolves.toEqual({
+      outcome: "db-unavailable",
+    });
+    expect(openedModals).toHaveLength(0);
+  });
+
+  it("stops on a library mismatch before scanning for notes", async () => {
+    const { deps } = makeDeps({});
+
+    await expect(
+      createBatchImport(deps).runBatchImportAll({ expectedGroupID: 7 }),
+    ).resolves.toEqual({ outcome: "library-mismatch" });
+    expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+    expect(openedModals).toHaveLength(0);
+  });
+
+  it("accepts a matching group library", async () => {
+    vi.mocked(getLibraries).mockReturnValue([
+      { ...PERSONAL_LIBRARY, groupID: 7 },
+    ]);
+    vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50]);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
+    const { deps } = makeDeps({});
+
+    const result = await createBatchImport(deps).runBatchImportAll({
+      expectedGroupID: 7,
+    });
+
+    expect(result).not.toEqual({ outcome: "library-mismatch" });
+  });
+
+  it("reports an unknown collection key instead of an empty scope", async () => {
+    vi.mocked(getCollectionIDByKey).mockReturnValue(undefined);
+    const { deps } = makeDeps({});
+
+    await expect(
+      createBatchImport(deps).runBatchImportAll({ collectionKey: COLLECTION }),
+    ).resolves.toEqual({ outcome: "collection-not-found" });
+    expect(getNoteItemIDsByCollection).not.toHaveBeenCalled();
+  });
+
+  it("reports an empty selection for a collection that holds no notes", async () => {
+    const { deps } = makeDeps({});
+
+    await expect(
+      createBatchImport(deps).runBatchImportAll({ collectionKey: COLLECTION }),
+    ).resolves.toEqual({ outcome: "empty-selection" });
+    expect(openedModals).toHaveLength(0);
+  });
+
+  it("imports every note the library holds", async () => {
+    vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    const { deps } = makeDeps({});
+
+    const result = await createBatchImport(deps).runBatchImportAll();
+
+    expect(result).toEqual({ outcome: "batch-modal" });
+    expect(getNoteItemIDsByLibrary).toHaveBeenCalledWith(
+      expect.anything(),
+      USER_LIBRARY_ID,
+    );
+    const { manifest } = await driveLastModal();
+    expect(manifest.options.tasks.map((task: FlatTask) => task.id)).toEqual([
+      50, 51,
+    ]);
+  });
+
+  it("scopes to the named collection within the configured library", async () => {
+    vi.mocked(getNoteItemIDsByCollection).mockReturnValue([50, 51]);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    const { deps } = makeDeps({});
+
+    const result = await createBatchImport(deps).runBatchImportAll({
+      collectionKey: COLLECTION,
+    });
+
+    expect(result).toEqual({ outcome: "batch-modal" });
+    expect(getNoteItemIDsByCollection).toHaveBeenCalledWith(expect.anything(), {
+      libraryID: USER_LIBRARY_ID,
+      collectionKey: COLLECTION,
+    });
+    expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+  });
 });
 
 describe("runBatchImport routing", () => {

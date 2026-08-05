@@ -26,6 +26,10 @@ import {
   classifyChunked,
   runBatchWrite,
 } from "@/services/batch-run";
+import {
+  resolveBatchScope,
+  type BatchScopeOptions,
+} from "@/services/batch-scope";
 import { type DatabaseService } from "@/services/database/service";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import { type NoteIndex } from "@/services/note-index/service";
@@ -71,6 +75,8 @@ export interface BatchImport {
     mode: ImportMode,
     itemIDs: readonly number[],
   ): Promise<BatchImportResult>;
+  /** @see {@link runBatchImportAll} */
+  runBatchImportAll(opts?: BatchScopeOptions): Promise<BatchImportResult>;
   /** @see {@link runChildImportByKey} */
   runChildImportByKey(indexedKey: string): Promise<BatchImportResult | null>;
   /** @see {@link reimportNoteByKey} */
@@ -83,6 +89,7 @@ export interface BatchImport {
 export function createBatchImport(deps: NoteImportDeps): BatchImport {
   return {
     runBatchImport: (mode, itemIDs) => runBatchImport(deps, mode, itemIDs),
+    runBatchImportAll: (opts) => runBatchImportAll(deps, opts),
     runChildImportByKey: (indexedKey) => runChildImportByKey(deps, indexedKey),
     reimportNoteByKey: (noteKey, targetFile) =>
       reimportNoteByKey(deps, noteKey, targetFile),
@@ -109,6 +116,8 @@ interface NotFoundEntry {
 export type BatchImportResult =
   | { outcome: "db-unavailable" }
   | { outcome: "empty-selection" }
+  | { outcome: "library-mismatch" }
+  | { outcome: "collection-not-found" }
   | { outcome: "not-found"; count: number }
   | { outcome: "batch-modal" }
   | { outcome: "single"; write: WriteOutcome; title: string }
@@ -151,6 +160,51 @@ async function runBatchImport(
   }
   openNoteImportModal(deps, itemIDs);
   return { outcome: "batch-modal" };
+}
+
+/**
+ * Import every Zotero note in scope — the whole configured citation library, or
+ * one collection and its descendants. Both note kinds are gathered: the child
+ * notes of the regular items in scope and the standalone notes filed there. The
+ * resolved notes then run through the same flow as an explicit `mode="note"`
+ * import, so the user still confirms in the batch modal before anything writes.
+ *
+ * @param opts.expectedGroupID when set, the configured library's group ID must
+ *   match — `0` means the personal library, a positive integer names a group.
+ *   A mismatch returns `library-mismatch` without scanning.
+ * @param opts.collectionKey when set, narrows the run to that collection and
+ *   every collection nested under it. A key this database doesn't hold returns
+ *   `collection-not-found`.
+ */
+async function runBatchImportAll(
+  deps: NoteImportDeps,
+  opts?: BatchScopeOptions,
+): Promise<BatchImportResult> {
+  if (deps.db.state !== "ready") {
+    logger.warn("Batch import all: database not ready");
+    return { outcome: "db-unavailable" };
+  }
+
+  const settings = await deps.settings.loaded;
+
+  let noteItemIDs: readonly number[];
+  {
+    using lease = await deps.db.acquireRead();
+    const scope = resolveBatchScope(lease.client, "notes", {
+      libraryID: settings["zotero.citation-library"],
+      ...opts,
+    });
+    if (scope.outcome !== "resolved") {
+      return { outcome: scope.outcome };
+    }
+    noteItemIDs = scope.itemIDs;
+  }
+
+  logger.info("Batch import all resolved", {
+    collectionKey: opts?.collectionKey,
+    notes: noteItemIDs.length,
+  });
+  return runBatchImport(deps, "note", noteItemIDs);
 }
 
 /** Light row label for a note ref: its title, else a key fallback. */

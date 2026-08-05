@@ -17,7 +17,7 @@ The single integer (`PROTOCOL_VERSION`) that versions the **HTTP** wire shapes o
 _Avoid_: wire version (too broad — it does not govern URLs), API version
 
 **Action**:
-A verb in the `zotlit/*` namespace (`open`, `update`, `update-many`, `import-note`, `import-notes`, `explore`). An action id plus its required query fields is a frozen contract on the URL transport; a breaking change is expressed as a **new** action id, never by mutating an existing one.
+A verb in the `zotlit/*` namespace (`open`, `update`, `update-many`, `update-all`, `import-note`, `import-notes`, `import-all-notes`, `explore`). An action id plus its required query fields is a frozen contract on the URL transport; a breaking change is expressed as a **new** action id, never by mutating an existing one.
 _Avoid_: command, route, endpoint
 
 **Indexed Key**:

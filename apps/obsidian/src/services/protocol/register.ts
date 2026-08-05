@@ -4,17 +4,21 @@ import { getItemRefByID, type ItemRef } from "@zotlit/db";
 import {
   batchProtocolActionId,
   exploreProtocolActionId,
+  importAllNotesProtocolActionId,
   importManyProtocolActionId,
   importProtocolActionId,
   parseExploreProtocolQuery,
+  parseImportAllNotesProtocolQuery,
   parseImportManyProtocolQuery,
   parseImportProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
+  parseUpdateAllProtocolQuery,
   type ProtocolAction,
   protocolActionId,
   protocolActions,
   protocolSourceMatches,
+  updateAllProtocolActionId,
 } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -24,6 +28,7 @@ import * as toast from "@/lib/toast";
 import { type LiveUpdateService } from "@/services/live-update/service";
 import {
   runBatchUpdate,
+  runBatchUpdateAll,
   type BatchUpdateResult,
 } from "@/services/note-feature/update-batch";
 import {
@@ -32,14 +37,17 @@ import {
   updateNote,
 } from "@/services/note-feature/update-single";
 import { type BatchImport } from "@/services/note-import/batch-import";
-import { batchImportToast } from "@/services/note-import/batch-import-notices";
+import {
+  batchImportAllToast,
+  batchImportToast,
+} from "@/services/note-import/batch-import-notices";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 const logger = getLogger("protocol");
 
 export interface ProtocolDeps extends SingleUpdateDeps {
-  batchImport: Pick<BatchImport, "runBatchImport">;
+  batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
   zoteroPref: ZoteroPrefService;
   liveUpdate: LiveUpdateService;
 }
@@ -77,6 +85,15 @@ export function registerProtocolHandlers(
   plugin.registerObsidianProtocolHandler(exploreProtocolActionId, (data) => {
     void handleExploreProtocol(data, deps);
   });
+  plugin.registerObsidianProtocolHandler(updateAllProtocolActionId, (data) => {
+    void handleUpdateAllProtocol(data, deps);
+  });
+  plugin.registerObsidianProtocolHandler(
+    importAllNotesProtocolActionId,
+    (data) => {
+      void handleImportAllNotesProtocol(data, deps);
+    },
+  );
 
   // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
   // runs the same interactive flow as the `update-many` protocol link.
@@ -229,6 +246,60 @@ async function handleExploreProtocol(
     itemIndexedKey: ref.indexedKey,
     anchorAnnotationKey: query.annotation,
   });
+}
+
+async function handleUpdateAllProtocol(
+  data: ObsidianProtocolData,
+  deps: ProtocolDeps,
+): Promise<void> {
+  const query = parseProtocolData(data, deps, {
+    action: "update-all",
+    parse: parseUpdateAllProtocolQuery,
+  });
+  if (!query) return;
+
+  await toast.promise(
+    runBatchUpdateAll(deps, {
+      expectedGroupID: query.groupID,
+      collectionKey: query.collectionKey,
+    }),
+    { success: updateAllNotice },
+  );
+}
+
+/** Handle `obsidian://zotlit/import-all-notes`. */
+async function handleImportAllNotesProtocol(
+  data: ObsidianProtocolData,
+  deps: ProtocolDeps,
+): Promise<void> {
+  const query = parseProtocolData(data, deps, {
+    action: "import-all-notes",
+    parse: parseImportAllNotesProtocolQuery,
+  });
+  if (!query) return;
+
+  await toast.promise(
+    deps.batchImport.runBatchImportAll({
+      expectedGroupID: query.groupID,
+      collectionKey: query.collectionKey,
+    }),
+    batchImportAllToast(),
+  );
+}
+
+function updateAllNotice(result: BatchUpdateResult): string | undefined {
+  switch (result.outcome) {
+    case "db-unavailable":
+      return m.batch_update_db_unavailable();
+    case "empty-selection":
+      return m.batch_update_all_empty();
+    case "library-mismatch":
+      return m.batch_update_all_library_mismatch();
+    case "collection-not-found":
+      return m.notice_collection_not_found();
+    default:
+      return undefined;
+  }
 }
 
 function parseProtocolData<Query extends { sourceId: string }>(

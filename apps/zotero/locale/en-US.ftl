@@ -45,6 +45,10 @@ zotlit-menu-item-import-notes =
     }
 zotlit-menu-item-explore =
     .label = Explore Template Data
+zotlit-menu-collection-update-all =
+    .label = Create or Update Literature Notes
+zotlit-menu-collection-import-all-notes =
+    .label = Import Child and Standalone Notes
 zotlit-menu-item-copy-key =
     .label = { $count ->
         [one] { $kind ->

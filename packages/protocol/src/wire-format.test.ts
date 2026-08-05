@@ -8,20 +8,25 @@ import {
   batchUpdateRequestSchema,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
+  buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
   buildProtocolUrl,
+  buildUpdateAllProtocolUrl,
   exploreProtocolQuerySchema,
+  importAllNotesProtocolQuerySchema,
   importManyProtocolQuerySchema,
   importNotesRequestSchema,
   importProtocolQuerySchema,
   protocolActions,
   protocolBatchQuerySchema,
   protocolQuerySchema,
+  updateAllProtocolQuerySchema,
 } from "./url";
 import { PROTOCOL_VERSION } from "./version";
 
 const SOURCE = "a1b2c3d4";
+const COLLECTION = "ABCD2345";
 
 type ObjectSchema = v.ObjectSchema<
   v.ObjectEntries,
@@ -98,6 +103,20 @@ function importNotesUrlWireSurface(): unknown {
   };
 }
 
+function updateAllUrlWireSurface(): unknown {
+  return {
+    example: buildUpdateAllProtocolUrl(SOURCE, 7, COLLECTION),
+    params: pipedObjectKeys(updateAllProtocolQuerySchema),
+  };
+}
+
+function importAllNotesUrlWireSurface(): unknown {
+  return {
+    example: buildImportAllNotesProtocolUrl(SOURCE, 7, COLLECTION),
+    params: pipedObjectKeys(importAllNotesProtocolQuerySchema),
+  };
+}
+
 function literatureNotesWireSurface(): unknown {
   const schema = batchUpdateRequestSchema as ObjectSchema;
   return {
@@ -132,6 +151,8 @@ describe("wire format", () => {
       notify: notifyWireSurface(),
       url: protocolUrlWireSurface(),
       exploreUrl: exploreUrlWireSurface(),
+      updateAllUrl: updateAllUrlWireSurface(),
+      importAllNotesUrl: importAllNotesUrlWireSurface(),
       importNoteUrl: importNoteUrlWireSurface(),
       importNotesUrl: importNotesUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
@@ -145,6 +166,14 @@ describe("wire format", () => {
           "params": [
             "annotation",
             "item",
+            "source-id",
+          ],
+        },
+        "importAllNotesUrl": {
+          "example": "obsidian://zotlit/import-all-notes?source-id=a1b2c3d4&library=7&collection=ABCD2345",
+          "params": [
+            "collection",
+            "library",
             "source-id",
           ],
         },
@@ -214,6 +243,14 @@ describe("wire format", () => {
             ],
           },
         ],
+        "updateAllUrl": {
+          "example": "obsidian://zotlit/update-all?source-id=a1b2c3d4&library=7&collection=ABCD2345",
+          "params": [
+            "collection",
+            "library",
+            "source-id",
+          ],
+        },
         "updateManyUrl": {
           "example": "obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=a1b2c3d4",
           "params": [

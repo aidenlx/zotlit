@@ -100,6 +100,20 @@ Select **Open ZotLit settings**, open **Attachments → Approved folders**, and 
   </Step>
 </Steps>
 
+## Import every note in a library or collection [#import-all]
+
+This path imports both kinds of note in one action: the child notes attached to your regular items and the standalone notes filed alongside them.
+
+For the whole library, open the command palette and run:
+
+<Command>ZotLit: Import all child and standalone notes</Command>
+
+For one collection, right-click it in the Zotero sidebar and choose **ZotLit > Import Child and Standalone Notes**. Nested subcollections are included. The same entry on **My Library** or a group library covers that whole library.
+
+Obsidian opens the **Import notes** modal described below, listing every note it found. Review the list, then confirm to start the batch.
+
+The command uses your **Default library** (set in **Settings > ZotLit**). If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero."
+
 ## Re-import notes in batch
 
 Batch re-import is started from the ZotLit companion, not from an Obsidian command.

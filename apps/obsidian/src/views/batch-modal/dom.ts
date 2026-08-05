@@ -109,7 +109,9 @@ export function listGroup(parent: HTMLElement, group: StaticGroup): void {
  * second muted line indented under the label. Shared by the live run-phase
  * panel and the summary's Failed group. */
 export function failureRow(ul: HTMLElement, failure: BatchFailure): void {
-  const li = ul.createEl("li", { cls: "zt:py-0.5 zt:min-w-0" });
+  const li = ul.createEl("li", {
+    cls: "zt:py-0.5 zt:min-w-0 zt:[content-visibility:auto] zt:[contain-intrinsic-size:auto_2.5rem]",
+  });
   const r = li.createDiv({
     cls: "zt:flex zt:items-center zt:gap-2 zt:min-w-0",
   });

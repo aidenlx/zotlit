@@ -15,6 +15,8 @@ export type FluentMessageId =
   | "zotlit-batch-update-server-needed-message"
   | "zotlit-batch-update-server-needed-title"
   | "zotlit-column-obsidian-note"
+  | "zotlit-menu-collection-import-all-notes"
+  | "zotlit-menu-collection-update-all"
   | "zotlit-menu-item-copy-key"
   | "zotlit-menu-item-explore"
   | "zotlit-menu-item-import-child-notes"

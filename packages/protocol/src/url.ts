@@ -367,6 +367,124 @@ export function parseExploreProtocolQuery(
   return v.parse(exploreProtocolQuerySchema, data);
 }
 
+const PROTOCOL_UPDATE_ALL_ACTION = "update-all";
+
+/**
+ * Library-wide note import. Shares {@link updateAllProtocolQuerySchema}'s query
+ * shape, and gathers both child notes of regular items and standalone notes in
+ * scope — so it carries no `mode`.
+ */
+const PROTOCOL_IMPORT_ALL_NOTES_ACTION = "import-all-notes";
+
+export const updateAllProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_UPDATE_ALL_ACTION}` as const;
+
+export const importAllNotesProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_IMPORT_ALL_NOTES_ACTION}` as const;
+
+/**
+ * 8-char base-32 Zotero collection key. Collection keys and item keys share
+ * `Zotero.Utilities.generateObjectKey()`'s format, so {@link isItemKey} validates
+ * both.
+ */
+const collectionKeyValue = v.optional(v.pipe(v.string(), v.check(isItemKey)));
+
+/**
+ * Query payload shared by `zotlit/update-all` and `zotlit/import-all-notes`:
+ * a library, optionally narrowed to one collection and its descendants.
+ */
+const libraryScopeQuerySchema = v.pipe(
+  v.object({
+    "source-id": sourceIdValue,
+    library: v.optional(v.pipe(v.string(), v.regex(/^\d+$/u))),
+    collection: collectionKeyValue,
+  }),
+  v.transform(({ "source-id": sourceId, library, collection }) => ({
+    sourceId,
+    /** `0` for the personal library; a positive integer for a group library. */
+    groupID: library ? Number(library) : 0,
+    /** Absent scopes the action to the whole library. */
+    collectionKey: collection,
+  })),
+);
+
+export const updateAllProtocolQuerySchema = libraryScopeQuerySchema;
+
+export const importAllNotesProtocolQuerySchema = libraryScopeQuerySchema;
+
+export type UpdateAllProtocolQuery = v.InferOutput<
+  typeof updateAllProtocolQuerySchema
+>;
+
+export type ImportAllNotesProtocolQuery = v.InferOutput<
+  typeof importAllNotesProtocolQuerySchema
+>;
+
+/**
+ * @param data decoded query record from Obsidian
+ * @throws {v.ValiError} when `source-id` is missing or malformed
+ */
+export function parseUpdateAllProtocolQuery(
+  data: Record<string, unknown>,
+): UpdateAllProtocolQuery {
+  return v.parse(updateAllProtocolQuerySchema, data);
+}
+
+/**
+ * @param data decoded query record from Obsidian
+ * @throws {v.ValiError} when `source-id` or `collection` is malformed
+ */
+export function parseImportAllNotesProtocolQuery(
+  data: Record<string, unknown>,
+): ImportAllNotesProtocolQuery {
+  return v.parse(importAllNotesProtocolQuerySchema, data);
+}
+
+/**
+ * Build an `obsidian://zotlit/update-all?source-id=<hash>&library=<groupID>`
+ * link for `Zotero.launchURL`. `groupID` 0 (or absent) means the personal
+ * library; Obsidian checks it against its own configured library. A
+ * `collectionKey` narrows the action to that collection and its descendants.
+ */
+export function buildUpdateAllProtocolUrl(
+  sourceId: string,
+  groupID?: number,
+  collectionKey?: string,
+): string {
+  return buildLibraryScopeUrl(updateAllProtocolActionId, sourceId, {
+    groupID,
+    collectionKey,
+  });
+}
+
+/**
+ * Build an `obsidian://zotlit/import-all-notes?source-id=<hash>&library=<groupID>`
+ * link for `Zotero.launchURL`, optionally narrowed to one collection and its
+ * descendants.
+ */
+export function buildImportAllNotesProtocolUrl(
+  sourceId: string,
+  groupID?: number,
+  collectionKey?: string,
+): string {
+  return buildLibraryScopeUrl(importAllNotesProtocolActionId, sourceId, {
+    groupID,
+    collectionKey,
+  });
+}
+
+/** Shared builder for the two {@link libraryScopeQuerySchema} actions. */
+function buildLibraryScopeUrl(
+  actionId: string,
+  sourceId: string,
+  scope: { groupID?: number; collectionKey?: string },
+): string {
+  const params = protocolUrlParams({}, sourceId);
+  if (scope.groupID) params.set("library", String(scope.groupID));
+  if (scope.collectionKey) params.set("collection", scope.collectionKey);
+  return `obsidian://${actionId}?${params}`;
+}
+
 /**
  * Build an `obsidian://zotlit/explore?item=<id>&source-id=<hash>` link for
  * `Zotero.launchURL`. An optional `annotation` key anchors the explorer at

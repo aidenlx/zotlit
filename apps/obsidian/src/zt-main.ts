@@ -19,6 +19,7 @@ import { addDatabaseActions } from "./services/database/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
+import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
@@ -192,6 +193,14 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       noteFeature: services.noteFeature,
       batchImport: services.batchImport,
+      updateAll: () =>
+        runBatchUpdateAll({
+          app: this.app,
+          db: services.db,
+          settings: services.settings,
+          noteFeature: services.noteFeature,
+          noteIndex: services.noteIndex,
+        }),
     });
     registerCitationSuggest(this, {
       app: this.app,
