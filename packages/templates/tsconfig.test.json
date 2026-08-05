@@ -2,7 +2,7 @@
   "extends": "./tsconfig.lib.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node-25", "vite/client", "vitest/importMeta"],
+    "types": ["node", "vite/client", "vitest/importMeta"],
     "paths": { "@defaults/*": ["./defaults/*"] }
   },
   "include": ["./src/**/*.ts"],
