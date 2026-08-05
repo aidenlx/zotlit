@@ -1,12 +1,8 @@
-// The `obsidian-i18n compile` command, including its watch loop over project inputs.
+// The `obsidian-i18n compile` command: one compile per invocation. Rebuilding
+// on input changes belongs to the Vite plugin in `./vite.ts`, which registers
+// the compile result's `watchPaths` with the bundler's own watcher.
 
-import { watch } from "node:fs";
-
-import {
-  compile,
-  type CompileOptions,
-  type CompileResult,
-} from "./compiler.js";
+import { compile, type CompileOptions } from "./compiler.js";
 
 export type CliIo = {
   cwd: string;
@@ -23,71 +19,23 @@ export async function runCli(
   },
 ): Promise<void> {
   const options = parseArguments(argv, io.cwd);
-  if (!options.watch) {
-    await runCompile(options, io);
-    return;
-  }
-
-  using watchSession = new DisposableStack();
-  let watchers = new DisposableStack();
-  watchSession.defer(() => watchers.dispose());
-  let compiling = false;
-  let pending = false;
-  const compileAndWatch = async (): Promise<void> => {
-    if (compiling) {
-      pending = true;
-      return;
-    }
-    compiling = true;
-    try {
-      const result = await runCompile(options, io);
-      watchers.dispose();
-      watchers = watchInputs(result, () => {
-        void compileAndWatch().catch((error: unknown) => {
-          io.stderr.write(`${toError(error).message}\n`);
-        });
-      });
-    } finally {
-      compiling = false;
-      if (pending) {
-        pending = false;
-        await compileAndWatch();
-      }
-    }
-  };
-  await compileAndWatch();
-  await new Promise<void>((resolveDone) => {
-    const close = (): void => resolveDone();
-    process.once("SIGINT", close);
-    process.once("SIGTERM", close);
-    watchSession.defer(() => {
-      process.off("SIGINT", close);
-      process.off("SIGTERM", close);
-    });
-  });
+  await runCompile(options, io);
 }
 
-type ParsedOptions = CompileOptions & { watch: boolean };
-
-function parseArguments(argv: readonly string[], cwd: string): ParsedOptions {
+function parseArguments(argv: readonly string[], cwd: string): CompileOptions {
   const args = [...argv];
   if (args.shift() !== "compile") {
     throw new Error(
-      "Usage: obsidian-i18n compile [--project PATH] [--output PATH] [--exclude-prefix PREFIX] [--target-locale-prefix PREFIX] [--watch]",
+      "Usage: obsidian-i18n compile [--project PATH] [--output PATH] [--exclude-prefix PREFIX] [--target-locale-prefix PREFIX]",
     );
   }
-  const options: ParsedOptions = {
+  const options: CompileOptions = {
     root: cwd,
-    watch: false,
     excludeMessagePrefixes: [],
     targetLocaleMessagePrefixes: [],
   };
   while (args.length > 0) {
     const option = args.shift()!;
-    if (option === "--watch") {
-      options.watch = true;
-      continue;
-    }
     const value = args.shift();
     if (value === undefined) throw new Error(`${option} requires a value`);
     switch (option) {
@@ -116,32 +64,10 @@ function parseArguments(argv: readonly string[], cwd: string): ParsedOptions {
   return options;
 }
 
-async function runCompile(
-  options: ParsedOptions,
-  io: CliIo,
-): Promise<CompileResult> {
+async function runCompile(options: CompileOptions, io: CliIo): Promise<void> {
   const result = await compile(options);
   io.stdout.write(`Generated ${result.messageCount} Message wrappers\n`);
   if (result.warnings.length > 0) {
     io.stderr.write(`${result.warnings.join("\n")}\n`);
   }
-  return result;
-}
-
-function watchInputs(
-  result: CompileResult,
-  onChange: () => void,
-): DisposableStack {
-  using watchers = new DisposableStack();
-  const inputs = new Set(result.watchPaths);
-  for (const path of inputs) {
-    watchers.adopt(watch(path, { persistent: true }, onChange), (watcher) =>
-      watcher.close(),
-    );
-  }
-  return watchers.move();
-}
-
-function toError(value: unknown): Error {
-  return value instanceof Error ? value : new Error(String(value));
 }
