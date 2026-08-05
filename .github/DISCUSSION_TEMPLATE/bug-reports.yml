@@ -17,6 +17,12 @@ body:
         duplicate. General usage questions belong in
         [Help](https://github.com/aidenlx/zotlit/discussions/categories/help)
         instead.
+
+
+        Follow
+        [Collect debug logs](https://zotlit.aidenlx.site/docs/how-to/collect-debug-logs)
+        to gather the Obsidian debug info, the ZotLit log archive, and the
+        Zotero debug output that this report asks for.
   - type: input
     id: zotlit-version
     attributes:
@@ -31,6 +37,17 @@ body:
       label: Host application versions
       description: Obsidian, Zotero, and OS versions.
       placeholder: e.g. Obsidian 1.7.2, Zotero 7.0.9, macOS 15.1
+    validations:
+      required: true
+  - type: textarea
+    id: obsidian-debug-info
+    attributes:
+      label: Obsidian debug info
+      description: >-
+        In Obsidian, open the command palette and run "Show debug info", then
+        paste the copied output here. See
+        [Collect debug logs](https://zotlit.aidenlx.site/docs/how-to/collect-debug-logs#obsidian-debug-info).
+      render: text
     validations:
       required: true
   - type: dropdown
