@@ -50,7 +50,7 @@ export function liveUpdatesPageItems(
 }
 
 function enabledDescription(): DocumentFragment {
-  const frag = document.createDocumentFragment();
+  const frag = createFragment();
   frag.append(m.settings_live_updates_enabled_desc());
 
   const hint = createDiv({ cls: "zt:mt-2 zt:text-(--text-warning)" });

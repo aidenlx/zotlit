@@ -33,6 +33,9 @@ export function syntheticFile(filePath: string): TFile {
   const name = slash === -1 ? filePath : filePath.slice(slash + 1);
   const dot = name.lastIndexOf(".");
   const hasExt = dot > 0 && dot < name.length - 1;
+  // Building the synthetic TFile itself; `instanceof TFile` narrowing
+  // doesn't apply here.
+  // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
   return Object.assign(Object.create(TFile.prototype) as TFile, {
     path: filePath,
     name,

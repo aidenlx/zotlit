@@ -288,8 +288,6 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
-    console.log("ZotLit loaded");
-
     this.#services = services;
     this.#stack = stack.move();
   }

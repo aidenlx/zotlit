@@ -100,7 +100,7 @@ export class DatabaseService extends Service<void> {
   #activeReadStack: AsyncDisposableStack | null = null;
   #watchers: FSWatcher[] = [];
   #walWatcher: FSWatcher | null = null;
-  #watchTimer: ReturnType<typeof setTimeout> | null = null;
+  #watchTimer: number | null = null;
   #refreshInFlight: Promise<void> | null = null;
   #refreshAgain = false;
   #leaseCount = 0;
@@ -516,8 +516,8 @@ export class DatabaseService extends Service<void> {
 
   #scheduleWatchedRefresh(): void {
     const rescheduled = !!this.#watchTimer;
-    if (this.#watchTimer) clearTimeout(this.#watchTimer);
-    this.#watchTimer = setTimeout(() => {
+    if (this.#watchTimer) window.clearTimeout(this.#watchTimer);
+    this.#watchTimer = window.setTimeout(() => {
       this.#watchTimer = null;
       logger.debug("Watcher debounce elapsed, scheduling refresh");
       this.#scheduleRefresh();
@@ -533,7 +533,7 @@ export class DatabaseService extends Service<void> {
     const hadPendingTimer = !!this.#watchTimer;
     const hadWalWatcher = !!this.#walWatcher;
     if (this.#watchTimer) {
-      clearTimeout(this.#watchTimer);
+      window.clearTimeout(this.#watchTimer);
       this.#watchTimer = null;
     }
     for (const watcher of this.#watchers) watcher.close();

@@ -33,9 +33,9 @@ export interface FrontmatterFieldModalOptions {
 /** Plain expr desc, or with a note that the field is read-only while the JS gate is off. */
 function buildExprDesc(readonly: boolean): string | DocumentFragment {
   if (!readonly) return m.settings_frontmatter_expr_desc();
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(m.settings_frontmatter_expr_desc());
-  const note = document.createElement("div");
+  const note = createDiv();
   note.className = "zt:mt-2 zt:text-(--text-warning)";
   note.textContent = m.settings_frontmatter_expr_readonly_js();
   desc.append(note);
@@ -207,7 +207,7 @@ export function openFrontmatterFieldModal(
 
     const exprError = validateExpr(expr, language);
     if (exprError) {
-      const desc = document.createDocumentFragment();
+      const desc = createFragment();
       desc.append(m.settings_frontmatter_expr_desc());
       appendCompileError(desc, exprError);
       exprSetting.setDesc(desc);

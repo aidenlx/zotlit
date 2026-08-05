@@ -5,10 +5,10 @@ export function appendCompileError(
   message: string,
   heading?: string,
 ): void {
-  const block = document.createElement("div");
+  const block = createDiv();
   block.className = "zt:mt-2 zt:text-(--text-error)";
   if (heading) block.append(heading);
-  const pre = document.createElement("pre");
+  const pre = createEl("pre");
   pre.className =
     "zt:m-0 zt:mt-1 zt:text-(length:--font-smallest) zt:whitespace-pre-wrap";
   pre.textContent = message;

@@ -2,10 +2,10 @@
 export function saveFile(data: Blob, filename: string): void {
   const url = URL.createObjectURL(data);
 
-  const link = document.createElement("a");
+  const link = createEl("a");
   link.href = url;
   link.download = filename;
-  link.style.display = "none";
+  link.classList.add("zt:hidden");
 
   document.body.appendChild(link);
   link.click();

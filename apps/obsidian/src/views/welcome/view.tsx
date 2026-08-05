@@ -40,7 +40,7 @@ export class WelcomeView extends ItemView {
   #closed = false;
   #stack: DisposableStack | undefined;
   #connectionGen = 0;
-  #checkingTimer: ReturnType<typeof setTimeout> | null = null;
+  #checkingTimer: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, deps: WelcomeViewDeps) {
     super(leaf);
@@ -147,7 +147,7 @@ export class WelcomeView extends ItemView {
   /** Show the checking spinner only if this readout is still pending after the grace delay. */
   #armChecking(gen: number): void {
     this.#clearCheckingTimer();
-    this.#checkingTimer = setTimeout(() => {
+    this.#checkingTimer = window.setTimeout(() => {
       this.#checkingTimer = null;
       if (!this.#closed && gen === this.#connectionGen) {
         this.#store.setState({ connection: { status: "checking" } });
@@ -157,7 +157,7 @@ export class WelcomeView extends ItemView {
 
   #clearCheckingTimer(): void {
     if (this.#checkingTimer !== null) {
-      clearTimeout(this.#checkingTimer);
+      window.clearTimeout(this.#checkingTimer);
       this.#checkingTimer = null;
     }
   }

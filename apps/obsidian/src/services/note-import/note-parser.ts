@@ -201,6 +201,9 @@ function subsumeAnnotationParagraphs(
     // path that reaches here without already being trimmed.
     const callout = raw.replaceAll(/\n{3,}/g, "\n\n").trim();
     if (callout === "") continue;
+    // `ownerDocument` here is a detached `DOMParser` document (see line 152),
+    // not the app's window document, so `createDiv()`/`.win` aren't available.
+    // eslint-disable-next-line obsidianmd/prefer-create-el
     const sentinel = paragraph.ownerDocument.createElement("div");
     sentinel.setAttribute(ANNOTATION_CALLOUT_ATTR, encodeCalloutAttr(callout));
     // Single placeholder so Turndown's blankRule keeps the node; avoids

@@ -233,11 +233,11 @@ function renderEjectableRow(
 
   const compileError =
     ctx.plugin.services.template.compileErrors.get(name)?.message;
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(TEMPLATE_META[name].desc());
-  desc.append(document.createElement("br"));
+  desc.append(createEl("br"));
   if (file) {
-    const code = document.createElement("code");
+    const code = createEl("code");
     code.textContent = file.path;
     desc.append(code);
   } else {
@@ -245,7 +245,7 @@ function renderEjectableRow(
   }
   const shadowedPath = ctx.plugin.services.template.shadowedFiles.get(name);
   if (shadowedPath) {
-    const shadowed = document.createElement("div");
+    const shadowed = createDiv();
     shadowed.className = "zt:mt-2 zt:text-(--text-warning)";
     shadowed.textContent = m.settings_template_shadowed({
       path: shadowedPath,
@@ -254,7 +254,7 @@ function renderEjectableRow(
   }
   const inertPath = ctx.plugin.services.template.inertEtaFiles.get(name);
   if (inertPath) {
-    const inert = document.createElement("div");
+    const inert = createDiv();
     inert.className = "zt:mt-2 zt:text-(--text-warning)";
     inert.textContent = m.settings_template_inert_eta({ path: inertPath });
     desc.append(inert);

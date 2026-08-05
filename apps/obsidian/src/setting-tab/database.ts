@@ -106,16 +106,16 @@ function renderDatabaseFileRow(
 ): () => void {
   const stack = new DisposableStack();
 
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(m.settings_db_file_desc());
-  desc.append(document.createElement("br"));
-  const pathCode = document.createElement("code");
+  desc.append(createEl("br"));
+  const pathCode = createEl("code");
   pathCode.textContent = ctx.zoteroPref.databasePath;
   desc.append(pathCode);
-  const statusBr = document.createElement("br");
-  const statusSpan = document.createElement("span");
-  statusBr.style.display = "none";
-  statusSpan.style.display = "none";
+  const statusBr = createEl("br");
+  const statusSpan = createSpan();
+  statusBr.classList.add("zt:hidden");
+  statusSpan.classList.add("zt:hidden");
   desc.append(statusBr, statusSpan);
 
   let refreshButton: ExtraButtonComponent | undefined;
@@ -161,14 +161,14 @@ function renderDatabaseFileRow(
     }
 
     if (text) {
-      statusBr.style.display = "";
-      statusSpan.style.display = "";
+      statusBr.classList.remove("zt:hidden");
+      statusSpan.classList.remove("zt:hidden");
       statusSpan.textContent = text;
       statusSpan.classList.toggle("mod-warning", isError);
       statusSpan.ariaLabel = lastErrorMessage ?? "";
     } else {
-      statusBr.style.display = "none";
-      statusSpan.style.display = "none";
+      statusBr.classList.add("zt:hidden");
+      statusSpan.classList.add("zt:hidden");
       statusSpan.textContent = "";
       statusSpan.classList.remove("mod-warning");
       statusSpan.ariaLabel = null;
@@ -219,9 +219,9 @@ function renderReadModeRow(
 ): () => void {
   const stack = new DisposableStack();
 
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(m.settings_db_read_mode_desc());
-  const options = document.createElement("ul");
+  const options = createEl("ul");
   for (const [name, details] of [
     [m.settings_db_read_mode_reflink(), m.settings_db_read_mode_reflink_desc()],
     [m.settings_db_read_mode_copy(), m.settings_db_read_mode_copy_desc()],
@@ -230,13 +230,13 @@ function renderReadModeRow(
       m.settings_db_read_mode_immutable_desc(),
     ],
   ] as const) {
-    const item = document.createElement("li");
+    const item = createEl("li");
     item.append(`${name}: ${details}`);
     options.append(item);
   }
   desc.append(options);
-  desc.append(document.createElement("br"));
-  const activeMode = document.createElement("span");
+  desc.append(createEl("br"));
+  const activeMode = createSpan();
   desc.append(activeMode);
 
   const modeLabel = (mode: ConfiguredReadMode | EffectiveReadMode): string => {
@@ -294,16 +294,16 @@ function renderProfileDirRow(
   const stack = new DisposableStack();
   const pref = ctx.zoteroPref;
 
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(m.settings_db_profile_dir_desc());
   appendDeviceOverrideNote(desc);
-  desc.append(document.createElement("br"));
-  const pathCode = document.createElement("code");
+  desc.append(createEl("br"));
+  const pathCode = createEl("code");
   desc.append(pathCode);
-  const statusBr = document.createElement("br");
-  const statusSpan = document.createElement("span");
-  statusBr.style.display = "none";
-  statusSpan.style.display = "none";
+  const statusBr = createEl("br");
+  const statusSpan = createSpan();
+  statusBr.classList.add("zt:hidden");
+  statusSpan.classList.add("zt:hidden");
   desc.append(statusBr, statusSpan);
 
   let dropdown: DropdownComponent | undefined;
@@ -356,13 +356,13 @@ function renderProfileDirRow(
           ? m.settings_db_profile_status_degraded()
           : "";
     if (text) {
-      statusBr.style.display = "";
-      statusSpan.style.display = "";
+      statusBr.classList.remove("zt:hidden");
+      statusSpan.classList.remove("zt:hidden");
       statusSpan.textContent = text;
       statusSpan.classList.toggle("mod-warning", state === "degraded");
     } else {
-      statusBr.style.display = "none";
-      statusSpan.style.display = "none";
+      statusBr.classList.add("zt:hidden");
+      statusSpan.classList.add("zt:hidden");
       statusSpan.textContent = "";
       statusSpan.classList.remove("mod-warning");
     }
@@ -512,11 +512,11 @@ function renderDataDirRow(
   const stack = new DisposableStack();
   const pref = ctx.zoteroPref;
 
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(m.settings_db_data_dir_desc());
   appendDeviceOverrideNote(desc);
-  desc.append(document.createElement("br"));
-  const pathCode = document.createElement("code");
+  desc.append(createEl("br"));
+  const pathCode = createEl("code");
   desc.append(pathCode);
 
   let dropdown: DropdownComponent | undefined;
@@ -587,7 +587,7 @@ function renderSourceIdRow(
   const stack = new DisposableStack();
   const pref = ctx.zoteroPref;
 
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(m.settings_db_source_id_desc());
   const profileLine = appendLabeledCode(
     desc,
@@ -619,9 +619,9 @@ function renderSourceIdRow(
 
 /** Append a `label: <code/>` line to `frag`, returning the `<code>` to fill in. */
 function appendLabeledCode(frag: DocumentFragment, label: string): HTMLElement {
-  frag.append(document.createElement("br"));
+  frag.append(createEl("br"));
   frag.append(label);
-  const code = document.createElement("code");
+  const code = createEl("code");
   frag.append(" ", code);
   return code;
 }
