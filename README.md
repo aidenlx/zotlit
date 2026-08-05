@@ -29,6 +29,13 @@
 
 </div>
 
+> [!WARNING]
+> **Update the Obsidian installer first.** ZotLit needs Obsidian 1.13.4 or newer, and the **installer version** must also be 1.13.4 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings → About**.
+>
+> If the installer is older, ZotLit does not load. Obsidian shows _Failed to load plugin "zotlit"_, and the developer console shows a `SyntaxError`.
+>
+> **Fix:** download Obsidian from [obsidian.md/download](https://obsidian.md/download) and run it over your current installation. Nothing is deleted, and no notes are lost. [Full steps →](https://zotlit.aidenlx.site/docs/how-to/update-obsidian-installer)
+
 > [!NOTE]
 > **Coming from v1?** v2 is a major upgrade with breaking changes. Your existing literature notes and custom templates do not carry over unchanged. Read the [migration guide](https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1) before upgrading.
 
