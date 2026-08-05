@@ -114,7 +114,7 @@ body):
   leader, mono-uppercase orange link into the docs — with a one-line
   description under each.
 - **Shared copyright footer** (`components/site-footer.tsx`): hairline-topped
-  "© year AidenLx · MIT Licensed" line, shared across all `(home)` index
+  "© year AidenLx · AGPL-3.0 Licensed" line, shared across all `(home)` index
   surfaces (landing, blog index, changelog index).
 
 ### Changelog (`/changelog`)
