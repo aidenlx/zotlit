@@ -31,9 +31,12 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
 | `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks + lints in one pass. **A clean run verifies types — no separate `tsgo`/`turbo run typecheck` pass.** |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
+| `pnpm review` / `pnpm review:fix`  | Obsidian guideline scan of `apps/obsidian` (ESLint). Release-time only — `release.ts` gates on it and CI re-runs it on `release/**` PRs. Blocks on errors; warnings are reported. |
 | `pnpm quality[:fix]`              | Runs lint, then format.                                                                                                     |
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
+
+ESLint is present at the root for **one** purpose: `pnpm review` checks `apps/obsidian` against the official Obsidian developer guidelines via `eslint-plugin-obsidianmd`, before a release is cut. Only the `obsidianmd/*` rules are enabled — oxlint owns everything else. Root `typescript` is aliased to `@typescript/typescript6` because typescript-eslint cannot run on TypeScript 7; workspace packages keep TypeScript 7 via the catalog. Leave `eslint.config.js` and that alias in place. See [ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md).
 
 Scope a task to one package with a turbo filter so its deps still build first: `turbo run <task> --filter=@zotlit/obsidian`. For tight inner-loop iteration that doesn't need the dep graph (single-file Vitest, `db:pull`, etc.), call the package tool directly — see each package's `AGENTS.md`.
 

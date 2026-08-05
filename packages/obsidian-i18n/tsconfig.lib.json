@@ -10,7 +10,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "isolatedDeclarations": false,
-    "types": ["node-25"]
+    "types": []
   },
   "include": ["./src/**/*.ts"],
   "exclude": ["./node_modules", "./dist/**/*", "./src/**/*.test.ts"]

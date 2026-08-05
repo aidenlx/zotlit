@@ -132,6 +132,23 @@ if (quality.exitCode !== 0) {
 }
 s.stop("Quality passed");
 
+// Obsidian's community review rejects guideline violations, so the plugin is
+// scanned here rather than after merge — `release.yml` only runs once the
+// version commit has already landed. oxlint (in `pnpm quality` above) owns
+// general hygiene; this is the Obsidian-specific pass. See ADR 0020.
+if (bumps.some((b) => b.app.name === "obsidian")) {
+  s.start("Plugin review");
+  const review = await $({ cwd: workspaceRoot, nothrow: true })`pnpm review`;
+  if (review.exitCode !== 0) {
+    s.stop("Plugin review failed", 1);
+    p.cancel(
+      `Obsidian guideline violations — fix these before releasing:\n${review.stdout}${review.stderr}`,
+    );
+    process.exit(1);
+  }
+  s.stop("Plugin review passed");
+}
+
 const branchName = `release/${currentBranch}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
 const commitMsg = `chore: release ${summary}`;
 

@@ -45,8 +45,8 @@
     "valibot": "catalog:"
   },
   "devDependencies": {
-    "@types/node-22": "npm:@types/node@^22.9.0",
-    "@types/node-25": "npm:@types/node@^25.6.2",
+    "@types/node": "catalog:",
+    "@types/node-24": "catalog:",
     "@zotlit/config": "workspace:*",
     "ajv": "catalog:",
     "drizzle-kit": "catalog:",

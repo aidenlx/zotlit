@@ -15,6 +15,9 @@
     "lint": "turbo run //#lint:repo",
     "lint:fix": "turbo run //#lint:repo -- --fix",
     "lint:repo": "oxlint",
+    "review": "turbo run //#review:plugin",
+    "review:plugin": "eslint",
+    "review:fix": "eslint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt",
     "quality": "pnpm lint && pnpm format",
@@ -26,12 +29,20 @@
   },
   "devDependencies": {
     "@electron/asar": "^4.2.0",
+    "@eslint/js": "^10.0.1",
+    "@eslint/json": "^2.0.1",
+    "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
+    "eslint": "^10.8.0",
+    "eslint-plugin-obsidianmd": "^0.4.1",
     "lefthook": "^2.1.1",
+    "obsidian": "workspace:*",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "^0.23.0",
-    "turbo": "^2.9.18"
+    "turbo": "^2.9.18",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.65.0"
   },
   "packageManager": "pnpm@11.1.3"
 }

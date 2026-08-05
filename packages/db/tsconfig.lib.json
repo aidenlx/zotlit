@@ -7,7 +7,7 @@
     "moduleResolution": "bundler",
     "outDir": "dist",
     "isolatedDeclarations": false,
-    "types": ["node-22"],
+    "types": ["node-24"],
     "paths": {
       "@/*": ["./src/*"],
       "@drizzle/*": ["./drizzle/*"]

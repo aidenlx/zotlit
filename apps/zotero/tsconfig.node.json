@@ -6,7 +6,7 @@
     "checkJs": true,
     "allowImportingTsExtensions": true,
     "isolatedDeclarations": false,
-    "types": ["node-25"]
+    "types": ["node"]
   },
   "include": [
     "./scripts/**/*.ts",
