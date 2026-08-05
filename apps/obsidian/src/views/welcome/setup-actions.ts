@@ -3,6 +3,7 @@ import { type App, FuzzySuggestModal, type TFolder } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { openSettingsTab } from "@/lib/open-settings";
 import { requireDialog } from "@/lib/require";
 import { type SettingsService } from "@/services/settings/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -27,8 +28,7 @@ export interface SetupActionsDeps {
 export function createSetupActions(deps: SetupActionsDeps): SetupActions {
   return {
     openSettings: () => {
-      deps.app.setting.open();
-      deps.app.setting.openTabById(deps.pluginId);
+      openSettingsTab(deps.app, deps.pluginId, [m.settings_page_database()]);
     },
     pickFolder: () => {
       new LiteratureFolderModal(deps.app, (folder) => {

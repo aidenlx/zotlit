@@ -18,13 +18,77 @@ declare module "obsidian" {
       /** The enabled core plugin instance, or null when disabled/absent. */
       getEnabledPluginById(id: string): unknown;
     };
-    setting: {
-      open(): void;
-      openTabById(id: string): unknown;
-    };
+    setting: SettingsModal;
     commands: {
       executeCommandById(id: string): boolean;
     };
+  }
+
+  /** The settings modal (`app.setting`). Internal; shape verified against Obsidian 1.13. */
+  interface SettingsModal extends Modal {
+    /** Tab rendered into the content pane, or null while none is open. */
+    activeTab: SettingTab | null;
+    /** Index backing the settings search box. */
+    searchIndex: SettingsSearchIndex;
+    /** Open a tab by id, searching built-in tabs then plugin tabs. Returns null when the id is unknown. Opening the modal is a separate {@link Modal.open} call. */
+    openTabById(id: string): SettingTab | null;
+    /** Render a tab, closing any open sub-pages. */
+    openTab(tab: SettingTab): void;
+    /**
+     * Open a tab, descend its `pagePath` sub-pages, then reveal `result`'s definition.
+     * Reads only the listed fields, so synthetic arguments navigate without a real search.
+     */
+    navigateToSearchResult(
+      group: Pick<SettingsSearchGroup, "tab" | "pagePath">,
+      result?: Pick<SettingsSearchResult, "entry">,
+    ): void;
+    /** Scroll the row for `definition` into view and flash it. Requires `tab` to be the rendered tab or sub-page. */
+    scrollToDefinition(tab: SettingTab, definition: SettingDefinition): void;
+  }
+
+  /** Flattened index over every registered tab's `settingItems`. */
+  interface SettingsSearchIndex {
+    tabs: SettingTab[];
+    /** Every searchable definition across all tabs, with the path that reaches it. */
+    getEntries(): SettingsSearchEntry[];
+    /** Simple search over name, desc, and aliases, grouped by page and sorted by score. */
+    search(query: string): SettingsSearchGroup[];
+  }
+
+  /** A definition plus the tab and sub-page path that reach it. */
+  interface SettingsSearchEntry {
+    tab: SettingTab;
+    definition: SettingDefinition;
+    /** Innermost page definition; absent at the tab root. */
+    page?: SettingDefinitionPage;
+    /** Sub-page `name` values, outermost first. Empty at the tab root. */
+    pagePath: string[];
+  }
+
+  /** Search hits sharing one tab and sub-page. */
+  interface SettingsSearchGroup {
+    tab: SettingTab;
+    page?: SettingDefinitionPage;
+    pagePath: string[];
+    tabNameMatch: SearchResult | null;
+    results: SettingsSearchResult[];
+    bestScore: number;
+  }
+
+  /** One matched definition inside a {@link SettingsSearchGroup}. */
+  interface SettingsSearchResult {
+    entry: SettingsSearchEntry;
+    nameMatch: SearchResult | null;
+    descMatch: SearchResult | null;
+    score: number;
+    matches: SearchMatches;
+  }
+
+  interface SettingTab {
+    /** Tab id. A `PluginSettingTab` takes `plugin.manifest.id`. */
+    id: string;
+    /** Sidebar label. A `PluginSettingTab` takes `plugin.manifest.name`. */
+    name: string;
   }
 
   /** Position-resolved link/tag token from {@link Editor.getClickableTokenAt}. */

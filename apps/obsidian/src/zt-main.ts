@@ -11,6 +11,7 @@ import {
 } from "./lib/i18n/install-toast";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
+import { openSettingsTab } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
 import { registerCitationKeyLinkNotices } from "./services/citekey-click/notices";
@@ -261,8 +262,10 @@ export default class ZotLitPlugin extends Plugin {
       registerAttachmentSkipNotice({
         attachmentImport: services.attachmentImport,
         openSettings: () => {
-          this.app.setting.open();
-          this.app.setting.openTabById(this.manifest.id);
+          openSettingsTab(this.app, this.manifest.id, [
+            m.settings_page_attachments(),
+            m.settings_attachment_approved_name(),
+          ]);
         },
       }),
     );

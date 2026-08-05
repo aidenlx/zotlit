@@ -5,9 +5,11 @@ description: |
   Use when creating or editing a PluginSettingTab, adding settings controls (toggle, text, number,
   dropdown, slider, file, folder, color), building settings groups/lists/sub-pages, wiring
   conditional visibility or validation, migrating from the imperative display() approach, or
-  touching any file under apps/obsidian/src/services/*/setting-tab/. Also use when the user mentions
-  "setting tab", "plugin settings", "getSettingDefinitions", "SettingControl", or "SettingDefinitionItem",
-  even if they don't explicitly ask for this skill.
+  touching any file under apps/obsidian/src/services/*/setting-tab/. Also use when opening the
+  settings modal from code, deep-linking to a settings sub-page, or revealing/highlighting one
+  setting row. Also use when the user mentions "setting tab", "plugin settings",
+  "getSettingDefinitions", "SettingControl", "SettingDefinitionItem", "app.setting", or
+  "openTabById", even if they don't explicitly ask for this skill.
 ---
 
 # Obsidian Declarative Settings (1.13.0+)
@@ -352,6 +354,134 @@ refreshes but the clicked row stays stuck on its pre-action state, because the c
 **Fix:** blur the button before triggering the update, e.g. `btn.extraSettingsEl.blur()` (or
 `el.blur()`) before the async work. Modal-driven actions are unaffected — focus is on the modal, not
 the row.
+
+## Navigating to settings from code
+
+`app.setting` is the settings modal. It is internal API — declared in
+`apps/obsidian/src/typings/obsidian-ex.d.ts`, verified against Obsidian 1.13. Reach for it when a
+notice, ribbon action, or command sends the user to a specific place in settings.
+
+There is no setting **id**. Definitions carry `name`, `desc`, `aliases`, and (for controls) a storage
+`key` — search and navigation use none of them as an address. A sub-page is addressed by its **page
+`name` path**, and a row is addressed by the **definition object itself** (identity, not id).
+
+### Open my plugin tab
+
+```ts
+app.setting.open();
+app.setting.openTabById(plugin.manifest.id);
+```
+
+`open()` is idempotent and synchronous, so this is safe whether or not the modal already shows.
+`openTabById` returns the `SettingTab` or `null`, and does not open the modal on its own. Built-in tab
+ids in 1.13: `about`, `appearance`, `editor`, `file`, `interface`, `hotkeys`, `keychain`, `plugins`,
+`community-plugins`. `sync` and `publish` are core-plugin tabs.
+
+### Open a sub-page
+
+`navigateToSearchResult` is the one call that does tab → descend N sub-pages → reveal. It reads only
+`tab`, `pagePath`, and `result.entry.definition`, so a plain object literal drives it — no real search
+result needed. It short-circuits when the tab and page stack already match, so repeat calls are cheap.
+
+```ts
+function openSettingsPage(app: App, tabId: string, pagePath: string[]): boolean {
+  app.setting.open();
+  const tab = app.setting.openTabById(tabId);
+  if (!tab) return false;
+  app.setting.navigateToSearchResult({ tab, pagePath });
+  return true;
+}
+
+// Two levels deep, outermost page first.
+openSettingsPage(app, plugin.manifest.id, [m.settingsPageZotero(), m.settingsPageDatabase()]);
+```
+
+`pagePath` holds the exact `name` strings `getSettingDefinitions()` returned. Derive them from the
+same message source as the definitions so they stay correct in every locale.
+
+### Reveal one setting row
+
+Two ways. Both scroll the row into view, focus it, and flash it for 750 ms — the same effect as
+clicking a settings search result.
+
+**By query** — works for any tab, including built-in ones:
+
+```ts
+function revealSettingByQuery(app: App, tabId: string, query: string): boolean {
+  app.setting.open();
+  const group = app.setting.searchIndex
+    .search(query)
+    .find((g) => g.tab.id === tabId && g.results.length > 0);
+  if (!group) return false;
+  app.setting.navigateToSearchResult(group, group.results[0]);
+  return true;
+}
+```
+
+**By definition** — resolve it from the live `tab.settingItems` at reveal time, then navigate and
+scroll:
+
+```ts
+function locate(
+  items: SettingDefinitionItem[],
+  name: string,
+  path: string[] = [],
+): { definition: SettingDefinition; pagePath: string[] } | null {
+  for (const item of items) {
+    if (!("type" in item)) {
+      if (item.name === name) return { definition: item, pagePath: path };
+      continue;
+    }
+    const nested = item.type === "page" ? [...path, item.name] : path;
+    const hit = item.items && locate(item.items, name, nested);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function revealSetting(app: App, tabId: string, name: string): boolean {
+  app.setting.open();
+  const tab = app.setting.openTabById(tabId);
+  if (!tab) return false;
+  const hit = locate(tab.settingItems, name);
+  if (!hit) return false;
+  app.setting.navigateToSearchResult({ tab, pagePath: hit.pagePath });
+  app.setting.scrollToDefinition(tab, hit.definition);
+  return true;
+}
+```
+
+Resolve the definition fresh on every reveal. `update()` re-runs `getSettingDefinitions()` and
+produces new objects, so a cached reference stops matching. `scrollToDefinition` also searches only
+the **rendered** tab or sub-page, which is why the `navigateToSearchResult` call comes first.
+
+### Related: the Hotkeys tab, filtered
+
+```ts
+app.setting.open();
+const tab = app.setting.openTabById("hotkeys") as (SettingTab & { setQuery(q: string): void }) | null;
+tab?.setQuery(plugin.manifest.id);
+```
+
+### Stability
+
+| API | Risk |
+|---|---|
+| `open()`, `close()`, `openTabById()` | Safe — stable since ~0.9, used by the `app:open-settings` command. Handle the `null` return. |
+| `activeTab`, `SettingTab.id` / `.name` | Low — plain fields. Treat as read-only. |
+| `navigateToSearchResult()`, `scrollToDefinition()` | Medium — new in 1.13 with one core caller each. Guard with `?.` and keep calls in one helper. |
+| `searchIndex.search()` | Medium — internal class returning bare object literals; a plausible refactor target. |
+| Anything keyed by a setting id | Nonexistent — no id concept exists. |
+
+There is no `obsidian://settings` URI and no per-setting command. For a deep link, register a handler
+and dispatch to the helpers above:
+
+```ts
+this.registerObsidianProtocolHandler("zotlit-settings", ({ page, setting: name }) => {
+  if (name) revealSetting(this.app, this.manifest.id, name);
+  else openSettingsPage(this.app, this.manifest.id, page ? page.split("/") : []);
+});
+```
 
 ## Style guide
 
