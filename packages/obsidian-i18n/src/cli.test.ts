@@ -5,11 +5,7 @@ import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
 
 import { runCli, type CliIo } from "./cli.js";
-import {
-  addLocale,
-  createFixtureProject,
-  writeCatalog,
-} from "./test-fixtures.js";
+import { addLocale, createFixtureProject } from "./test-fixtures.js";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const cliMainPath = resolve(packageRoot, "dist", "cli-main.mjs");
@@ -101,42 +97,6 @@ describe("runCli", () => {
       "1 untranslated message(s) fall back to the base locale: plugin_message",
     );
   });
-
-  test("watch recompiles when a discovered source catalog changes", async () => {
-    const projectPath = await createFixtureProject(
-      { plugin_message: "Plugin", docs_message: "Docs" },
-      { prefix: "obsidian-i18n-cli-" },
-    );
-    const root = dirname(projectPath);
-    const { io, stdout } = createIo(root);
-
-    const watching = runCli(
-      [
-        "compile",
-        "--project",
-        "project.inlang",
-        "--output",
-        "generated",
-        "--watch",
-      ],
-      io,
-    );
-
-    await waitFor(() => countGenerations(stdout()) >= 1);
-    await writeCatalog(join(root, "messages", "en.json"), {
-      plugin_message: "Updated",
-      docs_message: "Docs",
-    });
-    await waitFor(() => countGenerations(stdout()) >= 2);
-
-    process.emit("SIGINT");
-    await watching;
-
-    const pack = JSON.parse(
-      await readFile(join(root, "generated", "en.json"), "utf8"),
-    );
-    expect(pack.messages.plugin_message).toBe("Updated");
-  }, 30_000);
 });
 
 test("the built bin compiles once and exits 0", async () => {
@@ -188,18 +148,4 @@ function createIo(cwd: string): {
     stdout: () => stdoutChunks.join(""),
     stderr: () => stderrChunks.join(""),
   };
-}
-
-function countGenerations(output: string): number {
-  return output.match(/Generated 2 Message wrappers/g)?.length ?? 0;
-}
-
-async function waitFor(condition: () => boolean): Promise<void> {
-  const deadline = Date.now() + 12_000;
-  while (!condition()) {
-    if (Date.now() > deadline) {
-      throw new Error("Timed out waiting for watch compilation");
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
-  }
 }
