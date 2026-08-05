@@ -16,6 +16,14 @@ _Avoid_: Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for 
 The wayfinding page at a section's own URL (e.g. /docs/how-to): it helps the reader find the material they need — organized around the reader's situation or question, never a flat listing of the section's pages. It routes and nothing else: no tutorial, how-to, concept, or reference content of its own. The Intro section's index is the docs index ("Introduction").
 _Avoid_: table of contents, overview page, section landing page
 
+**Pre-release**:
+The channel that carries beta builds — BRAT for ZotLit, `update-beta.json` for the Companion. It is the reader-facing name for both apps' beta line; docs never expose the branch it ships from.
+_Avoid_: beta channel, next channel, nightly, canary
+
+**Dormant Pre-release**:
+The state where the Pre-release channel carries nothing newer than Stable, between beta cycles. Install pages report it as "no pre-release available" and never advertise a version behind Stable.
+_Avoid_: no beta, unreleased (that word marks a channel that never shipped)
+
 **Changelog Entry**:
 One release note on the site's /changelog, keyed by the Obsidian plugin's semver version. Companion releases have no entries of their own; a companion release is noted inside the plugin-version entry it shipped alongside.
 _Avoid_: release page, companion changelog
