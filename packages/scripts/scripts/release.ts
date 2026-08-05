@@ -232,6 +232,14 @@ p.outro(
   [
     `Released ${summary} on branch ${branchName}.`,
     `On merge to ${prTarget}, release.yml cuts the tag(s) and GitHub release(s).`,
+    ...(isStableGraduation
+      ? [
+          "",
+          "After the PR merges to main, sync back:",
+          "  git checkout next && git pull && git merge main",
+          "  pnpm release  # pick preminor to start the next beta cycle",
+        ]
+      : []),
   ].join("\n"),
 );
 
