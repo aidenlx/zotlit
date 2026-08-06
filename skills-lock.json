@@ -149,7 +149,7 @@
       "source": "vercel/turborepo",
       "sourceType": "github",
       "skillPath": "skills/turborepo/SKILL.md",
-      "computedHash": "b7c3165ae67a2892d6195a5b2cba15c8d96341f5c64ddd0d3ce4225c94a2ae83"
+      "computedHash": "fbcb282018309a9472de7b17b22be565ecba391d1c9ed94723a1e173f349210d"
     },
     "wayfinder": {
       "source": "mattpocock/skills",
