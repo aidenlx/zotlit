@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 import { type Attachment } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { type Citation } from "@/services/citation-scan/service";
+import {
+  type Citation,
+  type CitationOccurrence,
+} from "@/services/citation-index/service";
 
 import {
   buildReferenceEntries,
@@ -22,15 +25,37 @@ function citation(
     indexedKey,
     linkpath: `notes/${indexedKey}`,
     refNumber,
-    occurrences: lines.map(occurrenceAt),
+    occurrences: lines.map((line) => occurrenceAt(line)),
   };
 }
 
-/** A column-zero occurrence, shaped as the link cache reports positions. */
-function occurrenceAt(line: number): Citation["occurrences"][number] {
+/** A citekey the index resolved to no Literature Note. */
+function unresolved(
+  citekey: string,
+  refNumber: number,
+  lines: readonly number[] = [refNumber],
+): Citation {
   return {
-    start: { line, col: 0, offset: 0 },
-    end: { line, col: 0, offset: 0 },
+    indexedKey: null,
+    linkpath: null,
+    refNumber,
+    occurrences: lines.map((line) => occurrenceAt(line, "citekey", citekey)),
+  };
+}
+
+/** A column-zero occurrence, shaped as the index reports positions. */
+function occurrenceAt(
+  line: number,
+  kind: CitationOccurrence["kind"] = "wikilink",
+  raw = "Doe 2024",
+): CitationOccurrence {
+  return {
+    kind,
+    raw,
+    position: {
+      start: { line, col: 0, offset: 0 },
+      end: { line, col: 0, offset: 0 },
+    },
   };
 }
 
@@ -149,7 +174,7 @@ describe("buildReferenceEntries", () => {
       buildReferenceEntries(citations, sources, bibliography),
     ).toStrictEqual([
       {
-        indexedKey: "ALPHA002",
+        id: "ALPHA002",
         linkpath: "notes/ALPHA002",
         refNumber: 2,
         occurrences: [occurrenceAt(2)],
@@ -159,7 +184,7 @@ describe("buildReferenceEntries", () => {
         content: alpha.content,
       },
       {
-        indexedKey: "ZEBRA001",
+        id: "ZEBRA001",
         linkpath: "notes/ZEBRA001",
         refNumber: 1,
         occurrences: [occurrenceAt(1)],
@@ -197,7 +222,7 @@ describe("buildReferenceEntries", () => {
 
     expect(
       buildReferenceEntries(citations, sources, bibliography).map((entry) => [
-        entry.indexedKey,
+        entry.id,
         entry.kind,
       ]),
     ).toStrictEqual([
@@ -243,14 +268,14 @@ describe("buildReferenceEntries", () => {
 
     expect(buildReferenceEntries(citations, sources)).toStrictEqual([
       {
-        indexedKey: "GONE0001",
+        id: "GONE0001",
         linkpath: "notes/GONE0001",
         refNumber: 1,
         occurrences: [occurrenceAt(1)],
         kind: "missing",
       },
       {
-        indexedKey: "BOOK0002",
+        id: "BOOK0002",
         linkpath: "notes/BOOK0002",
         refNumber: 2,
         occurrences: [occurrenceAt(3), occurrenceAt(7)],
@@ -258,5 +283,53 @@ describe("buildReferenceEntries", () => {
         source: sources.get("BOOK0002"),
       },
     ]);
+  });
+
+  it("keeps both syntaxes of one citation in a single entry", () => {
+    const cited: Citation = {
+      indexedKey: "BOOK0001",
+      linkpath: "notes/BOOK0001",
+      refNumber: 1,
+      occurrences: [
+        occurrenceAt(2, "citekey", "doe2024"),
+        occurrenceAt(5, "wikilink", "Doe 2024"),
+      ],
+    };
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+
+    expect(buildReferenceEntries([cited], sources)).toMatchObject([
+      { kind: "summary", occurrences: cited.occurrences },
+    ]);
+  });
+
+  // Pandoc warns on an undefined citation rather than dropping it, so a typo
+  // stays in the list as an error row showing the key as it was written.
+  it("shows a citekey no literature note carries as an error row", () => {
+    expect(
+      buildReferenceEntries([unresolved("typo2024", 1, [3, 7])], new Map()),
+    ).toStrictEqual([
+      {
+        id: "@typo2024",
+        refNumber: 1,
+        occurrences: [
+          occurrenceAt(3, "citekey", "typo2024"),
+          occurrenceAt(7, "citekey", "typo2024"),
+        ],
+        kind: "unresolved",
+        citekey: "typo2024",
+      },
+    ]);
+  });
+
+  it("appends an unresolved citekey after the bibliography's own order", () => {
+    const citations = [unresolved("typo2024", 1), citation("BOOK0002", 2)];
+    const sources = new Map([["BOOK0002", source("BOOK0002", "ref-two")]]);
+    const bibliography = new Map([["ref-two", rendered("Two", "[1]")]]);
+
+    expect(
+      buildReferenceEntries(citations, sources, bibliography).map(
+        (entry) => entry.kind,
+      ),
+    ).toStrictEqual(["rendered", "unresolved"]);
   });
 });

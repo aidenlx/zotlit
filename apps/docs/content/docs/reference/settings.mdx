@@ -37,11 +37,14 @@ Open this page from **Settings → ZotLit → Citations**.
 
 ### Citation index
 
-| Label                | Key                         | Control | Default |
-| -------------------- | --------------------------- | ------- | ------- |
-| **Citekey indexing** | `citation.citekey-indexing` | Toggle  | On      |
+| Label                  | Key                           | Control | Default |
+| ---------------------- | ----------------------------- | ------- | ------- |
+| **Citekey indexing**   | `citation.citekey-indexing`   | Toggle  | On      |
+| **Wikilink citations** | `citation.wikilink-citations` | Toggle  | Off     |
 
 **Citekey indexing** tracks Pandoc citation keys such as `@doe2024` across your vault, so ZotLit knows which items each note cites. Keys inside code, math, comments, and frontmatter are ignored.
+
+**Wikilink citations** treats links to literature notes as citations, so the references sidebar lists them beside your citation keys. Pandoc export converts those links either way.
 
 ### Citation key links
 

@@ -3,7 +3,7 @@ import { type App, type Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
-import { type CitationScanner } from "@/services/citation-scan/service";
+import { type CitationIndex } from "@/services/citation-index/service";
 import { type DatabaseService } from "@/services/database/service";
 import { type PandocEngineService } from "@/services/pandoc/service";
 import { type SettingsService } from "@/services/settings/service";
@@ -23,7 +23,7 @@ type ReferencesPlugin = Pick<
 export interface ReferencesRegistrationDeps {
   app: App;
   db: DatabaseService;
-  citationScanner: CitationScanner;
+  citationIndex: CitationIndex;
   pandocEngine: PandocEngineService;
   zoteroPref: ZoteroPrefService;
   settings: SettingsService;
@@ -36,7 +36,7 @@ export function registerReferencesView(
   const viewDeps: ReferencesViewDeps = {
     app: deps.app,
     db: deps.db,
-    citationScanner: deps.citationScanner,
+    citationIndex: deps.citationIndex,
     pandocEngine: deps.pandocEngine,
     zoteroPref: deps.zoteroPref,
     settings: deps.settings,

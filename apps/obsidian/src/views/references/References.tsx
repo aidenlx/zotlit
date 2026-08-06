@@ -39,11 +39,7 @@ export function References() {
       ) : (
         <ul className="zt:flex zt:flex-col zt:text-sm">
           {entries.map((entry) => (
-            <Reference
-              key={entry.indexedKey}
-              entry={entry}
-              numbered={numbered}
-            />
+            <Reference key={entry.id} entry={entry} numbered={numbered} />
           ))}
         </ul>
       )}
@@ -84,7 +80,9 @@ function Reference({
   numbered: boolean;
 }) {
   const actions = useReferenceActions();
-  const isMissing = entry.kind === "missing";
+  // Both error states read the same way in the row: a warning gutter, and no
+  // note to open. What differs is the sentence and the tooltip that say why.
+  const inError = entry.kind === "missing" || entry.kind === "unresolved";
   const occurrenceCount = entry.occurrences.length;
   const gutter = gutterLabel(entry, numbered);
 
@@ -99,7 +97,7 @@ function Reference({
           <span
             className={cn(
               "zt:min-w-5 zt:shrink-0 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums",
-              isMissing && "zt:text-destructive",
+              inError && "zt:text-destructive",
             )}
           >
             {gutter}
@@ -132,15 +130,11 @@ function Reference({
                     reason. */}
                 <EntryAction
                   icon="file-text"
-                  label={
-                    isMissing
-                      ? m.references_open_note_missing()
-                      : m.references_open_note()
-                  }
-                  disabled={isMissing}
+                  label={openNoteLabel(entry)}
+                  disabled={inError}
                   onClick={() => actions.onOpenNote(entry)}
                 />
-                {entry.kind !== "missing" && (
+                {(entry.kind === "rendered" || entry.kind === "summary") && (
                   <>
                     <EntryAction
                       icon="external-link"
@@ -208,7 +202,21 @@ function gutterLabel(
     case "summary":
       return numbered ? entry.refNumber : undefined;
     case "missing":
+    case "unresolved":
       return "⚠";
+  }
+}
+
+/** Why the note button is there, or why it is dimmed. */
+function openNoteLabel(entry: ReferenceEntry): string {
+  switch (entry.kind) {
+    case "rendered":
+    case "summary":
+      return m.references_open_note();
+    case "missing":
+      return m.references_open_note_missing();
+    case "unresolved":
+      return m.references_open_note_unresolved();
   }
 }
 
@@ -232,6 +240,12 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
           {m.references_item_missing({ linkpath: entry.linkpath })}
+        </span>
+      );
+    case "unresolved":
+      return (
+        <span className={cn(textClass, "zt:text-destructive")}>
+          {m.references_citekey_unresolved({ citekey: entry.citekey })}
         </span>
       );
   }

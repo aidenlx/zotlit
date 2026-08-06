@@ -56,6 +56,11 @@ export function citationsPageItems(
           desc: m.settings_citation_citekey_indexing_desc(),
           control: { type: "toggle", key: "citation.citekey-indexing" },
         },
+        {
+          name: m.settings_citation_wikilink_citations_name(),
+          desc: m.settings_citation_wikilink_citations_desc(),
+          control: { type: "toggle", key: "citation.wikilink-citations" },
+        },
       ],
     },
     {

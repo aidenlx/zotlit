@@ -1,4 +1,4 @@
-// ItemView orchestrator for the References Sidebar: reads the scanned citations from the database and renders them through the Pandoc engine.
+// ItemView orchestrator for the References Sidebar: reads the active document's Citations from the index and renders them through the Pandoc engine.
 import { ItemView, type App, type WorkspaceLeaf } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -16,9 +16,10 @@ import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import {
+  citationsEqual,
   type Citation,
-  type CitationScanner,
-} from "@/services/citation-scan/service";
+  type CitationIndex,
+} from "@/services/citation-index/service";
 import { type DatabaseService } from "@/services/database/service";
 import { CitationRequestSupersededError } from "@/services/pandoc/engine";
 import { type PandocEngineService } from "@/services/pandoc/service";
@@ -48,7 +49,7 @@ const logger = getLogger(["views", "references"]);
 export interface ReferencesViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
-  citationScanner: Pick<CitationScanner, "store">;
+  citationIndex: Pick<CitationIndex, "getCitations" | "on">;
   pandocEngine: Pick<
     PandocEngineService,
     "getStatus" | "subscribe" | "getEngine" | "decline"
@@ -74,7 +75,13 @@ export class ReferencesView extends ItemView {
   #actions: ReferenceActions | null = null;
   /** Bumped per reload; an older render that finishes late is discarded. */
   #generation = 0;
+  /** Bumped per rescan, the same way, since a query may await a file read. */
+  #scan = 0;
+  /** Citations of the active document, as the current list was built from. */
+  #citations: readonly Citation[] = [];
   #styleId: string | null = null;
+  /** Whether wikilinks count as Citations here — the Wikilink Citations setting. */
+  #wikilinks = false;
 
   constructor(leaf: WorkspaceLeaf, deps: ReferencesViewDeps) {
     super(leaf);
@@ -96,10 +103,11 @@ export class ReferencesView extends ItemView {
   }
 
   protected override async onOpen(): Promise<void> {
-    const { app, db, citationScanner, pandocEngine, zoteroPref, settings } =
+    const { app, db, citationIndex, pandocEngine, zoteroPref, settings } =
       this.#deps;
 
     this.#styleId = this.#selectedStyleId();
+    this.#wikilinks = this.#wikilinkCitations();
     this.#actions = createReferenceActions({
       app,
       getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
@@ -116,7 +124,20 @@ export class ReferencesView extends ItemView {
       </ReferencesStoreProvider>,
     );
 
-    this.register(citationScanner.store.subscribe(() => this.#reload()));
+    // The index answers for the active document alone, so the pane follows
+    // whichever document that is, and every signal that can change its
+    // Citations: its own citekeys through the index, its wikilinks and the
+    // frontmatter that resolves either syntax through the metadata cache. A
+    // rescan that finds the same Citations rebuilds nothing.
+    this.registerEvent(
+      app.workspace.on("active-leaf-change", () => this.#rescan()),
+    );
+    this.register(
+      citationIndex.on("changed", (path) => {
+        if (path === app.workspace.getActiveFile()?.path) this.#rescan();
+      }),
+    );
+    this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
     this.register(db.on("changed", () => this.#reload({ invalidate: true })));
     this.register(
       pandocEngine.subscribe(() => this.#reload({ invalidate: true })),
@@ -129,13 +150,20 @@ export class ReferencesView extends ItemView {
     this.register(
       settings.subscribe(() => {
         const styleId = this.#selectedStyleId();
-        if (styleId === this.#styleId) return;
-        this.#styleId = styleId;
-        this.#reload({ invalidate: true });
+        if (styleId !== this.#styleId) {
+          this.#styleId = styleId;
+          this.#reload({ invalidate: true });
+        }
+        const wikilinks = this.#wikilinkCitations();
+        if (wikilinks !== this.#wikilinks) {
+          this.#wikilinks = wikilinks;
+          this.#rescan();
+        }
       }),
     );
 
     this.#reload();
+    this.#rescan();
     await db.ready;
     this.#reload();
   }
@@ -150,6 +178,38 @@ export class ReferencesView extends ItemView {
     return this.#deps.settings.current?.["citation.references-style"] ?? null;
   }
 
+  #wikilinkCitations(): boolean {
+    return (
+      this.#deps.settings.current?.["citation.wikilink-citations"] ?? false
+    );
+  }
+
+  /**
+   * Ask the index what the active document cites, and rebuild the list when the
+   * answer differs. The query is answered from the index, so a document the
+   * vault-wide backfill has not reached is scanned on demand rather than waited
+   * for; the read yields, so a stale answer is discarded.
+   */
+  #rescan(): void {
+    const scan = ++this.#scan;
+    void this.#readCitations().then((citations) => {
+      if (scan !== this.#scan || citationsEqual(this.#citations, citations)) {
+        return;
+      }
+      this.#citations = citations;
+      this.#reload();
+    });
+  }
+
+  /** Scope is `.md`, the only files the index covers. */
+  async #readCitations(): Promise<Citation[]> {
+    const file = this.#deps.app.workspace.getActiveFile();
+    if (!file || file.extension !== "md") return [];
+    return this.#deps.citationIndex.getCitations(file, {
+      wikilinks: this.#wikilinks,
+    });
+  }
+
   /**
    * Re-read the cited Items and re-render the whole list — no incremental
    * diffing. `invalidate` drops the formatted entries too, for a change that
@@ -158,7 +218,7 @@ export class ReferencesView extends ItemView {
   #reload({ invalidate = false } = {}): void {
     if (invalidate) this.#rendered.clear();
     const generation = ++this.#generation;
-    const { citations } = this.#deps.citationScanner.store.getState();
+    const citations = this.#citations;
     const sources = this.#readSources(citations);
 
     this.#store.setState({
@@ -187,6 +247,9 @@ export class ReferencesView extends ItemView {
       const user = getZoteroIdentity(db.client);
       const cited: { indexedKey: string; item: Item; summary: string }[] = [];
       for (const { indexedKey } of citations) {
+        // A citekey no Literature Note carries names no Item to read; the
+        // entry builder keeps it as an error row of its own.
+        if (indexedKey === null) continue;
         const selector = resolveIndexedKeyLibrary(db.client, indexedKey);
         if (!selector) continue;
         const item = getItemsByKey(db.client, selector.libraryID, [

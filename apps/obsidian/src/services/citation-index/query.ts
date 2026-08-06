@@ -1,6 +1,6 @@
 // Grouping one document's Citation Occurrences into Citations with Reference Numbers.
 
-import { type CitationOccurrence } from "./scan";
+import { occurrencesEqual, type CitationOccurrence } from "./scan";
 
 /** The Literature Note a Citation Occurrence resolves to. */
 export interface ResolvedNote {
@@ -68,4 +68,25 @@ export function groupCitations(
   }
 
   return [...byIdentity.values()];
+}
+
+/**
+ * Structural equality of two documents' Citation lists. A consumer refreshes on
+ * signals as broad as any metadata change, so this is what keeps an unrelated
+ * edit from rebuilding what it already shows.
+ */
+export function citationsEqual(
+  prev: readonly Citation[],
+  next: readonly Citation[],
+): boolean {
+  if (prev.length !== next.length) return false;
+  return prev.every((citation, index) => {
+    const other = next[index]!;
+    return (
+      citation.indexedKey === other.indexedKey &&
+      citation.linkpath === other.linkpath &&
+      citation.refNumber === other.refNumber &&
+      occurrencesEqual(citation.occurrences, other.occurrences)
+    );
+  });
 }

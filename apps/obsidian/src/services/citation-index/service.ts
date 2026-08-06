@@ -25,6 +25,7 @@ import {
 } from "./scan";
 
 export {
+  citationsEqual,
   type Citation,
   type ResolvedNote,
   type ResolveOccurrence,
@@ -84,10 +85,19 @@ export class CitationIndex extends Service<void> {
    * The Citations of one document, in first-occurrence order with their
    * Reference Numbers. A document the backfill has not reached is scanned on
    * demand, so the active document is answered without waiting for the vault.
+   *
+   * @param wikilinks whether Literature Note wikilinks count as Citations — the
+   *   Wikilink Citations setting, which each consumer applies for itself.
+   *   Leaving it out answers with everything the index knows.
    */
-  async getCitations(file: TFile): Promise<Citation[]> {
+  async getCitations(
+    file: TFile,
+    { wikilinks = true }: { wikilinks?: boolean } = {},
+  ): Promise<Citation[]> {
     const citekeys = await this.#coverFile(file);
-    const links = this.#app.metadataCache.getFileCache(file)?.links ?? [];
+    const links = wikilinks
+      ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
+      : [];
     return groupCitations(documentOccurrences(citekeys, links), (occurrence) =>
       this.#resolve(occurrence, file.path),
     );

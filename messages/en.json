@@ -284,6 +284,8 @@
   "settings_citation_index_heading": "Citation index",
   "settings_citation_citekey_indexing_name": "Citekey indexing",
   "settings_citation_citekey_indexing_desc": "Track Pandoc citation keys such as `@doe2024` across your vault, so ZotLit knows which items each note cites. Keys inside code, math, comments, and frontmatter are ignored.",
+  "settings_citation_wikilink_citations_name": "Wikilink citations",
+  "settings_citation_wikilink_citations_desc": "Treat links to literature notes as citations, so the references sidebar lists them beside your citation keys.",
   "settings_citation_key_links_name": "Citation key links",
   "settings_citation_key_links_desc": "Open bracketed citation keys in Live Preview and Source mode. This feature uses an internal Obsidian editor integration.",
   "settings_citation_key_links_docs": "Learn how citation key links work.",
@@ -319,6 +321,7 @@
   "references_empty": "The active note cites no literature notes.",
   "references_db_unavailable": "Open the Zotero database to see references.",
   "references_item_missing": "{linkpath} points to an item that is no longer in your Zotero library.",
+  "references_citekey_unresolved": "@{citekey} matches no literature note in this vault.",
   "references_go_to_occurrence": [
     {
       "declarations": ["input count"],
@@ -331,6 +334,7 @@
   ],
   "references_open_note": "Open literature note",
   "references_open_note_missing": "No literature note — item is missing",
+  "references_open_note_unresolved": "No literature note for this citation key",
   "references_open_in_zotero": "Open in Zotero",
   "references_open_attachment": "Open attachment in Zotero",
   "references_engine_hint_title": "Format these references",

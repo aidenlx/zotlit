@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { groupCitations, type ResolvedNote } from "./query";
+import { citationsEqual, groupCitations, type ResolvedNote } from "./query";
 import { type CitationOccurrence } from "./scan";
 
 const KEY_A = "ABCD2345";
@@ -144,5 +144,60 @@ describe("groupCitations", () => {
 
   it("returns an empty list for a document without occurrences", () => {
     expect(groupCitations([], resolver({}))).toEqual([]);
+  });
+});
+
+describe("citationsEqual", () => {
+  const doe = { doe2024: note(KEY_A, "Doe 2024.md") };
+
+  it("accepts two answers over the same document", () => {
+    const occurrences = [citekey("doe2024", 0), citekey("doe2024", 40)];
+
+    expect(
+      citationsEqual(
+        groupCitations(occurrences, resolver(doe)),
+        groupCitations(occurrences, resolver(doe)),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects an occurrence that moved", () => {
+    expect(
+      citationsEqual(
+        groupCitations([citekey("doe2024", 0)], resolver(doe)),
+        groupCitations([citekey("doe2024", 4)], resolver(doe)),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a citation the document gained", () => {
+    expect(
+      citationsEqual(
+        groupCitations([citekey("doe2024", 0)], resolver(doe)),
+        groupCitations(
+          [citekey("doe2024", 0), citekey("typo2024", 20)],
+          resolver(doe),
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  // A note that becomes a Literature Note leaves the occurrences where they
+  // were and only changes what they cite.
+  it("rejects a citation that now cites another Item", () => {
+    const occurrences = [wikilink("Doe 2024", 0)];
+
+    expect(
+      citationsEqual(
+        groupCitations(
+          occurrences,
+          resolver({ "Doe 2024": note(KEY_A, "Doe 2024") }),
+        ),
+        groupCitations(
+          occurrences,
+          resolver({ "Doe 2024": note(KEY_B, "Doe 2024") }),
+        ),
+      ),
+    ).toBe(false);
   });
 });

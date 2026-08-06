@@ -257,6 +257,8 @@
   "settings_citation_index_heading": "引文索引",
   "settings_citation_citekey_indexing_name": "文献引用标识索引",
   "settings_citation_citekey_indexing_desc": "在整个仓库中跟踪 `@doe2024` 这样的 Pandoc 文献引用标识，让 ZotLit 知道每篇笔记引用了哪些条目。代码、公式、注释和 Frontmatter 中的标识将被忽略。",
+  "settings_citation_wikilink_citations_name": "Wiki 链接引用",
+  "settings_citation_wikilink_citations_desc": "将指向文献笔记的链接视为引用，让参考文献侧边栏在文献引用标识之外也列出它们。",
   "settings_citation_key_links_name": "文献引用标识链接",
   "settings_citation_key_links_desc": "在实时预览和源码模式中打开方括号内的文献引用标识。此功能使用 Obsidian 内部编辑器集成。",
   "settings_citation_key_links_docs": "了解文献引用标识链接的工作方式。",
@@ -292,6 +294,7 @@
   "references_empty": "当前笔记没有引用任何文献笔记。",
   "references_db_unavailable": "打开 Zotero 数据库后即可查看参考文献。",
   "references_item_missing": "{linkpath} 指向的条目已不在 Zotero 文库中。",
+  "references_citekey_unresolved": "@{citekey} 在本仓库中没有对应的文献笔记。",
   "references_go_to_occurrence": [
     {
       "declarations": ["input count"],
@@ -304,6 +307,7 @@
   ],
   "references_open_note": "打开文献笔记",
   "references_open_note_missing": "没有文献笔记：条目已不在文库中",
+  "references_open_note_unresolved": "该文献引用标识没有对应的文献笔记",
   "references_open_in_zotero": "在 Zotero 中打开",
   "references_open_attachment": "在 Zotero 中打开附件",
   "references_engine_hint_title": "排版这些参考文献",

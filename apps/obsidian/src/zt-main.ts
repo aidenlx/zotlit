@@ -258,7 +258,7 @@ export default class ZotLitPlugin extends Plugin {
     registerReferencesView(this, {
       app: this.app,
       db: services.db,
-      citationScanner: services.citationScanner,
+      citationIndex: services.citationIndex,
       pandocEngine: services.pandocEngine,
       zoteroPref: services.zoteroPref,
       settings: services.settings,

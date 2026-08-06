@@ -6,7 +6,7 @@ import { parseAttachmentPath } from "@zotlit/db/path";
 import {
   type Citation,
   type CitationOccurrence,
-} from "@/services/citation-scan/service";
+} from "@/services/citation-index/service";
 
 /** One Attachment the entry offers to open in Zotero's reader. */
 export interface OpenableAttachment {
@@ -87,25 +87,33 @@ export interface RenderedReference {
 }
 
 interface ReferenceEntryBase {
-  /** Indexed Key of the cited Item — the entry's identity across re-renders. */
-  indexedKey: string;
-  /** Reference Number the scanner assigned by first occurrence. */
+  /**
+   * The entry's identity across re-renders: the Indexed Key of the cited Item,
+   * or the raw citekey when no Literature Note carries it.
+   */
+  id: string;
+  /** Reference Number the index assigned by first occurrence. */
   refNumber: number;
-  /** Linkpath of the cited Literature Note, for the open-note action. */
-  linkpath: string;
   occurrences: readonly CitationOccurrence[];
 }
 
 /**
  * One reference as the sidebar shows it. The engine's absence is a normal mode,
  * so a `summary` entry is ordinary content rather than a degraded one; a
- * `missing` entry keeps a citation whose Item vanished visible.
+ * `missing` entry keeps a citation whose Item vanished visible, and an
+ * `unresolved` entry does the same for a citekey that reaches no Literature
+ * Note — Pandoc warns on an undefined citation rather than dropping it.
  */
 export type ReferenceEntry = ReferenceEntryBase &
   (
-    | ({ kind: "rendered"; source: ReferenceSource } & RenderedReference)
-    | { kind: "summary"; source: ReferenceSource }
-    | { kind: "missing" }
+    | ({
+        kind: "rendered";
+        source: ReferenceSource;
+        linkpath: string;
+      } & RenderedReference)
+    | { kind: "summary"; source: ReferenceSource; linkpath: string }
+    | { kind: "missing"; linkpath: string }
+    | { kind: "unresolved"; citekey: string }
   );
 
 /**
@@ -116,6 +124,10 @@ export type ReferenceEntry = ReferenceEntryBase &
  * place for — an Item the database no longer holds, an id the engine did not
  * render — follows the ordered entries in first-occurrence order, which is the
  * order the whole list keeps when no bibliography is passed at all.
+ *
+ * A citation no Literature Note resolves keeps its raw citekey and trails the
+ * ordered entries with the rest, since the bibliography holds no place for a
+ * work the library does not know.
  *
  * @param sources cited Items by Indexed Key; an Item the database no longer
  *   holds is simply absent, and its citation becomes a `missing` entry.
@@ -131,7 +143,21 @@ export function buildReferenceEntries(
   const placed = new Map<string, ReferenceEntry>();
   const trailing: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, linkpath, occurrences } of citations) {
-    const base = { indexedKey, refNumber, linkpath, occurrences };
+    if (indexedKey === null || linkpath === null) {
+      // Every Citation carries an occurrence, and an unresolved one is written
+      // as a citekey, so its raw text is what the row shows. The identity keeps
+      // the `@` it is written with, which an Indexed Key never starts with.
+      const citekey = occurrences[0]!.raw;
+      trailing.push({
+        id: `@${citekey}`,
+        refNumber,
+        occurrences,
+        kind: "unresolved",
+        citekey,
+      });
+      continue;
+    }
+    const base = { id: indexedKey, refNumber, linkpath, occurrences };
     const source = sources.get(indexedKey);
     if (!source) {
       trailing.push({ ...base, kind: "missing" });

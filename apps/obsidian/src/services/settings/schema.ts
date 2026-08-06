@@ -76,6 +76,8 @@ export const schema = v.object({
   "citation.show-citekey-in-suggester": v.boolean(),
   /** Master switch for every literal-citekey surface of the Citation Index. */
   "citation.citekey-indexing": v.boolean(),
+  /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
+  "citation.wikilink-citations": v.boolean(),
   "citation.key-links": v.boolean(),
   "citation.key-links-frontmatter-key": citationKeyPropertySchema,
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
@@ -121,6 +123,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.at-trigger": false,
   "citation.show-citekey-in-suggester": false,
   "citation.citekey-indexing": true,
+  "citation.wikilink-citations": false,
   "citation.key-links": false,
   "citation.key-links-frontmatter-key": "citekey",
   "citation.references-style": null,

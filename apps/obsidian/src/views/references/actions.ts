@@ -5,7 +5,7 @@ import { createContext, useContext, type MouseEvent } from "react";
 
 import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
 
-import { type CitationOccurrence } from "@/services/citation-scan/service";
+import { type CitationOccurrence } from "@/services/citation-index/service";
 
 import {
   type OpenableAttachment,
@@ -47,11 +47,13 @@ export function createReferenceActions(
       const sourcePath = deps.getSourcePath();
       if (!sourcePath || entry.occurrences.length === 0) return;
       const next =
-        ((cursors.get(entry.indexedKey) ?? -1) + 1) % entry.occurrences.length;
-      cursors.set(entry.indexedKey, next);
+        ((cursors.get(entry.id) ?? -1) + 1) % entry.occurrences.length;
+      cursors.set(entry.id, next);
       revealOccurrence(deps.app, sourcePath, entry.occurrences[next]!);
     },
     onOpenNote(entry) {
+      // An unresolved citekey reaches no note, and its row disables the action.
+      if (entry.kind === "unresolved") return;
       void deps.app.workspace.openLinkText(
         entry.linkpath,
         deps.getSourcePath() ?? "",
@@ -129,11 +131,12 @@ function revealOccurrence(
   const view = leaf && markdownViewOf(leaf);
   if (!leaf || !view) return;
 
+  const { start, end } = occurrence.position;
   app.workspace.setActiveLeaf(leaf, { focus: true });
   view.setEphemeralState({
-    startLoc: occurrence.start,
-    endLoc: occurrence.end,
-    line: occurrence.start.line,
+    startLoc: start,
+    endLoc: end,
+    line: start.line,
   });
 }
 

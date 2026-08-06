@@ -223,6 +223,19 @@ describe("CitationIndex", () => {
     ]);
   });
 
+  it("leaves the wikilinks out for a consumer that does not count them", async () => {
+    const { draft, index, metadataCache } = await makeHarness({
+      "draft.md": "As @roe2025 wrote, see [[Doe 2024]].",
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", 23)],
+    } as CachedMetadata);
+
+    expect(await index.getCitations(draft, { wikilinks: false })).toMatchObject(
+      [{ indexedKey: KEY_B, refNumber: 1 }],
+    );
+  });
+
   it("leaves citekeys inside code, math, comments, and frontmatter out", async () => {
     const { draft, index } = await makeHarness({
       "draft.md": [

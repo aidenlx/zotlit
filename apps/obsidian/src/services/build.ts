@@ -3,7 +3,6 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
-import { CitationScanner } from "./citation-scan/service";
 import { CitekeyClick } from "./citekey-click/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
@@ -154,9 +153,6 @@ export function buildServices(
           metadataCache: plugin.app.metadataCache,
           template,
         }),
-    })
-    .use({
-      citationScanner: () => new CitationScanner({ app: plugin.app }),
     })
     .use({
       citationIndex: ({ noteIndex, settings }) =>
