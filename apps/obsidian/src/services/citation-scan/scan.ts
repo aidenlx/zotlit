@@ -1,12 +1,9 @@
 // Pure extraction of one document's Literature Note Citations from its link cache.
 
-import { parseLinktext, type LinkCache } from "obsidian";
+import { parseLinktext, type LinkCache, type Loc, type Pos } from "obsidian";
 
-/** Where one Literature Note Citation is written, in editor coordinates. */
-export interface CitationOccurrence {
-  line: number;
-  col: number;
-}
+/** Where one Literature Note Citation is written: the link's cache position. */
+export type CitationOccurrence = Pos;
 
 /** One cited Literature Note, with every place the document links to it. */
 export interface Citation {
@@ -44,10 +41,7 @@ export function scanCitations(
     const indexedKey = resolveIndexedKey(path);
     if (indexedKey === null) continue;
 
-    const occurrence = {
-      line: link.position.start.line,
-      col: link.position.start.col,
-    };
+    const occurrence = link.position;
     const existing = byIndexedKey.get(indexedKey);
     if (existing) {
       existing.occurrences.push(occurrence);
@@ -82,9 +76,13 @@ export function citationsEqual(
       listsEqual(
         a.occurrences,
         b.occurrences,
-        (x, y) => x.line === y.line && x.col === y.col,
+        (x, y) => locsEqual(x.start, y.start) && locsEqual(x.end, y.end),
       ),
   );
+}
+
+function locsEqual(a: Loc, b: Loc): boolean {
+  return a.line === b.line && a.col === b.col && a.offset === b.offset;
 }
 
 function listsEqual<T>(

@@ -132,7 +132,11 @@ describe("CitationScanner", () => {
     metadataCache.change("draft.md", body([wikilink("Roe 2025", 4)]));
 
     expect(scanner.store.getState().citations).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1, occurrences: [{ line: 4, col: 0 }] },
+      {
+        indexedKey: KEY_B,
+        refNumber: 1,
+        occurrences: [{ start: { line: 4, col: 0, offset: 0 } }],
+      },
     ]);
   });
 

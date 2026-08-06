@@ -107,8 +107,16 @@ function showAttachmentMenu(
 }
 
 /**
- * Put the cursor on one citation in the document the references were scanned
- * from. A document no editor holds open has nothing to reveal.
+ * Scroll one citation into view and flash it, in the document the references
+ * were scanned from. `setEphemeralState` is the same path search results and
+ * the core Outline plugin take; the method is public but the state fields are
+ * not (read from the Obsidian 1.13 runtime). One object serves both modes:
+ * editing mode reads `startLoc`/`endLoc` and flashes the exact range as an
+ * `is-flashing` CM6 decoration that stays until Escape, a click, or the next
+ * flash; reading view reads only `line` and flashes the enclosing block for
+ * 3 s. `endLoc` must accompany `startLoc` (`null` means to end of document),
+ * and `match` must stay out when `line` is set — reading view would queue two
+ * scrolls. A document no editor holds open has nothing to reveal.
  */
 function revealOccurrence(
   app: App,
@@ -122,9 +130,11 @@ function revealOccurrence(
   if (!leaf || !view) return;
 
   app.workspace.setActiveLeaf(leaf, { focus: true });
-  const position = { line: occurrence.line, ch: occurrence.col };
-  view.editor.setCursor(position);
-  view.editor.scrollIntoView({ from: position, to: position }, true);
+  view.setEphemeralState({
+    startLoc: occurrence.start,
+    endLoc: occurrence.end,
+    line: occurrence.start.line,
+  });
 }
 
 function markdownViewOf(leaf: WorkspaceLeaf): MarkdownView | null {

@@ -59,8 +59,8 @@ describe("scanCitations", () => {
     );
 
     expect(citations[0]!.occurrences).toEqual([
-      { line: 4, col: 12 },
-      { line: 9, col: 3 },
+      link("Doe 2024", 4, 12).position,
+      link("Doe 2024", 9, 3).position,
     ]);
   });
 

@@ -22,7 +22,15 @@ function citation(
     indexedKey,
     linkpath: `notes/${indexedKey}`,
     refNumber,
-    occurrences: lines.map((line) => ({ line, col: 0 })),
+    occurrences: lines.map(occurrenceAt),
+  };
+}
+
+/** A column-zero occurrence, shaped as the link cache reports positions. */
+function occurrenceAt(line: number): Citation["occurrences"][number] {
+  return {
+    start: { line, col: 0, offset: 0 },
+    end: { line, col: 0, offset: 0 },
   };
 }
 
@@ -144,7 +152,7 @@ describe("buildReferenceEntries", () => {
         indexedKey: "ALPHA002",
         linkpath: "notes/ALPHA002",
         refNumber: 2,
-        occurrences: [{ line: 2, col: 0 }],
+        occurrences: [occurrenceAt(2)],
         kind: "rendered",
         source: sources.get("ALPHA002"),
         marker: "[1]",
@@ -154,7 +162,7 @@ describe("buildReferenceEntries", () => {
         indexedKey: "ZEBRA001",
         linkpath: "notes/ZEBRA001",
         refNumber: 1,
-        occurrences: [{ line: 1, col: 0 }],
+        occurrences: [occurrenceAt(1)],
         kind: "rendered",
         source: sources.get("ZEBRA001"),
         marker: "[2]",
@@ -238,17 +246,14 @@ describe("buildReferenceEntries", () => {
         indexedKey: "GONE0001",
         linkpath: "notes/GONE0001",
         refNumber: 1,
-        occurrences: [{ line: 1, col: 0 }],
+        occurrences: [occurrenceAt(1)],
         kind: "missing",
       },
       {
         indexedKey: "BOOK0002",
         linkpath: "notes/BOOK0002",
         refNumber: 2,
-        occurrences: [
-          { line: 3, col: 0 },
-          { line: 7, col: 0 },
-        ],
+        occurrences: [occurrenceAt(3), occurrenceAt(7)],
         kind: "summary",
         source: sources.get("BOOK0002"),
       },
