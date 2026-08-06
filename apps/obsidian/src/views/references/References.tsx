@@ -2,7 +2,6 @@ import { type IconName } from "obsidian";
 import { type MouseEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
-import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { useDomContent } from "@/lib/sanitize-html";
@@ -28,9 +27,7 @@ export function References() {
 
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto">
-      <div className="zt:px-3 zt:pt-2">
-        <EngineSurface status={engine} />
-      </div>
+      <EngineSurface status={engine} />
       {entries.length === 0 ? (
         <div className="pane-empty zt:p-2">
           {dbReady ? m.references_empty() : m.references_db_unavailable()}
@@ -53,6 +50,14 @@ export function References() {
  */
 const revealOnHover =
   "zt:opacity-0 zt:transition-opacity zt:delay-0 zt:duration-150 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-hover:delay-100";
+
+/**
+ * A clickable-icon defaults to ribbon proportions — an 18px glyph in a 30x26
+ * box — which dwarfs the 13px text it sits beside in this pane. Trim the glyph
+ * and the box so an icon button reads as a footnote to the text. `--icon-xs`
+ * carries that 14px on the desktop and Obsidian's larger touch size on mobile.
+ */
+const compactIconButton = "zt:p-1 zt:[--icon-size:var(--icon-xs)]";
 
 /**
  * A flat row: Reference Number, entry text with a hover/focus-revealed toolbar
@@ -217,10 +222,7 @@ function EntryAction({
       icon={icon}
       onClick={onClick}
       disabled={disabled}
-      // A clickable-icon defaults to ribbon proportions — an 18px glyph in a
-      // 30x26 box — which dwarfs the 13px entry text it sits beside. Trim the
-      // glyph and the box so an action reads as a footnote to the entry.
-      className="zt:p-1 zt:[--icon-size:14px]"
+      className={compactIconButton}
       {...tooltipAttrs(label)}
     />
   );
@@ -228,8 +230,8 @@ function EntryAction({
 
 /**
  * The one surface the engine speaks through: the dismissible install hint while
- * the engine is merely absent, and one named callout per genuine failure. Both
- * sit above the same reference list, which stays the sidebar's normal content.
+ * the engine is merely absent, and one banner per genuine failure. Both sit
+ * above the same reference list, which stays the sidebar's normal content.
  */
 function EngineSurface({ status }: { status: PandocEngineStatus }) {
   const actions = useReferenceActions();
@@ -240,40 +242,37 @@ function EngineSurface({ status }: { status: PandocEngineStatus }) {
       return null;
     case "absent":
       return (
-        <Callout
-          type="tip"
-          icon="quote"
+        <Banner
           title={m.references_engine_hint_title()}
+          action={
+            <Button variant="cta" onClick={actions.onOpenEngineSettings}>
+              {m.references_engine_open_settings()}
+            </Button>
+          }
           onDismiss={actions.onDismissEngineHint}
         >
-          <p className="zt:mb-2">{m.references_engine_hint_body()}</p>
-          <Button variant="cta" onClick={actions.onOpenEngineSettings}>
-            {m.references_engine_open_settings()}
-          </Button>
-        </Callout>
+          {m.references_engine_hint_body()}
+        </Banner>
       );
     case "installing":
       return (
-        <Callout
-          type="info"
-          icon="download"
-          title={m.notice_pandoc_engine_downloading()}
-        >
-          <p>{m.settings_citation_engine_status_installing()}</p>
-        </Callout>
+        <Banner title={m.notice_pandoc_engine_downloading()}>
+          {m.settings_citation_engine_status_installing()}
+        </Banner>
       );
     case "failed":
       return (
-        <Callout
-          type="warning"
-          icon="alert-triangle"
+        <Banner
+          tone="warning"
           title={m.references_engine_failed_title()}
+          action={
+            <Button variant="cta" onClick={actions.onOpenEngineSettings}>
+              {m.references_engine_open_settings()}
+            </Button>
+          }
         >
-          <p className="zt:mb-2">{failureSentence(status.failure)}</p>
-          <Button variant="cta" onClick={actions.onOpenEngineSettings}>
-            {m.references_engine_open_settings()}
-          </Button>
-        </Callout>
+          {failureSentence(status.failure)}
+        </Banner>
       );
   }
 }
@@ -295,40 +294,62 @@ function failureSentence(failure: PandocEngineFailure): string {
 }
 
 /**
- * Obsidian's own callout markup, so the surface picks up the theme's callout
- * colors. `.callout` carries an unlayered `margin: 1em 0`; only an inline style
- * can pull the top edge back to the pane.
+ * A strip across the head of the pane, in the shape of the docs site banner: a
+ * flat alternate surface flush with the pane edges, the message ranged left,
+ * and the action and close button on the trailing edge. Sticky, so the notice
+ * stays put while the reference list scrolls under it.
  */
-function Callout({
-  type,
-  icon,
+function Banner({
+  tone = "normal",
   title,
+  action,
   onDismiss,
   children,
 }: {
-  type: string;
-  icon: IconName;
+  /** @defaultValue 'normal' */
+  tone?: "normal" | "warning";
   title: string;
+  action?: ReactNode;
   onDismiss?: () => void;
   children: ReactNode;
 }) {
   return (
-    <div className="callout" data-callout={type} style={{ marginTop: 0 }}>
-      <div className="callout-title">
-        <div className="callout-icon">
-          <Icon name={icon} />
+    // `bg-muted` (`--background-modifier-hover`) rather than a control token or
+    // a fixed surface: it is a translucent tint, so the strip steps away from
+    // whatever it is dropped on — either colour scheme, sidebar or main pane —
+    // and separates itself from the list below with no bottom border. `z-1`
+    // only has to clear the list, which sets no z-index of its own.
+    <div className="zt:sticky zt:top-0 zt:z-1 zt:flex zt:shrink-0 zt:flex-col zt:gap-2 zt:bg-muted zt:p-3 zt:ps-6 zt:text-sm zt:leading-snug">
+      <div>
+        {/* Only the title reserves the corner, and only while something sits in
+            it — the message below it and the action row both run to the full
+            inset either way. */}
+        <div
+          className={cn(
+            "zt:font-medium",
+            onDismiss && "zt:pe-6",
+            tone === "warning" && "zt:text-warning",
+          )}
+        >
+          {title}
         </div>
-        <div className="callout-title-inner">{title}</div>
-        {onDismiss && (
-          <IconButton
-            className="zt:ml-auto"
-            icon="x"
-            onClick={onDismiss}
-            {...tooltipAttrs(m.references_engine_hint_dismiss())}
-          />
-        )}
+        {children}
       </div>
-      <div className="callout-content">{children}</div>
+      {/* The action gets its own line, ranged right: sharing the message's line
+          in a sidebar leaves the copy about half the pane to wrap in. */}
+      {action && <div className="zt:flex zt:justify-end">{action}</div>}
+      {onDismiss && (
+        <IconButton
+          // Out of flow in the corner, so nothing else in the strip shifts to
+          // make room for it. Offset by the button's own 4px padding, so the
+          // glyph — not its transparent hit box — lands on the same 12px
+          // trailing inset the action is ranged against.
+          className={cn("zt:absolute zt:end-2 zt:top-2", compactIconButton)}
+          icon="x"
+          onClick={onDismiss}
+          {...tooltipAttrs(m.references_engine_hint_dismiss())}
+        />
+      )}
     </div>
   );
 }
