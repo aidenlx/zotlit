@@ -1,0 +1,71 @@
+// Grouping one document's Citation Occurrences into Citations with Reference Numbers.
+
+import { type CitationOccurrence } from "./scan";
+
+/** The Literature Note a Citation Occurrence resolves to. */
+export interface ResolvedNote {
+  /** Indexed Key of the cited Zotero Item. */
+  indexedKey: string;
+  /** Linkpath that opens the Literature Note. */
+  linkpath: string;
+}
+
+/**
+ * Resolution is lazy and per occurrence: a citekey resolves through the
+ * Citation Key Property, a linkpath through the Literature Note it points at.
+ */
+export type ResolveOccurrence = (
+  occurrence: CitationOccurrence,
+) => ResolvedNote | null;
+
+/** One cited work of a document, with every place the document cites it. */
+export interface Citation {
+  /** Indexed Key of the cited Item, or `null` when no Literature Note carries the citekey. */
+  indexedKey: string | null;
+  /** Linkpath the open-note action follows, or `null` when nothing resolves it. */
+  linkpath: string | null;
+  /** 1-based identifier, assigned by first occurrence in document order. */
+  refNumber: number;
+  occurrences: CitationOccurrence[];
+}
+
+/**
+ * Group one document's occurrences into its Citations.
+ *
+ * Occurrences of the same Item collapse into one Citation, so a document that
+ * cites it as a citekey and as a wikilink still gets one reference number. A
+ * citekey no Literature Note carries stays a Citation of its own — Pandoc warns
+ * on an undefined citation rather than dropping it — while a wikilink that
+ * points at an ordinary note is no Citation at all.
+ *
+ * @param occurrences in document order, which is the order reference numbers
+ *   are assigned in.
+ */
+export function groupCitations(
+  occurrences: readonly CitationOccurrence[],
+  resolve: ResolveOccurrence,
+): Citation[] {
+  const byIdentity = new Map<string, Citation>();
+
+  for (const occurrence of occurrences) {
+    const note = resolve(occurrence);
+    if (!note && occurrence.kind === "wikilink") continue;
+    const identity = note
+      ? `key:${note.indexedKey}`
+      : `citekey:${occurrence.raw}`;
+
+    const existing = byIdentity.get(identity);
+    if (existing) {
+      existing.occurrences.push(occurrence);
+      continue;
+    }
+    byIdentity.set(identity, {
+      indexedKey: note?.indexedKey ?? null,
+      linkpath: note?.linkpath ?? null,
+      refNumber: byIdentity.size + 1,
+      occurrences: [occurrence],
+    });
+  }
+
+  return [...byIdentity.values()];
+}

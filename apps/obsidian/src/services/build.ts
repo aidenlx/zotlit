@@ -2,6 +2,7 @@ import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
+import { CitationIndex } from "./citation-index/service";
 import { CitationScanner } from "./citation-scan/service";
 import { CitekeyClick } from "./citekey-click/service";
 import { DatabaseService } from "./database/service";
@@ -156,6 +157,10 @@ export function buildServices(
     })
     .use({
       citationScanner: () => new CitationScanner({ app: plugin.app }),
+    })
+    .use({
+      citationIndex: ({ noteIndex, settings }) =>
+        new CitationIndex({ app: plugin.app, noteIndex, settings }),
     })
     .use({
       pandocEngine: () => createPandocEngineService(plugin.app),

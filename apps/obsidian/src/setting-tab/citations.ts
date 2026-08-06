@@ -49,6 +49,17 @@ export function citationsPageItems(
     },
     {
       type: "group",
+      heading: m.settings_citation_index_heading(),
+      items: [
+        {
+          name: m.settings_citation_citekey_indexing_name(),
+          desc: m.settings_citation_citekey_indexing_desc(),
+          control: { type: "toggle", key: "citation.citekey-indexing" },
+        },
+      ],
+    },
+    {
+      type: "group",
       heading: m.settings_citation_key_links_name(),
       items: [
         {
