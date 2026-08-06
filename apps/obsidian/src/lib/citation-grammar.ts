@@ -183,6 +183,37 @@ export function scanCitationClusters(text: string): CitationCluster[] {
 }
 
 /**
+ * One citation as the source writes it, which is the unit a renderer formats:
+ * a whole bracketed cluster, or a bare author-in-text key.
+ */
+export interface CitationSpan extends TextSpan {
+  /** The keys this citation cites, in source order. */
+  keys: CitekeySpan[];
+}
+
+/**
+ * A bare key inside a cluster belongs to that cluster, so every key appears in
+ * exactly one citation.
+ *
+ * @returns every citation in `text`, in document order.
+ */
+export function scanCitations(text: string): CitationSpan[] {
+  const clusters = scanCitationClusters(text);
+  const citations: CitationSpan[] = clusters.map(({ start, end, items }) => ({
+    start,
+    end,
+    keys: items.map((item) => item.key),
+  }));
+  for (const key of scanCitekeys(text)) {
+    const held = clusters.some(
+      ({ start, end }) => key.start >= start && key.end <= end,
+    );
+    if (!held) citations.push({ start: key.start, end: key.end, keys: [key] });
+  }
+  return citations.sort((a, b) => a.start - b.start);
+}
+
+/**
  * Both span ends are inclusive, so a click on the leading `@` or on the
  * trailing key character still resolves.
  *

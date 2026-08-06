@@ -2,7 +2,11 @@
 
 import { parseLinktext, type LinkCache, type Loc, type Pos } from "obsidian";
 
-import { scanCitekeys } from "@/lib/citation-grammar";
+import {
+  scanCitations,
+  scanCitekeys,
+  type CitationSpan,
+} from "@/lib/citation-grammar";
 
 /** Which syntax wrote a Citation Occurrence. */
 export type CitationSyntax = "citekey" | "wikilink";
@@ -40,6 +44,17 @@ export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
     });
   }
   return occurrences;
+}
+
+/**
+ * Reads the same masked body {@link scanCitekeyOccurrences} does, so a citation
+ * written inside code, math, a `%%` comment, or frontmatter is no citation here
+ * either. Masking keeps every offset, so a span still addresses `text` itself.
+ *
+ * @returns the citations of `text`, in document order.
+ */
+export function scanDocumentCitations(text: string): CitationSpan[] {
+  return scanCitations(maskExclusions(text));
 }
 
 /**

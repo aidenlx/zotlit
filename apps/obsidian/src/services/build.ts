@@ -4,6 +4,7 @@ import type ZotLitPlugin from "@/zt-main";
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
 import { CitekeyEditor } from "./citekey-editor/service";
+import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
@@ -181,6 +182,17 @@ export function buildServices(
           noteIndex,
           noteFeature,
           db,
+          settings,
+        }),
+    })
+    .use({
+      citekeyReading: ({ db, citationIndex, bibliographyRender, settings }) =>
+        new CitekeyReading({
+          app: plugin.app,
+          plugin,
+          db,
+          citationIndex,
+          bibliographyRender,
           settings,
         }),
     });

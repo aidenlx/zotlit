@@ -75,6 +75,7 @@ function memoryConsent(): MemoryConsent {
 function fakeEngine(dispose = vi.fn()): CitationEngine {
   return {
     renderBibliography: () => Promise.resolve([]),
+    renderCitations: () => Promise.resolve([]),
     renderDocument: () => Promise.resolve(new Uint8Array()),
     [Symbol.asyncDispose]: () => {
       dispose();

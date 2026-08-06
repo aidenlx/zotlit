@@ -164,6 +164,10 @@ _Avoid_: mention trigger, @-suggester
 The editor surface of Citekey Indexing: literal `@citekey` text is marked in the editor, and a marked key opens its Literature Note on click — the note the Citation Key Property names, or one created from the matching Zotero Item. Built from CodeMirror decorations the plugin owns outright, since Obsidian's Markdown mode emits no token for a citekey; text the syntax tree classifies as code, math, comment, frontmatter, or URL stays plain. It replaces Citation Key Links, whose stored toggle migrates into it.
 _Avoid_: citekey click, citation click, Citation Key Links (the retired feature it replaces)
 
+**Citekey Reading Rendering** _(Obsidian)_:
+The reading-mode surface of the same toggle the Citekey Editor Treatment carries: a Markdown post-processor replaces each Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text, taken from the same plugin-wide bibliography render cache the References Sidebar reads. With no Pandoc Engine installed, each key inside the Citation shows the shared `Creators (Year)` item summary instead, and the brackets, prefixes, and locators the author wrote stay as written. Code, math, and links are left alone, so a wikilink in reading mode stays plain Obsidian.
+_Avoid_: reading-mode widget (a widget is the Live Preview decoration), citation preview
+
 ### Index and identity
 
 **Citation Key Property**:
@@ -186,7 +190,7 @@ The bracketed literal-citekey syntax `[see @a, p. 3; @b]` — one `;`-separated 
 _Avoid_: citation group (names the result, not the source syntax), bracketed citation
 
 **Citekey Indexing**:
-The default-on capability that scans literal Pandoc `@citekey` text vault-wide into the Citation Index. Its toggle is the master switch for every literal-citekey surface — References Sidebar entries and the Citekey Editor Treatment.
+The default-on capability that scans literal Pandoc `@citekey` text vault-wide into the Citation Index. Its toggle is the master switch for every literal-citekey surface — References Sidebar entries, the Citekey Editor Treatment, and Citekey Reading Rendering.
 _Avoid_: citekey scanning (names the mechanism, not the capability)
 
 **Wikilink Citations**:

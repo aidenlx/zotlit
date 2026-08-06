@@ -261,7 +261,7 @@
   "settings_citation_wikilink_citations_desc": "将指向文献笔记的链接视为引用，让参考文献侧边栏在文献引用标识之外也列出它们。",
   "settings_citation_editor_heading": "编辑器",
   "settings_citation_citekey_editor_name": "文献引用标识样式",
-  "settings_citation_citekey_editor_desc": "在编辑器中高亮 `@doe2024` 这样的文献引用标识（citation key），单击即可打开对应的文献笔记。",
+  "settings_citation_citekey_editor_desc": "在编辑器中高亮 `@doe2024` 这样的文献引用标识（citation key），单击即可打开对应的文献笔记。在阅读视图中，引用会显示排版后的文本。",
   "settings_citation_key_property_name": "文献引用标识属性",
   "settings_citation_key_property_desc": "用于存储每篇文献笔记的文献引用标识的 Frontmatter 属性。",
   "settings_citation_key_property_required": "请输入前后没有空格的属性名称。",

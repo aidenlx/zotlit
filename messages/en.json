@@ -288,7 +288,7 @@
   "settings_citation_wikilink_citations_desc": "Treat links to literature notes as citations, so the references sidebar lists them beside your citation keys.",
   "settings_citation_editor_heading": "Editor",
   "settings_citation_citekey_editor_name": "Citation key styling",
-  "settings_citation_citekey_editor_desc": "Style citation keys such as `@doe2024` in the editor, and open the literature note of a key when you click it.",
+  "settings_citation_citekey_editor_desc": "Style citation keys such as `@doe2024` in the editor, and open the literature note of a key when you click it. In reading view, citations show their formatted text.",
   "settings_citation_key_property_name": "Citation key property",
   "settings_citation_key_property_desc": "Frontmatter property that stores each Literature Note's citation key.",
   "settings_citation_key_property_required": "Enter a property name without leading or trailing spaces.",

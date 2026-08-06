@@ -44,6 +44,16 @@ export class Notice {
 
 export const editorInfoField = {};
 
+/**
+ * Constructible stand-in for `MarkdownView`, enough for the `instanceof` narrow
+ * that reaches a leaf's reading view.
+ */
+export class MarkdownView {
+  previewMode = {
+    rerender(_full?: boolean): void {},
+  };
+}
+
 export class TAbstractFile {
   vault: Vault = undefined as unknown as Vault;
   path = "";

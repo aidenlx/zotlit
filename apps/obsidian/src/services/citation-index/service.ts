@@ -36,7 +36,11 @@ export {
   type ResolvedNote,
   type ResolveOccurrence,
 } from "./query";
-export { type CitationOccurrence, type CitationSyntax } from "./scan";
+export {
+  scanDocumentCitations,
+  type CitationOccurrence,
+  type CitationSyntax,
+} from "./scan";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
 
 const logger = getLogger("citation-index");

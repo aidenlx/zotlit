@@ -255,6 +255,65 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     ).rejects.toThrow(CitationEngineError);
   });
 
+  it("formats one citation per source, in the order they were asked for", async () => {
+    const rendered = await engine.renderCitations({
+      citations: ["[@zeta20]", "@adams18"],
+      items: [
+        { ...ZETA, id: "zeta20" },
+        { ...ADAMS, id: "adams18" },
+      ],
+    });
+
+    expect(rendered).toHaveLength(2);
+    expect(rendered[0]?.textContent).toContain("Zeta");
+    expect(rendered[1]?.textContent).toContain("Adams");
+  });
+
+  it("keeps the prefix, locator, and author suppression of a cluster", async () => {
+    const [cluster] = await engine.renderCitations({
+      citations: ["[see @zeta20, p. 3; -@adams18]"],
+      items: [
+        { ...ZETA, id: "zeta20" },
+        { ...ADAMS, id: "adams18" },
+      ],
+    });
+
+    // The embedded style renders a page locator bare, so `p.` is not in it.
+    expect(cluster?.textContent).toBe("(see Zeta 2020, 3; 2018)");
+  });
+
+  it("numbers citations across the whole request under a numbered style", async () => {
+    const rendered = await engine.renderCitations({
+      citations: ["[@zeta20]", "[@adams18]", "[@zeta20]"],
+      items: [
+        { ...ZETA, id: "zeta20" },
+        { ...ADAMS, id: "adams18" },
+      ],
+      styleXml: NUMERIC_STYLE,
+    });
+
+    expect(rendered.map((citation) => citation.textContent)).toEqual([
+      "[1]",
+      "[2]",
+      "[1]",
+    ]);
+  });
+
+  it("leaves the bibliography out of a citation render", async () => {
+    const [only] = await engine.renderCitations({
+      citations: ["[@zeta20]"],
+      items: [{ ...ZETA, id: "zeta20" }],
+    });
+
+    expect(only?.textContent).not.toContain("A study of nothing");
+  });
+
+  it("renders nothing for an empty request", async () => {
+    expect(await engine.renderCitations({ citations: [], items: [] })).toEqual(
+      [],
+    );
+  });
+
   it("converts a document with a resolve map into docx bytes", async () => {
     const docx = await engine.renderDocument({
       markdown: DOCUMENT,

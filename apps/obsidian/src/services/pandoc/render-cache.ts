@@ -68,6 +68,11 @@ export class BibliographyRenderCache extends Service<void> {
     string,
     Promise<readonly BibliographyEntry[] | null>
   >();
+  /** In-text citation renders, held the same way and dropped by the same signals. */
+  readonly #citations = new Map<
+    string,
+    Promise<readonly DocumentFragment[] | null>
+  >();
   /** `undefined` until the first settings snapshot names the selected style. */
   #styleId: string | null | undefined;
 
@@ -102,24 +107,38 @@ export class BibliographyRenderCache extends Service<void> {
     if (items.length === 0) return [];
 
     const styleId = this.#styleId ?? null;
-    const key = renderKey(styleId, items);
-    const held = this.#renders.get(key);
-    if (held) {
-      // Re-insert, so the most recently asked-for render is the last to go.
-      this.#renders.delete(key);
-      this.#renders.set(key, held);
-      return held;
-    }
+    return this.#hold(this.#renders, renderKey(styleId, items), () =>
+      this.#runBibliography(items, styleId),
+    );
+  }
 
-    const pending = this.#run(items, styleId);
-    this.#renders.set(key, pending);
-    this.#evict();
-    const entries = await pending;
-    // A failed render is not an answer to hold: the next ask tries again.
-    if (entries === null && this.#renders.get(key) === pending) {
-      this.#renders.delete(key);
-    }
-    return entries;
+  /**
+   * One document's in-text citations, formatted in the References Style.
+   *
+   * A style that numbers counts citations across the whole document, so the
+   * unit rendered — and the unit cached — is every citation the document
+   * writes, in document order. The formatted content is shared with every other
+   * consumer of the same render, so a consumer inserts a clone of it.
+   *
+   * @param citations each citation as the source writes it, in document order.
+   * @param items the works those citekeys resolve to, each `id` the citekey the
+   *   source writes.
+   * @returns one formatted citation per source, in the same order; `null` when
+   *   no engine is installed or the render failed.
+   */
+  async renderCitations(
+    citations: readonly string[],
+    items: readonly CslItemData[],
+  ): Promise<readonly DocumentFragment[] | null> {
+    await this.ready.catch(() => undefined);
+    if (this.#engine.getStatus().kind !== "installed") return null;
+    if (citations.length === 0) return [];
+
+    const styleId = this.#styleId ?? null;
+    const key = renderKey(styleId, items, citations);
+    return this.#hold(this.#citations, key, () =>
+      this.#runCitations(citations, items, styleId),
+    );
   }
 
   on<K extends keyof BibliographyRenderEvents>(
@@ -145,7 +164,10 @@ export class BibliographyRenderCache extends Service<void> {
         if (settings) this.#applySettings(settings);
       }),
     );
-    stack.defer(() => this.#renders.clear());
+    stack.defer(() => {
+      this.#renders.clear();
+      this.#citations.clear();
+    });
 
     this.commit(stack.move());
   }
@@ -164,47 +186,100 @@ export class BibliographyRenderCache extends Service<void> {
    */
   #invalidate(): void {
     logger.debug("Dropped the bibliography renders", {
-      count: this.#renders.size,
+      count: this.#renders.size + this.#citations.size,
     });
     this.#renders.clear();
+    this.#citations.clear();
     this.#emitter.emit("invalidated");
   }
 
-  #evict(): void {
-    while (this.#renders.size > HELD_RENDERS) {
-      const oldest = this.#renders.keys().next().value;
-      if (oldest === undefined) return;
-      this.#renders.delete(oldest);
+  /**
+   * Answer `key` from `held`, running `format` when nothing holds it yet.
+   *
+   * @param held renders of one kind, oldest first, so the eviction takes the
+   *   least recent.
+   */
+  async #hold<T>(
+    held: Map<string, Promise<T | null>>,
+    key: string,
+    format: () => Promise<T | null>,
+  ): Promise<T | null> {
+    const pending = held.get(key);
+    if (pending) {
+      // Re-insert, so the most recently asked-for render is the last to go.
+      held.delete(key);
+      held.set(key, pending);
+      return pending;
     }
+
+    const running = format();
+    held.set(key, running);
+    while (held.size > HELD_RENDERS) {
+      const oldest = held.keys().next().value;
+      if (oldest === undefined) break;
+      held.delete(oldest);
+    }
+    const rendered = await running;
+    // A failed render is not an answer to hold: the next ask tries again.
+    if (rendered === null && held.get(key) === running) held.delete(key);
+    return rendered;
   }
 
   /** A failed render is a missing one: the consumer falls back to its own text. */
-  async #run(
+  async #runBibliography(
     items: readonly CslItemData[],
     styleId: string | null,
   ): Promise<readonly BibliographyEntry[] | null> {
     try {
       const engine = await this.#engine.getEngine();
-      const styleXml = await this.#styles.load(
-        this.#zoteroPref.dataDir,
-        styleId,
-      );
-      return await engine.renderBibliography({ items, styleXml });
+      return await engine.renderBibliography({
+        items,
+        styleXml: await this.#styleXml(styleId),
+      });
     } catch (error) {
       logger.warn("Cannot format the bibliography", { error });
       return null;
     }
   }
+
+  async #runCitations(
+    citations: readonly string[],
+    items: readonly CslItemData[],
+    styleId: string | null,
+  ): Promise<readonly DocumentFragment[] | null> {
+    try {
+      const engine = await this.#engine.getEngine();
+      return await engine.renderCitations({
+        citations,
+        items,
+        styleXml: await this.#styleXml(styleId),
+      });
+    } catch (error) {
+      logger.warn("Cannot format the citations", { error });
+      return null;
+    }
+  }
+
+  #styleXml(styleId: string | null): Promise<string | undefined> {
+    return this.#styles.load(this.#zoteroPref.dataDir, styleId);
+  }
 }
 
 /**
- * The identity of one render: the style that formats it, and the works it
- * covers in the order they are cited. A CSL id is a Zotero item URI or a
- * citation key, so neither part can carry the separator.
+ * The identity of one render: the style that formats it, the works it covers in
+ * the order they are cited, and — for an in-text render — the citations it
+ * formats. A CSL id is a Zotero item URI or a citation key, so neither can
+ * carry the separator, and the empty line between the two lists keeps them
+ * apart.
  */
 function renderKey(
   styleId: string | null,
   items: readonly CslItemData[],
+  citations: readonly string[] = [],
 ): string {
-  return [styleId ?? "", ...items.map((item) => item.id)].join("\n");
+  return [
+    styleId ?? "",
+    ...items.map((item) => item.id),
+    ...(citations.length > 0 ? ["", ...citations] : []),
+  ].join("\n");
 }

@@ -11,6 +11,7 @@ import {
   type BibliographyEntry,
   type BibliographyRequest,
   type CitationEngine,
+  type CitationRequest,
   type DocumentRequest,
 } from "./engine";
 import { BibliographyRenderCache } from "./render-cache";
@@ -26,6 +27,7 @@ function item(id: string): CslItemData {
 /** One engine, counting the renders it was asked for. */
 class EngineStub implements CitationEngine {
   readonly requests: BibliographyRequest[] = [];
+  readonly citationRequests: CitationRequest[] = [];
   /** Set to make the next render fail, as an engine that refuses one does. */
   fails = false;
 
@@ -40,6 +42,14 @@ class EngineStub implements CitationEngine {
         marker: String(index + 1),
         content: fragment(`entry for ${id}`),
       })),
+    );
+  }
+
+  renderCitations(request: CitationRequest): Promise<DocumentFragment[]> {
+    this.citationRequests.push(request);
+    if (this.fails) return Promise.reject(new Error("no"));
+    return Promise.resolve(
+      request.citations.map((source) => fragment(`cite for ${source}`)),
     );
   }
 
@@ -298,5 +308,76 @@ describe("BibliographyRenderCache", () => {
     await expect(cache.render(items)).resolves.not.toBeNull();
 
     expect(engine.requests).toHaveLength(2);
+  });
+});
+
+describe("BibliographyRenderCache citations", () => {
+  const items = [item("alpha")];
+
+  it("hands two consumers of the same document one render", async () => {
+    const { cache, engine } = await makeHarness();
+
+    const [first, second] = await Promise.all([
+      cache.renderCitations(["[@alpha]", "@alpha"], items),
+      cache.renderCitations(["[@alpha]", "@alpha"], items),
+    ]);
+
+    expect(engine.citationRequests).toHaveLength(1);
+    expect(first).toBe(second);
+    expect(first?.map((citation) => citation.textContent)).toEqual([
+      "cite for [@alpha]",
+      "cite for @alpha",
+    ]);
+  });
+
+  it("renders again for other citations of the same cited set", async () => {
+    const { cache, engine } = await makeHarness();
+
+    await cache.renderCitations(["[@alpha]"], items);
+    await cache.renderCitations(["@alpha"], items);
+
+    expect(engine.citationRequests).toHaveLength(2);
+  });
+
+  it("drops citation renders with the bibliography renders", async () => {
+    const { cache, engine, settings } = await makeHarness();
+
+    await cache.renderCitations(["[@alpha]"], items);
+    settings.update({ "citation.references-style": IEEE });
+    await cache.renderCitations(["[@alpha]"], items);
+
+    expect(engine.citationRequests).toHaveLength(2);
+  });
+
+  it("formats nothing while no engine is installed", async () => {
+    const { cache, engine, pandocEngine } = await makeHarness();
+    pandocEngine.setStatus({ kind: "absent" });
+
+    await expect(
+      cache.renderCitations(["[@alpha]"], items),
+    ).resolves.toBeNull();
+    expect(engine.citationRequests).toHaveLength(0);
+  });
+
+  it("formats nothing for a document that cites nothing", async () => {
+    const { cache, engine } = await makeHarness();
+
+    await expect(cache.renderCitations([], [])).resolves.toEqual([]);
+    expect(engine.citationRequests).toHaveLength(0);
+  });
+
+  it("asks again after a render the engine refused", async () => {
+    const { cache, engine } = await makeHarness();
+
+    engine.fails = true;
+    await expect(
+      cache.renderCitations(["[@alpha]"], items),
+    ).resolves.toBeNull();
+    engine.fails = false;
+    await expect(
+      cache.renderCitations(["[@alpha]"], items),
+    ).resolves.not.toBeNull();
+
+    expect(engine.citationRequests).toHaveLength(2);
   });
 });

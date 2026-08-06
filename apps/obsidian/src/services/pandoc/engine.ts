@@ -48,6 +48,22 @@ export interface BibliographyEntry {
   content: DocumentFragment;
 }
 
+export interface CitationRequest extends SupersedableRequest {
+  /**
+   * The citations to format, each as the source writes it — a bracketed
+   * cluster or a bare author-in-text key, one line apiece. A style that numbers
+   * counts them in this order, so a document hands over all of its own.
+   */
+  citations: readonly string[];
+  /**
+   * CSL-JSON the citekeys resolve against. Each `id` is the citekey the source
+   * writes, which is what citeproc matches a citation by.
+   */
+  items: readonly CslItemData[];
+  /** CSL style XML; the engine's embedded default style when omitted. */
+  styleXml?: string;
+}
+
 export type DocumentFormat = "docx" | "html";
 
 export interface DocumentRequest extends SupersedableRequest {
@@ -77,6 +93,8 @@ export interface CitationEngine extends AsyncDisposable {
   renderBibliography(
     request: BibliographyRequest,
   ): Promise<BibliographyEntry[]>;
+  /** @returns one formatted citation per requested source, in the same order. */
+  renderCitations(request: CitationRequest): Promise<DocumentFragment[]>;
   renderDocument(request: DocumentRequest): Promise<Uint8Array>;
 }
 
@@ -150,6 +168,37 @@ class PandocCitationEngine implements CitationEngine {
       supersedes,
     });
     return parseBibliography(stdout);
+  }
+
+  async renderCitations({
+    citations,
+    items,
+    styleXml,
+    supersedes,
+  }: CitationRequest): Promise<DocumentFragment[]> {
+    if (citations.length === 0) return [];
+    const style = styleInput(styleXml);
+    const { stdout } = await this.#convert({
+      options: {
+        from: MARKDOWN_READER,
+        to: "html",
+        standalone: false,
+        filters: ["citeproc"],
+        bibliography: [BIBLIOGRAPHY_FILE],
+        // The bibliography is the sidebar's job; this render wants the in-text
+        // citations alone.
+        metadata: { "suppress-bibliography": true },
+        wrap: "none",
+        ...style.options,
+      },
+      stdin: citations.join("\n\n"),
+      files: {
+        [BIBLIOGRAPHY_FILE]: JSON.stringify(items),
+        ...style.files,
+      },
+      supersedes,
+    });
+    return parseCitations(stdout, citations.length);
   }
 
   async renderDocument({
@@ -246,6 +295,30 @@ function styleInput(styleXml: string | undefined): {
   return styleXml === undefined
     ? { options: {}, files: {} }
     : { options: { csl: STYLE_FILE }, files: { [STYLE_FILE]: styleXml } };
+}
+
+/**
+ * Each requested citation is fed as a paragraph of its own, so Pandoc writes
+ * one `<p>` per citation in the order they were asked for. The paragraph's own
+ * children are the formatted citation — the style's affixes included — and they
+ * are sanitized once here, so neither the style nor an item field can carry
+ * active markup into the reading view.
+ *
+ * @throws {CitationEngineError} when the output does not answer every citation,
+ *   which would silently misalign the answers with what was asked.
+ */
+function parseCitations(html: string, expected: number): DocumentFragment[] {
+  const paragraphs = sanitizeHTMLToDom(html).querySelectorAll("p");
+  if (paragraphs.length !== expected) {
+    throw new CitationEngineError(
+      `Pandoc formatted ${paragraphs.length} of ${expected} citations`,
+    );
+  }
+  return [...paragraphs].map((paragraph) => {
+    const content = createFragment();
+    content.append(...paragraph.childNodes);
+    return content;
+  });
 }
 
 /** Pandoc prefixes every entry's `id` with this, over the CSL id of the item. */

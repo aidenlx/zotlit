@@ -7,6 +7,7 @@ import { getPackageRoot } from "@zotlit/scripts/package-roots";
 import {
   citekeyAt,
   scanCitationClusters,
+  scanCitations,
   scanCitekeys,
   type CitationCluster,
 } from "./citation-grammar";
@@ -257,6 +258,31 @@ describe("scanCitationClusters", () => {
         items(text, cluster).map((item) => item.citekey),
       ),
     ).toEqual([["a"], ["b"], ["c"]]);
+  });
+});
+
+describe("scanCitations", () => {
+  const sources = (text: string) =>
+    scanCitations(text).map((citation) => ({
+      source: text.slice(citation.start, citation.end),
+      keys: citation.keys.map((key) => key.citekey),
+    }));
+
+  it("reads a cluster whole and a bare key on its own", () => {
+    expect(sources("Blah [see @a, p. 3; @b] and @c said so.")).toEqual([
+      { source: "[see @a, p. 3; @b]", keys: ["a", "b"] },
+      { source: "@c", keys: ["c"] },
+    ]);
+  });
+
+  it("keeps the author-suppression dash with the key it belongs to", () => {
+    expect(sources("Blah -@a.")).toEqual([{ source: "-@a", keys: ["a"] }]);
+  });
+
+  it("leaves a bracket that carries no key as text", () => {
+    expect(sources("[an aside] and @a")).toEqual([
+      { source: "@a", keys: ["a"] },
+    ]);
   });
 });
 
