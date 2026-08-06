@@ -123,7 +123,7 @@
   "notice_template_not_ready": "模板仍在加载中。稍后再试一次。",
   "notice_citekey_not_found": "找不到文献引用标识（citation key）为 @{citekey} 的 Zotero 条目。",
   "notice_citekey_db_unavailable": "打开 Zotero 数据库查找文献引用标识（citation key）为 @{citekey} 的条目。",
-  "notice_citation_key_property_missing": "已启用文献引用标识样式，但托管 Frontmatter 中没有 {property} 属性。",
+  "notice_citation_key_property_missing": "已启用文献引用标识（citation key）样式，但托管 Frontmatter 中没有 {property} 属性。",
   "instruction_navigate": "导航",
   "instruction_dismiss": "关闭",
   "instruction_insert_citation": "插入引文",

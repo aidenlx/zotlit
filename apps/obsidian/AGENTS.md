@@ -61,7 +61,7 @@ Run `/obsidian-css` for styling decisions (colors, spacing, components, `zt:` pr
 
 Mark each plugin UI root (`ItemView.contentEl`, modal `contentEl`, settings pane) with `class="zt-root"` — that scope enables the Tailwind preflight so semantic HTML and border utilities render clean. See the skill's **Scoped preflight** section.
 
-View-specific styles live next to the view (`views/<view>/style.css`). Global styles go in `src/zt-main.css`.
+Feature styles live next to the code that owns them and are imported from it — `views/<view>/style.css`, `services/<service>/style.css`. The Tailwind entry and styles that belong to no single feature go in `src/zt-main.css`.
 
 ## Debugging
 
