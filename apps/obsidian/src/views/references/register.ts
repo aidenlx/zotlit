@@ -2,6 +2,7 @@ import "./style.css";
 import { type App, type Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { revealSetting } from "@/lib/open-settings";
 import { type CitationScanner } from "@/services/citation-scan/service";
 import { type DatabaseService } from "@/services/database/service";
 import { type PandocEngineService } from "@/services/pandoc/service";
@@ -40,8 +41,11 @@ export function registerReferencesView(
     zoteroPref: deps.zoteroPref,
     settings: deps.settings,
     openSettings: () => {
-      plugin.app.setting.open();
-      plugin.app.setting.openTabById(plugin.manifest.id);
+      revealSetting(
+        plugin.app,
+        plugin.manifest.id,
+        m.settings_citation_engine_name(),
+      );
     },
   };
 

@@ -47,7 +47,7 @@ export interface ReferencesViewDeps {
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;
   settings: Pick<SettingsService, "current" | "subscribe">;
-  /** Opens the settings page the engine install and the style picker live on. */
+  /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
 }
 
