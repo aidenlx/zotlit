@@ -15,6 +15,7 @@ import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
 import {
   type AttachmentImportActions,
+  type CitationIndexActions,
   type PandocEngineActions,
   type ReleaseTabActions,
   type SettingsKey,
@@ -44,6 +45,7 @@ export interface ZotLitSettingTabOptions {
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
   attachmentImport: AttachmentImportActions;
+  citationIndex: CitationIndexActions;
   template: TemplateService;
   release: ReleaseTabActions;
   pandocEngine: PandocEngineActions;
@@ -56,6 +58,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #db: DatabaseService;
   readonly #zoteroPref: ZoteroPrefService;
   readonly #attachmentImport: AttachmentImportActions;
+  readonly #citationIndex: CitationIndexActions;
   readonly #release: ReleaseTabActions;
   readonly #pandocEngine: PandocEngineActions;
   readonly #languagePack: LanguagePackLifecycle;
@@ -66,6 +69,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     db,
     zoteroPref,
     attachmentImport,
+    citationIndex,
     template,
     release,
     pandocEngine,
@@ -77,6 +81,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#db = db;
     this.#zoteroPref = zoteroPref;
     this.#attachmentImport = attachmentImport;
+    this.#citationIndex = citationIndex;
     this.#release = release;
     this.#pandocEngine = pandocEngine;
     this.#languagePack = languagePack;
@@ -142,6 +147,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       db: this.#db,
       zoteroPref: this.#zoteroPref,
       attachmentImport: this.#attachmentImport,
+      citationIndex: this.#citationIndex,
       release: this.#release,
       pandocEngine: this.#pandocEngine,
       languagePack: this.#languagePack,

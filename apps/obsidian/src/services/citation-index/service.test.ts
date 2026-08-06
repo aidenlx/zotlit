@@ -4,14 +4,20 @@ import {
   type App,
   type CachedMetadata,
   type EventRef,
+  type FileStats,
   type LinkCache,
 } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { defaults, type Settings } from "@/services/settings/schema";
 
-import { CitationIndex } from "./service";
+import {
+  CitationIndex,
+  type CitekeyRecord,
+  type CitekeyStore,
+} from "./service";
 
 const KEY_A = "ABCD2345";
 const KEY_B = "ZZZ99999g7";
@@ -21,6 +27,8 @@ type Callback = (...args: unknown[]) => void;
 class MockMetadataCache {
   readonly fileCache = new Map<string, CachedMetadata>();
   readonly files = new Map<string, TFile>();
+  /** Set by {@link MockVault}, which owns the bodies a save writes. */
+  vault?: MockVault;
 
   readonly #listeners: Record<string, Set<Callback>> = {
     changed: new Set(),
@@ -53,7 +61,9 @@ class MockMetadataCache {
     this.#listeners[name]!.delete(callback);
   }
 
+  /** A save: the body and its stat move, then the cache reparses and notifies. */
   change(file: TFile, body: string, links: LinkCache[] = []): void {
+    this.vault?.write(file, body);
     const cache = { links } as CachedMetadata;
     this.fileCache.set(file.path, cache);
     this.#emit("changed", file, body, cache);
@@ -72,9 +82,14 @@ class MockMetadataCache {
 
 class MockVault {
   readonly bodies = new Map<string, string>();
+  /** Every path read, in order — what tells an adopted scan from a rescan. */
+  readonly reads: string[] = [];
   readonly #listeners = new Set<Callback>();
+  readonly #held = new Map<string, PromiseWithResolvers<void>>();
 
-  constructor(readonly metadataCache: MockMetadataCache) {}
+  constructor(readonly metadataCache: MockMetadataCache) {
+    metadataCache.vault = this;
+  }
 
   getMarkdownFiles(): TFile[] {
     return [...this.metadataCache.files.values()].filter(
@@ -83,7 +98,27 @@ class MockVault {
   }
 
   cachedRead(file: TFile): Promise<string> {
-    return Promise.resolve(this.bodies.get(file.path) ?? "");
+    this.reads.push(file.path);
+    const body = this.bodies.get(file.path) ?? "";
+    const gate = this.#held.get(file.path);
+    if (!gate) return Promise.resolve(body);
+    this.#held.delete(file.path);
+    // The body is captured now, so a later write leaves this read holding a
+    // stale one — which is what a superseded backfill would try to store.
+    return gate.promise.then(() => body);
+  }
+
+  /** Parks the next read of `path`; the returned callback lets it finish. */
+  hold(path: string): () => void {
+    const gate = Promise.withResolvers<void>();
+    this.#held.set(path, gate);
+    return () => gate.resolve();
+  }
+
+  /** Writes a body with no event, as an edit made while the app was closed. */
+  write(file: TFile, body: string): void {
+    this.bodies.set(file.path, body);
+    file.stat = statOf(body);
   }
 
   on(_name: "rename", callback: Callback): EventRef {
@@ -133,6 +168,37 @@ class NoteIndexStub {
   getNotesByCitationKey(citationKey: string): TFile[] {
     const note = this.notes.get(citationKey);
     return note ? [note] : [];
+  }
+}
+
+/** The persisted store, in memory: it outlives an index the way a database does. */
+class MemoryStore implements CitekeyStore {
+  readonly records = new Map<string, CitekeyRecord>();
+  /** Every path written, in order — what tells a per-file write from a wholesale one. */
+  readonly writes: string[] = [];
+
+  load(): Promise<CitekeyRecord[]> {
+    return Promise.resolve([...this.records.values()]);
+  }
+
+  put(record: CitekeyRecord): Promise<void> {
+    this.writes.push(record.path);
+    this.records.set(record.path, structuredClone(record));
+    return Promise.resolve();
+  }
+
+  drop(path: string): Promise<void> {
+    this.records.delete(path);
+    return Promise.resolve();
+  }
+
+  clear(): Promise<void> {
+    this.records.clear();
+    return Promise.resolve();
+  }
+
+  [Symbol.asyncDispose](): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -414,25 +480,155 @@ describe("CitationIndex", () => {
   });
 
   it("stops indexing after disposal", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
+    const { draft, index, metadataCache, store } = await makeHarness({
       "draft.md": "As @doe2024 wrote.",
     });
     await index.getCitations(draft);
+    store.writes.length = 0;
+    const changed: string[] = [];
+    index.on("changed", (path) => changed.push(path));
 
     await index[Symbol.asyncDispose]();
     metadataCache.change(draft, "As @roe2025 wrote.");
 
+    expect(changed).toEqual([]);
+    expect(store.writes).toEqual([]);
+  });
+});
+
+describe("CitationIndex persistence", () => {
+  it("adopts a stored scan for a file the vault has not touched", async () => {
+    const store = new MemoryStore();
+    await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
+
+    const { draft, index, vault, workspace } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { store },
+    );
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(vault.reads).toEqual([]);
+    expect(await index.getCitations(draft)).toMatchObject([
+      { indexedKey: KEY_A, refNumber: 1 },
+    ]);
+  });
+
+  it("re-scans a file edited to the same length while the app was closed", async () => {
+    const store = new MemoryStore();
+    await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
+
+    const { draft, index, vault, workspace } = await makeHarness(
+      { "draft.md": "As @roe2025 wrote." },
+      { store },
+    );
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(vault.reads).toEqual(["draft.md"]);
+    expect(await index.getCitations(draft)).toMatchObject([
+      { indexedKey: KEY_B, refNumber: 1 },
+    ]);
+  });
+
+  it("writes the record of the one file that changed", async () => {
+    const { draft, index, metadataCache, store, workspace } = await makeHarness(
+      {
+        "draft.md": "As @doe2024 wrote.",
+        "other.md": "As @roe2025 wrote.",
+      },
+    );
+    workspace.layoutReady();
+    await index.whenIndexed();
+    store.writes.length = 0;
+
+    metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
+
+    expect(store.writes).toEqual(["draft.md"]);
+  });
+
+  it("forgets the stored scan of a deleted document", async () => {
+    const { draft, index, store, vault, workspace } = await makeHarness({
+      "draft.md": "As @doe2024 wrote.",
+    });
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    vault.deleteFile(draft);
+
+    expect(store.records.has("draft.md")).toBe(false);
+  });
+
+  it("clears the stored scans and rebuilds on reset", async () => {
+    const store = new MemoryStore();
+    const { draft, index, vault, workspace } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { store },
+    );
+    workspace.layoutReady();
+    await index.whenIndexed();
+    vault.reads.length = 0;
+
+    await index.reset();
+    await index.whenIndexed();
+
+    expect(vault.reads).toContain("draft.md");
+    expect(store.records.has("draft.md")).toBe(true);
     expect(await index.getCitations(draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
   });
+
+  it("keeps a backfill in flight from writing its scan past a reset", async () => {
+    const store = new MemoryStore();
+    const { draft, index, vault, workspace } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { store },
+    );
+    const release = vault.hold("draft.md");
+    workspace.layoutReady();
+    // The backfill runs until it parks on the read of `draft.md`.
+    await yieldToMain();
+
+    vault.write(draft, "As @roe2025 wrote.");
+    await index.reset();
+    await index.whenIndexed();
+    release();
+    await yieldToMain();
+
+    // The parked read still holds the pre-reset body; a later session must not
+    // find it, so the restart adopts what the rebuild wrote and reads nothing.
+    const restored = await makeHarness(
+      { "draft.md": "As @roe2025 wrote." },
+      { store },
+    );
+    restored.workspace.layoutReady();
+    await restored.index.whenIndexed();
+
+    expect(restored.vault.reads).toEqual([]);
+    expect(await restored.index.getCitations(restored.draft)).toMatchObject([
+      { indexedKey: KEY_B },
+    ]);
+  });
 });
+
+/** Runs one index to completion over `documents`, leaving its scans in `store`. */
+async function warmVault(
+  documents: Record<string, string>,
+  store: MemoryStore,
+): Promise<void> {
+  const { index, workspace } = await makeHarness(documents, { store });
+  workspace.layoutReady();
+  await index.whenIndexed();
+  await index[Symbol.asyncDispose]();
+}
 
 interface Harness {
   draft: TFile;
   index: CitationIndex;
   metadataCache: MockMetadataCache;
   settings: SettingsStub;
+  store: MemoryStore;
   vault: MockVault;
   workspace: MockWorkspace;
 }
@@ -441,18 +637,22 @@ interface Harness {
  * A vault of two Literature Notes — `doe2024` and `roe2025` — plus the passed
  * documents, none of which the index covers until an event, a query, or the
  * backfill reaches it.
+ *
+ * @param options.store carry one across two harnesses to model a restart: the
+ *   second index starts over the scans the first left behind.
  */
 async function makeHarness(
   documents: Record<string, string>,
-  options: { settings?: Partial<Settings> } = {},
+  options: { settings?: Partial<Settings>; store?: MemoryStore } = {},
 ): Promise<Harness> {
   const metadataCache = new MockMetadataCache();
   const vault = new MockVault(metadataCache);
   const workspace = new MockWorkspace();
   const noteIndex = new NoteIndexStub();
+  const store = options.store ?? new MemoryStore();
 
   const addFile = (path: string, body: string): TFile => {
-    const file = makeFile(path);
+    const file = makeFile(path, body);
     metadataCache.files.set(path, file);
     vault.bodies.set(path, body);
     return file;
@@ -477,15 +677,23 @@ async function makeHarness(
 
   const app = { metadataCache, vault, workspace } as unknown as App;
   const settings = new SettingsStub(options.settings);
-  const index = new CitationIndex({ app, noteIndex, settings });
+  const index = new CitationIndex({
+    app,
+    noteIndex,
+    settings,
+    openStore: () => Promise.resolve(store),
+  });
   services.push(index);
   await index.ready;
+  vault.reads.length = 0;
+  store.writes.length = 0;
 
   return {
     draft: metadataCache.files.get("draft.md")!,
     index,
     metadataCache,
     settings,
+    store,
     vault,
     workspace,
   };
@@ -506,11 +714,24 @@ function link(target: string, offset: number): LinkCache {
   };
 }
 
-function makeFile(path: string): TFile {
+function makeFile(path: string, body: string): TFile {
   const file = new TFile();
-  file.stat = { ctime: 0, mtime: 0, size: 0 };
+  file.stat = statOf(body);
   updateFilePath(file, path);
   return file;
+}
+
+/**
+ * The stat the vault reports for a body. It is a function of the body alone, so
+ * a restart over untouched content sees the stat the stored scan ran against,
+ * and any edit — including one that keeps the length — moves it.
+ */
+function statOf(body: string): FileStats {
+  let mtime = 0;
+  for (let at = 0; at < body.length; at += 1) {
+    mtime = (mtime * 31 + body.charCodeAt(at)) | 0;
+  }
+  return { ctime: 0, mtime: mtime >>> 0, size: body.length };
 }
 
 function updateFilePath(file: TFile, path: string): void {

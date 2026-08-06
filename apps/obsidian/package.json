@@ -37,6 +37,7 @@
     "eta": "catalog:",
     "fflate": "catalog:",
     "hono": "^4.13.0",
+    "idb": "^8.0.3",
     "monkey-around": "catalog:",
     "nanoid": "^5.1.14",
     "p-limit": "^7.3.0",

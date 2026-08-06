@@ -86,11 +86,40 @@ export function diagnosticsPageItems(
       action: () => void exportLogArchive(ctx.plugin),
     },
     {
+      name: m.settings_citation_index_reset_name(),
+      desc: m.settings_citation_index_reset_desc(),
+      action: () => void resetCitationIndex(ctx),
+    },
+    {
       name: m.settings_language_pack_reset_name(),
       desc: m.settings_language_pack_reset_desc(),
       action: () => void resetLanguagePacks(ctx),
     },
   ];
+}
+
+/**
+ * Clears every stored citekey scan and rebuilds it from the vault. The rebuild
+ * runs on past this call, so the notice names it rather than claiming it is done.
+ */
+async function resetCitationIndex(ctx: SettingTabContext): Promise<void> {
+  const confirmed = await confirm(
+    {
+      title: m.settings_citation_index_reset_confirm_title(),
+      content: m.settings_citation_index_reset_confirm_body(),
+      action: m.settings_citation_index_reset_action(),
+      destructive: true,
+    },
+    ctx.app,
+  );
+  if (!confirmed) return;
+  try {
+    await ctx.citationIndex.reset();
+    new BaseNotice(m.notice_citation_index_reset());
+  } catch (error) {
+    logger.error("Failed to reset the citation index", { error });
+    new BaseNotice(m.notice_citation_index_reset_failed());
+  }
 }
 
 /**

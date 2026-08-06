@@ -11,6 +11,8 @@ declare module "obsidian" {
     on(name: "initialized", callback: () => any, ctx?: any): EventRef;
   }
   interface App {
+    /** Stable per-vault id, the namespace Obsidian gives its own IndexedDB databases. */
+    appId: string;
     plugins: {
       plugins: Record<string, unknown>;
     };
