@@ -1,3 +1,5 @@
+// UI seam for the citekey editor service: one notice per event it reports.
+
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 

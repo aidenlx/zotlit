@@ -1,3 +1,6 @@
+// The citekey editor treatment service: it follows the settings that switch the
+// CodeMirror extension on and owns the click that opens a citekey's note.
+
 import { type Extension } from "@codemirror/state";
 import { type App, type PaneType, type Plugin } from "obsidian";
 

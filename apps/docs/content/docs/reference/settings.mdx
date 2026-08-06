@@ -37,29 +37,29 @@ Open this page from **Settings → ZotLit → Citations**.
 
 ### Citation index
 
-| Label                  | Key                           | Control | Default |
-| ---------------------- | ----------------------------- | ------- | ------- |
-| **Citekey indexing**   | `citation.citekey-indexing`   | Toggle  | On      |
-| **Wikilink citations** | `citation.wikilink-citations` | Toggle  | Off     |
+| Label                     | Key                           | Control | Default |
+| ------------------------- | ----------------------------- | ------- | ------- |
+| **Citation key indexing** | `citation.citekey-indexing`   | Toggle  | On      |
+| **Wikilink citations**    | `citation.wikilink-citations` | Toggle  | Off     |
 
-**Citekey indexing** tracks Pandoc citation keys such as `@doe2024` across your vault, so ZotLit knows which items each note cites. Keys inside code, math, comments, and frontmatter are ignored.
+**Citation key indexing** tracks Pandoc citation keys such as `@doe2024` across your vault, so ZotLit knows which items each note cites. Keys inside code, math, comments, and frontmatter are ignored.
 
 **Wikilink citations** treats links to literature notes as citations, so the references sidebar lists them beside your citation keys. Pandoc export converts those links either way.
 
-### Citation key links
+### Editor
 
 | Label                     | Key                                  | Control | Default   |
 | ------------------------- | ------------------------------------ | ------- | --------- |
-| **Citation key links**    | `citation.key-links`                 | Toggle  | Off       |
+| **Citation key styling**  | `citation.citekey-editor`            | Toggle  | On        |
 | **Citation key property** | `citation.key-links-frontmatter-key` | Text    | `citekey` |
 
 <Callout type="info">
-  **Citation key property** is visible only when **Citation key links** is on.
-  Earlier settings migrations keep **Citation key links** on. New installs use
-  the off default.
+  **Citation key styling** takes effect only while **Citation key indexing** is
+  on. **Citation key indexing** is the master switch for every citation key
+  surface: the references sidebar, the editor, and reading view.
 </Callout>
 
-**Citation key links** opens bracketed citation keys in Live Preview and Source mode. The setting description links to [How citation key links work](/docs/concepts/how-citekey-links-work) and notes that the feature uses an internal Obsidian editor integration.
+**Citation key styling** styles citation keys such as `@doe2024` in the editor, and opens the literature note of a key when you click it. In reading view, citations show their formatted text. See [How citation key styling works](/docs/concepts/how-citekey-links-work).
 
 **Citation key property** names the Literature Note frontmatter property used for citation key lookup. The value must be non-empty and cannot start or end with spaces.
 
