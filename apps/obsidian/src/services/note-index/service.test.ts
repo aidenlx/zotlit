@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { defaults, type Settings } from "@/services/settings/schema";
 
-import { isLiteratureNote, NoteIndex } from "./service";
+import { isLiteratureNote, NoteIndex, resolveIndexedKey } from "./service";
 
 const ITEM_A = "ABCD2345";
 const ITEM_B = "ZZZ99999";
@@ -435,6 +435,25 @@ describe("NoteIndex", () => {
     expect(isLiteratureNote(vault.files.get("paper.md")!, app)).toBe(true);
     expect(isLiteratureNote("paper.md", app)).toBe(true);
     expect(isLiteratureNote("invalid.md", app)).toBe(false);
+  });
+
+  it("resolves a linkpath to the Indexed Key of the Literature Note it points at", () => {
+    const notes = new Map([
+      ["Doe 2024.md", cache({ itemKey: ITEM_A })],
+      ["Ordinary.md", cache({})],
+    ]);
+    // Exact-path resolution; enough to tell a hit from a dangling link.
+    const app = {
+      metadataCache: {
+        getFirstLinkpathDest: (linkpath: string) =>
+          notes.has(`${linkpath}.md`) ? makeFile(`${linkpath}.md`) : null,
+        getFileCache: (file: TFile) => notes.get(file.path) ?? null,
+      },
+    } as unknown as App;
+
+    expect(resolveIndexedKey("Doe 2024", "source.md", app)).toBe(ITEM_A);
+    expect(resolveIndexedKey("Ordinary", "source.md", app)).toBeNull();
+    expect(resolveIndexedKey("Missing", "source.md", app)).toBeNull();
   });
 });
 

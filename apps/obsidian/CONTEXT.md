@@ -171,7 +171,7 @@ The configurable Literature Note frontmatter property whose non-empty string val
 _Avoid_: citekey frontmatter (names only the default property), resolver key
 
 **Note Index**:
-A vault-wide in-memory index mapping `zotero-key` to Literature Notes, `zotero-note-key` to Imported Notes, and each Literature Note's Citation Key Property value to that note. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
+A vault-wide in-memory index mapping `zotero-key` to Literature Notes, `zotero-note-key` to Imported Notes, and each Literature Note's Citation Key Property value to that note. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
 
 **Citation Index**:
 The plugin-owned, vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citekeys and Literature Note wikilinks. It persists only what Obsidian's metadata cache cannot infer (literal-citekey occurrences); wikilink occurrences derive from the metadata cache at query time. Resolution to Zotero Items is lazy, through the Note Index. It owns its readiness: a consumer that needs vault-wide completeness awaits its backfill, while the active document is indexed on demand.

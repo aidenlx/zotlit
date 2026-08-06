@@ -18,7 +18,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { type DatabaseService } from "@/services/database/service";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
+import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
   LOCAL_API_PREF,
@@ -145,11 +145,8 @@ function exportPorts(
   return {
     engine,
     dataDir: () => zoteroPref.dataDir,
-    resolveIndexedKey: (linkpath, sourcePath) => {
-      const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
-      if (!dest) return null;
-      return itemKeyFromFrontmatter(app.metadataCache.getFileCache(dest));
-    },
+    resolveIndexedKey: (linkpath, sourcePath) =>
+      resolveIndexedKey(linkpath, sourcePath, app),
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {

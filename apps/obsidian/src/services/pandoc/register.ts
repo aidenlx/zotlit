@@ -23,7 +23,7 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { type DatabaseService } from "@/services/database/service";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
+import { resolveIndexedKey } from "@/services/note-index/service";
 import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
@@ -65,7 +65,7 @@ export function registerPandocResolve(
       const response = await resolveCitations(params.file ?? "", {
         readDocument: (absolutePath) => readDocument(deps.app, absolutePath),
         resolveIndexedKey: (linkpath, sourcePath) =>
-          resolveIndexedKey(deps.app, linkpath, sourcePath),
+          resolveIndexedKey(linkpath, sourcePath, deps.app),
         database: {
           describe: () => ({
             dataDir: deps.zoteroPref.dataDir,
@@ -95,16 +95,6 @@ function readDocument(app: App, absolutePath: string): ResolveDocument | null {
     sourcePath: file.path,
     links: app.metadataCache.getFileCache(file)?.links ?? [],
   };
-}
-
-function resolveIndexedKey(
-  app: App,
-  linkpath: string,
-  sourcePath: string,
-): string | null {
-  const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
-  if (!dest) return null;
-  return itemKeyFromFrontmatter(app.metadataCache.getFileCache(dest));
 }
 
 /** One read lease per invocation, however many links the document carries. */

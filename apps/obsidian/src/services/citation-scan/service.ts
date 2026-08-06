@@ -5,7 +5,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
+import { resolveIndexedKey } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 
 import { citationsEqual, scanCitations, type Citation } from "./scan";
@@ -99,10 +99,8 @@ export class CitationScanner extends Service<void> {
     const links = metadataCache.getFileCache(file)?.links;
     if (!links) return [];
 
-    return scanCitations(links, (linkpath) => {
-      const dest = metadataCache.getFirstLinkpathDest(linkpath, file.path);
-      if (!dest) return null;
-      return itemKeyFromFrontmatter(metadataCache.getFileCache(dest));
-    });
+    return scanCitations(links, (linkpath) =>
+      resolveIndexedKey(linkpath, file.path, this.#app),
+    );
   }
 }
