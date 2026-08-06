@@ -3,6 +3,7 @@
 import { type CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { BoundedCache } from "@/lib/bounded-cache";
 import { getLogger } from "@/lib/log";
 import { type DatabaseService } from "@/services/database/service";
 import { Service } from "@/services/service-base";
@@ -63,16 +64,14 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #settings;
   readonly #emitter = createNanoEvents<BibliographyRenderEvents>();
   readonly #styles = new StyleXmlCache();
-  /** Renders by key, oldest first, so the eviction takes the least recent. */
-  readonly #renders = new Map<
-    string,
+  /** Bibliography renders by {@link renderKey}. */
+  readonly #renders = new BoundedCache<
     Promise<readonly BibliographyEntry[] | null>
-  >();
+  >(HELD_RENDERS);
   /** In-text citation renders, held the same way and dropped by the same signals. */
-  readonly #citations = new Map<
-    string,
+  readonly #citations = new BoundedCache<
     Promise<readonly DocumentFragment[] | null>
-  >();
+  >(HELD_RENDERS);
   /** `undefined` until the first settings snapshot names the selected style. */
   #styleId: string | null | undefined;
 
@@ -193,35 +192,16 @@ export class BibliographyRenderCache extends Service<void> {
     this.#emitter.emit("invalidated");
   }
 
-  /**
-   * Answer `key` from `held`, running `format` when nothing holds it yet.
-   *
-   * @param held renders of one kind, oldest first, so the eviction takes the
-   *   least recent.
-   */
+  /** Answer `key` from `held`, running `format` when nothing holds it yet. */
   async #hold<T>(
-    held: Map<string, Promise<T | null>>,
+    held: BoundedCache<Promise<T | null>>,
     key: string,
     format: () => Promise<T | null>,
   ): Promise<T | null> {
-    const pending = held.get(key);
-    if (pending) {
-      // Re-insert, so the most recently asked-for render is the last to go.
-      held.delete(key);
-      held.set(key, pending);
-      return pending;
-    }
-
-    const running = format();
-    held.set(key, running);
-    while (held.size > HELD_RENDERS) {
-      const oldest = held.keys().next().value;
-      if (oldest === undefined) break;
-      held.delete(oldest);
-    }
+    const running = held.hold(key, format);
     const rendered = await running;
     // A failed render is not an answer to hold: the next ask tries again.
-    if (rendered === null && held.get(key) === running) held.delete(key);
+    if (rendered === null && held.peek(key) === running) held.delete(key);
     return rendered;
   }
 

@@ -77,7 +77,6 @@ function fragment(text: string): DocumentFragment {
 interface Harness {
   process: MarkdownPostProcessor;
   citationRequests: { citations: readonly string[] }[];
-  settings: SettingsStub;
   dispose: () => Promise<void>;
 }
 
@@ -94,7 +93,6 @@ async function makeHarness({
   overrides?: Partial<Settings>;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
-  const settings = new SettingsStub(overrides);
   let process: MarkdownPostProcessor | undefined;
 
   const service = new CitekeyReading({
@@ -126,14 +124,13 @@ async function makeHarness({
       },
       on: () => () => undefined,
     },
-    settings,
+    settings: settingsStub(overrides),
   } as never);
   await service.ready;
 
   return {
     process: process!,
     citationRequests,
-    settings,
     dispose: () => service[Symbol.asyncDispose](),
   };
 }
@@ -230,6 +227,23 @@ describe("CitekeyReading", () => {
     }
   });
 
+  // Sidebar occurrence navigation flashes the block element the line sits in,
+  // so the swap has to stay inside that element and leave it in place.
+  it("keeps the block element a reading-view flash targets", async () => {
+    const { process, dispose } = await makeHarness({
+      body: "Blah [@alpha] blah.",
+    });
+    const el = section("<p>Blah [@alpha] blah.</p>");
+    const block = el.firstElementChild!;
+
+    await process(el, { sourcePath: "note.md" } as never);
+
+    expect(el.children).toHaveLength(1);
+    expect(el.firstElementChild).toBe(block);
+    expect(block.querySelector("span.zt-citation")).not.toBeNull();
+    await dispose();
+  });
+
   it("formats a document once for every section that asks", async () => {
     const { process, citationRequests, dispose } = await makeHarness({
       body: "One [@alpha].\n\nTwo [@alpha].",
@@ -247,27 +261,17 @@ describe("CitekeyReading", () => {
   });
 });
 
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
-  }
+/** Hands out one settings snapshot, the way the service reads its toggles. */
+function settingsStub(overrides: Partial<Settings>): {
+  ready: Promise<void>;
+  subscribe: (listener: (settings: Readonly<Settings>) => void) => () => void;
+} {
+  const current: Readonly<Settings> = { ...defaults, ...overrides };
+  return {
+    ready: Promise.resolve(),
+    subscribe: (listener) => {
+      listener(current);
+      return () => undefined;
+    },
+  };
 }

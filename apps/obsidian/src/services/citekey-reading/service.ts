@@ -17,6 +17,7 @@ import {
   type CslItemData,
 } from "@zotlit/db";
 
+import { BoundedCache } from "@/lib/bounded-cache";
 import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -91,7 +92,9 @@ export class CitekeyReading extends Service<void> {
   readonly #bibliographyRender;
   readonly #settings;
   /** Citations by document path; every section of one document shares them. */
-  readonly #documents = new Map<string, Promise<DocumentCitations>>();
+  readonly #documents = new BoundedCache<Promise<DocumentCitations>>(
+    HELD_DOCUMENTS,
+  );
 
   /** `undefined` until the first settings snapshot decides the treatment. */
   #enabled: boolean | undefined;
@@ -185,24 +188,17 @@ export class CitekeyReading extends Service<void> {
   }
 
   #documentCitations(file: TFile): Promise<DocumentCitations> {
-    const held = this.#documents.get(file.path);
-    if (held) return held;
-
-    const pending = this.#readDocument(file).catch((error: unknown) => {
-      logger.warn("Cannot read the citations of a document", {
-        path: file.path,
-        error,
-      });
-      this.#documents.delete(file.path);
-      return NO_CITATIONS;
-    });
-    this.#documents.set(file.path, pending);
-    while (this.#documents.size > HELD_DOCUMENTS) {
-      const oldest = this.#documents.keys().next().value;
-      if (oldest === undefined) break;
-      this.#documents.delete(oldest);
-    }
-    return pending;
+    return this.#documents.hold(file.path, () =>
+      this.#readDocument(file).catch((error: unknown) => {
+        logger.warn("Cannot read the citations of a document", {
+          path: file.path,
+          error,
+        });
+        // A failed read is not an answer to hold: the next section tries again.
+        this.#documents.delete(file.path);
+        return NO_CITATIONS;
+      }),
+    );
   }
 
   /**
