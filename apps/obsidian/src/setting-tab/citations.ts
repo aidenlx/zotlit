@@ -180,6 +180,7 @@ function renderReferencesStyleRow(
 
   setting.addDropdown((d) => {
     dropdown = d;
+    d.selectEl.addClass("zt:max-w-64");
     d.onChange((value) => {
       ctx.settings.update({
         "citation.references-style":
