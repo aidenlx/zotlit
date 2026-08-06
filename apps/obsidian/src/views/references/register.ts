@@ -5,9 +5,9 @@ import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import { type CitationIndex } from "@/services/citation-index/service";
 import { type DatabaseService } from "@/services/database/service";
+import { type BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { type PandocEngineService } from "@/services/pandoc/service";
 import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
   REFERENCES_VIEW_TYPE,
@@ -25,7 +25,7 @@ export interface ReferencesRegistrationDeps {
   db: DatabaseService;
   citationIndex: CitationIndex;
   pandocEngine: PandocEngineService;
-  zoteroPref: ZoteroPrefService;
+  bibliographyRender: BibliographyRenderCache;
   settings: SettingsService;
 }
 
@@ -38,7 +38,7 @@ export function registerReferencesView(
     db: deps.db,
     citationIndex: deps.citationIndex,
     pandocEngine: deps.pandocEngine,
-    zoteroPref: deps.zoteroPref,
+    bibliographyRender: deps.bibliographyRender,
     settings: deps.settings,
     openSettings: () => {
       revealSetting(

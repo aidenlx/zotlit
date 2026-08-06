@@ -1,7 +1,7 @@
 // Discovery of the CSL styles Zotero installed in its data directory.
 
 import { regex } from "arkregex";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import { isErrno } from "@/lib/errno";
@@ -62,7 +62,19 @@ export async function loadStyleXml(
   styleId: string | null,
 ): Promise<string | undefined> {
   if (!styleId) return undefined;
+  const file = await resolveStyleFile(dataDir, styleId);
+  if (!file) return undefined;
+  return readStyleXml(file.path);
+}
 
+/**
+ * The installed style file whose XML renders `styleId`, with a dependent style
+ * resolved to its independent parent.
+ */
+async function resolveStyleFile(
+  dataDir: string,
+  styleId: string,
+): Promise<StyleFile | undefined> {
   const root = join(dataDir, STYLES_DIR);
   const styles = indexById([
     ...(await readStyleDir(root)),
@@ -87,7 +99,69 @@ export async function loadStyleXml(
     );
     return undefined;
   }
-  return readStyleXml(independent.path);
+  return independent;
+}
+
+/** A held style file, and what a later load checks it against. */
+interface HeldStyle {
+  dataDir: string;
+  styleId: string;
+  /** Path of the independent style file the XML was read from. */
+  path: string;
+  /** mtime the read ran against, in epoch milliseconds. */
+  mtime: number;
+  xml: string;
+}
+
+/**
+ * The selected style's XML, held in memory across loads.
+ *
+ * Resolving a style ID reads every installed `.csl` file, which is far more
+ * than a render that only needs the XML should pay for. The held copy stands
+ * for as long as its file's mtime is the one it was read at, so a repeat load
+ * costs one `stat` and a style edited in place is still picked up.
+ */
+export class StyleXmlCache {
+  #held: HeldStyle | undefined;
+
+  /** Same answer as {@link loadStyleXml}, from the held copy where it stands. */
+  async load(
+    dataDir: string,
+    styleId: string | null,
+  ): Promise<string | undefined> {
+    if (!styleId) return undefined;
+
+    const held = this.#held;
+    if (held && held.dataDir === dataDir && held.styleId === styleId) {
+      if ((await mtimeOf(held.path)) === held.mtime) return held.xml;
+    }
+    this.#held = undefined;
+
+    const file = await resolveStyleFile(dataDir, styleId);
+    if (!file) return undefined;
+    // Read the mtime first: a file written between the read and its stat would
+    // otherwise be held under an mtime it no longer has, and never re-read.
+    const mtime = await mtimeOf(file.path);
+    const xml = await readStyleXml(file.path);
+    if (xml === undefined) return undefined;
+    if (mtime !== undefined) {
+      this.#held = { dataDir, styleId, path: file.path, mtime, xml };
+    }
+    return xml;
+  }
+}
+
+/** `undefined` for a file the host cannot stat, which holds nothing. */
+async function mtimeOf(path: string): Promise<number | undefined> {
+  try {
+    return (await stat(path)).mtimeMs;
+  } catch (error) {
+    logger.warn("Cannot read the timestamp of a CSL style file", {
+      path,
+      error,
+    });
+    return undefined;
+  }
 }
 
 /** First file wins, so a visible style shadows a hidden one with the same ID. */

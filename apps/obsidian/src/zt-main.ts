@@ -261,7 +261,7 @@ export default class ZotLitPlugin extends Plugin {
       db: services.db,
       citationIndex: services.citationIndex,
       pandocEngine: services.pandocEngine,
-      zoteroPref: services.zoteroPref,
+      bibliographyRender: services.bibliographyRender,
       settings: services.settings,
     });
 

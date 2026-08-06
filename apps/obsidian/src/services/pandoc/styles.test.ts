@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { listInstalledStyles, loadStyleXml } from "./styles";
+import { listInstalledStyles, loadStyleXml, StyleXmlCache } from "./styles";
 
 let dataDir: string;
 
@@ -158,5 +158,66 @@ describe("loadStyleXml", () => {
     await expect(
       loadStyleXml(dataDir, "http://www.zotero.org/styles/orphan"),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("StyleXmlCache", () => {
+  const APA = "http://www.zotero.org/styles/apa";
+  const IEEE = "http://www.zotero.org/styles/ieee";
+
+  /** A whole-second timestamp, which every filesystem stores exactly. */
+  const PINNED = 1_700_000_000;
+
+  it("re-reads a style file only when its timestamp moves", async () => {
+    const path = join(dataDir, "styles", "apa.csl");
+    await writeStyle("apa.csl", { id: APA, title: "APA" });
+    await utimes(path, PINNED, PINNED);
+
+    const styles = new StyleXmlCache();
+    await expect(styles.load(dataDir, APA)).resolves.toContain(
+      "<title>APA</title>",
+    );
+
+    // A body written under the timestamp the read already ran against is a
+    // body no read looks at.
+    await writeStyle("apa.csl", { id: APA, title: "APA Revised" });
+    await utimes(path, PINNED, PINNED);
+    await expect(styles.load(dataDir, APA)).resolves.toContain(
+      "<title>APA</title>",
+    );
+
+    await utimes(path, PINNED + 1, PINNED + 1);
+    await expect(styles.load(dataDir, APA)).resolves.toContain(
+      "<title>APA Revised</title>",
+    );
+  });
+
+  it("reads the style the setting names, and re-reads on a change of style", async () => {
+    await writeStyle("apa.csl", { id: APA, title: "APA" });
+    await writeStyle("ieee.csl", { id: IEEE, title: "IEEE" });
+    const styles = new StyleXmlCache();
+
+    await expect(styles.load(dataDir, APA)).resolves.toContain(
+      `<id>${APA}</id>`,
+    );
+    await expect(styles.load(dataDir, IEEE)).resolves.toContain(
+      `<id>${IEEE}</id>`,
+    );
+    await expect(styles.load(dataDir, APA)).resolves.toContain(
+      `<id>${APA}</id>`,
+    );
+  });
+
+  it("holds nothing for an unset or uninstalled style", async () => {
+    const styles = new StyleXmlCache();
+
+    await expect(styles.load(dataDir, null)).resolves.toBeUndefined();
+    await expect(styles.load(dataDir, APA)).resolves.toBeUndefined();
+
+    // A style installed after the miss is still found.
+    await writeStyle("apa.csl", { id: APA, title: "APA" });
+    await expect(styles.load(dataDir, APA)).resolves.toContain(
+      `<id>${APA}</id>`,
+    );
   });
 });

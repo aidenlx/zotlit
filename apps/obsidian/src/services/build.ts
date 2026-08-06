@@ -17,6 +17,7 @@ import {
 import { createNoteImporter, type NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
+import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
@@ -160,6 +161,15 @@ export function buildServices(
     })
     .use({
       pandocEngine: () => createPandocEngineService(plugin.app),
+    })
+    .use({
+      bibliographyRender: ({ db, pandocEngine, zoteroPref, settings }) =>
+        new BibliographyRenderCache({
+          db,
+          pandocEngine,
+          zoteroPref,
+          settings,
+        }),
     })
     .use({
       citekeyClick: ({ noteIndex, noteFeature, db, settings }) =>

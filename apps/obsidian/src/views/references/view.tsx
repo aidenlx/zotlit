@@ -21,11 +21,9 @@ import {
   type CitationIndex,
 } from "@/services/citation-index/service";
 import { type DatabaseService } from "@/services/database/service";
-import { CitationRequestSupersededError } from "@/services/pandoc/engine";
+import { type BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { type PandocEngineService } from "@/services/pandoc/service";
-import { loadStyleXml } from "@/services/pandoc/styles";
 import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
   createReferenceActions,
@@ -52,9 +50,10 @@ export interface ReferencesViewDeps {
   citationIndex: Pick<CitationIndex, "getCitations" | "on">;
   pandocEngine: Pick<
     PandocEngineService,
-    "getStatus" | "subscribe" | "getEngine" | "decline"
+    "getStatus" | "subscribe" | "decline"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;
+  /** The plugin-wide render cache, which owns the References Style and the engine. */
+  bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
   settings: Pick<SettingsService, "current" | "subscribe">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
@@ -69,8 +68,6 @@ export class ReferencesView extends ItemView {
    * falls back to its summary mid-edit.
    */
   readonly #rendered = new Map<string, RenderedReference>();
-  /** This view's own supersession slot, so two sidebars never drop each other's renders. */
-  readonly #slot = `references-${crypto.randomUUID()}`;
   #root: Root | null = null;
   #actions: ReferenceActions | null = null;
   /** Bumped per reload; an older render that finishes late is discarded. */
@@ -79,7 +76,6 @@ export class ReferencesView extends ItemView {
   #scan = 0;
   /** Citations of the active document, as the current list was built from. */
   #citations: readonly Citation[] = [];
-  #styleId: string | null = null;
   /** Whether wikilinks count as Citations here — the Wikilink Citations setting. */
   #wikilinks = false;
 
@@ -103,10 +99,15 @@ export class ReferencesView extends ItemView {
   }
 
   protected override async onOpen(): Promise<void> {
-    const { app, db, citationIndex, pandocEngine, zoteroPref, settings } =
-      this.#deps;
+    const {
+      app,
+      db,
+      citationIndex,
+      pandocEngine,
+      bibliographyRender,
+      settings,
+    } = this.#deps;
 
-    this.#styleId = this.#selectedStyleId();
     this.#wikilinks = this.#wikilinkCitations();
     this.#actions = createReferenceActions({
       app,
@@ -138,22 +139,18 @@ export class ReferencesView extends ItemView {
       }),
     );
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
-    this.register(db.on("changed", () => this.#reload({ invalidate: true })));
+    this.register(db.on("changed", () => this.#reload()));
+    this.register(pandocEngine.subscribe(() => this.#reload()));
+    // What the cache holds is what this pane shows, so its wholesale drop —
+    // for a Zotero change, a References Style change, or an engine that came or
+    // went — is the one signal that makes the formatted entries here stale.
     this.register(
-      pandocEngine.subscribe(() => this.#reload({ invalidate: true })),
-    );
-    this.register(
-      zoteroPref.on("resolved-changed", () =>
+      bibliographyRender.on("invalidated", () =>
         this.#reload({ invalidate: true }),
       ),
     );
     this.register(
       settings.subscribe(() => {
-        const styleId = this.#selectedStyleId();
-        if (styleId !== this.#styleId) {
-          this.#styleId = styleId;
-          this.#reload({ invalidate: true });
-        }
         const wikilinks = this.#wikilinkCitations();
         if (wikilinks !== this.#wikilinks) {
           this.#wikilinks = wikilinks;
@@ -172,10 +169,6 @@ export class ReferencesView extends ItemView {
     this.#root?.unmount();
     this.#root = null;
     this.#actions = null;
-  }
-
-  #selectedStyleId(): string | null {
-    return this.#deps.settings.current?.["citation.references-style"] ?? null;
   }
 
   #wikilinkCitations(): boolean {
@@ -302,42 +295,34 @@ export class ReferencesView extends ItemView {
     return sources;
   }
 
-  /** Formats the whole list in the References style, when an engine is installed. */
+  /**
+   * Formats the whole list through the plugin-wide render cache, which answers
+   * from a render another consumer already paid for whenever this document
+   * cites the same works in the same order.
+   *
+   * Nothing to format, and a cache that cannot format it, both leave the
+   * entries already on screen alone — which is what keeps a formatted entry
+   * from falling back to its summary while a re-render is pending.
+   */
   async #render(
     generation: number,
     citations: readonly Citation[],
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
-    if (this.#deps.pandocEngine.getStatus().kind !== "installed") return;
     const items = [...sources.values()].map((source) => source.csl);
-    if (items.length === 0) return;
+    const rendered = await this.#deps.bibliographyRender.render(items);
+    if (!rendered || rendered.length === 0) return;
+    if (generation !== this.#generation) return;
 
-    try {
-      const engine = await this.#deps.pandocEngine.getEngine();
-      const styleXml = await loadStyleXml(
-        this.#deps.zoteroPref.dataDir,
-        this.#styleId,
-      );
-      const rendered = await engine.renderBibliography({
-        items,
-        styleXml,
-        supersedes: this.#slot,
-      });
-      if (generation !== this.#generation) return;
-
-      // Refilled rather than merged: the render covers every cited Item, so
-      // what it leaves out is no longer cited, and the map's order is the
-      // bibliography order the list reads in.
-      this.#rendered.clear();
-      for (const { id, marker, content } of rendered) {
-        this.#rendered.set(id, { marker, content });
-      }
-      this.#store.setState({
-        entries: buildReferenceEntries(citations, sources, this.#rendered),
-      });
-    } catch (error) {
-      if (error instanceof CitationRequestSupersededError) return;
-      logger.warn("Cannot format the references", { error });
+    // Refilled rather than merged: the render covers every cited Item, so
+    // what it leaves out is no longer cited, and the map's order is the
+    // bibliography order the list reads in.
+    this.#rendered.clear();
+    for (const { id, marker, content } of rendered) {
+      this.#rendered.set(id, { marker, content });
     }
+    this.#store.setState({
+      entries: buildReferenceEntries(citations, sources, this.#rendered),
+    });
   }
 }
