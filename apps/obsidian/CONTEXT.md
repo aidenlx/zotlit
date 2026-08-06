@@ -115,12 +115,16 @@ _Avoid_: citation group (the group is the resulting Citation, not the source syn
 The marker a numeric CSL style renders ahead of each bibliography entry — the entry's citation number wrapped in the style's own affixes, such as `[1]` or `1.`. It belongs to the References Style, not to ZotLit: a sorted style can give the same Item a different Entry Marker across renders, and a non-numeric style produces none.
 _Avoid_: serial number, reference index, gutter number
 
+**Openable Attachment**:
+An Attachment of a cited Item whose path names a file, so Zotero's reader can be sent to it — the stored modes and both linked-file forms. A bare web link carries no file, and neither does a row whose path does not parse, so the References Sidebar offers neither. The file's format does not decide it: a PDF, an EPUB, a web snapshot, and an office document all qualify, and Zotero owns what happens to a format its reader cannot render.
+_Avoid_: PDF attachment (the format is not the rule), openable file
+
 **Reference Number**:
 An active-document identifier assigned to each distinct Literature Note Citation by first occurrence. It appears in editor widgets and in the References Sidebar's minimal reference list when no engine renders; repeated Citations share the same number, and the Markdown source stays unchanged.
 _Avoid_: citation key, reference index
 
 **References Sidebar** _(Obsidian)_:
-The active-document view that lists each distinct Literature Note Citation once and navigates to its occurrences. Engine-rendered entries keep the selected CSL style's bibliography order and show the style's Entry Marker — or no number when the style has none. References without a place in that order (missing Items, unrendered entries) stay visible after it with their error state. Without the engine, the minimal reference list keeps first-occurrence document order and Reference Numbers.
+The active-document view that lists each distinct Literature Note Citation once, navigates to its occurrences, and reaches the cited Item and its Openable Attachments in Zotero. Engine-rendered entries keep the selected CSL style's bibliography order and show the style's Entry Marker — or no number when the style has none. References without a place in that order (missing Items, unrendered entries) stay visible after it with their error state. Without the engine, the minimal reference list keeps first-occurrence document order and Reference Numbers.
 _Avoid_: bibliography sidebar, reference list pane
 
 **References Style**:
