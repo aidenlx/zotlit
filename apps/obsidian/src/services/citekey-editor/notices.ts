@@ -7,7 +7,21 @@ import { type CitekeyEditor } from "./service";
 export function registerCitekeyEditorNotices(
   service: CitekeyEditor,
 ): () => void {
-  return service.on("missing-property", (property) => {
-    new BaseNotice(m.notice_citation_key_property_missing({ property }));
-  });
+  const stack = new DisposableStack();
+  stack.defer(
+    service.on("missing-property", (property) => {
+      new BaseNotice(m.notice_citation_key_property_missing({ property }));
+    }),
+  );
+  stack.defer(
+    service.on("db-unavailable", (citekey) => {
+      new BaseNotice(m.notice_citekey_db_unavailable({ citekey }));
+    }),
+  );
+  stack.defer(
+    service.on("citekey-not-found", (citekey) => {
+      new BaseNotice(m.notice_citekey_not_found({ citekey }));
+    }),
+  );
+  return () => stack.dispose();
 }

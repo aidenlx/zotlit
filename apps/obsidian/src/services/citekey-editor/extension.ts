@@ -1,3 +1,6 @@
+// The CodeMirror side of the citekey editor treatment: citekey marks over the
+// visible ranges, and the click that opens the marked key's Literature Note.
+
 import {
   lineClassNodeProp,
   syntaxTree,

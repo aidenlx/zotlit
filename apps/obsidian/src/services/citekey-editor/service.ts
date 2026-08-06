@@ -9,9 +9,7 @@ import {
 } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import { type DatabaseService } from "@/services/database/service";
 import { type NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
@@ -35,6 +33,8 @@ export interface CitekeyEditorDeps {
 
 interface CitekeyEditorEvents {
   "missing-property": (property: string) => void;
+  "db-unavailable": (citekey: string) => void;
+  "citekey-not-found": (citekey: string) => void;
 }
 
 /**
@@ -104,7 +104,11 @@ export class CitekeyEditor extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    const enabled = settings["citation.citekey-editor"];
+    // Citekey Indexing is the master switch for every literal-citekey surface,
+    // so the treatment runs only while both it and the editor toggle are on.
+    const enabled =
+      settings["citation.citekey-indexing"] &&
+      settings["citation.citekey-editor"];
     const property = settings["citation.key-links-frontmatter-key"];
     const missingProperty =
       enabled &&
@@ -148,12 +152,12 @@ export class CitekeyEditor extends Service<void> {
     }
 
     if (this.#db.state !== "ready") {
-      new BaseNotice(m.notice_citekey_db_unavailable({ citekey }));
+      this.#emitter.emit("db-unavailable", citekey);
       return;
     }
     const item = this.#resolveItem(citekey);
     if (!item) {
-      new BaseNotice(m.notice_citekey_not_found({ citekey }));
+      this.#emitter.emit("citekey-not-found", citekey);
       return;
     }
 

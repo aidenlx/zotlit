@@ -63,6 +63,30 @@ describe("CitekeyEditor settings lifecycle", () => {
     await service[Symbol.asyncDispose]();
     expect(registered).toEqual([]);
   });
+
+  it("stays off while citekey indexing is off, whatever the editor toggle says", async () => {
+    const settings = new SettingsStub({
+      "citation.citekey-indexing": false,
+      "citation.citekey-editor": true,
+    });
+    let registered: Extension[] = [];
+    await using service = new CitekeyEditor({
+      app: { workspace: { updateOptions: () => undefined } },
+      plugin: {
+        registerEditorExtension: (extension: Extension) => {
+          registered = extension as Extension[];
+        },
+      },
+      settings,
+    } as never);
+    await service.ready;
+
+    expect(registered).toEqual([]);
+    settings.update({ "citation.citekey-indexing": true });
+    expect(registered).toHaveLength(1);
+    settings.update({ "citation.citekey-indexing": false });
+    expect(registered).toEqual([]);
+  });
 });
 
 class SettingsStub {
