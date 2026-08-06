@@ -72,7 +72,7 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  * touches, so the real services satisfy it as-is and target-resolution logic can
  * be unit-tested against plain stubs. DB reads run synchronously within one tick
  * (no `await` boundary a refresh swap could interleave with), matching the
- * house sync-read pattern (`protocol`, `citekey-click`).
+ * house sync-read pattern (`protocol`, `citekey-editor`).
  */
 export interface AnnotViewDeps {
   app: App;

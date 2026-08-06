@@ -14,7 +14,7 @@ import { BaseNotice } from "./lib/notice";
 import { openSettingsTab } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
-import { registerCitationKeyLinkNotices } from "./services/citekey-click/notices";
+import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
@@ -310,7 +310,7 @@ export default class ZotLitPlugin extends Plugin {
         },
       }),
     );
-    stack.defer(registerCitationKeyLinkNotices(services.citekeyClick));
+    stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
 
     // A Zotero item add/modify/trash push means the database changed; feed it
     // into the same coalesced refresh lane as the filesystem watchers.

@@ -276,3 +276,16 @@ export function migrateV2ToV3(raw: unknown): Record<string, unknown> {
   }
   return out;
 }
+
+/**
+ * Absorb Citation Key Links into the citekey editor treatment. The stored value
+ * carries over verbatim — an absent key meant the v3 default, off — so an
+ * upgrade never changes whether citekeys are clickable, while the new default
+ * governs fresh installs only.
+ */
+export function migrateV3ToV4(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+
+  const { "citation.key-links": keyLinks, ...rest } = raw;
+  return { ...rest, "citation.citekey-editor": keyLinks === true };
+}

@@ -1,11 +1,11 @@
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import { type CitekeyClick } from "./service";
+import { type CitekeyEditor } from "./service";
 
-/** Render Citation Key Links service events at the Obsidian UI seam. */
-export function registerCitationKeyLinkNotices(
-  service: CitekeyClick,
+/** Render citekey editor service events at the Obsidian UI seam. */
+export function registerCitekeyEditorNotices(
+  service: CitekeyEditor,
 ): () => void {
   return service.on("missing-property", (property) => {
     new BaseNotice(m.notice_citation_key_property_missing({ property }));

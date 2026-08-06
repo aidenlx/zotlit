@@ -160,9 +160,9 @@ _Avoid_: default trigger
 The opt-in Citation Suggester trigger: a bare ASCII `@` typed at a word boundary, never mid-word. Off by default. Having no closing delimiter, its query ends at the first space; an underscore in the query stands for a space in the search.
 _Avoid_: mention trigger, @-suggester
 
-**Citation Key Links** _(Obsidian)_:
-An optional editor feature that makes bracketed citation keys act as Obsidian internal links in Live Preview and Source mode, using the configured Citation Key Property to find Literature Notes. It starts off for new users and stays on when earlier settings migrate.
-_Avoid_: citekey click, citation click
+**Citekey Editor Treatment** _(Obsidian)_:
+The editor surface of Citekey Indexing: literal `@citekey` text is marked in the editor, and a marked key opens its Literature Note on click — the note the Citation Key Property names, or one created from the matching Zotero Item. Built from CodeMirror decorations the plugin owns outright, since Obsidian's Markdown mode emits no token for a citekey; text the syntax tree classifies as code, math, comment, frontmatter, or URL stays plain. It replaces Citation Key Links, whose stored toggle migrates into it.
+_Avoid_: citekey click, citation click, Citation Key Links (the retired feature it replaces)
 
 ### Index and identity
 
@@ -186,7 +186,7 @@ The bracketed literal-citekey syntax `[see @a, p. 3; @b]` — one `;`-separated 
 _Avoid_: citation group (names the result, not the source syntax), bracketed citation
 
 **Citekey Indexing**:
-The default-on capability that scans literal Pandoc `@citekey` text vault-wide into the Citation Index. Its toggle is the master switch for every literal-citekey surface — References Sidebar entries and the citekey editor treatment.
+The default-on capability that scans literal Pandoc `@citekey` text vault-wide into the Citation Index. Its toggle is the master switch for every literal-citekey surface — References Sidebar entries and the Citekey Editor Treatment.
 _Avoid_: citekey scanning (names the mechanism, not the capability)
 
 **Wikilink Citations**:

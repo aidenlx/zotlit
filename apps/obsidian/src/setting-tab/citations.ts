@@ -4,7 +4,6 @@ import {
   type SettingDefinitionItem,
 } from "obsidian";
 
-import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import {
   listInstalledStyles,
@@ -65,17 +64,16 @@ export function citationsPageItems(
     },
     {
       type: "group",
-      heading: m.settings_citation_key_links_name(),
+      heading: m.settings_citation_editor_heading(),
       items: [
         {
-          name: m.settings_citation_key_links_name(),
-          desc: citationKeyLinksDescription(),
-          control: { type: "toggle", key: "citation.key-links" },
+          name: m.settings_citation_citekey_editor_name(),
+          desc: m.settings_citation_citekey_editor_desc(),
+          control: { type: "toggle", key: "citation.citekey-editor" },
         },
         {
           name: m.settings_citation_key_property_name(),
           desc: m.settings_citation_key_property_desc(),
-          visible: () => ctx.settings.current?.["citation.key-links"] ?? false,
           control: {
             type: "text",
             key: "citation.key-links-frontmatter-key",
@@ -225,18 +223,6 @@ function referencesStyleDescription(): DocumentFragment {
   const link = createEl("a");
   link.href = ZOTERO_STYLES_URL;
   link.textContent = m.settings_citation_references_style_docs();
-  link.target = "_blank";
-  link.rel = "noopener";
-  desc.append(link);
-  return desc;
-}
-
-function citationKeyLinksDescription(): DocumentFragment {
-  const desc = createFragment();
-  desc.append(`${m.settings_citation_key_links_desc()} `);
-  const link = createEl("a");
-  link.href = `${DOCS_SITE_URL}/docs/concepts/how-citekey-links-work`;
-  link.textContent = m.settings_citation_key_links_docs();
   link.target = "_blank";
   link.rel = "noopener";
   desc.append(link);

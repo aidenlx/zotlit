@@ -78,7 +78,8 @@ export const schema = v.object({
   "citation.citekey-indexing": v.boolean(),
   /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
   "citation.wikilink-citations": v.boolean(),
-  "citation.key-links": v.boolean(),
+  /** Mark and click literal `@citekey` text in the editor. */
+  "citation.citekey-editor": v.boolean(),
   "citation.key-links-frontmatter-key": citationKeyPropertySchema,
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
   "citation.references-style": v.nullable(v.string()),
@@ -124,7 +125,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.show-citekey-in-suggester": false,
   "citation.citekey-indexing": true,
   "citation.wikilink-citations": false,
-  "citation.key-links": false,
+  "citation.citekey-editor": true,
   "citation.key-links-frontmatter-key": "citekey",
   "citation.references-style": null,
   "note.literature-folder": "literatures",

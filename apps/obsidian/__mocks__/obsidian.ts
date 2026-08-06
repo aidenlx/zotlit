@@ -15,6 +15,8 @@ import {
   type EditorSuggestContext,
   type Instruction,
   type Modifier,
+  type PaneType,
+  type UserEvent,
 } from "obsidian";
 
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
@@ -151,6 +153,9 @@ export abstract class SuggestModal<T> {
 
 export const Keymap = {
   isModifier(_evt: MouseEvent | KeyboardEvent, _modifier: Modifier): boolean {
+    return false;
+  },
+  isModEvent(_evt?: UserEvent | null): PaneType | boolean {
     return false;
   },
 };

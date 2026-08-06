@@ -3,7 +3,7 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
-import { CitekeyClick } from "./citekey-click/service";
+import { CitekeyEditor } from "./citekey-editor/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
@@ -25,6 +25,7 @@ import {
   migrateLegacyV0,
   migrateV1ToV2,
   migrateV2ToV3,
+  migrateV3ToV4,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
@@ -56,6 +57,7 @@ export function buildServices(
           migrateLegacy: migrateLegacyV0,
           migrateV1: migrateV1ToV2,
           migrateV2: migrateV2ToV3,
+          migrateV3: migrateV3ToV4,
         }),
     })
     .use({
@@ -172,9 +174,10 @@ export function buildServices(
         }),
     })
     .use({
-      citekeyClick: ({ noteIndex, noteFeature, db, settings }) =>
-        new CitekeyClick({
+      citekeyEditor: ({ noteIndex, noteFeature, db, settings }) =>
+        new CitekeyEditor({
           app: plugin.app,
+          plugin,
           noteIndex,
           noteFeature,
           db,

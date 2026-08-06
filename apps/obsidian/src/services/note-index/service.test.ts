@@ -390,7 +390,7 @@ describe("NoteIndex", () => {
     ]);
   });
 
-  it("keeps the citation-key index whatever the citation key links toggle is", async () => {
+  it("keeps the citation-key index whatever the citekey editor toggle is", async () => {
     const { metadataCache, service, settings } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A, citekey: "doe2024" }),
     });
@@ -400,7 +400,7 @@ describe("NoteIndex", () => {
       "paper.md",
     ]);
 
-    settings.update({ "citation.key-links": true });
+    settings.update({ "citation.citekey-editor": true });
     expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
       "paper.md",
     ]);

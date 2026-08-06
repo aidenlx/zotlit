@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateLegacyV0, migrateV1ToV2, migrateV2ToV3 } from "./migrate";
+import {
+  migrateLegacyV0,
+  migrateV1ToV2,
+  migrateV2ToV3,
+  migrateV3ToV4,
+} from "./migrate";
 
 describe("migrateLegacyV0", () => {
   it("returns an empty object for non-plain inputs", () => {
@@ -402,6 +407,51 @@ describe("migrateV2ToV3", () => {
       "citation.key-links": true,
       "citation.key-links-frontmatter-key": "citekey",
       "note.frontmatter-fields": "not-an-array",
+    });
+  });
+});
+
+describe("migrateV3ToV4", () => {
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV3ToV4(null)).toEqual({});
+    expect(migrateV3ToV4([1, 2, 3])).toEqual({});
+  });
+
+  it("carries an enabled citation key links setting into the citekey editor", () => {
+    expect(
+      migrateV3ToV4({ __VERSION__: 3, "citation.key-links": true }),
+    ).toEqual({
+      __VERSION__: 3,
+      "citation.citekey-editor": true,
+    });
+  });
+
+  it("keeps the citekey editor off for a user who had citation key links off", () => {
+    expect(migrateV3ToV4({ "citation.key-links": false })).toEqual({
+      "citation.citekey-editor": false,
+    });
+  });
+
+  it("treats an absent citation key links override as the v3 default, off", () => {
+    expect(
+      migrateV3ToV4({ "citation.key-links-frontmatter-key": "bibkey" }),
+    ).toEqual({
+      "citation.citekey-editor": false,
+      "citation.key-links-frontmatter-key": "bibkey",
+    });
+  });
+
+  it("leaves every other override untouched", () => {
+    expect(
+      migrateV3ToV4({
+        "citation.key-links": true,
+        "note.literature-folder": "refs",
+        "citation.citekey-indexing": false,
+      }),
+    ).toEqual({
+      "citation.citekey-editor": true,
+      "note.literature-folder": "refs",
+      "citation.citekey-indexing": false,
     });
   });
 });
