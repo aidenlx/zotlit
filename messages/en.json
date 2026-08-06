@@ -293,6 +293,7 @@
   "settings_citation_references_style_docs": "Learn how to install styles in Zotero.",
   "settings_citation_references_style_default": "Default (Chicago author-date)",
   "settings_citation_references_style_missing": "{id} (not installed)",
+  "settings_citation_references_style_refresh": "Refresh style list",
   "settings_citation_engine_name": "Pandoc engine",
   "settings_citation_engine_desc": "Formats references and built-in exports. ZotLit downloads the engine from the official Pandoc release, checks it against a pinned checksum, and shares it with every vault on this device.",
   "settings_citation_engine_status_absent": "Not installed. References stay a plain list until you install it.",

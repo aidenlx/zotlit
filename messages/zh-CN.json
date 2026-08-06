@@ -266,6 +266,7 @@
   "settings_citation_references_style_docs": "了解如何在 Zotero 中安装样式。",
   "settings_citation_references_style_default": "默认（Chicago author-date）",
   "settings_citation_references_style_missing": "{id}（未安装）",
+  "settings_citation_references_style_refresh": "刷新样式列表",
   "settings_citation_engine_name": "Pandoc 引擎",
   "settings_citation_engine_desc": "用于排版参考文献和内置导出。ZotLit 从 Pandoc 官方发布下载该引擎，按内置校验和验证，并与本设备上的所有仓库共享。",
   "settings_citation_engine_status_absent": "尚未安装。安装之前，参考文献以纯列表显示。",

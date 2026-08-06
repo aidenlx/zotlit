@@ -155,14 +155,28 @@ function renderReferencesStyleRow(
     dropdown.setValue(current);
   };
 
-  /** The read outlives the row only until disposal, so a live row always fills. */
+  /**
+   * The read outlives the row only until disposal, so a live row always fills.
+   * Only the newest read applies, so overlapping reloads cannot land stale.
+   */
+  let latestRead = 0;
   const reload = (): void => {
+    const read = ++latestRead;
     void listInstalledStyles(ctx.zoteroPref.dataDir).then((installed) => {
-      if (disposed) return;
+      if (disposed || read !== latestRead) return;
       styles = installed;
       repopulate();
     });
   };
+
+  // Zotero installs styles while this tab stays open, so the list re-reads the
+  // data directory on demand instead of only on mount.
+  setting.addExtraButton((button) =>
+    button
+      .setIcon("refresh-cw")
+      .setTooltip(m.settings_citation_references_style_refresh())
+      .onClick(reload),
+  );
 
   setting.addDropdown((d) => {
     dropdown = d;
