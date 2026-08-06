@@ -3,11 +3,13 @@ import { ItemView, type App, type WorkspaceLeaf } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
 
 import {
+  getAttachmentsByParents,
   getItemsByKey,
   getZoteroIdentity,
   isChildItemFields,
   itemToCsl,
   resolveIndexedKeyLibrary,
+  type Item,
 } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -29,7 +31,12 @@ import {
   ReferenceActionsContext,
   type ReferenceActions,
 } from "./actions";
-import { buildReferenceEntries, type ReferenceSource } from "./entries";
+import {
+  buildReferenceEntries,
+  toOpenableAttachments,
+  type OpenableAttachment,
+  type ReferenceSource,
+} from "./entries";
 import { References } from "./References";
 import { createReferencesStore, ReferencesStoreProvider } from "./store";
 
@@ -93,7 +100,6 @@ export class ReferencesView extends ItemView {
     this.#styleId = this.#selectedStyleId();
     this.#actions = createReferenceActions({
       app,
-      db,
       getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
       onOpenEngineSettings: () => this.#deps.openSettings(),
       onDismissEngineHint: () => pandocEngine.decline(),
@@ -164,7 +170,9 @@ export class ReferencesView extends ItemView {
   /**
    * The cited Items as CSL-JSON, read straight from the database so the sidebar
    * keeps working while Zotero is closed. An Item the library no longer holds
-   * is left out, and its citation stays visible as an error entry.
+   * is left out, and its citation stays visible as an error entry. Attachments
+   * come in one batched read, so the row knows what it can open before the
+   * reader clicks.
    */
   #readSources(
     citations: readonly Citation[],
@@ -175,19 +183,52 @@ export class ReferencesView extends ItemView {
 
     try {
       const user = getZoteroIdentity(db.client);
+      const cited: { indexedKey: string; item: Item; summary: string }[] = [];
       for (const { indexedKey } of citations) {
         const selector = resolveIndexedKeyLibrary(db.client, indexedKey);
         if (!selector) continue;
         const item = getItemsByKey(db.client, selector.libraryID, [
           selector.key,
         ])[0];
-        if (!item || isChildItemFields(item.fields)) continue;
+        if (!item) continue;
+        const { fields } = item;
+        if (isChildItemFields(fields)) continue;
+        cited.push({
+          indexedKey,
+          item,
+          summary: itemSummary(item, fields).formatted,
+        });
+      }
+
+      // Contained on its own: an unreadable attachment table costs the open
+      // action alone, where letting it escape would empty the whole list and
+      // show every citation as a missing Item.
+      const attachments = new Map<number, OpenableAttachment[]>();
+      try {
+        const rows = getAttachmentsByParents(
+          db.client,
+          cited.map(({ item }) => item.itemID),
+        );
+        for (const [itemID, group] of Map.groupBy(
+          rows,
+          (row) => row.parentItemID,
+        )) {
+          attachments.set(itemID, toOpenableAttachments(group));
+        }
+      } catch (error) {
+        logger.warn("Cannot read the attachments of the cited items", {
+          error,
+        });
+      }
+
+      for (const { indexedKey, item, summary } of cited) {
         sources.set(indexedKey, {
           csl: itemToCsl(item, user),
-          summary: itemSummary(item, item.fields).formatted,
+          summary,
           itemKey: item.key,
           itemID: item.itemID,
           groupID: item.groupID,
+          attachments: attachments.get(item.itemID) ?? [],
         });
       }
     } catch (error) {

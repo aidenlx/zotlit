@@ -1,11 +1,22 @@
 // One document's reference list: cited Items, the engine's bibliography, and document order.
 
-import { type CslItemData } from "@zotlit/db";
+import { type Attachment, type CslItemData } from "@zotlit/db";
+import { parseAttachmentPath } from "@zotlit/db/path";
 
 import {
   type Citation,
   type CitationOccurrence,
 } from "@/services/citation-scan/service";
+
+/** One Attachment the entry offers to open in Zotero's reader. */
+export interface OpenableAttachment {
+  /** Bare Zotero key of the Attachment itself, for `zotero://open`. */
+  key: string;
+  /** Group library ID, or `null` for the personal library. */
+  groupID: number | null;
+  /** Filename, which names the row when an Item carries several. */
+  label: string;
+}
 
 /** One cited Zotero Item, in the identities the sidebar's entry actions use. */
 export interface ReferenceSource {
@@ -19,6 +30,49 @@ export interface ReferenceSource {
   itemID: number;
   /** Group library ID, or `null` for the personal library. */
   groupID: number | null;
+  /** Openable Attachments of the Item, in library order; empty hides the action. */
+  attachments: readonly OpenableAttachment[];
+}
+
+/**
+ * Narrow an Item's Attachments to the ones Zotero's reader can be sent to, and
+ * name each by its filename.
+ *
+ * An Attachment qualifies when its path names a file: the stored modes and both
+ * linked-file forms. A bare web link carries no file, and a row whose path does
+ * not parse names none either, so neither is offered.
+ */
+export function toOpenableAttachments(
+  attachments: readonly Attachment[],
+): OpenableAttachment[] {
+  const openable: OpenableAttachment[] = [];
+  for (const { key, groupID, path, linkMode } of attachments) {
+    const parsed = parseAttachmentPath(path, linkMode, key);
+    switch (parsed.kind) {
+      case "storage":
+        openable.push({ key, groupID, label: parsed.filename });
+        break;
+      case "linked-absolute":
+        openable.push({ key, groupID, label: filename(parsed.path) });
+        break;
+      case "linked-base":
+        openable.push({ key, groupID, label: filename(parsed.relative) });
+        break;
+      case "linked-url":
+      case "unknown":
+        break;
+    }
+  }
+  return openable;
+}
+
+/**
+ * Last segment of a linked-file path, cut at either separator. A path a group
+ * library synced from another platform carries that platform's flavor, so the
+ * host's own separator alone would leave the whole path as the label.
+ */
+function filename(path: string): string {
+  return path.split(/[/\\]/).pop() ?? path;
 }
 
 interface ReferenceEntryBase {

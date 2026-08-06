@@ -1,5 +1,5 @@
 import { type IconName } from "obsidian";
-import { type ReactNode } from "react";
+import { type MouseEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
@@ -96,11 +96,18 @@ function Reference({ entry }: { entry: ReferenceEntry }) {
                     label={m.references_open_in_zotero()}
                     onClick={() => actions.onOpenInZotero(entry.source)}
                   />
-                  <EntryAction
-                    icon="paperclip"
-                    label={m.references_open_attachment()}
-                    onClick={() => actions.onOpenAttachment(entry.source)}
-                  />
+                  {/* Dropped outright when the Item stores nothing to open —
+                      the row keeps "Open in Zotero" either way, so the toolbar
+                      never empties. */}
+                  {entry.source.attachments.length > 0 && (
+                    <EntryAction
+                      icon="paperclip"
+                      label={m.references_open_attachment()}
+                      onClick={(event) =>
+                        actions.onOpenAttachment(entry.source, event)
+                      }
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -203,7 +210,7 @@ function EntryAction({
 }: {
   icon: IconName;
   label: string;
-  onClick: () => void;
+  onClick: (event: MouseEvent<HTMLElement>) => void;
   disabled?: boolean;
 }) {
   return (

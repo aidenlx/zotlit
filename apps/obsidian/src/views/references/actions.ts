@@ -1,32 +1,28 @@
 // What a References Sidebar entry can do: navigate the document, and reach the Item in Zotero.
 
-import { MarkdownView, type App, type WorkspaceLeaf } from "obsidian";
-import { createContext, useContext } from "react";
+import { MarkdownView, Menu, type App, type WorkspaceLeaf } from "obsidian";
+import { createContext, useContext, type MouseEvent } from "react";
+
+import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
+
+import { type CitationOccurrence } from "@/services/citation-scan/service";
 
 import {
-  attachmentOpenUri,
-  getAttachmentsByParents,
-  itemSelectUri,
-} from "@zotlit/db";
-
-import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
-import { type CitationOccurrence } from "@/services/citation-scan/service";
-import { type DatabaseService } from "@/services/database/service";
-
-import { type ReferenceEntry, type ReferenceSource } from "./entries";
-
-const logger = getLogger(["views", "references"]);
-
-const PDF_CONTENT_TYPE = "application/pdf";
+  type OpenableAttachment,
+  type ReferenceEntry,
+  type ReferenceSource,
+} from "./entries";
 
 export interface ReferenceActions {
   /** Move the editor to the entry's next occurrence, wrapping at the end. */
   onSelect: (entry: ReferenceEntry) => void;
   onOpenNote: (entry: ReferenceEntry) => void;
   onOpenInZotero: (source: ReferenceSource) => void;
-  onOpenAttachment: (source: ReferenceSource) => void;
+  /**
+   * Open the Item's Attachment in Zotero's reader. A single Attachment opens
+   * straight away; several offer a menu at the click.
+   */
+  onOpenAttachment: (source: ReferenceSource, event: MouseEvent) => void;
   /** Open the settings page the engine install lives on. */
   onOpenEngineSettings: () => void;
   /** Dismiss the install hint for good. */
@@ -35,7 +31,6 @@ export interface ReferenceActions {
 
 export interface ReferenceActionDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client">;
   /** Path of the document the listed references were scanned from. */
   getSourcePath: () => string | null;
   onOpenEngineSettings: () => void;
@@ -66,41 +61,49 @@ export function createReferenceActions(
     onOpenInZotero(source) {
       window.open(itemSelectUri(source.itemKey, source.groupID));
     },
-    onOpenAttachment(source) {
-      const uri = pdfAttachmentUri(deps.db, source);
-      if (!uri) {
-        new BaseNotice(m.references_no_pdf_attachment());
+    onOpenAttachment(source, event) {
+      const [first, ...rest] = source.attachments;
+      if (!first) return;
+      if (rest.length === 0) {
+        openAttachment(first);
         return;
       }
-      window.open(uri);
+      showAttachmentMenu(source.attachments, event);
     },
     onOpenEngineSettings: deps.onOpenEngineSettings,
     onDismissEngineHint: deps.onDismissEngineHint,
   };
 }
 
+function openAttachment({ key, groupID }: OpenableAttachment): void {
+  window.open(attachmentOpenUri(key, groupID));
+}
+
 /**
- * The `zotero://open` link to the Item's first PDF attachment, or `null` when
- * the Item carries none — or when the database is out of reach.
+ * Offer one row per Attachment. A keyboard click carries no pointer position
+ * (`detail` of `0`), so the menu takes the button's own corner instead of the
+ * window's.
  */
-function pdfAttachmentUri(
-  db: ReferenceActionDeps["db"],
-  source: ReferenceSource,
-): string | null {
-  if (db.state !== "ready") return null;
-  try {
-    const attachment = getAttachmentsByParents(db.client, [source.itemID]).find(
-      (candidate) => candidate.contentType === PDF_CONTENT_TYPE,
+function showAttachmentMenu(
+  attachments: readonly OpenableAttachment[],
+  event: MouseEvent,
+): void {
+  const menu = new Menu();
+  for (const attachment of attachments) {
+    menu.addItem((item) =>
+      item
+        .setTitle(attachment.label)
+        .setIcon("paperclip")
+        .onClick(() => openAttachment(attachment)),
     );
-    if (!attachment) return null;
-    return attachmentOpenUri(attachment.key, attachment.groupID);
-  } catch (error) {
-    logger.warn("Cannot read the attachments of {itemKey}", {
-      itemKey: source.itemKey,
-      error,
-    });
-    return null;
   }
+
+  if (event.detail === 0) {
+    const { left, bottom } = event.currentTarget.getBoundingClientRect();
+    menu.showAtPosition({ x: left, y: bottom });
+    return;
+  }
+  menu.showAtMouseEvent(event.nativeEvent);
 }
 
 /**
