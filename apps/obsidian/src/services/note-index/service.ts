@@ -120,7 +120,8 @@ export class NoteIndex extends Service<void> {
     await this.#settings.ready;
     const initialSettings = this.#settings.current;
     if (initialSettings) {
-      this.#citationKeyProperty = citationKeyProperty(initialSettings);
+      this.#citationKeyProperty =
+        initialSettings["citation.key-links-frontmatter-key"];
     }
     stack.defer(
       this.#settings.subscribe((settings) => {
@@ -245,7 +246,7 @@ export class NoteIndex extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    const next = citationKeyProperty(settings);
+    const next = settings["citation.key-links-frontmatter-key"];
     if (next === this.#citationKeyProperty) return;
     this.#citationKeyProperty = next;
     if (this.#scanned) {
@@ -311,12 +312,6 @@ function hasContributions(contributions: FileContributions): boolean {
     contributions.citationKey !== null ||
     contributions.noteKey !== null
   );
-}
-
-function citationKeyProperty(settings: Readonly<Settings>): string | null {
-  return settings["citation.key-links"]
-    ? settings["citation.key-links-frontmatter-key"]
-    : null;
 }
 
 function isMarkdownFile(file: TAbstractFile): file is TFile {

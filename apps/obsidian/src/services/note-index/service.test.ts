@@ -390,14 +390,15 @@ describe("NoteIndex", () => {
     ]);
   });
 
-  it("clears and restores the citation-key index as the feature changes", async () => {
+  it("keeps the citation-key index whatever the citation key links toggle is", async () => {
     const { metadataCache, service, settings } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A, citekey: "doe2024" }),
     });
     metadataCache.resolve();
 
-    settings.update({ "citation.key-links": false });
-    expect(service.getNotesByCitationKey("doe2024")).toEqual([]);
+    expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
+      "paper.md",
+    ]);
 
     settings.update({ "citation.key-links": true });
     expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
@@ -405,19 +406,21 @@ describe("NoteIndex", () => {
     ]);
   });
 
-  it("clears partial citation-key mappings when disabled before the first scan", async () => {
-    const { metadataCache, service, settings, vault } = await makeHarness({
-      "paper.md": cache({ itemKey: ITEM_A, citekey: "doe2024" }),
+  it("clears partial citation-key mappings when the property changes before the first scan", async () => {
+    const paper = cache({
+      itemKey: ITEM_A,
+      citekey: "doe2024",
+      properties: { bibkey: "new-key" },
     });
-    metadataCache.change(
-      vault.files.get("paper.md")!,
-      cache({ itemKey: ITEM_A, citekey: "doe2024" }),
-    );
+    const { metadataCache, service, settings, vault } = await makeHarness({
+      "paper.md": paper,
+    });
+    metadataCache.change(vault.files.get("paper.md")!, paper);
     expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
       "paper.md",
     ]);
 
-    settings.update({ "citation.key-links": false });
+    settings.update({ "citation.key-links-frontmatter-key": "bibkey" });
 
     expect(service.getNotesByCitationKey("doe2024")).toEqual([]);
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
@@ -451,7 +454,6 @@ async function makeHarness(
   const app = { metadataCache, vault } as unknown as App;
   const plugin = { app } as unknown as Plugin;
   const settings = new SettingsStub({
-    "citation.key-links": true,
     "citation.key-links-frontmatter-key": FIELD_CITEKEY,
     ...options.settings,
   });
