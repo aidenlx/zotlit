@@ -24,6 +24,32 @@ Reloads the Zotero database from disk. Use this after making changes in Zotero w
 | --------------- | ---------------- |
 | Command palette | Always available |
 
+## Library-wide update
+
+<Command>ZotLit: Create or update all literature notes</Command>
+
+Creates or updates a literature note for every item in the active library. Opens the same batch confirmation modal as a multi-item update from Zotero.
+
+| Entry point     | Details                                                                              |
+| --------------- | ------------------------------------------------------------------------------------ |
+| Command palette | Always available                                                                     |
+| Zotero          | Right-click a library or collection > **ZotLit > Create or Update Literature Notes** |
+
+The Zotero entry scopes the batch to the row you right-click: a library covers every item in it, a collection covers that collection and its subcollections.
+
+## Library-wide note import
+
+<Command>ZotLit: Import all child and standalone notes</Command>
+
+Imports every note in the active library — the child notes attached to regular items and standalone notes alike. Opens the same batch confirmation modal as a multi-note import from Zotero.
+
+| Entry point     | Details                                                                              |
+| --------------- | ------------------------------------------------------------------------------------ |
+| Command palette | Always available                                                                     |
+| Zotero          | Right-click a library or collection > **ZotLit > Import Child and Standalone Notes** |
+
+The Zotero entry scopes the import to the row you right-click, subcollections included.
+
 ## Literature note quick switcher
 
 <Command>ZotLit: Open literature note quick switcher</Command>
@@ -160,21 +186,23 @@ Opens the release notes for the installed ZotLit version.
 
 ## Entry-point summary
 
-| Command                             | Palette | Ribbon | File menu |        Editor        |
-| ----------------------------------- | :-----: | :----: | :-------: | :------------------: |
-| Refresh Zotero database             |   yes   |   —    |     —     |          —           |
-| Open literature note quick switcher |   yes   |   —    |     —     |          —           |
-| Insert Markdown citation            |   yes   |   —    |     —     | `[@` / `@` suggester |
-| Update literature note              |   yes   |   —    |    yes    |          —           |
-| Update literature note metadata     |   yes   |   —    |    yes    |          —           |
-| Overwrite literature note           |   yes   |   —    |    yes    |          —           |
-| Import child notes from Zotero      |   yes   |   —    |    yes    |          —           |
-| Copy item key                       |   yes   |   —    |    yes    |          —           |
-| Update imported note from Zotero    |   yes   |   —    |    yes    |          —           |
-| Open Zotero annotations             |   yes   |  yes   |     —     |          —           |
-| Open template data explorer         |   yes   |   —    |    yes    |          —           |
-| Open welcome view                   |   yes   |   —    |     —     |          —           |
-| Open release notes                  |   yes   |   —    |     —     |          —           |
+| Command                               | Palette | Ribbon | File menu |        Editor        |
+| ------------------------------------- | :-----: | :----: | :-------: | :------------------: |
+| Refresh Zotero database               |   yes   |   —    |     —     |          —           |
+| Create or update all literature notes |   yes   |   —    |     —     |          —           |
+| Import all child and standalone notes |   yes   |   —    |     —     |          —           |
+| Open literature note quick switcher   |   yes   |   —    |     —     |          —           |
+| Insert Markdown citation              |   yes   |   —    |     —     | `[@` / `@` suggester |
+| Update literature note                |   yes   |   —    |    yes    |          —           |
+| Update literature note metadata       |   yes   |   —    |    yes    |          —           |
+| Overwrite literature note             |   yes   |   —    |    yes    |          —           |
+| Import child notes from Zotero        |   yes   |   —    |    yes    |          —           |
+| Copy item key                         |   yes   |   —    |    yes    |          —           |
+| Update imported note from Zotero      |   yes   |   —    |    yes    |          —           |
+| Open Zotero annotations               |   yes   |  yes   |     —     |          —           |
+| Open template data explorer           |   yes   |   —    |    yes    |          —           |
+| Open welcome view                     |   yes   |   —    |     —     |          —           |
+| Open release notes                    |   yes   |   —    |     —     |          —           |
 
 ## Template Workbench CLI
 

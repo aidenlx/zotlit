@@ -14,6 +14,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "fumadocs-ui/components/ui/popover";
+import { useTreePath } from "fumadocs-ui/contexts/tree";
 import { useDocsLayout } from "fumadocs-ui/layouts/docs";
 import { LinkItem } from "fumadocs-ui/layouts/shared";
 import { isLayoutTabActive, type LayoutTab } from "fumadocs-ui/layouts/shared";
@@ -495,10 +496,11 @@ function SidebarTabsDropdown({
   const [open, setOpen] = useState(false);
   const { closeOnRedirect } = useSidebar();
   const pathname = usePathname();
+  const path = useTreePath();
 
   const selected = useMemo(() => {
-    return tabs.findLast((item) => isLayoutTabActive(item, pathname));
-  }, [tabs, pathname]);
+    return tabs.findLast((item) => isLayoutTabActive(item, path, pathname));
+  }, [tabs, path, pathname]);
 
   const onClick = () => {
     closeOnRedirect.current = false;

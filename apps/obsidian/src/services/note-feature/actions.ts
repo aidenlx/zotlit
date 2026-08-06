@@ -15,7 +15,10 @@ import {
   type BatchImport,
   type ReimportResult,
 } from "@/services/note-import/batch-import";
-import { childImportToast } from "@/services/note-import/batch-import-notices";
+import {
+  batchImportAllToast,
+  childImportToast,
+} from "@/services/note-import/batch-import-notices";
 import {
   isLiteratureNote,
   itemKeyFromFrontmatter,
@@ -24,12 +27,17 @@ import {
 import { InertTemplateError } from "@/services/template/errors";
 
 import { type NoteFeature, type UpdateScope } from "./operations";
+import { type BatchUpdateResult } from "./update-batch";
 import { updateNoteToast } from "./update-single";
 
 interface NoteFeatureActionDeps {
   app: App;
   noteFeature: NoteFeature;
-  batchImport: Pick<BatchImport, "runChildImportByKey" | "reimportNoteByKey">;
+  batchImport: Pick<
+    BatchImport,
+    "runChildImportByKey" | "reimportNoteByKey" | "runBatchImportAll"
+  >;
+  updateAll: () => Promise<BatchUpdateResult>;
 }
 
 export function addNoteFeatureActions(
@@ -84,6 +92,25 @@ export function addNoteFeatureActions(
       return withImportedNote(plugin, { ctx, checking }, (file, noteKey) => {
         void reimportNote(deps, file, noteKey);
       });
+    },
+  });
+
+  plugin.addCommand({
+    id: "update-all-notes",
+    name: m.command_update_all_notes_name(),
+    callback() {
+      void handleUpdateAll(deps.updateAll);
+    },
+  });
+
+  plugin.addCommand({
+    id: "import-all-notes",
+    name: m.command_import_all_notes_name(),
+    callback() {
+      void toast.promise(
+        deps.batchImport.runBatchImportAll(),
+        batchImportAllToast(),
+      );
     },
   });
 
@@ -282,6 +309,25 @@ function handleChildImport(
     deps.batchImport.runChildImportByKey(itemKey),
     childImportToast(),
   );
+}
+
+async function handleUpdateAll(
+  updateAll: () => Promise<BatchUpdateResult>,
+): Promise<void> {
+  await toast.promise(updateAll(), {
+    success: batchUpdateAllNotice,
+  });
+}
+
+function batchUpdateAllNotice(result: BatchUpdateResult): string | undefined {
+  switch (result.outcome) {
+    case "db-unavailable":
+      return m.batch_update_db_unavailable();
+    case "empty-selection":
+      return m.batch_update_all_empty();
+    default:
+      return undefined;
+  }
 }
 
 function withLiteratureNote(

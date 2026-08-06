@@ -165,6 +165,11 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onMoreOptions(evt, annot) {
       const menu = buildMenu(annot);
       if ("nativeEvent" in evt) {
+        // `MouseEvent` is shadowed by the React import above; `globalThis.`
+        // here is a type qualifier for the DOM type, not a runtime access,
+        // so the `window`/`activeWindow` popout-compatibility guidance
+        // doesn't apply.
+        // eslint-disable-next-line obsidianmd/no-global-this
         menu.showAtMouseEvent(evt.nativeEvent as globalThis.MouseEvent);
       }
     },

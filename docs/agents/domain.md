@@ -22,7 +22,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 │   ├── zotero/
 │   │   ├── CONTEXT.md
 │   │   └── docs/adr/
-│   └── website/
+│   └── docs/
 │       ├── CONTEXT.md
 │       └── docs/adr/
 └── packages/

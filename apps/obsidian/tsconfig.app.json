@@ -6,7 +6,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "isolatedDeclarations": false,
-    "types": ["node-22"],
+    "types": ["node-24"],
     "paths": {
       "@/*": ["./src/*"]
     }

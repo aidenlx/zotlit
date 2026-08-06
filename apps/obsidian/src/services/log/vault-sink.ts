@@ -37,7 +37,7 @@ export async function createVaultFileSink(
     inFlight = inFlight.then(() => adapter.append(path, data));
   };
 
-  const timer = setInterval(() => {
+  const timer = window.setInterval(() => {
     flushPending();
     inFlight = inFlight.catch((err: unknown) => {
       console.error("Failed to write to plugin log file", err);
@@ -51,7 +51,7 @@ export async function createVaultFileSink(
   sink[Symbol.asyncDispose] = () => {
     disposePromise ??= (async () => {
       accepting = false;
-      clearInterval(timer);
+      window.clearInterval(timer);
       flushPending();
       try {
         await inFlight;

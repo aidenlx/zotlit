@@ -6,7 +6,9 @@ import {
   fetchGitHubJson,
   getReleases,
   getZoteroCompanion,
+  isDormant,
   mainManifestUrl,
+  newestPreRelease,
   tagUrl,
   type ReleaseChannel,
 } from "@/lib/github-releases";
@@ -26,23 +28,28 @@ interface LedgerData {
   note?: string;
 }
 
-/** Channel exists but has no release yet (missing update manifest = 404). */
-interface Unreleased {
-  unreleased: true;
+/** A channel with nothing to advertise: never released, or dormant. */
+interface Empty {
+  channel: LedgerData["channel"];
+  empty: "not yet released" | "no pre-release available";
 }
+
+const dormant: Empty = {
+  channel: "Pre-release",
+  empty: "no pre-release available",
+};
 
 async function getObsidianLedger(
   channel: ReleaseChannel,
-): Promise<LedgerData | null> {
+): Promise<LedgerData | Empty | null> {
+  const stable = await fetchGitHubJson<PluginManifest>(mainManifestUrl());
+
   if (channel === "pre-release") {
     const releases = await getReleases();
-    const release = releases?.find(
-      (r) =>
-        r.prerelease &&
-        !r.tag_name.startsWith("zt-") &&
-        r.tag_name !== "zotero-release",
-    );
-    if (!release) return null;
+    if (!releases) return null;
+    const release = newestPreRelease(releases);
+    if (!release || isDormant(release.tag_name, stable?.version ?? null))
+      return dormant;
     const manifest = await fetchGitHubJson<PluginManifest>(
       assetUrl(release.tag_name, "manifest.json"),
     );
@@ -57,26 +64,30 @@ async function getObsidianLedger(
     };
   }
 
-  const manifest = await fetchGitHubJson<PluginManifest>(mainManifestUrl());
-  if (!manifest) return null;
+  if (!stable) return null;
   const release = (await getReleases())?.find(
-    (r) => r.tag_name === manifest.version,
+    (r) => r.tag_name === stable.version,
   );
   return {
     channel: "Stable",
-    version: manifest.version,
-    notesUrl: tagUrl(manifest.version),
+    version: stable.version,
+    notesUrl: tagUrl(stable.version),
     publishedAt: release?.published_at,
-    requires: `Obsidian ≥ ${manifest.minAppVersion}`,
-    note: manifest.isDesktopOnly ? "desktop only" : undefined,
+    requires: `Obsidian ≥ ${stable.minAppVersion}`,
+    note: stable.isDesktopOnly ? "desktop only" : undefined,
   };
 }
 
 async function getZoteroLedger(
   channel: ReleaseChannel,
-): Promise<LedgerData | Unreleased | null> {
+): Promise<LedgerData | Empty | null> {
   const companion = await getZoteroCompanion(channel);
-  if (!companion) return channel === "stable" ? { unreleased: true } : null;
+  if (channel === "pre-release") {
+    const stable = await getZoteroCompanion("stable");
+    if (!companion || isDormant(companion.version, stable?.version ?? null))
+      return dormant;
+  }
+  if (!companion) return { channel: "Stable", empty: "not yet released" };
   const release = (await getReleases())?.find(
     (r) => r.tag_name === companion.tag,
   );
@@ -139,10 +150,10 @@ export interface VersionLedgerProps {
 
 /**
  * Two-row leader-dots ledger showing the current release and its
- * compatibility range, fetched from GitHub with ISR. A channel whose update
- * manifest is known-missing renders a "not yet released" row; when release
- * data can't be checked at all it renders nothing, so the page degrades to
- * its plain form.
+ * compatibility range, fetched from GitHub with ISR. A channel with nothing to
+ * advertise — never released, or a dormant pre-release line — renders a single
+ * status row instead; when release data can't be checked at all it renders
+ * nothing, so the page degrades to its plain form.
  */
 export async function VersionLedger({ app, channel }: VersionLedgerProps) {
   const data = await (
@@ -150,11 +161,11 @@ export async function VersionLedger({ app, channel }: VersionLedgerProps) {
   ).catch(() => null);
   if (!data) return null;
 
-  if ("unreleased" in data) {
+  if ("empty" in data) {
     return (
       <div className="not-prose mb-4 text-sm text-fd-foreground">
-        <Row label="Stable">
-          <span className="text-fd-muted-foreground">not yet released</span>
+        <Row label={data.channel}>
+          <span className="text-fd-muted-foreground">{data.empty}</span>
         </Row>
       </div>
     );

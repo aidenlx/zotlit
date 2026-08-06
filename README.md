@@ -1,6 +1,5 @@
 <div align="center">
 
-<!-- TODO: replace the wordmark with a product screenshot (annotation view or a literature note) once one is captured -->
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/logo/zotlit-wordmark-dark.svg">
   <img alt="ZotLit" src="assets/logo/zotlit-wordmark.svg" width="320">
@@ -25,13 +24,20 @@
 </p>
 
 <p>
-  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Install with BRAT" src="https://custom-icon-badges.demolab.com/badge/-Install%20with%20BRAT-8b6cef?style=for-the-badge&logo=obsidian"></a>
+  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Install in Obsidian" src="https://custom-icon-badges.demolab.com/badge/-Install%20in%20Obsidian-8b6cef?style=for-the-badge&logo=obsidian"></a>
 </p>
 
 </div>
 
 > [!WARNING]
-> **ZotLit v2 is in beta.** It ships as GitHub pre-releases and installs with [BRAT](https://zotlit.aidenlx.site/docs/install-zotlit), not the Obsidian community store. The stable **v1** release lives on the [`v1` branch](https://github.com/aidenlx/zotlit/tree/v1). See the [v1 docs](https://zotlit-v1.aidenlx.site) for v1 usage.
+> **Update the Obsidian installer first.** ZotLit needs Obsidian 1.13.4 or newer, and the **installer version** must also be 1.13.4 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings → About**.
+>
+> If the installer is older, ZotLit does not load. Obsidian shows _Failed to load plugin "zotlit"_, and the developer console shows a `SyntaxError`.
+>
+> **Fix:** download Obsidian from [obsidian.md/download](https://obsidian.md/download) and run it over your current installation. Nothing is deleted, and no notes are lost. [Full steps →](https://zotlit.aidenlx.site/docs/how-to/update-obsidian-installer)
+
+> [!NOTE]
+> **Coming from v1?** v2 is a major upgrade with breaking changes. Your existing literature notes and custom templates do not carry over unchanged. Read the [migration guide](https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1) before upgrading.
 
 ## Overview
 
@@ -71,8 +77,12 @@ New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/
 > After you consent, ZotLit will download the `zh-CN.json` Language Pack from `github.com/aidenlx/zotlit`.
 
 > [!IMPORTANT]
+> **Shell command (macOS only)**
+> On macOS, ZotLit runs the system `cp -c` command to create zero-copy clones of files. A zero-copy clone duplicates a file instantly without using extra disk space — macOS shares the underlying data on disk until one copy is changed. ZotLit uses this for two things: snapshotting the Zotero database so it can be read safely without interfering with Zotero, and importing attachments (PDFs, images) into your vault without doubling disk usage. Node.js does not expose this macOS feature directly, so ZotLit invokes the system `cp` command. No other shell commands are executed.
+
+> [!IMPORTANT]
 > **Third-party project: back up your data**
-> ZotLit is a third-party project, not affiliated with Obsidian or Zotero, and may break when either updates. v2 is beta software. Back up your vault and Zotero data before using it. The stable v1 codebase remains on the [`v1` branch](https://github.com/aidenlx/zotlit/tree/v1), with [v1 docs](https://zotlit-v1.aidenlx.site).
+> ZotLit is a third-party project, not affiliated with Obsidian or Zotero, and may break when either updates. Back up your vault and Zotero data before using it. The v1 codebase remains on the [`v1` branch](https://github.com/aidenlx/zotlit/tree/v1), with [v1 docs](https://zotlit-v1.aidenlx.site).
 
 ## Support
 
@@ -82,6 +92,6 @@ Questions, help, and bug reports: [Community](https://zotlit.aidenlx.site/commun
 
 <div align="center">
 
-[MIT License](LICENSE) · [Credits](https://zotlit.aidenlx.site/docs/credits) · Not affiliated with Obsidian or Zotero
+[AGPL-3.0-or-later](LICENSE) · [Credits](https://zotlit.aidenlx.site/docs/credits) · Not affiliated with Obsidian or Zotero
 
 </div>

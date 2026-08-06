@@ -74,6 +74,12 @@ export {
 export { type ItemTag, type TemplateTag } from "./lib/zt-tag";
 export { type Attachment } from "./lib/zt-attach";
 export {
+  getCollectionIDByKey,
+  getIndexedItemIDsByCollection,
+  getNoteItemIDsByCollection,
+  getNoteItemIDsByLibrary,
+} from "./queries/batch-scope";
+export {
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
   getIndexSignature,

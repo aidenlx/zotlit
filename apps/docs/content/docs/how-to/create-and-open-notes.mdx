@@ -59,6 +59,28 @@ For details on the internal editor integration and the Reading mode limitation, 
 
 You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This requires the ZotLit Zotero companion plugin.
 
+### Update the entire library at once [#library-wide]
+
+Use this command to create or update literature notes for every item in your library at once.
+
+Open the command palette and run:
+
+<Command>ZotLit: Create or update all literature notes</Command>
+
+Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
+
+You can also trigger this from Zotero: right-click a library — **My Library** or a group library — in the sidebar and choose **ZotLit > Create or Update Literature Notes**.
+
+The command uses your **Default library** (set in **Settings > ZotLit**).
+
+### Update one collection at once [#collection-wide]
+
+In Zotero, right-click a collection in the sidebar and choose **ZotLit > Create or Update Literature Notes**. Obsidian opens the same confirmation modal, scoped to that collection.
+
+Items in nested subcollections are included, so you do not need to repeat the action on each child collection.
+
+If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero."
+
 ### Open or update a single item from Zotero
 
 When exactly one regular item is selected in the Zotero library, the top-level context menu shows **Open Literature Note in Obsidian**. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
@@ -69,7 +91,7 @@ When exactly one regular item is selected in the Zotero library, the top-level c
   <Step>
     ### Select items in Zotero
 
-    Select two or more items in your Zotero library. Use `Ctrl+A` (`Cmd+A` on macOS) to select everything in the current collection or view.
+    Select the items you want to update in your Zotero library.
 
   </Step>
   <Step>

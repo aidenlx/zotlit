@@ -33,6 +33,10 @@ zotlit-menu-item-import-notes =
     .label = 导入所选笔记
 zotlit-menu-item-explore =
     .label = 探索模板数据
+zotlit-menu-collection-update-all =
+    .label = 创建或更新文献笔记
+zotlit-menu-collection-import-all-notes =
+    .label = 导入子笔记与独立笔记
 zotlit-menu-item-copy-key =
     .label = { $kind ->
         [attachment] 复制附件标识符

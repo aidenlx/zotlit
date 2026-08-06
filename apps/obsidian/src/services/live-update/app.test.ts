@@ -166,11 +166,13 @@ describe("PUT /literature-notes", () => {
     });
 
     expect(res.status).toBe(204);
-    // The handler decouples emission via yieldToMain(); flush a tick.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(onUpdateMany).toHaveBeenCalledWith({
-      items: [1, 2, 3],
-      scope: "full",
-    });
+    // The handler decouples emission via yieldToMain(), whose message task
+    // lands on its own queue; poll for the call instead of a timer tick.
+    await vi.waitFor(() =>
+      expect(onUpdateMany).toHaveBeenCalledWith({
+        items: [1, 2, 3],
+        scope: "full",
+      }),
+    );
   });
 });

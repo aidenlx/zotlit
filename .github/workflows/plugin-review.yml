@@ -1,0 +1,67 @@
+name: Plugin Review
+
+# Obsidian's developer guidelines are checked once per release, not on every
+# PR — the rules move with Obsidian's review process, not with our code, so
+# running them continuously buys nothing. `release.ts` gates locally before the
+# branch exists; this is the backstop that cannot be skipped. See ADR 0020.
+on:
+  pull_request:
+    branches: [main, next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # `release.ts` names release branches `release/<line>/<app>-<version>`.
+    # workflow_dispatch has no head_ref, so it always runs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
+      # `--no-submodules` skips checkout since actions/checkout already fetched
+      # them above.
+      - uses: jdx/mise-action@v4
+      # pnpm is activated by mise's corepack post-install; this step is only
+      # here for the store cache.
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - run: mise run init --no-submodules
+
+      - name: Turborepo cache
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      # ESLint exits non-zero on errors only; warnings are reported and do not
+      # fail the job. The report is duplicated into the step summary because the
+      # job log is the only other place it appears.
+      - name: Obsidian guideline review
+        run: |
+          if ! pnpm review > review.log 2>&1; then
+            {
+              echo "### Obsidian guideline violations"
+              echo 'Run `pnpm review` locally to reproduce, `pnpm review:fix` for the autofixable subset.'
+              echo '```'
+              cat review.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            cat review.log
+            exit 1
+          fi
+          cat review.log

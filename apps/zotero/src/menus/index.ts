@@ -1,5 +1,6 @@
 import { logger as appLogger } from "@/lib/logger";
 
+import { registerCollectionMenu } from "./collection.js";
 import { registerItemMenu } from "./item.js";
 import { registerReaderAnnotationMenu } from "./reader-annotation.js";
 import { registerReaderPageMenu } from "./reader-page.js";
@@ -18,6 +19,7 @@ export async function registerMenus(
   logger.info("registering menus", { pluginID });
   await using stack = new AsyncDisposableStack();
   stack.use(registerItemMenu(pluginID));
+  stack.use(registerCollectionMenu(pluginID));
   stack.use(await registerReaderAnnotationMenu(pluginID));
   stack.use(await registerReaderPageMenu(pluginID));
   stack.defer(() => {

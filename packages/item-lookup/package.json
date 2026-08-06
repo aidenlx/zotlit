@@ -28,7 +28,7 @@
     "minisearch": "^7.2.0"
   },
   "devDependencies": {
-    "@types/node-25": "npm:@types/node@^25.6.2",
+    "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
     "jieba-wasm": "^2.4.0",
     "oxlint": "catalog:",

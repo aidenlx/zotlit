@@ -2,7 +2,7 @@
   "extends": "./tsconfig.lib.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node-25", "vitest/globals"]
+    "types": ["node", "vitest/globals"]
   },
   "include": ["./src/**/*.ts"],
   "exclude": ["./node_modules", "./dist/**/*"]

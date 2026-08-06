@@ -5,14 +5,18 @@ import {
   batchUpdateRequestSchema,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
+  buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
   buildProtocolUrl,
+  buildUpdateAllProtocolUrl,
   parseExploreProtocolQuery,
+  parseImportAllNotesProtocolQuery,
   parseImportManyProtocolQuery,
   parseImportProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
+  parseUpdateAllProtocolQuery,
   protocolActions,
   protocolSourceMatches,
 } from "./url";
@@ -256,6 +260,83 @@ describe("zotlit explore protocol", () => {
       ).toThrow();
     },
   );
+});
+
+describe.each([
+  {
+    action: "update-all",
+    build: buildUpdateAllProtocolUrl,
+    parse: parseUpdateAllProtocolQuery,
+  },
+  {
+    action: "import-all-notes",
+    build: buildImportAllNotesProtocolUrl,
+    parse: parseImportAllNotesProtocolQuery,
+  },
+])("zotlit $action protocol", ({ action, build, parse }) => {
+  const COLLECTION = "ABCD2345";
+
+  it("builds + round-trips a library-wide link", () => {
+    const url = build(SOURCE);
+    expect(url).toBe(`obsidian://zotlit/${action}?source-id=${SOURCE}`);
+    expect(decode(url).action).toBe(`zotlit/${action}`);
+    expect(parse(decode(url))).toEqual({
+      sourceId: SOURCE,
+      groupID: 0,
+      collectionKey: undefined,
+    });
+  });
+
+  it("builds + round-trips a group-library link", () => {
+    const url = build(SOURCE, 7);
+    expect(url).toBe(
+      `obsidian://zotlit/${action}?source-id=${SOURCE}&library=7`,
+    );
+    expect(parse(decode(url))).toEqual({
+      sourceId: SOURCE,
+      groupID: 7,
+      collectionKey: undefined,
+    });
+  });
+
+  it("builds + round-trips a collection-scoped link", () => {
+    const url = build(SOURCE, 7, COLLECTION);
+    expect(url).toBe(
+      `obsidian://zotlit/${action}?source-id=${SOURCE}&library=7&collection=${COLLECTION}`,
+    );
+    expect(parse(decode(url))).toEqual({
+      sourceId: SOURCE,
+      groupID: 7,
+      collectionKey: COLLECTION,
+    });
+  });
+
+  it("scopes a personal-library collection without a library param", () => {
+    const url = build(SOURCE, 0, COLLECTION);
+    expect(url).toBe(
+      `obsidian://zotlit/${action}?source-id=${SOURCE}&collection=${COLLECTION}`,
+    );
+    expect(parse(decode(url))).toEqual({
+      sourceId: SOURCE,
+      groupID: 0,
+      collectionKey: COLLECTION,
+    });
+  });
+
+  it("rejects a missing source-id", () => {
+    expect(() => parse({ collection: COLLECTION })).toThrow();
+  });
+
+  it.each(["", "x", "ABC1234!", "ABC123456", "ABC10ILO"])(
+    "rejects malformed collection key %s",
+    (collection) => {
+      expect(() => parse({ "source-id": SOURCE, collection })).toThrow();
+    },
+  );
+
+  it("rejects a non-numeric library", () => {
+    expect(() => parse({ "source-id": SOURCE, library: "group" })).toThrow();
+  });
 });
 
 describe("protocolSourceMatches", () => {

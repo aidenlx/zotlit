@@ -36,6 +36,27 @@
     },
     "//#lint:repo": {
       "dependsOn": ["//#lint:repo:deps"]
+    },
+    "//#review:plugin:deps": {
+      "dependsOn": [
+        "@zotlit/db#build",
+        "@zotlit/item-lookup#build",
+        "@zotlit/obsidian#generate:language-packs",
+        "@zotlit/protocol#build",
+        "@zotlit/shared#build",
+        "@zotlit/templates#build",
+        "@zotlit/zotero-types#build"
+      ]
+    },
+    "//#review:plugin": {
+      "dependsOn": ["//#review:plugin:deps"],
+      "inputs": [
+        "eslint.config.js",
+        "manifest.json",
+        "apps/obsidian/src/**",
+        "apps/obsidian/package.json",
+        "apps/obsidian/tsconfig*.json"
+      ]
     }
   }
 }

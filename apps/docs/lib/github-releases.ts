@@ -1,4 +1,5 @@
 // GitHub release + auto-update manifest lookups shared by the install pages.
+import { gt, rcompare, valid } from "semver";
 
 const REPO = "aidenlx/zotlit";
 const ZOTERO_ADDON_ID = "zotlit@aidenlx.site";
@@ -78,6 +79,31 @@ export function getReleases() {
   return fetchGitHubJson<GhRelease[]>(
     `https://api.github.com/repos/${REPO}/releases?per_page=30`,
   );
+}
+
+/**
+ * Highest-precedence plugin pre-release. Plugin releases are tagged with a bare
+ * semver version, so companion (`zt-…`) and infrastructure (`zotero-release`)
+ * tags fail the validity check and drop out. GitHub lists releases by creation
+ * date, which a re-cut tag inverts, so this picks by precedence instead.
+ */
+export function newestPreRelease(releases: GhRelease[]): GhRelease | null {
+  return (
+    releases
+      .filter((r) => r.prerelease && valid(r.tag_name))
+      .sort((a, b) => rcompare(a.tag_name, b.tag_name))
+      .at(0) ?? null
+  );
+}
+
+/**
+ * Whether the pre-release channel is dormant — its newest version does not lead
+ * stable, so the install pages advertise no pre-release. Equal versions count as
+ * dormant: the channel is serving the stable build. An app with no stable
+ * release yet is never dormant, since any pre-release leads it.
+ */
+export function isDormant(preRelease: string, stable: string | null) {
+  return stable !== null && !gt(preRelease, stable);
 }
 
 /**

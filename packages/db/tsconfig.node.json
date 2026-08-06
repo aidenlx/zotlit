@@ -5,7 +5,7 @@
     "allowImportingTsExtensions": true,
     "declaration": true,
     "isolatedDeclarations": false,
-    "types": ["node-25"]
+    "types": ["node"]
   },
   "include": ["./scripts/**/*.ts", "drizzle.config.js"],
   "exclude": ["./node_modules", "./src/**/*"]

@@ -1,5 +1,10 @@
 # Stable ships from main, betas ship from next
 
+> **Superseded by [ADR 0021](0021-next-is-the-primary-branch.md).**
+> The dual-branch model is retained, but `next` is now the primary branch
+> (never dormant), and stable graduations flow from `next` to `main` via
+> release-branch PRs. See ADR 0021 for the current model.
+
 ZotLit releases two lockstep apps (the Obsidian plugin and the Zotero companion) through two distribution channels: stable (community plugin store / `update.json`) and beta (BRAT / `update-beta.json`). Development happens on `next`, the beta line; fixes that stable users need — security patches, regressions — are cherry-picked to `main` and released as `2.0.x` patches. This dual-branch model, introduced with the unified release pipeline and documented in `CONTRIBUTING.md`, stays in force when 2.0.0 graduates to GA: `main` is the patch-only stable line receiving cherry-picks, `next` is the beta line kept strictly ahead. `release.yml` triggers on pushes to both branches and derives the release channel from the semver prerelease component, so the branch model requires no CI awareness beyond the trigger list.
 
 ## Considered Options

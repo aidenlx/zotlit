@@ -187,9 +187,9 @@ function renderReferencesStyleRow(
 }
 
 function citationKeyLinksDescription(): DocumentFragment {
-  const desc = document.createDocumentFragment();
+  const desc = createFragment();
   desc.append(`${m.settings_citation_key_links_desc()} `);
-  const link = document.createElement("a");
+  const link = createEl("a");
   link.href = `${DOCS_SITE_URL}/docs/concepts/how-citekey-links-work`;
   link.textContent = m.settings_citation_key_links_docs();
   link.target = "_blank";

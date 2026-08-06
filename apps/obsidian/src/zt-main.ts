@@ -11,6 +11,7 @@ import {
 } from "./lib/i18n/install-toast";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
+import { openSettingsTab } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
 import { registerCitationKeyLinkNotices } from "./services/citekey-click/notices";
@@ -18,6 +19,7 @@ import { addDatabaseActions } from "./services/database/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
+import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerPandocResolve } from "./services/pandoc/register";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
@@ -195,6 +197,14 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       noteFeature: services.noteFeature,
       batchImport: services.batchImport,
+      updateAll: () =>
+        runBatchUpdateAll({
+          app: this.app,
+          db: services.db,
+          settings: services.settings,
+          noteFeature: services.noteFeature,
+          noteIndex: services.noteIndex,
+        }),
     });
     registerCitationSuggest(this, {
       app: this.app,
@@ -292,8 +302,10 @@ export default class ZotLitPlugin extends Plugin {
       registerAttachmentSkipNotice({
         attachmentImport: services.attachmentImport,
         openSettings: () => {
-          this.app.setting.open();
-          this.app.setting.openTabById(this.manifest.id);
+          openSettingsTab(this.app, this.manifest.id, [
+            m.settings_page_attachments(),
+            m.settings_attachment_approved_name(),
+          ]);
         },
       }),
     );
@@ -306,8 +318,6 @@ export default class ZotLitPlugin extends Plugin {
         services.db.notifyExternalChange();
       }),
     );
-
-    console.log("ZotLit loaded");
 
     this.#services = services;
     this.#stack = stack.move();

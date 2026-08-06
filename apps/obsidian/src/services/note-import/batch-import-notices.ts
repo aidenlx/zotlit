@@ -31,6 +31,36 @@ export function batchImportNotice(
   }
 }
 
+/**
+ * Notices for a library-wide or collection-scoped import. Its early exits carry
+ * their own copy — an empty scope is a plain "nothing to import", not the
+ * missing-item report an explicit id list would get.
+ */
+export function batchImportAllNotice(
+  result: BatchImportResult,
+): string | undefined {
+  switch (result.outcome) {
+    case "empty-selection":
+      return m.batch_import_all_empty();
+    case "library-mismatch":
+      return m.batch_import_all_library_mismatch();
+    case "collection-not-found":
+      return m.notice_collection_not_found();
+    default:
+      return batchImportNotice(result);
+  }
+}
+
+export function batchImportAllToast(): {
+  success: (result: BatchImportResult) => string | undefined;
+  error: string;
+} {
+  return {
+    success: batchImportAllNotice,
+    error: m.batch_import_failed(),
+  };
+}
+
 export function batchImportToast(): {
   success: (result: BatchImportResult) => string | undefined;
   error: string;

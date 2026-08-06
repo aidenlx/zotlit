@@ -8,7 +8,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "isolatedDeclarations": false,
-    "types": ["node-25"],
+    "types": [],
     "paths": {
       "@/*": ["./src/*"]
     }

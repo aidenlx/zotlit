@@ -32,8 +32,8 @@ export async function browseForDir(opts: {
 
 /** Append the "stored on this device only" Device Override note as a fresh description line. */
 export function appendDeviceOverrideNote(frag: DocumentFragment): void {
-  frag.append(document.createElement("br"));
-  const note = document.createElement("small");
+  frag.append(createEl("br"));
+  const note = createEl("small");
   note.textContent = m.settings_db_device_override_note();
   frag.append(note);
 }

@@ -6,7 +6,7 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "isolatedDeclarations": false,
-    "types": ["node-22"],
+    "types": ["node-24"],
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"],
