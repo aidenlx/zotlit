@@ -111,9 +111,9 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
       ZETA.id,
       ADAMS.id,
     ]);
-    expect(entries.find((entry) => entry.id === ZETA.id)?.html).toContain(
-      "Zeta, Ann",
-    );
+    expect(
+      entries.find((entry) => entry.id === ZETA.id)?.content.textContent,
+    ).toContain("Zeta, Ann");
   });
 
   it("formats entries with the supplied CSL style", async () => {
@@ -123,8 +123,8 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     });
 
     expect(first?.id).toBe(ZETA.id);
-    expect(first?.html).toContain("[1]");
-    expect(first?.html).toContain("A study of nothing");
+    expect(first?.content.textContent).toContain("[1]");
+    expect(first?.content.textContent).toContain("A study of nothing");
   });
 
   it("renders no entries for an empty item set", async () => {
@@ -140,7 +140,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     const entries = await engine.renderBibliography({ items: [item] });
 
     expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
-    expect(entries[0]?.html).toContain("Zeta, Ann");
+    expect(entries[0]?.content.textContent).toContain("Zeta, Ann");
   });
 
   it("keys entries by a Zotero URI id under a numbered style", async () => {
@@ -151,7 +151,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     });
 
     expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
-    expect(entries[0]?.html).toContain("[1]");
+    expect(entries[0]?.content.textContent).toContain("[1]");
   });
 
   it("reports the Pandoc failure for an unusable style", async () => {

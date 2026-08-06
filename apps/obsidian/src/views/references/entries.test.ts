@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
 import { type Citation } from "@/services/citation-scan/service";
@@ -15,6 +16,15 @@ function citation(
     refNumber,
     occurrences: lines.map((line) => ({ line, col: 0 })),
   };
+}
+
+/** A rendered entry as the engine hands it over: parsed, not markup. */
+function fragment(text: string): DocumentFragment {
+  const content = createFragment();
+  const span = document.createElement("span");
+  span.textContent = text;
+  content.append(span);
+  return content;
 }
 
 function source(indexedKey: string, id: string): ReferenceSource {
@@ -35,9 +45,11 @@ describe("buildReferenceEntries", () => {
       ["ALPHA002", source("ALPHA002", "ref-alpha")],
     ]);
     // Alphabetical, as an author-name bibliography style sorts it.
+    const alpha = fragment("Alpha");
+    const zebra = fragment("Zebra");
     const rendered = new Map([
-      ["ref-alpha", "<span>Alpha</span>"],
-      ["ref-zebra", "<span>Zebra</span>"],
+      ["ref-alpha", alpha],
+      ["ref-zebra", zebra],
     ]);
 
     expect(buildReferenceEntries(citations, sources, rendered)).toStrictEqual([
@@ -48,7 +60,7 @@ describe("buildReferenceEntries", () => {
         occurrences: [{ line: 1, col: 0 }],
         kind: "rendered",
         source: sources.get("ZEBRA001"),
-        html: "<span>Zebra</span>",
+        content: zebra,
       },
       {
         indexedKey: "ALPHA002",
@@ -57,7 +69,7 @@ describe("buildReferenceEntries", () => {
         occurrences: [{ line: 2, col: 0 }],
         kind: "rendered",
         source: sources.get("ALPHA002"),
-        html: "<span>Alpha</span>",
+        content: alpha,
       },
     ]);
   });
@@ -80,7 +92,7 @@ describe("buildReferenceEntries", () => {
       ["BOOK0001", source("BOOK0001", "ref-one")],
       ["BOOK0002", source("BOOK0002", "ref-two")],
     ]);
-    const rendered = new Map([["ref-one", "<span>One</span>"]]);
+    const rendered = new Map([["ref-one", fragment("One")]]);
 
     expect(
       buildReferenceEntries(citations, sources, rendered).map((e) => e.kind),

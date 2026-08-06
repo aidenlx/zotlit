@@ -58,7 +58,7 @@ export class ReferencesView extends ItemView {
    * Rendered bibliography entries by CSL id. Kept across reloads so an entry
    * that is already formatted never falls back to its summary mid-edit.
    */
-  readonly #rendered = new Map<string, string>();
+  readonly #rendered = new Map<string, DocumentFragment>();
   /** This view's own supersession slot, so two sidebars never drop each other's renders. */
   readonly #slot = `references-${crypto.randomUUID()}`;
   #root: Root | null = null;
@@ -219,7 +219,7 @@ export class ReferencesView extends ItemView {
       });
       if (generation !== this.#generation) return;
 
-      for (const { id, html } of rendered) this.#rendered.set(id, html);
+      for (const { id, content } of rendered) this.#rendered.set(id, content);
       this.#store.setState({
         entries: buildReferenceEntries(citations, sources, this.#rendered),
       });

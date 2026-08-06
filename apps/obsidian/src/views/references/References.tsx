@@ -5,7 +5,7 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
-import { useSanitizedHtml } from "@/lib/sanitize-html";
+import { useDomContent } from "@/lib/sanitize-html";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import {
   type PandocEngineFailure,
@@ -158,7 +158,7 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
     case "rendered":
       return (
         <RenderedEntry
-          html={entry.html}
+          content={entry.content}
           className={cn(textClass, "zt:text-foreground")}
         />
       );
@@ -178,14 +178,14 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
 }
 
 function RenderedEntry({
-  html,
+  content,
   className,
 }: {
-  html: string;
+  content: DocumentFragment;
   className?: string;
 }) {
   return (
-    <span className={className} ref={useSanitizedHtml<HTMLSpanElement>(html)} />
+    <span className={className} ref={useDomContent<HTMLSpanElement>(content)} />
   );
 }
 

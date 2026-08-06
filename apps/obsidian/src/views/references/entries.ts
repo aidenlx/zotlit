@@ -38,7 +38,7 @@ interface ReferenceEntryBase {
  */
 export type ReferenceEntry = ReferenceEntryBase &
   (
-    | { kind: "rendered"; source: ReferenceSource; html: string }
+    | { kind: "rendered"; source: ReferenceSource; content: DocumentFragment }
     | { kind: "summary"; source: ReferenceSource }
     | { kind: "missing" }
   );
@@ -57,15 +57,15 @@ export type ReferenceEntry = ReferenceEntryBase &
 export function buildReferenceEntries(
   citations: readonly Citation[],
   sources: ReadonlyMap<string, ReferenceSource>,
-  rendered?: ReadonlyMap<string, string>,
+  rendered?: ReadonlyMap<string, DocumentFragment>,
 ): ReferenceEntry[] {
   return citations.map(({ indexedKey, refNumber, linkpath, occurrences }) => {
     const base = { indexedKey, refNumber, linkpath, occurrences };
     const source = sources.get(indexedKey);
     if (!source) return { ...base, kind: "missing" };
-    const html = rendered?.get(source.csl.id);
-    return html === undefined
+    const content = rendered?.get(source.csl.id);
+    return content === undefined
       ? { ...base, kind: "summary", source }
-      : { ...base, kind: "rendered", source, html };
+      : { ...base, kind: "rendered", source, content };
   });
 }

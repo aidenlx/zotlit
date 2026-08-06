@@ -35,8 +35,11 @@ export interface BibliographyRequest extends SupersedableRequest {
 export interface BibliographyEntry {
   /** CSL `id` of the item this entry renders. */
   id: string;
-  /** The formatted entry as an HTML fragment, without its wrapping element. */
-  html: string;
+  /**
+   * The formatted entry, without its wrapping element. Already sanitized and
+   * parsed, so a consumer inserts a clone instead of re-parsing markup.
+   */
+  content: DocumentFragment;
 }
 
 export type DocumentFormat = "docx" | "html";
@@ -248,17 +251,17 @@ const ENTRY_ID_PREFIX = "ref-";
  * id is a Zotero URI long enough for Pandoc to wrap the opening tag, so the
  * markup is read as a DOM rather than matched as text.
  *
- * Sanitizing here also means a style or an item field cannot carry active
- * markup into the entries the sidebar stores.
+ * The entry keeps that parsed form: it is sanitized once here, so a style or an
+ * item field cannot carry active markup into the sidebar, and the view inserts
+ * it without a serialize-and-re-parse round trip.
  */
 function parseBibliography(html: string): BibliographyEntry[] {
   const entries: BibliographyEntry[] = [];
   for (const entry of sanitizeHTMLToDom(html).querySelectorAll(".csl-entry")) {
     if (!entry.id.startsWith(ENTRY_ID_PREFIX)) continue;
-    entries.push({
-      id: entry.id.slice(ENTRY_ID_PREFIX.length),
-      html: entry.innerHTML,
-    });
+    const content = createFragment();
+    content.append(...entry.childNodes);
+    entries.push({ id: entry.id.slice(ENTRY_ID_PREFIX.length), content });
   }
   return entries;
 }
