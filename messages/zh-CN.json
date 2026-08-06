@@ -289,7 +289,16 @@
   "references_empty": "当前笔记没有引用任何文献笔记。",
   "references_db_unavailable": "打开 Zotero 数据库后即可查看参考文献。",
   "references_item_missing": "{linkpath} 指向的条目已不在 Zotero 文库中。",
-  "references_go_to_occurrence": "跳转到该参考文献的下一处引用",
+  "references_go_to_occurrence": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "跳转到本笔记中的引用",
+        "count=*": "跳转到本笔记中的下一处引用（共 {count} 处）"
+      }
+    }
+  ],
   "references_open_note": "打开文献笔记",
   "references_open_in_zotero": "在 Zotero 中打开",
   "references_open_attachment": "在 Zotero 中打开 PDF",

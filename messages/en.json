@@ -316,8 +316,16 @@
   "references_empty": "The active note cites no literature notes.",
   "references_db_unavailable": "Open the Zotero database to see references.",
   "references_item_missing": "{linkpath} points to an item that is no longer in your Zotero library.",
-  "references_go_to_occurrence": "Go to the next citation of this reference",
-  "references_occurrence_count": "Cited {count} times in this note",
+  "references_go_to_occurrence": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "Go to the citation in this note",
+        "count=*": "Go to the next citation in this note (cited {count} times)"
+      }
+    }
+  ],
   "references_open_note": "Open literature note",
   "references_open_note_missing": "No literature note — item is missing",
   "references_open_in_zotero": "Open in Zotero",

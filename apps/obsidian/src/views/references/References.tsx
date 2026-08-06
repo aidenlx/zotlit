@@ -47,11 +47,18 @@ export function References() {
 }
 
 /**
- * A flat row: Reference Number, entry text (with an inline occurrence
- * counter and a hover/focus-revealed toolbar underneath), and a
- * hover-revealed chevron. Only the entry text is clickable, and it cycles the
- * entry's occurrences — the row around it is inert, so the toolbar and the
- * chevron are the only other targets and none of them overlap.
+ * Fades a secondary action in on hover or keyboard focus. The opening delay
+ * sits only on the hover variant, so collapsing and keyboard focus both stay
+ * instant. Shared, so every action in a row reveals on the same beat.
+ */
+const revealOnHover =
+  "zt:opacity-0 zt:transition-opacity zt:delay-0 zt:duration-150 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-hover:delay-100";
+
+/**
+ * A flat row: Reference Number, entry text with a hover/focus-revealed toolbar
+ * underneath, and an action column on the right. The text is inert and
+ * selectable — it renders what the engine formatted, so it can be copied out
+ * whole. Nothing the reader can act on overlaps the text.
  */
 function Reference({ entry }: { entry: ReferenceEntry }) {
   const actions = useReferenceActions();
@@ -70,49 +77,19 @@ function Reference({ entry }: { entry: ReferenceEntry }) {
           {isMissing ? "⚠" : entry.refNumber}
         </span>
         <div className="zt:min-w-0 zt:flex-1">
-          <div>
-            {/* A span rather than an anchor: Obsidian styles bare `a`
-                globally and unlayered, which would impose its link colour and
-                weight here and leave us fighting them. The affordance is the
-                link cursor plus an underline on hover — the entry keeps normal
-                text colour, since a whole bibliography entry in link purple
-                would outshout the list. `hover:` already compiles under
-                `@media (hover: hover)`, matching Obsidian's own link rule. */}
-            <span
-              role="link"
-              tabIndex={0}
-              className="zt:cursor-link zt:hover:underline"
-              {...tooltipAttrs(m.references_go_to_occurrence())}
-              onClick={() => actions.onSelect(entry)}
-              onKeyDown={(e) => {
-                if (e.key !== " " && e.key !== "Enter") return;
-                e.preventDefault();
-                actions.onSelect(entry);
-              }}
-            >
-              <ReferenceBody entry={entry} />
-            </span>
-            {/* A bare number needs saying out loud — on its own it reads as
-                part of the citation rather than as a count of citations. */}
-            {occurrenceCount > 1 && (
-              <span
-                className="zt:ml-1.5 zt:cursor-help zt:text-xs zt:text-muted-foreground zt:tabular-nums"
-                {...tooltipAttrs(
-                  m.references_occurrence_count({ count: occurrenceCount }),
-                )}
-              >
-                {occurrenceCount}
-              </span>
-            )}
+          {/* Selectable, so a formatted entry can be copied out of the pane
+              whole. Nothing else lives in this flow — the occurrence count
+              rides with the jump button instead, where a selection cannot
+              sweep it up. */}
+          <div className="zt:select-text">
+            <ReferenceBody entry={entry} />
           </div>
           {/* Collapsed to zero height as a class, never an inline style — an
               inline style on this element would outrank the hover/focus
-              classes below and the toolbar could never open. The opening
-              delay sits only on the hover variant (`group-hover:delay-100`),
-              so collapsing and keyboard focus both stay instant. */}
+              classes below and the toolbar could never open. */}
           {entry.kind !== "missing" && (
             <div className="zt:grid zt:grid-rows-[0fr] zt:transition-[grid-template-rows] zt:delay-0 zt:duration-150 zt:ease-out zt:group-focus-within:grid-rows-[1fr] zt:group-hover:grid-rows-[1fr] zt:group-hover:delay-100">
-              <div className="zt:overflow-hidden zt:opacity-0 zt:transition-opacity zt:delay-0 zt:duration-150 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-hover:delay-100">
+              <div className={cn("zt:overflow-hidden", revealOnHover)}>
                 <div className="zt:flex zt:items-center zt:gap-0.5 zt:pt-1">
                   <EntryAction
                     icon="external-link"
@@ -129,23 +106,52 @@ function Reference({ entry }: { entry: ReferenceEntry }) {
             </div>
           )}
         </div>
-        {/* Disabled rather than hidden on a missing entry, so the row keeps
-            its shape and the tooltip carries the reason. The dimming comes
-            from Obsidian's own `.clickable-icon[aria-disabled="true"]` rule,
-            which `IconButton` triggers — a utility class cannot do it, since
-            Obsidian's unlayered rules outrank the whole utilities layer. */}
-        <div className="zt:flex zt:w-5 zt:shrink-0 zt:justify-center zt:self-start">
-          <IconButton
-            icon="chevron-right"
-            disabled={isMissing}
-            onClick={() => actions.onOpenNote(entry)}
-            className="zt:opacity-0 zt:transition-opacity zt:group-hover:opacity-100"
-            {...tooltipAttrs(
-              isMissing
-                ? m.references_open_note_missing()
-                : m.references_open_note(),
+        {/* The jump button leads and stays painted; the note button keeps its
+            box underneath while unpainted, so neither target moves when hover
+            reveals the second one. */}
+        <div className="zt:flex zt:shrink-0 zt:flex-col zt:items-end zt:self-start">
+          {/* Live even on a missing entry: the citation is still in the
+              document, and jumping to it is how the reader goes to fix it. */}
+          <div className="zt:relative">
+            <EntryAction
+              icon="chevron-right"
+              label={m.references_go_to_occurrence({ count: occurrenceCount })}
+              onClick={() => actions.onSelect(entry)}
+            />
+            {/* The count rides in the button's top-left corner, which a
+                chevron leaves empty, rather than beside it — a badge in the
+                flow would widen the column on every multiply-cited row. It is
+                a visual echo only; the button's tooltip already says the
+                count out loud, since a bare number reads as part of the
+                citation rather than as a count of citations. */}
+            {occurrenceCount > 1 && (
+              <span
+                aria-hidden
+                className="zt:pointer-events-none zt:absolute zt:top-0 zt:left-0 zt:text-[0.625rem] zt:leading-none zt:text-muted-foreground zt:tabular-nums"
+              >
+                {occurrenceCount}
+              </span>
             )}
-          />
+          </div>
+          {/* The fade rides a wrapper, never the button: Obsidian's unlayered
+              `.clickable-icon[aria-disabled="true"] { opacity: .4 }` outranks
+              the whole utilities layer, so on a missing entry an opacity class
+              on the button itself loses and it would sit permanently visible.
+              That same rule is what dims the button once revealed — disabled
+              rather than hidden there, so the row keeps its shape and the
+              tooltip carries the reason. */}
+          <div className={revealOnHover}>
+            <EntryAction
+              icon="file-text"
+              label={
+                isMissing
+                  ? m.references_open_note_missing()
+                  : m.references_open_note()
+              }
+              disabled={isMissing}
+              onClick={() => actions.onOpenNote(entry)}
+            />
+          </div>
         </div>
       </div>
     </li>
@@ -193,18 +199,21 @@ function EntryAction({
   icon,
   label,
   onClick,
+  disabled,
 }: {
   icon: IconName;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <IconButton
       icon={icon}
       onClick={onClick}
+      disabled={disabled}
       // A clickable-icon defaults to ribbon proportions — an 18px glyph in a
-      // 30x26 box — which dwarfs the 13px entry text it sits under. Trim the
-      // glyph and the box so the toolbar reads as a footnote to the entry.
+      // 30x26 box — which dwarfs the 13px entry text it sits beside. Trim the
+      // glyph and the box so an action reads as a footnote to the entry.
       className="zt:p-1 zt:[--icon-size:14px]"
       {...tooltipAttrs(label)}
     />
