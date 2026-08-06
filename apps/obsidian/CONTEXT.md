@@ -173,6 +173,22 @@ _Avoid_: citekey frontmatter (names only the default property), resolver key
 **Note Index**:
 A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. While Citation Key Links are enabled, it also maps each Literature Note's Citation Key Property value; metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
 
+**Citation Index**:
+The plugin-owned, vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citekeys and Literature Note wikilinks. It persists only what Obsidian's metadata cache cannot infer (literal-citekey occurrences); wikilink occurrences derive from the metadata cache at query time. Resolution to Zotero Items is lazy, through the Note Index. It owns its readiness: a consumer that needs vault-wide completeness awaits its backfill, while the active document is indexed on demand.
+_Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
+
+**Citation Occurrence**:
+One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
+_Avoid_: citation instance, match, hit
+
+**Citekey Indexing**:
+The default-on capability that scans literal Pandoc `@citekey` text vault-wide into the Citation Index. Its toggle is the master switch for every literal-citekey surface — References Sidebar entries and the citekey editor treatment.
+_Avoid_: citekey scanning (names the mechanism, not the capability)
+
+**Wikilink Citations**:
+The opt-in interpretation of Literature Note wikilinks as Citations in the index-backed UI — References Sidebar entries and wikilink editor styling. Pandoc export converts wikilinks to Citations regardless of this toggle.
+_Avoid_: wikilink as citekey (the working name), link citations
+
 ### Zotero connection
 
 **Device Override**:
