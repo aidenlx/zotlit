@@ -80,7 +80,7 @@ export function citationsPageItems(
       items: [
         {
           name: m.settings_citation_references_style_name(),
-          desc: m.settings_citation_references_style_desc(),
+          desc: referencesStyleDescription(),
           render: (setting) => renderReferencesStyleRow(setting, ctx),
         },
         pandocEngineDefinition(ctx),
@@ -184,6 +184,21 @@ function renderReferencesStyleRow(
   );
 
   return () => stack.dispose();
+}
+
+/** Zotero's guide to installing CSL styles from the Zotero Style Repository. */
+const ZOTERO_STYLES_URL = "https://www.zotero.org/support/styles";
+
+function referencesStyleDescription(): DocumentFragment {
+  const desc = createFragment();
+  desc.append(`${m.settings_citation_references_style_desc()} `);
+  const link = createEl("a");
+  link.href = ZOTERO_STYLES_URL;
+  link.textContent = m.settings_citation_references_style_docs();
+  link.target = "_blank";
+  link.rel = "noopener";
+  desc.append(link);
+  return desc;
 }
 
 function citationKeyLinksDescription(): DocumentFragment {
