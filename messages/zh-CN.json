@@ -300,6 +300,7 @@
     }
   ],
   "references_open_note": "打开文献笔记",
+  "references_open_note_missing": "没有文献笔记：条目已不在文库中",
   "references_open_in_zotero": "在 Zotero 中打开",
   "references_open_attachment": "在 Zotero 中打开 PDF",
   "references_no_pdf_attachment": "该条目没有 PDF 附件。",
