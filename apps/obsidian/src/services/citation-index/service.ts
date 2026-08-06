@@ -56,8 +56,10 @@ export interface CitationIndexOptions {
   noteIndex: Pick<NoteIndex, "getNotesByCitationKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
   /**
-   * Where scans survive a restart. Defaults to the vault's own IndexedDB
-   * database; a store that fails to open costs a full rescan and nothing else.
+   * Where scans survive a restart; a store that fails to open costs a full
+   * rescan and nothing else.
+   *
+   * @default openCitekeyStore
    */
   openStore?: (app: App) => Promise<CitekeyStore>;
 }
@@ -369,9 +371,10 @@ export class CitationIndex extends Service<void> {
   }
 
   /**
-   * Citekey Indexing is the master switch: turning it off drops every scan
-   * result the index holds. Turning it back on starts the next build, which
-   * adopts the stored scans the vault still matches and reads the rest.
+   * Citekey Indexing is the master switch: turning it off drops every scan the
+   * index holds in memory, while the store keeps its records for the next
+   * launch to start from. Turning it back on within the same session starts the
+   * next build, which reads the vault again.
    */
   #applySettings(settings: Readonly<Settings>): void {
     const next = settings["citation.citekey-indexing"];
