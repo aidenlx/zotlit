@@ -83,6 +83,18 @@ export class FileSystemAdapter {
   }
 }
 
+/**
+ * Parses like the real `sanitizeHTMLToDom`, but sanitizes nothing — Obsidian
+ * runs the markup through DOMPurify, which the plugin does not depend on.
+ * A test that asserts on sanitizing belongs against the real Obsidian runtime.
+ * Needs a DOM, so its callers run under `// @vitest-environment happy-dom`.
+ */
+export function sanitizeHTMLToDom(html: string): DocumentFragment {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return template.content;
+}
+
 export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replaceAll(/\/+/g, "/").replace(/\/$/, "");
 }

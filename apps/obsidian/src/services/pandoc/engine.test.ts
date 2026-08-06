@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -40,6 +41,9 @@ const ADAMS: CslItemData = {
   author: [{ family: "Adams", given: "Bob" }],
   issued: { "date-parts": [[2018]] },
 };
+
+/** The id shape `itemToCsl` builds for a personal-library item. */
+const ZOTERO_URI_ID = "http://zotero.org/users/12345/items/ZETA1234";
 
 /** A numbered style, so a rendered entry is unmistakably this style's work. */
 const NUMERIC_STYLE = `<?xml version="1.0" encoding="utf-8"?>
@@ -125,6 +129,29 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
 
   it("renders no entries for an empty item set", async () => {
     await expect(engine.renderBibliography({ items: [] })).resolves.toEqual([]);
+  });
+
+  /**
+   * `itemToCsl` addresses an item by its Zotero URI, which is long enough that
+   * Pandoc's default line wrapping would break the opening tag of the entry.
+   */
+  it("keys entries by a Zotero URI id", async () => {
+    const item: CslItemData = { ...ZETA, id: ZOTERO_URI_ID };
+    const entries = await engine.renderBibliography({ items: [item] });
+
+    expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
+    expect(entries[0]?.html).toContain("Zeta, Ann");
+  });
+
+  it("keys entries by a Zotero URI id under a numbered style", async () => {
+    const item: CslItemData = { ...ZETA, id: ZOTERO_URI_ID };
+    const entries = await engine.renderBibliography({
+      items: [item],
+      styleXml: NUMERIC_STYLE,
+    });
+
+    expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
+    expect(entries[0]?.html).toContain("[1]");
   });
 
   it("reports the Pandoc failure for an unusable style", async () => {

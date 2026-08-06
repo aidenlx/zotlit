@@ -1,6 +1,6 @@
 // Bibliography and cited-document rendering, behind an interface that hides Pandoc.
 
-import { regex } from "arkregex";
+import { sanitizeHTMLToDom } from "obsidian";
 
 import { type CslItemData } from "@zotlit/db";
 
@@ -131,6 +131,9 @@ class PandocCitationEngine implements CitationEngine {
         to: "html",
         standalone: false,
         filters: ["citeproc"],
+        // Entry markup is stored and re-inserted as HTML, so single-line output
+        // keeps it free of the line breaks Pandoc's wrapping would introduce.
+        wrap: "none",
         ...style.options,
       },
       stdin: JSON.stringify(items),
@@ -236,33 +239,26 @@ function styleInput(styleXml: string | undefined): {
     : { options: { csl: STYLE_FILE }, files: { [STYLE_FILE]: styleXml } };
 }
 
+/** Pandoc prefixes every entry's `id` with this, over the CSL id of the item. */
+const ENTRY_ID_PREFIX = "ref-";
+
 /**
  * Pandoc wraps every bibliography entry in `<div id="ref-ID" class="csl-entry">`
- * inside one `<div id="refs">`. Entry markup can nest further divs, so an entry
- * runs to the next entry's opening tag — or, for the last one, to the closing
- * tag of the wrapper — rather than to the next `</div>`.
+ * inside one `<div id="refs">`. Entry markup nests further elements, and a CSL
+ * id is a Zotero URI long enough for Pandoc to wrap the opening tag, so the
+ * markup is read as a DOM rather than matched as text.
+ *
+ * Sanitizing here also means a style or an item field cannot carry active
+ * markup into the entries the sidebar stores.
  */
 function parseBibliography(html: string): BibliographyEntry[] {
-  const entryOpen = regex(
-    `<div id="ref-(?<id>[^"]*)" class="csl-entry"[^>]*>`,
-    "g",
-  );
   const entries: BibliographyEntry[] = [];
-
-  let open = entryOpen.exec(html);
-  while (open !== null) {
-    const { id } = open.groups;
-    const start = open.index + open[0].length;
-    open = entryOpen.exec(html);
-    const end = open?.index ?? html.lastIndexOf("</div>");
-    entries.push({ id, html: closeEntry(html.slice(start, end)) });
+  for (const entry of sanitizeHTMLToDom(html).querySelectorAll(".csl-entry")) {
+    if (!entry.id.startsWith(ENTRY_ID_PREFIX)) continue;
+    entries.push({
+      id: entry.id.slice(ENTRY_ID_PREFIX.length),
+      html: entry.innerHTML,
+    });
   }
   return entries;
-}
-
-function closeEntry(entry: string): string {
-  const trimmed = entry.trim();
-  return trimmed.endsWith("</div>")
-    ? trimmed.slice(0, -"</div>".length).trim()
-    : trimmed;
 }
