@@ -86,79 +86,78 @@ function Reference({ entry }: { entry: ReferenceEntry }) {
           </div>
           {/* Collapsed to zero height as a class, never an inline style — an
               inline style on this element would outrank the hover/focus
-              classes below and the toolbar could never open. */}
-          {entry.kind !== "missing" && (
-            <div className="zt:grid zt:grid-rows-[0fr] zt:transition-[grid-template-rows] zt:delay-0 zt:duration-150 zt:ease-out zt:group-focus-within:grid-rows-[1fr] zt:group-hover:grid-rows-[1fr] zt:group-hover:delay-100">
-              <div className={cn("zt:overflow-hidden", revealOnHover)}>
-                <div className="zt:flex zt:items-center zt:gap-0.5 zt:pt-1">
-                  <EntryAction
-                    icon="external-link"
-                    label={m.references_open_in_zotero()}
-                    onClick={() => actions.onOpenInZotero(entry.source)}
-                  />
-                  {/* Dropped outright when the Item stores nothing to open —
-                      the row keeps "Open in Zotero" either way, so the toolbar
-                      never empties. */}
-                  {entry.source.attachments.length > 0 && (
+              classes below and the toolbar could never open. The toolbar
+              itself stays live on a missing entry, since the note button
+              inside it still has somewhere to go. */}
+          <div className="zt:grid zt:grid-rows-[0fr] zt:transition-[grid-template-rows] zt:delay-0 zt:duration-150 zt:ease-out zt:group-focus-within:grid-rows-[1fr] zt:group-hover:grid-rows-[1fr] zt:group-hover:delay-100">
+            <div className={cn("zt:overflow-hidden", revealOnHover)}>
+              <div className="zt:flex zt:items-center zt:gap-0.5 zt:pt-1">
+                {/* The fade rides the shared wrapper above, never the button:
+                    Obsidian's unlayered
+                    `.clickable-icon[aria-disabled="true"] { opacity: .4 }`
+                    outranks the whole utilities layer, so on a missing entry
+                    an opacity class on the button itself loses and it would
+                    sit permanently visible. That same rule is what dims the
+                    button once revealed — disabled rather than hidden there,
+                    so the row keeps its shape and the tooltip carries the
+                    reason. */}
+                <EntryAction
+                  icon="file-text"
+                  label={
+                    isMissing
+                      ? m.references_open_note_missing()
+                      : m.references_open_note()
+                  }
+                  disabled={isMissing}
+                  onClick={() => actions.onOpenNote(entry)}
+                />
+                {entry.kind !== "missing" && (
+                  <>
                     <EntryAction
-                      icon="paperclip"
-                      label={m.references_open_attachment()}
-                      onClick={(event) =>
-                        actions.onOpenAttachment(entry.source, event)
-                      }
+                      icon="external-link"
+                      label={m.references_open_in_zotero()}
+                      onClick={() => actions.onOpenInZotero(entry.source)}
                     />
-                  )}
-                </div>
+                    {/* Dropped outright when the Item stores nothing to open —
+                        the row keeps "Open in Zotero" either way, so the
+                        toolbar never empties. */}
+                    {entry.source.attachments.length > 0 && (
+                      <EntryAction
+                        icon="paperclip"
+                        label={m.references_open_attachment()}
+                        onClick={(event) =>
+                          actions.onOpenAttachment(entry.source, event)
+                        }
+                      />
+                    )}
+                  </>
+                )}
               </div>
             </div>
-          )}
+          </div>
         </div>
-        {/* The jump button leads and stays painted; the note button keeps its
-            box underneath while unpainted, so neither target moves when hover
-            reveals the second one. */}
-        <div className="zt:flex zt:shrink-0 zt:flex-col zt:items-end zt:self-start">
-          {/* Live even on a missing entry: the citation is still in the
-              document, and jumping to it is how the reader goes to fix it. */}
-          <div className="zt:relative">
-            <EntryAction
-              icon="chevron-right"
-              label={m.references_go_to_occurrence({ count: occurrenceCount })}
-              onClick={() => actions.onSelect(entry)}
-            />
-            {/* The count rides in the button's top-left corner, which a
-                chevron leaves empty, rather than beside it — a badge in the
-                flow would widen the column on every multiply-cited row. It is
-                a visual echo only; the button's tooltip already says the
-                count out loud, since a bare number reads as part of the
-                citation rather than as a count of citations. */}
-            {occurrenceCount > 1 && (
-              <span
-                aria-hidden
-                className="zt:pointer-events-none zt:absolute zt:top-0 zt:left-0 zt:text-[0.625rem] zt:leading-none zt:text-muted-foreground zt:tabular-nums"
-              >
-                {occurrenceCount}
-              </span>
-            )}
-          </div>
-          {/* The fade rides a wrapper, never the button: Obsidian's unlayered
-              `.clickable-icon[aria-disabled="true"] { opacity: .4 }` outranks
-              the whole utilities layer, so on a missing entry an opacity class
-              on the button itself loses and it would sit permanently visible.
-              That same rule is what dims the button once revealed — disabled
-              rather than hidden there, so the row keeps its shape and the
-              tooltip carries the reason. */}
-          <div className={revealOnHover}>
-            <EntryAction
-              icon="file-text"
-              label={
-                isMissing
-                  ? m.references_open_note_missing()
-                  : m.references_open_note()
-              }
-              disabled={isMissing}
-              onClick={() => actions.onOpenNote(entry)}
-            />
-          </div>
+        {/* Live even on a missing entry: the citation is still in the
+            document, and jumping to it is how the reader goes to fix it. */}
+        <div className="zt:relative zt:shrink-0 zt:self-start">
+          <EntryAction
+            icon="chevron-right"
+            label={m.references_go_to_occurrence({ count: occurrenceCount })}
+            onClick={() => actions.onSelect(entry)}
+          />
+          {/* The count rides in the button's top-left corner, which a
+              chevron leaves empty, rather than beside it — a badge in the
+              flow would widen the column on every multiply-cited row. It is
+              a visual echo only; the button's tooltip already says the count
+              out loud, since a bare number reads as part of the citation
+              rather than as a count of citations. */}
+          {occurrenceCount > 1 && (
+            <span
+              aria-hidden
+              className="zt:pointer-events-none zt:absolute zt:top-0 zt:left-0 zt:text-[0.625rem] zt:leading-none zt:text-muted-foreground zt:tabular-nums"
+            >
+              {occurrenceCount}
+            </span>
+          )}
         </div>
       </div>
     </li>
