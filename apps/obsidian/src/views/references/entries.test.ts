@@ -10,6 +10,7 @@ import {
   buildReferenceEntries,
   toOpenableAttachments,
   type ReferenceSource,
+  type RenderedReference,
 } from "./entries";
 
 function citation(
@@ -26,12 +27,12 @@ function citation(
 }
 
 /** A rendered entry as the engine hands it over: parsed, not markup. */
-function fragment(text: string): DocumentFragment {
+function rendered(text: string, marker?: string): RenderedReference {
   const content = createFragment();
   const span = document.createElement("span");
   span.textContent = text;
   content.append(span);
-  return content;
+  return { marker, content };
 }
 
 function source(indexedKey: string, id: string): ReferenceSource {
@@ -122,30 +123,23 @@ describe("toOpenableAttachments", () => {
 });
 
 describe("buildReferenceEntries", () => {
-  it("keeps document order and reference numbers when the engine renders in another order", () => {
+  it("follows the engine's bibliography order, with the style's entry markers", () => {
     const citations = [citation("ZEBRA001", 1), citation("ALPHA002", 2)];
     const sources = new Map([
       ["ZEBRA001", source("ZEBRA001", "ref-zebra")],
       ["ALPHA002", source("ALPHA002", "ref-alpha")],
     ]);
     // Alphabetical, as an author-name bibliography style sorts it.
-    const alpha = fragment("Alpha");
-    const zebra = fragment("Zebra");
-    const rendered = new Map([
+    const alpha = rendered("Alpha", "[1]");
+    const zebra = rendered("Zebra", "[2]");
+    const bibliography = new Map([
       ["ref-alpha", alpha],
       ["ref-zebra", zebra],
     ]);
 
-    expect(buildReferenceEntries(citations, sources, rendered)).toStrictEqual([
-      {
-        indexedKey: "ZEBRA001",
-        linkpath: "notes/ZEBRA001",
-        refNumber: 1,
-        occurrences: [{ line: 1, col: 0 }],
-        kind: "rendered",
-        source: sources.get("ZEBRA001"),
-        content: zebra,
-      },
+    expect(
+      buildReferenceEntries(citations, sources, bibliography),
+    ).toStrictEqual([
       {
         indexedKey: "ALPHA002",
         linkpath: "notes/ALPHA002",
@@ -153,8 +147,55 @@ describe("buildReferenceEntries", () => {
         occurrences: [{ line: 2, col: 0 }],
         kind: "rendered",
         source: sources.get("ALPHA002"),
-        content: alpha,
+        marker: "[1]",
+        content: alpha.content,
       },
+      {
+        indexedKey: "ZEBRA001",
+        linkpath: "notes/ZEBRA001",
+        refNumber: 1,
+        occurrences: [{ line: 1, col: 0 }],
+        kind: "rendered",
+        source: sources.get("ZEBRA001"),
+        marker: "[2]",
+        content: zebra.content,
+      },
+    ]);
+  });
+
+  it("keeps the marker unset for a style that renders none", () => {
+    const citations = [citation("BOOK0001", 1)];
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+    const bibliography = new Map([["ref-book", rendered("Book")]]);
+
+    expect(
+      buildReferenceEntries(citations, sources, bibliography),
+    ).toMatchObject([{ kind: "rendered", marker: undefined }]);
+  });
+
+  it("appends a reference the bibliography holds no place for, in document order", () => {
+    const citations = [
+      citation("GONE0001", 1),
+      citation("BOOK0002", 2),
+      citation("BOOK0003", 3),
+    ];
+    const sources = new Map([
+      ["BOOK0002", source("BOOK0002", "ref-two")],
+      ["BOOK0003", source("BOOK0003", "ref-three")],
+    ]);
+    // The engine rendered the third citation alone; the first cites an Item
+    // the database no longer holds, and the second went unrendered.
+    const bibliography = new Map([["ref-three", rendered("Three", "[1]")]]);
+
+    expect(
+      buildReferenceEntries(citations, sources, bibliography).map((entry) => [
+        entry.indexedKey,
+        entry.kind,
+      ]),
+    ).toStrictEqual([
+      ["BOOK0003", "rendered"],
+      ["GONE0001", "missing"],
+      ["BOOK0002", "summary"],
     ]);
   });
 
@@ -176,10 +217,12 @@ describe("buildReferenceEntries", () => {
       ["BOOK0001", source("BOOK0001", "ref-one")],
       ["BOOK0002", source("BOOK0002", "ref-two")],
     ]);
-    const rendered = new Map([["ref-one", fragment("One")]]);
+    const bibliography = new Map([["ref-one", rendered("One")]]);
 
     expect(
-      buildReferenceEntries(citations, sources, rendered).map((e) => e.kind),
+      buildReferenceEntries(citations, sources, bibliography).map(
+        (e) => e.kind,
+      ),
     ).toStrictEqual(["rendered", "summary"]);
   });
 

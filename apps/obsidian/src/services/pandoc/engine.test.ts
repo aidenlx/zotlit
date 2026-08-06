@@ -89,6 +89,48 @@ function Link(link)
 end
 `;
 
+/**
+ * A style that lays an entry out as several blocks: `display="block"` and
+ * `display="indent"` are what put a `csl-block` and a `csl-indent` around a
+ * part of an entry, which the sidebar flattens back into one flow.
+ */
+const BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info>
+    <title>Blocked</title>
+    <id>http://example.com/blocked</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><text variable="citation-number"/></layout></citation>
+  <bibliography>
+    <layout>
+      <names variable="author" display="block"><name/></names>
+      <text variable="title" display="indent"/>
+    </layout>
+  </bibliography>
+</style>`;
+
+/**
+ * A style that lays a block out beside a marker: a flush layout puts the rest
+ * of the entry in a second column, so its blocks nest one level deeper.
+ */
+const NESTED_BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info>
+    <title>Blocked and numbered</title>
+    <id>http://example.com/blocked-numbered</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><text variable="citation-number" prefix="[" suffix="]"/></layout></citation>
+  <bibliography second-field-align="flush">
+    <layout>
+      <text variable="citation-number" prefix="[" suffix="]"/>
+      <names variable="author"><name/></names>
+      <text variable="title" display="indent"/>
+    </layout>
+  </bibliography>
+</style>`;
+
 const RESOLVE_MAP = JSON.stringify({ citations: { "Zeta 2020": ZETA.id } });
 const DOCUMENT = "Cited here [[Zeta 2020]].\n\n# References\n";
 
@@ -123,8 +165,61 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     });
 
     expect(first?.id).toBe(ZETA.id);
-    expect(first?.content.textContent).toContain("[1]");
     expect(first?.content.textContent).toContain("A study of nothing");
+  });
+
+  it("hands the entry marker over apart from the entry text", async () => {
+    const [first] = await engine.renderBibliography({
+      items: [ZETA],
+      styleXml: NUMERIC_STYLE,
+    });
+
+    expect(first?.marker).toBe("[1]");
+    expect(first?.content.textContent).not.toContain("[1]");
+  });
+
+  it("leaves the marker unset for a style that renders none", async () => {
+    const entries = await engine.renderBibliography({ items: [ZETA] });
+
+    expect(entries[0]?.marker).toBeUndefined();
+  });
+
+  it("returns entries in the style's bibliography order", async () => {
+    const entries = await engine.renderBibliography({ items: [ZETA, ADAMS] });
+
+    // The embedded style sorts by author, so Adams leads whatever order the
+    // items arrived in.
+    expect(entries.map((entry) => entry.id)).toEqual([ADAMS.id, ZETA.id]);
+  });
+
+  it("flattens the blocks of an entry into one inline flow", async () => {
+    const [first] = await engine.renderBibliography({
+      items: [ZETA],
+      styleXml: BLOCK_STYLE,
+    });
+
+    expect(first?.content.textContent).toBe("Ann Zeta A study of nothing");
+    expect(first?.content.querySelector("div")).toBeNull();
+  });
+
+  it("flattens the blocks a flush layout nests beside the marker", async () => {
+    const [first] = await engine.renderBibliography({
+      items: [ZETA],
+      styleXml: NESTED_BLOCK_STYLE,
+    });
+
+    expect(first?.marker).toBe("[1]");
+    expect(first?.content.textContent).toBe("Ann Zeta A study of nothing");
+    expect(first?.content.querySelector("div")).toBeNull();
+  });
+
+  it("keeps the markup a style formats an entry's text with", async () => {
+    const [first] = await engine.renderBibliography({ items: [ZETA] });
+
+    // The embedded style italicizes a book title.
+    expect(first?.content.querySelector("em")?.textContent).toBe(
+      "A Study of Nothing",
+    );
   });
 
   it("renders no entries for an empty item set", async () => {
@@ -151,7 +246,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     });
 
     expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
-    expect(entries[0]?.content.textContent).toContain("[1]");
+    expect(entries[0]?.marker).toBe("[1]");
   });
 
   it("reports the Pandoc failure for an unusable style", async () => {

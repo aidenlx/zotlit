@@ -36,8 +36,14 @@ export interface BibliographyEntry {
   /** CSL `id` of the item this entry renders. */
   id: string;
   /**
-   * The formatted entry, without its wrapping element. Already sanitized and
-   * parsed, so a consumer inserts a clone instead of re-parsing markup.
+   * The Entry Marker the style rendered ahead of the entry — a citation number
+   * in the style's own affixes — or `undefined` for a style that renders none.
+   */
+  marker: string | undefined;
+  /**
+   * The formatted entry text, without its wrapping element and without the
+   * marker. Already sanitized and parsed, so a consumer inserts a clone instead
+   * of re-parsing markup.
    */
   content: DocumentFragment;
 }
@@ -245,11 +251,21 @@ function styleInput(styleXml: string | undefined): {
 /** Pandoc prefixes every entry's `id` with this, over the CSL id of the item. */
 const ENTRY_ID_PREFIX = "ref-";
 
+/** The block a style's Entry Marker sits in, when the style renders one. */
+const LEFT_MARGIN_CLASS = "csl-left-margin";
+
+/**
+ * The blocks a style lays the rest of an entry out in: the second column of a
+ * flush layout, and the two `display` blocks a layout can wrap a part in.
+ */
+const ENTRY_BLOCK_CLASSES = ["csl-right-inline", "csl-block", "csl-indent"];
+
 /**
  * Pandoc wraps every bibliography entry in `<div id="ref-ID" class="csl-entry">`
- * inside one `<div id="refs">`. Entry markup nests further elements, and a CSL
- * id is a Zotero URI long enough for Pandoc to wrap the opening tag, so the
- * markup is read as a DOM rather than matched as text.
+ * inside one `<div id="refs">`, and reports the entries in the style's own
+ * bibliography order. Entry markup nests further elements, and a CSL id is a
+ * Zotero URI long enough for Pandoc to wrap the opening tag, so the markup is
+ * read as a DOM rather than matched as text.
  *
  * The entry keeps that parsed form: it is sanitized once here, so a style or an
  * item field cannot carry active markup into the sidebar, and the view inserts
@@ -259,9 +275,66 @@ function parseBibliography(html: string): BibliographyEntry[] {
   const entries: BibliographyEntry[] = [];
   for (const entry of sanitizeHTMLToDom(html).querySelectorAll(".csl-entry")) {
     if (!entry.id.startsWith(ENTRY_ID_PREFIX)) continue;
-    const content = createFragment();
-    content.append(...entry.childNodes);
-    entries.push({ id: entry.id.slice(ENTRY_ID_PREFIX.length), content });
+    entries.push({
+      id: entry.id.slice(ENTRY_ID_PREFIX.length),
+      ...splitEntry(entry),
+    });
   }
   return entries;
+}
+
+/**
+ * Take the Entry Marker out of an entry and flatten what is left into one
+ * inline flow.
+ *
+ * A style lays an entry out in blocks, and a block break would push whatever
+ * the sidebar puts after the entry — its occurrence counter — onto its own
+ * line. Each block hands its own children over instead, separated by one space
+ * where the break used to be. A flush layout nests its blocks inside the column
+ * beside the marker, so a block hands over what its own blocks hold. Line
+ * breaks the markup itself carries between blocks are layout rather than text,
+ * so they make that same single space.
+ */
+function splitEntry(
+  entry: Element,
+): Pick<BibliographyEntry, "marker" | "content"> {
+  const content = createFragment();
+  let marker: string | undefined;
+
+  /** Moves one level of children over, and recurses through the blocks. */
+  function flatten(parent: Node): void {
+    /** A separator stands between what was emitted and whatever comes next. */
+    let gap = false;
+    // A copy, since appending a node to the flow takes it out of `parent` and
+    // the live child list would shift the ones still to be read.
+    const children = [...parent.childNodes];
+    for (const node of children) {
+      if (isWhitespace(node)) {
+        gap = true;
+        continue;
+      }
+      if (hasClass(node, LEFT_MARGIN_CLASS)) {
+        marker ??= node.textContent?.trim() || undefined;
+        gap = false;
+        continue;
+      }
+      const block = ENTRY_BLOCK_CLASSES.some((name) => hasClass(node, name));
+      if (content.hasChildNodes() && (gap || block)) content.append(" ");
+      if (block) flatten(node);
+      else content.append(node);
+      gap = block;
+    }
+  }
+
+  flatten(entry);
+  return { marker, content };
+}
+
+function hasClass(node: Node, name: string): boolean {
+  return node instanceof Element && node.classList.contains(name);
+}
+
+/** Text that carries no content of its own, so it reads as a separator. */
+function isWhitespace(node: Node): boolean {
+  return node.nodeType === Node.TEXT_NODE && !node.textContent?.trim();
 }

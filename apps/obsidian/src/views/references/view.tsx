@@ -36,6 +36,7 @@ import {
   toOpenableAttachments,
   type OpenableAttachment,
   type ReferenceSource,
+  type RenderedReference,
 } from "./entries";
 import { References } from "./References";
 import { createReferencesStore, ReferencesStoreProvider } from "./store";
@@ -62,10 +63,11 @@ export class ReferencesView extends ItemView {
   readonly #store = createReferencesStore();
   readonly #deps: ReferencesViewDeps;
   /**
-   * Rendered bibliography entries by CSL id. Kept across reloads so an entry
-   * that is already formatted never falls back to its summary mid-edit.
+   * Rendered bibliography entries by CSL id, in the engine's bibliography
+   * order. Kept across reloads so an entry that is already formatted never
+   * falls back to its summary mid-edit.
    */
-  readonly #rendered = new Map<string, DocumentFragment>();
+  readonly #rendered = new Map<string, RenderedReference>();
   /** This view's own supersession slot, so two sidebars never drop each other's renders. */
   readonly #slot = `references-${crypto.randomUUID()}`;
   #root: Root | null = null;
@@ -260,7 +262,13 @@ export class ReferencesView extends ItemView {
       });
       if (generation !== this.#generation) return;
 
-      for (const { id, content } of rendered) this.#rendered.set(id, content);
+      // Refilled rather than merged: the render covers every cited Item, so
+      // what it leaves out is no longer cited, and the map's order is the
+      // bibliography order the list reads in.
+      this.#rendered.clear();
+      for (const { id, marker, content } of rendered) {
+        this.#rendered.set(id, { marker, content });
+      }
       this.#store.setState({
         entries: buildReferenceEntries(citations, sources, this.#rendered),
       });

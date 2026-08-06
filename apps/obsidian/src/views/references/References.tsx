@@ -18,12 +18,16 @@ import { useReferencesStore } from "./store";
 /**
  * The pane: the engine surface above, the reference list below. The list is a
  * `ul` — a bare `ol` keeps Obsidian's own unlayered numbering, which would
- * double the Reference Numbers the entries already carry.
+ * double the numbers the entries already carry.
  */
 export function References() {
   const entries = useReferencesStore((s) => s.entries);
   const engine = useReferencesStore((s) => s.engine);
   const dbReady = useReferencesStore((s) => s.dbReady);
+  // Reference Numbers belong to the minimal list. Once the engine has formatted
+  // an entry, the list reads as the style's own bibliography, and numbering the
+  // rest of it would set a second numbering against the style's markers.
+  const numbered = !entries.some((entry) => entry.kind === "rendered");
 
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto">
@@ -35,7 +39,11 @@ export function References() {
       ) : (
         <ul className="zt:flex zt:flex-col zt:text-sm">
           {entries.map((entry) => (
-            <Reference key={entry.indexedKey} entry={entry} />
+            <Reference
+              key={entry.indexedKey}
+              entry={entry}
+              numbered={numbered}
+            />
           ))}
         </ul>
       )}
@@ -60,27 +68,43 @@ const revealOnHover =
 const compactIconButton = "zt:p-1 zt:[--icon-size:var(--icon-xs)]";
 
 /**
- * A flat row: Reference Number, entry text with a hover/focus-revealed toolbar
+ * A flat row: the gutter, entry text with a hover/focus-revealed toolbar
  * underneath, and an action column on the right. The text is inert and
  * selectable — it renders what the engine formatted, so it can be copied out
  * whole. Nothing the reader can act on overlaps the text.
+ *
+ * @param numbered whether the list carries Reference Numbers, which the minimal
+ *   list does and an engine-rendered one leaves to the style.
  */
-function Reference({ entry }: { entry: ReferenceEntry }) {
+function Reference({
+  entry,
+  numbered,
+}: {
+  entry: ReferenceEntry;
+  numbered: boolean;
+}) {
   const actions = useReferenceActions();
   const isMissing = entry.kind === "missing";
   const occurrenceCount = entry.occurrences.length;
+  const gutter = gutterLabel(entry, numbered);
 
   return (
     <li>
       <div className="zt:group zt:flex zt:items-baseline zt:gap-2 zt:border-b zt:border-border zt:px-3 zt:py-2">
-        <span
-          className={cn(
-            "zt:w-5 zt:shrink-0 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums",
-            isMissing && "zt:text-destructive",
-          )}
-        >
-          {isMissing ? "⚠" : entry.refNumber}
-        </span>
+        {/* The gutter is only there when something numbers the entry: a style
+            that numbers nothing gives the entry text the whole row instead of
+            an empty column to start after. It holds its width for the numbers
+            it does carry, and a marker wider than that widens its own row. */}
+        {gutter !== undefined && (
+          <span
+            className={cn(
+              "zt:min-w-5 zt:shrink-0 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums",
+              isMissing && "zt:text-destructive",
+            )}
+          >
+            {gutter}
+          </span>
+        )}
         <div className="zt:min-w-0 zt:flex-1">
           {/* Selectable, so a formatted entry can be copied out of the pane
               whole. Nothing else lives in this flow — the occurrence count
@@ -167,6 +191,25 @@ function Reference({ entry }: { entry: ReferenceEntry }) {
       </div>
     </li>
   );
+}
+
+/**
+ * What the gutter shows, or `undefined` to leave the row without one: the
+ * style's own Entry Marker on a rendered entry, the Reference Number while the
+ * list numbers its entries, and the warning state of a missing Item either way.
+ */
+function gutterLabel(
+  entry: ReferenceEntry,
+  numbered: boolean,
+): string | number | undefined {
+  switch (entry.kind) {
+    case "rendered":
+      return entry.marker;
+    case "summary":
+      return numbered ? entry.refNumber : undefined;
+    case "missing":
+      return "⚠";
+  }
 }
 
 function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
