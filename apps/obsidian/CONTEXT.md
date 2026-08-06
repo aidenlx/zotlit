@@ -181,6 +181,10 @@ _Avoid_: citation cache (names the persistence, not the index), citation scanner
 One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
 _Avoid_: citation instance, match, hit
 
+**Citation Cluster**:
+The bracketed literal-citekey syntax `[see @a, p. 3; @b]` — one `;`-separated item per citekey, each carrying an optional prefix and suffix, and `-@` to suppress the author. It is the source text a Citation Index scan and an editor widget both read; the Citation Run is its wikilink counterpart in Pandoc export.
+_Avoid_: citation group (names the result, not the source syntax), bracketed citation
+
 **Citekey Indexing**:
 The default-on capability that scans literal Pandoc `@citekey` text vault-wide into the Citation Index. Its toggle is the master switch for every literal-citekey surface — References Sidebar entries and the citekey editor treatment.
 _Avoid_: citekey scanning (names the mechanism, not the capability)

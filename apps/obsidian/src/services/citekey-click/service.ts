@@ -18,6 +18,7 @@ import {
 } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { citekeyAt } from "@/lib/citation-grammar";
 import { registerEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -29,8 +30,6 @@ import { type NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
-
-import { citationAtOffset } from "./parse";
 
 const logger = getLogger("citekey-click");
 
@@ -270,21 +269,21 @@ export function findCitekeyToken(
   pos: EditorPosition,
   noteIndex: NoteIndex,
 ): ClickableToken | null {
-  const token = citationAtOffset(editor.getLine(pos.line), pos.ch);
-  if (!token) return null;
+  const key = citekeyAt(editor.getLine(pos.line), pos.ch);
+  if (!key) return null;
 
   const range = {
-    start: { line: pos.line, ch: token.start },
-    end: { line: pos.line, ch: token.end },
+    start: { line: pos.line, ch: key.start },
+    end: { line: pos.line, ch: key.end },
   };
-  const matches = noteIndex.getNotesByCitationKey(token.citekey);
+  const matches = noteIndex.getNotesByCitationKey(key.citekey);
   if (matches.length === 1) {
     const existing = matches[0]!;
     return { type: "internal-link", text: existing.path, ...range };
   }
   const createToken: CreateToken = {
     type: "internal-link",
-    text: token.citekey,
+    text: key.citekey,
     citekey: CREATE_MARKER,
     ...range,
   };
