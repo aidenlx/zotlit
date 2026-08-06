@@ -70,6 +70,7 @@ export class ReferencesView extends ItemView {
   constructor(leaf: WorkspaceLeaf, deps: ReferencesViewDeps) {
     super(leaf);
     this.contentEl.addClass("zt-root");
+    this.contentEl.addClass("zt-references-view");
     this.#deps = deps;
   }
 

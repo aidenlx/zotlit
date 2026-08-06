@@ -6,7 +6,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import {
   type PandocEngineFailure,
   type PandocEngineStatus,
@@ -27,14 +27,16 @@ export function References() {
   const dbReady = useReferencesStore((s) => s.dbReady);
 
   return (
-    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto zt:px-3 zt:py-2">
-      <EngineSurface status={engine} />
+    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto">
+      <div className="zt:px-3 zt:pt-2">
+        <EngineSurface status={engine} />
+      </div>
       {entries.length === 0 ? (
-        <div className="pane-empty">
+        <div className="pane-empty zt:p-2">
           {dbReady ? m.references_empty() : m.references_db_unavailable()}
         </div>
       ) : (
-        <ul className="zt:flex zt:flex-col zt:gap-3 zt:text-sm">
+        <ul className="zt:flex zt:flex-col zt:text-sm">
           {entries.map((entry) => (
             <Reference key={entry.indexedKey} entry={entry} />
           ))}
@@ -45,73 +47,146 @@ export function References() {
 }
 
 /**
- * Hanging indent with the Reference Number flush in the outdent, so a wrapped
- * entry reads as one block under its number.
+ * A flat row: Reference Number, entry text (with an inline occurrence
+ * counter and a hover/focus-revealed toolbar underneath), and a
+ * hover-revealed chevron. Only the entry text is clickable, and it cycles the
+ * entry's occurrences — the row around it is inert, so the toolbar and the
+ * chevron are the only other targets and none of them overlap.
  */
 function Reference({ entry }: { entry: ReferenceEntry }) {
   const actions = useReferenceActions();
+  const isMissing = entry.kind === "missing";
+  const occurrenceCount = entry.occurrences.length;
 
   return (
     <li>
-      <div
-        role="button"
-        tabIndex={0}
-        className="zt:cursor-pointer zt:pl-7 zt:-indent-7 zt:leading-normal"
-        {...tooltipAttrs(m.references_go_to_occurrence())}
-        onClick={() => actions.onSelect(entry)}
-        onKeyDown={(e) => {
-          if (e.key !== " " && e.key !== "Enter") return;
-          e.preventDefault();
-          actions.onSelect(entry);
-        }}
-      >
-        <span className="zt:mr-1 zt:text-muted-foreground zt:tabular-nums">
-          {entry.refNumber}.
+      <div className="zt:group zt:flex zt:items-baseline zt:gap-2 zt:border-b zt:border-border zt:px-3 zt:py-2">
+        <span
+          className={cn(
+            "zt:w-5 zt:shrink-0 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums",
+            isMissing && "zt:text-destructive",
+          )}
+        >
+          {isMissing ? "⚠" : entry.refNumber}
         </span>
-        <ReferenceBody entry={entry} />
-      </div>
-      <div className="zt:mt-1 zt:flex zt:gap-1 zt:pl-7">
-        <EntryAction
-          icon="file-text"
-          label={m.references_open_note()}
-          onClick={() => actions.onOpenNote(entry)}
-        />
-        {entry.kind !== "missing" && (
-          <>
-            <EntryAction
-              icon="external-link"
-              label={m.references_open_in_zotero()}
-              onClick={() => actions.onOpenInZotero(entry.source)}
-            />
-            <EntryAction
-              icon="paperclip"
-              label={m.references_open_attachment()}
-              onClick={() => actions.onOpenAttachment(entry.source)}
-            />
-          </>
-        )}
+        <div className="zt:min-w-0 zt:flex-1">
+          <div>
+            {/* A span rather than an anchor: Obsidian styles bare `a`
+                globally and unlayered, which would impose its link colour and
+                weight here and leave us fighting them. The affordance is the
+                link cursor plus an underline on hover — the entry keeps normal
+                text colour, since a whole bibliography entry in link purple
+                would outshout the list. `hover:` already compiles under
+                `@media (hover: hover)`, matching Obsidian's own link rule. */}
+            <span
+              role="link"
+              tabIndex={0}
+              className="zt:cursor-link zt:hover:underline"
+              {...tooltipAttrs(m.references_go_to_occurrence())}
+              onClick={() => actions.onSelect(entry)}
+              onKeyDown={(e) => {
+                if (e.key !== " " && e.key !== "Enter") return;
+                e.preventDefault();
+                actions.onSelect(entry);
+              }}
+            >
+              <ReferenceBody entry={entry} />
+            </span>
+            {/* A bare number needs saying out loud — on its own it reads as
+                part of the citation rather than as a count of citations. */}
+            {occurrenceCount > 1 && (
+              <span
+                className="zt:ml-1.5 zt:cursor-help zt:text-xs zt:text-muted-foreground zt:tabular-nums"
+                {...tooltipAttrs(
+                  m.references_occurrence_count({ count: occurrenceCount }),
+                )}
+              >
+                {occurrenceCount}
+              </span>
+            )}
+          </div>
+          {/* Collapsed to zero height as a class, never an inline style — an
+              inline style on this element would outrank the hover/focus
+              classes below and the toolbar could never open. The opening
+              delay sits only on the hover variant (`group-hover:delay-100`),
+              so collapsing and keyboard focus both stay instant. */}
+          {entry.kind !== "missing" && (
+            <div className="zt:grid zt:grid-rows-[0fr] zt:transition-[grid-template-rows] zt:delay-0 zt:duration-150 zt:ease-out zt:group-focus-within:grid-rows-[1fr] zt:group-hover:grid-rows-[1fr] zt:group-hover:delay-100">
+              <div className="zt:overflow-hidden zt:opacity-0 zt:transition-opacity zt:delay-0 zt:duration-150 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-hover:delay-100">
+                <div className="zt:flex zt:items-center zt:gap-0.5 zt:pt-1">
+                  <EntryAction
+                    icon="external-link"
+                    label={m.references_open_in_zotero()}
+                    onClick={() => actions.onOpenInZotero(entry.source)}
+                  />
+                  <EntryAction
+                    icon="paperclip"
+                    label={m.references_open_attachment()}
+                    onClick={() => actions.onOpenAttachment(entry.source)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        {/* Disabled rather than hidden on a missing entry, so the row keeps
+            its shape and the tooltip carries the reason. The dimming comes
+            from Obsidian's own `.clickable-icon[aria-disabled="true"]` rule,
+            which `IconButton` triggers — a utility class cannot do it, since
+            Obsidian's unlayered rules outrank the whole utilities layer. */}
+        <div className="zt:flex zt:w-5 zt:shrink-0 zt:justify-center zt:self-start">
+          <IconButton
+            icon="chevron-right"
+            disabled={isMissing}
+            onClick={() => actions.onOpenNote(entry)}
+            className="zt:opacity-0 zt:transition-opacity zt:group-hover:opacity-100"
+            {...tooltipAttrs(
+              isMissing
+                ? m.references_open_note_missing()
+                : m.references_open_note(),
+            )}
+          />
+        </div>
       </div>
     </li>
   );
 }
 
 function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
+  const textClass = "zt:font-content zt:text-sm zt:leading-snug";
   switch (entry.kind) {
     case "rendered":
-      return <RenderedEntry html={entry.html} />;
+      return (
+        <RenderedEntry
+          html={entry.html}
+          className={cn(textClass, "zt:text-foreground")}
+        />
+      );
     case "summary":
-      return <span>{entry.source.summary}</span>;
+      return (
+        <span className={cn(textClass, "zt:text-foreground")}>
+          {entry.source.summary}
+        </span>
+      );
     case "missing":
       return (
-        <span className="zt:text-destructive">
+        <span className={cn(textClass, "zt:text-destructive")}>
           {m.references_item_missing({ linkpath: entry.linkpath })}
         </span>
       );
   }
 }
 
-function RenderedEntry({ html }: { html: string }) {
-  return <span ref={useSanitizedHtml<HTMLSpanElement>(html)} />;
+function RenderedEntry({
+  html,
+  className,
+}: {
+  html: string;
+  className?: string;
+}) {
+  return (
+    <span className={className} ref={useSanitizedHtml<HTMLSpanElement>(html)} />
+  );
 }
 
 function EntryAction({
@@ -123,7 +198,17 @@ function EntryAction({
   label: string;
   onClick: () => void;
 }) {
-  return <IconButton icon={icon} onClick={onClick} {...tooltipAttrs(label)} />;
+  return (
+    <IconButton
+      icon={icon}
+      onClick={onClick}
+      // A clickable-icon defaults to ribbon proportions — an 18px glyph in a
+      // 30x26 box — which dwarfs the 13px entry text it sits under. Trim the
+      // glyph and the box so the toolbar reads as a footnote to the entry.
+      className="zt:p-1 zt:[--icon-size:14px]"
+      {...tooltipAttrs(label)}
+    />
+  );
 }
 
 /**
