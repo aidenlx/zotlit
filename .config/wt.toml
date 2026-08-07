@@ -12,4 +12,9 @@ pre-start = "mise trust && mise run init {{ primary_worktree_path }}"
 # Deinit submodules before `git worktree remove` runs so its untracked-file
 # check passes — otherwise removal demands `--force`, which the Claude Code
 # WorktreeRemove plugin path doesn't pass.
-pre-remove = "git submodule deinit --force --all"
+#
+# Then unregister this worktree's Obsidian debug vault, so the vault list keeps
+# no dead entry once the folder goes. The script drives the running app when one
+# answers and edits obsidian.json directly when none does, so it never wakes a
+# shut Obsidian. A failing pre-remove aborts the removal, so it stays non-fatal.
+pre-remove = "git submodule deinit --force --all && { node packages/scripts/scripts/obsidian-vault.ts remove --purge || true; }"

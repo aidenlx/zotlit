@@ -12,23 +12,45 @@ description: |
 Drive the running Obsidian app through `obsidian-cli` to verify plugin changes against real
 rendered state. The DOM is the source of truth.
 
+## Vault setup, once per worktree
+
+Each worktree debugs against its own vault at `tests/zt-vault-<worktree>`, seeded from the tracked
+`tests/zt-vault` template and gitignored. `build:dev` copies the bundle into the vault of the
+worktree you build from. Build once, then register:
+
+```bash
+pnpm --filter @zotlit/obsidian build:dev
+packages/scripts/scripts/obsidian-vault.ts create
+```
+
+`create` needs the bundle already in the vault, seeds the fixture notes around
+it, turns Restricted Mode off, and confirms the plugin actually loaded. It
+prints the 16-hex vault id. Obsidian names a vault after its folder, so the distinct folder
+name also makes `vault=zt-vault-<worktree>` resolve unambiguously — `vault=<name>` picks the first
+basename match, which is why every worktree needs its own name. Tear down with
+`packages/scripts/scripts/obsidian-vault.ts remove --purge`; `wt`'s `pre-remove`
+hook already runs that when the worktree goes.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `obsidian-cli plugin:reload id=zotlit` | Reload the plugin after a build |
-| `obsidian-cli commands filter=zotlit` | List available plugin commands |
-| `obsidian-cli command id=zotlit:<cmd>` | Run a command |
-| `obsidian-cli eval code='<js>'` | Run JS in the app, returns the value |
-| `obsidian-cli dev:screenshot path=<abs>` | Capture the window (absolute path required) |
-| `obsidian-cli dev:errors` | Captured errors |
-| `obsidian-cli dev:console` | Console output |
+| `obsidian-cli vault=<id> plugin:reload id=zotlit` | Reload the plugin after a build |
+| `obsidian-cli vault=<id> commands filter=zotlit` | List available plugin commands |
+| `obsidian-cli vault=<id> command id=zotlit:<cmd>` | Run a command |
+| `obsidian-cli vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
+| `obsidian-cli vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
+| `obsidian-cli vault=<id> dev:errors` | Captured errors |
+| `obsidian-cli vault=<id> dev:console` | Console output |
+
+The CLI always exits 0. Read the output text: `=> ` prefixes a result, and failures come back as
+`Error: …` or `Vault not found.`
 
 ## Loop
 
-1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` (copies bundle into the test vault's
-   `.obsidian/plugins/zotlit`).
-2. **Reload** — `obsidian-cli plugin:reload id=zotlit`.
+1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` (copies the bundle into this worktree's
+   `tests/zt-vault-<worktree>/.obsidian/plugins/zotlit`).
+2. **Reload** — `obsidian-cli vault=<id> plugin:reload id=zotlit`.
 3. **Open** — `obsidian-cli command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
 4. **Probe** — `obsidian-cli eval code='…'` with `getComputedStyle(el)` /
    `el.getBoundingClientRect()` to assert what actually rendered. A computed-style assertion is
@@ -51,12 +73,12 @@ A capture taken right after reload or `revealLeaf` may show old DOM while the ch
 live. Cross-check against an `eval` DOM/computed-style query — if they disagree, the DOM query
 wins. Re-shoot. A DevTools window open over Obsidian can also steal the capture — close it first.
 
-### Vault is the main checkout
+### Confirm which vault answered
 
-The running app's vault is `~/repo/zotlit-repo/zotlit-v2/tests/zt-vault` even when working from
-a worktree. `build:dev` from any worktree copies there, and `data.json` edits must target that
-vault, not the worktree's own `tests/zt-vault`. Confirm with
-`eval code='app.vault.adapter.basePath'`.
+An untargeted command goes to the focused window, which may belong to another worktree. Pass
+`vault=<id>`, and confirm with `eval code='app.vault.adapter.basePath'` — it must print the
+`tests/zt-vault-<worktree>` of the worktree you build from. `data.json` edits target that same
+path, not the `tests/zt-vault` template.
 
 ### Occluded window
 

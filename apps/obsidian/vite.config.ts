@@ -12,6 +12,7 @@ import {
   parseMinElectronVersion,
 } from "@zotlit/scripts/obsidian-manifest";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+import { getTestVaultDir } from "@zotlit/scripts/test-vault";
 
 import packageJson from "./package.json" with { type: "json" };
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
@@ -34,24 +35,9 @@ const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const pandocEngine = await resolvePandocEnginePin();
 console.log(`Pinning Pandoc ${pandocEngine.version}: ${pandocEngine.url}`);
 
-async function getTestVaultPluginDir(pluginId: string) {
-  let baseRoot = workspaceRoot;
-  try {
-    const primary = (
-      await readFile(join(workspaceRoot, ".primary-worktree"), "utf-8")
-    ).trim();
-    if (primary) baseRoot = resolve(workspaceRoot, primary);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-  }
-  return resolve(
-    baseRoot,
-    "tests",
-    "zt-vault",
-    ".obsidian",
-    "plugins",
-    pluginId,
-  );
+/** `obsidian-vault.ts create` seeds and registers this folder with Obsidian. */
+function getTestVaultPluginDir(pluginId: string) {
+  return join(getTestVaultDir(workspaceRoot), ".obsidian", "plugins", pluginId);
 }
 
 export default defineConfig(({ mode }) => {
@@ -169,7 +155,7 @@ function obsidianBuildPlugin(): Plugin {
 
       await writeFile(join(outDir, ".hotreload"), "");
 
-      const testVaultPluginDir = await getTestVaultPluginDir(manifestJson.id);
+      const testVaultPluginDir = getTestVaultPluginDir(manifestJson.id);
       try {
         await mkdir(testVaultPluginDir, { recursive: true });
         const assets = ["main.js", "manifest.json", ".hotreload"];

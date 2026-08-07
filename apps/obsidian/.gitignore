@@ -5,5 +5,3 @@ bundle-stats.html
 
 # Language Pack compiler output
 src/lib/i18n/generated/
-
-.primary-worktree

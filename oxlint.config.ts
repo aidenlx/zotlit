@@ -18,6 +18,7 @@ export default defineConfig({
     ".claude/**",
     ".scratch/**",
     "tests/zt-vault/**",
+    "tests/zt-vault-*/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
   ],

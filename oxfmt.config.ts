@@ -10,6 +10,7 @@ export default defineConfig({
     ...baseConfig.ignorePatterns,
     ".scratch/**",
     "tests/zt-vault/**",
+    "tests/zt-vault-*/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
     "packages/zotero-types/zotero-schema/**",

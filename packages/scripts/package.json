@@ -5,11 +5,13 @@
   "type": "module",
   "imports": {
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
-    "#package-roots": "./lib/package-roots.ts"
+    "#package-roots": "./lib/package-roots.ts",
+    "#test-vault": "./lib/test-vault.ts"
   },
   "exports": {
     "./obsidian-manifest": "./lib/obsidian-manifest.ts",
-    "./package-roots": "./lib/package-roots.ts"
+    "./package-roots": "./lib/package-roots.ts",
+    "./test-vault": "./lib/test-vault.ts"
   },
   "scripts": {
     "release": "node scripts/release.ts",
