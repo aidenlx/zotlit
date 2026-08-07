@@ -83,14 +83,14 @@ async function resolveStyleFile(
 
   const selected = styles.get(styleId);
   if (!selected) {
-    logger.info("Selected CSL style is not installed", { styleId, dataDir });
+    logger.debug("Selected CSL style is not installed", { styleId, dataDir });
     return undefined;
   }
   const independent = selected.parentId
     ? styles.get(selected.parentId)
     : selected;
   if (!independent) {
-    logger.info(
+    logger.debug(
       "Independent parent of the selected CSL style is not installed",
       {
         styleId,
@@ -133,7 +133,10 @@ export class StyleXmlCache {
 
     const held = this.#held;
     if (held && held.dataDir === dataDir && held.styleId === styleId) {
-      if ((await mtimeOf(held.path)) === held.mtime) return held.xml;
+      if ((await mtimeOf(held.path)) === held.mtime) {
+        logger.trace("CSL style cache hit", { styleId });
+        return held.xml;
+      }
     }
     this.#held = undefined;
 
@@ -147,6 +150,7 @@ export class StyleXmlCache {
     if (mtime !== undefined) {
       this.#held = { dataDir, styleId, path: file.path, mtime, xml };
     }
+    logger.debug("CSL style loaded", { styleId, path: file.path });
     return xml;
   }
 }

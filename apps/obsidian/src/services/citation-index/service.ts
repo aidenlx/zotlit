@@ -172,6 +172,7 @@ export class CitationIndex extends Service<void> {
     await this.ready;
     this.#build += 1;
     const covered = [...this.#scans.keys()];
+    logger.debug("Citation index reset", { covered: covered.length });
     this.#scans.clear();
     this.#backfilled = false;
     await this.#store?.clear();
@@ -221,10 +222,19 @@ export class CitationIndex extends Service<void> {
     // failure costs a rescan per launch rather than the feature.
     try {
       this.#store = stack.use(await this.#openStore(this.#app));
-      for (const { path, ...scan } of await this.#store.load()) {
+      const loaded = await this.#store.load();
+      let restored = 0;
+      for (const { path, ...scan } of loaded) {
         // An event that already scanned the file during startup is fresher.
-        if (!this.#scans.has(path)) this.#scans.set(path, scan);
+        if (!this.#scans.has(path)) {
+          this.#scans.set(path, scan);
+          restored += 1;
+        }
       }
+      logger.debug("Citation index store loaded", {
+        count: loaded.length,
+        restored,
+      });
     } catch (error) {
       logger.error("Citation index store unavailable", { error });
     }
@@ -239,6 +249,7 @@ export class CitationIndex extends Service<void> {
   /** Readiness settles even on a failed pass, so no consumer waits forever. */
   async #runBackfill(): Promise<void> {
     const build = this.#build;
+    logger.debug("Citation index backfill started", { build });
     try {
       await this.#backfill(build);
     } catch (error) {
@@ -291,7 +302,13 @@ export class CitationIndex extends Service<void> {
     const quiet = prev
       ? occurrencesEqual(prev.occurrences, occurrences)
       : occurrences.length === 0;
-    if (!quiet) this.#emitter.emit("changed", file.path);
+    if (!quiet) {
+      logger.trace("Citation scan changed", {
+        path: file.path,
+        count: occurrences.length,
+      });
+      this.#emitter.emit("changed", file.path);
+    }
     return occurrences;
   }
 
@@ -384,6 +401,7 @@ export class CitationIndex extends Service<void> {
     const next = settings["citation.citekey-indexing"];
     if (next === this.#indexing) return;
     this.#indexing = next;
+    logger.info("Citation indexing changed", { enabled: next });
     const covered = [...this.#scans.keys()];
     if (!next) this.#scans.clear();
     for (const path of covered) this.#emitter.emit("changed", path);

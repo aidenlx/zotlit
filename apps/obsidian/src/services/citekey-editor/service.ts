@@ -148,6 +148,11 @@ export class CitekeyEditor extends Service<void> {
     const directMatches = this.#noteIndex.getNotesByCitationKey(citekey);
     if (directMatches.length === 1) {
       const existing = directMatches[0]!;
+      logger.debug("Opened citekey note", {
+        citekey,
+        path: existing.path,
+        branch: "direct",
+      });
       await workspace.openLinkText(existing.path, "", newLeaf, {
         active: true,
       });
@@ -155,17 +160,30 @@ export class CitekeyEditor extends Service<void> {
     }
 
     if (this.#db.state !== "ready") {
+      logger.debug("Citekey open blocked", {
+        citekey,
+        branch: "db-unavailable",
+      });
       this.#emitter.emit("db-unavailable", citekey);
       return;
     }
     const item = this.#resolveItem(citekey);
     if (!item) {
+      logger.debug("Citekey open blocked", {
+        citekey,
+        branch: "citekey-not-found",
+      });
       this.#emitter.emit("citekey-not-found", citekey);
       return;
     }
 
     const authoritative = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
     if (authoritative) {
+      logger.debug("Opened citekey note", {
+        citekey,
+        path: authoritative.path,
+        branch: "authoritative",
+      });
       await workspace.openLinkText(authoritative.path, "", newLeaf, {
         active: true,
       });
@@ -173,7 +191,11 @@ export class CitekeyEditor extends Service<void> {
     }
 
     const file = await createNoteWithToast(this.#noteFeature, item);
-    if (!file) return;
+    if (!file) {
+      logger.debug("Citekey note creation cancelled", { citekey });
+      return;
+    }
+    logger.debug("Created citekey note", { citekey, path: file.path });
     await workspace.openLinkText(file.path, "", true, { active: true });
   }
 

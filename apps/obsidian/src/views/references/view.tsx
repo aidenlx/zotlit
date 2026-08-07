@@ -190,6 +190,10 @@ export class ReferencesView extends ItemView {
         return;
       }
       this.#citations = citations;
+      logger.trace("References citations changed", {
+        path: this.#deps.app.workspace.getActiveFile()?.path,
+        count: citations.length,
+      });
       this.#reload();
     });
   }
@@ -321,6 +325,9 @@ export class ReferencesView extends ItemView {
     for (const { id, marker, content } of rendered) {
       this.#rendered.set(id, { marker, content });
     }
+    logger.debug("References bibliography rendered", {
+      count: rendered.length,
+    });
     this.#store.setState({
       entries: buildReferenceEntries(citations, sources, this.#rendered),
     });

@@ -106,9 +106,12 @@ export class BibliographyRenderCache extends Service<void> {
     if (items.length === 0) return [];
 
     const styleId = this.#styleId ?? null;
-    return this.#hold(this.#renders, renderKey(styleId, items), () =>
-      this.#runBibliography(items, styleId),
-    );
+    return this.#hold({
+      held: this.#renders,
+      key: renderKey(styleId, items),
+      format: () => this.#runBibliography(items, styleId),
+      kind: "bibliography",
+    });
   }
 
   /**
@@ -135,9 +138,12 @@ export class BibliographyRenderCache extends Service<void> {
 
     const styleId = this.#styleId ?? null;
     const key = renderKey(styleId, items, citations);
-    return this.#hold(this.#citations, key, () =>
-      this.#runCitations(citations, items, styleId),
-    );
+    return this.#hold({
+      held: this.#citations,
+      key,
+      format: () => this.#runCitations(citations, items, styleId),
+      kind: "citations",
+    });
   }
 
   on<K extends keyof BibliographyRenderEvents>(
@@ -176,6 +182,10 @@ export class BibliographyRenderCache extends Service<void> {
     if (next === this.#styleId) return;
     const initial = this.#styleId === undefined;
     this.#styleId = next;
+    logger.info(
+      initial ? "References style selected" : "References style changed",
+      { styleId: next },
+    );
     if (!initial) this.#invalidate();
   }
 
@@ -193,11 +203,20 @@ export class BibliographyRenderCache extends Service<void> {
   }
 
   /** Answer `key` from `held`, running `format` when nothing holds it yet. */
-  async #hold<T>(
-    held: BoundedCache<Promise<T | null>>,
-    key: string,
-    format: () => Promise<T | null>,
-  ): Promise<T | null> {
+  async #hold<T>({
+    held,
+    key,
+    format,
+    kind,
+  }: {
+    held: BoundedCache<Promise<T | null>>;
+    key: string;
+    format: () => Promise<T | null>;
+    kind: "bibliography" | "citations";
+  }): Promise<T | null> {
+    if (held.peek(key) !== undefined) {
+      logger.trace("Render cache hit", { kind });
+    }
     const running = held.hold(key, format);
     const rendered = await running;
     // A failed render is not an answer to hold: the next ask tries again.
@@ -212,10 +231,12 @@ export class BibliographyRenderCache extends Service<void> {
   ): Promise<readonly BibliographyEntry[] | null> {
     try {
       const engine = await this.#engine.getEngine();
-      return await engine.renderBibliography({
+      const rendered = await engine.renderBibliography({
         items,
         styleXml: await this.#styleXml(styleId),
       });
+      logger.debug("Bibliography rendered", { count: rendered.length });
+      return rendered;
     } catch (error) {
       logger.warn("Cannot format the bibliography", { error });
       return null;
@@ -229,11 +250,13 @@ export class BibliographyRenderCache extends Service<void> {
   ): Promise<readonly DocumentFragment[] | null> {
     try {
       const engine = await this.#engine.getEngine();
-      return await engine.renderCitations({
+      const rendered = await engine.renderCitations({
         citations,
         items,
         styleXml: await this.#styleXml(styleId),
       });
+      logger.debug("Citations rendered", { count: rendered.length });
+      return rendered;
     } catch (error) {
       logger.warn("Cannot format the citations", { error });
       return null;

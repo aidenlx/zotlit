@@ -261,14 +261,21 @@ class PandocCitationEngine implements CitationEngine {
     supersedes,
   }: ConversionRequest): Promise<PandocConvertResult> {
     const claim = {};
-    if (supersedes !== undefined) this.#claims.set(supersedes, claim);
+    if (supersedes !== undefined) {
+      if (this.#claims.has(supersedes)) {
+        logger.trace("Pandoc request superseded", { slot: supersedes });
+      }
+      this.#claims.set(supersedes, claim);
+    }
 
     const result = this.#queue.then(() => {
       if (supersedes !== undefined) {
-        if (this.#claims.get(supersedes) !== claim)
+        if (this.#claims.get(supersedes) !== claim) {
+          logger.trace("Pandoc request dropped", { slot: supersedes });
           throw new CitationRequestSupersededError(
             "A newer request superseded this one",
           );
+        }
         this.#claims.delete(supersedes);
       }
       const runtime = this.#runtime;

@@ -231,6 +231,12 @@ export class CitekeyReading extends Service<void> {
       const source = sources[index]!;
       if (!formatted.has(source)) formatted.set(source, fragment);
     });
+    logger.debug("Document citations read", {
+      path: file.path,
+      citations: sources.length,
+      items: items.length,
+      formatted: formatted.size,
+    });
     return { formatted, summaries };
   }
 
@@ -281,7 +287,9 @@ export class CitekeyReading extends Service<void> {
 
   /** A reading view holds what a post-processor produced until it renders again. */
   #rerenderReadingViews(): void {
-    for (const leaf of this.#app.workspace.getLeavesOfType("markdown")) {
+    const leaves = this.#app.workspace.getLeavesOfType("markdown");
+    logger.debug("Rerendering reading views", { count: leaves.length });
+    for (const leaf of leaves) {
       const { view } = leaf;
       if (view instanceof MarkdownView) view.previewMode.rerender(true);
     }
