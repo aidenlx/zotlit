@@ -12,8 +12,12 @@ import {
 } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { type NavigationPane } from "@/services/citekey-navigation";
+import {
+  CITEKEY_HOVER_SOURCE,
+  type NavigationPane,
+} from "@/services/citekey-navigation";
 import { type DatabaseService } from "@/services/database/service";
 import { type NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
@@ -28,7 +32,7 @@ const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
   app: App;
-  plugin: Pick<Plugin, "registerEditorExtension">;
+  plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
   db: DatabaseService;
@@ -76,8 +80,11 @@ export class CitekeyEditor extends Service<void> {
     this.#noteFeature = deps.noteFeature;
     this.#db = deps.db;
     this.#settings = deps.settings;
-    this.#extension = citekeyEditorExtension((citekey, pane) => {
-      void this.openCitekey(citekey, pane);
+    this.#extension = citekeyEditorExtension({
+      open: (citekey, pane) => {
+        void this.openCitekey(citekey, pane);
+      },
+      hoverNotePath: (citekey) => this.hoverNotePath(citekey),
     });
     this.ready = this.#load();
   }
@@ -93,6 +100,12 @@ export class CitekeyEditor extends Service<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
 
+    // Registered once and for the plugin's lifetime, so the row in Obsidian's
+    // Page preview settings stays put while the treatment toggles.
+    this.#plugin.registerHoverLinkSource(CITEKEY_HOVER_SOURCE, {
+      display: m.hover_source_citekey(),
+      defaultMod: false,
+    });
     this.#plugin.registerEditorExtension(this.#extensions);
     stack.defer(() => {
       this.#extensions.length = 0;
@@ -140,6 +153,16 @@ export class CitekeyEditor extends Service<void> {
    */
   get enabled(): boolean {
     return this.#enabled;
+  }
+
+  /**
+   * The Literature Note a hover preview may show: the one note indexed under
+   * `citekey`. A key with zero or several notes answers with nothing, which
+   * keeps every popover path clear of the create-then-open flow.
+   */
+  hoverNotePath(citekey: string): string | null {
+    const matches = this.#noteIndex.getNotesByCitationKey(citekey);
+    return matches.length === 1 ? matches[0]!.path : null;
   }
 
   /**

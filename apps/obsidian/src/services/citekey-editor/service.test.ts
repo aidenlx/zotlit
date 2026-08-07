@@ -1,6 +1,8 @@
 import { type Extension } from "@codemirror/state";
+import { type HoverLinkSource } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import { defaults, type Settings } from "@/services/settings/schema";
 
 import { CitekeyEditor } from "./service";
@@ -22,6 +24,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerEditorExtension: (extension: Extension) => {
           registered = extension as Extension[];
         },
+        registerHoverLinkSource: () => undefined,
       },
       settings,
     } as never);
@@ -79,6 +82,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerEditorExtension: (extension: Extension) => {
           registered = extension as Extension[];
         },
+        registerHoverLinkSource: () => undefined,
       },
       settings,
     } as never);
@@ -89,6 +93,50 @@ describe("CitekeyEditor settings lifecycle", () => {
     expect(registered).toHaveLength(1);
     settings.update({ "citation.citekey-indexing": false });
     expect(registered).toEqual([]);
+  });
+});
+
+describe("CitekeyEditor hover preview", () => {
+  it("registers one hover-link source that previews on bare hover", async () => {
+    const sources: Record<string, HoverLinkSource> = {};
+    await using service = new CitekeyEditor({
+      app: { workspace: { updateOptions: () => undefined } },
+      plugin: {
+        registerEditorExtension: () => undefined,
+        registerHoverLinkSource: (id: string, info: HoverLinkSource) => {
+          sources[id] = info;
+        },
+      },
+      settings: new SettingsStub(),
+    } as never);
+    await service.ready;
+
+    expect(Object.keys(sources)).toEqual([CITEKEY_HOVER_SOURCE]);
+    expect(sources[CITEKEY_HOVER_SOURCE]?.defaultMod).toBe(false);
+    expect(sources[CITEKEY_HOVER_SOURCE]?.display).toBeTruthy();
+  });
+
+  it("answers with a note path only while exactly one literature note matches", async () => {
+    const notes: Record<string, { path: string }[]> = {
+      doe2024: [{ path: "lit/doe2024.md" }],
+      smith2020: [{ path: "lit/a.md" }, { path: "lit/b.md" }],
+    };
+    await using service = new CitekeyEditor({
+      app: { workspace: { updateOptions: () => undefined } },
+      plugin: {
+        registerEditorExtension: () => undefined,
+        registerHoverLinkSource: () => undefined,
+      },
+      noteIndex: {
+        getNotesByCitationKey: (citekey: string) => notes[citekey] ?? [],
+      },
+      settings: new SettingsStub(),
+    } as never);
+    await service.ready;
+
+    expect(service.hoverNotePath("doe2024")).toBe("lit/doe2024.md");
+    expect(service.hoverNotePath("smith2020")).toBeNull();
+    expect(service.hoverNotePath("nobody1999")).toBeNull();
   });
 });
 

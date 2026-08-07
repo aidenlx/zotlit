@@ -1,4 +1,5 @@
 export {
+  CITEKEY_HOVER_SOURCE,
   navigationIntent,
   navigationPane,
   type EditorMode,

@@ -2,6 +2,13 @@
 
 import { type PaneType } from "obsidian";
 
+/**
+ * The `hover-link` source id every citekey surface emits under. One id keeps
+ * Obsidian's Page preview settings to a single row whose Ctrl-gating governs
+ * them all.
+ */
+export const CITEKEY_HOVER_SOURCE = "zotlit-citekey";
+
 export type NavigationPane = boolean | PaneType;
 export type NavigationAction = "click" | "hover";
 export type NavigationButton = "left" | "middle" | "none";

@@ -1,6 +1,7 @@
 // The CodeMirror side of the citekey editor treatment: citekey marks over the
 // visible ranges, the lookup that answers which citekey covers a document
-// position, and the click that opens the marked key's Literature Note.
+// position, the click that opens the marked key's Literature Note, and the
+// hover that previews it.
 
 import {
   lineClassNodeProp,
@@ -19,11 +20,12 @@ import {
   type EditorView,
   type ViewUpdate,
 } from "@codemirror/view";
-import { Keymap } from "obsidian";
+import { editorInfoField, Keymap } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import {
   navigationIntent,
+  CITEKEY_HOVER_SOURCE,
   type EditorMode,
   type NavigationPane,
 } from "@/services/citekey-navigation";
@@ -37,24 +39,42 @@ const logger = getLogger("citekey-editor");
 export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
 
 /**
+ * The resolution state hover reads.
+ *
+ * @returns the vault path of the one Literature Note `citekey` names, or null
+ *   when zero or several name it.
+ */
+export type ResolveHoverNote = (citekey: string) => string | null;
+
+export interface CitekeyEditorHandlers {
+  open: OpenCitekey;
+  hoverNotePath: ResolveHoverNote;
+}
+
+/** The plugin's own class on every citekey mark, and the hover target. */
+const CITEKEY_CLASS = "zt-citekey";
+
+/**
  * `cm-underline` is Obsidian's own link-text class: it draws the link
  * decoration line and, together with the plugin's cursor rule, gives a
  * recognized citekey the affordance of an internal link.
  */
-const MARK_CLASS = "cm-underline zt-citekey";
+const MARK_CLASS = `cm-underline ${CITEKEY_CLASS}`;
 
 const CITEKEY_MARK = Decoration.mark({ class: MARK_CLASS });
 
 /**
- * Marks every recognized `@citekey` in the visible ranges and makes it open its
- * Literature Note on click.
+ * Marks every recognized `@citekey` in the visible ranges, makes it open its
+ * Literature Note on click, and previews that note on hover.
  *
  * Marks are provided from a view plugin, which the CodeMirror provisioning rule
  * allows because nothing here changes the vertical block structure. Obsidian's
  * own clickable-token machinery never sees a citekey — its Markdown mode emits
- * no token for one — so the click path is the plugin's own.
+ * no token for one — so the click and hover paths are the plugin's own.
  */
-export function citekeyEditorExtension(open: OpenCitekey): Extension {
+export function citekeyEditorExtension(
+  handlers: CitekeyEditorHandlers,
+): Extension {
   return ViewPlugin.fromClass(
     class CitekeyEditorPlugin {
       decorations: DecorationSet;
@@ -78,18 +98,13 @@ export function citekeyEditorExtension(open: OpenCitekey): Extension {
        *   tells CodeMirror to stop handling the event.
        */
       openAt(event: MouseEvent, view: EditorView): boolean {
-        const editorMode: EditorMode = view.dom.closest(".is-live-preview")
-          ? "live-preview"
-          : "source";
+        const editorMode = editorModeOf(view);
         // A drag that ended on a citekey is a selection, not a click. Source
         // mode still lets a modifier click through: Shift-click extends the
         // selection on mousedown, and native links navigate regardless.
         if (!view.state.selection.main.empty && editorMode === "live-preview")
           return false;
-        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-        if (pos === null) return false;
-
-        const citekey = citekeyAtPos(view.state, pos);
+        const citekey = citekeyAtEvent(view, event);
         if (citekey === null) return false;
 
         const button = event.button === 1 ? "middle" : "left";
@@ -129,8 +144,61 @@ export function citekeyEditorExtension(open: OpenCitekey): Extension {
         });
 
         event.preventDefault();
-        open(citekey, intent.pane);
+        handlers.open(citekey, intent.pane);
         return true;
+      }
+
+      /**
+       * Asks the Page preview core plugin for the Literature Note of the
+       * citekey under the pointer. Obsidian owns the Ctrl-gating and the
+       * popover itself; this shell only names the source and the target.
+       */
+      hoverAt(event: MouseEvent, view: EditorView): void {
+        const targetEl = citekeyElementAt(event);
+        if (targetEl === null) return;
+
+        const citekey = citekeyAtEvent(view, event);
+        if (citekey === null) return;
+
+        // A key naming zero or several notes reaches the intent module as an
+        // unavailable target, which answers with no hover — so no popover can
+        // reach the create-then-open flow.
+        const notePath = handlers.hoverNotePath(citekey);
+        const intent = navigationIntent(
+          {
+            action: "hover",
+            button: "none",
+            mod: Keymap.isModifier(event, "Mod"),
+            shift: event.shiftKey,
+            alt: event.altKey,
+            editorMode: editorModeOf(view),
+            surface: "editor",
+          },
+          notePath === null
+            ? { resolution: "unavailable" }
+            : { resolution: "direct", citekey },
+        );
+        // The second test repeats the target's own input so TypeScript sees
+        // the path a `direct` resolution always carries.
+        if (intent.kind !== "hover" || notePath === null) {
+          logger.trace("Citekey hover suppressed", { citekey });
+          return;
+        }
+
+        const info = view.state.field(editorInfoField, false);
+        if (!info) return;
+        logger.trace("Citekey hover previews note", {
+          citekey,
+          path: notePath,
+        });
+        info.app.workspace.trigger("hover-link", {
+          event,
+          source: CITEKEY_HOVER_SOURCE,
+          hoverParent: info,
+          targetEl,
+          linktext: notePath,
+          sourcePath: info.file?.path ?? "",
+        });
       }
     },
     {
@@ -145,9 +213,42 @@ export function citekeyEditorExtension(open: OpenCitekey): Extension {
           if (event.button !== 1) return false;
           return this.openAt(event, view);
         },
+        mouseover(event, view) {
+          this.hoverAt(event, view);
+          return false;
+        },
       },
     },
   );
+}
+
+/**
+ * Applies the same re-entry guard Obsidian runs before its own `hover-link`,
+ * so moving within one mark fires a single hover.
+ *
+ * @returns the citekey mark the pointer entered, or null when the event lands
+ *   on no mark or moves within the one it is already inside.
+ */
+function citekeyElementAt(event: MouseEvent): HTMLElement | null {
+  const { target, relatedTarget } = event;
+  if (!(target instanceof HTMLElement)) return null;
+  const targetEl = target.closest<HTMLElement>(`.${CITEKEY_CLASS}`);
+  if (targetEl === null) return null;
+  if (relatedTarget instanceof Node && targetEl.contains(relatedTarget)) {
+    return null;
+  }
+  return targetEl;
+}
+
+/** @returns the citekey under the pointer, or null when it covers none. */
+function citekeyAtEvent(view: EditorView, event: MouseEvent): string | null {
+  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+  if (pos === null) return null;
+  return citekeyAtPos(view.state, pos);
+}
+
+function editorModeOf(view: EditorView): EditorMode {
+  return view.dom.closest(".is-live-preview") ? "live-preview" : "source";
 }
 
 function buildMarks(view: EditorView): DecorationSet {
