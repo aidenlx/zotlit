@@ -1,12 +1,12 @@
 ---
 title: "How citation key styling works"
-description: "How ZotLit recognizes Pandoc citation keys, styles and opens them in the editor, and renders them in reading view."
+description: "How ZotLit recognizes Pandoc citation keys, styles them in the editor, renders formatted citations in Live Preview and reading view, and opens literature notes from a click."
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-ZotLit reads the literal Pandoc citation keys you write — `@doe2024` and clusters such as `[see @doe2024, p. 3; @smith2020]` — and treats them as citations. **Citation key indexing** tracks them across your vault. **Citation key styling** is the editor and reading-view surface of that index: a recognized key is styled and clickable while you write, and shows its formatted citation text in reading view.
+ZotLit reads the literal Pandoc citation keys you write — `@doe2024` and clusters such as `[see @doe2024, p. 3; @smith2020]` — and treats them as citations. **Citation key indexing** tracks them across your vault. **Citation key styling** is the editor and reading-view surface of that index: a recognized key is styled and clickable while you write, and each citation shows its formatted text in Live Preview and in reading view.
 
 Both settings live in **Settings → ZotLit → Citations**. **Citation key indexing** is on by default and is the master switch; **Citation key styling** is on by default and takes effect only while indexing is on.
 
@@ -32,9 +32,27 @@ Text that Obsidian's editor classifies as code, math, a `%%` comment, frontmatte
 
 ## What happens in the editor
 
-A recognized key is styled like an internal link in Live Preview and Source mode, so you can see at a glance which text ZotLit reads as a citation. Click the key to open its literature note; `Ctrl`/`Cmd`-click or middle-click opens it in a new tab.
-
 Styling comes from ZotLit's own editor decorations rather than from Obsidian's link machinery, so it applies to bare keys as well as bracketed ones.
+
+### Source mode
+
+In Source mode, each recognized key is styled like an internal link, so you can see at a glance which text ZotLit reads as a citation. You always see the raw text you wrote. Click a key to open its literature note; `Ctrl`/`Cmd`-click or middle-click opens it in a new tab.
+
+### Live Preview [#live-preview]
+
+In Live Preview, ZotLit goes a step further: each whole citation — a bare `@key`, `-@key`, or a cluster such as `[see @a, p. 3; @b]` — is replaced with its formatted citation text, rendered in the style **References style** selects. This is the same text [reading view](#reading-mode) and the references sidebar show, so your draft reads like the exported document.
+
+Without the Pandoc Engine installed, each key shows its `Creators (Year)` summary instead, and the brackets, prefixes, and locators you wrote stay as written.
+
+A citation whose keys do not match any Zotero item is left exactly as you wrote it, and is not clickable.
+
+#### Editing around a rendered citation
+
+The raw text comes back the moment the cursor or selection touches the rendered citation at either end, and it stays visible while the citation text is still being read. When the editor loses focus, all citations show their formatted text. Cursor motion steps over a rendered citation as one unit, and backspace removes it whole — editing is never blocked.
+
+#### Click and hover
+
+A rendered citation is clickable the same way a marked key is: click opens the literature note, `Ctrl`/`Cmd`-click or middle-click opens a new tab, and hover shows the page preview. A citation naming several works opens a menu listing each work so you pick which note to open; hover stays silent for a multi-work citation.
 
 ## How click resolution works
 

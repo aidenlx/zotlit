@@ -161,8 +161,20 @@ The opt-in Citation Suggester trigger: a bare ASCII `@` typed at a word boundary
 _Avoid_: mention trigger, @-suggester
 
 **Citekey Editor Treatment** _(Obsidian)_:
-The editor surface of Citekey Indexing: literal `@citekey` text is marked in the editor, and a marked key is a Citekey Navigation target. Built from CodeMirror decorations the plugin owns outright, since Obsidian's Markdown mode emits no token for a citekey; text the syntax tree classifies as code, math, comment, frontmatter, or URL stays plain. A mark reads as resolved or unresolved by the same Citation Index query Citekey Navigation opens through, and rebuilds on a plugin-owned state effect the service dispatches into every open editor whenever the Note Index reports a change. It replaces Citation Key Links, whose stored toggle migrates into it.
+The editor surface of Citekey Indexing: literal `@citekey` text is marked in the editor, and a marked key is a Citekey Navigation target. Built from CodeMirror decorations the plugin owns outright, since Obsidian's Markdown mode emits no token for a citekey; text the syntax tree classifies as code, math, comment, frontmatter, or URL stays plain. A mark reads as resolved or unresolved by the same Citation Index query Citekey Navigation opens through, and rebuilds on a plugin-owned state effect the service dispatches into every open editor whenever the Note Index reports a change. In Live Preview it also carries the Citekey Widget. It replaces Citation Key Links, whose stored toggle migrates into it.
 _Avoid_: citekey click, citation click, Citation Key Links (the retired feature it replaces)
+
+**Citekey Widget** _(Obsidian)_:
+The Live Preview decoration that replaces a whole Citation — a Citation Cluster or a bare author-in-text key — with its formatted text, so a draft reads like the exported document. The text is the Document Citation Text, so a widget, the Citekey Reading Rendering, and the References Sidebar always agree; with no Pandoc Engine installed each key shows its item summary and the brackets, prefixes, and locators the author wrote stay as written. The raw marked source comes back whenever the selection touches the widget at either end, and stays while a render is still running, so editing is never blocked. Cursor motion treats a widget as one atomic range, and a widget is a Citekey Navigation target like the marks it replaces, with a multi-key Citation offering the citation menu. Source mode always shows raw text.
+_Avoid_: citation preview, inline render (names the effect, not the decoration)
+
+**Rendered Citation**:
+The element a Citation's formatted text is shown in, on either surface that shows one — the Citekey Widget in Live Preview, and the Citekey Reading Rendering's span in reading mode. Both carry the same class, and one shared module gives both the click, citation menu, and hover of Citekey Navigation, so the surfaces differ only in how the element reaches the page.
+_Avoid_: citation span, formatted citation (names the text, not the element it sits in)
+
+**Document Citation Text**:
+The formatted text of every Citation one document writes, together with the `Creators (Year)` summary of each work those Citations name. Read once per document from the plugin-wide bibliography render cache — every Citation of the document at once, since a numbering style counts across the whole document — and shared by the Citekey Widget and the Citekey Reading Rendering, so both show the same text and go stale together.
+_Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
 
 **Citekey Navigation** _(Obsidian)_:
 The interaction surface of recognized citekeys across Live Preview, Source mode, and reading mode — click, hover page preview, and the open-under-cursor palette commands — all routed through one flow: a key that resolves to one Literature Note opens it, and any other key offers create-then-open. Hover stays silent for a key that resolves to no single Literature Note.

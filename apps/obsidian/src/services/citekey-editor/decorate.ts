@@ -1,6 +1,11 @@
 // Pure decoration-range computation for the citekey editor treatment.
 
-import { scanCitekeys, type TextSpan } from "@/lib/citation-grammar";
+import {
+  scanCitations,
+  scanCitekeys,
+  type TextSpan,
+} from "@/lib/citation-grammar";
+import { type CitationSource } from "@/services/citation-text/present";
 
 /** A citekey span to mark, with the key the click flow resolves. */
 export interface CitekeyMark extends TextSpan {
@@ -83,4 +88,75 @@ export function resolveCitekeyMarks(
   resolves: (citekey: string) => boolean,
 ): ResolvedCitekeyMark[] {
   return marks.map((mark) => ({ ...mark, resolved: resolves(mark.citekey) }));
+}
+
+/** One Citation of a line, at the range a widget would replace. */
+export interface CitationRange extends TextSpan, CitationSource {}
+
+/**
+ * A widget replaces a whole Citation — a Citation Cluster or a bare
+ * author-in-text key — because that is the unit a style formats, and it carries
+ * Pandoc's author-suppression `-` for the same reason.
+ *
+ * @param text one line of the document.
+ * @param isExcluded decides, per candidate span in `text`'s own offsets,
+ *   whether the editor's syntax tree rules it out.
+ * @returns the citations to replace, in document order, each with its keys at
+ *   their offsets within its own source.
+ */
+export function citationRanges(
+  text: string,
+  isExcluded: (span: TextSpan) => boolean,
+): CitationRange[] {
+  const found: CitationRange[] = [];
+  for (const { start, end, keys } of scanCitations(text)) {
+    if (isExcluded({ start, end })) continue;
+    found.push({
+      start,
+      end,
+      source: text.slice(start, end),
+      keys: keys.map((key) => ({
+        citekey: key.citekey,
+        start: key.start - start,
+        end: key.end - start,
+      })),
+    });
+  }
+  return found;
+}
+
+/**
+ * A widget hides the text its citation covers, so the marks under it would show
+ * nothing; leaving them out also keeps the decoration set free of ranges that
+ * run into a replacement. A citation contains every key it names, so testing
+ * containment drops exactly the marks a widget hides.
+ *
+ * @param replaced the citations a widget takes the place of, in line offsets.
+ */
+export function marksOutside(
+  marks: readonly CitekeyMark[],
+  replaced: readonly TextSpan[],
+): CitekeyMark[] {
+  return marks.filter(
+    (mark) =>
+      !replaced.some(
+        ({ start, end }) => mark.start >= start && mark.end <= end,
+      ),
+  );
+}
+
+/**
+ * Obsidian's own reveal test, which counts a touch at either end: a collapsed
+ * cursor exactly at a widget's start or end brings the raw text back.
+ *
+ * @param ranges the selection ranges, which a blurred editor reports as none —
+ *   blur conceals everything, the way Obsidian's own live preview reads it.
+ * @see docs/research/pandoc-citekey-cm6-live-preview.md — section 6.2
+ */
+export function overlapsSelection(
+  ranges: readonly { from: number; to: number }[],
+  from: number,
+  to: number,
+): boolean {
+  return ranges.some((range) => range.from <= to && range.to >= from);
 }

@@ -14,6 +14,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { type CitationText } from "@/services/citation-text/service";
 import {
   CITEKEY_HOVER_SOURCE,
   type NavigationPane,
@@ -26,7 +27,7 @@ import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
 
-import { citekeyEditorExtension, citekeyIndexChanged } from "./extension";
+import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 
 const logger = getLogger("citekey-editor");
 
@@ -36,6 +37,8 @@ export interface CitekeyEditorDeps {
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
   db: DatabaseService;
+  /** The formatted citations every surface of one document shares. */
+  citationText: Pick<CitationText, "peek" | "load" | "on">;
   settings: SettingsService;
 }
 
@@ -60,6 +63,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #noteIndex;
   readonly #noteFeature;
   readonly #db;
+  readonly #citationText;
   readonly #settings;
   readonly #emitter = createNanoEvents<CitekeyEditorEvents>();
   readonly #extension: Extension;
@@ -79,6 +83,7 @@ export class CitekeyEditor extends Service<void> {
     this.#noteIndex = deps.noteIndex;
     this.#noteFeature = deps.noteFeature;
     this.#db = deps.db;
+    this.#citationText = deps.citationText;
     this.#settings = deps.settings;
     this.#extension = citekeyEditorExtension({
       open: (citekey, pane) => {
@@ -86,6 +91,12 @@ export class CitekeyEditor extends Service<void> {
       },
       hoverNotePath: (citekey) => this.hoverNotePath(citekey),
       resolves: (citekey) => this.#resolves(citekey),
+      citationText: (path) => this.#citationText.peek(path),
+      requestCitationText: (file) => {
+        // The read announces itself when it settles, which is what brings the
+        // widgets in.
+        void this.#citationText.load(file);
+      },
     });
     this.ready = this.#load();
   }
@@ -122,6 +133,15 @@ export class CitekeyEditor extends Service<void> {
     // own invalidation is coarse, so every change restyles every open editor.
     stack.defer(this.#noteIndex.on("changed", () => this.#restyleEditors()));
     stack.defer(this.#noteIndex.on("rebuilt", () => this.#restyleEditors()));
+    // A widget's text is read asynchronously and shared with every other
+    // surface, so the editors showing that document draw again when it lands
+    // or goes stale — until then they keep the raw marked source.
+    stack.defer(
+      this.#citationText.on("changed", (path) => this.#redrawWidgets(path)),
+    );
+    stack.defer(
+      this.#citationText.on("invalidated", () => this.#redrawWidgets()),
+    );
 
     this.commit(stack.move());
   }
@@ -131,15 +151,37 @@ export class CitekeyEditor extends Service<void> {
   }
 
   #restyleEditors(): void {
-    if (!this.#enabled) return;
-    const leaves = this.#app.workspace.getLeavesOfType("markdown");
-    logger.trace("Restyling citekey marks", { editors: leaves.length });
-    for (const leaf of leaves) {
+    const editors = this.#decorateAgain();
+    logger.trace("Restyling citekey marks", { editors });
+  }
+
+  /** @param path the document whose text changed, or nothing for every one. */
+  #redrawWidgets(path?: string): void {
+    const editors = this.#decorateAgain(path);
+    logger.trace("Redrawing citation widgets", { editors, path });
+  }
+
+  /**
+   * Asks the open Markdown editors to build their decorations again. The
+   * decoration layer owns what changed; this only names the reason, since the
+   * data behind a mark or a widget lives outside the document.
+   *
+   * @param path the one document to reach, or nothing for every editor.
+   * @returns how many editors the effect reached.
+   */
+  #decorateAgain(path?: string): number {
+    if (!this.#enabled) return 0;
+    let reached = 0;
+    for (const leaf of this.#app.workspace.getLeavesOfType("markdown")) {
       const { view } = leaf;
-      if (view instanceof MarkdownView) {
-        view.editor.cm.dispatch({ effects: citekeyIndexChanged.of(undefined) });
-      }
+      if (!(view instanceof MarkdownView)) continue;
+      if (path !== undefined && view.file?.path !== path) continue;
+      view.editor.cm.dispatch({
+        effects: citekeyDecorationsChanged.of(undefined),
+      });
+      reached += 1;
     }
+    return reached;
   }
 
   #applySettings(settings: Readonly<Settings>): void {

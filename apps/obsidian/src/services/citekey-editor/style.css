@@ -26,6 +26,21 @@
   }
 }
 
+/* A Citation shown as the text a style formatted. The colour stays the
+   surrounding text's — a citation is body text a style formatted — and only
+   the cursor and the hover say that it navigates, exactly as the reading-view
+   rendering of the same text reads. */
+.markdown-source-view.mod-cm6 span.zt-citation {
+  cursor: var(--cursor-link);
+}
+
+@media (hover: hover) {
+  .markdown-source-view.mod-cm6 span.zt-citation:hover {
+    color: var(--link-color-hover);
+    text-decoration-line: var(--link-decoration-hover);
+  }
+}
+
 /* A citekey with no indexed Literature Note: the same broken-reference accent
    Obsidian gives an unresolved internal link, so a typo'd or deleted citekey
    reads as broken while writing. Declared after the resolved rules, including

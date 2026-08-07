@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  citationRanges,
   citekeyMarks,
   isExcludedTokenClass,
+  marksOutside,
+  overlapsSelection,
   resolveCitekeyMarks,
 } from "./decorate";
 
@@ -83,5 +86,82 @@ describe("isExcludedTokenClass", () => {
     expect(isExcludedTokenClass("")).toBe(false);
     expect(isExcludedTokenClass("hmd-barelink link")).toBe(false);
     expect(isExcludedTokenClass("em")).toBe(false);
+  });
+});
+
+describe("citationRanges", () => {
+  it("reads a cluster whole and a bare key on its own", () => {
+    expect(
+      citationRanges("Blah [see @a, p. 3; @b] and @c.", never).map(
+        (citation) => citation.source,
+      ),
+    ).toEqual(["[see @a, p. 3; @b]", "@c"]);
+  });
+
+  it("keeps each key at its offset within the citation's own source", () => {
+    expect(citationRanges("x [see @a; @b] y", never)).toEqual([
+      {
+        start: 2,
+        end: 14,
+        source: "[see @a; @b]",
+        keys: [
+          { citekey: "a", start: 5, end: 7 },
+          { citekey: "b", start: 9, end: 11 },
+        ],
+      },
+    ]);
+  });
+
+  it("takes the author-suppression dash into the citation", () => {
+    expect(
+      citationRanges("-@doe2024 said so.", never).map(
+        (citation) => citation.source,
+      ),
+    ).toEqual(["-@doe2024"]);
+  });
+
+  it("skips a citation the editor rules out", () => {
+    expect(
+      citationRanges("@kept and [@dropped]", (span) => span.start === 10).map(
+        (citation) => citation.source,
+      ),
+    ).toEqual(["@kept"]);
+  });
+});
+
+describe("marksOutside", () => {
+  const line = "[see @a; @b] and @c";
+
+  it("drops the marks a replaced citation covers", () => {
+    const [cluster] = citationRanges(line, never);
+    expect(marksOutside(citekeyMarks(line, never), [cluster!])).toEqual([
+      { start: 17, end: 19, citekey: "c" },
+    ]);
+  });
+
+  it("keeps every mark when nothing is replaced", () => {
+    expect(marksOutside(citekeyMarks(line, never), [])).toHaveLength(3);
+  });
+});
+
+describe("overlapsSelection", () => {
+  const range = { from: 4, to: 4 };
+
+  it("counts a cursor at either end of the span, as Obsidian does", () => {
+    expect(overlapsSelection([range], 4, 10)).toBe(true);
+    expect(overlapsSelection([{ from: 10, to: 10 }], 4, 10)).toBe(true);
+  });
+
+  it("counts a selection that crosses the span", () => {
+    expect(overlapsSelection([{ from: 2, to: 20 }], 4, 10)).toBe(true);
+  });
+
+  it("leaves a span no range touches alone", () => {
+    expect(overlapsSelection([range], 6, 10)).toBe(false);
+    expect(overlapsSelection([{ from: 11, to: 14 }], 4, 10)).toBe(false);
+  });
+
+  it("touches nothing without a range, which is how a blurred editor reads", () => {
+    expect(overlapsSelection([], 4, 10)).toBe(false);
   });
 });

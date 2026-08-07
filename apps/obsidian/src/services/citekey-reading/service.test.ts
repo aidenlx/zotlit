@@ -5,6 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
 import { type Citation } from "@/services/citation-index/service";
+import {
+  ALPHA,
+  ALPHA_KEY,
+  citation,
+  fragment,
+} from "@/services/citation-text/__fixtures__";
+import { CitationText } from "@/services/citation-text/service";
 import { defaults, type Settings } from "@/services/settings/schema";
 
 import { CitekeyReading } from "./service";
@@ -25,53 +32,11 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   };
 });
 
-const ALPHA_KEY = "1/ALPHA123";
-
-/** The one Item the stubbed database answers with. */
-const ALPHA = {
-  key: "ALPHA123",
-  itemID: 1,
-  groupID: null,
-  indexedKey: ALPHA_KEY,
-  creators: [{ creatorType: "author", lastName: "Zeta", firstName: "Ann" }],
-  primaryCreatorType: "author",
-  customFields: [],
-  fields: {
-    itemType: "book",
-    title: "A study of nothing",
-    date: "2020",
-  },
-};
-
-function citation(citekey: string, indexedKey: string | null): Citation {
-  return {
-    indexedKey,
-    linkpath: indexedKey === null ? null : "Zeta 2020",
-    refNumber: 1,
-    occurrences: [
-      {
-        kind: "citekey",
-        raw: citekey,
-        position: {
-          start: { line: 0, col: 0, offset: 0 },
-          end: { line: 0, col: 0, offset: 0 },
-        },
-      },
-    ],
-  };
-}
-
 /** One rendered section, as a Markdown post-processor receives it. */
 function section(html: string): HTMLElement {
   const root = document.createElement("div");
   root.innerHTML = html;
   return root;
-}
-
-function fragment(text: string): DocumentFragment {
-  const content = document.createDocumentFragment();
-  content.append(text);
-  return content;
 }
 
 interface Harness {
@@ -95,25 +60,19 @@ async function makeHarness({
   const citationRequests: { citations: readonly string[] }[] = [];
   let process: MarkdownPostProcessor | undefined;
 
-  const service = new CitekeyReading({
+  const citationText = new CitationText({
     app: {
-      vault: {
-        getFileByPath: (path: string) => ({ path }) as TFile,
-        cachedRead: () => Promise.resolve(body),
-      },
+      vault: { cachedRead: () => Promise.resolve(body) },
       metadataCache: { on: () => ({ e: { offref: () => undefined } }) },
-      workspace: { getLeavesOfType: () => [] },
-    },
-    plugin: {
-      registerMarkdownPostProcessor: (postProcessor: MarkdownPostProcessor) => {
-        process = postProcessor;
-        return postProcessor;
-      },
     },
     db: { state: "ready", client: {} },
     citationIndex: {
       getCitations: () => Promise.resolve(cited),
       on: () => () => undefined,
+    },
+    noteIndex: {
+      on: () => () => undefined,
+      whenIndexed: () => Promise.resolve(),
     },
     bibliographyRender: {
       renderCitations: (citations: readonly string[]) => {
@@ -124,6 +83,21 @@ async function makeHarness({
       },
       on: () => () => undefined,
     },
+  } as never);
+  await citationText.ready;
+
+  const service = new CitekeyReading({
+    app: {
+      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
+      workspace: { getLeavesOfType: () => [] },
+    },
+    plugin: {
+      registerMarkdownPostProcessor: (postProcessor: MarkdownPostProcessor) => {
+        process = postProcessor;
+        return postProcessor;
+      },
+    },
+    citationText,
     citekeyEditor: {
       openCitekey: () => Promise.resolve(),
       hoverNotePath: () => null,
@@ -135,7 +109,10 @@ async function makeHarness({
   return {
     process: process!,
     citationRequests,
-    dispose: () => service[Symbol.asyncDispose](),
+    dispose: async () => {
+      await service[Symbol.asyncDispose]();
+      await citationText[Symbol.asyncDispose]();
+    },
   };
 }
 
@@ -184,32 +161,6 @@ describe("CitekeyReading", () => {
     await process(el, { sourcePath: "note.md" } as never);
 
     expect(el.textContent).toBe("@ghost blah.");
-    await dispose();
-  });
-
-  it("formats every citation of the document, not only the section's", async () => {
-    const { process, citationRequests, dispose } = await makeHarness({
-      body: "First @alpha.\n\nThen [@alpha].",
-    });
-
-    await process(section("<p>Then [@alpha].</p>"), {
-      sourcePath: "note.md",
-    } as never);
-
-    expect(citationRequests).toEqual([{ citations: ["@alpha", "[@alpha]"] }]);
-    await dispose();
-  });
-
-  it("reads no citation out of a code block", async () => {
-    const { process, citationRequests, dispose } = await makeHarness({
-      body: "```\n[@alpha]\n```\n\nReal [@alpha] here.",
-    });
-
-    await process(section("<p>Real [@alpha] here.</p>"), {
-      sourcePath: "note.md",
-    } as never);
-
-    expect(citationRequests).toEqual([{ citations: ["[@alpha]"] }]);
     await dispose();
   });
 

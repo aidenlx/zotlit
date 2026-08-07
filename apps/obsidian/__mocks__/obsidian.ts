@@ -42,7 +42,12 @@ export class Notice {
   hide(): void {}
 }
 
+// The three CodeMirror facets/fields Obsidian adds to its editors. A state
+// without them answers `state.field(field, false)` with `undefined` and
+// `view.plugin(plugin)` with `null`, which is what an editor-less test needs.
 export const editorInfoField = {};
+export const editorLivePreviewField = {};
+export const livePreviewState = {};
 
 /**
  * Constructible stand-in for `MarkdownView`, enough for the `instanceof` narrow

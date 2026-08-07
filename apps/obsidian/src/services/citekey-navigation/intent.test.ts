@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  citationTarget,
   navigationIntent,
+  type CitedWork,
   type NavigationGesture,
   type NavigationTarget,
 } from "./intent";
@@ -165,5 +167,30 @@ describe("navigationIntent", () => {
         resolution: "unavailable",
       }),
     ).toEqual({ kind: "nothing" });
+  });
+});
+
+describe("citationTarget", () => {
+  const work = (citekey: string): CitedWork => ({
+    citekey,
+    label: `Work ${citekey}`,
+  });
+
+  it("opens the one work a single-key citation names", () => {
+    expect(citationTarget([work("a")])).toEqual({
+      resolution: "open-or-create",
+      citekey: "a",
+    });
+  });
+
+  it("asks which work a multi-key citation means", () => {
+    expect(citationTarget([work("a"), work("b")])).toEqual({
+      resolution: "citation-menu",
+      citekeys: ["a", "b"],
+    });
+  });
+
+  it("leaves a citation naming no work inert", () => {
+    expect(citationTarget([])).toEqual({ resolution: "unavailable" });
   });
 });

@@ -3,6 +3,7 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
+import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
@@ -175,30 +176,33 @@ export function buildServices(
         }),
     })
     .use({
-      citekeyEditor: ({ noteIndex, noteFeature, db, settings }) =>
+      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
+        new CitationText({
+          app: plugin.app,
+          db,
+          citationIndex,
+          noteIndex,
+          bibliographyRender,
+        }),
+    })
+    .use({
+      citekeyEditor: ({ noteIndex, noteFeature, db, citationText, settings }) =>
         new CitekeyEditor({
           app: plugin.app,
           plugin,
           noteIndex,
           noteFeature,
           db,
+          citationText,
           settings,
         }),
     })
     .use({
-      citekeyReading: ({
-        db,
-        citationIndex,
-        bibliographyRender,
-        citekeyEditor,
-        settings,
-      }) =>
+      citekeyReading: ({ citationText, citekeyEditor, settings }) =>
         new CitekeyReading({
           app: plugin.app,
           plugin,
-          db,
-          citationIndex,
-          bibliographyRender,
+          citationText,
           citekeyEditor,
           settings,
         }),

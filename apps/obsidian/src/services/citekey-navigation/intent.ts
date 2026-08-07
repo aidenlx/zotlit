@@ -35,6 +35,32 @@ export type NavigationTarget =
   | { resolution: "citation-menu"; citekeys: readonly string[] }
   | { resolution: "unavailable" };
 
+/** One work a rendered citation names, as its click target. */
+export interface CitedWork {
+  citekey: string;
+  /**
+   * The work's summary, or — for a key that reaches no Zotero Item — the key as
+   * the citation writes it, braces and all, which is the raw text the
+   * References Sidebar shows an unresolved key by.
+   */
+  label: string;
+}
+
+/**
+ * What a click on a rendered citation reaches: the one work it names opens
+ * straight away, several works ask which, and none leaves the citation inert.
+ */
+export function citationTarget(works: readonly CitedWork[]): NavigationTarget {
+  if (works.length === 0) return { resolution: "unavailable" };
+  if (works.length === 1) {
+    return { resolution: "open-or-create", citekey: works[0]!.citekey };
+  }
+  return {
+    resolution: "citation-menu",
+    citekeys: works.map((work) => work.citekey),
+  };
+}
+
 export type NavigationIntent =
   | { kind: "open"; citekey: string; pane: NavigationPane }
   | {

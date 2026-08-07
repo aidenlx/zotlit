@@ -1,7 +1,14 @@
 export {
+  attachCitationNavigation,
+  type CitationHoverTarget,
+  type CitationNavigation,
+} from "./citation";
+export {
   CITEKEY_HOVER_SOURCE,
+  citationTarget,
   navigationIntent,
   navigationPane,
+  type CitedWork,
   type EditorMode,
   type NavigationAction,
   type NavigationButton,

@@ -1,7 +1,8 @@
 import { type Extension } from "@codemirror/state";
-import { type HoverLinkSource } from "obsidian";
+import { MarkdownView, type HoverLinkSource } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { type DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import { defaults, type Settings } from "@/services/settings/schema";
 
@@ -27,6 +28,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
+      citationText: new CitationTextStub(),
       settings,
     } as never);
     service.on("missing-property", (property) => notices.push(property));
@@ -86,6 +88,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
+      citationText: new CitationTextStub(),
       settings,
     } as never);
     await service.ready;
@@ -110,6 +113,7 @@ describe("CitekeyEditor hover preview", () => {
         },
       },
       noteIndex: new NoteIndexStub(),
+      citationText: new CitationTextStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -131,6 +135,7 @@ describe("CitekeyEditor hover preview", () => {
         registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(notes),
+      citationText: new CitationTextStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -160,6 +165,7 @@ describe("CitekeyEditor index-change broadcast", () => {
         registerHoverLinkSource: () => undefined,
       },
       noteIndex,
+      citationText: new CitationTextStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -170,6 +176,82 @@ describe("CitekeyEditor index-change broadcast", () => {
     expect(requests).toBe(2);
   });
 });
+
+describe("CitekeyEditor citation text broadcast", () => {
+  /** The markdown leaves two notes are open in, as the workspace hands them out. */
+  const leaves = (dispatched: string[]) =>
+    ["note.md", "other.md"].map((path) => ({
+      // The service narrows a leaf's view with `instanceof`, so the stand-in
+      // carries the prototype rather than running the real constructor.
+      view: Object.assign(Object.create(MarkdownView.prototype) as object, {
+        file: { path },
+        editor: { cm: { dispatch: () => dispatched.push(path) } },
+      }),
+    }));
+
+  const openEditors = async (dispatched: string[]) => {
+    const citationText = new CitationTextStub();
+    const service = new CitekeyEditor({
+      app: {
+        workspace: {
+          updateOptions: () => undefined,
+          getLeavesOfType: () => leaves(dispatched),
+        },
+      },
+      plugin: {
+        registerEditorExtension: () => undefined,
+        registerHoverLinkSource: () => undefined,
+      },
+      noteIndex: new NoteIndexStub(),
+      citationText,
+      settings: new SettingsStub(),
+    } as never);
+    await service.ready;
+    return { service, citationText };
+  };
+
+  it("redraws only the editors showing the document whose text changed", async () => {
+    const dispatched: string[] = [];
+    const { service, citationText } = await openEditors(dispatched);
+
+    citationText.emit("changed", "note.md");
+
+    expect(dispatched).toEqual(["note.md"]);
+    await service[Symbol.asyncDispose]();
+  });
+
+  it("redraws every editor when all citation text goes stale", async () => {
+    const dispatched: string[] = [];
+    const { service, citationText } = await openEditors(dispatched);
+
+    citationText.emit("invalidated");
+
+    expect(dispatched).toEqual(["note.md", "other.md"]);
+    await service[Symbol.asyncDispose]();
+  });
+});
+
+class CitationTextStub {
+  readonly #listeners: Record<string, Set<(path?: string) => void>> = {};
+
+  peek(): DocumentCitations | null {
+    return null;
+  }
+
+  load(): Promise<DocumentCitations> {
+    return Promise.resolve({ formatted: new Map(), summaries: new Map() });
+  }
+
+  on(event: string, cb: (path?: string) => void): () => void {
+    const listeners = (this.#listeners[event] ??= new Set());
+    listeners.add(cb);
+    return () => listeners.delete(cb);
+  }
+
+  emit(event: string, path?: string): void {
+    for (const cb of this.#listeners[event] ?? []) cb(path);
+  }
+}
 
 class NoteIndexStub {
   readonly #notes: Record<string, { path: string }[]>;
