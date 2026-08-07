@@ -1,13 +1,21 @@
 /* Citekey editor treatment. A recognized `@citekey` reads as a citation and
    behaves like an internal link: Obsidian's own `cm-underline` on the same mark
-   draws the link decoration line, and these rules supply the accent colour and
-   the link cursor that Obsidian scopes to its own link token classes.
+   draws the link decoration line, and these rules supply the accent colour.
 
    Both classes plus the element name are compounded so a citekey inside `[...]`
    — which Obsidian tokenizes as a bare link and colours as an external one —
-   looks the same as a bare one. */
+   looks the same as a bare one. Source mode keeps the text cursor, like native
+   links; Live Preview supplies the link cursor for its clickable treatment. */
 .markdown-source-view.mod-cm6 span.zt-citekey.cm-underline {
   color: var(--link-color);
+}
+
+.markdown-source-view.mod-cm6:not(.is-live-preview)
+  span.zt-citekey.cm-underline {
+  cursor: text;
+}
+
+.markdown-source-view.mod-cm6.is-live-preview span.zt-citekey.cm-underline {
   cursor: var(--cursor-link);
 }
 

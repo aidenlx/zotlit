@@ -18,16 +18,22 @@ import {
   type EditorView,
   type ViewUpdate,
 } from "@codemirror/view";
-import { Keymap, type PaneType } from "obsidian";
+import { Keymap } from "obsidian";
+
+import { getLogger } from "@/lib/log";
+import {
+  navigationIntent,
+  type EditorMode,
+  type NavigationPane,
+} from "@/services/citekey-navigation";
 
 import { citekeyMarks, isExcludedTokenClass } from "./decorate";
 import "./style.css";
 
+const logger = getLogger("citekey-editor");
+
 /** Opens the Literature Note of `citekey`, creating it when none exists yet. */
-export type OpenCitekey = (
-  citekey: string,
-  newLeaf: boolean | PaneType,
-) => void;
+export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
 
 /**
  * `cm-underline` is Obsidian's own link-text class: it draws the link
@@ -73,13 +79,15 @@ export function citekeyEditorExtension(open: OpenCitekey): Extension {
        * @returns whether the citekey under the pointer was opened, which also
        *   tells CodeMirror to stop handling the event.
        */
-      openAt(
-        event: MouseEvent,
-        view: EditorView,
-        newLeaf: boolean | PaneType,
-      ): boolean {
-        // A drag that ended on a citekey is a selection, not a click.
-        if (!view.state.selection.main.empty) return false;
+      openAt(event: MouseEvent, view: EditorView): boolean {
+        const editorMode: EditorMode = view.dom.closest(".is-live-preview")
+          ? "live-preview"
+          : "source";
+        // A drag that ended on a citekey is a selection, not a click. Source
+        // mode still lets a modifier click through: Shift-click extends the
+        // selection on mousedown, and native links navigate regardless.
+        if (!view.state.selection.main.empty && editorMode === "live-preview")
+          return false;
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
         if (pos === null) return false;
 
@@ -90,8 +98,44 @@ export function citekeyEditorExtension(open: OpenCitekey): Extension {
         });
         if (citekey === null) return false;
 
+        const button = event.button === 1 ? "middle" : "left";
+        const mod = Keymap.isModifier(event, "Mod");
+        const intent = navigationIntent(
+          {
+            action: "click",
+            button,
+            mod,
+            shift: event.shiftKey,
+            alt: event.altKey,
+            editorMode,
+            surface: "editor",
+            pane: event.button === 1 ? "tab" : Keymap.isModEvent(event),
+          },
+          { resolution: "open-or-create", citekey },
+        );
+        if (intent.kind !== "open") {
+          // A Source-mode plain click falls through to CodeMirror's caret
+          // placement; every other non-open intent means this shell does not
+          // handle the gesture yet.
+          logger.debug("Citekey click not followed", {
+            citekey,
+            editorMode,
+            button,
+            mod,
+            intent: intent.kind,
+          });
+          return false;
+        }
+        logger.debug("Citekey click opens note", {
+          citekey,
+          editorMode,
+          button,
+          mod,
+          pane: intent.pane,
+        });
+
         event.preventDefault();
-        open(citekey, newLeaf);
+        open(citekey, intent.pane);
         return true;
       }
     },
@@ -100,12 +144,12 @@ export function citekeyEditorExtension(open: OpenCitekey): Extension {
       eventHandlers: {
         click(event, view) {
           if (event.button !== 0) return false;
-          return this.openAt(event, view, Keymap.isModEvent(event));
+          return this.openAt(event, view);
         },
         // Obsidian reads middle-click off `mousedown`; `click` never fires for it.
         mousedown(event, view) {
           if (event.button !== 1) return false;
-          return this.openAt(event, view, "tab");
+          return this.openAt(event, view);
         },
       },
     },
