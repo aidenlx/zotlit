@@ -13,6 +13,7 @@ import {
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { CITATION_FRAGMENT_FIXTURES } from "../src/lib/__fixtures__/citation-fragments.ts";
 import {
   PANDOC_DEFAULTS_FILENAME,
   PANDOC_FILTER_FILENAME,
@@ -83,32 +84,6 @@ const CASES: Case[] = [
     plain: "(Doe 2020)",
   },
   { name: "alias", markdown: "[[Doe 2020|Jane's book]]", plain: "(Doe 2020)" },
-  {
-    name: "locator",
-    markdown: "[[Doe 2020#cite:locator=33]]",
-    plain: "(Doe 2020, 33)",
-  },
-  {
-    name: "label and locator",
-    markdown: "[[Doe 2020#cite:label=chapter&locator=3]]",
-    plain: "(Doe 2020, chap. 3)",
-  },
-  {
-    name: "prefix, locator and suffix",
-    markdown:
-      "[[Doe 2020#cite:prefix=see%20also&label=chapter&locator=3&suffix=for%20context]]",
-    plain: "(see also Doe 2020, chap. 3, for context)",
-  },
-  {
-    name: "suppress-author",
-    markdown: "[[Smith 2021#cite:mode=suppress-author&locator=7]]",
-    plain: "(2021, 7)",
-  },
-  {
-    name: "author-in-text",
-    markdown: "[[Doe 2020#cite:mode=author-in-text&locator=33]]",
-    plain: "Doe (2020, 33)",
-  },
   {
     name: "citation run",
     markdown: "[[Doe 2020]]; [[Smith 2021]]",
@@ -187,56 +162,6 @@ const CASES: Case[] = [
     plain: "(Doe 2020); Some Note; (Smith 2021)",
   },
   {
-    name: "empty fragment",
-    markdown: "[[Doe 2020#cite:]]",
-    error: "the Citation Fragment is empty",
-  },
-  {
-    name: "parameter without =",
-    markdown: "[[Doe 2020#cite:locator]]",
-    error: 'is missing its "="',
-  },
-  {
-    name: "empty value",
-    markdown: "[[Doe 2020#cite:locator=]]",
-    error: '"locator" has an empty value',
-  },
-  {
-    name: "unknown parameter",
-    markdown: "[[Doe 2020#cite:page=33]]",
-    error: '"page" is not a Citation Fragment parameter',
-  },
-  {
-    name: "duplicate parameter",
-    markdown: "[[Doe 2020#cite:locator=1&locator=2]]",
-    error: '"locator" appears more than once',
-  },
-  {
-    name: "malformed percent encoding",
-    markdown: "[[Doe 2020#cite:locator=%zz]]",
-    error: "malformed percent encoding",
-  },
-  {
-    name: "unsupported mode",
-    markdown: "[[Doe 2020#cite:mode=narrative]]",
-    error: '"mode" does not support "narrative"',
-  },
-  {
-    name: "unsupported label",
-    markdown: "[[Doe 2020#cite:label=slide&locator=3]]",
-    error: '"label" does not support "slide"',
-  },
-  {
-    name: "label without locator",
-    markdown: "[[Doe 2020#cite:label=chapter]]",
-    error: '"label" needs a "locator"',
-  },
-  {
-    name: "prefix with author-in-text",
-    markdown: "[[Doe 2020#cite:mode=author-in-text&prefix=see]]",
-    error: '"prefix" does not combine with mode=author-in-text',
-  },
-  {
     name: "author-in-text after the first run position",
     markdown: "[[Doe 2020]]; [[Smith 2021#cite:mode=author-in-text]]",
     error: "only the first position in a Citation Run",
@@ -262,6 +187,18 @@ const CASES: Case[] = [
     error: "stopped on 1 error(s)",
   },
 ];
+
+// Fragment cases come from the corpus the TypeScript parser also runs, so the
+// two implementations cannot drift.
+for (const fixture of CITATION_FRAGMENT_FIXTURES) {
+  if (fixture.fragment === null) continue;
+  const markdown = `[[Doe 2020#cite:${fixture.fragment}]]`;
+  CASES.push(
+    fixture.error
+      ? { name: fixture.name, markdown, error: fixture.error }
+      : { name: fixture.name, markdown, plain: fixture.plain! },
+  );
+}
 
 interface Run {
   status: number;
