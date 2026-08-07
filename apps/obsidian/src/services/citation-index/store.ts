@@ -24,7 +24,7 @@ export interface CitekeyRecord extends FileScan {
  * The persistence seam of the Citation Index. Everything it holds is derived
  * data the vault can rebuild, so a record it loses costs one rescan.
  */
-export interface CitekeyStore extends AsyncDisposable {
+export interface CitekeyStore extends Disposable {
   /** Every record the store holds, in no particular order. */
   load(): Promise<CitekeyRecord[]>;
   put(record: CitekeyRecord): Promise<void>;
@@ -70,9 +70,6 @@ export async function openCitekeyStore(app: App): Promise<CitekeyStore> {
     },
     drop: (path) => db.delete(SCANS, path),
     clear: () => db.clear(SCANS),
-    [Symbol.asyncDispose]: () => {
-      db.close();
-      return Promise.resolve();
-    },
+    [Symbol.dispose]: () => db.close(),
   };
 }

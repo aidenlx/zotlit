@@ -197,9 +197,7 @@ class MemoryStore implements CitekeyStore {
     return Promise.resolve();
   }
 
-  [Symbol.asyncDispose](): Promise<void> {
-    return Promise.resolve();
-  }
+  [Symbol.dispose](): void {}
 }
 
 class SettingsStub {
