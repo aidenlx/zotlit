@@ -70,6 +70,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [scratch-artifacts](policies/scratch-artifacts.md) — probe scripts and trial output go in workspace `tmp/`, not `/tmp`
 - [package and workspace roots](policies/package-roots.md) — package-root paths and pnpm workspace discovery
 - [logging](policies/logging.md) — LogTape, structured fields
+- [observability](policies/observability.md) — lean `info`; permanent `debug` / `trace` at decision points
 - [temporal-dates](policies/temporal-dates.md) — Temporal API, not Date/date-fns/dayjs
 - [vocabulary](policies/vocabulary.md) — canonical terms for Zotero keys, citation keys, and `citekey`
 
