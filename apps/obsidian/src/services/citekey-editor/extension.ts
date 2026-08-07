@@ -1,5 +1,6 @@
 // The CodeMirror side of the citekey editor treatment: citekey marks over the
-// visible ranges, and the click that opens the marked key's Literature Note.
+// visible ranges, the lookup that answers which citekey covers a document
+// position, and the click that opens the marked key's Literature Note.
 
 import {
   lineClassNodeProp,
@@ -42,10 +43,7 @@ export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
  */
 const MARK_CLASS = "cm-underline zt-citekey";
 
-/** The `citekey` spec field the click handler reads back off a mark. */
-interface CitekeyMarkSpec {
-  citekey?: string;
-}
+const CITEKEY_MARK = Decoration.mark({ class: MARK_CLASS });
 
 /**
  * Marks every recognized `@citekey` in the visible ranges and makes it open its
@@ -91,11 +89,7 @@ export function citekeyEditorExtension(open: OpenCitekey): Extension {
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
         if (pos === null) return false;
 
-        let citekey: string | null = null;
-        this.decorations.between(pos, pos, (_from, _to, mark) => {
-          citekey = (mark.spec as CitekeyMarkSpec).citekey ?? null;
-          return false;
-        });
+        const citekey = citekeyAtPos(view.state, pos);
         if (citekey === null) return false;
 
         const button = event.button === 1 ? "middle" : "left";
@@ -172,18 +166,32 @@ function buildMarks(view: EditorView): DecorationSet {
         isExcluded(state, line.from + span.start, line.from + span.end),
       );
       for (const mark of marks) {
-        builder.add(
-          line.from + mark.start,
-          line.from + mark.end,
-          Decoration.mark({
-            class: MARK_CLASS,
-            citekey: mark.citekey,
-          } satisfies CitekeyMarkSpec & { class: string }),
-        );
+        builder.add(line.from + mark.start, line.from + mark.end, CITEKEY_MARK);
       }
     }
   }
   return builder.finish();
+}
+
+/**
+ * The citekey covering document position `pos` — the one lookup the click and
+ * the palette commands share. `pos` counts as inside the key at either
+ * boundary, the same `from <= pos && to >= pos` range test Obsidian runs on
+ * its own tokens.
+ *
+ * @see Editor.getClickableTokenAt in Obsidian 1.13
+ */
+export function citekeyAtPos(state: EditorState, pos: number): string | null {
+  const line = state.doc.lineAt(pos);
+  const from = line.from;
+  for (const mark of citekeyMarks(line.text, (span) =>
+    isExcluded(state, from + span.start, from + span.end),
+  )) {
+    if (pos >= from + mark.start && pos <= from + mark.end) {
+      return mark.citekey;
+    }
+  }
+  return null;
 }
 
 /** Whether Obsidian's syntax tree classifies `[from, to)` as non-citation text. */

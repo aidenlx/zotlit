@@ -102,6 +102,11 @@ declare module "obsidian" {
   }
   interface Editor {
     getClickableTokenAt(pos: EditorPosition): ClickableToken | null;
+    /**
+     * The CodeMirror 6 view behind the editor. Obsidian's own `Editor` methods
+     * read it unconditionally, so every editor handed to a command has it.
+     */
+    cm: import("@codemirror/view").EditorView;
   }
   interface MarkdownView {
     /** Live-preview / source edit sub-view; absent in pure reading mode. */

@@ -2,7 +2,7 @@
 // CodeMirror extension on and owns the click that opens a citekey's note.
 
 import { type Extension } from "@codemirror/state";
-import { type App, type PaneType, type Plugin } from "obsidian";
+import { type App, type Plugin } from "obsidian";
 
 import {
   getItemIDByCitekey,
@@ -13,6 +13,7 @@ import {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
+import { type NavigationPane } from "@/services/citekey-navigation";
 import { type DatabaseService } from "@/services/database/service";
 import { type NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
@@ -75,8 +76,8 @@ export class CitekeyEditor extends Service<void> {
     this.#noteFeature = deps.noteFeature;
     this.#db = deps.db;
     this.#settings = deps.settings;
-    this.#extension = citekeyEditorExtension((citekey, newLeaf) => {
-      void this.#openCitekey(citekey, newLeaf);
+    this.#extension = citekeyEditorExtension((citekey, pane) => {
+      void this.openCitekey(citekey, pane);
     });
     this.ready = this.#load();
   }
@@ -134,14 +135,19 @@ export class CitekeyEditor extends Service<void> {
   }
 
   /**
+   * Whether the editor treatment runs: Citekey Indexing and the citekey
+   * editor toggle are both on. The palette commands gate on it.
+   */
+  get enabled(): boolean {
+    return this.#enabled;
+  }
+
+  /**
    * A citekey with exactly one indexed Literature Note opens it directly.
    * Otherwise the Zotero Item decides: an existing note for its Indexed Key
    * wins, and only a key with no note at all creates one.
    */
-  async #openCitekey(
-    citekey: string,
-    newLeaf: boolean | PaneType,
-  ): Promise<void> {
+  async openCitekey(citekey: string, pane: NavigationPane): Promise<void> {
     const { workspace } = this.#app;
     await this.#noteIndex.whenIndexed();
 
@@ -153,7 +159,7 @@ export class CitekeyEditor extends Service<void> {
         path: existing.path,
         branch: "direct",
       });
-      await workspace.openLinkText(existing.path, "", newLeaf, {
+      await workspace.openLinkText(existing.path, "", pane, {
         active: true,
       });
       return;
@@ -184,7 +190,7 @@ export class CitekeyEditor extends Service<void> {
         path: authoritative.path,
         branch: "authoritative",
       });
-      await workspace.openLinkText(authoritative.path, "", newLeaf, {
+      await workspace.openLinkText(authoritative.path, "", pane, {
         active: true,
       });
       return;
@@ -196,7 +202,7 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
     logger.debug("Created citekey note", { citekey, path: file.path });
-    await workspace.openLinkText(file.path, "", true, { active: true });
+    await workspace.openLinkText(file.path, "", pane, { active: true });
   }
 
   /** Resolve the Zotero item for `citekey` in the configured citation library. */

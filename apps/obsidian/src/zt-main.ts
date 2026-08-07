@@ -14,6 +14,7 @@ import { BaseNotice } from "./lib/notice";
 import { openSettingsTab } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
+import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
@@ -193,6 +194,7 @@ export default class ZotLitPlugin extends Plugin {
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
+    addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
     registerIndexedKeyFileMenu(this);
     addNoteFeatureActions(this, {
       app: this.app,

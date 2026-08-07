@@ -29,8 +29,10 @@ describe("CitekeyEditor settings lifecycle", () => {
     await service.ready;
 
     expect(registered).toEqual([]);
+    expect(service.enabled).toBe(false);
     settings.update({ "citation.citekey-editor": true });
     expect(registered).toHaveLength(1);
+    expect(service.enabled).toBe(true);
     expect(reconfigures).toBe(1);
     expect(notices).toHaveLength(1);
 
@@ -56,6 +58,7 @@ describe("CitekeyEditor settings lifecycle", () => {
 
     settings.update({ "citation.citekey-editor": false });
     expect(registered).toEqual([]);
+    expect(service.enabled).toBe(false);
     settings.update({ "citation.citekey-editor": true });
     expect(registered).toHaveLength(1);
     expect(notices).toHaveLength(4);
