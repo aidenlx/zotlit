@@ -11,3 +11,9 @@ export {
   type NavigationSurface,
   type NavigationTarget,
 } from "./intent";
+export {
+  mouseGesture,
+  triggerCitekeyHover,
+  type CitekeyHoverLink,
+  type GestureSurface,
+} from "./shell";

@@ -1,0 +1,15 @@
+/* Reading-mode citations. Every rendered citation is a click target — one that
+   reaches no work stays raw source text and grows no element — so the link
+   affordance goes on the class itself. The colour stays the surrounding text's:
+   a citation is body text that a style formatted, and only its cursor and its
+   hover say that it navigates. */
+.markdown-rendered span.zt-citation {
+  cursor: var(--cursor-link);
+}
+
+@media (hover: hover) {
+  .markdown-rendered span.zt-citation:hover {
+    color: var(--link-color-hover);
+    text-decoration-line: var(--link-decoration-hover);
+  }
+}

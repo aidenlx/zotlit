@@ -124,6 +124,10 @@ async function makeHarness({
       },
       on: () => () => undefined,
     },
+    citekeyEditor: {
+      openCitekey: () => Promise.resolve(),
+      hoverNotePath: () => null,
+    },
     settings: settingsStub(overrides),
   } as never);
   await service.ready;

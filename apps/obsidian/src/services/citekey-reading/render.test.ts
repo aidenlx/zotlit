@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   citationElement,
+  citationTarget,
+  citedWorks,
   replaceCitations,
   sectionCitations,
   summarizeCitation,
@@ -88,10 +90,76 @@ describe("replaceCitations", () => {
   });
 });
 
-describe("summarizeCitation", () => {
-  const citation = (source: string): SectionCitation =>
-    sectionCitations(section(`<p>${source}</p>`))[0]!;
+const citation = (source: string): SectionCitation =>
+  sectionCitations(section(`<p>${source}</p>`))[0]!;
 
+describe("citedWorks", () => {
+  it("names each work by its summary, in the order the citation writes it", () => {
+    expect(
+      citedWorks(citation("[see @a, p. 3; -@b]"), (key) =>
+        key === "a" ? "Zeta (2020)" : "Adams (2018)",
+      ),
+    ).toEqual([
+      { citekey: "a", label: "Zeta (2020)" },
+      { citekey: "b", label: "Adams (2018)" },
+    ]);
+  });
+
+  it("shows a key that reaches no item by its raw citekey", () => {
+    expect(
+      citedWorks(citation("[@a; @ghost]"), (key) =>
+        key === "a" ? "Zeta (2020)" : undefined,
+      ),
+    ).toEqual([
+      { citekey: "a", label: "Zeta (2020)" },
+      { citekey: "ghost", label: "@ghost" },
+    ]);
+  });
+
+  it("keeps the braces an unresolved braced key is written with", () => {
+    expect(
+      citedWorks(citation("[@{https://example.com/paper}]"), () => undefined),
+    ).toEqual([
+      {
+        citekey: "https://example.com/paper",
+        label: "@{https://example.com/paper}",
+      },
+    ]);
+  });
+
+  it("names a repeated key once", () => {
+    expect(
+      citedWorks(citation("[@a; @b; @a]"), () => undefined).map(
+        (work) => work.citekey,
+      ),
+    ).toEqual(["a", "b"]);
+  });
+});
+
+describe("citationTarget", () => {
+  const works = (source: string) =>
+    citedWorks(citation(source), (key) => `Work ${key}`);
+
+  it("opens the one work a single-key citation names", () => {
+    expect(citationTarget(works("[see @a, p. 3]"))).toEqual({
+      resolution: "open-or-create",
+      citekey: "a",
+    });
+  });
+
+  it("asks which work a multi-key citation means", () => {
+    expect(citationTarget(works("[@a; @b]"))).toEqual({
+      resolution: "citation-menu",
+      citekeys: ["a", "b"],
+    });
+  });
+
+  it("leaves a citation naming no work inert", () => {
+    expect(citationTarget([])).toEqual({ resolution: "unavailable" });
+  });
+});
+
+describe("summarizeCitation", () => {
   it("puts each key's summary in its place, keeping what the author wrote", () => {
     expect(
       summarizeCitation(citation("[see @a, p. 3; -@b]"), (key) =>

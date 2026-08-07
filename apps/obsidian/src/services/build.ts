@@ -186,13 +186,20 @@ export function buildServices(
         }),
     })
     .use({
-      citekeyReading: ({ db, citationIndex, bibliographyRender, settings }) =>
+      citekeyReading: ({
+        db,
+        citationIndex,
+        bibliographyRender,
+        citekeyEditor,
+        settings,
+      }) =>
         new CitekeyReading({
           app: plugin.app,
           plugin,
           db,
           citationIndex,
           bibliographyRender,
+          citekeyEditor,
           settings,
         }),
     });

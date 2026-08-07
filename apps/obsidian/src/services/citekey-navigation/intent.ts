@@ -21,7 +21,8 @@ export interface NavigationGesture {
   mod: boolean;
   shift: boolean;
   alt: boolean;
-  editorMode: EditorMode;
+  /** The editor's mode; a reading-mode shell has none and leaves it out. */
+  editorMode?: EditorMode;
   surface: NavigationSurface;
   /** The result of Obsidian's public `Keymap.isModEvent`, when available. */
   pane?: NavigationPane;

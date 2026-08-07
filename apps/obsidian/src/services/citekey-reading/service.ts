@@ -1,7 +1,8 @@
-// The reading-mode surface of the Citekey Editor Treatment: literal citekey citations show formatted in the reading view.
+// The reading-mode surface of the Citekey Editor Treatment: literal citekey citations show formatted in the reading view, and navigate like links.
 
 import {
   MarkdownView,
+  Menu,
   type App,
   type MarkdownPostProcessorContext,
   type Plugin,
@@ -26,6 +27,12 @@ import {
   type Citation,
   type CitationIndex,
 } from "@/services/citation-index/service";
+import { type CitekeyEditor } from "@/services/citekey-editor/service";
+import {
+  mouseGesture,
+  navigationIntent,
+  triggerCitekeyHover,
+} from "@/services/citekey-navigation";
 import { type DatabaseService } from "@/services/database/service";
 import { type BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
@@ -34,10 +41,14 @@ import { type SettingsService } from "@/services/settings/service";
 
 import {
   citationElement,
+  citationTarget,
+  citedWorks,
   replaceCitations,
   sectionCitations,
   summarizeCitation,
+  type CitedWork,
 } from "./render";
+import "./style.css";
 
 const logger = getLogger("citekey-reading");
 
@@ -56,6 +67,14 @@ interface DocumentCitations {
   summaries: ReadonlyMap<string, string>;
 }
 
+/** One citation as the reading view now holds it, for its handlers to read. */
+interface RenderedCitation {
+  element: HTMLElement;
+  works: readonly CitedWork[];
+  /** The path of the note the citation is written in. */
+  sourcePath: string;
+}
+
 const NO_CITATIONS: DocumentCitations = {
   formatted: new Map(),
   summaries: new Map(),
@@ -68,6 +87,8 @@ export interface CitekeyReadingDeps {
   citationIndex: Pick<CitationIndex, "getCitations" | "on">;
   /** The plugin-wide render cache, which owns the References Style and the engine. */
   bibliographyRender: Pick<BibliographyRenderCache, "renderCitations" | "on">;
+  /** The open-or-create flow and the hover resolution every citekey surface shares. */
+  citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   settings: Pick<SettingsService, "ready" | "subscribe">;
 }
 
@@ -81,6 +102,11 @@ export interface CitekeyReadingDeps {
  * citation keeps its own brackets, prefixes, and locators, and each key it
  * names shows the shared `Creators (Year)` item summary instead.
  *
+ * A rendered citation is also a click target carrying Citekey Navigation: the
+ * one work it names opens on click, several works open a menu at the cursor,
+ * and hover previews the Literature Note of a single resolved key. A citation
+ * none of whose keys reaches a Zotero Item stays raw source text and inert.
+ *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
  * are read per render rather than by adding and removing it.
  */
@@ -90,6 +116,7 @@ export class CitekeyReading extends Service<void> {
   readonly #db;
   readonly #citationIndex;
   readonly #bibliographyRender;
+  readonly #citekeyEditor;
   readonly #settings;
   /** Citations by document path; every section of one document shares them. */
   readonly #documents = new BoundedCache<Promise<DocumentCitations>>(
@@ -108,6 +135,7 @@ export class CitekeyReading extends Service<void> {
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
     this.#bibliographyRender = deps.bibliographyRender;
+    this.#citekeyEditor = deps.citekeyEditor;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -142,7 +170,14 @@ export class CitekeyReading extends Service<void> {
         this.#rerenderReadingViews();
       }),
     );
-    stack.defer(() => this.#documents.clear());
+    // A rendered citation carries this service's own click and hover handlers,
+    // so the reading views render again without it once it is gone. The flag
+    // goes first: the post-processor may still be registered while this runs.
+    stack.defer(() => {
+      this.#enabled = false;
+      this.#documents.clear();
+      this.#rerenderReadingViews();
+    });
 
     this.commit(stack.move());
   }
@@ -164,7 +199,7 @@ export class CitekeyReading extends Service<void> {
     this.#rerenderReadingViews();
   }
 
-  /** Formats every citation of one rendered section. */
+  /** Formats every citation of one rendered section and makes it navigate. */
   async #process(
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext,
@@ -176,15 +211,154 @@ export class CitekeyReading extends Service<void> {
     if (!file) return;
 
     const { formatted, summaries } = await this.#documentCitations(file);
+    const summaryOf = (citekey: string): string | undefined =>
+      summaries.get(citekey);
     const doc = el.ownerDocument;
     replaceCitations(citations, (citation) => {
       const rendered = formatted.get(citation.source);
-      if (rendered) return citationElement(doc, rendered.cloneNode(true));
-      const summarized = summarizeCitation(citation, (citekey) =>
-        summaries.get(citekey),
-      );
-      return summarized === null ? null : citationElement(doc, summarized);
+      const content =
+        rendered?.cloneNode(true) ?? summarizeCitation(citation, summaryOf);
+      // A citation none of whose keys reaches a Zotero Item has nothing to
+      // show and nothing to open: its source stays as written, and inert.
+      if (content === null) return null;
+      const element = citationElement(doc, content);
+      this.#makeInteractive({
+        element,
+        works: citedWorks(citation, summaryOf),
+        sourcePath: ctx.sourcePath,
+      });
+      return element;
     });
+  }
+
+  /**
+   * Gives one rendered citation the click and hover of an internal link.
+   *
+   * The listeners sit on the citation's own element, so they go with it when
+   * the reading view renders that section again.
+   */
+  #makeInteractive(citation: RenderedCitation): void {
+    const { element, works } = citation;
+    element.addEventListener("click", (event) => {
+      if (event.button === 0) this.#navigate(event, works);
+    });
+    // Obsidian reads middle-click off `mousedown`; `click` never fires for it.
+    element.addEventListener("mousedown", (event) => {
+      if (event.button === 1) this.#navigate(event, works);
+    });
+    element.addEventListener("mouseover", (event) => {
+      this.#preview(event, citation);
+    });
+  }
+
+  /**
+   * Opens the work a rendered citation names, or asks which when it names
+   * several. Every branch runs the citekey editor's open-or-create flow, so a
+   * missing Literature Note is handled the way it is everywhere else.
+   */
+  #navigate(event: MouseEvent, works: readonly CitedWork[]): void {
+    const intent = navigationIntent(
+      mouseGesture(event, "click", { surface: "reading" }),
+      citationTarget(works),
+    );
+    if (intent.kind === "open") {
+      event.preventDefault();
+      logger.debug("Rendered citation opens note", {
+        citekey: intent.citekey,
+        pane: intent.pane,
+      });
+      void this.#citekeyEditor.openCitekey(intent.citekey, intent.pane);
+      return;
+    }
+    if (intent.kind !== "show-citation-menu") {
+      logger.debug("Rendered citation click not followed", {
+        works: works.length,
+        intent: intent.kind,
+      });
+      return;
+    }
+    event.preventDefault();
+
+    logger.debug("Rendered citation offers its works", {
+      works: works.length,
+      pane: intent.pane,
+    });
+    const menu = new Menu();
+    for (const work of works) {
+      menu.addItem((item) =>
+        item.setTitle(work.label).onClick(() => {
+          void this.#citekeyEditor.openCitekey(work.citekey, intent.pane);
+        }),
+      );
+    }
+    menu.showAtMouseEvent(event);
+  }
+
+  /**
+   * Previews the Literature Note a rendered citation names.
+   *
+   * A citation naming several works reaches the intent module as an unavailable
+   * target and previews nothing, so no popover path can create a file.
+   */
+  #preview(event: MouseEvent, citation: RenderedCitation): void {
+    const { element, works, sourcePath } = citation;
+    // The same re-entry guard Obsidian runs before its own `hover-link`, so
+    // moving within one citation fires a single hover.
+    const { relatedTarget } = event;
+    if (relatedTarget instanceof Node && element.contains(relatedTarget))
+      return;
+
+    const single = works.length === 1 ? works[0]!.citekey : null;
+    const notePath =
+      single === null ? null : this.#citekeyEditor.hoverNotePath(single);
+    const intent = navigationIntent(
+      mouseGesture(event, "hover", { surface: "reading" }),
+      notePath === null || single === null
+        ? { resolution: "unavailable" }
+        : { resolution: "direct", citekey: single },
+    );
+    // The second test repeats the target's own input so TypeScript sees the
+    // path a `direct` resolution always carries.
+    if (intent.kind !== "hover" || notePath === null) {
+      logger.trace("Rendered citation hover suppressed", {
+        works: works.length,
+      });
+      return;
+    }
+
+    const hoverParent = this.#viewOf(element);
+    if (!hoverParent) {
+      logger.trace("Rendered citation belongs to no markdown view", {
+        citekey: intent.citekey,
+      });
+      return;
+    }
+    logger.trace("Rendered citation previews note", {
+      citekey: intent.citekey,
+      path: notePath,
+    });
+    triggerCitekeyHover(this.#app.workspace, {
+      event,
+      hoverParent,
+      targetEl: element,
+      linktext: notePath,
+      sourcePath,
+    });
+  }
+
+  /**
+   * The Markdown view a rendered citation sits in, which Obsidian hangs the
+   * popover off. Markdown rendered outside such a view — an export, a popover
+   * of its own — belongs to none, and hover stays silent there.
+   */
+  #viewOf(element: HTMLElement): MarkdownView | null {
+    for (const leaf of this.#app.workspace.getLeavesOfType("markdown")) {
+      const { view } = leaf;
+      if (view instanceof MarkdownView && view.containerEl.contains(element)) {
+        return view;
+      }
+    }
+    return null;
   }
 
   #documentCitations(file: TFile): Promise<DocumentCitations> {

@@ -21,12 +21,13 @@ import {
   type EditorView,
   type ViewUpdate,
 } from "@codemirror/view";
-import { editorInfoField, Keymap } from "obsidian";
+import { editorInfoField } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import {
+  mouseGesture,
   navigationIntent,
-  CITEKEY_HOVER_SOURCE,
+  triggerCitekeyHover,
   type EditorMode,
   type NavigationPane,
 } from "@/services/citekey-navigation";
@@ -135,21 +136,15 @@ export function citekeyEditorExtension(
         const citekey = citekeyAtEvent(view, event);
         if (citekey === null) return false;
 
-        const button = event.button === 1 ? "middle" : "left";
-        const mod = Keymap.isModifier(event, "Mod");
-        const intent = navigationIntent(
-          {
-            action: "click",
-            button,
-            mod,
-            shift: event.shiftKey,
-            alt: event.altKey,
-            editorMode,
-            surface: "editor",
-            pane: event.button === 1 ? "tab" : Keymap.isModEvent(event),
-          },
-          { resolution: "open-or-create", citekey },
-        );
+        const gesture = mouseGesture(event, "click", {
+          surface: "editor",
+          editorMode,
+        });
+        const { button, mod } = gesture;
+        const intent = navigationIntent(gesture, {
+          resolution: "open-or-create",
+          citekey,
+        });
         if (intent.kind !== "open") {
           // A Source-mode plain click falls through to CodeMirror's caret
           // placement; every other non-open intent means this shell does not
@@ -193,15 +188,10 @@ export function citekeyEditorExtension(
         // reach the create-then-open flow.
         const notePath = handlers.hoverNotePath(citekey);
         const intent = navigationIntent(
-          {
-            action: "hover",
-            button: "none",
-            mod: Keymap.isModifier(event, "Mod"),
-            shift: event.shiftKey,
-            alt: event.altKey,
-            editorMode: editorModeOf(view),
+          mouseGesture(event, "hover", {
             surface: "editor",
-          },
+            editorMode: editorModeOf(view),
+          }),
           notePath === null
             ? { resolution: "unavailable" }
             : { resolution: "direct", citekey },
@@ -219,9 +209,8 @@ export function citekeyEditorExtension(
           citekey,
           path: notePath,
         });
-        info.app.workspace.trigger("hover-link", {
+        triggerCitekeyHover(info.app.workspace, {
           event,
-          source: CITEKEY_HOVER_SOURCE,
           hoverParent: info,
           targetEl,
           linktext: notePath,

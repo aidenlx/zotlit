@@ -1,6 +1,7 @@
 // The citations one rendered reading-view section holds, and the swap that puts formatted text in their place.
 
 import { scanCitations, type TextSpan } from "@/lib/citation-grammar";
+import { type NavigationTarget } from "@/services/citekey-navigation";
 
 /**
  * Elements whose text is never a citation. Code, math, and the frontmatter
@@ -107,6 +108,57 @@ export function summarizeCitation(
     resolved = true;
   }
   return resolved ? text + source.slice(at) : null;
+}
+
+/** One work a rendered citation names, as its click target. */
+export interface CitedWork {
+  citekey: string;
+  /**
+   * The work's summary, or — for a key that reaches no Zotero Item — the key as
+   * the citation writes it, braces and all, which is the raw text the
+   * References Sidebar shows an unresolved key by.
+   */
+  label: string;
+}
+
+/**
+ * The works one rendered citation names, in the order it names them.
+ *
+ * A citation that writes the same key twice names one work, so a menu built
+ * from these lists each work once.
+ *
+ * @param summaryOf the `Creators (Year)` summary of one citekey, or `undefined`
+ *   for a key that reaches no Zotero Item.
+ */
+export function citedWorks(
+  { source, keys }: Pick<SectionCitation, "source" | "keys">,
+  summaryOf: (citekey: string) => string | undefined,
+): CitedWork[] {
+  const works = new Map<string, CitedWork>();
+  for (const key of keys) {
+    const { citekey } = key;
+    if (works.has(citekey)) continue;
+    works.set(citekey, {
+      citekey,
+      label: summaryOf(citekey) ?? source.slice(key.start, key.end),
+    });
+  }
+  return [...works.values()];
+}
+
+/**
+ * What a click on a rendered citation reaches: the one work it names opens
+ * straight away, several works ask which, and none leaves the citation inert.
+ */
+export function citationTarget(works: readonly CitedWork[]): NavigationTarget {
+  if (works.length === 0) return { resolution: "unavailable" };
+  if (works.length === 1) {
+    return { resolution: "open-or-create", citekey: works[0]!.citekey };
+  }
+  return {
+    resolution: "citation-menu",
+    citekeys: works.map((work) => work.citekey),
+  };
 }
 
 /** Wraps formatted citation text in the element the reading view shows. */
