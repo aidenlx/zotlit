@@ -169,8 +169,20 @@ The interaction surface of recognized citekeys across Live Preview, Source mode,
 _Avoid_: citekey click (one gesture of the surface, not the concept), citekey links
 
 **Citekey Reading Rendering** _(Obsidian)_:
-The reading-mode surface of the same toggle the Citekey Editor Treatment carries: a Markdown post-processor replaces each Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text, taken from the same plugin-wide bibliography render cache the References Sidebar reads. With no Pandoc Engine installed, each key inside the Citation shows the shared `Creators (Year)` item summary instead, and the brackets, prefixes, and locators the author wrote stay as written. Code, math, and links are left alone, so a wikilink in reading mode stays plain Obsidian.
+The reading-mode surface of the same toggle the Citekey Editor Treatment carries: a Markdown post-processor replaces each Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text, taken from the same plugin-wide bibliography render cache the References Sidebar reads. With no Pandoc Engine installed, each key inside the Citation shows the shared `Creators (Year)` item summary instead, and the brackets, prefixes, and locators the author wrote stay as written. Code, math, and links are left alone; a Literature Note wikilink is the Wikilink Reading Rendering's surface, not this one's.
 _Avoid_: reading-mode widget (a widget is the Live Preview decoration), citation preview
+
+**Citation Display Text**:
+The citation-shaped text a decorated Literature Note wikilink shows in place of its raw path and fragment: `@` plus the note's Citation Key Property value, falling back to `@` plus the note's filename, never the folder path. A Citation Fragment renders as the equivalent Pandoc citation source text — mode, prefix, locator, and suffix included — so nothing the author encoded is hidden.
+_Avoid_: display alias (an alias is author-written and always wins), pretty text
+
+**Wikilink Editor Treatment** _(Obsidian)_:
+The Live Preview surface of wikilink citation display: a Literature Note wikilink shows its Citation Display Text instead of its raw path and Citation Fragment, while click, hover, drag, and conceal interaction stay Obsidian's. Cursor or selection contact restores the raw text; Source mode always shows raw text.
+_Avoid_: wikilink styling (the retired marks-only scope), wikilink conceal
+
+**Wikilink Reading Rendering** _(Obsidian)_:
+The reading-mode surface of the same treatment: a Literature Note wikilink's display text becomes its Citation Display Text while the link's target, navigation, and hover stay Obsidian's.
+_Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 
 ### Index and identity
 
@@ -198,7 +210,7 @@ The default-on capability that scans literal Pandoc `@citekey` text vault-wide i
 _Avoid_: citekey scanning (names the mechanism, not the capability)
 
 **Wikilink Citations**:
-The opt-in interpretation of Literature Note wikilinks as Citations in the index-backed UI — References Sidebar entries and wikilink editor styling. Pandoc export converts wikilinks to Citations regardless of this toggle.
+The opt-in interpretation of Literature Note wikilinks as Citations in the index-backed UI — References Sidebar entries and, for wikilinks without a Citation Fragment, the Wikilink Editor Treatment and Wikilink Reading Rendering. A wikilink carrying a Citation Fragment shows its Citation Display Text regardless of this toggle, just as Pandoc export converts wikilinks to Citations regardless of it.
 _Avoid_: wikilink as citekey (the working name), link citations
 
 ### Zotero connection
