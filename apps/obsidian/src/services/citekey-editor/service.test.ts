@@ -26,6 +26,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         },
         registerHoverLinkSource: () => undefined,
       },
+      noteIndex: new NoteIndexStub(),
       settings,
     } as never);
     service.on("missing-property", (property) => notices.push(property));
@@ -84,6 +85,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         },
         registerHoverLinkSource: () => undefined,
       },
+      noteIndex: new NoteIndexStub(),
       settings,
     } as never);
     await service.ready;
@@ -107,6 +109,7 @@ describe("CitekeyEditor hover preview", () => {
           sources[id] = info;
         },
       },
+      noteIndex: new NoteIndexStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -127,9 +130,7 @@ describe("CitekeyEditor hover preview", () => {
         registerEditorExtension: () => undefined,
         registerHoverLinkSource: () => undefined,
       },
-      noteIndex: {
-        getNotesByCitationKey: (citekey: string) => notes[citekey] ?? [],
-      },
+      noteIndex: new NoteIndexStub(notes),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -139,6 +140,61 @@ describe("CitekeyEditor hover preview", () => {
     expect(service.hoverNotePath("nobody1999")).toBeNull();
   });
 });
+
+describe("CitekeyEditor index-change broadcast", () => {
+  it("asks every open markdown editor to restyle when the Note Index changes", async () => {
+    const noteIndex = new NoteIndexStub();
+    let requests = 0;
+    await using service = new CitekeyEditor({
+      app: {
+        workspace: {
+          updateOptions: () => undefined,
+          getLeavesOfType: (type: string) => {
+            if (type === "markdown") requests++;
+            return [];
+          },
+        },
+      },
+      plugin: {
+        registerEditorExtension: () => undefined,
+        registerHoverLinkSource: () => undefined,
+      },
+      noteIndex,
+      settings: new SettingsStub(),
+    } as never);
+    await service.ready;
+
+    noteIndex.emit("changed");
+    expect(requests).toBe(1);
+    noteIndex.emit("rebuilt");
+    expect(requests).toBe(2);
+  });
+});
+
+class NoteIndexStub {
+  readonly #notes: Record<string, { path: string }[]>;
+  readonly #listeners: Record<"changed" | "rebuilt", Set<() => void>> = {
+    changed: new Set(),
+    rebuilt: new Set(),
+  };
+
+  constructor(notes: Record<string, { path: string }[]> = {}) {
+    this.#notes = notes;
+  }
+
+  getNotesByCitationKey(citekey: string): { path: string }[] {
+    return this.#notes[citekey] ?? [];
+  }
+
+  on(event: "changed" | "rebuilt", cb: () => void): () => void {
+    this.#listeners[event].add(cb);
+    return () => this.#listeners[event].delete(cb);
+  }
+
+  emit(event: "changed" | "rebuilt"): void {
+    for (const cb of this.#listeners[event]) cb();
+  }
+}
 
 class SettingsStub {
   current: Readonly<Settings>;

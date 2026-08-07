@@ -2,7 +2,7 @@
 // CodeMirror extension on and owns the click that opens a citekey's note.
 
 import { type Extension } from "@codemirror/state";
-import { type App, type Plugin } from "obsidian";
+import { MarkdownView, type App, type Plugin } from "obsidian";
 
 import {
   getItemIDByCitekey,
@@ -26,7 +26,7 @@ import { Service } from "@/services/service-base";
 import { type Settings } from "@/services/settings/schema";
 import { type SettingsService } from "@/services/settings/service";
 
-import { citekeyEditorExtension } from "./extension";
+import { citekeyEditorExtension, citekeyIndexChanged } from "./extension";
 
 const logger = getLogger("citekey-editor");
 
@@ -85,6 +85,7 @@ export class CitekeyEditor extends Service<void> {
         void this.openCitekey(citekey, pane);
       },
       hoverNotePath: (citekey) => this.hoverNotePath(citekey),
+      resolves: (citekey) => this.#resolves(citekey),
     });
     this.ready = this.#load();
   }
@@ -116,8 +117,29 @@ export class CitekeyEditor extends Service<void> {
         if (settings) this.#applySettings(settings);
       }),
     );
+    // Creating, deleting, or renaming a Literature Note, or editing its
+    // Citation Key Property, can flip a citekey's resolution; the Note Index's
+    // own invalidation is coarse, so every change restyles every open editor.
+    stack.defer(this.#noteIndex.on("changed", () => this.#restyleEditors()));
+    stack.defer(this.#noteIndex.on("rebuilt", () => this.#restyleEditors()));
 
     this.commit(stack.move());
+  }
+
+  #resolves(citekey: string): boolean {
+    return this.#noteIndex.getNotesByCitationKey(citekey).length > 0;
+  }
+
+  #restyleEditors(): void {
+    if (!this.#enabled) return;
+    const leaves = this.#app.workspace.getLeavesOfType("markdown");
+    logger.trace("Restyling citekey marks", { editors: leaves.length });
+    for (const leaf of leaves) {
+      const { view } = leaf;
+      if (view instanceof MarkdownView) {
+        view.editor.cm.dispatch({ effects: citekeyIndexChanged.of(undefined) });
+      }
+    }
   }
 
   #applySettings(settings: Readonly<Settings>): void {

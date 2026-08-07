@@ -25,3 +25,21 @@
     text-decoration-line: var(--link-decoration-hover);
   }
 }
+
+/* A citekey with no indexed Literature Note: the same broken-reference accent
+   Obsidian gives an unresolved internal link, so a typo'd or deleted citekey
+   reads as broken while writing. Declared after the resolved rules, including
+   their :hover, so its higher-specificity selector still wins on hover. */
+.markdown-source-view.mod-cm6 span.zt-citekey-unresolved.cm-underline {
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
+  text-decoration-color: var(--link-unresolved-decoration-color);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+}
+
+@media (hover: hover) {
+  .markdown-source-view.mod-cm6 span.zt-citekey-unresolved.cm-underline:hover {
+    color: var(--link-unresolved-color);
+    text-decoration-line: var(--link-decoration-hover);
+  }
+}

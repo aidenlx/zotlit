@@ -161,7 +161,7 @@ The opt-in Citation Suggester trigger: a bare ASCII `@` typed at a word boundary
 _Avoid_: mention trigger, @-suggester
 
 **Citekey Editor Treatment** _(Obsidian)_:
-The editor surface of Citekey Indexing: literal `@citekey` text is marked in the editor, and a marked key is a Citekey Navigation target. Built from CodeMirror decorations the plugin owns outright, since Obsidian's Markdown mode emits no token for a citekey; text the syntax tree classifies as code, math, comment, frontmatter, or URL stays plain. It replaces Citation Key Links, whose stored toggle migrates into it.
+The editor surface of Citekey Indexing: literal `@citekey` text is marked in the editor, and a marked key is a Citekey Navigation target. Built from CodeMirror decorations the plugin owns outright, since Obsidian's Markdown mode emits no token for a citekey; text the syntax tree classifies as code, math, comment, frontmatter, or URL stays plain. A mark reads as resolved or unresolved by the same Citation Index query Citekey Navigation opens through, and rebuilds on a plugin-owned state effect the service dispatches into every open editor whenever the Note Index reports a change. It replaces Citation Key Links, whose stored toggle migrates into it.
 _Avoid_: citekey click, citation click, Citation Key Links (the retired feature it replaces)
 
 **Citekey Navigation** _(Obsidian)_:

@@ -10,6 +10,7 @@ import {
 } from "@codemirror/language";
 import {
   RangeSetBuilder,
+  StateEffect,
   type EditorState,
   type Extension,
 } from "@codemirror/state";
@@ -30,7 +31,11 @@ import {
   type NavigationPane,
 } from "@/services/citekey-navigation";
 
-import { citekeyMarks, isExcludedTokenClass } from "./decorate";
+import {
+  citekeyMarks,
+  isExcludedTokenClass,
+  resolveCitekeyMarks,
+} from "./decorate";
 import "./style.css";
 
 const logger = getLogger("citekey-editor");
@@ -46,10 +51,25 @@ export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
  */
 export type ResolveHoverNote = (citekey: string) => string | null;
 
+/**
+ * Whether a citekey names at least one Literature Note — the Citation Index's
+ * lazy query, through the Citation Key Property.
+ */
+export type ResolveCitekey = (citekey: string) => boolean;
+
 export interface CitekeyEditorHandlers {
   open: OpenCitekey;
   hoverNotePath: ResolveHoverNote;
+  resolves: ResolveCitekey;
 }
+
+/**
+ * Dispatched by the citekey editor service whenever the Note Index reports a
+ * change that could flip a citekey's resolution — since index invalidation is
+ * coarse, this effect is the external trigger the decoration layer rebuilds
+ * from, rather than trying to track which citekeys the change touched.
+ */
+export const citekeyIndexChanged = StateEffect.define<void>();
 
 /** The plugin's own class on every citekey mark, and the hover target. */
 const CITEKEY_CLASS = "zt-citekey";
@@ -62,6 +82,11 @@ const CITEKEY_CLASS = "zt-citekey";
 const MARK_CLASS = `cm-underline ${CITEKEY_CLASS}`;
 
 const CITEKEY_MARK = Decoration.mark({ class: MARK_CLASS });
+
+/** A citekey with no indexed Literature Note: a broken reference. */
+const CITEKEY_MARK_UNRESOLVED = Decoration.mark({
+  class: `${MARK_CLASS} ${CITEKEY_CLASS}-unresolved`,
+});
 
 /**
  * Marks every recognized `@citekey` in the visible ranges, makes it open its
@@ -80,16 +105,19 @@ export function citekeyEditorExtension(
       decorations: DecorationSet;
 
       constructor(view: EditorView) {
-        this.decorations = buildMarks(view);
+        this.decorations = buildMarks(view, handlers.resolves);
       }
 
       update(update: ViewUpdate): void {
         if (
           update.docChanged ||
           update.viewportChanged ||
-          syntaxTree(update.state) !== syntaxTree(update.startState)
+          syntaxTree(update.state) !== syntaxTree(update.startState) ||
+          update.transactions.some((tr) =>
+            tr.effects.some((effect) => effect.is(citekeyIndexChanged)),
+          )
         ) {
-          this.decorations = buildMarks(update.view);
+          this.decorations = buildMarks(update.view, handlers.resolves);
         }
       }
 
@@ -251,7 +279,7 @@ function editorModeOf(view: EditorView): EditorMode {
   return view.dom.closest(".is-live-preview") ? "live-preview" : "source";
 }
 
-function buildMarks(view: EditorView): DecorationSet {
+function buildMarks(view: EditorView, resolves: ResolveCitekey): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const { state } = view;
   let lastLineFrom = -1;
@@ -263,11 +291,18 @@ function buildMarks(view: EditorView): DecorationSet {
       if (line.from === lastLineFrom) continue;
       lastLineFrom = line.from;
 
-      const marks = citekeyMarks(line.text, (span) =>
-        isExcluded(state, line.from + span.start, line.from + span.end),
+      const marks = resolveCitekeyMarks(
+        citekeyMarks(line.text, (span) =>
+          isExcluded(state, line.from + span.start, line.from + span.end),
+        ),
+        resolves,
       );
       for (const mark of marks) {
-        builder.add(line.from + mark.start, line.from + mark.end, CITEKEY_MARK);
+        builder.add(
+          line.from + mark.start,
+          line.from + mark.end,
+          mark.resolved ? CITEKEY_MARK : CITEKEY_MARK_UNRESOLVED,
+        );
       }
     }
   }

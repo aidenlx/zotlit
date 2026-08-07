@@ -64,3 +64,23 @@ export function citekeyMarks(
   }
   return marks;
 }
+
+/** A citekey mark plus whether it resolves to a Literature Note. */
+export interface ResolvedCitekeyMark extends CitekeyMark {
+  resolved: boolean;
+}
+
+/**
+ * Attaches resolution state to each mark, so the caller can style a broken
+ * reference apart from one that resolves. Kept apart from {@link citekeyMarks}
+ * so the click-target lookup, which needs no resolution state, stays free of a
+ * resolver dependency.
+ *
+ * @param resolves {@link ../extension.ResolveCitekey}
+ */
+export function resolveCitekeyMarks(
+  marks: readonly CitekeyMark[],
+  resolves: (citekey: string) => boolean,
+): ResolvedCitekeyMark[] {
+  return marks.map((mark) => ({ ...mark, resolved: resolves(mark.citekey) }));
+}

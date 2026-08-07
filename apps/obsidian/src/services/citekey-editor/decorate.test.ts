@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { citekeyMarks, isExcludedTokenClass } from "./decorate";
+import {
+  citekeyMarks,
+  isExcludedTokenClass,
+  resolveCitekeyMarks,
+} from "./decorate";
 
 const never = (): boolean => false;
 
@@ -40,6 +44,23 @@ describe("citekeyMarks", () => {
       (span) => span.start === 10,
     );
     expect(marks).toEqual([{ start: 0, end: 5, citekey: "kept" }]);
+  });
+});
+
+describe("resolveCitekeyMarks", () => {
+  it("attaches resolution state per mark, keeping their spans and citekeys", () => {
+    const marks = citekeyMarks("[see @a, p. 3; @b]", never);
+    const resolved = new Set(["a"]);
+    expect(
+      resolveCitekeyMarks(marks, (citekey) => resolved.has(citekey)),
+    ).toEqual([
+      { start: 5, end: 7, citekey: "a", resolved: true },
+      { start: 15, end: 17, citekey: "b", resolved: false },
+    ]);
+  });
+
+  it("resolves nothing against an empty mark list", () => {
+    expect(resolveCitekeyMarks([], () => true)).toEqual([]);
   });
 });
 
