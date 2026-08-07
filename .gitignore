@@ -40,3 +40,5 @@ project.inlang/*
 !project.inlang/settings.json
 
 .vercel
+
+.pi
