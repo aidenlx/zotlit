@@ -1,23 +1,21 @@
 import { basename } from "node:path/posix";
-import {
-  TFile,
-  type App,
-  type CachedMetadata,
-  type EventRef,
-  type FileStats,
-  type LinkCache,
+import { TFile } from "obsidian";
+import type {
+  App,
+  CachedMetadata,
+  EventRef,
+  FileStats,
+  LinkCache,
 } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { yieldToMain } from "@/lib/yield-to-main";
-import { defaults, type Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
-import {
-  CitationIndex,
-  type CitekeyRecord,
-  type CitekeyStore,
-} from "./service";
+import { CitationIndex } from "./service";
+import type { CitekeyRecord, CitekeyStore } from "./service";
 
 const KEY_A = "ABCD2345";
 const KEY_B = "ZZZ99999g7";

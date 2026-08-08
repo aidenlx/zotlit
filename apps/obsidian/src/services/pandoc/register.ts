@@ -5,13 +5,13 @@
 // parses, so its error codes and messages stay literal English.
 
 import { isAbsolute, relative } from "node:path";
-import {
-  normalizePath,
-  type App,
-  type CliFlag,
-  type CliFlags,
-  type FileSystemAdapter,
-  type Plugin,
+import { normalizePath } from "obsidian";
+import type {
+  App,
+  CliFlag,
+  CliFlags,
+  FileSystemAdapter,
+  Plugin,
 } from "obsidian";
 
 import {
@@ -22,15 +22,12 @@ import {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import {
-  resolveCitations,
-  type ResolveDocument,
-  type ResolvedItem,
-} from "./resolve";
+import { resolveCitations } from "./resolve";
+import type { ResolveDocument, ResolvedItem } from "./resolve";
 
 const logger = getLogger(["pandoc", "resolve"]);
 

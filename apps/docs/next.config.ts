@@ -1,5 +1,5 @@
 import { createMDX } from "fumadocs-mdx/next";
-import { type NextConfig } from "next";
+import type { NextConfig } from "next";
 
 import { buildV1Redirects } from "./lib/v1-redirects";
 

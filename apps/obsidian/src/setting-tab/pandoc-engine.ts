@@ -1,15 +1,15 @@
 // Install and uninstall controls for the device-wide Pandoc engine binary.
 
-import { type Setting, type SettingDefinition } from "obsidian";
+import type { Setting, SettingDefinition } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
-import {
-  type PandocEngineFailure,
-  type PandocEngineStatus,
+import type {
+  PandocEngineFailure,
+  PandocEngineStatus,
 } from "@/services/pandoc/service";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 
 /**
  * The engine row: what the engine is, where it stands, and the one action that

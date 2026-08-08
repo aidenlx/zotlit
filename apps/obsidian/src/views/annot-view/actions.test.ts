@@ -1,7 +1,7 @@
 import { Menu } from "@mock/obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { type AnnotViewItem } from "@zotlit/db";
+import type { AnnotViewItem } from "@zotlit/db";
 
 import { createAnnotActions } from "./actions";
 

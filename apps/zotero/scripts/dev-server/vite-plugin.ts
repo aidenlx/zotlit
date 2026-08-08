@@ -1,14 +1,12 @@
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { inspect } from "node:util";
-import { loadEnv, type Plugin } from "vite";
+import { loadEnv } from "vite";
+import type { Plugin } from "vite";
 
 import { installTemporaryAddon, reloadAddon } from "./remote-firefox.js";
-import {
-  resolveDevPath,
-  spawnZotero,
-  type ZoteroDevSession,
-} from "./runner.js";
+import { resolveDevPath, spawnZotero } from "./runner.js";
+import type { ZoteroDevSession } from "./runner.js";
 
 const PREFIX = "[zotero-dev]";
 const ENV_EXAMPLE_PATH = "apps/zotero/.env.example";

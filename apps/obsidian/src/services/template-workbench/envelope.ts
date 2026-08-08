@@ -5,27 +5,25 @@
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
 
-import {
-  CONTRACT_VERSION,
-  type ContractRoot,
-  type TemplateSlot,
-} from "@zotlit/db";
-import {
-  type FrontmatterLanguage,
-  type FrontmatterMergeStrategy,
+import { CONTRACT_VERSION } from "@zotlit/db";
+import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
-import { TemplateError, type TemplateLanguage } from "@zotlit/templates/facade";
-import { type FrontmatterField } from "@zotlit/templates/frontmatter";
+import { TemplateError } from "@zotlit/templates/facade";
+import type { TemplateLanguage } from "@zotlit/templates/facade";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { InertTemplateError } from "@/services/template/errors";
-import {
-  errorContext,
-  type CompileError,
-  type TemplateFileStatus,
+import { errorContext } from "@/services/template/service";
+import type {
+  CompileError,
+  TemplateFileStatus,
 } from "@/services/template/service";
 
-import { type TemplateDataLoadResult } from "./data";
-import { type SchemaAsset } from "./schema";
+import type { TemplateDataLoadResult } from "./data";
+import type { SchemaAsset } from "./schema";
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {

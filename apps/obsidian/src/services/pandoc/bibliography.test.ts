@@ -1,16 +1,18 @@
 import { regex } from "arkregex";
 import { describe, expect, it, vi } from "vitest";
 
-import { type CslItemData } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 
 import {
   fetchBibliography,
   LOCAL_API_PREF,
   ZOTERO_HTTP_PORT,
-  type BibliographyHttpRequest,
-  type BibliographyItemRef,
-  type BibliographyPorts,
-  type BibliographyResult,
+} from "./bibliography";
+import type {
+  BibliographyHttpRequest,
+  BibliographyItemRef,
+  BibliographyPorts,
+  BibliographyResult,
 } from "./bibliography";
 
 const ORIGIN = `http://127.0.0.1:${ZOTERO_HTTP_PORT}`;

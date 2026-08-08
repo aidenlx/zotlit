@@ -11,12 +11,12 @@ import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
-import { createNoteFeature, type NoteFeature } from "./note-feature";
-import {
-  createBatchImport,
-  type BatchImport,
-} from "./note-import/batch-import";
-import { createNoteImporter, type NoteImporter } from "./note-import/service";
+import { createNoteFeature } from "./note-feature";
+import type { NoteFeature } from "./note-feature";
+import { createBatchImport } from "./note-import/batch-import";
+import type { BatchImport } from "./note-import/batch-import";
+import { createNoteImporter } from "./note-import/service";
+import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { BibliographyRenderCache } from "./pandoc/render-cache";

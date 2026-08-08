@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  type DisplayNode,
-  type DisplayValueType,
-  formatPath,
-  type PathSegment,
+import { formatPath } from "./display-tree";
+import type {
+  DisplayNode,
+  DisplayValueType,
+  PathSegment,
 } from "./display-tree";
 import { renderSnippet, snippetKindsFor } from "./snippets";
 

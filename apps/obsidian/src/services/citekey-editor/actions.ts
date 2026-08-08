@@ -2,14 +2,14 @@
 // Obsidian's native open-link-under-cursor set: in place, in a new tab, to
 // the right, and in a new window.
 
-import { type Plugin } from "obsidian";
+import type { Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { type NavigationPane } from "@/services/citekey-navigation";
+import type { NavigationPane } from "@/services/citekey-navigation";
 
 import { citekeyAtPos } from "./extension";
-import { type CitekeyEditor } from "./service";
+import type { CitekeyEditor } from "./service";
 
 const logger = getLogger("citekey-editor");
 

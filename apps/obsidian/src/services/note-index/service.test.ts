@@ -1,15 +1,11 @@
 import { basename } from "node:path/posix";
-import {
-  TFile,
-  type App,
-  type CachedMetadata,
-  type EventRef,
-  type Plugin,
-} from "obsidian";
+import { TFile } from "obsidian";
+import type { App, CachedMetadata, EventRef, Plugin } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { defaults, type Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import { isLiteratureNote, NoteIndex, resolveIndexedKey } from "./service";
 

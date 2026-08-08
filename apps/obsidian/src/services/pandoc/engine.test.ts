@@ -4,16 +4,16 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { type CslItemData } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 
 import { yieldToMain } from "@/lib/yield-to-main";
 
 import {
-  type CitationEngine,
   CitationEngineError,
   CitationRequestSupersededError,
   createCitationEngine,
 } from "./engine";
+import type { CitationEngine } from "./engine";
 
 /**
  * The binary the plugin pins, read straight out of `pandoc-wasm`. The package

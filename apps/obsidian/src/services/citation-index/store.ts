@@ -1,9 +1,10 @@
 // Where the Citation Index keeps its literal-citekey scans between sessions.
 
-import { openDB, type DBSchema } from "idb";
-import { type App } from "obsidian";
+import { openDB } from "idb";
+import type { DBSchema } from "idb";
+import type { App } from "obsidian";
 
-import { type CitationOccurrence } from "./scan";
+import type { CitationOccurrence } from "./scan";
 
 /** One file's scan, plus what decides whether it still describes that file. */
 export interface FileScan {

@@ -6,13 +6,8 @@
 // so the card previews exactly the text a Literature Note will contain and a
 // `**bold**` typed in Zotero reads the same in both places.
 
-import {
-  Keymap,
-  MarkdownRenderChild,
-  MarkdownRenderer,
-  type App,
-  type Component,
-} from "obsidian";
+import { Keymap, MarkdownRenderChild, MarkdownRenderer } from "obsidian";
+import type { App, Component } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import {

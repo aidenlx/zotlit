@@ -2,15 +2,14 @@
 
 import * as React from "react";
 import {
-  type ComponentProps,
   createContext,
-  type ReactNode,
   useContext,
   useEffect,
   useId,
   useMemo,
   useState,
 } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import * as Unstyled from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";

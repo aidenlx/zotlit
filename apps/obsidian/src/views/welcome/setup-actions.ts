@@ -1,12 +1,13 @@
 // Live orchestration for the Welcome View quick-start step actions: open settings, pick the literature-note folder, search the library, and locate the Zotero data directory.
-import { type App, FuzzySuggestModal, type TFolder } from "obsidian";
+import { FuzzySuggestModal } from "obsidian";
+import type { App, TFolder } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { openSettingsTab } from "@/lib/open-settings";
 import { requireDialog } from "@/lib/require";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 const logger = getLogger(["views", "welcome"]);
 

@@ -1,7 +1,7 @@
 "use client";
 import { Header } from "fumadocs-ui/layouts/docs/slots/header";
 // Docs mobile header (#nd-subnav) carrying the site's double-hairline signature.
-import { type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/cn";
 

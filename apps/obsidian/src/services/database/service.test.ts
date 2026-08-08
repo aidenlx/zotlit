@@ -3,16 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { defaults, type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import {
-  buildSqliteUri,
-  type EffectiveReadMode,
-  type PreparedRead,
-  prepareRead,
-} from "./read-source";
+import { buildSqliteUri, prepareRead } from "./read-source";
+import type { EffectiveReadMode, PreparedRead } from "./read-source";
 
 describe("read-source", () => {
   let dir: string;

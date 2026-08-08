@@ -1,14 +1,15 @@
 import "./style.css";
-import { type App, type Plugin, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { type DatabaseService } from "@/services/database/service";
-import { type ItemLookup } from "@/services/item-lookup/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 

@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type Attachment } from "@zotlit/db";
+import type { Attachment } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import { attachmentAbsPath } from "@zotlit/db/path";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import {
-  type AttachmentSource,
-  type SourceOrigin,
+import type {
+  AttachmentSource,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
 
 import {

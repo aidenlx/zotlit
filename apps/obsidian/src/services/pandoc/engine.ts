@@ -2,16 +2,16 @@
 
 import { sanitizeHTMLToDom } from "obsidian";
 
-import { type CslItemData } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 
-import {
-  createPandocRuntime,
-  type PandocConvertResult,
-  type PandocOptions,
-  type PandocRuntime,
-  type VirtualFiles,
+import { createPandocRuntime } from "./runtime";
+import type {
+  PandocConvertResult,
+  PandocOptions,
+  PandocRuntime,
+  VirtualFiles,
 } from "./runtime";
 
 const logger = getLogger("pandoc");

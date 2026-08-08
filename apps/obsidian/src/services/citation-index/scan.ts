@@ -1,12 +1,10 @@
 // One document's Citation Occurrences: the shared grammar over a masked body, merged with the link cache.
 
-import { parseLinktext, type LinkCache, type Loc, type Pos } from "obsidian";
+import { parseLinktext } from "obsidian";
+import type { LinkCache, Loc, Pos } from "obsidian";
 
-import {
-  scanCitations,
-  scanCitekeys,
-  type CitationSpan,
-} from "@/lib/citation-grammar";
+import { scanCitations, scanCitekeys } from "@/lib/citation-grammar";
+import type { CitationSpan } from "@/lib/citation-grammar";
 
 /** Which syntax wrote a Citation Occurrence. */
 export type CitationSyntax = "citekey" | "wikilink";

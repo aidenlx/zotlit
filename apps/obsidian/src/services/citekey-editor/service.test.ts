@@ -1,10 +1,12 @@
-import { type Extension } from "@codemirror/state";
-import { MarkdownView, type HoverLinkSource } from "obsidian";
+import type { Extension } from "@codemirror/state";
+import { MarkdownView } from "obsidian";
+import type { HoverLinkSource } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import { type DocumentCitations } from "@/services/citation-text/service";
+import type { DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
-import { defaults, type Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import { CitekeyEditor } from "./service";
 

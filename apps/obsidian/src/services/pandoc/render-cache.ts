@@ -1,18 +1,18 @@
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
 
-import { type CslItemData } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { BoundedCache } from "@/lib/bounded-cache";
 import { getLogger } from "@/lib/log";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { type BibliographyEntry } from "./engine";
-import { type PandocEngineService } from "./service";
+import type { BibliographyEntry } from "./engine";
+import type { PandocEngineService } from "./service";
 import { StyleXmlCache } from "./styles";
 
 const logger = getLogger(["pandoc", "render-cache"]);

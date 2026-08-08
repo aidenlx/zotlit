@@ -3,10 +3,10 @@
 import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
-import { type ItemFields } from "@zotlit/zotero-types";
+import type { ItemFields } from "@zotlit/zotero-types";
 
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { type Creator, type Item } from "@/queries/items";
+import type { Creator, Item } from "@/queries/items";
 
 import { itemToCsl } from "./zt-csl-item";
 

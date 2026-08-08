@@ -1,12 +1,8 @@
-import { type LinkCache } from "obsidian";
+import type { LinkCache } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  resolveCitations,
-  type ResolvePorts,
-  type ResolveResponse,
-  type ResolvedItem,
-} from "./resolve";
+import { resolveCitations } from "./resolve";
+import type { ResolvePorts, ResolveResponse, ResolvedItem } from "./resolve";
 
 const FILE = "/vault/Notes/Paper.md";
 const SOURCE = "Notes/Paper.md";

@@ -1,7 +1,7 @@
 // Build-time split of the one zotlit-cite.lua source into its two shipped variants.
 
 import { readFile } from "node:fs/promises";
-import { type Plugin } from "vite";
+import type { Plugin } from "vite";
 
 /**
  * How a built filter obtains its resolution map: `cli` shells out to a live

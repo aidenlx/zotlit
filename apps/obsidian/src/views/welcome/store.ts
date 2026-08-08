@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import { type ConnectionReadout } from "./connection";
+import type { ConnectionReadout } from "./connection";
 
 export interface WelcomeState {
   /** `"upgraded"` renders the Migration Prompt banner and hides the footer migration link; `"fresh"` is the plain onboarding state. */

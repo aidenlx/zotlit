@@ -1,12 +1,8 @@
-import { type NoteTemplateContext } from "@zotlit/db";
-import {
-  evalFrontmatterFields,
-  type CompiledFrontmatterField,
-} from "@zotlit/templates/frontmatter";
-import {
-  type FrontmatterMergeConflictHandler,
-  mergeFrontmatterFields,
-} from "@zotlit/templates/frontmatter-merge";
+import type { NoteTemplateContext } from "@zotlit/db";
+import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
+import type { CompiledFrontmatterField } from "@zotlit/templates/frontmatter";
+import { mergeFrontmatterFields } from "@zotlit/templates/frontmatter-merge";
+import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
 
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 

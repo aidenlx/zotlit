@@ -1,19 +1,19 @@
-import {
-  type App,
-  TFile,
-  type MarkdownFileInfo,
-  type MarkdownView,
-  type Menu,
-  type Plugin,
+import { TFile } from "obsidian";
+import type {
+  App,
+  MarkdownFileInfo,
+  MarkdownView,
+  Menu,
+  Plugin,
 } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import {
-  type BatchImport,
-  type ReimportResult,
+import type {
+  BatchImport,
+  ReimportResult,
 } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
@@ -26,8 +26,8 @@ import {
 } from "@/services/note-index/service";
 import { InertTemplateError } from "@/services/template/errors";
 
-import { type NoteFeature, type UpdateScope } from "./operations";
-import { type BatchUpdateResult } from "./update-batch";
+import type { NoteFeature, UpdateScope } from "./operations";
+import type { BatchUpdateResult } from "./update-batch";
 import { updateNoteToast } from "./update-single";
 
 interface NoteFeatureActionDeps {

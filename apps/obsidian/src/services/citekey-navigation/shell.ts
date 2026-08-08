@@ -2,13 +2,11 @@
 // becomes one gesture, and one hovered note becomes the `hover-link` the Page
 // preview core plugin answers.
 
-import { Keymap, type HoverParent, type Workspace } from "obsidian";
+import { Keymap } from "obsidian";
+import type { HoverParent, Workspace } from "obsidian";
 
-import {
-  CITEKEY_HOVER_SOURCE,
-  type NavigationAction,
-  type NavigationGesture,
-} from "./intent";
+import { CITEKEY_HOVER_SOURCE } from "./intent";
+import type { NavigationAction, NavigationGesture } from "./intent";
 
 /** The surface a gesture happened on, and the editor's mode where it has one. */
 export type GestureSurface = Pick<NavigationGesture, "surface" | "editorMode">;

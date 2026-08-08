@@ -1,11 +1,8 @@
 // Pure decoration-range computation for the citekey editor treatment.
 
-import {
-  scanCitations,
-  scanCitekeys,
-  type TextSpan,
-} from "@/lib/citation-grammar";
-import { type CitationSource } from "@/services/citation-text/present";
+import { scanCitations, scanCitekeys } from "@/lib/citation-grammar";
+import type { TextSpan } from "@/lib/citation-grammar";
+import type { CitationSource } from "@/services/citation-text/present";
 
 /** A citekey span to mark, with the key the click flow resolves. */
 export interface CitekeyMark extends TextSpan {

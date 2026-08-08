@@ -9,8 +9,8 @@ import {
   copyValue,
   findAnnotationRoot,
   formatPath,
-  type DisplayNode,
 } from "./display-tree";
+import type { DisplayNode } from "./display-tree";
 
 function expectValueChildren(node: DisplayNode): readonly DisplayNode[] {
   expect(node.kind).toBe("value");

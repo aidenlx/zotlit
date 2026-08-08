@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { CITATION_FRAGMENT_FIXTURES } from "./__fixtures__/citation-fragments";
 import {
-  type CitationLocatorLabel,
   citationDisplayText,
   parseCitationFragment,
 } from "./citation-fragment";
+import type { CitationLocatorLabel } from "./citation-fragment";
 
 describe("parseCitationFragment", () => {
   for (const fixture of CITATION_FRAGMENT_FIXTURES) {

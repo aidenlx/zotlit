@@ -1,7 +1,7 @@
-import { type AnnotationPositionRaw } from "@drizzle/schema";
+import type { AnnotationPositionRaw } from "@drizzle/schema";
 import { getLogger } from "@logtape/logtape";
 
-import { type Temporal } from "@zotlit/shared/temporal";
+import type { Temporal } from "@zotlit/shared/temporal";
 
 const logger = getLogger(["zotlit", "db", "annotations"]);
 

@@ -1,8 +1,5 @@
-import {
-  checkProtocolVersion,
-  PROTOCOL_VERSION,
-  type ProtocolVersionCheck,
-} from "@zotlit/protocol";
+import { checkProtocolVersion, PROTOCOL_VERSION } from "@zotlit/protocol";
+import type { ProtocolVersionCheck } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";

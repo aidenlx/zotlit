@@ -4,17 +4,18 @@
 // Pure and framework-free — the emitter renders it to MDX, the table component
 // renders it to React, and both restate the contract identically.
 
-import {
-  type ContractExample,
-  type ContractHelper,
-  type ContractIR,
-  type ContractMember,
-  type ContractNamedType,
-  type ContractObject,
-  type ContractType,
+import type {
+  ContractExample,
+  ContractHelper,
+  ContractIR,
+  ContractMember,
+  ContractNamedType,
+  ContractObject,
+  ContractType,
 } from "@zotlit/db/contract/ir";
 
-import { SECTIONS, type SectionSpec } from "./sections.ts";
+import { SECTIONS } from "./sections.ts";
+import type { SectionSpec } from "./sections.ts";
 
 /** One run of a description: plain prose, inline code, or a resolved link. */
 export type InlineNode =

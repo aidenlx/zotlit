@@ -3,13 +3,10 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { type Plugin, type ResolvedConfig } from "vite";
+import type { Plugin, ResolvedConfig } from "vite";
 
-import {
-  compile,
-  resolveCompilePaths,
-  type CompileOptions,
-} from "./compiler.js";
+import { compile, resolveCompilePaths } from "./compiler.js";
+import type { CompileOptions } from "./compiler.js";
 import { isLanguagePackFileName } from "./language-pack.js";
 
 export type ObsidianI18nViteOptions = Omit<CompileOptions, "root"> & {

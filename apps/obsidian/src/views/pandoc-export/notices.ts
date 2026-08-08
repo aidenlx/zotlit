@@ -2,9 +2,9 @@
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import {
-  type BibliographySource,
-  type ExportFailure,
+import type {
+  BibliographySource,
+  ExportFailure,
 } from "@/services/pandoc/export";
 
 /** The engine is the one prerequisite the command cannot supply itself. */

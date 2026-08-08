@@ -1,6 +1,7 @@
 // Resolves one document's Literature Note links to the citation keys Pandoc cites.
 
-import { parseLinktext, type LinkCache } from "obsidian";
+import { parseLinktext } from "obsidian";
+import type { LinkCache } from "obsidian";
 
 /** Fragment prefix that declares citation intent on a link. */
 const CITE_FRAGMENT_PREFIX = "#cite:";

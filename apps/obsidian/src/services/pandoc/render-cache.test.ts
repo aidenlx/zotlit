@@ -1,21 +1,22 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type CslItemData } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 
-import { type DatabaseEvents } from "@/services/database/service";
-import { defaults, type Settings } from "@/services/settings/schema";
-import { type ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import type { DatabaseEvents } from "@/services/database/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
-import {
-  type BibliographyEntry,
-  type BibliographyRequest,
-  type CitationEngine,
-  type CitationRequest,
-  type DocumentRequest,
+import type {
+  BibliographyEntry,
+  BibliographyRequest,
+  CitationEngine,
+  CitationRequest,
+  DocumentRequest,
 } from "./engine";
 import { BibliographyRenderCache } from "./render-cache";
-import { type PandocEngineStatus } from "./service";
+import type { PandocEngineStatus } from "./service";
 
 const APA = "http://www.zotero.org/styles/apa";
 const IEEE = "http://www.zotero.org/styles/ieee";

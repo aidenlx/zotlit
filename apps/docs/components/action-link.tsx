@@ -1,5 +1,5 @@
 import { Download, Link } from "lucide-react";
-import { type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import ObsidianMark from "@/assets/obsidian.svg?svgr";
 import { cn } from "@/lib/cn";

@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
   sqliteTable,
-  type AnySQLiteColumn,
   primaryKey,
   index,
   unique,
@@ -9,13 +8,14 @@ import {
   text,
   customType,
 } from "drizzle-orm/sqlite-core";
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { type AnnotationType } from "@/lib/zt-annot";
-import { type LinkMode } from "@/lib/zt-attach";
-import { type CreatorFieldMode } from "@/lib/zt-creator";
-import { type TagType } from "@/lib/zt-tag";
+import type { AnnotationType } from "@/lib/zt-annot";
+import type { LinkMode } from "@/lib/zt-attach";
+import type { CreatorFieldMode } from "@/lib/zt-creator";
+import type { TagType } from "@/lib/zt-tag";
 
 type SqliteAnyOut =
   | null

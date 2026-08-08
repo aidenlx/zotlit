@@ -1,6 +1,7 @@
 import { getLogLevels, isLogLevel } from "@logtape/logtape";
 import { strToU8, zipSync } from "fflate";
-import { FileSystemAdapter, type SettingDefinitionItem } from "obsidian";
+import { FileSystemAdapter } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 
 import { Temporal } from "@zotlit/shared/temporal";
 
@@ -11,10 +12,10 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
 import { LOG_FILENAME } from "@/services/log/service";
-import { type LogLevel } from "@/services/settings/schema";
+import type { LogLevel } from "@/services/settings/schema";
 import type ZotLitPlugin from "@/zt-main";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 
 const logger = getLogger(["setting-tab", "diagnostics"]);
 

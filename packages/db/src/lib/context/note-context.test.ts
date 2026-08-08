@@ -3,22 +3,19 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { type TemplateItemResolvers } from "@/lib/context/zt-template-item";
-import { type Annotation } from "@/lib/zt-annot";
+import type { TemplateItemResolvers } from "@/lib/context/zt-template-item";
+import type { Annotation } from "@/lib/zt-annot";
 import { CollectionCache } from "@/lib/zt-collection";
 import { getAnnotationsByParent } from "@/queries/annotations";
 import { getItemsByKey } from "@/queries/items";
-import { resolveItemTagsByIDs, type TagMemo } from "@/queries/tags";
+import { resolveItemTagsByIDs } from "@/queries/tags";
+import type { TagMemo } from "@/queries/tags";
 import { createFixtureSchema } from "@/test-utils";
 
-import {
-  fetchAnnotationsTemplateData,
-  fetchNoteContext,
-  type AnnotationResolvers,
-  type NoteResolvers,
-} from "./note-context";
+import { fetchAnnotationsTemplateData, fetchNoteContext } from "./note-context";
+import type { AnnotationResolvers, NoteResolvers } from "./note-context";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;

@@ -4,20 +4,20 @@
 // discovering the commands. Guide output and diagnostic prose inside a response
 // stay literal English, since `code` is the machine surface agent scripts read.
 
-import {
-  type App,
-  type CliFlag,
-  type CliFlags,
-  type FileSystemAdapter,
-  type Plugin,
+import type {
+  App,
+  CliFlag,
+  CliFlags,
+  FileSystemAdapter,
+  Plugin,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { type DatabaseService } from "@/services/database/service";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
   createTemplateWorkbenchHandlers,
@@ -39,14 +39,16 @@ import {
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
   TEMPLATE_SLOT_NAMES,
-  type DATA_PARAMS,
-  type FRONTMATTER_EVAL_PARAMS,
-  type FRONTMATTER_REMOVE_PARAMS,
-  type FRONTMATTER_REORDER_PARAMS,
-  type FRONTMATTER_SET_PARAMS,
-  type GUIDE_PARAMS,
-  type RENDER_PARAMS,
-  type SOURCE_PARAMS,
+} from "./request";
+import type {
+  DATA_PARAMS,
+  FRONTMATTER_EVAL_PARAMS,
+  FRONTMATTER_REMOVE_PARAMS,
+  FRONTMATTER_REORDER_PARAMS,
+  FRONTMATTER_SET_PARAMS,
+  GUIDE_PARAMS,
+  RENDER_PARAMS,
+  SOURCE_PARAMS,
 } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import { choices } from "./vocabulary";

@@ -1,14 +1,13 @@
 // Compiles an Inlang project into typed wrappers and JSON Language Packs.
 
-import {
-  loadProjectFromDirectory,
-  selectBundleNested,
-  type BundleNested,
-  type Declaration,
-  type Expression,
-  type InlangProject,
-  type Match,
-  type Pattern,
+import { loadProjectFromDirectory, selectBundleNested } from "@inlang/sdk";
+import type {
+  BundleNested,
+  Declaration,
+  Expression,
+  InlangProject,
+  Match,
+  Pattern,
 } from "@inlang/sdk";
 import fs from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -18,10 +17,12 @@ import {
   isLanguagePackFileName,
   isSupportedLanguagePackFormatter,
   parseNumericLiteral,
-  type Declaration as PackDeclaration,
-  type Expression as PackExpression,
-  type Match as PackMatch,
-  type Message as PackMessage,
+} from "./language-pack.js";
+import type {
+  Declaration as PackDeclaration,
+  Expression as PackExpression,
+  Match as PackMatch,
+  Message as PackMessage,
 } from "./language-pack.js";
 import { validateLanguagePack } from "./validation.js";
 

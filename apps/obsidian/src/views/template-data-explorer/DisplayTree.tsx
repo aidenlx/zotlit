@@ -1,20 +1,20 @@
 // Presentational tree renderer for display-tree nodes; raises intent via callbacks only.
 
 import { regex } from "arkregex";
-import { type IconName } from "obsidian";
+import type { IconName } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 
-import {
-  copyValue,
-  type DisplayNode,
-  type DisplayValueType,
-  type HelperNode,
-  type PlaceholderNode,
-  type ValueNode,
+import { copyValue } from "./display-tree";
+import type {
+  DisplayNode,
+  DisplayValueType,
+  HelperNode,
+  PlaceholderNode,
+  ValueNode,
 } from "./display-tree";
 
 /** Per-primitive value tone; keys stay `text-foreground`, so a key never shares a value's styling. */

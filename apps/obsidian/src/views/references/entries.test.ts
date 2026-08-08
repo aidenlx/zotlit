@@ -1,20 +1,16 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { type Attachment } from "@zotlit/db";
+import type { Attachment } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import {
-  type Citation,
-  type CitationOccurrence,
+import type {
+  Citation,
+  CitationOccurrence,
 } from "@/services/citation-index/service";
 
-import {
-  buildReferenceEntries,
-  toOpenableAttachments,
-  type ReferenceSource,
-  type RenderedReference,
-} from "./entries";
+import { buildReferenceEntries, toOpenableAttachments } from "./entries";
+import type { ReferenceSource, RenderedReference } from "./entries";
 
 function citation(
   indexedKey: string,

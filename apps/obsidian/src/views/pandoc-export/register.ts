@@ -3,37 +3,31 @@
 
 import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import {
-  requestUrl,
-  type App,
-  type FileSystemAdapter,
-  type Plugin,
-  type TFile,
-} from "obsidian";
+import { requestUrl } from "obsidian";
+import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
 
 import { parseIndexedKey, resolveIndexedKeyLibrary } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
   LOCAL_API_PREF,
-  type BibliographyItemRef,
-  type BibliographyTransport,
 } from "@/services/pandoc/bibliography";
-import {
-  describeError,
-  exportCitedDocument,
-  type ExportPorts,
-} from "@/services/pandoc/export";
-import { type PandocEngineService } from "@/services/pandoc/service";
+import type {
+  BibliographyItemRef,
+  BibliographyTransport,
+} from "@/services/pandoc/bibliography";
+import { describeError, exportCitedDocument } from "@/services/pandoc/export";
+import type { ExportPorts } from "@/services/pandoc/export";
+import type { PandocEngineService } from "@/services/pandoc/service";
 import { loadStyleXml } from "@/services/pandoc/styles";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { openPandocExportModal } from "./modal";
 import { showEngineMissing, showExportFailure } from "./notices";

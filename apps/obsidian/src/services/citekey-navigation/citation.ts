@@ -1,20 +1,14 @@
 // The interaction one rendered citation carries, wherever it is rendered.
 
-import { Menu, type HoverParent, type Workspace } from "obsidian";
+import { Menu } from "obsidian";
+import type { HoverParent, Workspace } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
-import {
-  citationTarget,
-  navigationIntent,
-  type CitedWork,
-  type NavigationPane,
-} from "./intent";
-import {
-  mouseGesture,
-  triggerCitekeyHover,
-  type GestureSurface,
-} from "./shell";
+import { citationTarget, navigationIntent } from "./intent";
+import type { CitedWork, NavigationPane } from "./intent";
+import { mouseGesture, triggerCitekeyHover } from "./shell";
+import type { GestureSurface } from "./shell";
 
 const logger = getLogger("citekey-navigation");
 

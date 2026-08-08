@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  citationTarget,
-  navigationIntent,
-  type CitedWork,
-  type NavigationGesture,
-  type NavigationTarget,
-} from "./intent";
+import { citationTarget, navigationIntent } from "./intent";
+import type { CitedWork, NavigationGesture, NavigationTarget } from "./intent";
 
 const editorGesture = (
   overrides: Partial<NavigationGesture> = {},

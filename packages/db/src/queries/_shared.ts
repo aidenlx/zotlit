@@ -1,13 +1,14 @@
-import { type relations } from "@drizzle/relations";
-import { sql, type DBQueryConfig, type Placeholder } from "drizzle-orm";
-import {
-  type SQLiteAsyncRelationalQuery,
-  type SQLiteAsyncSelectBase,
-  type SQLiteSyncRelationalQuery,
+import type { relations } from "@drizzle/relations";
+import { sql } from "drizzle-orm";
+import type { DBQueryConfig, Placeholder } from "drizzle-orm";
+import type {
+  SQLiteAsyncRelationalQuery,
+  SQLiteAsyncSelectBase,
+  SQLiteSyncRelationalQuery,
 } from "drizzle-orm/sqlite-core";
 
-import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { SQLocalDatabaseClient } from "@/client/web";
 
 export { CHILD_ITEM_TYPES, type ChildItemType } from "@/lib/item-types";
 

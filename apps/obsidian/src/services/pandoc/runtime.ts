@@ -3,11 +3,11 @@
 import {
   ConsoleStdout,
   File as WasiFile,
-  type Inode,
   OpenFile,
   PreopenDirectory,
   WASI,
 } from "@bjorn3/browser_wasi_shim";
+import type { Inode } from "@bjorn3/browser_wasi_shim";
 
 import { getLogger } from "@/lib/log";
 

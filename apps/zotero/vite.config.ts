@@ -1,4 +1,5 @@
-import { defineConfig, type ConfigEnv } from "vite";
+import { defineConfig } from "vite";
+import type { ConfigEnv } from "vite";
 
 import { fluentPlugin } from "./scripts/vite-fluent-plugin.js";
 import { prefsPlugin } from "./scripts/vite-prefs-plugin.js";

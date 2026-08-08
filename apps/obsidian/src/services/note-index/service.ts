@@ -1,18 +1,13 @@
-import {
-  TFile,
-  type App,
-  type CachedMetadata,
-  type Plugin,
-  type TAbstractFile,
-} from "obsidian";
+import { TFile } from "obsidian";
+import type { App, CachedMetadata, Plugin, TAbstractFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
 import {
   diffContributions,
@@ -20,9 +15,8 @@ import {
   fileContributions,
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
-  type ContribDiff,
-  type FileContributions,
 } from "./parse";
+import type { ContribDiff, FileContributions } from "./parse";
 
 export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 

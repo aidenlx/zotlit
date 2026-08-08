@@ -1,7 +1,8 @@
 // The citations one rendered reading-view section holds, and the swap that puts formatted text in their place.
 
-import { scanCitations, type TextSpan } from "@/lib/citation-grammar";
-import { type CitationSource } from "@/services/citation-text/present";
+import { scanCitations } from "@/lib/citation-grammar";
+import type { TextSpan } from "@/lib/citation-grammar";
+import type { CitationSource } from "@/services/citation-text/present";
 
 /**
  * Elements whose text is never a citation. Code, math, and the frontmatter

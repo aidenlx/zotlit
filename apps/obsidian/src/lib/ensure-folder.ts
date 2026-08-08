@@ -1,5 +1,6 @@
 import { dirname } from "node:path/posix";
-import { normalizePath, TFile, TFolder, type App, type Vault } from "obsidian";
+import { normalizePath, TFile, TFolder } from "obsidian";
+import type { App, Vault } from "obsidian";
 
 /** The vault surface {@link ensureFolder} / {@link ensureParentFolder} touch. */
 type FolderVaultApp = {

@@ -5,7 +5,7 @@ import {
   isAccessorIdentifier,
 } from "@/services/template/accessor-path";
 
-import { type DisplayNode } from "./display-tree";
+import type { DisplayNode } from "./display-tree";
 
 export type TemplateEngine = "liquid" | "eta";
 

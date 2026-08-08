@@ -9,8 +9,8 @@ import {
   scanCitationClusters,
   scanCitations,
   scanCitekeys,
-  type CitationCluster,
 } from "./citation-grammar";
+import type { CitationCluster } from "./citation-grammar";
 
 const packageRoot = getPackageRoot();
 

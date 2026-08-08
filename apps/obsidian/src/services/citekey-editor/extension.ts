@@ -8,26 +8,21 @@ import {
   syntaxTree,
   tokenClassNodeProp,
 } from "@codemirror/language";
-import {
-  RangeSetBuilder,
-  StateEffect,
-  type EditorState,
-  type Extension,
-} from "@codemirror/state";
+import { RangeSetBuilder, StateEffect } from "@codemirror/state";
+import type { EditorState, Extension } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
   ViewPlugin,
   WidgetType,
-  type DecorationSet,
-  type ViewUpdate,
 } from "@codemirror/view";
+import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import {
   editorInfoField,
   editorLivePreviewField,
   livePreviewState,
-  type TFile,
 } from "obsidian";
+import type { TFile } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import {
@@ -35,16 +30,18 @@ import {
   citationContent,
   citationElement,
   citedWorks,
-  type DocumentCitations,
 } from "@/services/citation-text/present";
+import type { DocumentCitations } from "@/services/citation-text/present";
 import {
   attachCitationNavigation,
   mouseGesture,
   navigationIntent,
   triggerCitekeyHover,
-  type CitedWork,
-  type EditorMode,
-  type NavigationPane,
+} from "@/services/citekey-navigation";
+import type {
+  CitedWork,
+  EditorMode,
+  NavigationPane,
 } from "@/services/citekey-navigation";
 
 import {
@@ -54,8 +51,8 @@ import {
   marksOutside,
   overlapsSelection,
   resolveCitekeyMarks,
-  type CitationRange,
 } from "./decorate";
+import type { CitationRange } from "./decorate";
 import "./style.css";
 
 const logger = getLogger("citekey-editor");

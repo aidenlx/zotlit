@@ -1,16 +1,15 @@
 // The built-in export's one dialog: output format, CSL style, and destination.
 
 import { extname } from "node:path";
-import { Modal, Setting, type App } from "obsidian";
+import { Modal, Setting } from "obsidian";
+import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
-import { type DocumentFormat } from "@/services/pandoc/engine";
-import {
-  listInstalledStyles,
-  type InstalledCslStyle,
-} from "@/services/pandoc/styles";
+import type { DocumentFormat } from "@/services/pandoc/engine";
+import { listInstalledStyles } from "@/services/pandoc/styles";
+import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/setting-tab/citations";
 
 const logger = getLogger(["views", "pandoc-export"]);

@@ -1,31 +1,26 @@
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
 
-import { type Extension } from "@codemirror/state";
-import { MarkdownView, type App, type Plugin } from "obsidian";
+import type { Extension } from "@codemirror/state";
+import { MarkdownView } from "obsidian";
+import type { App, Plugin } from "obsidian";
 
-import {
-  getItemIDByCitekey,
-  getItemsByID,
-  USER_LIBRARY_ID,
-  type Item,
-} from "@zotlit/db";
+import { getItemIDByCitekey, getItemsByID, USER_LIBRARY_ID } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { type CitationText } from "@/services/citation-text/service";
-import {
-  CITEKEY_HOVER_SOURCE,
-  type NavigationPane,
-} from "@/services/citekey-navigation";
-import { type DatabaseService } from "@/services/database/service";
-import { type NoteFeature } from "@/services/note-feature";
+import type { CitationText } from "@/services/citation-text/service";
+import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
+import type { NavigationPane } from "@/services/citekey-navigation";
+import type { DatabaseService } from "@/services/database/service";
+import type { NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
-import { type NoteIndex } from "@/services/note-index/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 

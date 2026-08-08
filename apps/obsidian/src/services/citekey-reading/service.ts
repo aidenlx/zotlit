@@ -1,11 +1,7 @@
 // The reading-mode surface of the Citekey Editor Treatment: literal citekey citations show formatted in the reading view, and navigate like links.
 
-import {
-  MarkdownView,
-  type App,
-  type MarkdownPostProcessorContext,
-  type Plugin,
-} from "obsidian";
+import { MarkdownView } from "obsidian";
+import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import {
@@ -13,12 +9,12 @@ import {
   citationElement,
   citedWorks,
 } from "@/services/citation-text/present";
-import { type CitationText } from "@/services/citation-text/service";
-import { type CitekeyEditor } from "@/services/citekey-editor/service";
+import type { CitationText } from "@/services/citation-text/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import { attachCitationNavigation } from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
 import { replaceCitations, sectionCitations } from "./render";
 import "./style.css";

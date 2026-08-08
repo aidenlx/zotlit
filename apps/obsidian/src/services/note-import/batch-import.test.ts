@@ -1,4 +1,4 @@
-import { type TFile } from "obsidian";
+import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,22 +15,22 @@ import {
   getNoteRefsByItemIDs,
   getTrashedNoteItemIDs,
   USER_LIBRARY_ID,
-  type ChildNote,
-  type Library,
-  type Note,
 } from "@zotlit/db";
+import type { ChildNote, Library, Note } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { Temporal } from "@zotlit/shared/temporal";
 
-import { defaults, type Settings } from "@/services/settings/schema";
-import {
-  type BatchClassifyControls,
-  type BatchModalOptions,
-  type BatchRunControls,
-  type FlatTask,
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type {
+  BatchClassifyControls,
+  BatchModalOptions,
+  BatchRunControls,
+  FlatTask,
 } from "@/views/batch-modal";
 
-import { createBatchImport, type NoteImportDeps } from "./batch-import";
+import { createBatchImport } from "./batch-import";
+import type { NoteImportDeps } from "./batch-import";
 import { batchImportNotice, childImportToast } from "./batch-import-notices";
 
 vi.mock("@zotlit/db", async (importOriginal) => {

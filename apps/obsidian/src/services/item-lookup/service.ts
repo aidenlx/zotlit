@@ -31,31 +31,23 @@ import {
   getIndexedItemsByID,
   getIndexSignature,
   getItemsByID,
-  type IndexedItem,
-  type IndexSignature,
-  type Item,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
-import {
-  createIndexBuilder,
-  searchIndex,
-  type ChsSegmenter,
-  type SearchHit as EngineSearchHit,
-  type SearchIndex,
-  type TokenizerOptions,
+import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { createIndexBuilder, searchIndex } from "@zotlit/item-lookup";
+import type {
+  ChsSegmenter,
+  SearchHit as EngineSearchHit,
+  SearchIndex,
+  TokenizerOptions,
 } from "@zotlit/item-lookup";
 
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
-import {
-  DatabaseError,
-  type DatabaseService,
-} from "@/services/database/service";
+import { DatabaseError } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 import { Service } from "@/services/service-base";
-import {
-  type Settings,
-  type SettingsService,
-} from "@/services/settings/service";
+import type { Settings, SettingsService } from "@/services/settings/service";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;

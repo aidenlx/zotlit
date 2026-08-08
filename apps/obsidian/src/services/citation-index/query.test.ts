@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { citationsEqual, groupCitations, type ResolvedNote } from "./query";
-import { type CitationOccurrence } from "./scan";
+import { citationsEqual, groupCitations } from "./query";
+import type { ResolvedNote } from "./query";
+import type { CitationOccurrence } from "./scan";
 
 const KEY_A = "ABCD2345";
 const KEY_B = "ZZZ99999g7";

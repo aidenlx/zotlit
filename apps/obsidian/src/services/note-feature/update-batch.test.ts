@@ -6,15 +6,16 @@ import {
   getIndexedItemIDsByLibrary,
   getLibraries,
   USER_LIBRARY_ID,
-  type Library,
 } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 
 import { defaults } from "@/services/settings/schema";
-import { type BatchModalOptions } from "@/views/batch-modal";
+import type { BatchModalOptions } from "@/views/batch-modal";
 
-import { runBatchUpdateAll, type BatchUpdateResult } from "./update-batch";
-import { type SingleUpdateDeps } from "./update-single";
+import { runBatchUpdateAll } from "./update-batch";
+import type { BatchUpdateResult } from "./update-batch";
+import type { SingleUpdateDeps } from "./update-single";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();

@@ -1,5 +1,5 @@
-import { type LogRecord, type Sink } from "@logtape/logtape";
-import { type DataAdapter, type Plugin } from "obsidian";
+import type { LogRecord, Sink } from "@logtape/logtape";
+import type { DataAdapter, Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {

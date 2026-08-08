@@ -4,7 +4,8 @@ import semverGte from "semver/functions/gte";
 import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { initI18n, type LanguagePackLifecycle } from "./lib/i18n";
+import { initI18n } from "./lib/i18n";
+import type { LanguagePackLifecycle } from "./lib/i18n";
 import {
   installLanguagePack,
   toastLanguagePackDownload,

@@ -1,13 +1,13 @@
-import {
-  type Article,
-  type BlogPosting,
-  type BreadcrumbList,
-  type Organization,
-  type Person,
-  type SoftwareApplication,
-  type Thing,
-  type WebSite,
-  type WithContext,
+import type {
+  Article,
+  BlogPosting,
+  BreadcrumbList,
+  Organization,
+  Person,
+  SoftwareApplication,
+  Thing,
+  WebSite,
+  WithContext,
 } from "schema-dts";
 
 import { appName, baseURL, gitConfig } from "./shared";

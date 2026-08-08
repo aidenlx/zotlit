@@ -2,9 +2,10 @@ import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { type CitationEngine } from "./engine";
-import { PandocEngineService, type PandocEnginePorts } from "./service";
-import { type EngineBinaryStore } from "./store";
+import type { CitationEngine } from "./engine";
+import { PandocEngineService } from "./service";
+import type { PandocEnginePorts } from "./service";
+import type { EngineBinaryStore } from "./store";
 
 /** Node's own typings hand back `ArrayBufferLike` views; the ports take `ArrayBuffer` ones. */
 function bytes(source: Uint8Array): Uint8Array<ArrayBuffer> {

@@ -21,11 +21,12 @@ import { FIELD_ALIASES, ZOTERO_DATE_FIELDS } from "@zotlit/zotero-types";
 import fixture from "@zotlit/zotero-types/fixtures/item-to-csl.json" with { type: "json" };
 import zoteroSchema from "@zotlit/zotero-types/schema.json" with { type: "json" };
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { CHILD_ITEM_TYPES } from "@/lib/item-types";
-import { type CreatorFieldMode } from "@/lib/zt-creator";
-import { getItemsByLibrary, type Item } from "@/queries/items";
+import type { CreatorFieldMode } from "@/lib/zt-creator";
+import { getItemsByLibrary } from "@/queries/items";
+import type { Item } from "@/queries/items";
 import { createFixtureSchema } from "@/test-utils";
 
 import { itemToCsl } from "./zt-csl-item";

@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { CollectionCache } from "@/lib/zt-collection";
 import { createFixtureSchema } from "@/test-utils";
 

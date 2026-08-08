@@ -1,4 +1,5 @@
-import { parseItemDate, type Creator, type Item } from "@zotlit/db";
+import { parseItemDate } from "@zotlit/db";
+import type { Creator, Item } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 

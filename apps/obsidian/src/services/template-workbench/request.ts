@@ -1,24 +1,18 @@
 // Selector parsing: the request each command accepts, and the identity it asserts.
 
-import { type CliData } from "obsidian";
+import type { CliData } from "obsidian";
 
-import {
-  parseIndexedKey,
-  TEMPLATE_SLOT_ROOTS,
-  type ContractRoot,
-  type TemplateSlot,
-} from "@zotlit/db";
-import {
-  type FrontmatterLanguage,
-  type FrontmatterMergeStrategy,
+import { parseIndexedKey, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
 
-import {
-  diagnostic,
-  type Diagnostic,
-  type WorkbenchIdentity,
-} from "./envelope";
-import { GUIDE_TOPIC_NAMES, parseGuideTopic, type GuideTopic } from "./guide";
+import { diagnostic } from "./envelope";
+import type { Diagnostic, WorkbenchIdentity } from "./envelope";
+import { GUIDE_TOPIC_NAMES, parseGuideTopic } from "./guide";
+import type { GuideTopic } from "./guide";
 import { CONTRACT_ROOT_NAMES, parseContractRoot } from "./schema";
 import {
   choices,

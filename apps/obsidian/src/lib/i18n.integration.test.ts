@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { expect, test } from "vitest";
 
-import { type LanguagePackRuntime } from "@zotlit/obsidian-i18n";
+import type { LanguagePackRuntime } from "@zotlit/obsidian-i18n";
 import { compile } from "@zotlit/obsidian-i18n/compiler";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 

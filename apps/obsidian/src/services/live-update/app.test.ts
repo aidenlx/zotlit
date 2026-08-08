@@ -6,7 +6,8 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
-import { createLiveUpdateApp, type LiveUpdateAppDeps } from "./app";
+import { createLiveUpdateApp } from "./app";
+import type { LiveUpdateAppDeps } from "./app";
 
 const SOURCE_ID = "a1b2c3d4";
 

@@ -2,12 +2,12 @@
 import { chunk } from "@std/collections/chunk";
 import pLimit from "p-limit";
 
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { AbortError } from "@/lib/abort-error";
 import { formatErrorMessage } from "@/lib/toast";
 import { yieldToMain } from "@/lib/yield-to-main";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 
 /** A failed-item payload the run reports; rendered by the modal's failure row. */
 export interface BatchFailure {

@@ -18,13 +18,14 @@ import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { renderAnnotations } from "@/lib/annotation-render";
-import {
-  type AttachmentSource,
-  type ResolveLinkOptions,
-  type SourceOrigin,
+import type {
+  AttachmentSource,
+  ResolveLinkOptions,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
 
-import { parseNote, type ParseNoteDeps } from "./note-parser";
+import { parseNote } from "./note-parser";
+import type { ParseNoteDeps } from "./note-parser";
 
 const packageRoot = getPackageRoot();
 

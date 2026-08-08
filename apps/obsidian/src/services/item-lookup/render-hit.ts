@@ -1,12 +1,13 @@
-import { renderMatches, type SearchMatches } from "obsidian";
+import { renderMatches } from "obsidian";
+import type { SearchMatches } from "obsidian";
 
 import { isChildItemFields } from "@zotlit/db";
-import { type JournalArticleFields } from "@zotlit/zotero-types";
+import type { JournalArticleFields } from "@zotlit/zotero-types";
 
 import { itemSummary } from "@/lib/item-summary";
-import { type SettingsService } from "@/services/settings/service";
+import type { SettingsService } from "@/services/settings/service";
 
-import { type SearchHit } from "./service";
+import type { SearchHit } from "./service";
 
 /** CSS owns this value; JS reads it so the truncation window matches the
  *  visible column width. Themes override by setting the same variable. */

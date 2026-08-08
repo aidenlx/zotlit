@@ -1,8 +1,8 @@
 // The fixture contract behind the page-model and GFM tests.
 
-import { type ContractIR } from "@zotlit/db/contract/ir";
+import type { ContractIR } from "@zotlit/db/contract/ir";
 
-import { type SectionSpec } from "./sections.ts";
+import type { SectionSpec } from "./sections.ts";
 
 export const SPECS: readonly SectionSpec[] = [
   {

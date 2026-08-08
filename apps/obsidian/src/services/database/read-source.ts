@@ -27,7 +27,7 @@ import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
-import { type ZoteroReadMode } from "@/services/settings/schema";
+import type { ZoteroReadMode } from "@/services/settings/schema";
 
 export { reapStaleReadTemps } from "./reap-stale-read-temps";
 

@@ -7,20 +7,19 @@ import {
   fetchAnnotationsTemplateData,
   narrowBaseDataToCiteItemData,
   withAnnotationCitation,
-  type Annotation,
-  type AnnotationResolvers,
-  type Attachment,
-  type FallibleTemplateLink,
-  type GroupIDMemo,
-  type TagMemo,
-  type TemplateParentItemData,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
-import {
-  attachmentAbsPath,
-  resolveAnnotCachePath,
-  type AttachmentPathContext,
-} from "@zotlit/db/path";
+import type {
+  Annotation,
+  AnnotationResolvers,
+  Attachment,
+  FallibleTemplateLink,
+  GroupIDMemo,
+  TagMemo,
+  TemplateParentItemData,
+} from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
+import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import { inlineCitation } from "@/lib/inline-citation";
 import { creatorSummary } from "@/lib/item-summary";
@@ -29,9 +28,9 @@ import {
   commentToMarkdown,
   createCommentTurndown,
 } from "@/lib/turndown/comment";
-import { type AttachmentImport } from "@/services/attachment-import/service";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 /**
  * Build the {@link FallibleTemplateLink} for an attachment's on-disk file

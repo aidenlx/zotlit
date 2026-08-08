@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
-import { type ItemFields } from "@zotlit/zotero-types";
+import type { ItemFields } from "@zotlit/zotero-types";
 
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { type BaseItem, type Item } from "@/queries/items";
+import type { BaseItem, Item } from "@/queries/items";
 
-import {
-  itemToTemplateBaseData,
-  type TemplateCreator,
-} from "./zt-template-item";
+import { itemToTemplateBaseData } from "./zt-template-item";
+import type { TemplateCreator } from "./zt-template-item";
 
 function makeItem(
   fields: { itemType: string } & Record<string, string | null>,

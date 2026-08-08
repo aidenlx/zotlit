@@ -1,24 +1,20 @@
-import { type Temporal } from "@zotlit/shared/temporal";
+import type { Temporal } from "@zotlit/shared/temporal";
 
 import { defineToString } from "@/lib/to-string";
-import {
-  annotationTypeToName,
-  type Annotation,
-  type ResolvedAnnotationTypeName,
-} from "@/lib/zt-annot";
-import {
-  annotationColorToName,
-  type AnnotationColorName,
-} from "@/lib/zt-color";
-import { toTemplateTag, type ItemTag, type TemplateTag } from "@/lib/zt-tag";
+import { annotationTypeToName } from "@/lib/zt-annot";
+import type { Annotation, ResolvedAnnotationTypeName } from "@/lib/zt-annot";
+import { annotationColorToName } from "@/lib/zt-color";
+import type { AnnotationColorName } from "@/lib/zt-color";
+import { toTemplateTag } from "@/lib/zt-tag";
+import type { ItemTag, TemplateTag } from "@/lib/zt-tag";
 import { annotationOpenUri } from "@/lib/zt-uri";
 
 import { emptyToNull } from "./normalize";
-import { type TemplateAttachment } from "./zt-template-attach";
-import {
-  type FallibleTemplateLink,
-  type TemplateLink,
-  type TemplateParentItemData,
+import type { TemplateAttachment } from "./zt-template-attach";
+import type {
+  FallibleTemplateLink,
+  TemplateLink,
+  TemplateParentItemData,
 } from "./zt-template-item";
 
 /**

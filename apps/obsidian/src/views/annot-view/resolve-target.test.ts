@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { type ItemRef, type Library, USER_LIBRARY_ID } from "@zotlit/db";
+import { USER_LIBRARY_ID } from "@zotlit/db";
+import type { ItemRef, Library } from "@zotlit/db";
 
 import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
 

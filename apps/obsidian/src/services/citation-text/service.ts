@@ -1,6 +1,6 @@
 // The formatted text of one document's Citations, held for every surface that shows them.
 
-import { type App, type TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 
 import {
   getItemsByKey,
@@ -8,25 +8,25 @@ import {
   isChildItemFields,
   itemToCsl,
   resolveIndexedKeyLibrary,
-  type CslItemData,
 } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { BoundedCache } from "@/lib/bounded-cache";
 import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import {
-  scanDocumentCitations,
-  type Citation,
-  type CitationIndex,
+import { scanDocumentCitations } from "@/services/citation-index/service";
+import type {
+  Citation,
+  CitationIndex,
 } from "@/services/citation-index/service";
-import { type DatabaseService } from "@/services/database/service";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { DatabaseService } from "@/services/database/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
 
-import { type DocumentCitations } from "./present";
+import type { DocumentCitations } from "./present";
 
 export { type DocumentCitations } from "./present";
 

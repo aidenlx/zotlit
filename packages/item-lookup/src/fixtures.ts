@@ -1,14 +1,6 @@
-import {
-  type BaseItem,
-  type Creator,
-  type IndexedItem,
-  type Item,
-} from "@zotlit/db";
+import type { BaseItem, Creator, IndexedItem, Item } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
-import {
-  type ItemFields,
-  type JournalArticleFields,
-} from "@zotlit/zotero-types";
+import type { ItemFields, JournalArticleFields } from "@zotlit/zotero-types";
 
 export interface ItemFixtureOptions {
   key: string;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPageModel, type RowModel } from "./page-model.ts";
+import { buildPageModel } from "./page-model.ts";
+import type { RowModel } from "./page-model.ts";
 import { IR, SPECS } from "./test-fixtures.ts";
 
 function rowOf(sectionId: string, name: string): RowModel {

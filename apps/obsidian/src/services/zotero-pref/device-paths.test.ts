@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   loadZoteroPathOverrides,
   saveZoteroPathOverrides,
-  type ZoteroPathOverrides,
 } from "./device-paths";
+import type { ZoteroPathOverrides } from "./device-paths";
 
 const KEY = "zotlit-zotero-paths";
 

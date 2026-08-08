@@ -3,7 +3,8 @@ import tailwindcss from "@tailwindcss/vite";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { join, resolve } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
 
 import { obsidianI18n } from "@zotlit/obsidian-i18n/vite";

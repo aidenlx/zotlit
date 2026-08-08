@@ -1,5 +1,5 @@
 // Per-device Zotero profile/data-directory overrides, stored in Obsidian's vault-scoped localStorage (never synced).
-import { type App } from "obsidian";
+import type { App } from "obsidian";
 
 /** localStorage surface these helpers need — the vault-scoped store. */
 export type DeviceStorage = Pick<App, "loadLocalStorage" | "saveLocalStorage">;

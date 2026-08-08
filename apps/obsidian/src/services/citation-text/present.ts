@@ -1,7 +1,7 @@
 // How one Citation is presented once its text is known: the works it names, the summary it falls back to, and the element that shows it.
 
-import { type TextSpan } from "@/lib/citation-grammar";
-import { type CitedWork } from "@/services/citekey-navigation";
+import type { TextSpan } from "@/lib/citation-grammar";
+import type { CitedWork } from "@/services/citekey-navigation";
 
 /** The class every formatted citation carries, for themes and snippets to reach. */
 export const CITATION_CLASS = "zt-citation";

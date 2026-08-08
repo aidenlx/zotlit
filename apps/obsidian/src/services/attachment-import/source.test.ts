@@ -4,12 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  decideSource,
-  NO_ROOTS,
-  type CanonicalRoots,
-  type SourceOrigin,
-} from "./source";
+import { decideSource, NO_ROOTS } from "./source";
+import type { CanonicalRoots, SourceOrigin } from "./source";
 
 const STORAGE = "/zotero/storage";
 const CACHE = "/zotero/cache";

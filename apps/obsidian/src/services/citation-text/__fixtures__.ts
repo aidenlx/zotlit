@@ -1,6 +1,6 @@
 // The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
 
-import { type Citation } from "@/services/citation-index/service";
+import type { Citation } from "@/services/citation-index/service";
 
 export const ALPHA_KEY = "1/ALPHA123";
 

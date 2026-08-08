@@ -1,12 +1,10 @@
-import { type App, Menu, Platform } from "obsidian";
-import {
-  createContext,
-  type DragEvent,
-  type KeyboardEvent,
-  type MouseEvent,
-} from "react";
+import { Menu, Platform } from "obsidian";
+import type { App } from "obsidian";
+import { createContext } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
-import { annotationOpenUri, type AnnotViewItem } from "@zotlit/db";
+import { annotationOpenUri } from "@zotlit/db";
+import type { AnnotViewItem } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -14,10 +12,10 @@ import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
-import { type NoteFeature } from "@/services/note-feature";
+import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
-import { type CommentRenderer } from "./comment-render";
+import type { CommentRenderer } from "./comment-render";
 
 export interface AnnotActions {
   onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotViewItem): void;

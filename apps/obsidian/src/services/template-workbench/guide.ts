@@ -9,7 +9,7 @@ import {
 
 import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
 
-import { type DiagnosticCode } from "./envelope";
+import type { DiagnosticCode } from "./envelope";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import {
   FRONTMATTER_LANGUAGE_NAMES,

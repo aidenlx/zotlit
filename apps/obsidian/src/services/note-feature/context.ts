@@ -1,15 +1,15 @@
-import { type FileManager, type TFile, type Vault } from "obsidian";
+import type { FileManager, TFile, Vault } from "obsidian";
 
-import {
-  buildFilenameContext,
-  type CollectionCache,
-  type Item,
-  type ItemTag,
-  type NoteResolvers,
-  type TemplateCollection,
-  type TemplateFilenameItemData,
+import { buildFilenameContext } from "@zotlit/db";
+import type {
+  CollectionCache,
+  Item,
+  ItemTag,
+  NoteResolvers,
+  TemplateCollection,
+  TemplateFilenameItemData,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { hasSuffixMarker } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
@@ -17,20 +17,17 @@ import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
 import { creatorSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
-import {
-  type AttachmentImport,
-  type AttachmentImportService,
+import type {
+  AttachmentImport,
+  AttachmentImportService,
 } from "@/services/attachment-import/service";
-import { type DatabaseService } from "@/services/database/service";
-import {
-  type NoteImport,
-  type NoteImporter,
-} from "@/services/note-import/service";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { NoteImport, NoteImporter } from "@/services/note-import/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { resolveFreeNotePath } from "./filename";
 

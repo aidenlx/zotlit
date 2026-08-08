@@ -4,10 +4,8 @@ import { usePathname } from "fumadocs-core/framework";
 import Link from "fumadocs-core/link";
 import * as Base from "fumadocs-ui/components/sidebar/base";
 import { createLinkItemRenderer } from "fumadocs-ui/components/sidebar/link-item";
-import {
-  createPageTreeRenderer,
-  type SidebarPageTreeComponents,
-} from "fumadocs-ui/components/sidebar/page-tree";
+import { createPageTreeRenderer } from "fumadocs-ui/components/sidebar/page-tree";
+import type { SidebarPageTreeComponents } from "fumadocs-ui/components/sidebar/page-tree";
 import { buttonVariants } from "fumadocs-ui/components/ui/button";
 import {
   Popover,
@@ -17,7 +15,8 @@ import {
 import { useTreePath } from "fumadocs-ui/contexts/tree";
 import { useDocsLayout } from "fumadocs-ui/layouts/docs";
 import { LinkItem } from "fumadocs-ui/layouts/shared";
-import { isLayoutTabActive, type LayoutTab } from "fumadocs-ui/layouts/shared";
+import { isLayoutTabActive } from "fumadocs-ui/layouts/shared";
+import type { LayoutTab } from "fumadocs-ui/layouts/shared";
 import { SearchTrigger } from "fumadocs-ui/layouts/shared/slots/search-trigger";
 import {
   Check,
@@ -26,13 +25,8 @@ import {
   Languages,
   SidebarIcon,
 } from "lucide-react";
-import {
-  type ComponentProps,
-  type ReactNode,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { mergeRefs } from "@/lib/merge-refs";

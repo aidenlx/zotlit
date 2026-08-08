@@ -5,21 +5,18 @@
 // bibliography stops the export before Pandoc runs, so an exported document
 // never carries a silently incomplete bibliography.
 
-import { type CslItemData } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 
-import {
-  type BibliographyFailure,
-  type BibliographyItemRef,
-  type BibliographyResult,
-  type BibliographySource,
+import type {
+  BibliographyFailure,
+  BibliographyItemRef,
+  BibliographyResult,
+  BibliographySource,
 } from "./bibliography";
-import { type CitationEngine, type DocumentFormat } from "./engine";
+import type { CitationEngine, DocumentFormat } from "./engine";
 import { PANDOC_RESOLVE_MAP_FILENAME, pandocSandboxFilter } from "./filter";
-import {
-  collectCitationLinks,
-  type CitationLink,
-  type ResolveDocument,
-} from "./resolve";
+import { collectCitationLinks } from "./resolve";
+import type { CitationLink, ResolveDocument } from "./resolve";
 
 /** Named by {@link ExportFailure}, so one import covers a failure's whole shape. */
 export { type BibliographySource } from "./bibliography";

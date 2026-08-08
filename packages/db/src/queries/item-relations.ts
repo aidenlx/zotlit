@@ -1,4 +1,4 @@
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { parseItemUri } from "@/lib/zt-note-mark";
 
 import { defineQuery } from "./_shared";

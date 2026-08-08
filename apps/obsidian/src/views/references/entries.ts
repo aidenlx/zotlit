@@ -1,11 +1,11 @@
 // One document's reference list: cited Items, the engine's bibliography, and the order the list reads in.
 
-import { type Attachment, type CslItemData } from "@zotlit/db";
+import type { Attachment, CslItemData } from "@zotlit/db";
 import { parseAttachmentPath } from "@zotlit/db/path";
 
-import {
-  type Citation,
-  type CitationOccurrence,
+import type {
+  Citation,
+  CitationOccurrence,
 } from "@/services/citation-index/service";
 
 /** One Attachment the entry offers to open in Zotero's reader. */

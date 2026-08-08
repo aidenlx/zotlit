@@ -1,4 +1,4 @@
-import { type ProtocolAction, type UpdateScope } from "@zotlit/protocol";
+import type { ProtocolAction, UpdateScope } from "@zotlit/protocol";
 
 import { registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";

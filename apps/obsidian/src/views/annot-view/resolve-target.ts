@@ -1,10 +1,6 @@
 // Pure follow-mode → load-target resolution for the annotation view.
-import {
-  type ItemRef,
-  type Library,
-  parseIndexedKey,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
+import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import type { ItemRef, Library } from "@zotlit/db";
 
 /** A resolved item plus the attachment to prefer when first loading it. */
 export interface LoadTarget {

@@ -1,14 +1,12 @@
 // Copy-key menu items and Literature Note file-menu registration.
-import { type Menu, type Plugin, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { Menu, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
-import {
-  copyIndexedKey,
-  type IndexedKeyCopyTarget,
-  type IndexedKeyKind,
-} from "./actions";
+import { copyIndexedKey } from "./actions";
+import type { IndexedKeyCopyTarget, IndexedKeyKind } from "./actions";
 
 const COPY_LABEL: Record<IndexedKeyKind, () => string> = {
   item: m.command_copy_item_key_name,

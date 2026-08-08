@@ -4,7 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
 
-import { runCli, type CliIo } from "./cli.js";
+import { runCli } from "./cli.js";
+import type { CliIo } from "./cli.js";
 import { addLocale, createFixtureProject } from "./test-fixtures.js";
 
 const packageRoot = resolve(import.meta.dirname, "..");

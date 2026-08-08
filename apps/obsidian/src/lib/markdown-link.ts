@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { TFile } from "obsidian";
 
-import { type TemplateLink } from "@zotlit/db";
+import type { TemplateLink } from "@zotlit/db";
 
 /**
  * Build a {@link TemplateLink} to an absolute on-disk path as a `file://` URL.

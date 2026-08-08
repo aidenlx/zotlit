@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { glob } from "tinyglobby";
-import { type Plugin } from "vite";
+import type { Plugin } from "vite";
 
 import { parsePrefsFile } from "./parse-prefs.js";
 

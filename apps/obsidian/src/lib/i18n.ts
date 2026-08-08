@@ -1,9 +1,9 @@
 // ZotLit release policy and port wiring for the reusable Language Pack lifecycle.
 
-import {
-  createLanguagePackLifecycle,
-  type LanguagePackLifecyclePorts,
-  type PackSource,
+import { createLanguagePackLifecycle } from "@zotlit/obsidian-i18n";
+import type {
+  LanguagePackLifecyclePorts,
+  PackSource,
 } from "@zotlit/obsidian-i18n";
 
 import { RELEASE_ORIGIN, resourceReleaseUrl } from "./constants.js";

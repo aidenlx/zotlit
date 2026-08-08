@@ -1,10 +1,11 @@
-import { Context, toValueSync, Value, type Liquid } from "liquidjs";
+import { Context, toValueSync, Value } from "liquidjs";
+import type { Liquid } from "liquidjs";
 
 import { basename } from "./basename";
-import {
-  type FrontmatterField,
-  type FrontmatterLanguage,
-  type FrontmatterMergeStrategy,
+import type {
+  FrontmatterField,
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
 } from "./constants";
 
 type BasenameHelper = (path: string, ext?: string) => string;

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { type TFile } from "obsidian";
+import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
-import { type Citation } from "@/services/citation-index/service";
+import type { Citation } from "@/services/citation-index/service";
 
 import { ALPHA, ALPHA_KEY, citation, fragment } from "./__fixtures__";
 import { CitationText } from "./service";

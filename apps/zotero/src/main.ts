@@ -1,11 +1,10 @@
-import {
-  BOOTSTRAP_REASONS,
-  type BootstrapReason,
-} from "./lib/bootstrap-reasons";
+import { BOOTSTRAP_REASONS } from "./lib/bootstrap-reasons";
+import type { BootstrapReason } from "./lib/bootstrap-reasons";
 import { attachFluentToWindow } from "./lib/l10n";
 import { logger, setupLogging } from "./lib/logger";
 import { registerMenus } from "./menus";
-import { type NoteStatus, registerNoteStatus } from "./note-status";
+import { registerNoteStatus } from "./note-status";
+import type { NoteStatus } from "./note-status";
 import { registerNotify } from "./notify";
 import { registerPrefPane } from "./prefs";
 

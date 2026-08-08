@@ -1,20 +1,15 @@
 // Side-effect-free NoteResolvers shared by the Template Data Explorer and Template Workbench (ADR 0005).
-import {
-  normalizePath,
-  type App,
-  type FileManager,
-  type TFile,
-  type Vault,
-} from "obsidian";
+import { normalizePath } from "obsidian";
+import type { App, FileManager, TFile, Vault } from "obsidian";
 import type TurndownService from "turndown";
 
-import {
-  type Annotation,
-  type Attachment,
-  type ChildNote,
-  type NoteResolvers,
-  type TemplateFilenameItemData,
-  type TemplateNoteLink,
+import type {
+  Annotation,
+  Attachment,
+  ChildNote,
+  NoteResolvers,
+  TemplateFilenameItemData,
+  TemplateNoteLink,
 } from "@zotlit/db";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 
@@ -30,9 +25,9 @@ import {
   commentToMarkdown,
   createCommentTurndown,
 } from "@/lib/turndown/comment";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type Settings } from "@/services/settings/schema";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { Settings } from "@/services/settings/schema";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { markInertPlaceholder } from "./inert-placeholder";
 

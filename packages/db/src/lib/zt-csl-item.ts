@@ -8,11 +8,13 @@ import {
   ITEM_TYPE_TO_CSL_TYPE,
 } from "@zotlit/zotero-types/csl";
 
-import { type ZoteroUserIdentity } from "@/queries/account";
-import { type Creator, type Item } from "@/queries/items";
+import type { ZoteroUserIdentity } from "@/queries/account";
+import type { Creator, Item } from "@/queries/items";
 
-import { parseNameParticles, type CslPersonName } from "./zt-csl-name";
-import { parseItemDate, type ItemDate } from "./zt-date";
+import { parseNameParticles } from "./zt-csl-name";
+import type { CslPersonName } from "./zt-csl-name";
+import { parseItemDate } from "./zt-date";
+import type { ItemDate } from "./zt-date";
 import { extraToCsl } from "./zt-extra-to-csl";
 import { itemUri } from "./zt-uri";
 

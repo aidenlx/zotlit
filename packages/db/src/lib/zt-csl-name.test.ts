@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { parseNameParticles, type CslPersonName } from "./zt-csl-name";
+import { parseNameParticles } from "./zt-csl-name";
+import type { CslPersonName } from "./zt-csl-name";
 
 describe("parseNameParticles", () => {
   it("splits Zotero name particles and suffixes", () => {

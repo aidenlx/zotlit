@@ -1,8 +1,9 @@
 // Per-page OpenGraph/Twitter/canonical metadata builder. Fields are spread
 // per-page (not inherited) because Next.js shallow-merges the openGraph object.
-import { type Metadata } from "next";
+import type { Metadata } from "next";
 
-import { appName, type OgType, ogImageUrl } from "./shared";
+import { appName, ogImageUrl } from "./shared";
+import type { OgType } from "./shared";
 
 const OG_IMAGE_DIMENSIONS = { width: 1200, height: 630 } as const;
 

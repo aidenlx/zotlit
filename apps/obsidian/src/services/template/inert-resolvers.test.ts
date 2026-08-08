@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import TurndownService from "turndown";
 import { describe, expect, it } from "vitest";
 
@@ -8,16 +8,18 @@ import {
   fetchNoteContext,
   getItemsByKey,
   USER_LIBRARY_ID,
-  type Annotation,
-  type Attachment,
-  type BaseItem,
-  type ChildNote,
-  type Item,
+} from "@zotlit/db";
+import type {
+  Annotation,
+  Attachment,
+  BaseItem,
+  ChildNote,
+  Item,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { Temporal } from "@zotlit/shared/temporal";
-import { type ItemFields } from "@zotlit/zotero-types";
+import type { ItemFields } from "@zotlit/zotero-types";
 
 import { creatorSummary } from "@/lib/item-summary";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
@@ -26,8 +28,10 @@ import { inertPlaceholderReason } from "./inert-placeholder";
 import {
   buildInertNoteResolvers,
   resolveExcerptImageContext,
-  type ExcerptImageContext,
-  type InertNoteResolverDeps,
+} from "./inert-resolvers";
+import type {
+  ExcerptImageContext,
+  InertNoteResolverDeps,
 } from "./inert-resolvers";
 
 function makeItem(

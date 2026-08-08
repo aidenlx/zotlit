@@ -6,7 +6,8 @@
 // codes name the situation; the export UI owns the wording that guides the user
 // out of it.
 
-import { formatIndexedKey, type CslItemData } from "@zotlit/db";
+import { formatIndexedKey } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 

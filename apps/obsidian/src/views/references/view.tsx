@@ -1,6 +1,8 @@
 // ItemView orchestrator for the References Sidebar: reads the active document's Citations from the index and renders them through the Pandoc engine.
-import { ItemView, type App, type WorkspaceLeaf } from "obsidian";
-import { createRoot, type Root } from "react-dom/client";
+import { ItemView } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 
 import {
   getAttachmentsByParents,
@@ -9,33 +11,29 @@ import {
   isChildItemFields,
   itemToCsl,
   resolveIndexedKeyLibrary,
-  type Item,
 } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import {
-  citationsEqual,
-  type Citation,
-  type CitationIndex,
+import { citationsEqual } from "@/services/citation-index/service";
+import type {
+  Citation,
+  CitationIndex,
 } from "@/services/citation-index/service";
-import { type DatabaseService } from "@/services/database/service";
-import { type BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import { type PandocEngineService } from "@/services/pandoc/service";
-import { type SettingsService } from "@/services/settings/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { PandocEngineService } from "@/services/pandoc/service";
+import type { SettingsService } from "@/services/settings/service";
 
-import {
-  createReferenceActions,
-  ReferenceActionsContext,
-  type ReferenceActions,
-} from "./actions";
-import {
-  buildReferenceEntries,
-  toOpenableAttachments,
-  type OpenableAttachment,
-  type ReferenceSource,
-  type RenderedReference,
+import { createReferenceActions, ReferenceActionsContext } from "./actions";
+import type { ReferenceActions } from "./actions";
+import { buildReferenceEntries, toOpenableAttachments } from "./entries";
+import type {
+  OpenableAttachment,
+  ReferenceSource,
+  RenderedReference,
 } from "./entries";
 import { References } from "./References";
 import { createReferencesStore, ReferencesStoreProvider } from "./store";

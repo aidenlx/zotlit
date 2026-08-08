@@ -1,6 +1,6 @@
 // Pure navigation decisions shared by citekey interaction shells.
 
-import { type PaneType } from "obsidian";
+import type { PaneType } from "obsidian";
 
 /**
  * The `hover-link` source id every citekey surface emits under. One id keeps

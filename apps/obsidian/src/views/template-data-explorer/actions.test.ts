@@ -2,7 +2,8 @@ import { Menu } from "@mock/obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createExplorerActions } from "./actions";
-import { formatPath, type DisplayNode } from "./display-tree";
+import { formatPath } from "./display-tree";
+import type { DisplayNode } from "./display-tree";
 
 const node: DisplayNode = {
   kind: "value",

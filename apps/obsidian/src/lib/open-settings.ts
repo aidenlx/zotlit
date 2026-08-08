@@ -1,10 +1,6 @@
 // Deep links into the settings modal: select a tab, descend its sub-pages, and reveal one row.
 
-import {
-  type App,
-  type SettingDefinition,
-  type SettingDefinitionItem,
-} from "obsidian";
+import type { App, SettingDefinition, SettingDefinitionItem } from "obsidian";
 
 /**
  * Open the settings modal on `tabId` and descend `pagePath`.

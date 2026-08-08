@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { type IndexedItem, USER_LIBRARY_ID } from "@zotlit/db";
+import { USER_LIBRARY_ID } from "@zotlit/db";
+import type { IndexedItem } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { buildIndex, cleanQuery, searchIndex } from "./engine";
 import { makeCreator as creator, makeIndexedItem as item } from "./fixtures";
-import { type TokenizerOptions } from "./tokenizer";
+import type { TokenizerOptions } from "./tokenizer";
 
 describe("item lookup engine", () => {
   it("matches query terms across Zotero quicksearch fields", () => {

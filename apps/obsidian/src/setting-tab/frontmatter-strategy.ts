@@ -1,4 +1,4 @@
-import { type FrontmatterMergeStrategy } from "@zotlit/templates/constants";
+import type { FrontmatterMergeStrategy } from "@zotlit/templates/constants";
 
 import * as m from "@/lib/i18n/generated/messages";
 

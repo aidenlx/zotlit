@@ -1,18 +1,14 @@
 // Liquid engine core: fixed engine config plus the ZotLit tag/filter vocabulary.
 
-import {
-  evalToken,
-  filters,
-  Liquid,
-  Tag,
-  tags,
-  type Context,
-  type Emitter,
-  type FS,
-  type TagToken,
-  type Template,
-  type TopLevelToken,
-  type ValueToken,
+import { evalToken, filters, Liquid, Tag, tags } from "liquidjs";
+import type {
+  Context,
+  Emitter,
+  FS,
+  TagToken,
+  Template,
+  TopLevelToken,
+  ValueToken,
 } from "liquidjs";
 
 import { Temporal } from "@zotlit/shared/temporal";

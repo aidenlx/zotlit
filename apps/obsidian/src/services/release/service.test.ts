@@ -1,9 +1,10 @@
-import { type App, TFile, TFolder } from "obsidian";
+import { TFile, TFolder } from "obsidian";
+import type { App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { type HydrationOrigin } from "@/services/settings/classify";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import type { HydrationOrigin } from "@/services/settings/classify";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
 import { V1_TEMPLATE_FOLDER } from "./constants";
 import { ReleaseService } from "./service";

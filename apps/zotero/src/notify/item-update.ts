@@ -1,8 +1,8 @@
-import { type ItemUpdate } from "@zotlit/protocol";
+import type { ItemUpdate } from "@zotlit/protocol";
 
 import { logger as appLogger } from "@/lib/logger";
 
-import { type Send } from "./send";
+import type { Send } from "./send";
 import { notifyEnabled } from "./shared";
 
 const logger = appLogger.getChild(["notify", "item"]);

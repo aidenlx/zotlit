@@ -1,28 +1,22 @@
-import { type Extension } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 import { dirname } from "node:path/posix";
-import {
-  TFile,
-  type App,
-  type EventRef,
-  type Plugin,
-  type TAbstractFile,
-} from "obsidian";
+import { TFile } from "obsidian";
+import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
-import {
-  type AutoTrim,
-  type FrontmatterLanguage,
+import type {
+  AutoTrim,
+  FrontmatterLanguage,
 } from "@zotlit/templates/constants";
-import {
-  TemplateError,
-  TemplateFacade,
-  type RootVariableUse,
-  type TemplateLanguage,
+import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
+import type {
+  RootVariableUse,
+  TemplateLanguage,
 } from "@zotlit/templates/facade";
-import {
-  evalFrontmatterFields,
-  type CompiledFrontmatterField,
-  type FrontmatterField,
+import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
+import type {
+  CompiledFrontmatterField,
+  FrontmatterField,
 } from "@zotlit/templates/frontmatter";
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
@@ -30,8 +24,8 @@ import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
 import {
   DEFAULT_TEMPLATES,
@@ -40,8 +34,8 @@ import {
   templateFileFromPath,
   templatePath,
   TEMPLATE_NAMES,
-  type TemplateName,
 } from "./defaults";
+import type { TemplateName } from "./defaults";
 import { bracketExtension } from "./editor/bracket";
 import { EtaSuggest } from "./editor/suggest";
 import { InertTemplateError } from "./errors";

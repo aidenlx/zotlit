@@ -1,21 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type IndexedItem, type IndexSignature, type Item } from "@zotlit/db";
+import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import {
   makeCreator as creator,
   makeIndexedItem as indexedItem,
   makeItem as item,
-  type ItemFixtureOptions,
 } from "@zotlit/item-lookup/fixtures";
+import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
 
-import {
-  DatabaseError,
-  type DatabaseService,
-} from "@/services/database/service";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import { DatabaseError } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
 import { ItemLookup } from "./service";
 

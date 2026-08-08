@@ -1,4 +1,4 @@
-import { type LogLevel, type LogRecord } from "@logtape/logtape";
+import type { LogLevel, LogRecord } from "@logtape/logtape";
 
 import { Temporal } from "./temporal";
 

@@ -1,6 +1,6 @@
-import { type App } from "obsidian";
+import type { App } from "obsidian";
 
-import { type ChsSegmenter } from "@zotlit/item-lookup";
+import type { ChsSegmenter } from "@zotlit/item-lookup";
 
 export function getChsSegmenter(
   app: App | null | undefined,

@@ -1,17 +1,15 @@
-import {
-  type DropdownComponent,
-  type Setting,
-  type SettingDefinitionItem,
+import type {
+  DropdownComponent,
+  Setting,
+  SettingDefinitionItem,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import {
-  listInstalledStyles,
-  type InstalledCslStyle,
-} from "@/services/pandoc/styles";
+import { listInstalledStyles } from "@/services/pandoc/styles";
+import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { RESET_SETTING } from "@/services/settings/service";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { pandocEngineDefinition } from "./pandoc-engine";
 import { defaultPlaceholder } from "./placeholder";
 

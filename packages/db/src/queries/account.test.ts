@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { createFixtureSchema } from "@/test-utils";
 
 import { getZoteroIdentity } from "./account";

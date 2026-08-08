@@ -1,11 +1,11 @@
-import { type Workspace } from "obsidian";
-import { type DragEvent } from "react";
+import type { Workspace } from "obsidian";
+import type { DragEvent } from "react";
 
-import { type AnnotViewItem } from "@zotlit/db";
+import type { AnnotViewItem } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-import { type AttachmentImport } from "@/services/attachment-import/service";
-import { type NoteFeature } from "@/services/note-feature";
+import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { NoteFeature } from "@/services/note-feature";
 
 const logger = getLogger(["views", "annot-view"]);
 

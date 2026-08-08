@@ -7,8 +7,8 @@ import {
   SECTION_OPEN_MAX,
   setRowIcon,
 } from "./dom";
-import { type FlatTask } from "./flat-manifest";
-import { type BatchCounts, type BatchManifest } from "./types";
+import type { FlatTask } from "./flat-manifest";
+import type { BatchCounts, BatchManifest } from "./types";
 
 export interface HierarchyParent {
   label: string;

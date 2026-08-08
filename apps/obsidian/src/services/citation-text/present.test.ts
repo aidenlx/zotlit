@@ -3,12 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { scanCitations } from "@/lib/citation-grammar";
 
-import {
-  citationElement,
-  citedWorks,
-  summarizeCitation,
-  type CitationSource,
-} from "./present";
+import { citationElement, citedWorks, summarizeCitation } from "./present";
+import type { CitationSource } from "./present";
 
 /** One citation, read out of the source text that is nothing but that citation. */
 function citation(source: string): CitationSource {

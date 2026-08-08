@@ -1,6 +1,7 @@
 // Grouping one document's Citation Occurrences into Citations with Reference Numbers.
 
-import { occurrencesEqual, type CitationOccurrence } from "./scan";
+import { occurrencesEqual } from "./scan";
+import type { CitationOccurrence } from "./scan";
 
 /** The Literature Note a Citation Occurrence resolves to. */
 export interface ResolvedNote {

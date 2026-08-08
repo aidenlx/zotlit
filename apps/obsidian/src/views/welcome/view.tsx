@@ -1,20 +1,18 @@
 // ItemView orchestrator for the Welcome View: mounts the presentational tree, wires live step actions, and keeps connection status subscribed to DB events while open.
-import {
-  type App,
-  ItemView,
-  type ViewStateResult,
-  type WorkspaceLeaf,
-} from "obsidian";
-import { createRoot, type Root } from "react-dom/client";
+import { ItemView } from "obsidian";
+import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { type DatabaseService } from "@/services/database/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { type WelcomeActions, WelcomeActionsContext } from "./actions";
+import { WelcomeActionsContext } from "./actions";
+import type { WelcomeActions } from "./actions";
 import { readConnectionStatus, readConnectionSync } from "./connection";
-import { type SetupActions } from "./setup-actions";
+import type { SetupActions } from "./setup-actions";
 import { createWelcomeStore, WelcomeStoreProvider } from "./store";
 import { Welcome } from "./Welcome";
 

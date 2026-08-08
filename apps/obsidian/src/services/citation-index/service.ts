@@ -1,6 +1,7 @@
 // The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
 
-import { TFile, type App, type TAbstractFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, TAbstractFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -10,25 +11,22 @@ import { yieldToMain } from "@/lib/yield-to-main";
 import {
   itemKeyFromFrontmatter,
   resolveIndexedKey,
-  type NoteIndex,
 } from "@/services/note-index/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
-import { groupCitations, type Citation, type ResolvedNote } from "./query";
+import { groupCitations } from "./query";
+import type { Citation, ResolvedNote } from "./query";
 import {
   documentOccurrences,
   occurrencesEqual,
   scanCitekeyOccurrences,
-  type CitationOccurrence,
 } from "./scan";
-import {
-  openCitekeyStore,
-  type CitekeyRecord,
-  type CitekeyStore,
-  type FileScan,
-} from "./store";
+import type { CitationOccurrence } from "./scan";
+import { openCitekeyStore } from "./store";
+import type { CitekeyRecord, CitekeyStore, FileScan } from "./store";
 
 export {
   citationsEqual,

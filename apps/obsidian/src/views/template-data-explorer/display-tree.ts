@@ -1,9 +1,7 @@
 // Pure value-walker mapping an anchor root object + expansion set to typed display nodes.
 
-import {
-  formatAccessorPath,
-  type TemplatePathSegment,
-} from "@/services/template/accessor-path";
+import { formatAccessorPath } from "@/services/template/accessor-path";
+import type { TemplatePathSegment } from "@/services/template/accessor-path";
 import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
 
 export type PathSegment = TemplatePathSegment;

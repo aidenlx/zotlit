@@ -4,9 +4,9 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import { type PandocEngineStatus } from "@/services/pandoc/service";
+import type { PandocEngineStatus } from "@/services/pandoc/service";
 
-import { type ReferenceEntry } from "./entries";
+import type { ReferenceEntry } from "./entries";
 
 export interface ReferencesState {
   /** Reference list of the active document, in document order. */

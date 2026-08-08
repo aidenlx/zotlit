@@ -1,26 +1,28 @@
 import {
-  type BatchUpdateRequest,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
   buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
-  type ImportMode,
-  type ImportNotesRequest,
   buildProtocolUrl,
   buildUpdateAllProtocolUrl,
-  type ProtocolAction,
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
   SOURCE_ID_HEADER,
-  type UpdateScope,
+} from "@zotlit/protocol";
+import type {
+  BatchUpdateRequest,
+  ImportMode,
+  ImportNotesRequest,
+  ProtocolAction,
+  UpdateScope,
 } from "@zotlit/protocol";
 
 import { formatValue } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 import { notifyUrl } from "@/notify/shared";
 import { sourceId } from "@/notify/source";
-import { type FluentMessageId } from "@/types/fluent";
+import type { FluentMessageId } from "@/types/fluent";
 
 const logger = appLogger.getChild(["menus", "obsidian"]);
 

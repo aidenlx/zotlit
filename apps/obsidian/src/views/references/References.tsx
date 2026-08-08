@@ -1,18 +1,18 @@
-import { type IconName } from "obsidian";
-import { type MouseEvent, type ReactNode } from "react";
+import type { IconName } from "obsidian";
+import type { MouseEvent, ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { useDomContent } from "@/lib/sanitize-html";
 import { cn, tooltipAttrs } from "@/lib/utils";
-import {
-  type PandocEngineFailure,
-  type PandocEngineStatus,
+import type {
+  PandocEngineFailure,
+  PandocEngineStatus,
 } from "@/services/pandoc/service";
 
 import { useReferenceActions } from "./actions";
-import { type ReferenceEntry } from "./entries";
+import type { ReferenceEntry } from "./entries";
 import { useReferencesStore } from "./store";
 
 /**

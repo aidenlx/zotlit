@@ -2,22 +2,16 @@ import { unzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { type LinkCache } from "obsidian";
+import type { LinkCache } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { type CslItemData } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
 
-import {
-  type BibliographyFailure,
-  type BibliographyItemRef,
-} from "./bibliography";
-import { createCitationEngine, type DocumentRequest } from "./engine";
-import {
-  exportCitedDocument,
-  type ExportFailure,
-  type ExportPorts,
-  type ExportResult,
-} from "./export";
+import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
+import { createCitationEngine } from "./engine";
+import type { DocumentRequest } from "./engine";
+import { exportCitedDocument } from "./export";
+import type { ExportFailure, ExportPorts, ExportResult } from "./export";
 import { PANDOC_RESOLVE_MAP_FILENAME, pandocSandboxFilter } from "./filter";
 
 const SOURCE = "Notes/Paper.md";

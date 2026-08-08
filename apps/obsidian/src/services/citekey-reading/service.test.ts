@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { type MarkdownPostProcessor, type TFile } from "obsidian";
+import type { MarkdownPostProcessor, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
-import { type Citation } from "@/services/citation-index/service";
+import type { Citation } from "@/services/citation-index/service";
 import {
   ALPHA,
   ALPHA_KEY,
@@ -12,7 +12,8 @@ import {
   fragment,
 } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
-import { defaults, type Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import { CitekeyReading } from "./service";
 

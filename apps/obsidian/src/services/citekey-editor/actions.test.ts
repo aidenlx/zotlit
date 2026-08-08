@@ -1,9 +1,9 @@
 import { EditorState } from "@codemirror/state";
 import { createMockPlugin } from "@mock/obsidian";
-import { type Editor } from "obsidian";
+import type { Editor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { type NavigationPane } from "@/services/citekey-navigation";
+import type { NavigationPane } from "@/services/citekey-navigation";
 
 import { addCitekeyEditorActions } from "./actions";
 

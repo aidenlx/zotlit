@@ -1,13 +1,11 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-import {
-  connectWithRetry,
-  findFreePort,
-  type RdpClient,
-} from "./rdp-client.js";
+import { connectWithRetry, findFreePort } from "./rdp-client.js";
+import type { RdpClient } from "./rdp-client.js";
 
 const DEV_DIR_NAME = ".zotero-dev";
 const RDP_PREFS = [

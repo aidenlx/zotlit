@@ -1,10 +1,11 @@
 import { deletedItems, itemAnnotations } from "@drizzle/schema";
 import { and, eq, notExists } from "drizzle-orm";
 
-import { type NodeDatabaseClient } from "@/client/node";
-import { type AnnotationType } from "@/lib/zt-annot";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { AnnotationType } from "@/lib/zt-annot";
 
-import { defineQuery, type QueryRow } from "./_shared";
+import { defineQuery } from "./_shared";
+import type { QueryRow } from "./_shared";
 
 export interface AnnotViewAttachment {
   itemID: number;

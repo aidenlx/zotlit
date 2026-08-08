@@ -8,7 +8,7 @@ import {
   SECTION_OPEN_MAX,
   setRowIcon,
 } from "./dom";
-import { type BatchCounts, type BatchManifest } from "./types";
+import type { BatchCounts, BatchManifest } from "./types";
 
 export interface FlatTask {
   id: number;

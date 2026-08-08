@@ -1,10 +1,11 @@
-import { existsSync, watch, type FSWatcher, type WatchOptions } from "node:fs";
+import { existsSync, watch } from "node:fs";
+import type { FSWatcher, WatchOptions } from "node:fs";
 import { dirname, join } from "node:path";
 
-import {
-  createClient,
-  type DatabaseOptions,
-  type NodeDatabaseClient,
+import { createClient } from "@zotlit/db/client/node";
+import type {
+  DatabaseOptions,
+  NodeDatabaseClient,
 } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -12,20 +13,15 @@ import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
-import {
-  type Settings,
-  type SettingsService,
-} from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { Settings, SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import {
-  buildSqliteUri,
-  type ConfiguredReadMode,
-  type EffectiveReadMode,
-  type PreparedRead,
-  prepareRead,
-  type ReadFallbackNotice,
-  reapStaleReadTemps,
+import { buildSqliteUri, prepareRead, reapStaleReadTemps } from "./read-source";
+import type {
+  ConfiguredReadMode,
+  EffectiveReadMode,
+  PreparedRead,
+  ReadFallbackNotice,
 } from "./read-source";
 
 const logger = getLogger("database");

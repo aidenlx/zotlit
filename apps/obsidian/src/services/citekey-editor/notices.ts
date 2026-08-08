@@ -3,7 +3,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import { type CitekeyEditor } from "./service";
+import type { CitekeyEditor } from "./service";
 
 /** Render citekey editor service events at the Obsidian UI seam. */
 export function registerCitekeyEditorNotices(

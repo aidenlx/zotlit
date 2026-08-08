@@ -9,24 +9,13 @@ import {
   items,
   itemTypes,
 } from "@drizzle/schema";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  isNull,
-  notInArray,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, asc, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 
-import {
-  CHILD_ITEM_TYPES,
-  defineQuery,
-  type ParamsPlaceholder,
-} from "./_shared";
+import { CHILD_ITEM_TYPES, defineQuery } from "./_shared";
+import type { ParamsPlaceholder } from "./_shared";
 
 /** Placeholders every collection-scoped query in this module declares. */
 interface CollectionScope {

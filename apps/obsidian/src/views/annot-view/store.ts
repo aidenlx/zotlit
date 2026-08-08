@@ -3,15 +3,11 @@ import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
 
-import {
-  type AnnotViewAttachment,
-  type AnnotViewItem,
-  type ItemRef,
-} from "@zotlit/db";
+import type { AnnotViewAttachment, AnnotViewItem, ItemRef } from "@zotlit/db";
 
-import { type ReaderTarget } from "@/services/live-update/service";
+import type { ReaderTarget } from "@/services/live-update/service";
 
-import { type AnnotFilter } from "./filter";
+import type { AnnotFilter } from "./filter";
 
 /**
  * What the view tracks: the active literature note (default), the active Zotero

@@ -26,10 +26,10 @@ import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
 import {
-  type DeviceStorage,
   loadZoteroPathOverrides,
   saveZoteroPathOverrides,
 } from "./device-paths";
+import type { DeviceStorage } from "./device-paths";
 import {
   getZoteroProfilesRoot,
   parsePrefsJs,
@@ -39,9 +39,8 @@ import {
   PROFILES_INI_FILENAME,
   resolveProfileDir,
   selectDefaultProfile,
-  type PrefValue,
-  type ZoteroProfile,
 } from "./prefs-file";
+import type { PrefValue, ZoteroProfile } from "./prefs-file";
 
 const logger = getLogger("zotero-pref");
 

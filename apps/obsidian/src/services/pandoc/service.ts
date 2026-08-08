@@ -1,14 +1,18 @@
 // Consent-gated download, hash verification, and device-wide cache of the pinned Pandoc engine binary.
 
 import { unzipSync } from "fflate";
-import { requestUrl, type App } from "obsidian";
+import { requestUrl } from "obsidian";
+import type { App } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
-import { createCitationEngine, type CitationEngine } from "./engine";
-import { PINNED_PANDOC_ENGINE, type PinnedPandocEngine } from "./pinned-engine";
-import { createOpfsBinaryStore, type EngineBinaryStore } from "./store";
+import { createCitationEngine } from "./engine";
+import type { CitationEngine } from "./engine";
+import { PINNED_PANDOC_ENGINE } from "./pinned-engine";
+import type { PinnedPandocEngine } from "./pinned-engine";
+import { createOpfsBinaryStore } from "./store";
+import type { EngineBinaryStore } from "./store";
 
 const logger = getLogger(["pandoc", "engine"]);
 

@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, test, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import type { Mock } from "vitest";
 
-import { type LanguagePackLifecyclePorts } from "@zotlit/obsidian-i18n";
+import type { LanguagePackLifecyclePorts } from "@zotlit/obsidian-i18n";
 
 import { initI18n } from "./i18n.js";
 import * as m from "./i18n/generated/messages.js";

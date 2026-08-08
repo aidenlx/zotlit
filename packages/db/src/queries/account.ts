@@ -1,7 +1,7 @@
 // Reads the signed-in Zotero account's identity from the `settings` table.
 import { getLogger } from "@logtape/logtape";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 
 import { defineQuery } from "./_shared";
 

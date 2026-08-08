@@ -1,7 +1,8 @@
 // Indexed Key derivation for Zotero objects.
 import { getLogger } from "@logtape/logtape";
 
-import { formatIndexedKey, type ParsedIndexedKey } from "@zotlit/db";
+import { formatIndexedKey } from "@zotlit/db";
+import type { ParsedIndexedKey } from "@zotlit/db";
 
 // Rooted category rather than `@/lib/logger`, whose import chain reaches the
 // Zotero-only `Localization` global and would keep this module out of tests.

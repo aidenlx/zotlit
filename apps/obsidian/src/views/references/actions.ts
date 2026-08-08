@@ -1,16 +1,18 @@
 // What a References Sidebar entry can do: navigate the document, and reach the Item in Zotero.
 
-import { MarkdownView, Menu, type App, type WorkspaceLeaf } from "obsidian";
-import { createContext, useContext, type MouseEvent } from "react";
+import { MarkdownView, Menu } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
+import { createContext, useContext } from "react";
+import type { MouseEvent } from "react";
 
 import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
 
-import { type CitationOccurrence } from "@/services/citation-index/service";
+import type { CitationOccurrence } from "@/services/citation-index/service";
 
-import {
-  type OpenableAttachment,
-  type ReferenceEntry,
-  type ReferenceSource,
+import type {
+  OpenableAttachment,
+  ReferenceEntry,
+  ReferenceSource,
 } from "./entries";
 
 export interface ReferenceActions {

@@ -3,7 +3,7 @@
 import gt from "semver/functions/gt";
 import valid from "semver/functions/valid";
 
-import { type HydrationOrigin } from "@/services/settings/classify";
+import type { HydrationOrigin } from "@/services/settings/classify";
 
 import { V1_TEMPLATE_FOLDER } from "./constants";
 

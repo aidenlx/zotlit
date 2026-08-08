@@ -1,19 +1,16 @@
 import "./style.css";
-import { type App, type Plugin } from "obsidian";
+import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
-import { type CitationIndex } from "@/services/citation-index/service";
-import { type DatabaseService } from "@/services/database/service";
-import { type BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import { type PandocEngineService } from "@/services/pandoc/service";
-import { type SettingsService } from "@/services/settings/service";
+import type { CitationIndex } from "@/services/citation-index/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { PandocEngineService } from "@/services/pandoc/service";
+import type { SettingsService } from "@/services/settings/service";
 
-import {
-  REFERENCES_VIEW_TYPE,
-  ReferencesView,
-  type ReferencesViewDeps,
-} from "./view";
+import { REFERENCES_VIEW_TYPE, ReferencesView } from "./view";
+import type { ReferencesViewDeps } from "./view";
 
 type ReferencesPlugin = Pick<
   Plugin,
