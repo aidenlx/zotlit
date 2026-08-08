@@ -4,44 +4,14 @@
 // `display` is the Citation Display Text the TypeScript derivation renders for
 // citation key `doe2020` / note `Doe 2020.md`.
 
-/**
- * The accepted-details shape, restated rather than imported from the module:
- * the repo's import rules require the `@/` alias, which the plain `node` run
- * behind the Lua check cannot resolve, and `prefer-inline` type specifiers
- * leave a runtime import behind. The parser tests assert every fixture against
- * the module with `toEqual`, so any drift between the two shapes fails a test.
- */
-interface CitationFragmentDetails {
-  mode: "normal" | "author-in-text" | "suppress-author";
-  prefix: string | null;
-  label:
-    | "book"
-    | "chapter"
-    | "column"
-    | "figure"
-    | "folio"
-    | "issue"
-    | "line"
-    | "note"
-    | "opus"
-    | "page"
-    | "paragraph"
-    | "part"
-    | "section"
-    | "sub-verbo"
-    | "verse"
-    | "volume"
-    | null;
-  locator: string | null;
-  suffix: string | null;
-}
+import type { CitationFragment } from "@/lib/citation-fragment";
 
 export interface CitationFragmentFixture {
   name: string;
   /** The raw text after `#cite:`; `null` means the link has no Citation Fragment. */
   fragment: string | null;
   /** The exporter-accepted details, present iff the fragment parses. */
-  details?: CitationFragmentDetails;
+  details?: CitationFragment;
   /** The exporter's fatal-error message, present iff the fragment is rejected. */
   error?: string;
   /** Expected citeproc plain rendering, used only by the Lua filter check. */
