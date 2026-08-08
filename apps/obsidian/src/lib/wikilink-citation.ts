@@ -5,7 +5,8 @@
 
 import type { SettingsService } from "@/services/settings/service";
 
-import { citationDisplayText } from "./citation-fragment";
+import { citationDisplay, citationRunSource } from "./citation-fragment";
+import type { CitationRunItem, CitationSource } from "./citation-fragment";
 import { getLogger } from "./log";
 
 const logger = getLogger("wikilink-citation");
@@ -48,6 +49,8 @@ function citationTarget(linktext: string): CitationLinkTarget | null {
 export interface LiteratureNoteTarget {
   /** The note's vault path; its filename backs the display-text fallback. */
   path: string;
+  /** Its Indexed Key — the Zotero Item a rendered citation is formatted from. */
+  indexedKey: string;
   /** The note's Citation Key Property value, or null when it carries none. */
   citationKey: string | null;
 }
@@ -68,9 +71,21 @@ export interface WikilinkCitationContext {
   fragmentlessDisplay: boolean;
 }
 
+/** The Citation one Literature Note wikilink writes, and how it reads alone. */
+export interface WikilinkCitation {
+  /** The work the Citation names, as a derived Pandoc source would name it. */
+  item: CitationRunItem;
+  /** {@link LiteratureNoteTarget.indexedKey} of the work it names. */
+  indexedKey: string;
+  /**
+   * The Citation Display Text this link shows on its own — the text a surface
+   * shows until a rendered citation stands in its place.
+   */
+  displayText: string;
+}
+
 /**
- * The Citation Display Text one wikilink shows in place of its raw path and
- * Citation Fragment.
+ * The Citation one wikilink writes.
  *
  * Left alone, each for its own reason: a heading or block subpath, because it
  * is not a Citation Fragment; a link resolving to no Literature Note; a
@@ -78,24 +93,108 @@ export interface WikilinkCitationContext {
  * Fragment, which stays raw rather than guessing at what the exporter would
  * reject.
  *
- * @returns the text, or null when the link keeps Obsidian's own display.
+ * @returns the Citation, or null when the link keeps Obsidian's own display.
  */
-export function wikilinkDisplayText(
+export function wikilinkCitation(
   linktext: string,
   context: WikilinkCitationContext,
-): string | null {
+): WikilinkCitation | null {
   const target = citationTarget(linktext);
   if (target === null) return null;
   if (target.fragment === null && !context.fragmentlessDisplay) return null;
   const note = context.literatureNote(target.linkpath);
   if (note === null) return null;
-  const display = citationDisplayText({
+  const display = citationDisplay({
     citationKey: note.citationKey,
     notePath: note.path,
     fragment: target.fragment,
   });
-  return display.kind === "raw" ? null : display.text;
+  if (display === null) return null;
+  return {
+    item: display.item,
+    indexedKey: note.indexedKey,
+    displayText: display.text,
+  };
 }
+
+/** One member of a Citation Run: what wrote it, and the Citation it wrote. */
+export interface RunMember<T> {
+  /** The link the surface read, in that surface's own terms. */
+  source: T;
+  citation: WikilinkCitation;
+}
+
+/**
+ * What one Citation Run renders as, and what it shows until a render lands.
+ * The run analogue of {@link citationDisplay}.
+ */
+export interface RunDisplay {
+  /** The Pandoc source of the whole run, which is what a render is keyed by. */
+  citation: CitationSource;
+  /**
+   * The Citation Display Text of the whole run: a lone link keeps its own text,
+   * so a fragment-less one still reads as the bare `@citekey`, while a run of
+   * several reads as the grouped source the exporter writes.
+   */
+  text: string;
+}
+
+/**
+ * The Citation a whole run writes.
+ *
+ * @param run one Citation Run, as {@link citationRuns} grouped it.
+ */
+export function runDisplay<T>(run: readonly RunMember<T>[]): RunDisplay {
+  const citation = citationRunSource(run.map(({ citation }) => citation.item));
+  const only = run.length === 1 ? run[0]!.citation : null;
+  return { citation, text: only?.displayText ?? citation.source };
+}
+
+/**
+ * Groups a surface's links into Citation Runs, so a run renders as the one
+ * grouped Citation export writes it as.
+ *
+ * A run continues while a `;` with nothing but spaces or tabs around it joins
+ * two Citations — the same rule the Pandoc filter applies, where only a `Space`
+ * may sit around the separator and a `SoftBreak` ends the run. A link that
+ * writes no Citation ends a run as surely as prose does, which is why grouping
+ * reads the surface's links rather than its Citations.
+ *
+ * @param links every link of one surface, in document order.
+ * @param citationOf the Citation a link writes, or null when it writes none.
+ * @param textBetween the text separating two links, or null when they are too
+ *   far apart to join at all — a paragraph away, or in another container.
+ * @returns the runs, in document order, each holding at least one member.
+ * @see apps/obsidian/src/services/pandoc/filter/zotlit-cite.lua — `process_inlines`
+ */
+export function citationRuns<T>(
+  links: readonly T[],
+  citationOf: (link: T) => WikilinkCitation | null,
+  textBetween: (previous: T, next: T) => string | null,
+): RunMember<T>[][] {
+  const runs: RunMember<T>[][] = [];
+  /** The link the last Citation was written by, or null when it wrote none. */
+  let previous: T | null = null;
+  for (const link of links) {
+    const citation = citationOf(link);
+    if (citation === null) {
+      previous = null;
+      continue;
+    }
+    const separator = previous === null ? null : textBetween(previous, link);
+    previous = link;
+    const open = runs.at(-1);
+    if (open !== undefined && separator !== null && JOINS_RUN.test(separator)) {
+      open.push({ source: link, citation });
+      continue;
+    }
+    runs.push([{ source: link, citation }]);
+  }
+  return runs;
+}
+
+/** The separator that joins two Citations into one run. */
+const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
 
 /**
  * The settings both wikilink display surfaces read, kept current for as long as

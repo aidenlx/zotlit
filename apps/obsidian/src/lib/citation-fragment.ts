@@ -1,5 +1,8 @@
 // Citation Fragment parsing and Citation Display Text derivation for wikilinks.
 
+import { citekeyToken, scanCitations } from "./citation-grammar";
+import type { TextSpan } from "./citation-grammar";
+
 /** The three Pandoc citation modes a Citation Fragment can request. */
 export type CitationMode = "normal" | "author-in-text" | "suppress-author";
 
@@ -252,25 +255,159 @@ export interface CitationDisplaySource {
   fragment: string | null;
 }
 
-export type CitationDisplayResult =
-  | { kind: "text"; text: string }
-  | { kind: "raw" };
+/** The Citation one wikilink writes, and the text it shows on its own. */
+export interface CitationDisplay {
+  item: CitationRunItem;
+  /**
+   * The Citation Display Text: `@` plus the note's Citation Key Property value,
+   * falling back to `@` plus the note's filename, never the folder path, and a
+   * Citation Fragment as the equivalent Pandoc citation source text.
+   *
+   * A fragment-less link keeps the bare `@citekey` here while
+   * {@link citationRunSource} writes it as the parenthetical `[@citekey]` the
+   * exporter produces: this is the text shown until a render lands, and the
+   * exporter's own form only once one has.
+   */
+  text: string;
+}
 
 /**
- * The text a decorated wikilink shows in place of its raw path and fragment:
- * `@` plus the note's Citation Key Property value, falling back to `@` plus
- * the note's filename, never the folder path. A Citation Fragment renders as
- * the equivalent Pandoc citation source text; anything the exporter would
- * reject yields the raw verdict, never a guess.
+ * The Citation a resolved Literature Note and the fragment naming it write.
+ *
+ * @returns null for anything the exporter would reject, so a caller shows raw
+ *   text rather than a guess.
  */
-export function citationDisplayText(
+export function citationDisplay(
   source: CitationDisplaySource,
-): CitationDisplayResult {
-  const key = source.citationKey || basenameWithoutExtension(source.notePath);
-  if (source.fragment === null) return { kind: "text", text: `@${key}` };
+): CitationDisplay | null {
+  const citekey =
+    source.citationKey || basenameWithoutExtension(source.notePath);
+  if (source.fragment === null) {
+    return {
+      item: { citekey, details: NORMAL_CITATION },
+      text: `@${citekey}`,
+    };
+  }
   const parsed = parseCitationFragment(source.fragment);
-  if (!parsed.ok) return { kind: "raw" };
-  return { kind: "text", text: fragmentSourceText(parsed.details, key) };
+  if (!parsed.ok) return null;
+  const item = { citekey, details: parsed.details };
+  return { item, text: citationRunSource([item]).source };
+}
+
+/** A fragment-less wikilink, which is a normal-mode Citation of its note. */
+const NORMAL_CITATION: CitationFragment = {
+  mode: "normal",
+  prefix: null,
+  label: null,
+  locator: null,
+  suffix: null,
+};
+
+/** One work a Citation names, with the details it names that work under. */
+export interface CitationRunItem {
+  /** The citekey the Pandoc source names the work by. */
+  citekey: string;
+  details: CitationFragment;
+}
+
+/** One `@citekey` of a citation, at its offset within the citation's own source. */
+export interface CitationKey extends TextSpan {
+  citekey: string;
+}
+
+/** One citation as source text, with the keys it names located in it. */
+export interface CitationSource {
+  /** The citation exactly as a note writes it, or as a derivation writes it. */
+  source: string;
+  keys: CitationKey[];
+}
+
+/**
+ * The Pandoc source text a standalone Citation or a whole Citation Run is
+ * written as — the very text the equivalent Citation Cluster carries, so both
+ * citing syntaxes reach one render and read alike.
+ *
+ * A run of several works is one bracketed cluster, which is also the only form
+ * the citekey syntax can write a group in: an author-in-text item keeps its
+ * textual `@key [locator]` form only while it stands alone. That is where this
+ * derivation and export part company — the Lua filter keeps the author-in-text
+ * mode of a run's first item — and it parts company on purpose: parity with the
+ * equivalent Citation Cluster is what a reader compares the two syntaxes by,
+ * and no bracketed cluster can carry an author-in-text item.
+ *
+ * @see apps/obsidian/src/services/pandoc/filter/zotlit-cite.lua — `build_cite`
+ *
+ * @param items the works of one Citation, in the order the source names them.
+ */
+export function citationRunSource(
+  items: readonly CitationRunItem[],
+): CitationSource {
+  const keys: CitationKey[] = [];
+  const only = items.length === 1 ? items[0]! : null;
+  if (only && only.details.mode === "author-in-text") {
+    let source = citekeyToken(only.citekey);
+    keys.push({ citekey: only.citekey, start: 0, end: source.length });
+    const inside = joinParts([locatorText(only.details), only.details.suffix]);
+    if (inside) source += ` [${inside}]`;
+    return { source, keys };
+  }
+
+  let source = "[";
+  for (const [position, { citekey, details }] of items.entries()) {
+    if (position > 0) source += "; ";
+    if (details.prefix) source += `${details.prefix} `;
+    const start = source.length;
+    // The suppression `-` belongs to the key it marks, which is what lets a
+    // summary fallback take the whole token's place.
+    if (details.mode === "suppress-author") source += "-";
+    source += citekeyToken(citekey);
+    keys.push({ citekey, start, end: source.length });
+    const trailing = joinParts([locatorText(details), details.suffix]);
+    if (trailing) source += `, ${trailing}`;
+  }
+  return { source: `${source}]`, keys };
+}
+
+/**
+ * Whether a derived source is text the engine reads back as the citation it was
+ * derived from.
+ *
+ * A derivation writes a citekey and a Citation Fragment's own prose into Pandoc
+ * source, and neither is guaranteed to survive the trip: a Literature Note
+ * filename standing in for a missing Citation Key Property may hold a space,
+ * which no Pandoc key carries, braced or not; and a prefix or suffix may hold
+ * the `;` that ends an item. The shared grammar is the authority on what Pandoc
+ * reads, so the check is a round trip through it — a citation that starts where
+ * the derivation started and names the same keys in the same order is one the
+ * engine will format as meant. Anything else stays out of the render, and the
+ * Citation Display Text stands in its place.
+ *
+ * The span's end is left out: a standalone author-in-text Citation writes its
+ * locator in a trailing bracket that the grammar reads as text of its own,
+ * exactly as Pandoc's own reader takes it for the citation's suffix.
+ */
+export function isRenderableCitation({
+  source,
+  keys,
+}: CitationSource): boolean {
+  const scanned = scanCitations(source);
+  const only = scanned.length === 1 ? scanned[0]! : null;
+  if (only === null || only.start !== 0) return false;
+  if (only.keys.length !== keys.length) return false;
+  return only.keys.every(
+    (key, at) =>
+      key.citekey === keys[at]!.citekey && key.start === keys[at]!.start,
+  );
+}
+
+/** `p. 4`, `chap. 2`, or nothing at all when the Citation names no locator. */
+function locatorText(details: CitationFragment): string | null {
+  if (!details.locator) return null;
+  return `${LOCATOR_LABEL_SHORT[details.label ?? "page"]} ${details.locator}`;
+}
+
+function joinParts(parts: readonly (string | null)[]): string {
+  return parts.filter((part) => part).join(", ");
 }
 
 function basenameWithoutExtension(path: string): string {
@@ -304,23 +441,3 @@ const LOCATOR_LABEL_SHORT: Readonly<Record<CitationLocatorLabel, string>> = {
   verse: "v.",
   volume: "vol.",
 };
-
-function fragmentSourceText(details: CitationFragment, key: string): string {
-  const keyToken = `${details.mode === "suppress-author" ? "-" : ""}@${key}`;
-  const locator = details.locator
-    ? `${LOCATOR_LABEL_SHORT[details.label ?? "page"]} ${details.locator}`
-    : null;
-  const suffix = details.suffix;
-
-  if (details.mode === "author-in-text") {
-    let inside = locator ?? "";
-    if (suffix) inside += `${inside ? ", " : ""}${suffix}`;
-    return inside ? `${keyToken} [${inside}]` : keyToken;
-  }
-
-  let inside = details.prefix ? `${details.prefix} ` : "";
-  inside += keyToken;
-  if (locator) inside += `, ${locator}`;
-  if (suffix) inside += `, ${suffix}`;
-  return `[${inside}]`;
-}

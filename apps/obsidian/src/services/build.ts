@@ -178,13 +178,20 @@ export function buildServices(
         }),
     })
     .use({
-      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
+      citationText: ({
+        db,
+        citationIndex,
+        noteIndex,
+        bibliographyRender,
+        settings,
+      }) =>
         new CitationText({
           app: plugin.app,
           db,
           citationIndex,
           noteIndex,
           bibliographyRender,
+          settings,
         }),
     })
     .use({
@@ -200,12 +207,24 @@ export function buildServices(
         }),
     })
     .use({
-      wikilinkEditor: ({ noteIndex, settings }) =>
-        new WikilinkEditor({ app: plugin.app, plugin, noteIndex, settings }),
+      wikilinkEditor: ({ noteIndex, citationText, settings }) =>
+        new WikilinkEditor({
+          app: plugin.app,
+          plugin,
+          noteIndex,
+          citationText,
+          settings,
+        }),
     })
     .use({
-      wikilinkReading: ({ noteIndex, settings }) =>
-        new WikilinkReading({ app: plugin.app, plugin, noteIndex, settings }),
+      wikilinkReading: ({ noteIndex, citationText, settings }) =>
+        new WikilinkReading({
+          app: plugin.app,
+          plugin,
+          noteIndex,
+          citationText,
+          settings,
+        }),
     })
     .use({
       citekeyReading: ({ citationText, citekeyEditor, settings }) =>

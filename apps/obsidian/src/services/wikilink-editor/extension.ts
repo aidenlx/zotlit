@@ -9,10 +9,16 @@ import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType } from "@codemirror/view";
 import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
+import type { TFile } from "obsidian";
 
 import { livePreviewOf } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+import {
+  citationContent,
+  citationInsert,
+} from "@/services/citation-text/present";
+import type { DocumentCitations } from "@/services/citation-text/present";
 
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";
@@ -48,6 +54,14 @@ export interface WikilinkEditorHandlers {
    * @see ./decorate.ts — `WikilinkDisplayContext.fragmentlessDisplay`
    */
   fragmentlessDisplay: () => boolean;
+  /**
+   * The formatted citations held for one document, or null while none are —
+   * decorations are built synchronously, so a widget can only show text that is
+   * already there, and until then it shows the Citation Display Text.
+   */
+  citationText: (path: string) => DocumentCitations | null;
+  /** Asks for a document's citations, so a later rebuild finds them held. */
+  requestCitationText: (file: TFile) => void;
 }
 
 /**
@@ -127,7 +141,8 @@ export function wikilinkEditorExtension(
 }
 
 /**
- * One decorated wikilink, shown as its Citation Display Text.
+ * One decorated wikilink Citation, shown as the text a style formatted or — until
+ * a render lands, and with no engine installed — as its Citation Display Text.
  *
  * The element carries exactly what Obsidian's own rendering would have put on
  * the replaced text: the `cm-*` classes of the token it stands for, the class
@@ -137,15 +152,23 @@ export function wikilinkEditorExtension(
  * Obsidian's own handlers, which resolve the link from the document position
  * rather than from the DOM.
  *
+ * A lone Citation therefore behaves exactly as it did before it was rendered. A
+ * Citation Run is the one narrowing: its widget covers several links, and those
+ * handlers read the position its start maps to, so the whole run clicks, hovers,
+ * and drags as the first work it names.
+ *
  * @see docs/research/wikilink-display-decoration-interaction.md — sections 2, 2.5
  */
 class CitationDisplayWidget extends WidgetType {
-  readonly #text;
+  readonly #content;
   readonly #className;
 
-  constructor(text: string, tokenClasses: readonly string[]) {
+  constructor(
+    content: DocumentFragment | string,
+    tokenClasses: readonly string[],
+  ) {
     super();
-    this.#text = text;
+    this.#content = content;
     this.#className = [
       ...tokenClasses.map((name) => `cm-${name}`),
       UNDERLINE_CLASS,
@@ -153,8 +176,15 @@ class CitationDisplayWidget extends WidgetType {
     ].join(" ");
   }
 
+  /**
+   * Formatted content is the very object the document's held citations carry,
+   * so a fresh read of that document is a fresh object and redraws, while
+   * Citation Display Text compares by value.
+   */
   eq(other: CitationDisplayWidget): boolean {
-    return other.#text === this.#text && other.#className === this.#className;
+    return (
+      other.#content === this.#content && other.#className === this.#className
+    );
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -162,7 +192,7 @@ class CitationDisplayWidget extends WidgetType {
     element.className = this.#className;
     element.tabIndex = -1;
     element.draggable = true;
-    element.textContent = this.#text;
+    element.append(citationInsert(this.#content));
     return element;
   }
 }
@@ -176,27 +206,52 @@ function buildDecorations(
   // raw text throughout; the treatment follows it.
   if (!livePreviewOf(state)) return Decoration.none;
 
-  const sourcePath = state.field(editorInfoField, false)?.file?.path ?? "";
+  const file = state.field(editorInfoField, false)?.file ?? null;
+  const sourcePath = file?.path ?? "";
   const context = {
     literatureNote: (linkpath: string) =>
       handlers.literatureNote(linkpath, sourcePath),
     fragmentlessDisplay: handlers.fragmentlessDisplay(),
     selection: view.hasFocus ? state.selection.ranges : [],
+    textBetween: (from: number, to: number) => state.doc.sliceString(from, to),
   };
 
-  const builder = new RangeSetBuilder<Decoration>();
+  const decorations: WikilinkDecoration[] = [];
   for (const range of visibleLineRanges(view)) {
     const spans = scanWikilinks(tokenNodes(state, range));
-    for (const decoration of wikilinkDecorations(spans, context)) {
-      builder.add(decoration.from, decoration.to, replacement(decoration));
-    }
+    decorations.push(...wikilinkDecorations(spans, context));
+  }
+  if (decorations.length === 0) return Decoration.none;
+
+  // Asked for only once a Citation is on screen, so a document that writes none
+  // is never read. A document whose citations are not held yet keeps its
+  // Citation Display Text, and the read announces itself when it settles, which
+  // brings the formatted text in without a document change.
+  const citations = file === null ? null : handlers.citationText(file.path);
+  if (file !== null && citations === null) handlers.requestCitationText(file);
+
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const decoration of decorations) {
+    builder.add(
+      decoration.from,
+      decoration.to,
+      replacement(decoration, citations),
+    );
   }
   return builder.finish();
 }
 
-function replacement(decoration: WikilinkDecoration): Decoration {
+function replacement(
+  decoration: WikilinkDecoration,
+  citations: DocumentCitations | null,
+): Decoration {
+  const formatted =
+    citations === null ? null : citationContent(decoration.citation, citations);
   return Decoration.replace({
-    widget: new CitationDisplayWidget(decoration.text, decoration.tokenClasses),
+    widget: new CitationDisplayWidget(
+      formatted ?? decoration.fallback,
+      decoration.tokenClasses,
+    ),
   });
 }
 

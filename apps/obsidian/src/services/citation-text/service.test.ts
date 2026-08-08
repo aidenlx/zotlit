@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
-import type { TFile } from "obsidian";
+import type { LinkCache, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
 import type { Citation } from "@/services/citation-index/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import { ALPHA, ALPHA_KEY, citation, fragment } from "./__fixtures__";
 import { CitationText } from "./service";
@@ -27,6 +29,12 @@ vi.mock("@zotlit/db", async (importOriginal) => {
 
 const NOTE = { path: "note.md" } as TFile;
 
+/**
+ * The Indexed Key a Literature Note stand-in carries. Zotero's item-key charset
+ * leaves out `1`, so the fixture Item's own key cannot stand in for one.
+ */
+const LIT_KEY = "ALPHA234";
+
 interface Harness {
   service: CitationText;
   citationRequests: { citations: readonly string[] }[];
@@ -45,11 +53,19 @@ async function makeHarness({
   body,
   cited = [citation("alpha", ALPHA_KEY)],
   formats = true,
+  links = [],
+  notes = {},
+  settings = {},
 }: {
   body: string;
   cited?: Citation[];
   /** Whether an engine is installed, which is what the cache answers for. */
   formats?: boolean;
+  /** The wikilinks Obsidian's metadata cache reports for the document. */
+  links?: LinkCache[];
+  /** The Literature Note each linkpath names, by linkpath. */
+  notes?: Record<string, { citekey: string | undefined }>;
+  settings?: Partial<Settings>;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
   const listeners = new Map<string, (payload?: never) => void>();
@@ -71,6 +87,19 @@ async function makeHarness({
           listeners.set(`metadata:${name}`, cb);
           return { e: { offref: () => undefined } };
         },
+        // The document reports its own links; a Literature Note reports the
+        // frontmatter that makes it one.
+        getFileCache: (file: { path: string }) =>
+          file.path === NOTE.path
+            ? { links }
+            : {
+                frontmatter: {
+                  "zotero-key": LIT_KEY,
+                  citekey: notes[file.path]?.citekey,
+                },
+              },
+        getFirstLinkpathDest: (linkpath: string) =>
+          Object.hasOwn(notes, linkpath) ? { path: linkpath } : null,
       },
     },
     db: { state: "ready", client: {} },
@@ -90,6 +119,13 @@ async function makeHarness({
         );
       },
       on: listen("render"),
+    },
+    settings: {
+      ready: Promise.resolve(),
+      subscribe: (cb: (next: Readonly<Settings>) => void) => {
+        cb({ ...defaults, ...settings });
+        return () => undefined;
+      },
     },
   } as never);
   await service.ready;
@@ -175,6 +211,152 @@ describe("CitationText", () => {
     await service.load(NOTE);
 
     expect(citationRequests).toEqual([{ citations: [] }]);
+    await dispose();
+  });
+});
+
+describe("CitationText over wikilink Citations", () => {
+  /** The Literature Note the wikilink suites cite, and its citekey. */
+  const LIT = "literatures/alpha";
+  const notes: Record<string, { citekey: string | undefined }> = {
+    [LIT]: { citekey: "alpha" },
+  };
+  /** Wikilink Citations, which a fragment-less link needs to be a Citation. */
+  const WIKILINK_CITATIONS = { "citation.wikilink-citations": true } as const;
+
+  /** One `[[…]]` of the document, as Obsidian's metadata cache reports it. */
+  function link(target: string, start: number, original?: string): LinkCache {
+    const raw = original ?? `[[${target}]]`;
+    return {
+      link: target,
+      original: raw,
+      position: {
+        start: { line: 0, col: start, offset: start },
+        end: { line: 0, col: start + raw.length, offset: start + raw.length },
+      },
+    };
+  }
+
+  it("renders a fragment-carrying wikilink as the citekey cluster it equals", async () => {
+    const body = `Claim [[${LIT}#cite:locator=4]].`;
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      cited: [],
+      links: [link(`${LIT}#cite:locator=4`, body.indexOf("[["))],
+      notes,
+    });
+
+    const { formatted } = await service.load(NOTE);
+
+    expect(citationRequests).toEqual([{ citations: ["[@alpha, p. 4]"] }]);
+    expect(formatted.get("[@alpha, p. 4]")?.textContent).toBe(
+      "«[@alpha, p. 4]»",
+    );
+    await dispose();
+  });
+
+  it("renders a Citation Run as one grouped citation", async () => {
+    const body = `Both [[${LIT}#cite:locator=4]]; [[${LIT}]].`;
+    const first = body.indexOf("[[");
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      cited: [],
+      links: [
+        link(`${LIT}#cite:locator=4`, first),
+        link(LIT, body.lastIndexOf("[[")),
+      ],
+      notes,
+      settings: WIKILINK_CITATIONS,
+    });
+
+    await service.load(NOTE);
+
+    expect(citationRequests).toEqual([
+      { citations: ["[@alpha, p. 4; @alpha]"] },
+    ]);
+    await dispose();
+  });
+
+  it("leaves a fragment-less wikilink out while Wikilink Citations is off", async () => {
+    const body = `Claim [[${LIT}]].`;
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      cited: [],
+      links: [link(LIT, body.indexOf("[["))],
+      notes,
+      settings: { "citation.wikilink-citations": false },
+    });
+
+    await service.load(NOTE);
+
+    expect(citationRequests).toEqual([{ citations: [] }]);
+    await dispose();
+  });
+
+  it("leaves an aliased wikilink out, as the display surfaces do", async () => {
+    const body = `Claim [[${LIT}|Alpha]].`;
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      cited: [],
+      links: [link(LIT, body.indexOf("[["), `[[${LIT}|Alpha]]`)],
+      notes,
+    });
+
+    await service.load(NOTE);
+
+    expect(citationRequests).toEqual([{ citations: [] }]);
+    await dispose();
+  });
+
+  it("renders both syntaxes in one batch, in document order", async () => {
+    const body = `Wikilink [[${LIT}#cite:locator=5]] then citekey [@alpha, p. 6].`;
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      links: [link(`${LIT}#cite:locator=5`, body.indexOf("[["))],
+      notes,
+    });
+
+    await service.load(NOTE);
+
+    expect(citationRequests).toEqual([
+      { citations: ["[@alpha, p. 5]", "[@alpha, p. 6]"] },
+    ]);
+    await dispose();
+  });
+
+  // A note with no Citation Key Property falls back to its filename, and no
+  // Pandoc key carries the space in one.
+  it("keeps a Citation no Pandoc source can name out of the render", async () => {
+    const SPACED = "literatures/Doe 2020";
+    const body = `Claim [[${SPACED}]].`;
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      cited: [],
+      links: [link(SPACED, body.indexOf("[["))],
+      notes: { [SPACED]: { citekey: undefined } },
+      settings: WIKILINK_CITATIONS,
+    });
+
+    await service.load(NOTE);
+
+    expect(citationRequests).toEqual([{ citations: [] }]);
+    await dispose();
+  });
+
+  it("names a wikilink-cited work by the citekey its Citation Key Property gives", async () => {
+    const body = `Claim [[${LIT}]].`;
+    const { service, dispose } = await makeHarness({
+      body,
+      cited: [],
+      links: [link(LIT, body.indexOf("[["))],
+      notes,
+      settings: WIKILINK_CITATIONS,
+      formats: false,
+    });
+
+    const { summaries } = await service.load(NOTE);
+
+    expect(summaries.get("alpha")).toBe("Zeta (2020)");
     await dispose();
   });
 });

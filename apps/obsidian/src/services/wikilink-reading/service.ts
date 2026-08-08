@@ -9,14 +9,20 @@ import { getLogger } from "@/lib/log";
 import { rerenderReadingViews } from "@/lib/reading-view";
 import {
   WikilinkDisplaySettings,
-  wikilinkDisplayText,
+  runDisplay,
+  wikilinkCitation,
 } from "@/lib/wikilink-citation";
+import {
+  citationContent,
+  citationInsert,
+} from "@/services/citation-text/present";
+import type { CitationText } from "@/services/citation-text/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
-import { renderWikilinkCitations } from "./render";
+import { renderCitationRuns, sectionCitationRuns } from "./render";
 
 const logger = getLogger("wikilink-reading");
 
@@ -24,12 +30,15 @@ export interface WikilinkReadingDeps {
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   noteIndex: Pick<NoteIndex, "on">;
+  /** The formatted citations every surface of one document shares. */
+  citationText: Pick<CitationText, "load" | "on">;
   settings: SettingsService;
 }
 
 /**
- * The Wikilink Reading Rendering: in reading mode a Literature Note wikilink's
- * display text becomes its Citation Display Text, while the link's target,
+ * The Wikilink Reading Rendering: in reading mode a Literature Note wikilink —
+ * and a whole Citation Run of them — shows the citation a style formatted, or
+ * its Citation Display Text until that render lands, while the link's target,
  * navigation, and hover stay Obsidian's.
  *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
@@ -39,7 +48,7 @@ export interface WikilinkReadingDeps {
  *
  * Two behavior changes come with replacing an anchor's text, both intended and
  * documented for the user: dragging such a link out of reading mode and the
- * context menu's Copy carry the Citation Display Text rather than the raw path.
+ * context menu's Copy carry the rendered citation rather than the raw path.
  *
  * @see docs/research/wikilink-display-decoration-interaction.md — section 6
  */
@@ -47,6 +56,7 @@ export class WikilinkReading extends Service<void> {
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
+  readonly #citationText;
   readonly #settings;
 
   /** The two settings that decide what a link displays. */
@@ -61,6 +71,7 @@ export class WikilinkReading extends Service<void> {
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
+    this.#citationText = deps.citationText;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -69,6 +80,8 @@ export class WikilinkReading extends Service<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
 
+    // The promise is handed back, so Obsidian shows the section only once the
+    // citations settled and no raw source ever flashes.
     this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),
     );
@@ -79,6 +92,9 @@ export class WikilinkReading extends Service<void> {
     // renders every open reading view again.
     stack.defer(this.#noteIndex.on("changed", () => this.#rerender()));
     stack.defer(this.#noteIndex.on("rebuilt", () => this.#rerender()));
+    // A reading view holds what a post-processor produced, so text that went
+    // stale keeps showing until the view renders that section again.
+    stack.defer(this.#citationText.on("invalidated", () => this.#rerender()));
     // A reading view holds the text this service wrote, so the views render
     // again without it once it is gone. The flag goes first: the post-processor
     // may still be registered while this runs.
@@ -90,11 +106,14 @@ export class WikilinkReading extends Service<void> {
     this.commit(stack.move());
   }
 
-  /** Shows the Citation Display Text of every wikilink in one rendered section. */
-  #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
+  /** Shows every wikilink Citation of one rendered section as its own text. */
+  async #process(
+    el: HTMLElement,
+    ctx: MarkdownPostProcessorContext,
+  ): Promise<void> {
     if (this.#retired) return;
-    const shown = renderWikilinkCitations(el, (linktext) =>
-      wikilinkDisplayText(linktext, {
+    const runs = sectionCitationRuns(el, (linktext) =>
+      wikilinkCitation(linktext, {
         literatureNote: (linkpath) =>
           resolveLiteratureNote(linkpath, ctx.sourcePath, {
             app: this.#app,
@@ -103,6 +122,20 @@ export class WikilinkReading extends Service<void> {
         fragmentlessDisplay: this.#display.fragmentlessDisplay,
       }),
     );
+    if (runs.length === 0) return;
+
+    // Read only once a Citation is on screen, so a section that writes none
+    // waits for nothing. The section is shown when the read settles, which is
+    // what keeps the raw source from ever flashing.
+    const file = this.#app.vault.getFileByPath(ctx.sourcePath);
+    const text = file === null ? null : await this.#citationText.load(file);
+    if (this.#retired) return;
+
+    const shown = renderCitationRuns(runs, (run) => {
+      const { citation, text: displayText } = runDisplay(run);
+      const formatted = text === null ? null : citationContent(citation, text);
+      return formatted === null ? displayText : citationInsert(formatted);
+    });
     if (shown > 0) {
       logger.trace("Rendered wikilink citations", {
         path: ctx.sourcePath,

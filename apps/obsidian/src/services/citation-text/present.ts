@@ -1,22 +1,14 @@
 // How one Citation is presented once its text is known: the works it names, the summary it falls back to, and the element that shows it.
 
-import type { TextSpan } from "@/lib/citation-grammar";
+import type { CitationSource } from "@/lib/citation-fragment";
 import type { CitedWork } from "@/services/citekey-navigation";
+
+// One citation as a surface holds it: the same shape whether a note wrote it or
+// a wikilink derivation did, which is what lets the two syntaxes share a render.
+export type { CitationKey, CitationSource } from "@/lib/citation-fragment";
 
 /** The class every formatted citation carries, for themes and snippets to reach. */
 export const CITATION_CLASS = "zt-citation";
-
-/** One `@citekey` of a citation, at its offset within the citation's own source. */
-export interface CitationKey extends TextSpan {
-  citekey: string;
-}
-
-/** One citation as a surface holds it, whichever surface read it. */
-export interface CitationSource {
-  /** The citation exactly as the note writes it. */
-  source: string;
-  keys: CitationKey[];
-}
 
 /** What one document's surfaces need to put text in their citations' place. */
 export interface DocumentCitations {
@@ -101,20 +93,23 @@ export function citationContent(
 }
 
 /**
- * Wraps a citation's content in the element a surface shows.
+ * A citation's content, ready for one surface to insert.
  *
  * Formatted content is shared with every other surface showing the same
  * citation, so a fragment goes in as a clone rather than being moved out of the
  * held text.
  */
+export function citationInsert(content: Node | string): Node | string {
+  return typeof content === "string" ? content : content.cloneNode(true);
+}
+
+/** Wraps a citation's content in the element a surface shows. */
 export function citationElement(
   doc: Document,
   content: Node | string,
 ): HTMLElement {
   const element = doc.createElement("span");
   element.className = CITATION_CLASS;
-  element.append(
-    typeof content === "string" ? content : content.cloneNode(true),
-  );
+  element.append(citationInsert(content));
   return element;
 }

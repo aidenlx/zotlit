@@ -15,14 +15,22 @@ const WANG = "literatures/wangMutationalClinicalSpectrum2020a";
 interface Harness extends AsyncDisposable {
   settings: SettingsStub;
   noteIndex: NoteIndexStub;
+  citationText: CitationTextStub;
   /** Runs the registered post-processor over one link and reads its display. */
-  render: (linktext: string) => string;
+  render: (linktext: string) => Promise<string>;
   rerenders: () => number;
 }
 
-async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
+async function harness({
+  formatted,
+  ...overrides
+}: Partial<Settings> & {
+  /** The formatted citation the shared text holds, by its Pandoc source. */
+  formatted?: Record<string, string>;
+} = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
+  const citationText = new CitationTextStub(formatted ?? {});
   let rerenders = 0;
   let process: MarkdownPostProcessor | undefined;
   const view = Object.assign(Object.create(MarkdownView.prototype) as object, {
@@ -31,6 +39,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
   const service = new WikilinkReading({
     app: {
       workspace: { getLeavesOfType: () => [{ view }] },
+      vault: { getFileByPath: (path: string) => ({ path }) },
       metadataCache: {
         getFirstLinkpathDest: (linkpath: string) =>
           linkpath === WANG ? { path: `${WANG}.md` } : null,
@@ -45,15 +54,17 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
       },
     },
     noteIndex,
+    citationText,
     settings,
   } as never);
   await service.ready;
   return {
     settings,
     noteIndex,
-    render: (linktext) => {
+    citationText,
+    render: async (linktext) => {
       const root = section(`<p>${internalLink(linktext)}</p>`);
-      void process?.(root, { sourcePath: "note.md" } as never);
+      await process?.(root, { sourcePath: "note.md" } as never);
       return root.textContent ?? "";
     },
     rerenders: () => rerenders,
@@ -65,7 +76,7 @@ describe("WikilinkReading rendering", () => {
   it("shows a fragment-carrying link as its Citation Display Text", async () => {
     await using harnessed = await harness();
 
-    expect(harnessed.render(`${WANG}#cite:locator=7`)).toBe(
+    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
       "[@wang2020, p. 7]",
     );
   });
@@ -75,13 +86,13 @@ describe("WikilinkReading rendering", () => {
       "citation.wikilink-citations": true,
     });
 
-    expect(harnessed.render(WANG)).toBe("@wang2020");
+    expect(await harnessed.render(WANG)).toBe("@wang2020");
   });
 
   it("leaves a fragment-less link raw while Wikilink Citations is off", async () => {
     await using harnessed = await harness();
 
-    expect(harnessed.render(WANG)).toBe(WANG);
+    expect(await harnessed.render(WANG)).toBe(WANG);
   });
 
   it("shows a fragment-carrying link whatever the toggles say", async () => {
@@ -90,7 +101,7 @@ describe("WikilinkReading rendering", () => {
       "citation.wikilink-display": false,
     });
 
-    expect(harnessed.render(`${WANG}#cite:locator=7`)).toBe(
+    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
       "[@wang2020, p. 7]",
     );
   });
@@ -101,20 +112,32 @@ describe("WikilinkReading rendering", () => {
       "citation.key-links-frontmatter-key": "bibkey",
     });
 
-    expect(harnessed.render(WANG)).toBe("@wangMutationalClinicalSpectrum2020a");
+    expect(await harnessed.render(WANG)).toBe(
+      "@wangMutationalClinicalSpectrum2020a",
+    );
+  });
+
+  it("shows the citation a style formatted once the shared text holds one", async () => {
+    await using harnessed = await harness({
+      formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
+    });
+
+    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
+      "(Wang et al. 2020, p. 7)",
+    );
   });
 
   it("leaves a link that names no Literature Note alone", async () => {
     await using harnessed = await harness();
 
-    expect(harnessed.render("notes/plain")).toBe("notes/plain");
+    expect(await harnessed.render("notes/plain")).toBe("notes/plain");
   });
 
   it("leaves the reading views alone once the treatment is retired", async () => {
     const harnessed = await harness();
     await harnessed[Symbol.asyncDispose]();
 
-    expect(harnessed.render(`${WANG}#cite:locator=7`)).toBe(
+    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
       `${WANG} > cite:locator=7`,
     );
   });
@@ -148,6 +171,13 @@ describe("WikilinkReading rerender", () => {
     expect(rerenders()).toBe(3);
   });
 
+  it("renders again when the shared citation text goes stale", async () => {
+    await using harnessed = await harness();
+
+    harnessed.citationText.emit();
+    expect(harnessed.rerenders()).toBe(1);
+  });
+
   it("leaves the reading views alone when an unrelated setting changes", async () => {
     await using harnessed = await harness();
 
@@ -162,6 +192,37 @@ describe("WikilinkReading rerender", () => {
     expect(harnessed.rerenders()).toBe(1);
   });
 });
+
+class CitationTextStub {
+  readonly #formatted: Record<string, string>;
+  readonly #listeners = new Set<() => void>();
+
+  constructor(formatted: Record<string, string>) {
+    this.#formatted = formatted;
+  }
+
+  load(): Promise<{
+    formatted: Map<string, DocumentFragment>;
+    summaries: Map<string, string>;
+  }> {
+    const formatted = new Map<string, DocumentFragment>();
+    for (const [source, text] of Object.entries(this.#formatted)) {
+      const content = document.createDocumentFragment();
+      content.append(text);
+      formatted.set(source, content);
+    }
+    return Promise.resolve({ formatted, summaries: new Map() });
+  }
+
+  on(_event: "invalidated", cb: () => void): () => void {
+    this.#listeners.add(cb);
+    return () => this.#listeners.delete(cb);
+  }
+
+  emit(): void {
+    for (const cb of this.#listeners) cb();
+  }
+}
 
 class NoteIndexStub {
   readonly #listeners: Record<"changed" | "rebuilt", Set<() => void>> = {

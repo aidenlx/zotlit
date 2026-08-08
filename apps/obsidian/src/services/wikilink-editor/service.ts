@@ -9,6 +9,7 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+import type { CitationText } from "@/services/citation-text/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -25,13 +26,16 @@ export interface WikilinkEditorDeps {
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension">;
   noteIndex: Pick<NoteIndex, "on">;
+  /** The formatted citations every surface of one document shares. */
+  citationText: Pick<CitationText, "peek" | "load" | "on">;
   settings: SettingsService;
 }
 
 /**
- * The Wikilink Editor Treatment: in Live Preview a Literature Note wikilink
- * shows its Citation Display Text instead of its raw path and Citation
- * Fragment, while click, hover, drag, and conceal interaction stay Obsidian's.
+ * The Wikilink Editor Treatment: in Live Preview a Literature Note wikilink —
+ * and a whole Citation Run of them — shows the citation a style formatted, or
+ * its Citation Display Text until that render lands, while click, hover, drag,
+ * and conceal interaction stay Obsidian's.
  *
  * The extension is registered as a mutable array, the mechanism
  * `registerEditorExtension` documents, and stays installed for the plugin's
@@ -43,6 +47,7 @@ export class WikilinkEditor extends Service<void> {
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
+  readonly #citationText;
   readonly #settings;
   readonly #extension: Extension;
 
@@ -59,11 +64,18 @@ export class WikilinkEditor extends Service<void> {
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
+    this.#citationText = deps.citationText;
     this.#settings = deps.settings;
     this.#extension = wikilinkEditorExtension({
       literatureNote: (linkpath, sourcePath) =>
         this.#literatureNote(linkpath, sourcePath),
       fragmentlessDisplay: () => this.#display.fragmentlessDisplay,
+      citationText: (path) => this.#citationText.peek(path),
+      requestCitationText: (file) => {
+        // The read announces itself when it settles, which is what brings the
+        // formatted citations in.
+        void this.#citationText.load(file);
+      },
     });
     this.ready = this.#load();
   }
@@ -87,6 +99,11 @@ export class WikilinkEditor extends Service<void> {
     // redraws every open editor.
     stack.defer(this.#noteIndex.on("changed", () => this.#redraw()));
     stack.defer(this.#noteIndex.on("rebuilt", () => this.#redraw()));
+    // A citation's formatted text is read asynchronously and shared with every
+    // other surface, so the editors showing that document draw again when it
+    // lands or goes stale — until then they keep the Citation Display Text.
+    stack.defer(this.#citationText.on("changed", (path) => this.#redraw(path)));
+    stack.defer(this.#citationText.on("invalidated", () => this.#redraw()));
 
     this.commit(stack.move());
   }
@@ -105,12 +122,15 @@ export class WikilinkEditor extends Service<void> {
    * Asks the open Markdown editors to build their decorations again. The
    * decoration layer owns what changed; this only names the reason, since what
    * a link displays lives outside the document.
+   *
+   * @param path the one document to reach, or nothing for every editor.
    */
-  #redraw(): void {
+  #redraw(path?: string): void {
     const reached = dispatchToMarkdownEditors(
       this.#app,
       wikilinkDecorationsChanged.of(undefined),
+      { path },
     );
-    logger.trace("Redrawing wikilink citations", { editors: reached });
+    logger.trace("Redrawing wikilink citations", { editors: reached, path });
   }
 }

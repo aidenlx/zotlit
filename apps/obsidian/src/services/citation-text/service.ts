@@ -1,6 +1,6 @@
 // The formatted text of one document's Citations, held for every surface that shows them.
 
-import type { App, TFile } from "obsidian";
+import type { App, LinkCache, TFile } from "obsidian";
 
 import {
   getItemsByKey,
@@ -13,20 +13,29 @@ import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { BoundedCache } from "@/lib/bounded-cache";
+import { isRenderableCitation } from "@/lib/citation-fragment";
 import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import {
+  WikilinkDisplaySettings,
+  citationRuns,
+  runDisplay,
+  wikilinkCitation,
+} from "@/lib/wikilink-citation";
 import { scanDocumentCitations } from "@/services/citation-index/service";
 import type {
   Citation,
   CitationIndex,
 } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
+import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
+import type { SettingsService } from "@/services/settings/service";
 
-import type { DocumentCitations } from "./present";
+import type { CitationSource, DocumentCitations } from "./present";
 
 export { type DocumentCitations } from "./present";
 
@@ -67,12 +76,19 @@ export interface CitationTextDeps {
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   /** The plugin-wide render cache, which owns the References Style and the engine. */
   bibliographyRender: Pick<BibliographyRenderCache, "renderCitations" | "on">;
+  /** The settings that decide which wikilinks are Citations at all. */
+  settings: SettingsService;
 }
 
 /**
- * Formats every Citation one document writes, and hands the same answer to
- * every surface that shows that document — the reading view's post-processor
- * and the editor's cluster widgets alike, so both read the same text.
+ * Formats every Citation one document writes in either citing syntax, and hands
+ * the same answer to every surface that shows that document — the reading
+ * view's post-processors and the editor's widgets alike, so all of them read
+ * the same text.
+ *
+ * A wikilink Citation is formatted from the Pandoc source the exporter would
+ * write it as, which is the very source the equivalent Citation Cluster
+ * carries; the two syntaxes therefore share one render and read alike.
  *
  * Text comes from the plugin-wide bibliography render cache, which is also the
  * References Sidebar's source, so all three surfaces agree on the References
@@ -89,8 +105,12 @@ export class CitationText extends Service<void> {
   readonly #citationIndex;
   readonly #noteIndex;
   readonly #bibliographyRender;
+  readonly #settings;
   readonly #emitter = createNanoEvents<CitationTextEvents>();
   readonly #documents = new BoundedCache<HeldCitations>(HELD_DOCUMENTS);
+
+  /** The two settings that decide which wikilinks write a Citation. */
+  readonly #display = new WikilinkDisplaySettings();
 
   ready: Promise<void>;
 
@@ -101,6 +121,7 @@ export class CitationText extends Service<void> {
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
     this.#bibliographyRender = deps.bibliographyRender;
+    this.#settings = deps.settings;
     this.ready = this.#load();
   }
 
@@ -129,7 +150,11 @@ export class CitationText extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
+    await this.#settings.ready;
 
+    // Which wikilinks are Citations, and the Citation Key Property they name
+    // their works by, decide what every document's citations say.
+    stack.defer(this.#display.watch(this.#settings, () => this.#dropAll()));
     // A document's own citekeys decide what its citations say.
     stack.defer(this.#citationIndex.on("changed", (path) => this.#drop(path)));
     // So does everything else the document writes around them: a locator or a
@@ -221,17 +246,23 @@ export class CitationText extends Service<void> {
    */
   async #readDocument(file: TFile): Promise<DocumentCitations> {
     await this.#noteIndex.whenIndexed();
+    const body = await this.#app.vault.cachedRead(file);
+    const wikilinks = this.#wikilinkCitations(file, body);
     const cited = await this.#citationIndex.getCitations(file, {
       wikilinks: false,
     });
-    const { items, summaries } = this.#readCited(cited);
+    const { items, summaries } = this.#readCited(
+      citekeysByItem(cited, wikilinks.works),
+    );
 
-    const body = await this.#app.vault.cachedRead(file);
-    const sources = scanDocumentCitations(body)
+    // Both syntaxes go to one render in document order, so a numbering style
+    // counts every citation of the document once and in the order it reads.
+    const sources = [...literalCitations(body), ...wikilinks.citations]
+      .sort((a, b) => a.start - b.start)
       .filter((citation) =>
         citation.keys.every((key) => summaries.has(key.citekey)),
       )
-      .map(({ start, end }) => body.slice(start, end));
+      .map(({ source }) => source);
 
     const rendered = await this.#bibliographyRender.renderCitations(
       sources,
@@ -246,6 +277,7 @@ export class CitationText extends Service<void> {
     logger.debug("Document citations read", {
       path: file.path,
       citations: sources.length,
+      wikilinks: wikilinks.citations.length,
       items: items.length,
       formatted: formatted.size,
     });
@@ -253,27 +285,80 @@ export class CitationText extends Service<void> {
   }
 
   /**
+   * The Citations one document's Literature Note wikilinks write, each as the
+   * Pandoc source the exporter would write it as.
+   *
+   * Link occurrences come from Obsidian's own metadata cache, which already
+   * omits links inside code, and a Citation Run is read from the document text
+   * that joins them. A Markdown-syntax link and an aliased one stay out, the
+   * same two exclusions the display surfaces make.
+   */
+  #wikilinkCitations(file: TFile, body: string): DocumentWikilinks {
+    const context = {
+      literatureNote: (linkpath: string) =>
+        resolveLiteratureNote(linkpath, file.path, {
+          app: this.#app,
+          citationKeyProperty: this.#display.citationKeyProperty,
+        }),
+      fragmentlessDisplay: this.#display.fragmentlessDisplay,
+    };
+
+    const runs = citationRuns(
+      this.#app.metadataCache.getFileCache(file)?.links ?? [],
+      (link) =>
+        isWikilink(link) ? wikilinkCitation(link.link, context) : null,
+      (previous, next) =>
+        body.slice(previous.position.end.offset, next.position.start.offset),
+    );
+
+    const works = new Map<string, string>();
+    const citations: PlacedCitation[] = [];
+    for (const run of runs) {
+      for (const { citation } of run) {
+        works.set(citation.item.citekey, citation.indexedKey);
+      }
+      const { citation } = runDisplay(run);
+      // A derivation the engine would read back as something else stays out of
+      // the render, and the run shows its Citation Display Text instead.
+      if (!isRenderableCitation(citation)) {
+        logger.debug("Wikilink citation is not Pandoc source", {
+          path: file.path,
+          source: citation.source,
+        });
+        continue;
+      }
+      citations.push({
+        start: run[0]!.source.position.start.offset,
+        ...citation,
+      });
+    }
+    return { citations, works };
+  }
+
+  /**
    * The cited works, read straight from the database so the surfaces keep
    * working while Zotero is closed.
    *
    * Citeproc matches a citation by the CSL `id`, so each work is handed over
-   * under the citekey the document writes rather than under its item URI.
+   * under the citekey the document names it by — the key the author wrote, or
+   * the Citation Key Property a wikilink resolves to.
+   *
+   * @param cited the citekeys naming each Indexed Key the document cites.
    */
-  #readCited(cited: readonly Citation[]): {
+  #readCited(cited: ReadonlyMap<string, ReadonlySet<string>>): {
     items: CslItemData[];
     summaries: Map<string, string>;
   } {
     const items: CslItemData[] = [];
     const summaries = new Map<string, string>();
-    if (this.#db.state !== "ready" || cited.length === 0) {
+    if (this.#db.state !== "ready" || cited.size === 0) {
       return { items, summaries };
     }
 
     try {
       const client = this.#db.client;
       const user = getZoteroIdentity(client);
-      for (const { indexedKey, occurrences } of cited) {
-        if (indexedKey === null) continue;
+      for (const [indexedKey, citekeys] of cited) {
         const selector = resolveIndexedKeyLibrary(client, indexedKey);
         if (!selector) continue;
         const item = getItemsByKey(client, selector.libraryID, [
@@ -285,10 +370,19 @@ export class CitationText extends Service<void> {
 
         const { title, subtitle } = itemSummary(item, fields);
         const csl = itemToCsl(item, user);
-        for (const { raw } of occurrences) {
-          if (summaries.has(raw)) continue;
-          summaries.set(raw, subtitle || title);
-          items.push({ ...csl, id: raw });
+        for (const citekey of citekeys) {
+          // One citekey names one work here: a document that reaches two
+          // through it — a literal key and a wikilink whose note carries the
+          // same Citation Key Property value — keeps the first work read.
+          if (summaries.has(citekey)) {
+            logger.debug("Citekey names two works in one document", {
+              citekey,
+              dropped: indexedKey,
+            });
+            continue;
+          }
+          summaries.set(citekey, subtitle || title);
+          items.push({ ...csl, id: citekey });
         }
       }
     } catch (error) {
@@ -296,4 +390,63 @@ export class CitationText extends Service<void> {
     }
     return { items, summaries };
   }
+}
+
+/** One Citation of a document, at the offset the document writes it. */
+interface PlacedCitation extends CitationSource {
+  start: number;
+}
+
+/** What one document's Literature Note wikilinks cite. */
+interface DocumentWikilinks {
+  /** The Citations they write, one per Citation Run, in document order. */
+  citations: PlacedCitation[];
+  /** The Indexed Key each derived citekey names. */
+  works: Map<string, string>;
+}
+
+/**
+ * Whether a link is a wikilink whose display the treatment owns. A
+ * Markdown-syntax link is not, and neither is an aliased one — the alias is the
+ * display the author already chose, the same exclusion the display surfaces
+ * make.
+ */
+function isWikilink(link: LinkCache): boolean {
+  return link.original.startsWith("[[") && !link.original.includes("|");
+}
+
+/** The literal Citation Clusters of a document body, in document order. */
+function literalCitations(body: string): PlacedCitation[] {
+  return scanDocumentCitations(body).map(({ start, end, keys }) => ({
+    start,
+    source: body.slice(start, end),
+    keys: keys.map((key) => ({
+      citekey: key.citekey,
+      start: key.start - start,
+      end: key.end - start,
+    })),
+  }));
+}
+
+/**
+ * The citekeys naming each Indexed Key the document cites, over both syntaxes —
+ * one work cited as a citekey and as a wikilink reaches the database once and
+ * answers under both names.
+ */
+function citekeysByItem(
+  cited: readonly Citation[],
+  works: ReadonlyMap<string, string>,
+): Map<string, Set<string>> {
+  const byItem = new Map<string, Set<string>>();
+  const add = (indexedKey: string, citekey: string): void => {
+    const citekeys = byItem.get(indexedKey);
+    if (citekeys) citekeys.add(citekey);
+    else byItem.set(indexedKey, new Set([citekey]));
+  };
+  for (const { indexedKey, occurrences } of cited) {
+    if (indexedKey === null) continue;
+    for (const { raw } of occurrences) add(indexedKey, raw);
+  }
+  for (const [citekey, indexedKey] of works) add(indexedKey, citekey);
+  return byItem;
 }

@@ -1,5 +1,8 @@
-// The wikilink anchors one rendered reading-view section holds, and the swap
-// that puts their Citation Display Text in place.
+// The wikilink Citations one rendered reading-view section holds, and the swap
+// that puts their formatted text in place.
+
+import { citationRuns } from "@/lib/wikilink-citation";
+import type { RunMember, WikilinkCitation } from "@/lib/wikilink-citation";
 
 /**
  * Obsidian's own anchor for an internal link, which its Markdown parser builds
@@ -34,15 +37,24 @@ function breadcrumb(linktext: string): string {
 }
 
 /**
- * The Citation Display Text one link target shows, or null to keep Obsidian's
- * own rendering.
+ * The Citation one link target writes, or null to keep Obsidian's own
+ * rendering.
  */
-export type WikilinkDisplay = (linktext: string) => string | null;
+export type WikilinkCitationOf = (linktext: string) => WikilinkCitation | null;
 
 /**
- * Replaces the display text of every Literature Note wikilink in one rendered
- * section, and nothing else about it: `class`, `href`, and `data-href` stay as
- * Obsidian wrote them, so the target, navigation, and hover stay Obsidian's.
+ * What one Citation Run shows in place of its links, or null to leave them as
+ * Obsidian rendered them.
+ */
+export type FormatWikilinkRun = (
+  run: readonly RunMember<HTMLAnchorElement>[],
+) => Node | string | null;
+
+/** The Citation Runs of one rendered section, as their anchors carry them. */
+export type SectionRuns = RunMember<HTMLAnchorElement>[][];
+
+/**
+ * The Citation Runs of one rendered section, in document order.
  *
  * An aliased link keeps its alias, the display the author already chose — the
  * same exclusion Live Preview makes, so the two surfaces agree on every link.
@@ -53,24 +65,97 @@ export type WikilinkDisplay = (linktext: string) => string | null;
  * container rather than an anchor, so this pass never reaches one.
  *
  * @param root one rendered section, as a Markdown post-processor receives it.
- * @returns how many links show their Citation Display Text.
  */
-export function renderWikilinkCitations(
+export function sectionCitationRuns(
   root: HTMLElement,
-  display: WikilinkDisplay,
+  citationOf: WikilinkCitationOf,
+): SectionRuns {
+  return citationRuns(
+    [...root.querySelectorAll<HTMLAnchorElement>(INTERNAL_LINK)],
+    (anchor) => citationRendered(anchor, citationOf),
+    textBetween,
+  );
+}
+
+/**
+ * Shows each Citation Run as what `format` returns for it, and changes nothing
+ * else about its links: `class`, `href`, and `data-href` stay as Obsidian wrote
+ * them, so the target, navigation, and hover stay Obsidian's.
+ *
+ * A run of several works collapses into its first anchor, so the whole run
+ * navigates to the first work it names — the same narrowing the Live Preview
+ * run widget makes, and the one place a run departs from #663's per-link
+ * interaction. A lone Citation keeps its anchor and every gesture on it.
+ *
+ * @returns how many Citations show their formatted text.
+ */
+export function renderCitationRuns(
+  runs: SectionRuns,
+  format: FormatWikilinkRun,
 ): number {
   let rendered = 0;
-  for (const anchor of root.querySelectorAll<HTMLAnchorElement>(
-    INTERNAL_LINK,
-  )) {
-    const linktext = anchor.dataset["href"];
-    if (linktext === undefined) continue;
-    if (anchor.hasAttribute(ALIAS_MARKER)) continue;
-    if (anchor.textContent !== breadcrumb(linktext)) continue;
-    const text = display(linktext);
-    if (text === null) continue;
-    anchor.textContent = text;
+  for (const run of runs) {
+    const content = format(run);
+    if (content === null) continue;
+    const first = run[0]!.source;
+    // Everything between the run's anchors is the separators that joined them,
+    // so the run leaves one anchor behind and nothing else of its source.
+    for (const { source } of run.slice(1)) {
+      removeBetween(first, source);
+      source.remove();
+    }
+    first.replaceChildren(content);
     rendered += 1;
   }
   return rendered;
+}
+
+/** @returns the Citation `anchor` writes, or null when it writes none. */
+function citationRendered(
+  anchor: HTMLAnchorElement,
+  citationOf: WikilinkCitationOf,
+): WikilinkCitation | null {
+  const linktext = anchor.dataset["href"];
+  if (linktext === undefined) return null;
+  if (anchor.hasAttribute(ALIAS_MARKER)) return null;
+  if (anchor.textContent !== breadcrumb(linktext)) return null;
+  return citationOf(linktext);
+}
+
+/**
+ * The text between two anchors, which decides whether they join into one
+ * Citation Run.
+ *
+ * Only plain text may lie between them: an element there is a `<br>` that ended
+ * the line, an inline container the run does not span, or a sibling this pass
+ * has no claim on, and each of those ends the run. Anchors in two different
+ * parents likewise never join, which is what keeps a paragraph break — which
+ * writes no text of its own — from reading as an empty separator.
+ *
+ * @returns the text, or null when the two are not joinable at all.
+ */
+function textBetween(
+  previous: HTMLAnchorElement,
+  anchor: HTMLAnchorElement,
+): string | null {
+  if (previous.parentNode !== anchor.parentNode) return null;
+  let text = "";
+  for (
+    let node = previous.nextSibling;
+    node !== anchor;
+    node = node?.nextSibling ?? null
+  ) {
+    if (node === null || node.nodeType !== Node.TEXT_NODE) return null;
+    text += node.nodeValue ?? "";
+  }
+  return text;
+}
+
+/** Drops the separator nodes a run's anchors were joined by. */
+function removeBetween(from: ChildNode, to: ChildNode): void {
+  for (let node = from.nextSibling; node !== null && node !== to; ) {
+    const next = node.nextSibling;
+    node.remove();
+    node = next;
+  }
 }

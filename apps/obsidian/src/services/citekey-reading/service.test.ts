@@ -64,7 +64,10 @@ async function makeHarness({
   const citationText = new CitationText({
     app: {
       vault: { cachedRead: () => Promise.resolve(body) },
-      metadataCache: { on: () => ({ e: { offref: () => undefined } }) },
+      metadataCache: {
+        on: () => ({ e: { offref: () => undefined } }),
+        getFileCache: () => ({}),
+      },
     },
     db: { state: "ready", client: {} },
     citationIndex: {
@@ -83,6 +86,13 @@ async function makeHarness({
         );
       },
       on: () => () => undefined,
+    },
+    settings: {
+      ready: Promise.resolve(),
+      subscribe: (cb: (next: Readonly<Settings>) => void) => {
+        cb(defaults);
+        return () => undefined;
+      },
     },
   } as never);
   await citationText.ready;

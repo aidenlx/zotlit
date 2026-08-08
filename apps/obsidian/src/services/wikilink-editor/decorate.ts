@@ -1,10 +1,15 @@
 // Pure decoration-range computation for the Wikilink Editor Treatment: which
-// scanned links show their Citation Display Text, over which range, and with
-// which reconstructed token classes.
+// scanned links form a Citation, over which range, and with which reconstructed
+// token classes.
 
+import type { CitationSource } from "@/lib/citation-fragment";
 import { overlapsSelection } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
-import { wikilinkDisplayText } from "@/lib/wikilink-citation";
+import {
+  citationRuns,
+  runDisplay,
+  wikilinkCitation,
+} from "@/lib/wikilink-citation";
 import type { WikilinkCitationContext } from "@/lib/wikilink-citation";
 
 import type { WikilinkSpan } from "./scan";
@@ -25,41 +30,62 @@ export interface WikilinkDisplayContext extends WikilinkCitationContext {
    * @see docs/research/wikilink-display-decoration-interaction.md — section 4.1
    */
   selection: readonly DocRange[];
+  /**
+   * The document text of one range, which is what decides whether two links
+   * are joined by a `;` into one Citation Run.
+   */
+  textBetween: (from: number, to: number) => string;
 }
 
-/** One link to replace, with everything its widget needs. */
+/** One Citation to replace, with everything its widget needs. */
 export interface WikilinkDecoration extends DocRange {
-  /** The Citation Display Text shown in place of the raw path and fragment. */
-  text: string;
+  /** The Pandoc source of the Citation, which a formatted render is keyed by. */
+  citation: CitationSource;
+  /** The Citation Display Text, shown until a formatted render stands in. */
+  fallback: string;
   /** {@link WikilinkSpan.tokenClasses} */
   tokenClasses: readonly string[];
 }
 
 /**
- * The links that show their Citation Display Text, in document order.
+ * The Citations to replace, in document order — one decoration per Citation
+ * Run, so a run reads as the single grouped Citation export writes.
  *
  * Beyond what the shared derivation leaves alone, two exclusions are this
  * surface's own: an embed, because Obsidian replaces the whole construct and
  * the Citation Index omits it; and an aliased link, because the alias is the
- * display the author already chose.
+ * display the author already chose. Either one also ends a run, since a link
+ * that shows its own text cannot be folded into a neighbour's Citation.
  */
 export function wikilinkDecorations(
   spans: readonly WikilinkSpan[],
   context: WikilinkDisplayContext,
 ): WikilinkDecoration[] {
+  const runs = citationRuns(
+    spans,
+    (span) =>
+      span.isEmbed || span.hasAlias
+        ? null
+        : wikilinkCitation(span.linktext, context),
+    (previous, next) => context.textBetween(previous.outer.to, next.outer.from),
+  );
+
   const decorations: WikilinkDecoration[] = [];
-  for (const span of spans) {
-    if (span.isEmbed || span.hasAlias) continue;
-    if (overlapsSelection(context.selection, span.group.from, span.group.to)) {
+  for (const run of runs) {
+    const first = run[0]!.source;
+    const last = run.at(-1)!.source;
+    // A run reveals as one unit: any contact with the conceal group of any of
+    // its members brings the whole run's raw text back.
+    if (overlapsSelection(context.selection, first.group.from, last.group.to)) {
       continue;
     }
-    const text = wikilinkDisplayText(span.linktext, context);
-    if (text === null) continue;
+    const { citation, text } = runDisplay(run);
     decorations.push({
-      from: span.inner.from,
-      to: span.inner.to,
-      text,
-      tokenClasses: span.tokenClasses,
+      from: first.inner.from,
+      to: last.inner.to,
+      citation,
+      fallback: text,
+      tokenClasses: first.tokenClasses,
     });
   }
   return decorations;

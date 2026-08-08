@@ -1,5 +1,11 @@
-/* Wikilink Editor Treatment. A decorated Literature Note wikilink shows its
-   Citation Display Text and has to read as the internal link it still is.
+/* Wikilink Editor Treatment. A decorated Literature Note wikilink shows the
+   citation a style formatted and has to read as the internal link it still is.
+
+   That is where it parts from `.zt-citation`, which a literal Citation Cluster
+   carries: a rendered cluster is body text in the body colour, while a rendered
+   wikilink keeps the link colour, because click, hover, and drag on it are
+   still Obsidian's and the colour is what says so. The two syntaxes read the
+   same words; only the affordance differs.
 
    Obsidian's own link colour and cursor come from descendant selectors —
    `.cm-hmd-internal-link .cm-underline` — and the widget carries both classes

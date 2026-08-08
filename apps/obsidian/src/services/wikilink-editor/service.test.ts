@@ -22,6 +22,7 @@ interface Harness extends AsyncDisposable {
   service: WikilinkEditor;
   settings: SettingsStub;
   noteIndex: NoteIndexStub;
+  citationText: CitationTextStub;
   registered: Extension[];
   reconfigures: () => number;
   dispatched: string[];
@@ -30,6 +31,7 @@ interface Harness extends AsyncDisposable {
 async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
+  const citationText = new CitationTextStub();
   const dispatched: string[] = [];
   let registered: Extension[] = [];
   let reconfigures = 0;
@@ -46,6 +48,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
       },
     },
     noteIndex,
+    citationText,
     settings,
   } as never);
   await service.ready;
@@ -53,6 +56,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
     service,
     settings,
     noteIndex,
+    citationText,
     registered,
     reconfigures: () => reconfigures,
     dispatched,
@@ -115,6 +119,18 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual([]);
   });
 
+  it("redraws the one document whose citation text landed", async () => {
+    await using harnessed = await harness();
+    const { citationText, dispatched } = harnessed;
+
+    citationText.emit("changed", "note.md");
+    expect(dispatched).toEqual(["note.md"]);
+
+    dispatched.length = 0;
+    citationText.emit("invalidated");
+    expect(dispatched).toEqual(["note.md", "other.md"]);
+  });
+
   it("leaves the editors alone when Wikilink Citations is off, since the display toggle then changes nothing", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
@@ -139,6 +155,33 @@ class NoteIndexStub {
 
   emit(event: "changed" | "rebuilt"): void {
     for (const cb of this.#listeners[event]) cb();
+  }
+}
+
+class CitationTextStub {
+  readonly #listeners: Record<
+    "changed" | "invalidated",
+    Set<(path?: string) => void>
+  > = { changed: new Set(), invalidated: new Set() };
+
+  peek(): null {
+    return null;
+  }
+
+  load(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
+
+  on(
+    event: "changed" | "invalidated",
+    cb: (path?: string) => void,
+  ): () => void {
+    this.#listeners[event].add(cb);
+    return () => this.#listeners[event].delete(cb);
+  }
+
+  emit(event: "changed" | "invalidated", path?: string): void {
+    for (const cb of this.#listeners[event]) cb(path);
   }
 }
 

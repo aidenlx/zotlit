@@ -25,8 +25,37 @@ function span(
   };
 }
 
+/**
+ * The scanned links of one line, laid out as the document writes them: each
+ * `[[…]]` follows the last with `separator` between them.
+ */
+function line(
+  linktexts: readonly string[],
+  separator = "; ",
+): {
+  spans: WikilinkSpan[];
+  textBetween: (from: number, to: number) => string;
+} {
+  const spans: WikilinkSpan[] = [];
+  let text = "";
+  for (const linktext of linktexts) {
+    if (text !== "") text += separator;
+    const outerFrom = text.length;
+    text += `[[${linktext}]]`;
+    spans.push(
+      span(linktext, {
+        inner: { from: outerFrom + 2, to: text.length - 2 },
+        outer: { from: outerFrom, to: text.length },
+        group: { from: outerFrom, to: text.length },
+      }),
+    );
+  }
+  return { spans, textBetween: (from, to) => text.slice(from, to) };
+}
+
 const WANG: LiteratureNoteTarget = {
   path: "literatures/wangMutationalClinicalSpectrum2020a.md",
+  indexedKey: "1/WANG2020A",
   citationKey: "wang2020",
 };
 
@@ -38,6 +67,7 @@ function context(
       linkpath.startsWith("literatures/wang") ? WANG : null,
     fragmentlessDisplay: true,
     selection: [],
+    textBetween: () => "",
     ...overrides,
   };
 }
@@ -45,16 +75,26 @@ function context(
 const WANG_LINK = "literatures/wangMutationalClinicalSpectrum2020a";
 
 describe("wikilinkDecorations", () => {
-  it("replaces the link's interior with its Citation Display Text", () => {
+  it("replaces the link's interior with its Citation", () => {
     expect(
       wikilinkDecorations([span(`${WANG_LINK}#cite:locator=7`)], context()),
     ).toEqual([
       {
         from: 2,
         to: 2 + `${WANG_LINK}#cite:locator=7`.length,
-        text: "[@wang2020, p. 7]",
+        citation: {
+          source: "[@wang2020, p. 7]",
+          keys: [{ citekey: "wang2020", start: 1, end: 10 }],
+        },
+        fallback: "[@wang2020, p. 7]",
         tokenClasses: ["hmd-internal-link"],
       },
+    ]);
+  });
+
+  it("keeps a fragment-less link reading as the bare citekey until a render lands", () => {
+    expect(wikilinkDecorations([span(WANG_LINK)], context())).toMatchObject([
+      { citation: { source: "[@wang2020]" }, fallback: "@wang2020" },
     ]);
   });
 
@@ -110,6 +150,62 @@ describe("wikilinkDecorations", () => {
       wikilinkDecorations(
         [link],
         context({ selection: [{ from: 80, to: 80 }] }),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("wikilinkDecorations over a Citation Run", () => {
+  it("replaces a semicolon-joined run with one grouped Citation", () => {
+    const { spans, textBetween } = line([
+      `${WANG_LINK}#cite:locator=7`,
+      WANG_LINK,
+    ]);
+
+    expect(wikilinkDecorations(spans, context({ textBetween }))).toMatchObject([
+      {
+        from: spans[0]!.inner.from,
+        to: spans[1]!.inner.to,
+        citation: { source: "[@wang2020, p. 7; @wang2020]" },
+        fallback: "[@wang2020, p. 7; @wang2020]",
+      },
+    ]);
+  });
+
+  it("joins a run written with no space around the separator", () => {
+    const { spans, textBetween } = line([WANG_LINK, WANG_LINK], ";");
+
+    expect(wikilinkDecorations(spans, context({ textBetween }))).toHaveLength(
+      1,
+    );
+  });
+
+  it("keeps two Citations apart when anything but a semicolon separates them", () => {
+    for (const separator of [", ", " and ", ";\n"]) {
+      const { spans, textBetween } = line([WANG_LINK, WANG_LINK], separator);
+
+      expect(wikilinkDecorations(spans, context({ textBetween }))).toHaveLength(
+        2,
+      );
+    }
+  });
+
+  it("ends a run at a link that writes no Citation", () => {
+    const { spans, textBetween } = line([WANG_LINK, "plain/note", WANG_LINK]);
+
+    expect(wikilinkDecorations(spans, context({ textBetween }))).toHaveLength(
+      2,
+    );
+  });
+
+  it("reverts the whole run when the selection touches any of its links", () => {
+    const { spans, textBetween } = line([WANG_LINK, WANG_LINK]);
+    const at = spans[1]!.group.to;
+
+    expect(
+      wikilinkDecorations(
+        spans,
+        context({ textBetween, selection: [{ from: at, to: at }] }),
       ),
     ).toEqual([]);
   });

@@ -5,7 +5,9 @@ import type { Settings } from "@/services/settings/schema";
 
 import {
   WikilinkDisplaySettings,
-  wikilinkDisplayText,
+  citationRuns,
+  runDisplay,
+  wikilinkCitation,
 } from "./wikilink-citation";
 import type {
   LiteratureNoteTarget,
@@ -14,10 +16,17 @@ import type {
 
 const WANG: LiteratureNoteTarget = {
   path: "literatures/wangMutationalClinicalSpectrum2020a.md",
+  indexedKey: "1/WANG2020A",
   citationKey: "wang2020",
 };
 
 const WANG_LINK = "literatures/wangMutationalClinicalSpectrum2020a";
+
+/** The Citation Display Text a link shows on its own, or null when it shows none. */
+const displayText = (
+  linktext: string,
+  ctx: WikilinkCitationContext,
+): string | null => wikilinkCitation(linktext, ctx)?.displayText ?? null;
 
 function context(
   overrides: Partial<WikilinkCitationContext> = {},
@@ -30,24 +39,25 @@ function context(
   };
 }
 
-describe("wikilinkDisplayText", () => {
+describe("wikilinkCitation", () => {
   it("shows a bare linkpath as its Citation Key Property value", () => {
-    expect(wikilinkDisplayText(WANG_LINK, context())).toBe("@wang2020");
+    expect(displayText(WANG_LINK, context())).toBe("@wang2020");
   });
 
   it("shows a Citation Fragment as its Pandoc citation text", () => {
-    expect(wikilinkDisplayText(`${WANG_LINK}#cite:locator=7`, context())).toBe(
+    expect(displayText(`${WANG_LINK}#cite:locator=7`, context())).toBe(
       "[@wang2020, p. 7]",
     );
   });
 
   it("falls back to the filename when the note carries no Citation Key Property", () => {
     expect(
-      wikilinkDisplayText(
+      displayText(
         "literatures/xu2019",
         context({
           literatureNote: () => ({
             path: "literatures/xuNoCitationKeyProperty2019.md",
+            indexedKey: "1/XU2019",
             citationKey: null,
           }),
         }),
@@ -57,7 +67,7 @@ describe("wikilinkDisplayText", () => {
 
   it("shows a fragment-carrying link whatever the display toggle says", () => {
     expect(
-      wikilinkDisplayText(
+      displayText(
         `${WANG_LINK}#cite:locator=7`,
         context({ fragmentlessDisplay: false }),
       ),
@@ -66,31 +76,99 @@ describe("wikilinkDisplayText", () => {
 
   it("leaves a fragment-less link alone while the display toggle is off", () => {
     expect(
-      wikilinkDisplayText(WANG_LINK, context({ fragmentlessDisplay: false })),
+      displayText(WANG_LINK, context({ fragmentlessDisplay: false })),
     ).toBeNull();
   });
 
   it("leaves a malformed Citation Fragment raw", () => {
-    expect(
-      wikilinkDisplayText(`${WANG_LINK}#cite:page=7`, context()),
-    ).toBeNull();
-    expect(wikilinkDisplayText(`${WANG_LINK}#cite:`, context())).toBeNull();
+    expect(displayText(`${WANG_LINK}#cite:page=7`, context())).toBeNull();
+    expect(displayText(`${WANG_LINK}#cite:`, context())).toBeNull();
   });
 
   it("leaves a heading or block subpath alone", () => {
-    expect(wikilinkDisplayText(`${WANG_LINK}#Methods`, context())).toBeNull();
-    expect(wikilinkDisplayText(`${WANG_LINK}#^b7c1a2`, context())).toBeNull();
+    expect(displayText(`${WANG_LINK}#Methods`, context())).toBeNull();
+    expect(displayText(`${WANG_LINK}#^b7c1a2`, context())).toBeNull();
   });
 
   it("leaves a subpath-only link alone, which names no note", () => {
-    expect(wikilinkDisplayText("#Methods", context())).toBeNull();
-    expect(wikilinkDisplayText("", context())).toBeNull();
+    expect(displayText("#Methods", context())).toBeNull();
+    expect(displayText("", context())).toBeNull();
   });
 
   it("leaves a link that names no Literature Note alone", () => {
+    expect(displayText("plain/note#cite:locator=7", context())).toBeNull();
+  });
+});
+
+describe("citationRuns", () => {
+  /** One link of a stand-in surface: its name, and the text before it. */
+  const link = (name: string, separatorBefore: string | null) => ({
+    name,
+    separatorBefore,
+  });
+  /** Every named link writes a Citation; a link named "plain" writes none. */
+  const runs = (links: { name: string; separatorBefore: string | null }[]) =>
+    citationRuns(
+      links,
+      ({ name }) =>
+        name === "plain" ? null : wikilinkCitation(WANG_LINK, context()),
+      (_previous, next) => next.separatorBefore,
+    ).map((run) => run.map(({ source }) => source.name));
+
+  it("joins Citations a bare semicolon separates", () => {
+    expect(runs([link("a", null), link("b", ";")])).toEqual([["a", "b"]]);
+  });
+
+  it("joins them through spaces or tabs around the semicolon", () => {
+    expect(runs([link("a", null), link("b", " ; "), link("c", "\t;")])).toEqual(
+      [["a", "b", "c"]],
+    );
+  });
+
+  it("ends a run at a comma, at prose, and at a line break", () => {
     expect(
-      wikilinkDisplayText("plain/note#cite:locator=7", context()),
-    ).toBeNull();
+      runs([
+        link("a", null),
+        link("b", ", "),
+        link("c", " and "),
+        link("d", ";\n"),
+      ]),
+    ).toEqual([["a"], ["b"], ["c"], ["d"]]);
+  });
+
+  it("ends a run at a link too far apart to join at all", () => {
+    expect(runs([link("a", null), link("b", null)])).toEqual([["a"], ["b"]]);
+  });
+
+  it("ends a run at a link that writes no Citation, and leaves it out", () => {
+    expect(runs([link("a", null), link("plain", ";"), link("b", ";")])).toEqual(
+      [["a"], ["b"]],
+    );
+  });
+});
+
+describe("runDisplay", () => {
+  /** One run member; the surface it came from is nothing this reads. */
+  const member = (linktext: string) => ({
+    source: linktext,
+    citation: wikilinkCitation(linktext, context())!,
+  });
+
+  it("keeps a lone fragment-less link reading as the bare citekey", () => {
+    expect(runDisplay([member(WANG_LINK)])).toEqual({
+      citation: { source: "[@wang2020]", keys: expect.anything() },
+      text: "@wang2020",
+    });
+  });
+
+  it("reads a run as the grouped source the exporter writes", () => {
+    const run = runDisplay([
+      member(`${WANG_LINK}#cite:locator=7`),
+      member(WANG_LINK),
+    ]);
+
+    expect(run.citation.source).toBe("[@wang2020, p. 7; @wang2020]");
+    expect(run.text).toBe("[@wang2020, p. 7; @wang2020]");
   });
 });
 

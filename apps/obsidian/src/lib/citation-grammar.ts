@@ -213,6 +213,26 @@ export function scanCitations(text: string): CitationSpan[] {
   return citations.sort((a, b) => a.start - b.start);
 }
 
+/** The simple key on its own, which is what a derived key must match whole. */
+const WHOLE_SIMPLE_KEY = regex(`^${SIMPLE_KEY}$`, "u");
+
+/**
+ * `citekey` as the Pandoc source that names it: the bare `@key`, or the braced
+ * `@{key}` for a key the simple form cannot carry — a Literature Note filename
+ * standing in for a missing Citation Key Property holds whatever the filesystem
+ * allows.
+ *
+ * Braces are Pandoc's own escape hatch and take any non-space character, so a
+ * key holding a space is beyond both forms and keeps the bare form, which at
+ * least reads as the key the note carries. {@link scanCitekeys} reads such a
+ * derivation back as a different key, which is how a caller finds out that no
+ * engine will format it.
+ */
+export function citekeyToken(citekey: string): string {
+  if (WHOLE_SIMPLE_KEY.test(citekey)) return `@${citekey}`;
+  return /\s/u.test(citekey) ? `@${citekey}` : `@{${citekey}}`;
+}
+
 /**
  * Both span ends are inclusive, so a click on the leading `@` or on the
  * trailing key character still resolves.
