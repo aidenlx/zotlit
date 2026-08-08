@@ -42,8 +42,10 @@ interface Harness {
   indexChanged: (path: string) => void;
   /** Fires the render cache's wholesale drop. */
   rendersInvalidated: () => void;
-  /** Fires the Note Index's report that a citekey's resolution moved. */
+  /** Fires the Note Index's report that a Literature Note moved. */
   resolutionChanged: () => void;
+  /** Fires the Citation Index's report that the resolution snapshot rebuilt. */
+  citekeyResolutionChanged: () => void;
   /** Fires Obsidian's own metadata event for one file. */
   metadataChanged: (path: string) => void;
   dispose: () => Promise<void>;
@@ -92,12 +94,7 @@ async function makeHarness({
         getFileCache: (file: { path: string }) =>
           file.path === NOTE.path
             ? { links }
-            : {
-                frontmatter: {
-                  "zotero-key": LIT_KEY,
-                  citekey: notes[file.path]?.citekey,
-                },
-              },
+            : { frontmatter: { "zotero-key": LIT_KEY } },
         getFirstLinkpathDest: (linkpath: string) =>
           Object.hasOwn(notes, linkpath) ? { path: linkpath } : null,
       },
@@ -105,6 +102,13 @@ async function makeHarness({
     db: { state: "ready", client: {} },
     citationIndex: {
       getCitations: () => Promise.resolve(cited),
+      // Every Literature Note stand-in shares one Indexed Key, so one entry
+      // answers for however many linkpaths the test names.
+      citekeyOf: (indexedKey: string) =>
+        indexedKey === LIT_KEY
+          ? (Object.values(notes)[0]?.citekey ?? null)
+          : null,
+      whenResolved: () => Promise.resolve(),
       on: listen("index"),
     },
     noteIndex: {
@@ -136,6 +140,7 @@ async function makeHarness({
     indexChanged: (path) => fire("index:changed", path),
     rendersInvalidated: () => fire("render:invalidated"),
     resolutionChanged: () => fire("notes:changed"),
+    citekeyResolutionChanged: () => fire("index:resolution-changed"),
     metadataChanged: (path) => fire("metadata:changed", { path }),
     dispose: () => service[Symbol.asyncDispose](),
   };
@@ -324,8 +329,8 @@ describe("CitationText over wikilink Citations", () => {
     await dispose();
   });
 
-  // A note with no Citation Key Property falls back to its filename, and no
-  // Pandoc key carries the space in one.
+  // An Item with no native citation key falls back to its note's filename,
+  // and no Pandoc key carries the space in one.
   it("keeps a Citation no Pandoc source can name out of the render", async () => {
     const SPACED = "literatures/Doe 2020";
     const body = `Claim [[${SPACED}]].`;
@@ -343,7 +348,7 @@ describe("CitationText over wikilink Citations", () => {
     await dispose();
   });
 
-  it("names a wikilink-cited work by the citekey its Citation Key Property gives", async () => {
+  it("names a wikilink-cited work by its native Zotero citation key", async () => {
     const body = `Claim [[${LIT}]].`;
     const { service, dispose } = await makeHarness({
       body,
@@ -437,9 +442,9 @@ describe("CitationText staleness", () => {
     await dispose();
   });
 
-  // The Citation Key Property of any Literature Note decides what a citekey
-  // here reaches, so a moved mapping makes every document's text stale.
-  it("drops every document when a citekey's resolution moved", async () => {
+  // Which Literature Note a wikilink resolves to decides what a citekey here
+  // reaches, so a moved mapping makes every document's text stale.
+  it("drops every document when a Literature Note moves", async () => {
     const { service, resolutionChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
@@ -448,6 +453,24 @@ describe("CitationText staleness", () => {
     service.on("invalidated", () => (invalidated += 1));
 
     resolutionChanged();
+
+    expect(service.peek(NOTE.path)).toBeNull();
+    expect(invalidated).toBe(1);
+    await dispose();
+  });
+
+  // The citekey resolution snapshot decides what a literal `@citekey` reaches
+  // and whether a wikilink's Item carries a native citation key, so a rebuild
+  // makes every document's text stale.
+  it("drops every document when the citekey resolution snapshot rebuilds", async () => {
+    const { service, citekeyResolutionChanged, dispose } = await makeHarness({
+      body: "Blah [@alpha].",
+    });
+    await service.load(NOTE);
+    let invalidated = 0;
+    service.on("invalidated", () => (invalidated += 1));
+
+    citekeyResolutionChanged();
 
     expect(service.peek(NOTE.path)).toBeNull();
     expect(invalidated).toBe(1);

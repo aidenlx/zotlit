@@ -3,15 +3,14 @@
 import { TFile } from "obsidian";
 import type { App, TAbstractFile } from "obsidian";
 
+import { getCitekeysByLibrary, USER_LIBRARY_ID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
-import {
-  itemKeyFromFrontmatter,
-  resolveIndexedKey,
-} from "@/services/note-index/service";
+import type { DatabaseService } from "@/services/database/service";
+import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
@@ -25,6 +24,8 @@ import {
   scanCitekeyOccurrences,
 } from "./scan";
 import type { CitationOccurrence } from "./scan";
+import { CitekeySnapshot } from "./snapshot";
+import type { ReadCitekeys, SnapshotItem } from "./snapshot";
 import { openCitekeyStore } from "./store";
 import type { CitekeyRecord, CitekeyStore, FileScan } from "./store";
 
@@ -39,6 +40,7 @@ export {
   type CitationOccurrence,
   type CitationSyntax,
 } from "./scan";
+export type { SnapshotItem } from "./snapshot";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
 
 const logger = getLogger("citation-index");
@@ -51,12 +53,18 @@ interface CitationIndexEvents {
   changed: (path: string) => void;
   /** The vault-wide backfill finished; the index covers every Markdown file. */
   backfilled: () => void;
+  /**
+   * The citekey resolution snapshot was rebuilt and now answers differently.
+   * Vault-wide, unlike `changed`: every surface that resolves a citekey redraws.
+   */
+  "resolution-changed": () => void;
 }
 
 export interface CitationIndexOptions {
   app: App;
-  noteIndex: Pick<NoteIndex, "getNotesByCitationKey">;
+  noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
+  db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
   /**
    * Where scans survive a restart; a store that fails to open costs a full
    * rescan and nothing else.
@@ -64,6 +72,12 @@ export interface CitationIndexOptions {
    * @default openCitekeyStore
    */
   openStore?: (app: App) => Promise<CitekeyStore>;
+  /**
+   * The bulk read the snapshot rebuilds from.
+   *
+   * @default getCitekeysByLibrary
+   */
+  readCitekeys?: ReadCitekeys;
 }
 
 /**
@@ -84,10 +98,13 @@ export class CitationIndex extends Service<void> {
   readonly #app;
   readonly #noteIndex;
   readonly #settings;
+  readonly #db;
   readonly #openStore;
+  readonly #readCitekeys;
   readonly #emitter = createNanoEvents<CitationIndexEvents>();
   /** Scans by path; a path it covers with matching mtime and size needs no read. */
   readonly #scans = new Map<string, FileScan>();
+  readonly #snapshot = new CitekeySnapshot();
   #store?: CitekeyStore;
   /**
    * Which build of the index is current. A reset or a re-enable starts the next
@@ -98,6 +115,10 @@ export class CitationIndex extends Service<void> {
   #indexing = true;
   #backfilled = false;
   #stopped = false;
+  /** Which build of the resolution snapshot is current; a rebuild bumps it. */
+  #rebuildSeq = 0;
+  #resolved = false;
+  #libraryID: number;
 
   ready: Promise<void>;
 
@@ -106,7 +127,11 @@ export class CitationIndex extends Service<void> {
     this.#app = options.app;
     this.#noteIndex = options.noteIndex;
     this.#settings = options.settings;
+    this.#db = options.db;
     this.#openStore = options.openStore ?? openCitekeyStore;
+    this.#readCitekeys = options.readCitekeys ?? getCitekeysByLibrary;
+    this.#libraryID =
+      options.settings.current?.["zotero.citation-library"] ?? USER_LIBRARY_ID;
     this.ready = this.#load();
   }
 
@@ -157,6 +182,28 @@ export class CitationIndex extends Service<void> {
     if (this.#backfilled) return;
     await new Promise<void>((resolve) =>
       this.once("backfilled", () => resolve()),
+    );
+  }
+
+  /** The Zotero Item a native citation key names, read synchronously. */
+  resolveCitekey(citekey: string): SnapshotItem | null {
+    return this.#snapshot.byCitekey(citekey);
+  }
+
+  /** The native citation key of an Item — the wikilink display text. */
+  citekeyOf(indexedKey: string): string | null {
+    return this.#snapshot.citekeyOf(indexedKey);
+  }
+
+  /**
+   * Resolves once the snapshot has run its first rebuild — the resolution
+   * counterpart of {@link whenIndexed}. Settles even on a failed read.
+   */
+  async whenResolved(): Promise<void> {
+    await this.ready;
+    if (this.#resolved) return;
+    await new Promise<void>((resolve) =>
+      this.once("resolution-changed", () => resolve()),
     );
   }
 
@@ -212,9 +259,7 @@ export class CitationIndex extends Service<void> {
         }),
       ),
     );
-    stack.defer(() => {
-      this.#stopped = true;
-    });
+    stack.defer(this.#db.on("changed", () => void this.#rebuildSnapshot()));
 
     // A store that fails to open leaves the index whole and unpersisted, so the
     // failure costs a rescan per launch rather than the feature.
@@ -241,6 +286,14 @@ export class CitationIndex extends Service<void> {
     // one-shot with no unregister, so the run gates on disposal instead.
     workspace.onLayoutReady(() => void this.#runBackfill());
 
+    void this.#rebuildSnapshot();
+    // Registered last so it runs first on disposal (stack is LIFO): the flag
+    // must flip before the store and listeners tear down, so a persist or a
+    // db-driven rebuild still in flight during the async disposal window
+    // no-ops instead of writing to a closed store or emitting mid-disposal.
+    stack.defer(() => {
+      this.#stopped = true;
+    });
     this.commit(stack.move());
   }
 
@@ -287,6 +340,42 @@ export class CitationIndex extends Service<void> {
   /** Whether a build other than `build` has taken over, or none should run at all. */
   #stale(build: number): boolean {
     return this.#stopped || !this.#indexing || build !== this.#build;
+  }
+
+  /**
+   * Rebuilds the resolution snapshot from one bulk database read. Sequenced by
+   * {@link #rebuildSeq}, so a rebuild superseded mid-flight by a newer one
+   * settles without touching the maps. A degraded database, or a read that
+   * throws, leaves the maps as they were rather than clearing them.
+   */
+  async #rebuildSnapshot(): Promise<void> {
+    this.#rebuildSeq += 1;
+    const seq = this.#rebuildSeq;
+    await this.#db.ready;
+    if (this.#stopped || seq !== this.#rebuildSeq) return;
+
+    let changed = false;
+    if (this.#db.state !== "ready") {
+      logger.debug("Resolution snapshot rebuild skipped, database not ready", {
+        libraryID: this.#libraryID,
+      });
+    } else {
+      try {
+        const rows = this.#readCitekeys(this.#db.client, this.#libraryID);
+        changed = this.#snapshot.replace(rows);
+        logger.debug("Resolution snapshot rebuilt", {
+          libraryID: this.#libraryID,
+          count: rows.length,
+          changed,
+        });
+      } catch (error) {
+        logger.warn("Resolution snapshot rebuild failed", { error });
+      }
+    }
+
+    const firstSettle = !this.#resolved;
+    this.#resolved = true;
+    if (changed || firstSettle) this.#emitter.emit("resolution-changed");
   }
 
   /** Idempotent: a content-identical touch stores the same list and wakes nobody. */
@@ -381,12 +470,10 @@ export class CitationIndex extends Service<void> {
       );
       return indexedKey ? { indexedKey, linkpath: occurrence.raw } : null;
     }
-    const [note] = this.#noteIndex.getNotesByCitationKey(occurrence.raw);
-    if (!note) return null;
-    const indexedKey = itemKeyFromFrontmatter(
-      this.#app.metadataCache.getFileCache(note),
-    );
-    return indexedKey ? { indexedKey, linkpath: note.path } : null;
+    const item = this.#snapshot.byCitekey(occurrence.raw);
+    if (!item) return null;
+    const [note] = this.#noteIndex.getNotesByItemKey(item.indexedKey);
+    return { indexedKey: item.indexedKey, linkpath: note?.path ?? null };
   }
 
   /**
@@ -396,6 +483,16 @@ export class CitationIndex extends Service<void> {
    * next build, which reads the vault again.
    */
   #applySettings(settings: Readonly<Settings>): void {
+    const nextLibraryID = settings["zotero.citation-library"];
+    if (nextLibraryID !== this.#libraryID) {
+      logger.info("Citation library changed", {
+        prev: this.#libraryID,
+        next: nextLibraryID,
+      });
+      this.#libraryID = nextLibraryID;
+      void this.#rebuildSnapshot();
+    }
+
     const next = settings["citation.citekey-indexing"];
     if (next === this.#indexing) return;
     this.#indexing = next;

@@ -67,9 +67,10 @@ export interface WikilinkEditorHandlers {
 /**
  * Dispatched by the wikilink editor service whenever something outside the
  * document changed what these decorations should say — a Literature Note
- * appearing, losing its Citation Key Property, or the settings that gate
- * fragment-less display. Every such invalidation is coarse, so this one effect
- * asks for a rebuild rather than naming what it touched.
+ * appearing, the Citation Index's resolution snapshot rebuilding, or the
+ * settings that gate fragment-less display. Every such invalidation is
+ * coarse, so this one effect asks for a rebuild rather than naming what it
+ * touched.
  */
 export const wikilinkDecorationsChanged = StateEffect.define<void>();
 

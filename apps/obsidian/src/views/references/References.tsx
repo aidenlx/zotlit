@@ -239,7 +239,9 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
     case "missing":
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
-          {m.references_item_missing({ linkpath: entry.linkpath })}
+          {m.references_item_missing({
+            linkpath: entry.linkpath ?? `@${entry.occurrences[0]!.raw}`,
+          })}
         </span>
       );
     case "unresolved":

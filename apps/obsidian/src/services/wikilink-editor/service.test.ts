@@ -23,6 +23,7 @@ interface Harness extends AsyncDisposable {
   settings: SettingsStub;
   noteIndex: NoteIndexStub;
   citationText: CitationTextStub;
+  citationIndex: CitationIndexStub;
   registered: Extension[];
   reconfigures: () => number;
   dispatched: string[];
@@ -32,6 +33,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
   const citationText = new CitationTextStub();
+  const citationIndex = new CitationIndexStub();
   const dispatched: string[] = [];
   let registered: Extension[] = [];
   let reconfigures = 0;
@@ -49,6 +51,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
     },
     noteIndex,
     citationText,
+    citationIndex,
     settings,
   } as never);
   await service.ready;
@@ -57,6 +60,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
     settings,
     noteIndex,
     citationText,
+    citationIndex,
     registered,
     reconfigures: () => reconfigures,
     dispatched,
@@ -93,7 +97,7 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
-  it("redraws when a gating setting or the Citation Key Property changes", async () => {
+  it("redraws when a gating setting changes", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
     });
@@ -105,9 +109,13 @@ describe("WikilinkEditor redraw", () => {
     dispatched.length = 0;
     settings.update({ "citation.wikilink-display": false });
     expect(dispatched).toEqual(["note.md", "other.md"]);
+  });
 
-    dispatched.length = 0;
-    settings.update({ "citation.key-links-frontmatter-key": "bibkey" });
+  it("redraws every open editor when the citekey resolution snapshot rebuilds", async () => {
+    await using harnessed = await harness();
+    const { citationIndex, dispatched } = harnessed;
+
+    citationIndex.emit("resolution-changed");
     expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
@@ -182,6 +190,23 @@ class CitationTextStub {
 
   emit(event: "changed" | "invalidated", path?: string): void {
     for (const cb of this.#listeners[event]) cb(path);
+  }
+}
+
+class CitationIndexStub {
+  readonly #listeners = new Set<() => void>();
+
+  citekeyOf(): string | null {
+    return null;
+  }
+
+  on(event: "resolution-changed", cb: () => void): () => void {
+    this.#listeners.add(cb);
+    return () => this.#listeners.delete(cb);
+  }
+
+  emit(_event: "resolution-changed"): void {
+    for (const cb of this.#listeners) cb();
   }
 }
 

@@ -44,7 +44,7 @@ In Live Preview, ZotLit goes a step further: each whole citation — a bare `@ke
 
 Without the Pandoc Engine installed, each key shows its `Creators (Year)` summary instead, and the brackets, prefixes, and locators you wrote stay as written.
 
-A citation whose keys do not match any Zotero item is left exactly as you wrote it, and is not clickable.
+A citation whose keys do not match any live Zotero item shows unresolved styling and is not clickable.
 
 #### Editing around a rendered citation
 
@@ -52,13 +52,11 @@ The raw text comes back the moment the cursor or selection touches the rendered 
 
 #### Click and hover
 
-A rendered citation is clickable the same way a marked key is: click opens the literature note, `Ctrl`/`Cmd`-click or middle-click opens a new tab, and hover shows the page preview. A citation naming several works opens a menu listing each work so you pick which note to open; hover stays silent for a multi-work citation.
+A rendered citation is clickable the same way a marked key is: click opens the literature note, `Ctrl`/`Cmd`-click or middle-click opens a new tab. Hover shows the page preview when the item resolves to exactly one literature note. A citation naming several works opens a menu listing each work so you pick which note to open; hover stays silent for a multi-work citation.
 
 ## How click resolution works
 
-ZotLit first looks for a literature note whose **Citation key property** holds that key. Exactly one match opens directly.
-
-With no match or several matches, ZotLit finds the Zotero item by citation key in the **Default library**. It then checks the authoritative `zotero-key` identity: an existing literature note for that item opens, and only a key with no note at all creates one. This check prevents a duplicate when an existing note has a missing or different citation key property.
+A click on a citation key resolves it against Zotero's native citation key field in the **Default library**. When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit runs the usual create-then-open flow.
 
 If no Zotero item carries the key, a notice appears: "No Zotero item with citation key `@{key}`." If the Zotero database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
 
@@ -72,13 +70,19 @@ Without the Pandoc Engine installed, each key shows the `Creators (Year)` summar
 
 Wikilinks in reading view are left untouched, so reading view stays plain Obsidian for them.
 
-## Citation Key Property and Managed Frontmatter
+## Resolution and the `citekey` frontmatter field
 
-The default Managed Frontmatter list includes a `citekey` field backed by `zt.citationKey`. You can edit, rename, or remove this ordinary managed field.
+Citation key resolution is database-first: ZotLit resolves a literal key such as `@doe2024` against Zotero's own native citation key field, scoped to the configured **Default library**. A key whose Zotero item exists styles and renders as a normal citation in the editor, reading view, and the references sidebar, even when the item has no literature note yet. A key that matches no Zotero item is the error state: unresolved styling in the editor and an error row in the references sidebar showing the raw key.
 
-Set **Citation key property** to the property that stores citation keys in your Literature Notes. If the selected property is missing from Managed Frontmatter, ZotLit shows a notice. Citation key styling stays active, and existing unmanaged property values can still resolve notes.
+The lookup is scoped to a single library. Citation keys kept only in Better BibTeX's own database, rather than in Zotero's native citation key field, stay unresolved.
 
-Only a non-empty string value can match a citation key. The `zotero-key` property remains the system identity for Literature Notes.
+Resolution refreshes automatically when the Zotero database changes. Re-keying an item in Zotero updates the editor and sidebar on the next refresh. There is a brief moment after startup or a refresh where keys read as unresolved before the lookup warms; they restyle on their own.
+
+The default Managed Frontmatter list includes a `citekey` field backed by `zt.citationKey`. ZotLit still writes this field into new literature notes for interoperability with other tools, but ZotLit itself does not read it for resolution. You can edit, rename, or remove this ordinary managed field. The `zotero-key` property remains the system identity for literature notes.
+
+### Wikilink citation display
+
+When Wikilink Citations is on, a literature note wikilink without a fragment displays the item's native Zotero citation key. When the item carries no citation key, the note's filename is the fallback.
 
 ## See also
 

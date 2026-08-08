@@ -219,8 +219,8 @@ const WHOLE_SIMPLE_KEY = regex(`^${SIMPLE_KEY}$`, "u");
 /**
  * `citekey` as the Pandoc source that names it: the bare `@key`, or the braced
  * `@{key}` for a key the simple form cannot carry — a Literature Note filename
- * standing in for a missing Citation Key Property holds whatever the filesystem
- * allows.
+ * standing in for an Item with no native citation key holds whatever the
+ * filesystem allows.
  *
  * Braces are Pandoc's own escape hatch and take any non-space character, so a
  * key holding a space is beyond both forms and keeps the bare form, which at

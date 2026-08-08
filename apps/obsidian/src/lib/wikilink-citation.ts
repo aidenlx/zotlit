@@ -51,7 +51,7 @@ export interface LiteratureNoteTarget {
   path: string;
   /** Its Indexed Key — the Zotero Item a rendered citation is formatted from. */
   indexedKey: string;
-  /** The note's Citation Key Property value, or null when it carries none. */
+  /** Its native Zotero citation key, or null when the Item carries none. */
   citationKey: string | null;
 }
 
@@ -205,16 +205,10 @@ const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
  */
 export class WikilinkDisplaySettings {
   #fragmentlessDisplay = false;
-  #citationKeyProperty: string | null = null;
 
   /** {@link WikilinkCitationContext.fragmentlessDisplay} */
   get fragmentlessDisplay(): boolean {
     return this.#fragmentlessDisplay;
-  }
-
-  /** The frontmatter property a Literature Note's citation key comes from. */
-  get citationKeyProperty(): string | null {
-    return this.#citationKeyProperty;
   }
 
   /**
@@ -243,16 +237,11 @@ export class WikilinkDisplaySettings {
       const fragmentlessDisplay =
         next["citation.wikilink-citations"] &&
         next["citation.wikilink-display"];
-      const citationKeyProperty = next["citation.key-links-frontmatter-key"];
-      const changed =
-        fragmentlessDisplay !== this.#fragmentlessDisplay ||
-        citationKeyProperty !== this.#citationKeyProperty;
+      const changed = fragmentlessDisplay !== this.#fragmentlessDisplay;
       this.#fragmentlessDisplay = fragmentlessDisplay;
-      this.#citationKeyProperty = citationKeyProperty;
       if (seeding || !changed) return;
       logger.debug("Wikilink display settings changed", {
         fragmentlessDisplay,
-        citationKeyProperty,
       });
       redraw();
     });

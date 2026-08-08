@@ -35,6 +35,8 @@ export interface ReferenceActionDeps {
   app: App;
   /** Path of the document the listed references were scanned from. */
   getSourcePath: () => string | null;
+  /** Open the Literature Note of the Item a citekey names, creating it first when it has none. */
+  openCitekey: (citekey: string) => void;
   onOpenEngineSettings: () => void;
   onDismissEngineHint: () => void;
 }
@@ -54,8 +56,15 @@ export function createReferenceActions(
       revealOccurrence(deps.app, sourcePath, entry.occurrences[next]!);
     },
     onOpenNote(entry) {
-      // An unresolved citekey reaches no note, and its row disables the action.
-      if (entry.kind === "unresolved") return;
+      // An unresolved citekey reaches no note, and a missing entry's Item
+      // could not be read at all; both keep their row's action disabled.
+      if (entry.kind === "unresolved" || entry.kind === "missing") return;
+      // No Literature Note yet — the citekey editor's one create-then-open
+      // flow makes it, then opens it.
+      if (entry.linkpath === null) {
+        deps.openCitekey(entry.occurrences[0]!.raw);
+        return;
+      }
       void deps.app.workspace.openLinkText(
         entry.linkpath,
         deps.getSourcePath() ?? "",

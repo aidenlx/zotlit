@@ -12,6 +12,7 @@ import {
   runDisplay,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
+import type { CitationIndex } from "@/services/citation-index/service";
 import {
   citationContent,
   citationInsert,
@@ -33,6 +34,7 @@ export interface WikilinkReadingDeps {
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "load" | "on">;
   settings: SettingsService;
+  citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
 }
 
 /**
@@ -58,6 +60,7 @@ export class WikilinkReading extends Service<void> {
   readonly #noteIndex;
   readonly #citationText;
   readonly #settings;
+  readonly #citationIndex;
 
   /** The two settings that decide what a link displays. */
   readonly #display = new WikilinkDisplaySettings();
@@ -73,6 +76,7 @@ export class WikilinkReading extends Service<void> {
     this.#noteIndex = deps.noteIndex;
     this.#citationText = deps.citationText;
     this.#settings = deps.settings;
+    this.#citationIndex = deps.citationIndex;
     this.ready = this.#load();
   }
 
@@ -86,12 +90,15 @@ export class WikilinkReading extends Service<void> {
       this.#process(el, ctx),
     );
     stack.defer(this.#display.watch(this.#settings, () => this.#rerender()));
-    // Creating, deleting, or renaming a Literature Note, or editing its
-    // Citation Key Property, changes what a link displays without changing any
-    // document; the Note Index's own invalidation is coarse, so every change
-    // renders every open reading view again.
+    // Creating, deleting, or renaming a Literature Note, or a citekey
+    // resolution snapshot rebuild, changes what a link displays without
+    // changing any document; the Note Index's own invalidation is coarse, so
+    // every change renders every open reading view again.
     stack.defer(this.#noteIndex.on("changed", () => this.#rerender()));
     stack.defer(this.#noteIndex.on("rebuilt", () => this.#rerender()));
+    stack.defer(
+      this.#citationIndex.on("resolution-changed", () => this.#rerender()),
+    );
     // A reading view holds what a post-processor produced, so text that went
     // stale keeps showing until the view renders that section again.
     stack.defer(this.#citationText.on("invalidated", () => this.#rerender()));
@@ -114,11 +121,17 @@ export class WikilinkReading extends Service<void> {
     if (this.#retired) return;
     const runs = sectionCitationRuns(el, (linktext) =>
       wikilinkCitation(linktext, {
-        literatureNote: (linkpath) =>
-          resolveLiteratureNote(linkpath, ctx.sourcePath, {
+        literatureNote: (linkpath) => {
+          const note = resolveLiteratureNote(linkpath, ctx.sourcePath, {
             app: this.#app,
-            citationKeyProperty: this.#display.citationKeyProperty,
-          }),
+          });
+          return (
+            note && {
+              ...note,
+              citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
+            }
+          );
+        },
         fragmentlessDisplay: this.#display.fragmentlessDisplay,
       }),
     );

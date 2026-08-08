@@ -22,6 +22,7 @@ import type {
   Citation,
   CitationIndex,
 } from "@/services/citation-index/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
@@ -46,6 +47,8 @@ export interface ReferencesViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
   citationIndex: Pick<CitationIndex, "getCitations" | "on">;
+  /** Opens the Literature Note a citekey names, creating it first when it has none. */
+  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   pandocEngine: Pick<
     PandocEngineService,
     "getStatus" | "subscribe" | "decline"
@@ -101,6 +104,7 @@ export class ReferencesView extends ItemView {
       app,
       db,
       citationIndex,
+      citekeyEditor,
       pandocEngine,
       bibliographyRender,
       settings,
@@ -110,6 +114,7 @@ export class ReferencesView extends ItemView {
     this.#actions = createReferenceActions({
       app,
       getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
+      openCitekey: (citekey) => void citekeyEditor.openCitekey(citekey, false),
       onOpenEngineSettings: () => this.#deps.openSettings(),
       onDismissEngineHint: () => pandocEngine.decline(),
     });
@@ -136,6 +141,11 @@ export class ReferencesView extends ItemView {
         if (path === app.workspace.getActiveFile()?.path) this.#rescan();
       }),
     );
+    // Vault-wide: the citekey resolution snapshot rebuilt and now answers
+    // differently, so the active document's Citations may resolve to a
+    // different Item — or a citekey that resolved before now resolves to
+    // none — regardless of which document changed to trigger the rebuild.
+    this.register(citationIndex.on("resolution-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
     this.register(db.on("changed", () => this.#reload()));
     this.register(pandocEngine.subscribe(() => this.#reload()));
@@ -242,7 +252,7 @@ export class ReferencesView extends ItemView {
       const user = getZoteroIdentity(db.client);
       const cited: { indexedKey: string; item: Item; summary: string }[] = [];
       for (const { indexedKey } of citations) {
-        // A citekey no Literature Note carries names no Item to read; the
+        // A citekey naming no live Zotero Item names nothing to read; the
         // entry builder keeps it as an error row of its own.
         if (indexedKey === null) continue;
         const selector = resolveIndexedKeyLibrary(db.client, indexedKey);

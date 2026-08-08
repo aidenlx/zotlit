@@ -4,13 +4,13 @@
 import type { Extension } from "@codemirror/state";
 import type { App, Plugin } from "obsidian";
 
-import { getItemIDByCitekey, getItemsByID, USER_LIBRARY_ID } from "@zotlit/db";
-import type { Item } from "@zotlit/db";
+import { getItemsByID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { NavigationPane } from "@/services/citekey-navigation";
@@ -35,18 +35,19 @@ export interface CitekeyEditorDeps {
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "load" | "on">;
   settings: SettingsService;
+  citationIndex: Pick<CitationIndex, "resolveCitekey" | "on" | "whenResolved">;
 }
 
 interface CitekeyEditorEvents {
-  "missing-property": (property: string) => void;
   "db-unavailable": (citekey: string) => void;
   "citekey-not-found": (citekey: string) => void;
 }
 
 /**
- * The citekey editor treatment: literal Pandoc `@citekey` text is marked in the
- * editor and opens its Literature Note on click — the note the Citation Key
- * Property points at, or a note created from the matching Zotero Item.
+ * The citekey editor treatment: literal Pandoc `@citekey` text is marked in
+ * the editor and opens the Literature Note of the Zotero Item its native
+ * citation key names — the note an Indexed Key already points at, or a note
+ * created from the matching Item.
  *
  * The CodeMirror extension is registered once as a mutable array, so the
  * setting toggles it by rewriting that array and asking Obsidian to
@@ -60,6 +61,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #db;
   readonly #citationText;
   readonly #settings;
+  readonly #citationIndex;
   readonly #emitter = createNanoEvents<CitekeyEditorEvents>();
   readonly #extension: Extension;
 
@@ -67,7 +69,6 @@ export class CitekeyEditor extends Service<void> {
   readonly #extensions: Extension[] = [];
 
   #enabled = false;
-  #missingProperty: string | null = null;
 
   ready: Promise<void>;
 
@@ -80,6 +81,7 @@ export class CitekeyEditor extends Service<void> {
     this.#db = deps.db;
     this.#citationText = deps.citationText;
     this.#settings = deps.settings;
+    this.#citationIndex = deps.citationIndex;
     this.#extension = citekeyEditorExtension({
       open: (citekey, pane) => {
         void this.openCitekey(citekey, pane);
@@ -123,11 +125,13 @@ export class CitekeyEditor extends Service<void> {
         if (settings) this.#applySettings(settings);
       }),
     );
-    // Creating, deleting, or renaming a Literature Note, or editing its
-    // Citation Key Property, can flip a citekey's resolution; the Note Index's
-    // own invalidation is coarse, so every change restyles every open editor.
-    stack.defer(this.#noteIndex.on("changed", () => this.#restyleEditors()));
-    stack.defer(this.#noteIndex.on("rebuilt", () => this.#restyleEditors()));
+    // A citekey resolution snapshot rebuild can flip whether a citekey
+    // resolves at all, so every rebuild restyles every open editor.
+    stack.defer(
+      this.#citationIndex.on("resolution-changed", () =>
+        this.#restyleEditors(),
+      ),
+    );
     // A widget's text is read asynchronously and shared with every other
     // surface, so the editors showing that document draw again when it lands
     // or goes stale — until then they keep the raw marked source.
@@ -142,7 +146,7 @@ export class CitekeyEditor extends Service<void> {
   }
 
   #resolves(citekey: string): boolean {
-    return this.#noteIndex.getNotesByCitationKey(citekey).length > 0;
+    return this.#citationIndex.resolveCitekey(citekey) !== null;
   }
 
   #restyleEditors(): void {
@@ -179,18 +183,6 @@ export class CitekeyEditor extends Service<void> {
     const enabled =
       settings["citation.citekey-indexing"] &&
       settings["citation.citekey-editor"];
-    const property = settings["citation.key-links-frontmatter-key"];
-    const missingProperty =
-      enabled &&
-      !settings["note.frontmatter-fields"].some(
-        (field) => field.key === property,
-      )
-        ? property
-        : null;
-    if (missingProperty !== null && missingProperty !== this.#missingProperty) {
-      this.#emitter.emit("missing-property", property);
-    }
-    this.#missingProperty = missingProperty;
 
     if (enabled === this.#enabled) return;
     this.#enabled = enabled;
@@ -210,47 +202,38 @@ export class CitekeyEditor extends Service<void> {
 
   /**
    * The Literature Note a hover preview may show: the one note indexed under
-   * `citekey`. A key with zero or several notes answers with nothing, which
-   * keeps every popover path clear of the create-then-open flow.
+   * the Indexed Key a citekey resolves to. A citekey with zero or several
+   * notes answers with nothing, which keeps every popover path clear of the
+   * create-then-open flow.
    */
   hoverNotePath(citekey: string): string | null {
-    const matches = this.#noteIndex.getNotesByCitationKey(citekey);
+    const item = this.#citationIndex.resolveCitekey(citekey);
+    if (!item) return null;
+    const matches = this.#noteIndex.getNotesByItemKey(item.indexedKey);
     return matches.length === 1 ? matches[0]!.path : null;
   }
 
   /**
-   * A citekey with exactly one indexed Literature Note opens it directly.
-   * Otherwise the Zotero Item decides: an existing note for its Indexed Key
-   * wins, and only a key with no note at all creates one.
+   * The Zotero Item a citekey names decides what opens: an existing note for
+   * its Indexed Key wins, and only an Item with no note at all creates one.
    */
   async openCitekey(citekey: string, pane: NavigationPane): Promise<void> {
     const { workspace } = this.#app;
-    await this.#noteIndex.whenIndexed();
+    await Promise.all([
+      this.#noteIndex.whenIndexed(),
+      this.#citationIndex.whenResolved(),
+    ]);
 
-    const directMatches = this.#noteIndex.getNotesByCitationKey(citekey);
-    if (directMatches.length === 1) {
-      const existing = directMatches[0]!;
-      logger.debug("Opened citekey note", {
-        citekey,
-        path: existing.path,
-        branch: "direct",
-      });
-      await workspace.openLinkText(existing.path, "", pane, {
-        active: true,
-      });
-      return;
-    }
-
-    if (this.#db.state !== "ready") {
-      logger.debug("Citekey open blocked", {
-        citekey,
-        branch: "db-unavailable",
-      });
-      this.#emitter.emit("db-unavailable", citekey);
-      return;
-    }
-    const item = this.#resolveItem(citekey);
+    const item = this.#citationIndex.resolveCitekey(citekey);
     if (!item) {
+      if (this.#db.state !== "ready") {
+        logger.debug("Citekey open blocked", {
+          citekey,
+          branch: "db-unavailable",
+        });
+        this.#emitter.emit("db-unavailable", citekey);
+        return;
+      }
       logger.debug("Citekey open blocked", {
         citekey,
         branch: "citekey-not-found",
@@ -259,36 +242,35 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
 
-    const authoritative = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
-    if (authoritative) {
+    const existing = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
+    if (existing) {
       logger.debug("Opened citekey note", {
         citekey,
-        path: authoritative.path,
-        branch: "authoritative",
+        path: existing.path,
+        branch: "existing",
       });
-      await workspace.openLinkText(authoritative.path, "", pane, {
+      await workspace.openLinkText(existing.path, "", pane, {
         active: true,
       });
       return;
     }
 
-    const file = await createNoteWithToast(this.#noteFeature, item);
+    const [zoteroItem] = getItemsByID(this.#db.client, [item.itemID]);
+    if (!zoteroItem) {
+      logger.debug("Citekey open blocked", {
+        citekey,
+        branch: "citekey-not-found",
+      });
+      this.#emitter.emit("citekey-not-found", citekey);
+      return;
+    }
+
+    const file = await createNoteWithToast(this.#noteFeature, zoteroItem);
     if (!file) {
       logger.debug("Citekey note creation cancelled", { citekey });
       return;
     }
     logger.debug("Created citekey note", { citekey, path: file.path });
     await workspace.openLinkText(file.path, "", pane, { active: true });
-  }
-
-  /** Resolve the Zotero item for `citekey` in the configured citation library. */
-  #resolveItem(citekey: string): Item | null {
-    const client = this.#db.client;
-    const libraryID =
-      this.#settings.current?.["zotero.citation-library"] ?? USER_LIBRARY_ID;
-    const itemID = getItemIDByCitekey(client, libraryID, citekey);
-    if (itemID == null) return null;
-    const [item] = getItemsByID(client, [itemID]);
-    return item ?? null;
   }
 }

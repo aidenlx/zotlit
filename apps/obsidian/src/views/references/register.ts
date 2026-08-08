@@ -4,6 +4,7 @@ import type { App, Plugin } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
@@ -21,6 +22,7 @@ export interface ReferencesRegistrationDeps {
   app: App;
   db: DatabaseService;
   citationIndex: CitationIndex;
+  citekeyEditor: CitekeyEditor;
   pandocEngine: PandocEngineService;
   bibliographyRender: BibliographyRenderCache;
   settings: SettingsService;
@@ -34,6 +36,7 @@ export function registerReferencesView(
     app: deps.app,
     db: deps.db,
     citationIndex: deps.citationIndex,
+    citekeyEditor: deps.citekeyEditor,
     pandocEngine: deps.pandocEngine,
     bibliographyRender: deps.bibliographyRender,
     settings: deps.settings,

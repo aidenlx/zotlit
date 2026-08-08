@@ -101,18 +101,22 @@ interface ReferenceEntryBase {
  * One reference as the sidebar shows it. The engine's absence is a normal mode,
  * so a `summary` entry is ordinary content rather than a degraded one; a
  * `missing` entry keeps a citation whose Item vanished visible, and an
- * `unresolved` entry does the same for a citekey that reaches no Literature
- * Note — Pandoc warns on an undefined citation rather than dropping it.
+ * `unresolved` entry does the same for a citekey that names no live Zotero
+ * Item — Pandoc warns on an undefined citation rather than dropping it. A
+ * `rendered` or `summary` entry's `linkpath` is `null` when its Item has no
+ * Literature Note yet, so the open action creates one; a `missing` entry
+ * carries the same type, but `null` there means the database could not read
+ * the Item at all, and the open action stays disabled.
  */
 export type ReferenceEntry = ReferenceEntryBase &
   (
     | ({
         kind: "rendered";
         source: ReferenceSource;
-        linkpath: string;
+        linkpath: string | null;
       } & RenderedReference)
-    | { kind: "summary"; source: ReferenceSource; linkpath: string }
-    | { kind: "missing"; linkpath: string }
+    | { kind: "summary"; source: ReferenceSource; linkpath: string | null }
+    | { kind: "missing"; linkpath: string | null }
     | { kind: "unresolved"; citekey: string }
   );
 
@@ -125,7 +129,7 @@ export type ReferenceEntry = ReferenceEntryBase &
  * render — follows the ordered entries in first-occurrence order, which is the
  * order the whole list keeps when no bibliography is passed at all.
  *
- * A citation no Literature Note resolves keeps its raw citekey and trails the
+ * A citekey naming no live Zotero Item keeps its raw text and trails the
  * ordered entries with the rest, since the bibliography holds no place for a
  * work the library does not know.
  *
@@ -143,7 +147,7 @@ export function buildReferenceEntries(
   const placed = new Map<string, ReferenceEntry>();
   const trailing: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, linkpath, occurrences } of citations) {
-    if (indexedKey === null || linkpath === null) {
+    if (indexedKey === null) {
       // Every Citation carries an occurrence, and an unresolved one is written
       // as a citekey, so its raw text is what the row shows. The identity keeps
       // the `@` it is written with, which an Indexed Key never starts with.

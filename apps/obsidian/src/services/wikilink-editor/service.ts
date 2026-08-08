@@ -9,6 +9,7 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -29,6 +30,7 @@ export interface WikilinkEditorDeps {
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "load" | "on">;
   settings: SettingsService;
+  citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
 }
 
 /**
@@ -49,6 +51,7 @@ export class WikilinkEditor extends Service<void> {
   readonly #noteIndex;
   readonly #citationText;
   readonly #settings;
+  readonly #citationIndex;
   readonly #extension: Extension;
 
   /** Registered once; emptied on disposal, which retires the treatment. */
@@ -66,6 +69,7 @@ export class WikilinkEditor extends Service<void> {
     this.#noteIndex = deps.noteIndex;
     this.#citationText = deps.citationText;
     this.#settings = deps.settings;
+    this.#citationIndex = deps.citationIndex;
     this.#extension = wikilinkEditorExtension({
       literatureNote: (linkpath, sourcePath) =>
         this.#literatureNote(linkpath, sourcePath),
@@ -93,12 +97,15 @@ export class WikilinkEditor extends Service<void> {
     });
 
     stack.defer(this.#display.watch(this.#settings, () => this.#redraw()));
-    // Creating, deleting, or renaming a Literature Note, or editing its
-    // Citation Key Property, changes what a link displays without changing any
-    // document; the Note Index's own invalidation is coarse, so every change
-    // redraws every open editor.
+    // Creating, deleting, or renaming a Literature Note, or a citekey
+    // resolution snapshot rebuild, changes what a link displays without
+    // changing any document; the Note Index's own invalidation is coarse, so
+    // every change redraws every open editor.
     stack.defer(this.#noteIndex.on("changed", () => this.#redraw()));
     stack.defer(this.#noteIndex.on("rebuilt", () => this.#redraw()));
+    stack.defer(
+      this.#citationIndex.on("resolution-changed", () => this.#redraw()),
+    );
     // A citation's formatted text is read asynchronously and shared with every
     // other surface, so the editors showing that document draw again when it
     // lands or goes stale — until then they keep the Citation Display Text.
@@ -112,10 +119,15 @@ export class WikilinkEditor extends Service<void> {
     linkpath: string,
     sourcePath: string,
   ): LiteratureNoteTarget | null {
-    return resolveLiteratureNote(linkpath, sourcePath, {
+    const note = resolveLiteratureNote(linkpath, sourcePath, {
       app: this.#app,
-      citationKeyProperty: this.#display.citationKeyProperty,
     });
+    return (
+      note && {
+        ...note,
+        citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
+      }
+    );
   }
 
   /**

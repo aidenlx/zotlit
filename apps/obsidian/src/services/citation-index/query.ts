@@ -3,17 +3,18 @@
 import { occurrencesEqual } from "./scan";
 import type { CitationOccurrence } from "./scan";
 
-/** The Literature Note a Citation Occurrence resolves to. */
+/** The Item a Citation Occurrence resolves to. */
 export interface ResolvedNote {
   /** Indexed Key of the cited Zotero Item. */
   indexedKey: string;
-  /** Linkpath that opens the Literature Note. */
-  linkpath: string;
+  /** Linkpath that opens the Literature Note, or `null` when the Item has none yet. */
+  linkpath: string | null;
 }
 
 /**
  * Resolution is lazy and per occurrence: a citekey resolves through the
- * Citation Key Property, a linkpath through the Literature Note it points at.
+ * citekey resolution snapshot, a linkpath through the Literature Note it
+ * points at.
  */
 export type ResolveOccurrence = (
   occurrence: CitationOccurrence,
@@ -21,9 +22,9 @@ export type ResolveOccurrence = (
 
 /** One cited work of a document, with every place the document cites it. */
 export interface Citation {
-  /** Indexed Key of the cited Item, or `null` when no Literature Note carries the citekey. */
+  /** Indexed Key of the cited Item, or `null` when the citekey names no live Zotero Item. */
   indexedKey: string | null;
-  /** Linkpath the open-note action follows, or `null` when nothing resolves it. */
+  /** Linkpath that opens the Literature Note, or `null` when the Item has none yet. */
   linkpath: string | null;
   /** 1-based identifier, assigned by first occurrence in document order. */
   refNumber: number;
@@ -35,9 +36,9 @@ export interface Citation {
  *
  * Occurrences of the same Item collapse into one Citation, so a document that
  * cites it as a citekey and as a wikilink still gets one reference number. A
- * citekey no Literature Note carries stays a Citation of its own — Pandoc warns
- * on an undefined citation rather than dropping it — while a wikilink that
- * points at an ordinary note is no Citation at all.
+ * citekey naming no live Zotero Item stays a Citation of its own — Pandoc
+ * warns on an undefined citation rather than dropping it — while a wikilink
+ * that points at an ordinary note is no Citation at all.
  *
  * @param occurrences in document order, which is the order reference numbers
  *   are assigned in.

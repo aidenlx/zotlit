@@ -27,7 +27,7 @@ describe("parseCitationFragment", () => {
 });
 
 describe("citationDisplay", () => {
-  it("uses the Citation Key Property value", () => {
+  it("uses the native citation key", () => {
     expect(
       citationDisplay({
         citationKey: "wang2020",
@@ -47,7 +47,7 @@ describe("citationDisplay", () => {
     ).toHaveProperty("text", "@wangMutationalClinicalSpectrum2020a");
   });
 
-  it("treats an empty Citation Key Property value as missing", () => {
+  it("treats an empty native citation key as missing", () => {
     expect(
       citationDisplay({
         citationKey: "",
@@ -233,8 +233,8 @@ describe("isRenderableCitation", () => {
     ).toBe(true);
   });
 
-  // A note filename standing in for a missing Citation Key Property: no Pandoc
-  // key carries a space, braced or not.
+  // A note filename standing in for an Item with no native citation key: no
+  // Pandoc key carries a space, braced or not.
   it("rejects a key holding a space", () => {
     expect(isRenderableCitation(source("Doe 2020"))).toBe(false);
   });

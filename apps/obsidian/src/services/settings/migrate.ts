@@ -290,3 +290,14 @@ export function migrateV3ToV4(raw: unknown): Record<string, unknown> {
   const { "citation.key-links": keyLinks, ...rest } = raw;
   return { ...rest, "citation.citekey-editor": keyLinks === true };
 }
+
+/**
+ * Retire the Citation Key Property. Citekeys resolve against Zotero's native
+ * citation keys, so no frontmatter property participates; the managed
+ * `citekey` field stays as template output and is left untouched.
+ */
+export function migrateV4ToV5(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.key-links-frontmatter-key": _retired, ...rest } = raw;
+  return rest;
+}

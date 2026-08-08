@@ -72,6 +72,8 @@ async function makeHarness({
     db: { state: "ready", client: {} },
     citationIndex: {
       getCitations: () => Promise.resolve(cited),
+      citekeyOf: () => null,
+      whenResolved: () => Promise.resolve(),
       on: () => () => undefined,
     },
     noteIndex: {

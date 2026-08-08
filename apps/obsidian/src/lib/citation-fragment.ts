@@ -241,8 +241,9 @@ function isControlByte(byte: number): boolean {
 /** The resolved Literature Note plus the raw fragment a wikilink carries. */
 export interface CitationDisplaySource {
   /**
-   * The note's Citation Key Property value, or `null`/`""` when the note has
-   * none — the display falls back to the note's filename.
+   * The Item's native Zotero citation key, from the Citation Index's
+   * resolution snapshot, or `null`/`""` when the Item carries none — the
+   * display falls back to the note's filename.
    */
   citationKey: string | null;
   /** The note's vault path; only its basename without extension is used. */
@@ -259,9 +260,10 @@ export interface CitationDisplaySource {
 export interface CitationDisplay {
   item: CitationRunItem;
   /**
-   * The Citation Display Text: `@` plus the note's Citation Key Property value,
-   * falling back to `@` plus the note's filename, never the folder path, and a
-   * Citation Fragment as the equivalent Pandoc citation source text.
+   * The Citation Display Text: `@` plus the Item's native Zotero citation key
+   * from the resolution snapshot, falling back to `@` plus the note's
+   * filename, never the folder path, and a Citation Fragment as the
+   * equivalent Pandoc citation source text.
    *
    * A fragment-less link keeps the bare `@citekey` here while
    * {@link citationRunSource} writes it as the parenthetical `[@citekey]` the
@@ -374,13 +376,13 @@ export function citationRunSource(
  *
  * A derivation writes a citekey and a Citation Fragment's own prose into Pandoc
  * source, and neither is guaranteed to survive the trip: a Literature Note
- * filename standing in for a missing Citation Key Property may hold a space,
- * which no Pandoc key carries, braced or not; and a prefix or suffix may hold
- * the `;` that ends an item. The shared grammar is the authority on what Pandoc
- * reads, so the check is a round trip through it — a citation that starts where
- * the derivation started and names the same keys in the same order is one the
- * engine will format as meant. Anything else stays out of the render, and the
- * Citation Display Text stands in its place.
+ * filename standing in for an Item with no native citation key may hold a
+ * space, which no Pandoc key carries, braced or not; and a prefix or suffix
+ * may hold the `;` that ends an item. The shared grammar is the authority on
+ * what Pandoc reads, so the check is a round trip through it — a citation
+ * that starts where the derivation started and names the same keys in the
+ * same order is one the engine will format as meant. Anything else stays out
+ * of the render, and the Citation Display Text stands in its place.
  *
  * The span's end is left out: a standalone author-in-text Citation writes its
  * locator in a trailing bracket that the grammar reads as text of its own,

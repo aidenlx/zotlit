@@ -177,7 +177,7 @@ The formatted text of every Citation one document writes, together with the `Cre
 _Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
 
 **Citekey Navigation** _(Obsidian)_:
-The interaction surface of recognized citekeys across Live Preview, Source mode, and reading mode — click, hover page preview, and the open-under-cursor palette commands — all routed through one flow: a key that resolves to one Literature Note opens it, and any other key offers create-then-open. Hover stays silent for a key that resolves to no single Literature Note.
+The interaction surface of recognized citekeys across Live Preview, Source mode, and reading mode — click, hover page preview, and the open-under-cursor palette commands — all routed through one flow: it resolves a citekey to its Zotero Item, then opens that Item's Literature Note or runs create-then-open. Hover stays silent for a key that resolves to no Zotero Item.
 _Avoid_: citekey click (one gesture of the surface, not the concept), citekey links
 
 **Citekey Reading Rendering** _(Obsidian)_:
@@ -185,7 +185,7 @@ The reading-mode surface of the same toggle the Citekey Editor Treatment carries
 _Avoid_: reading-mode widget (a widget is the Live Preview decoration), citation preview
 
 **Citation Display Text**:
-The citation-shaped text a decorated Literature Note wikilink shows in place of its raw path and fragment: `@` plus the note's Citation Key Property value, falling back to `@` plus the note's filename, never the folder path. A Citation Fragment renders as the equivalent Pandoc citation source text — mode, prefix, locator, and suffix included — so nothing the author encoded is hidden.
+The citation-shaped text a decorated Literature Note wikilink shows in place of its raw path and fragment: `@` plus the Item's native Zotero citation key, read through the Citation Index's resolution snapshot, falling back to `@` plus the note's filename when the Item carries none — never the folder path. A Citation Fragment renders as the equivalent Pandoc citation source text — mode, prefix, locator, and suffix included — so nothing the author encoded is hidden.
 _Avoid_: display alias (an alias is author-written and always wins), pretty text
 
 **Wikilink Editor Treatment** _(Obsidian)_:
@@ -198,16 +198,16 @@ _Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 
 ### Index and identity
 
-**Citation Key Property**:
-The configurable Literature Note frontmatter property whose non-empty string value the Note Index maps to that Literature Note. It defaults to `citekey` and is an ordinary Managed Frontmatter field.
-_Avoid_: citekey frontmatter (names only the default property), resolver key
-
 **Note Index**:
-A vault-wide in-memory index mapping `zotero-key` to Literature Notes, `zotero-note-key` to Imported Notes, and each Literature Note's Citation Key Property value to that note. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
+A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
 
 **Citation Index**:
-The plugin-owned, vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citekeys and Literature Note wikilinks. It persists only what Obsidian's metadata cache cannot infer (literal-citekey occurrences); wikilink occurrences derive from the metadata cache at query time. Resolution to Zotero Items is lazy, through the Note Index. It owns its readiness: a consumer that needs vault-wide completeness awaits its backfill, while the active document is indexed on demand.
+The plugin-owned, vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citekeys and Literature Note wikilinks. It persists only what Obsidian's metadata cache cannot infer (literal-citekey occurrences); wikilink occurrences derive from the metadata cache at query time. Resolution of a literal citekey is database-first, through the Citekey Resolution Snapshot; the Note Index supplies only the Literature Note linkpath for the resolved Item. It owns its readiness: a consumer that needs vault-wide completeness awaits its backfill, while the active document is indexed on demand.
 _Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
+
+**Citekey Resolution Snapshot**:
+The Citation Index's in-memory map from a native Zotero citation key to its Item, and back, scoped to the configured citation library and rebuilt wholesale whenever the Zotero database changes.
+_Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuild)
 
 **Citation Occurrence**:
 One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.

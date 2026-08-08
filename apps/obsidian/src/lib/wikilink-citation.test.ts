@@ -40,7 +40,7 @@ function context(
 }
 
 describe("wikilinkCitation", () => {
-  it("shows a bare linkpath as its Citation Key Property value", () => {
+  it("shows a bare linkpath as its native Zotero citation key", () => {
     expect(displayText(WANG_LINK, context())).toBe("@wang2020");
   });
 
@@ -50,19 +50,19 @@ describe("wikilinkCitation", () => {
     );
   });
 
-  it("falls back to the filename when the note carries no Citation Key Property", () => {
+  it("falls back to the filename when the Item carries no native citation key", () => {
     expect(
       displayText(
         "literatures/xu2019",
         context({
           literatureNote: () => ({
-            path: "literatures/xuNoCitationKeyProperty2019.md",
+            path: "literatures/xuNoCitekey2019.md",
             indexedKey: "1/XU2019",
             citationKey: null,
           }),
         }),
       ),
-    ).toBe("@xuNoCitationKeyProperty2019");
+    ).toBe("@xuNoCitekey2019");
   });
 
   it("shows a fragment-carrying link whatever the display toggle says", () => {
@@ -176,7 +176,6 @@ describe("WikilinkDisplaySettings", () => {
   it("seeds from the first snapshot without asking for a redraw", () => {
     const settings = new SettingsStub({
       "citation.wikilink-citations": true,
-      "citation.key-links-frontmatter-key": "bibkey",
     });
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
@@ -184,7 +183,6 @@ describe("WikilinkDisplaySettings", () => {
     display.watch(settings, () => redraws++);
 
     expect(display.fragmentlessDisplay).toBe(true);
-    expect(display.citationKeyProperty).toBe("bibkey");
     expect(redraws).toBe(0);
   });
 
@@ -217,7 +215,7 @@ describe("WikilinkDisplaySettings", () => {
     settings.update({ "citation.wikilink-citations": true });
     expect(redraws).toBe(1);
 
-    settings.update({ "citation.key-links-frontmatter-key": "bibkey" });
+    settings.update({ "citation.wikilink-display": false });
     expect(redraws).toBe(2);
   });
 

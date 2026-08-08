@@ -15,7 +15,8 @@ toggle on. The "Gating" section below tells you what to switch off for the secon
 
 ## Fragment-less Literature Note wikilink
 
-A resolved Literature Note wikilink with no fragment shows `@` plus its Citation Key Property:
+A resolved Literature Note wikilink with no fragment shows `@` plus its Item's native Zotero
+citation key, read through the citekey resolution snapshot:
 
 The nebulin protein regulates thin filament length ([[literatures/wittNebulinRegulatesThin2006]]).
 Expect `@wittNebulinRegulatesThin2006`.
@@ -23,9 +24,10 @@ Expect `@wittNebulinRegulatesThin2006`.
 Distal myopathy follows from nebulin mutations ([[literatures/wallgren-petterssonDistalMyopathyCaused2007]]).
 Expect `@wallgren-petterssonDistalMyopathyCaused2007`.
 
-## Citation Key Property fallback
+## No native citation key: filename fallback
 
-A Literature Note with no Citation Key Property falls back to its filename — never its folder path:
+A Literature Note whose Zotero item carries no native citation key falls back to its filename —
+never its folder path:
 
 An indexed note without a citekey ([[literatures/xuNoCitationKeyProperty2019]]).
 Expect `@xuNoCitationKeyProperty2019`.
@@ -251,9 +253,9 @@ of reading mode and the context menu's **Copy** both carry the displayed Citatio
 
 Each action below must refresh open editors and reading views with no reopen:
 
-1. Edit `citekey` in `literatures/wittNebulinRegulatesThin2006.md` and watch this note's
+1. Re-key the item in Zotero and let the database refresh, and watch this note's
    `@wittNebulinRegulatesThin2006` displays follow it.
 2. Rename that Literature Note and watch the links follow.
 3. Delete a Literature Note and watch its links fall back to Obsidian's rendering.
-4. Create `literatures/noSuchLiteratureNote2099.md` with a `citekey` and watch the broken
-   links above become decorated.
+4. Create `literatures/noSuchLiteratureNote2099.md` with a `zotero-key` for its Zotero item
+   and watch the broken links above become decorated.

@@ -62,7 +62,12 @@ export {
   type ChildNote,
   type Note,
 } from "./queries/notes";
-export { getCitekeyByItemKey, getItemIDByCitekey } from "./queries/citekey";
+export {
+  getCitekeyByItemKey,
+  getCitekeysByLibrary,
+  getItemIDByCitekey,
+  type LibraryCitekey,
+} from "./queries/citekey";
 export { resolveItemTags, type TagMemo } from "./queries/tags";
 export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
 export {

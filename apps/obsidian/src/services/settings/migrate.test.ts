@@ -5,6 +5,7 @@ import {
   migrateV1ToV2,
   migrateV2ToV3,
   migrateV3ToV4,
+  migrateV4ToV5,
 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
@@ -450,6 +451,34 @@ describe("migrateV3ToV4", () => {
       }),
     ).toEqual({
       "citation.citekey-editor": true,
+      "note.literature-folder": "refs",
+      "citation.citekey-indexing": false,
+    });
+  });
+});
+
+describe("migrateV4ToV5", () => {
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV4ToV5(null)).toEqual({});
+    expect(migrateV4ToV5([1, 2, 3])).toEqual({});
+  });
+
+  it("drops the retired Citation Key Property override", () => {
+    expect(
+      migrateV4ToV5({
+        __VERSION__: 4,
+        "citation.key-links-frontmatter-key": "bibkey",
+      }),
+    ).toEqual({ __VERSION__: 4 });
+  });
+
+  it("leaves every other override untouched", () => {
+    expect(
+      migrateV4ToV5({
+        "note.literature-folder": "refs",
+        "citation.citekey-indexing": false,
+      }),
+    ).toEqual({
       "note.literature-folder": "refs",
       "citation.citekey-indexing": false,
     });

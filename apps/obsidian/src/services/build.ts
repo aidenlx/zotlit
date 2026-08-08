@@ -28,6 +28,7 @@ import {
   migrateV1ToV2,
   migrateV2ToV3,
   migrateV3ToV4,
+  migrateV4ToV5,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
@@ -62,6 +63,7 @@ export function buildServices(
           migrateV1: migrateV1ToV2,
           migrateV2: migrateV2ToV3,
           migrateV3: migrateV3ToV4,
+          migrateV4: migrateV4ToV5,
         }),
     })
     .use({
@@ -84,8 +86,7 @@ export function buildServices(
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
-      noteIndex: ({ settings }) =>
-        new NoteIndex({ plugin, app: plugin.app, settings }),
+      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
       liveUpdate: ({ settings, zoteroPref, noteIndex }) =>
@@ -162,8 +163,8 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings }) =>
-        new CitationIndex({ app: plugin.app, noteIndex, settings }),
+      citationIndex: ({ noteIndex, settings, db }) =>
+        new CitationIndex({ app: plugin.app, noteIndex, settings, db }),
     })
     .use({
       pandocEngine: () => createPandocEngineService(plugin.app),
@@ -195,7 +196,14 @@ export function buildServices(
         }),
     })
     .use({
-      citekeyEditor: ({ noteIndex, noteFeature, db, citationText, settings }) =>
+      citekeyEditor: ({
+        noteIndex,
+        noteFeature,
+        db,
+        citationText,
+        settings,
+        citationIndex,
+      }) =>
         new CitekeyEditor({
           app: plugin.app,
           plugin,
@@ -204,26 +212,29 @@ export function buildServices(
           db,
           citationText,
           settings,
+          citationIndex,
         }),
     })
     .use({
-      wikilinkEditor: ({ noteIndex, citationText, settings }) =>
+      wikilinkEditor: ({ noteIndex, citationText, settings, citationIndex }) =>
         new WikilinkEditor({
           app: plugin.app,
           plugin,
           noteIndex,
           citationText,
           settings,
+          citationIndex,
         }),
     })
     .use({
-      wikilinkReading: ({ noteIndex, citationText, settings }) =>
+      wikilinkReading: ({ noteIndex, citationText, settings, citationIndex }) =>
         new WikilinkReading({
           app: plugin.app,
           plugin,
           noteIndex,
           citationText,
           settings,
+          citationIndex,
         }),
     })
     .use({

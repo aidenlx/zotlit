@@ -11,11 +11,6 @@ export function registerCitekeyEditorNotices(
 ): () => void {
   const stack = new DisposableStack();
   stack.defer(
-    service.on("missing-property", (property) => {
-      new BaseNotice(m.notice_citation_key_property_missing({ property }));
-    }),
-  );
-  stack.defer(
     service.on("db-unavailable", (citekey) => {
       new BaseNotice(m.notice_citekey_db_unavailable({ citekey }));
     }),

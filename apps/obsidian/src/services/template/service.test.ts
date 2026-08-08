@@ -1268,6 +1268,7 @@ async function makeHarness(options?: {
     migrateV1: (raw) => raw,
     migrateV2: (raw) => raw,
     migrateV3: (raw) => raw,
+    migrateV4: (raw) => raw,
   });
   await settings.ready;
 

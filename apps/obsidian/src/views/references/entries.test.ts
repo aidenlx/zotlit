@@ -25,7 +25,7 @@ function citation(
   };
 }
 
-/** A citekey the index resolved to no Literature Note. */
+/** A citekey the index resolved to no live Zotero Item. */
 function unresolved(
   citekey: string,
   refNumber: number,
@@ -298,9 +298,30 @@ describe("buildReferenceEntries", () => {
     ]);
   });
 
+  it("renders an Item with no Literature Note yet as an ordinary entry", () => {
+    const cited: Citation = {
+      indexedKey: "BOOK0001",
+      linkpath: null,
+      refNumber: 1,
+      occurrences: [occurrenceAt(1)],
+    };
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+
+    expect(buildReferenceEntries([cited], sources)).toStrictEqual([
+      {
+        id: "BOOK0001",
+        linkpath: null,
+        refNumber: 1,
+        occurrences: cited.occurrences,
+        kind: "summary",
+        source: sources.get("BOOK0001"),
+      },
+    ]);
+  });
+
   // Pandoc warns on an undefined citation rather than dropping it, so a typo
   // stays in the list as an error row showing the key as it was written.
-  it("shows a citekey no literature note carries as an error row", () => {
+  it("shows a citekey naming no live Zotero Item as an error row", () => {
     expect(
       buildReferenceEntries([unresolved("typo2024", 1, [3, 7])], new Map()),
     ).toStrictEqual([

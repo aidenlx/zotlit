@@ -65,8 +65,8 @@ export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
 export type ResolveHoverNote = (citekey: string) => string | null;
 
 /**
- * Whether a citekey names at least one Literature Note — the Citation Index's
- * lazy query, through the Citation Key Property.
+ * Whether a citekey names a live Zotero Item — read synchronously from the
+ * Citation Index's resolution snapshot.
  */
 export type ResolveCitekey = (citekey: string) => boolean;
 

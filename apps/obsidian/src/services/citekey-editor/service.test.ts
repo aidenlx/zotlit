@@ -11,14 +11,8 @@ import type { Settings } from "@/services/settings/schema";
 import { CitekeyEditor } from "./service";
 
 describe("CitekeyEditor settings lifecycle", () => {
-  it("registers the extension only while enabled and notices each transition into enabled plus missing", async () => {
-    const settings = new SettingsStub({
-      "citation.citekey-editor": false,
-      "note.frontmatter-fields": defaults["note.frontmatter-fields"].filter(
-        (field) => field.key !== "citekey",
-      ),
-    });
-    const notices: string[] = [];
+  it("registers the extension only while enabled", async () => {
+    const settings = new SettingsStub({ "citation.citekey-editor": false });
     let registered: Extension[] = [];
     let reconfigures = 0;
     const service = new CitekeyEditor({
@@ -31,9 +25,9 @@ describe("CitekeyEditor settings lifecycle", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
+      citationIndex: new CitationIndexStub(),
       settings,
     } as never);
-    service.on("missing-property", (property) => notices.push(property));
     await service.ready;
 
     expect(registered).toEqual([]);
@@ -42,34 +36,12 @@ describe("CitekeyEditor settings lifecycle", () => {
     expect(registered).toHaveLength(1);
     expect(service.enabled).toBe(true);
     expect(reconfigures).toBe(1);
-    expect(notices).toHaveLength(1);
-
-    settings.update({ "citation.key-links-frontmatter-key": "bibkey" });
-    expect(notices).toHaveLength(2);
-    settings.update({
-      "note.frontmatter-fields": [
-        ...settings.current["note.frontmatter-fields"],
-        {
-          key: "bibkey",
-          expr: "zt.citationKey",
-          merge: "replace",
-          language: "liquid",
-        },
-      ],
-    });
-    settings.update({
-      "note.frontmatter-fields": settings.current[
-        "note.frontmatter-fields"
-      ].filter((field) => field.key !== "bibkey"),
-    });
-    expect(notices).toHaveLength(3);
 
     settings.update({ "citation.citekey-editor": false });
     expect(registered).toEqual([]);
     expect(service.enabled).toBe(false);
     settings.update({ "citation.citekey-editor": true });
     expect(registered).toHaveLength(1);
-    expect(notices).toHaveLength(4);
 
     await service[Symbol.asyncDispose]();
     expect(registered).toEqual([]);
@@ -91,6 +63,7 @@ describe("CitekeyEditor settings lifecycle", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
+      citationIndex: new CitationIndexStub(),
       settings,
     } as never);
     await service.ready;
@@ -116,6 +89,7 @@ describe("CitekeyEditor hover preview", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
+      citationIndex: new CitationIndexStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -126,9 +100,13 @@ describe("CitekeyEditor hover preview", () => {
   });
 
   it("answers with a note path only while exactly one literature note matches", async () => {
+    const citationIndex = new CitationIndexStub({
+      doe2024: { itemID: 1, indexedKey: "ABCD2024" },
+      smith2020: { itemID: 2, indexedKey: "ABCD2020" },
+    });
     const notes: Record<string, { path: string }[]> = {
-      doe2024: [{ path: "lit/doe2024.md" }],
-      smith2020: [{ path: "lit/a.md" }, { path: "lit/b.md" }],
+      ABCD2024: [{ path: "lit/doe2024.md" }],
+      ABCD2020: [{ path: "lit/a.md" }, { path: "lit/b.md" }],
     };
     await using service = new CitekeyEditor({
       app: { workspace: { updateOptions: () => undefined } },
@@ -138,6 +116,7 @@ describe("CitekeyEditor hover preview", () => {
       },
       noteIndex: new NoteIndexStub(notes),
       citationText: new CitationTextStub(),
+      citationIndex,
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -149,8 +128,8 @@ describe("CitekeyEditor hover preview", () => {
 });
 
 describe("CitekeyEditor index-change broadcast", () => {
-  it("asks every open markdown editor to restyle when the Note Index changes", async () => {
-    const noteIndex = new NoteIndexStub();
+  it("asks every open markdown editor to restyle when the citekey resolution snapshot rebuilds", async () => {
+    const citationIndex = new CitationIndexStub();
     let requests = 0;
     await using service = new CitekeyEditor({
       app: {
@@ -166,16 +145,15 @@ describe("CitekeyEditor index-change broadcast", () => {
         registerEditorExtension: () => undefined,
         registerHoverLinkSource: () => undefined,
       },
-      noteIndex,
+      noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
+      citationIndex,
       settings: new SettingsStub(),
     } as never);
     await service.ready;
 
-    noteIndex.emit("changed");
+    citationIndex.emit();
     expect(requests).toBe(1);
-    noteIndex.emit("rebuilt");
-    expect(requests).toBe(2);
   });
 });
 
@@ -206,6 +184,7 @@ describe("CitekeyEditor citation text broadcast", () => {
       },
       noteIndex: new NoteIndexStub(),
       citationText,
+      citationIndex: new CitationIndexStub(),
       settings: new SettingsStub(),
     } as never);
     await service.ready;
@@ -255,6 +234,37 @@ class CitationTextStub {
   }
 }
 
+interface SnapshotItemStub {
+  itemID: number;
+  indexedKey: string;
+}
+
+class CitationIndexStub {
+  readonly #resolutions: Record<string, SnapshotItemStub>;
+  readonly #listeners = new Set<() => void>();
+
+  constructor(resolutions: Record<string, SnapshotItemStub> = {}) {
+    this.#resolutions = resolutions;
+  }
+
+  resolveCitekey(citekey: string): SnapshotItemStub | null {
+    return this.#resolutions[citekey] ?? null;
+  }
+
+  whenResolved(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  on(_event: "resolution-changed", cb: () => void): () => void {
+    this.#listeners.add(cb);
+    return () => this.#listeners.delete(cb);
+  }
+
+  emit(): void {
+    for (const cb of this.#listeners) cb();
+  }
+}
+
 class NoteIndexStub {
   readonly #notes: Record<string, { path: string }[]>;
   readonly #listeners: Record<"changed" | "rebuilt", Set<() => void>> = {
@@ -266,8 +276,12 @@ class NoteIndexStub {
     this.#notes = notes;
   }
 
-  getNotesByCitationKey(citekey: string): { path: string }[] {
-    return this.#notes[citekey] ?? [];
+  getNotesByItemKey(indexedKey: string): { path: string }[] {
+    return this.#notes[indexedKey] ?? [];
+  }
+
+  whenIndexed(): Promise<void> {
+    return Promise.resolve();
   }
 
   on(event: "changed" | "rebuilt", cb: () => void): () => void {

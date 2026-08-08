@@ -16,6 +16,7 @@ interface Harness extends AsyncDisposable {
   settings: SettingsStub;
   noteIndex: NoteIndexStub;
   citationText: CitationTextStub;
+  citationIndex: CitationIndexStub;
   /** Runs the registered post-processor over one link and reads its display. */
   render: (linktext: string) => Promise<string>;
   rerenders: () => number;
@@ -23,14 +24,20 @@ interface Harness extends AsyncDisposable {
 
 async function harness({
   formatted,
+  citekeys,
   ...overrides
 }: Partial<Settings> & {
   /** The formatted citation the shared text holds, by its Pandoc source. */
   formatted?: Record<string, string>;
+  /** The citekey resolution snapshot's answer for each Indexed Key. */
+  citekeys?: Record<string, string>;
 } = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
   const citationText = new CitationTextStub(formatted ?? {});
+  const citationIndex = new CitationIndexStub(
+    citekeys ?? { ABCD2345: "wang2020" },
+  );
   let rerenders = 0;
   let process: MarkdownPostProcessor | undefined;
   const view = Object.assign(Object.create(MarkdownView.prototype) as object, {
@@ -44,7 +51,7 @@ async function harness({
         getFirstLinkpathDest: (linkpath: string) =>
           linkpath === WANG ? { path: `${WANG}.md` } : null,
         getFileCache: () => ({
-          frontmatter: { "zotero-key": "ABCD2345", citekey: "wang2020" },
+          frontmatter: { "zotero-key": "ABCD2345" },
         }),
       },
     },
@@ -55,6 +62,7 @@ async function harness({
     },
     noteIndex,
     citationText,
+    citationIndex,
     settings,
   } as never);
   await service.ready;
@@ -62,6 +70,7 @@ async function harness({
     settings,
     noteIndex,
     citationText,
+    citationIndex,
     render: async (linktext) => {
       const root = section(`<p>${internalLink(linktext)}</p>`);
       await process?.(root, { sourcePath: "note.md" } as never);
@@ -106,10 +115,10 @@ describe("WikilinkReading rendering", () => {
     );
   });
 
-  it("reads the Citation Key Property the settings name", async () => {
+  it("falls back to the filename when the Item carries no native citation key", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
-      "citation.key-links-frontmatter-key": "bibkey",
+      citekeys: {},
     });
 
     expect(await harnessed.render(WANG)).toBe(
@@ -155,7 +164,7 @@ describe("WikilinkReading rerender", () => {
     expect(rerenders()).toBe(2);
   });
 
-  it("renders again when a gating setting or the Citation Key Property changes", async () => {
+  it("renders again when a gating setting changes", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
     });
@@ -166,9 +175,14 @@ describe("WikilinkReading rerender", () => {
 
     settings.update({ "citation.wikilink-display": false });
     expect(rerenders()).toBe(2);
+  });
 
-    settings.update({ "citation.key-links-frontmatter-key": "bibkey" });
-    expect(rerenders()).toBe(3);
+  it("renders every reading view again when the citekey resolution snapshot rebuilds", async () => {
+    await using harnessed = await harness();
+    const { citationIndex, rerenders } = harnessed;
+
+    citationIndex.emit();
+    expect(rerenders()).toBe(1);
   });
 
   it("renders again when the shared citation text goes stale", async () => {
@@ -237,6 +251,28 @@ class NoteIndexStub {
 
   emit(event: "changed" | "rebuilt"): void {
     for (const cb of this.#listeners[event]) cb();
+  }
+}
+
+class CitationIndexStub {
+  readonly #citekeys: Record<string, string>;
+  readonly #listeners = new Set<() => void>();
+
+  constructor(citekeys: Record<string, string>) {
+    this.#citekeys = citekeys;
+  }
+
+  citekeyOf(indexedKey: string): string | null {
+    return this.#citekeys[indexedKey] ?? null;
+  }
+
+  on(_event: "resolution-changed", cb: () => void): () => void {
+    this.#listeners.add(cb);
+    return () => this.#listeners.delete(cb);
+  }
+
+  emit(): void {
+    for (const cb of this.#listeners) cb();
   }
 }
 

@@ -9,13 +9,18 @@ import type {
 } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { LibraryCitekey } from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { yieldToMain } from "@/lib/yield-to-main";
+import type { DatabaseEvents } from "@/services/database/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
 import { CitationIndex } from "./service";
 import type { CitekeyRecord, CitekeyStore } from "./service";
+import type { ReadCitekeys } from "./snapshot";
 
 const KEY_A = "ABCD2345";
 const KEY_B = "ZZZ99999g7";
@@ -161,12 +166,70 @@ class MockWorkspace {
 }
 
 class NoteIndexStub {
+  /** Literature Notes by Indexed Key. */
   readonly notes = new Map<string, TFile>();
 
-  getNotesByCitationKey(citationKey: string): TFile[] {
-    const note = this.notes.get(citationKey);
+  getNotesByItemKey(indexedKey: string): TFile[] {
+    const note = this.notes.get(indexedKey);
     return note ? [note] : [];
   }
+}
+
+/** The database double: a mutable `state`, a `client` stand-in, and a `changed` event. */
+class DatabaseStub {
+  state: "loading" | "ready" | "degraded" = "ready";
+  readonly client = {} as NodeDatabaseClient;
+  readonly #listeners = new Set<() => void>();
+  readonly #ready = Promise.withResolvers<void>();
+
+  constructor({ readyImmediately = true } = {}) {
+    if (readyImmediately) this.#ready.resolve();
+  }
+
+  get ready(): Promise<void> {
+    return this.#ready.promise;
+  }
+
+  /** Settles `ready` for a harness that parked it to model a cold start. */
+  settle(): void {
+    this.#ready.resolve();
+  }
+
+  on<K extends keyof DatabaseEvents>(
+    event: K,
+    cb: DatabaseEvents[K],
+  ): () => void {
+    const listener = cb as () => void;
+    if (event === "changed") this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  changed(): void {
+    for (const listener of this.#listeners) listener();
+  }
+}
+
+/** Rows the snapshot rebuild reads, plus which `libraryID` it was called with. */
+class CitekeysStub {
+  rows: LibraryCitekey[];
+  readonly calls: number[] = [];
+
+  constructor(rows: LibraryCitekey[]) {
+    this.rows = rows;
+  }
+
+  read: ReadCitekeys = (_db, libraryID) => {
+    this.calls.push(libraryID);
+    return this.rows;
+  };
+}
+
+/** The default citekeys the snapshot resolves, mirroring the two Literature Notes. */
+function defaultCitekeys(): LibraryCitekey[] {
+  return [
+    { itemID: 1, key: "DOE2024", indexedKey: KEY_A, citekey: "doe2024" },
+    { itemID: 2, key: "ROE2025", indexedKey: KEY_B, citekey: "roe2025" },
+  ];
 }
 
 /** The persisted store, in memory: it outlives an index the way a database does. */
@@ -608,6 +671,104 @@ describe("CitationIndex persistence", () => {
   });
 });
 
+describe("CitationIndex resolution", () => {
+  it("resolves a citekey with no Literature Note in the vault", async () => {
+    const { draft, index } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { notes: false },
+    );
+
+    expect(await index.getCitations(draft)).toMatchObject([
+      { indexedKey: KEY_A, linkpath: null },
+    ]);
+    expect(index.citekeyOf(KEY_A)).toBe("doe2024");
+  });
+
+  it("stays unresolved before the snapshot is warm, then resolves once the read settles", async () => {
+    const db = new DatabaseStub({ readyImmediately: false });
+    const { index } = await makeHarness({}, { db, notes: false });
+
+    expect(index.resolveCitekey("doe2024")).toBeNull();
+    const waiting = index.whenResolved();
+
+    db.settle();
+    await waiting;
+
+    expect(index.resolveCitekey("doe2024")).toEqual({
+      itemID: 1,
+      indexedKey: KEY_A,
+    });
+  });
+
+  it("rebuilds on the database changed event, dropping the old key and adding the new one", async () => {
+    const { index, citekeys, db } = await makeHarness({}, { notes: false });
+    expect(index.resolveCitekey("doe2024")).not.toBeNull();
+    expect(index.resolveCitekey("doe2024b")).toBeNull();
+
+    citekeys.rows = citekeys.rows.map((row) =>
+      row.citekey === "doe2024" ? { ...row, citekey: "doe2024b" } : row,
+    );
+    let notified = 0;
+    index.on("resolution-changed", () => notified++);
+
+    db.changed();
+    await index.whenResolved();
+    await yieldToMain();
+
+    expect(notified).toBeGreaterThan(0);
+    expect(index.resolveCitekey("doe2024")).toBeNull();
+    expect(index.resolveCitekey("doe2024b")).toEqual({
+      itemID: 1,
+      indexedKey: KEY_A,
+    });
+  });
+
+  it("emits nothing when a rebuild finds identical rows", async () => {
+    const { index, db } = await makeHarness({}, { notes: false });
+    let notified = 0;
+    index.on("resolution-changed", () => notified++);
+
+    db.changed();
+    await yieldToMain();
+
+    expect(notified).toBe(0);
+  });
+
+  it("reads the configured citation library and rebuilds when it changes", async () => {
+    const { index, citekeys, settings } = await makeHarness(
+      {},
+      { notes: false },
+    );
+    expect(citekeys.calls).toContain(defaults["zotero.citation-library"]);
+
+    settings.update({ "zotero.citation-library": 2 });
+    await index.whenResolved();
+    await yieldToMain();
+
+    expect(citekeys.calls).toContain(2);
+  });
+
+  it("settles whenResolved unresolved when the database is degraded", async () => {
+    const db = new DatabaseStub();
+    db.state = "degraded";
+    const { index } = await makeHarness({}, { db, notes: false });
+
+    await index.whenResolved();
+
+    expect(index.resolveCitekey("doe2024")).toBeNull();
+  });
+
+  it("resolves with a Literature Note's path as linkpath", async () => {
+    const { draft, index } = await makeHarness({
+      "draft.md": "As @doe2024 wrote.",
+    });
+
+    expect(await index.getCitations(draft)).toMatchObject([
+      { indexedKey: KEY_A, linkpath: "Doe 2024.md" },
+    ]);
+  });
+});
+
 /** Runs one index to completion over `documents`, leaving its scans in `store`. */
 async function warmVault(
   documents: Record<string, string>,
@@ -627,25 +788,41 @@ interface Harness {
   store: MemoryStore;
   vault: MockVault;
   workspace: MockWorkspace;
+  db: DatabaseStub;
+  citekeys: CitekeysStub;
 }
 
 /**
  * A vault of two Literature Notes — `doe2024` and `roe2025` — plus the passed
  * documents, none of which the index covers until an event, a query, or the
- * backfill reaches it.
+ * backfill reaches it. The resolution snapshot resolves `doe2024`/`roe2025` to
+ * `KEY_A`/`KEY_B` by default.
  *
  * @param options.store carry one across two harnesses to model a restart: the
  *   second index starts over the scans the first left behind.
+ * @param options.db a caller-controlled database double (e.g. one whose
+ *   `ready` is parked) — skips the harness's own wait for the first
+ *   resolution rebuild, leaving that to the test.
+ * @param options.notes set `false` to omit the two Literature Notes, so a
+ *   resolved citekey carries no `linkpath`.
  */
 async function makeHarness(
   documents: Record<string, string>,
-  options: { settings?: Partial<Settings>; store?: MemoryStore } = {},
+  options: {
+    settings?: Partial<Settings>;
+    store?: MemoryStore;
+    citekeys?: LibraryCitekey[];
+    db?: DatabaseStub;
+    notes?: boolean;
+  } = {},
 ): Promise<Harness> {
   const metadataCache = new MockMetadataCache();
   const vault = new MockVault(metadataCache);
   const workspace = new MockWorkspace();
   const noteIndex = new NoteIndexStub();
   const store = options.store ?? new MemoryStore();
+  const db = options.db ?? new DatabaseStub();
+  const citekeys = new CitekeysStub(options.citekeys ?? defaultCitekeys());
 
   const addFile = (path: string, body: string): TFile => {
     const file = makeFile(path, body);
@@ -653,16 +830,22 @@ async function makeHarness(
     vault.bodies.set(path, body);
     return file;
   };
-  for (const [citekey, indexedKey] of [
-    ["doe2024", KEY_A],
-    ["roe2025", KEY_B],
-  ] as const) {
-    const path = citekey === "doe2024" ? "Doe 2024.md" : "Roe 2025.md";
-    const note = addFile(path, "");
-    metadataCache.fileCache.set(path, {
-      frontmatter: { [FIELD_ZOTERO_KEY]: indexedKey, [FIELD_CITEKEY]: citekey },
-    } as CachedMetadata);
-    noteIndex.notes.set(citekey, note);
+  const withNotes = options.notes ?? true;
+  if (withNotes) {
+    for (const [citekey, indexedKey] of [
+      ["doe2024", KEY_A],
+      ["roe2025", KEY_B],
+    ] as const) {
+      const path = citekey === "doe2024" ? "Doe 2024.md" : "Roe 2025.md";
+      const note = addFile(path, "");
+      metadataCache.fileCache.set(path, {
+        frontmatter: {
+          [FIELD_ZOTERO_KEY]: indexedKey,
+          [FIELD_CITEKEY]: citekey,
+        },
+      } as CachedMetadata);
+      noteIndex.notes.set(indexedKey, note);
+    }
   }
   for (const [path, body] of Object.entries(documents)) {
     addFile(path, body);
@@ -677,10 +860,15 @@ async function makeHarness(
     app,
     noteIndex,
     settings,
+    db,
+    readCitekeys: citekeys.read,
     openStore: () => Promise.resolve(store),
   });
   services.push(index);
   await index.ready;
+  // A caller-supplied `db` controls its own readiness (e.g. a parked one), so
+  // only the harness's own default double is waited on here.
+  if (!options.db) await index.whenResolved();
   vault.reads.length = 0;
   store.writes.length = 0;
 
@@ -692,6 +880,8 @@ async function makeHarness(
     store,
     vault,
     workspace,
+    db,
+    citekeys,
   };
 }
 

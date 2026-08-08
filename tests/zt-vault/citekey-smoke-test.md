@@ -5,8 +5,10 @@ title: Citekey Smoke Test
 
 This note exercises literal Pandoc `@citekey` citations described in spec #642. Use it to
 smoke-test the References Sidebar, Live Preview widgets, and reading-mode rendering against
-`src/lib/citation-grammar.test.ts`. Each Literature Note referenced here lives under
-`literatures/` with a matching Citation Key Property.
+`src/lib/citation-grammar.test.ts`. A citekey resolves when the configured citation library
+holds a Zotero item carrying that native citation key; a key matching no live Zotero item is
+the error-state entry, and a key whose item has no Literature Note yet renders normally and
+creates the note on click.
 
 ## Author-in-text citekey
 
@@ -46,7 +48,7 @@ Author suppression applies per item inside a cluster:
 
 ## Unresolved citekey (error entry)
 
-A citekey with no matching Literature Note should surface as an error-state entry showing the
+A citekey naming no live Zotero item should surface as an error-state entry showing the
 raw key, not vanish:
 
 This cites a key with no note: [@nonexistentCitekeyForSmokeTest2099].

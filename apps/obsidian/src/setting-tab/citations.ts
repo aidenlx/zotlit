@@ -11,7 +11,6 @@ import { RESET_SETTING } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { pandocEngineDefinition } from "./pandoc-engine";
-import { defaultPlaceholder } from "./placeholder";
 
 /** Items for the "Citations" sub-page. */
 export function citationsPageItems(
@@ -75,21 +74,6 @@ export function citationsPageItems(
           name: m.settings_citation_citekey_editor_name(),
           desc: m.settings_citation_citekey_editor_desc(),
           control: { type: "toggle", key: "citation.citekey-editor" },
-        },
-        {
-          name: m.settings_citation_key_property_name(),
-          desc: m.settings_citation_key_property_desc(),
-          control: {
-            type: "text",
-            key: "citation.key-links-frontmatter-key",
-            placeholder: defaultPlaceholder(
-              "citation.key-links-frontmatter-key",
-            ),
-            validate: (value) =>
-              value.length > 0 && value === value.trim()
-                ? undefined
-                : m.settings_citation_key_property_required(),
-          },
         },
       ],
     },

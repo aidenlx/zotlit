@@ -45,13 +45,9 @@ Type or paste a Pandoc citation like `@key` or `[@key]` in Live Preview or Sourc
 
 ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
 
-The **Citation key property** setting controls direct lookup and defaults to `citekey`. Exactly one matching Literature Note supports direct opening. Files without `zotero-key` do not count as Literature Note matches.
-
-When the property has no match or multiple matches, a click looks up the Zotero item. ZotLit then checks the item's `zotero-key` before creating a note. This check prevents a duplicate when an existing Literature Note has a missing or different citation key property.
+A click resolves the citation key against Zotero's native citation key field in the **Default library** (set at the top of **Settings > ZotLit**). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
 
 If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
-
-Zotero lookup uses the **Default library** setting at the top of **Settings > ZotLit**. If the selected Citation Key Property is absent from Managed Frontmatter, ZotLit shows a notice but keeps the feature active. Existing unmanaged property values can still resolve notes.
 
 For the recognized syntax and what reading view shows, see [How citation key styling works](/docs/concepts/how-citekey-links-work).
 

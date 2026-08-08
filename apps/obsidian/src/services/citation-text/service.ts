@@ -71,7 +71,10 @@ interface CitationTextEvents {
 export interface CitationTextDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client">;
-  citationIndex: Pick<CitationIndex, "getCitations" | "on">;
+  citationIndex: Pick<
+    CitationIndex,
+    "getCitations" | "citekeyOf" | "whenResolved" | "on"
+  >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   /** The plugin-wide render cache, which owns the References Style and the engine. */
@@ -152,8 +155,8 @@ export class CitationText extends Service<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
 
-    // Which wikilinks are Citations, and the Citation Key Property they name
-    // their works by, decide what every document's citations say.
+    // Which wikilinks are Citations decides what every document's citations
+    // say.
     stack.defer(this.#display.watch(this.#settings, () => this.#dropAll()));
     // A document's own citekeys decide what its citations say.
     stack.defer(this.#citationIndex.on("changed", (path) => this.#drop(path)));
@@ -166,14 +169,21 @@ export class CitationText extends Service<void> {
         this.#app.metadataCache.on("changed", (file) => this.#drop(file.path)),
       ),
     );
-    // Resolution is the one cross-document input: the Citation Key Property of
-    // any Literature Note decides what a citekey here reaches. Only `changed`
-    // is listened for, and it reports just the edits that move a mapping. Its
-    // `rebuilt` counterpart rides Obsidian's `resolved` event, which fires
-    // after every batch of edits in the vault, and dropping there would put
-    // back the wholesale flush this holds text to avoid; a rescan that finds a
-    // moved mapping in steady state has already emitted `changed` for it.
+    // Renaming or creating a Literature Note is a cross-document input: which
+    // Literature Note a wikilink resolves to decides what a citekey here
+    // reaches. Only `changed` is listened for, and it reports just the edits
+    // that move a mapping. Its `rebuilt` counterpart rides Obsidian's
+    // `resolved` event, which fires after every batch of edits in the vault,
+    // and dropping there would put back the wholesale flush this holds text to
+    // avoid; a rescan that finds a moved mapping in steady state has already
+    // emitted `changed` for it.
     stack.defer(this.#noteIndex.on("changed", () => this.#dropAll()));
+    // A citekey resolution snapshot rebuild is the other cross-document input:
+    // it decides what a literal `@citekey` reaches, and whether a wikilink's
+    // Literature Note carries a native citation key at all.
+    stack.defer(
+      this.#citationIndex.on("resolution-changed", () => this.#dropAll()),
+    );
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(
@@ -239,13 +249,17 @@ export class CitationText extends Service<void> {
    * out: citeproc has nothing to format it from, and it falls back to what the
    * author wrote.
    *
-   * The read waits for the Note Index to finish its first scan, so a document
-   * opened during startup is never answered against an index that still
+   * The read waits for the Note Index to finish its first scan and for the
+   * citekey resolution snapshot to run its first rebuild, so a document opened
+   * during startup is never answered against an index or a snapshot that still
    * resolves nothing. That wait is what lets the drops below listen for moved
    * mappings alone rather than for every rescan.
    */
   async #readDocument(file: TFile): Promise<DocumentCitations> {
-    await this.#noteIndex.whenIndexed();
+    await Promise.all([
+      this.#noteIndex.whenIndexed(),
+      this.#citationIndex.whenResolved(),
+    ]);
     const body = await this.#app.vault.cachedRead(file);
     const wikilinks = this.#wikilinkCitations(file, body);
     const cited = await this.#citationIndex.getCitations(file, {
@@ -295,11 +309,17 @@ export class CitationText extends Service<void> {
    */
   #wikilinkCitations(file: TFile, body: string): DocumentWikilinks {
     const context = {
-      literatureNote: (linkpath: string) =>
-        resolveLiteratureNote(linkpath, file.path, {
+      literatureNote: (linkpath: string) => {
+        const note = resolveLiteratureNote(linkpath, file.path, {
           app: this.#app,
-          citationKeyProperty: this.#display.citationKeyProperty,
-        }),
+        });
+        return (
+          note && {
+            ...note,
+            citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
+          }
+        );
+      },
       fragmentlessDisplay: this.#display.fragmentlessDisplay,
     };
 
@@ -341,7 +361,7 @@ export class CitationText extends Service<void> {
    *
    * Citeproc matches a citation by the CSL `id`, so each work is handed over
    * under the citekey the document names it by — the key the author wrote, or
-   * the Citation Key Property a wikilink resolves to.
+   * the native Zotero citation key a wikilink resolves to.
    *
    * @param cited the citekeys naming each Indexed Key the document cites.
    */
@@ -372,8 +392,8 @@ export class CitationText extends Service<void> {
         const csl = itemToCsl(item, user);
         for (const citekey of citekeys) {
           // One citekey names one work here: a document that reaches two
-          // through it — a literal key and a wikilink whose note carries the
-          // same Citation Key Property value — keeps the first work read.
+          // through it — a literal key and a wikilink whose Item carries the
+          // same native citation key — keeps the first work read.
           if (summaries.has(citekey)) {
             logger.debug("Citekey names two works in one document", {
               citekey,

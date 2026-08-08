@@ -58,15 +58,6 @@ const serverPort = v.pipe(
   v.maxValue(65535),
 );
 
-export const citationKeyPropertySchema = v.pipe(
-  v.string(),
-  v.nonEmpty("Citation key property is required"),
-  v.check(
-    (value) => value === value.trim(),
-    "Citation key property must not start or end with whitespace",
-  ),
-);
-
 export const schema = v.object({
   "log.level": logLevel,
   "log.to-file": v.boolean(),
@@ -86,7 +77,6 @@ export const schema = v.object({
   "citation.wikilink-display": v.boolean(),
   /** Mark and click literal `@citekey` text in the editor. */
   "citation.citekey-editor": v.boolean(),
-  "citation.key-links-frontmatter-key": citationKeyPropertySchema,
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
   "citation.references-style": v.nullable(v.string()),
 
@@ -133,7 +123,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.wikilink-citations": false,
   "citation.wikilink-display": true,
   "citation.citekey-editor": true,
-  "citation.key-links-frontmatter-key": "citekey",
   "citation.references-style": null,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
