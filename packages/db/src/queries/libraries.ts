@@ -1,9 +1,10 @@
-import { type LibraryType } from "@drizzle/schema";
+import type { LibraryType } from "@drizzle/schema";
 
-import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { SQLocalDatabaseClient } from "@/client/web";
 
-import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
+import { defineQuery } from "./_shared";
+import type { FindManyOptions, QueryRow } from "./_shared";
 
 export interface Library {
   libraryID: number;

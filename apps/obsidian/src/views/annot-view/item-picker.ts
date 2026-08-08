@@ -1,13 +1,11 @@
-import { type App, SuggestModal } from "obsidian";
+import { SuggestModal } from "obsidian";
+import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import {
-  DEFAULT_LIMIT,
-  type ItemLookup,
-  type SearchHit,
-} from "@/services/item-lookup/service";
-import { type SettingsService } from "@/services/settings/service";
+import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import type { ItemLookup, SearchHit } from "@/services/item-lookup/service";
+import type { SettingsService } from "@/services/settings/service";
 
 export interface ItemPickerDeps {
   app: App;

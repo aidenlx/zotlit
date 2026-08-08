@@ -1,5 +1,5 @@
-import { type NodeDatabaseClient } from "@/client/node";
-import { type QueryRow } from "@/queries/_shared";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { QueryRow } from "@/queries/_shared";
 import {
   collectionIDsByItemQuery,
   collectionNodesByLibraryQuery,

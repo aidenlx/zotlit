@@ -1,6 +1,7 @@
-import { type ObsidianProtocolData, type Plugin } from "obsidian";
+import type { ObsidianProtocolData, Plugin } from "obsidian";
 
-import { getItemRefByID, type ItemRef } from "@zotlit/db";
+import { getItemRefByID } from "@zotlit/db";
+import type { ItemRef } from "@zotlit/db";
 import {
   batchProtocolActionId,
   exploreProtocolActionId,
@@ -14,34 +15,34 @@ import {
   parseProtocolBatchQuery,
   parseProtocolQuery,
   parseUpdateAllProtocolQuery,
-  type ProtocolAction,
   protocolActionId,
   protocolActions,
   protocolSourceMatches,
   updateAllProtocolActionId,
 } from "@zotlit/protocol";
+import type { ProtocolAction } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import { type LiveUpdateService } from "@/services/live-update/service";
+import type { LiveUpdateService } from "@/services/live-update/service";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
-  type BatchUpdateResult,
 } from "@/services/note-feature/update-batch";
+import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import {
   createAndOpen,
-  type SingleUpdateDeps,
   updateNote,
 } from "@/services/note-feature/update-single";
-import { type BatchImport } from "@/services/note-import/batch-import";
+import type { SingleUpdateDeps } from "@/services/note-feature/update-single";
+import type { BatchImport } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 const logger = getLogger("protocol");

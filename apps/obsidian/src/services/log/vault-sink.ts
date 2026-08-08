@@ -1,9 +1,6 @@
-import {
-  type LogRecord,
-  type Sink,
-  getJsonLinesFormatter,
-} from "@logtape/logtape";
-import { type DataAdapter } from "obsidian";
+import { getJsonLinesFormatter } from "@logtape/logtape";
+import type { LogRecord, Sink } from "@logtape/logtape";
+import type { DataAdapter } from "obsidian";
 
 const FLUSH_INTERVAL_MS = 1000;
 

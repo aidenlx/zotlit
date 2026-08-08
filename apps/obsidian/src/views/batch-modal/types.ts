@@ -2,10 +2,10 @@
 
 // The classify/run contract is owned by the batch-run service (the leaf that
 // drives it); re-exported here so modal code keeps a single import surface.
-import {
-  type BatchClassifyControls,
-  type BatchRunControls,
-  type BatchRunResult,
+import type {
+  BatchClassifyControls,
+  BatchRunControls,
+  BatchRunResult,
 } from "@/services/batch-run";
 
 export type {

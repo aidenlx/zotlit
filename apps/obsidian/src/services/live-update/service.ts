@@ -1,23 +1,21 @@
-import { serve, type ServerType } from "@hono/node-server";
+import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 
-import {
-  type ImportMode,
-  type ItemUpdate,
-  type NotifyEvent,
-  type ReaderActive,
-  type ReaderAnnotSelect,
-  type UpdateScope,
+import type {
+  ImportMode,
+  ItemUpdate,
+  NotifyEvent,
+  ReaderActive,
+  ReaderAnnotSelect,
+  UpdateScope,
 } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import { type NoteIndex } from "@/services/note-index/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import {
-  type Settings,
-  type SettingsService,
-} from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { Settings, SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { createLiveUpdateApp } from "./app";
 

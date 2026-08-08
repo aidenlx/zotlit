@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { V1_TEMPLATE_FOLDER } from "./constants";
-import { decideRelease, type ReleaseCheckInput } from "./decide";
+import { decideRelease } from "./decide";
+import type { ReleaseCheckInput } from "./decide";
 
 const CURRENT = "2.0.0-alpha.6";
 

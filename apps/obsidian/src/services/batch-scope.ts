@@ -8,7 +8,7 @@ import {
   getNoteItemIDsByCollection,
   getNoteItemIDsByLibrary,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
 

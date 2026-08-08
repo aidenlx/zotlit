@@ -1,14 +1,17 @@
-import { type Temporal } from "@zotlit/shared/temporal";
+import type { Temporal } from "@zotlit/shared/temporal";
 import { FIELD_ALIASES } from "@zotlit/zotero-types";
 
 import { ZT_FIELD_ALIASES } from "@/lib/context/zt-field-aliases";
 import { defineToString } from "@/lib/to-string";
-import { type TemplateCollection } from "@/lib/zt-collection";
-import { parseItemDate, type ItemDate } from "@/lib/zt-date";
-import { parseItemExtra, type ItemExtra } from "@/lib/zt-extra";
-import { toTemplateTag, type ItemTag, type TemplateTag } from "@/lib/zt-tag";
+import type { TemplateCollection } from "@/lib/zt-collection";
+import { parseItemDate } from "@/lib/zt-date";
+import type { ItemDate } from "@/lib/zt-date";
+import { parseItemExtra } from "@/lib/zt-extra";
+import type { ItemExtra } from "@/lib/zt-extra";
+import { toTemplateTag } from "@/lib/zt-tag";
+import type { ItemTag, TemplateTag } from "@/lib/zt-tag";
 import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
-import { type Creator, type Item } from "@/queries/items";
+import type { Creator, Item } from "@/queries/items";
 
 /**
  * One creator of an item, in the template vocabulary. Coerces to

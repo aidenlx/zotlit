@@ -8,13 +8,13 @@
  * here — extend as needed alongside the services that consume it.
  */
 
-import {
-  type App,
-  type Command,
-  type Debouncer,
-  type EditorSuggestContext,
-  type Instruction,
-  type Modifier,
+import type {
+  App,
+  Command,
+  Debouncer,
+  EditorSuggestContext,
+  Instruction,
+  Modifier,
 } from "obsidian";
 
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.

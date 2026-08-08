@@ -8,7 +8,8 @@
 // `Zotero`, `Services`, etc. are in scope. Return a JSON-serializable value
 // (wrap multi-statement logic in an IIFE) to read it back here.
 
-import { createConnection, type Socket } from "node:net";
+import { createConnection } from "node:net";
+import type { Socket } from "node:net";
 
 const BYTE_COLON = 0x3a;
 

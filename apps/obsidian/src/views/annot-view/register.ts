@@ -1,17 +1,18 @@
 import "./style.css";
-import { type App, type Plugin } from "obsidian";
+import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { type AttachmentImportService } from "@/services/attachment-import/service";
-import { type DatabaseService } from "@/services/database/service";
-import { type ItemLookup } from "@/services/item-lookup/service";
-import { type LiveUpdateService } from "@/services/live-update/service";
-import { type NoteFeature } from "@/services/note-feature";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { AttachmentImportService } from "@/services/attachment-import/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
+import type { LiveUpdateService } from "@/services/live-update/service";
+import type { NoteFeature } from "@/services/note-feature";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { ANNOT_VIEW_TYPE, AnnotationView, type AnnotViewDeps } from "./view";
+import { ANNOT_VIEW_TYPE, AnnotationView } from "./view";
+import type { AnnotViewDeps } from "./view";
 
 type AnnotViewPlugin = Pick<
   Plugin,

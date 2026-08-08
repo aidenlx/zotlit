@@ -1,8 +1,8 @@
 import * as m from "@/lib/i18n/generated/messages";
 // Pure BatchImportResult → user-facing string mappings for notices and toasts.
-import { type BatchRunResult } from "@/services/batch-run";
+import type { BatchRunResult } from "@/services/batch-run";
 
-import { type BatchImportResult } from "./batch-import";
+import type { BatchImportResult } from "./batch-import";
 
 /** Map preflight import outcomes to a notice; modal/cancelled paths are silent. */
 export function batchImportNotice(

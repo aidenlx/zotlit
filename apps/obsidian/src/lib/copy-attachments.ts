@@ -1,14 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { constants, createWriteStream, type Stats } from "node:fs";
-import {
-  copyFile,
-  lstat,
-  rename,
-  rm,
-  stat,
-  utimes,
-  type FileHandle,
-} from "node:fs/promises";
+import { constants, createWriteStream } from "node:fs";
+import type { Stats } from "node:fs";
+import { copyFile, lstat, rename, rm, stat, utimes } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 

@@ -1,5 +1,5 @@
 // Reads the signed-in Zotero account's username from the `settings` table.
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 
 import { defineQuery } from "./_shared";
 

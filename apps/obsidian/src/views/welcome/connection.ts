@@ -3,12 +3,9 @@ import { homedir } from "node:os";
 
 import { getIndexSignature, getLibraries } from "@zotlit/db";
 
-import { type DatabaseService } from "@/services/database/service";
-import {
-  type Settings,
-  type SettingsService,
-} from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { Settings, SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 export type ConnectionReadout =
   | { status: "checking" }

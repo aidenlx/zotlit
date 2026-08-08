@@ -1,7 +1,9 @@
 // Shared copy-key action used by Literature Notes, Annotation View, and Template Data Explorer.
-import { type Plugin, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { Plugin } from "obsidian";
 
-import { formatIndexedKey, type ParsedIndexedKey } from "@zotlit/db";
+import { formatIndexedKey } from "@zotlit/db";
+import type { ParsedIndexedKey } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";

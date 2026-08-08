@@ -14,16 +14,14 @@ import {
   formatCompilerWarnings,
   compile,
   compileProject,
-  type CompileResult,
-  type GeneratedArtifacts,
   writeOutput,
 } from "./compiler.js";
+import type { CompileResult, GeneratedArtifacts } from "./compiler.js";
 import {
   LanguagePackSchemaVersionError,
   validateLanguagePack,
-  type LanguagePackRuntime,
-  type TargetLocaleMessages,
 } from "./index.js";
+import type { LanguagePackRuntime, TargetLocaleMessages } from "./index.js";
 import {
   addLocale,
   addSourcePattern,

@@ -1,9 +1,11 @@
-import { type NodeDatabaseClient } from "@/client/node";
-import { type Annotation } from "@/lib/zt-annot";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { Annotation } from "@/lib/zt-annot";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
-import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
+import { groupIDForLibrary, resolveGroupID } from "./_groups";
+import type { GroupIDMemo } from "./_groups";
+import { defineQuery } from "./_shared";
+import type { FindManyOptions, QueryRow } from "./_shared";
 
 const annotationFindOptions = {
   with: {

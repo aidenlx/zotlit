@@ -1,7 +1,8 @@
-import { type Editor, type EventRef } from "obsidian";
+import type { Editor, EventRef } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import { defaults, type Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import { CitekeyClick, findCitekeyToken } from "./service";
 

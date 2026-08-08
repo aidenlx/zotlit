@@ -1,6 +1,6 @@
 import { cut, cut_for_search } from "jieba-wasm";
 
-import { type ChsSegmenter } from "./tokenizer";
+import type { ChsSegmenter } from "./tokenizer";
 
 /**
  * Node-side Jieba segmenter. Internal: not re-exported from the package

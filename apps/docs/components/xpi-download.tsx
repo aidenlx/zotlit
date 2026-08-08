@@ -1,10 +1,7 @@
 // Resolves the latest companion `.xpi` and renders a direct download link.
 import { ActionLink } from "@/components/action-link";
-import {
-  getZoteroCompanion,
-  releasesUrl,
-  type ReleaseChannel,
-} from "@/lib/github-releases";
+import { getZoteroCompanion, releasesUrl } from "@/lib/github-releases";
+import type { ReleaseChannel } from "@/lib/github-releases";
 
 export interface XpiDownloadProps {
   channel?: ReleaseChannel;

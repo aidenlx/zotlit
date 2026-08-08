@@ -1,7 +1,5 @@
-import {
-  rehypeCodeDefaultOptions,
-  type LLMsOptions,
-} from "fumadocs-core/mdx-plugins";
+import { rehypeCodeDefaultOptions } from "fumadocs-core/mdx-plugins";
+import type { LLMsOptions } from "fumadocs-core/mdx-plugins";
 import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
 import {
   defineCollections,

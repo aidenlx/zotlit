@@ -5,7 +5,8 @@
 // apps/docs/DESIGN.md and docs/brand.md.
 import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { type FetchLike, googleFonts } from "takumi-js/helpers";
+import { googleFonts } from "takumi-js/helpers";
+import type { FetchLike } from "takumi-js/helpers";
 import { Renderer } from "takumi-js/node";
 import { ImageResponse } from "takumi-js/response";
 

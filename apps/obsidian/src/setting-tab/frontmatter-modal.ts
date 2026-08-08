@@ -1,8 +1,9 @@
-import { type App, Modal, Setting } from "obsidian";
+import { Modal, Setting } from "obsidian";
+import type { App } from "obsidian";
 
-import {
-  type FrontmatterLanguage,
-  type FrontmatterMergeStrategy,
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
 
 import { AbortError } from "@/lib/abort-error";

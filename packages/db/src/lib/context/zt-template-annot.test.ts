@@ -3,17 +3,14 @@ import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import {
-  type Annotation,
-  type ResolvedAnnotationTypeName,
-} from "@/lib/zt-annot";
+import type { Annotation, ResolvedAnnotationTypeName } from "@/lib/zt-annot";
 
 import {
   annotationToTemplateData,
   withAnnotationCitation,
-  type TemplateAnnotation,
 } from "./zt-template-annot";
-import { type TemplateAttachment } from "./zt-template-attach";
+import type { TemplateAnnotation } from "./zt-template-annot";
+import type { TemplateAttachment } from "./zt-template-attach";
 
 function makeAnnotation(overrides?: Partial<Annotation>): Annotation {
   return {

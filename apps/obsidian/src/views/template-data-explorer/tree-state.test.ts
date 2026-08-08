@@ -5,8 +5,8 @@ import {
   setAnchor,
   setFilter,
   toggleNode,
-  type TreeState,
 } from "./tree-state";
+import type { TreeState } from "./tree-state";
 
 describe("initialTreeState", () => {
   it("returns a fresh empty state with no anchor by default", () => {

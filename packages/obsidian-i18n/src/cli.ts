@@ -2,7 +2,8 @@
 // on input changes belongs to the Vite plugin in `./vite.ts`, which registers
 // the compile result's `watchPaths` with the bundler's own watcher.
 
-import { compile, type CompileOptions } from "./compiler.js";
+import { compile } from "./compiler.js";
+import type { CompileOptions } from "./compiler.js";
 
 export type CliIo = {
   cwd: string;

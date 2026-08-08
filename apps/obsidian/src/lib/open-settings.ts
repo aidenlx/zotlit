@@ -1,6 +1,6 @@
 // Deep links into the settings modal: select a tab, then descend its sub-pages.
 
-import { type App } from "obsidian";
+import type { App } from "obsidian";
 
 /**
  * Open the settings modal on `tabId` and descend `pagePath`.

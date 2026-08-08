@@ -10,10 +10,10 @@ import { join } from "node:path";
 
 import { CONTRACT_IR } from "../lib/template-contract/contract.ts";
 import { renderDocMarkdown } from "../lib/template-contract/gfm.ts";
-import {
-  buildPageModel,
-  type PageSection,
-  type SectionValue,
+import { buildPageModel } from "../lib/template-contract/page-model.ts";
+import type {
+  PageSection,
+  SectionValue,
 } from "../lib/template-contract/page-model.ts";
 
 const PAGE = join("content", "docs", "reference", "templates", "data.mdx");

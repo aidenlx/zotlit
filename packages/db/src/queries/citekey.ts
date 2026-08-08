@@ -1,4 +1,4 @@
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 
 import { defineQuery } from "./_shared";
 

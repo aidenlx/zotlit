@@ -1,18 +1,20 @@
 // Hono app for the companion-facing HTTP listener: gates + routes, no server lifecycle.
 import { vValidator } from "@hono/valibot-validator";
-import { type Context, type Next } from "hono";
+import type { Context, Next } from "hono";
 import { Hono } from "hono/tiny";
 
 import {
   batchUpdateRequestSchema,
   importNotesRequestSchema,
-  type ImportMode,
-  type NotifyEvent,
   notifyEventSchema,
-  type NoteStatusResponse,
   PROTOCOL_VERSION_HEADER,
   SOURCE_ID_HEADER,
-  type UpdateScope,
+} from "@zotlit/protocol";
+import type {
+  ImportMode,
+  NotifyEvent,
+  NoteStatusResponse,
+  UpdateScope,
 } from "@zotlit/protocol";
 
 import { getLogger } from "@/lib/log";

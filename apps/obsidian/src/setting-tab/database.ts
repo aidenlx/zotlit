@@ -1,28 +1,29 @@
 import { join } from "node:path";
-import {
-  type DropdownComponent,
-  type ExtraButtonComponent,
-  type SettingDefinitionItem,
-  type Setting,
+import type {
+  DropdownComponent,
+  ExtraButtonComponent,
+  SettingDefinitionItem,
+  Setting,
 } from "obsidian";
 
-import { getLibraries, type Library } from "@zotlit/db";
+import { getLibraries } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
-import {
-  type ConfiguredReadMode,
-  type EffectiveReadMode,
+import type {
+  ConfiguredReadMode,
+  EffectiveReadMode,
 } from "@/services/database/read-source";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
 } from "@/services/zotero-pref/prefs-file";
-import { type ZoteroProfileInfo } from "@/services/zotero-pref/service";
+import type { ZoteroProfileInfo } from "@/services/zotero-pref/service";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { appendDeviceOverrideNote, browseForDir } from "./device-override";
 
 const logger = getLogger(["setting-tab", "database"]);

@@ -1,9 +1,10 @@
 import { distinct } from "@std/collections";
 
-import { type NodeDatabaseClient } from "@/client/node";
-import { type ItemTag, type Tag } from "@/lib/zt-tag";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { ItemTag, Tag } from "@/lib/zt-tag";
 
-import { defineQuery, type QueryRow } from "./_shared";
+import { defineQuery } from "./_shared";
+import type { QueryRow } from "./_shared";
 
 const itemTagsByItemQuery = defineQuery<{ itemID: number }>()(
   (db, { placeholder }) =>

@@ -1,10 +1,11 @@
-import { type Plugin } from "obsidian";
+import type { Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 
-import { DatabaseError, type DatabaseService } from "./service";
+import { DatabaseError } from "./service";
+import type { DatabaseService } from "./service";
 
 /**
  * Register the manual `zotlit:refresh-zotero-data` command — the escape hatch for

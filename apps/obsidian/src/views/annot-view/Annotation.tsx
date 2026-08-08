@@ -1,10 +1,7 @@
 import { useCallback, useContext } from "react";
 
-import {
-  annotationTypeToName,
-  type AnnotationType,
-  type AnnotViewItem,
-} from "@zotlit/db";
+import { annotationTypeToName } from "@zotlit/db";
+import type { AnnotationType, AnnotViewItem } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";

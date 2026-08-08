@@ -1,6 +1,6 @@
 // Presentational tree for the Welcome View: fresh-state onboarding timeline with doc chips and footer links, plus the upgraded-state Migration Prompt banner.
-import { type IconName } from "obsidian";
-import { type ReactNode } from "react";
+import type { IconName } from "obsidian";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";

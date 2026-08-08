@@ -1,14 +1,10 @@
 import { defineToString } from "@/lib/to-string";
-import {
-  linkModeToName,
-  parseAttachmentPath,
-  type Attachment,
-  type AttachmentPath,
-} from "@/lib/zt-attach";
+import { linkModeToName, parseAttachmentPath } from "@/lib/zt-attach";
+import type { Attachment, AttachmentPath } from "@/lib/zt-attach";
 import { attachmentOpenUri } from "@/lib/zt-uri";
 
 import { emptyToNull } from "./normalize";
-import { type FallibleTemplateLink } from "./zt-template-item";
+import type { FallibleTemplateLink } from "./zt-template-item";
 
 /**
  * Attachment data in the v2 template vocabulary. Exposed on `zt.attachments`

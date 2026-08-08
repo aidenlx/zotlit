@@ -11,11 +11,11 @@ import {
   CollapsibleTrigger,
 } from "fumadocs-ui/components/ui/collapsible";
 import { useHomeLayout } from "fumadocs-ui/layouts/home";
-import { type LinkItemType, LinkItem } from "fumadocs-ui/layouts/shared";
+import { LinkItem } from "fumadocs-ui/layouts/shared";
+import type { LinkItemType } from "fumadocs-ui/layouts/shared";
 import { useIsScrollTop } from "fumadocs-ui/utils/use-is-scroll-top";
 import { ChevronDown, Languages } from "lucide-react";
 import {
-  type ComponentProps,
   createContext,
   Fragment,
   use,
@@ -25,6 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/cn";
 import { mergeRefs } from "@/lib/merge-refs";

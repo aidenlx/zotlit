@@ -3,9 +3,8 @@ import {
   parseCitationData,
   parseEmbeddedCitationItems,
   parseEmbeddedCitationSnapshot,
-  type AnnotationInfo,
-  type CitationInfo,
 } from "@zotlit/db";
+import type { AnnotationInfo, CitationInfo } from "@zotlit/db";
 
 /**
  * DOM glue over `@zotlit/db`'s note-mark parsers: read the URL-encoded payloads

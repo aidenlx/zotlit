@@ -13,18 +13,17 @@ import {
   getItemsByKey,
   getLibraryByGroupID,
   resolveCitedItem,
-  type Attachment,
-  type CitationItem,
-  type Item,
-  type ResolvedCiteRef,
-  type ZoteroRef,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
-import {
-  attachmentAbsPath,
-  parseAttachmentPath,
-  type AttachmentPathContext,
-} from "@zotlit/db/path";
+import type {
+  Attachment,
+  CitationItem,
+  Item,
+  ResolvedCiteRef,
+  ZoteroRef,
+} from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { attachmentAbsPath, parseAttachmentPath } from "@zotlit/db/path";
+import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -33,10 +32,11 @@ import {
   createNoteTurndown,
   encodeCalloutAttr,
 } from "@/lib/turndown";
-import { renderColorMark, type ColorMarkKind } from "@/lib/turndown/color-mark";
-import {
-  type AttachmentImport,
-  type SourceOrigin,
+import { renderColorMark } from "@/lib/turndown/color-mark";
+import type { ColorMarkKind } from "@/lib/turndown/color-mark";
+import type {
+  AttachmentImport,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
 
 import {
@@ -46,8 +46,8 @@ import {
   parseEmbeddedCitations,
   parseEmbeddedItemSnapshots,
   parseNoteSchema,
-  type NoteAnnotation,
 } from "./note-marks";
+import type { NoteAnnotation } from "./note-marks";
 
 const logger = getLogger(["note-import", "note-parser"]);
 

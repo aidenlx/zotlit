@@ -1,15 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import {
-  type BatchClassifyControls,
-  type BatchRunControls,
-  type BatchRunTask,
-  type RunOutcome,
-  classifyChunked,
-  executeBatchRun,
-  runBatchWrite,
+import { classifyChunked, executeBatchRun, runBatchWrite } from "./batch-run";
+import type {
+  BatchClassifyControls,
+  BatchRunControls,
+  BatchRunTask,
+  RunOutcome,
 } from "./batch-run";
 
 /** Settle event recorder for a run's controls, plus the abort controller so a

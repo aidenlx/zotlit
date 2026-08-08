@@ -1,21 +1,13 @@
 import { regex } from "arkregex";
 import MiniSearch from "minisearch";
 
-import {
-  parseItemDate,
-  parseItemLanguage,
-  type IndexedItem,
-  type LanguageNameLookup,
-} from "@zotlit/db";
+import { parseItemDate, parseItemLanguage } from "@zotlit/db";
+import type { IndexedItem, LanguageNameLookup } from "@zotlit/db";
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { formatCreator } from "./format-creator";
-import {
-  normalize,
-  normalizeWithIndexMap,
-  tokenize,
-  type TokenizerOptions,
-} from "./tokenizer";
+import { normalize, normalizeWithIndexMap, tokenize } from "./tokenizer";
+import type { TokenizerOptions } from "./tokenizer";
 
 /** Structurally compatible with Obsidian's `SearchMatches`. */
 export type SearchMatches = [number, number][];

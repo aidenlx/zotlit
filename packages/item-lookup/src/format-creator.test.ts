@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type Creator, type ItemLanguage } from "@zotlit/db";
+import type { Creator, ItemLanguage } from "@zotlit/db";
 
 import { formatCreator } from "./format-creator";
 

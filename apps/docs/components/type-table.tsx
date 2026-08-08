@@ -13,13 +13,8 @@ import {
   CollapsibleTrigger,
 } from "fumadocs-ui/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
-import {
-  Fragment,
-  useEffect,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from "react";
+import { Fragment, useEffect, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 

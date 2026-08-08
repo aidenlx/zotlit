@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Temporal } from "@zotlit/shared/temporal";
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
-import { type FrontmatterField } from "@zotlit/templates/frontmatter";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { InertTemplateError } from "@/services/template/errors";
 import { markInertPlaceholder } from "@/services/template/inert-placeholder";
-import { type CompileError } from "@/services/template/service";
+import type { CompileError } from "@/services/template/service";
 
 import {
   createTemplateWorkbenchHandlers,

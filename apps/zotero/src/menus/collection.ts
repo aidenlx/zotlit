@@ -1,8 +1,9 @@
 // Collections-pane context menu for batch operations. Shown on library, group,
 // and collection rows.
-import { registerMenu, type TypedMenuOptions } from "@/lib/l10n";
+import { registerMenu } from "@/lib/l10n";
+import type { TypedMenuOptions } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
-import { type FluentMessageId } from "@/types/fluent";
+import type { FluentMessageId } from "@/types/fluent";
 
 import { importAllNotesInObsidian, updateAllInObsidian } from "./obsidian.js";
 

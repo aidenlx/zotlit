@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createLanguagePackLifecycle,
   createLanguagePackRuntime,
-  type LanguagePackLifecyclePorts,
-  type LanguagePackSituation,
   resolveLocale,
+} from "./index.js";
+import type {
+  LanguagePackLifecyclePorts,
+  LanguagePackSituation,
 } from "./index.js";
 
 const PLUGIN_VERSION = "2.0.0";

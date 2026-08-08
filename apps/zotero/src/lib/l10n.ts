@@ -1,6 +1,6 @@
 import { FLUENT_FILE_NAME } from "@/constant";
 import { logger as appLogger } from "@/lib/logger";
-import { type FluentMessageId } from "@/types/fluent";
+import type { FluentMessageId } from "@/types/fluent";
 
 const FTL_FILES = [FLUENT_FILE_NAME];
 

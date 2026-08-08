@@ -1,8 +1,8 @@
-import { type Plugin } from "obsidian";
+import type { Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { type ReleaseService } from "./service";
+import type { ReleaseService } from "./service";
 
 /** Register the command that reopens the Release Note for the current version. */
 export function addReleaseActions(

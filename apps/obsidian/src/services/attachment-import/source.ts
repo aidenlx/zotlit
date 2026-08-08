@@ -6,7 +6,7 @@ import { constants } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
-import { type AttachmentCopySource } from "@/lib/copy-attachments";
+import type { AttachmentCopySource } from "@/lib/copy-attachments";
 import { isErrno } from "@/lib/errno";
 
 /**

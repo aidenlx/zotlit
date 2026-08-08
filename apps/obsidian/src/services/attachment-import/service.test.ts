@@ -8,12 +8,14 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileSystemAdapter, TFolder, type App } from "obsidian";
+import { FileSystemAdapter, TFolder } from "obsidian";
+import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { copyAttachments } from "@/lib/copy-attachments";
 
-import { AttachmentImportService, type AttachmentSkipSummary } from "./service";
+import { AttachmentImportService } from "./service";
+import type { AttachmentSkipSummary } from "./service";
 import { makeDeviceStorage } from "./test-utils";
 
 vi.mock("@/lib/copy-attachments", () => ({

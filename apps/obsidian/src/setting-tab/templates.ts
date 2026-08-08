@@ -1,32 +1,32 @@
-import {
-  type App,
-  type SettingControl,
-  type SettingDefinition,
-  type SettingDefinitionItem,
-  type Setting,
-  type TFile,
+import type {
+  App,
+  SettingControl,
+  SettingDefinition,
+  SettingDefinitionItem,
+  Setting,
+  TFile,
 } from "obsidian";
 
-import { type TemplateLanguage } from "@zotlit/templates/facade";
+import type { TemplateLanguage } from "@zotlit/templates/facade";
 
 import { confirm } from "@/lib/confirm";
 import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { type AutoTrim } from "@/services/settings/schema";
+import type { AutoTrim } from "@/services/settings/schema";
 import {
   DEFAULT_TEMPLATES,
   DEFAULT_TEMPLATES_ETA,
   templateFileFromPath,
   templatePath,
   TEMPLATE_NAMES,
-  type TemplateName,
 } from "@/services/template/defaults";
+import type { TemplateName } from "@/services/template/defaults";
 import { normalizeVaultPath } from "@/services/template/path";
 
 import { appendCompileError } from "./compile-error";
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { frontmatterPageItems } from "./frontmatter";
 import { defaultPlaceholder } from "./placeholder";
 import { migrationReminderItem } from "./resources";

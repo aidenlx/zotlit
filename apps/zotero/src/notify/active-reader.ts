@@ -1,6 +1,6 @@
 import { logger as appLogger } from "@/lib/logger";
 
-import { type Send } from "./send";
+import type { Send } from "./send";
 import { currentSelection, notifyEnabled } from "./shared";
 
 const logger = appLogger.getChild(["notify", "active-reader"]);

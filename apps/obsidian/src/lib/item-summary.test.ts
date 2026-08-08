@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isChildItemFields,
-  type Creator,
-  type ItemDisplayInfo,
-} from "@zotlit/db";
+import { isChildItemFields } from "@zotlit/db";
+import type { Creator, ItemDisplayInfo } from "@zotlit/db";
 import { makeItem } from "@zotlit/item-lookup/fixtures";
 
 import { itemSummary, creatorSummary } from "./item-summary";

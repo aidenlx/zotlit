@@ -13,8 +13,8 @@ import filenameEta from "@zotlit/templates/defaults/filename.eta?raw";
 import filename from "@zotlit/templates/defaults/filename.liquid?raw";
 import noteEta from "@zotlit/templates/defaults/note.eta?raw";
 import note from "@zotlit/templates/defaults/note.liquid?raw";
-import { type TemplateLanguage } from "@zotlit/templates/facade";
-import { type FrontmatterField } from "@zotlit/templates/frontmatter";
+import type { TemplateLanguage } from "@zotlit/templates/facade";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { normalizeVaultPath } from "./path";
 

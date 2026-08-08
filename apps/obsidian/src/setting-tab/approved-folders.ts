@@ -2,14 +2,11 @@
 // Zotero's control is granted from, listed with the attachment import settings
 // and marked as device state.
 
-import {
-  type SettingDefinitionItem,
-  type SettingDefinitionPage,
-} from "obsidian";
+import type { SettingDefinitionItem, SettingDefinitionPage } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { appendDeviceOverrideNote, browseForDir } from "./device-override";
 
 /**

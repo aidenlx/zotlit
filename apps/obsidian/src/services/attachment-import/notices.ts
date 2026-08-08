@@ -5,7 +5,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import { type AttachmentImportService } from "./service";
+import type { AttachmentImportService } from "./service";
 
 const ATTACHMENT_SKIP_NOTICE_DURATION_MS = 30_000;
 

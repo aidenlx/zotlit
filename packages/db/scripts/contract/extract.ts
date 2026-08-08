@@ -1,26 +1,25 @@
+import type {
+  ContractAdditionalMembers,
+  ContractExample,
+  ContractLiteral,
+  ContractMember,
+  ContractNamedType,
+  ContractObject,
+  ContractRef,
+  ContractStringified,
+  ContractType,
+} from "#contract/ir";
 // Walks the `zt` contract types with ts-morph and records their serialized form as contract IR.
 import { regex } from "arkregex";
-import {
-  Node,
-  type InterfaceDeclaration,
-  type JSDoc,
-  type JSDocTag,
-  type Signature,
-  type Symbol as TypeSymbol,
-  type Type,
+import { Node } from "ts-morph";
+import type {
+  InterfaceDeclaration,
+  JSDoc,
+  JSDocTag,
+  Signature,
+  Symbol as TypeSymbol,
+  Type,
 } from "ts-morph";
-
-import {
-  type ContractAdditionalMembers,
-  type ContractExample,
-  type ContractLiteral,
-  type ContractMember,
-  type ContractNamedType,
-  type ContractObject,
-  type ContractRef,
-  type ContractStringified,
-  type ContractType,
-} from "#contract/ir";
 
 /** ts-morph's in-memory path for the lib file declaring the `Temporal` namespace. */
 const TEMPORAL_LIB = "lib.esnext.temporal.d.ts";

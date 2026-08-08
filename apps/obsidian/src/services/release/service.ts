@@ -1,19 +1,21 @@
 // Once-per-launch release check: onboarding branch, update notice, Release Note.
 
-import { type App, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import {
-  type SettingsPatch,
-  type SettingsService,
+import type { Settings } from "@/services/settings/schema";
+import type {
+  SettingsPatch,
+  SettingsService,
 } from "@/services/settings/service";
 
 import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
-import { decideRelease, type ReleaseDecision } from "./decide";
+import { decideRelease } from "./decide";
+import type { ReleaseDecision } from "./decide";
 
 const logger = getLogger("release");
 

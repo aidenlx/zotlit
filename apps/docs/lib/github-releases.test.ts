@@ -1,11 +1,8 @@
 import { assertEquals } from "@std/assert";
 import { describe, it } from "vitest";
 
-import {
-  isDormant,
-  newestPreRelease,
-  type GhRelease,
-} from "@/lib/github-releases";
+import { isDormant, newestPreRelease } from "@/lib/github-releases";
+import type { GhRelease } from "@/lib/github-releases";
 
 function release(tag: string, prerelease = true): GhRelease {
   return { tag_name: tag, prerelease, published_at: "2026-08-01T00:00:00Z" };

@@ -1,7 +1,7 @@
 // SEO sitemap: every indexable HTML route, enumerated exhaustively off the
 // typed AppRoutes union so a new page route can't silently escape it.
-import { type AppRoutes } from "@next/routes";
-import { type MetadataRoute } from "next";
+import type { AppRoutes } from "@next/routes";
+import type { MetadataRoute } from "next";
 
 import { baseURL } from "@/lib/shared";
 import { blog, changelog, source } from "@/lib/source";

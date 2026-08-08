@@ -3,14 +3,14 @@
 // that doesn't structurally cover the member it replaces, or an owner
 // reachable from more than its own declaring root.
 
-import { type ContractRoot } from "../../src/contract/roots.ts";
-import { reachableTypes } from "./json-schema.ts";
-
-import {
-  type ContractIR,
-  type ContractReference,
-  type ContractRootIR,
+import type {
+  ContractIR,
+  ContractReference,
+  ContractRootIR,
 } from "#contract/ir";
+
+import type { ContractRoot } from "../../src/contract/roots.ts";
+import { reachableTypes } from "./json-schema.ts";
 
 /**
  * Fail codegen on a declared {@link ContractReference} that would substitute a

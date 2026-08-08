@@ -1,10 +1,11 @@
-import { parse, type Resource } from "@fluent/syntax";
+import { parse } from "@fluent/syntax";
+import type { Resource } from "@fluent/syntax";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { glob } from "tinyglobby";
-import { type Plugin } from "vite";
+import type { Plugin } from "vite";
 
-import { type ZoteroBuildEnv } from "./vite-zotero-plugin.js";
+import type { ZoteroBuildEnv } from "./vite-zotero-plugin.js";
 
 export interface FluentPluginOpts {
   root: string;

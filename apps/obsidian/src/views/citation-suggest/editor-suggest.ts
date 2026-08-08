@@ -1,21 +1,21 @@
 import { regex } from "arkregex";
-import {
-  EditorSuggest,
-  Keymap,
-  type Editor,
-  type EditorPosition,
-  type EditorSuggestContext,
-  type EditorSuggestTriggerInfo,
-  type TFile,
+import { EditorSuggest, Keymap } from "obsidian";
+import type {
+  Editor,
+  EditorPosition,
+  EditorSuggestContext,
+  EditorSuggestTriggerInfo,
+  TFile,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
+import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
 
-import { type CitationSuggestDeps } from "./register";
+import type { CitationSuggestDeps } from "./register";
 
 const TRIGGER = regex("[\\[【]@([^\\]】]*)$");
 // Bare `@` at a word boundary: line start, or preceded by whitespace or one of

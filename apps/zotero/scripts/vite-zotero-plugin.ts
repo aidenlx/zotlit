@@ -3,7 +3,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { glob } from "tinyglobby";
 import { build } from "vite";
-import { type InlineConfig, type LibraryFormats, type Plugin } from "vite";
+import type { InlineConfig, LibraryFormats, Plugin } from "vite";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 

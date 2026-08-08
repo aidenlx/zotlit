@@ -4,13 +4,13 @@
 // behind a row expander; Markdown has no expander, so every detail this
 // module renders lands directly in the row.
 
-import {
-  sectionOf,
-  type Doc,
-  type ItemTypeRow,
-  type PageModel,
-  type RowModel,
-  type TableModel,
+import { sectionOf } from "./page-model.ts";
+import type {
+  Doc,
+  ItemTypeRow,
+  PageModel,
+  RowModel,
+  TableModel,
 } from "./page-model.ts";
 
 /** One section's tables as GFM, replacing `<ContractTable section>` in the Markdown edition. */

@@ -4,10 +4,8 @@ import {
   getTextFormatter,
   isLogLevel,
   reset,
-  type LogLevel,
-  type Sink,
-  type TextFormatter,
 } from "@logtape/logtape";
+import type { LogLevel, Sink, TextFormatter } from "@logtape/logtape";
 
 import { MAIN_BUNDLE_NAME } from "@/constant";
 import { prefs } from "@/prefs";

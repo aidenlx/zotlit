@@ -1,10 +1,7 @@
-import {
-  type App,
-  ItemView,
-  type ViewStateResult,
-  type WorkspaceLeaf,
-} from "obsidian";
-import { createRoot, type Root } from "react-dom/client";
+import { ItemView } from "obsidian";
+import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 
 import {
   getAnnotViewAnnotations,
@@ -14,51 +11,43 @@ import {
   getItemsByKey,
   getLibraries,
   isChildItemFields,
-  type AnnotViewItem,
-  type Item,
-  type ItemRef,
   parseIndexedKey,
-  type Library,
 } from "@zotlit/db";
+import type { AnnotViewItem, Item, ItemRef, Library } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import {
-  type AttachmentImport,
-  type AttachmentImportService,
+import type {
+  AttachmentImport,
+  AttachmentImportService,
 } from "@/services/attachment-import/service";
-import { type DatabaseService } from "@/services/database/service";
-import { type ItemLookup } from "@/services/item-lookup/service";
-import { type LiveUpdateService } from "@/services/live-update/service";
-import { type NoteFeature } from "@/services/note-feature";
+import type { DatabaseService } from "@/services/database/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
+import type { LiveUpdateService } from "@/services/live-update/service";
+import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
-import {
-  AnnotActionsContext,
-  createAnnotActions,
-  type AnnotActions,
-} from "./actions";
+import { AnnotActionsContext, createAnnotActions } from "./actions";
+import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
-import { sanitizeSavedFilter, type SavedFilter } from "./filter";
+import { sanitizeSavedFilter } from "./filter";
+import type { SavedFilter } from "./filter";
 import { pickItem } from "./item-picker";
-import {
-  type LoadTarget,
-  resolveLibraryID,
-  resolveLoadTarget,
-} from "./resolve-target";
+import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
+import type { LoadTarget } from "./resolve-target";
 import {
   AnnotStoreProvider,
   createAnnotStore,
   INITIAL_FILTER_STATE,
-  type FollowMode,
 } from "./store";
+import type { FollowMode } from "./store";
 
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 

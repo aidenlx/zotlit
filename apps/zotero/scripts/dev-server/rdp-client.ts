@@ -3,7 +3,8 @@
 // Derived from Mozilla web-ext `src/firefox/rdp-client.js`.
 
 import { EventEmitter } from "node:events";
-import { createConnection, createServer, type Socket } from "node:net";
+import { createConnection, createServer } from "node:net";
+import type { Socket } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 
 export const DEFAULT_HOST = "127.0.0.1";

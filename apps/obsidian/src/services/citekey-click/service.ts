@@ -1,34 +1,30 @@
 import { around } from "monkey-around";
-import {
-  MarkdownView,
-  type App,
-  type ClickableToken,
-  type Editor,
-  type EditorPosition,
-  type MarkdownEditView,
-  type PaneType,
-  type WorkspaceLeaf,
+import { MarkdownView } from "obsidian";
+import type {
+  App,
+  ClickableToken,
+  Editor,
+  EditorPosition,
+  MarkdownEditView,
+  PaneType,
+  WorkspaceLeaf,
 } from "obsidian";
 
-import {
-  getItemIDByCitekey,
-  getItemsByID,
-  USER_LIBRARY_ID,
-  type Item,
-} from "@zotlit/db";
+import { getItemIDByCitekey, getItemsByID, USER_LIBRARY_ID } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { type DatabaseService } from "@/services/database/service";
-import { type NoteFeature } from "@/services/note-feature";
+import type { DatabaseService } from "@/services/database/service";
+import type { NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
-import { type NoteIndex } from "@/services/note-index/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
 import { citationAtOffset } from "./parse";
 

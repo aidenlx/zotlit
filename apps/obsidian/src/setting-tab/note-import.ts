@@ -1,9 +1,9 @@
 // Declarative settings for the "Note import" sub-page.
-import { type SettingDefinitionItem } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
 
 /** Items for the "Note import" sub-page. */

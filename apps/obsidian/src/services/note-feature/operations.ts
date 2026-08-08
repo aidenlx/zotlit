@@ -1,4 +1,5 @@
-import { stringifyYaml, type TFile } from "obsidian";
+import { stringifyYaml } from "obsidian";
+import type { TFile } from "obsidian";
 
 import {
   citekeysToCiteTemplateData,
@@ -10,15 +11,18 @@ import {
   getItemsByKey,
   resolveIndexedKeyLibrary,
   resolveItemTags,
-  type CiteRef,
-  type GroupIDMemo,
-  type Item,
-  type NoteTemplateContext,
-  type TagMemo,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
-import { type UpdateScope } from "@zotlit/protocol";
-import { createNanoEvents, type Emitter } from "@zotlit/shared/nanoevents";
+import type {
+  CiteRef,
+  GroupIDMemo,
+  Item,
+  NoteTemplateContext,
+  TagMemo,
+} from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { UpdateScope } from "@zotlit/protocol";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import type { Emitter } from "@zotlit/shared/nanoevents";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import {
@@ -30,17 +34,16 @@ import { ensureParentFolder } from "@/lib/ensure-folder";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { isFileExistsError } from "@/lib/vault-errors";
-import { type AttachmentImport } from "@/services/attachment-import/service";
-import { type NoteImport } from "@/services/note-import/service";
-import { type Settings } from "@/services/settings/schema";
+import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { NoteImport } from "@/services/note-import/service";
+import type { Settings } from "@/services/settings/schema";
 
 import {
   buildNoteResolvers,
   fetchItemCollections,
   resolveNotePath,
-  type NoteFeatureDeps,
-  type SyncRenderDeps,
 } from "./context";
+import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
 import { applyManagedFrontmatter } from "./frontmatter";
 
 const logger = getLogger("note-feature");

@@ -14,7 +14,7 @@
 // two Chinese branches below with per-page 308s to /zh-CN/<equiv>, derived from
 // PAGE_MAP (no separate zh map to maintain).
 
-import { type NextConfig } from "next";
+import type { NextConfig } from "next";
 
 import { zotlitLegacyUrl } from "./shared";
 import { PAGE_MAP, V1_ONLY } from "./v1-routes";

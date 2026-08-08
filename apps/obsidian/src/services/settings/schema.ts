@@ -6,8 +6,8 @@ import {
   autoTrimSchema,
   DEFAULT_AUTO_TRIM,
   frontmatterFieldSchema,
-  type AutoTrim,
 } from "@zotlit/templates/constants";
+import type { AutoTrim } from "@zotlit/templates/constants";
 
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 

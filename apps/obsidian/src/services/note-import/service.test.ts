@@ -1,4 +1,5 @@
-import { TFile, TFolder, type App } from "obsidian";
+import { TFile, TFolder } from "obsidian";
+import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,22 +11,22 @@ import {
 import { Temporal } from "@zotlit/shared/temporal";
 
 import { renderAnnotations } from "@/lib/annotation-render";
-import {
-  AttachmentImportService,
-  type AttachmentSource,
-  type SourceOrigin,
+import { AttachmentImportService } from "@/services/attachment-import/service";
+import type {
+  AttachmentSource,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
-import { defaults, type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
 
 import { parseNote } from "./note-parser";
-import {
-  createNoteImporter,
-  type ImportVaultApp,
-  NoteImportMintError,
-  type NoteImporter,
-  type PrepareNoteImportOptions,
+import { createNoteImporter, NoteImportMintError } from "./service";
+import type {
+  ImportVaultApp,
+  NoteImporter,
+  PrepareNoteImportOptions,
 } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {

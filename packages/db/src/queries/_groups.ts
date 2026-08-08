@@ -1,7 +1,7 @@
 import { groups } from "@drizzle/schema";
 import { eq } from "drizzle-orm";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 
 import { defineQuery } from "./_shared";
 

@@ -1,14 +1,15 @@
 import { dirname as sourceDirname, isAbsolute, relative, sep } from "node:path";
 import { dirname as noteDirname } from "node:path/posix";
-import { debounce, FileSystemAdapter, normalizePath, type App } from "obsidian";
+import { debounce, FileSystemAdapter, normalizePath } from "obsidian";
+import type { App } from "obsidian";
 
-import { type TemplateLink } from "@zotlit/db";
+import type { TemplateLink } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import {
-  copyAttachments,
-  type AttachmentCopyItem,
-  type AttachmentCopyResult,
+import { copyAttachments } from "@/lib/copy-attachments";
+import type {
+  AttachmentCopyItem,
+  AttachmentCopyResult,
 } from "@/lib/copy-attachments";
 import {
   ensureFolder,
@@ -20,8 +21,8 @@ import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { normalizeFilename } from "@/services/note-feature/filename";
 import { Service } from "@/services/service-base";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { loadApprovedFolders, saveApprovedFolders } from "./approved-folders";
 import {
@@ -30,10 +31,12 @@ import {
   confirmSource,
   decideSource,
   NO_ROOTS,
-  type AttachmentSource,
-  type BlockedSource,
-  type CanonicalRoots,
-  type SourceOrigin,
+} from "./source";
+import type {
+  AttachmentSource,
+  BlockedSource,
+  CanonicalRoots,
+  SourceOrigin,
 } from "./source";
 
 export {

@@ -1,23 +1,24 @@
-import { PluginSettingTab, type SettingDefinitionItem } from "obsidian";
+import { PluginSettingTab } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 
-import { type LanguagePackLifecycle } from "@/lib/i18n";
+import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-import { type DatabaseService } from "@/services/database/service";
-import {
-  type SettingsPatch,
-  type SettingsService,
+import type { DatabaseService } from "@/services/database/service";
+import type {
+  SettingsPatch,
+  SettingsService,
 } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
-import {
-  type AttachmentImportActions,
-  type ReleaseTabActions,
-  type SettingsKey,
-  type SettingTabContext,
+import type {
+  AttachmentImportActions,
+  ReleaseTabActions,
+  SettingsKey,
+  SettingTabContext,
 } from "./context";
 import { databasePageItems, libraryDefinition } from "./database";
 import {

@@ -1,30 +1,28 @@
-import {
-  annotationToTemplateData,
-  type TemplateAnnotation,
-} from "@/lib/context/zt-template-annot";
-import {
-  resolveTemplateAttachment,
-  type TemplateAttachment,
-} from "@/lib/context/zt-template-attach";
+import { annotationToTemplateData } from "@/lib/context/zt-template-annot";
+import type { TemplateAnnotation } from "@/lib/context/zt-template-annot";
+import { resolveTemplateAttachment } from "@/lib/context/zt-template-attach";
+import type { TemplateAttachment } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
   resolveItemCore,
   withItemPreview,
-  type FallibleTemplateLink,
-  type ResolvedItemCore,
-  type TemplateFilenameItemData,
-  type TemplateItemBaseData,
-  type TemplateItemData,
-  type TemplateItemResolvers,
-  type TemplateLink,
+} from "@/lib/context/zt-template-item";
+import type {
+  FallibleTemplateLink,
+  ResolvedItemCore,
+  TemplateFilenameItemData,
+  TemplateItemBaseData,
+  TemplateItemData,
+  TemplateItemResolvers,
+  TemplateLink,
 } from "@/lib/context/zt-template-item";
 import { defineToString } from "@/lib/to-string";
-import { type Annotation } from "@/lib/zt-annot";
-import { type Attachment } from "@/lib/zt-attach";
-import { type TemplateCollection } from "@/lib/zt-collection";
-import { type ItemTag } from "@/lib/zt-tag";
-import { type Item } from "@/queries/items";
-import { type ChildNote } from "@/queries/notes";
+import type { Annotation } from "@/lib/zt-annot";
+import type { Attachment } from "@/lib/zt-attach";
+import type { TemplateCollection } from "@/lib/zt-collection";
+import type { ItemTag } from "@/lib/zt-tag";
+import type { Item } from "@/queries/items";
+import type { ChildNote } from "@/queries/notes";
 
 /**
  * A single entry in {@link NoteTemplateContext.relatedItems}: the related

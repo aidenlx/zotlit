@@ -1,4 +1,5 @@
-import { type App, ConfirmationModal } from "obsidian";
+import { ConfirmationModal } from "obsidian";
+import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 

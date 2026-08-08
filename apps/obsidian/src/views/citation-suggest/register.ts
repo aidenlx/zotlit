@@ -1,10 +1,10 @@
 import "./style.css";
-import { type App, type Plugin } from "obsidian";
+import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { type ItemLookup } from "@/services/item-lookup/service";
-import { type NoteFeature } from "@/services/note-feature";
-import { type SettingsService } from "@/services/settings/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
+import type { NoteFeature } from "@/services/note-feature";
+import type { SettingsService } from "@/services/settings/service";
 
 import { CitationEditorSuggest } from "./editor-suggest";
 import { InsertCitationModal } from "./insert-modal";

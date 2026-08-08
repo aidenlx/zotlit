@@ -1,6 +1,6 @@
 // Test-only doubles shared by the attachment-import suites.
 
-import { type DeviceStorage } from "./approved-folders";
+import type { DeviceStorage } from "./approved-folders";
 
 /**
  * Obsidian's vault-scoped localStorage. One store stands for one vault on one

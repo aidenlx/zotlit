@@ -1,12 +1,8 @@
 // ItemView orchestrator for the Template Data Explorer: picks an item, fetches its note-root context through inert resolvers, and drives the display tree.
-import {
-  type App,
-  ItemView,
-  type Menu,
-  type ViewStateResult,
-  type WorkspaceLeaf,
-} from "obsidian";
-import { createRoot, type Root } from "react-dom/client";
+import { ItemView } from "obsidian";
+import type { App, Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 
 import {
   CollectionCache,
@@ -15,36 +11,31 @@ import {
   getItemsByKey,
   getLibraries,
   isChildItemFields,
-  type Item,
-  type Library,
-  type NoteTemplateContext,
   parseIndexedKey,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
+import type { Item, Library, NoteTemplateContext } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
-import { type ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
 import {
   buildInertNoteResolvers,
   findExistingLitNote,
   resolveExcerptImageContext,
 } from "@/services/template/inert-resolvers";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import {
-  createExplorerActions,
-  type ExplorerActions,
-  ExplorerActionsContext,
-} from "./actions";
+import { createExplorerActions, ExplorerActionsContext } from "./actions";
+import type { ExplorerActions } from "./actions";
 import {
   annotationKeyAtPath,
   buildDisplayTree,
@@ -53,18 +44,15 @@ import {
 } from "./display-tree";
 import { Explorer } from "./Explorer";
 import { pickItem } from "./item-picker";
-import {
-  createExplorerStore,
-  ExplorerStoreProvider,
-  type ExplorerState,
-} from "./store";
+import { createExplorerStore, ExplorerStoreProvider } from "./store";
+import type { ExplorerState } from "./store";
 import {
   initialTreeState,
   setAnchor,
   setFilter,
   toggleNode,
-  type TreeState,
 } from "./tree-state";
+import type { TreeState } from "./tree-state";
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
 

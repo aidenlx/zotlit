@@ -1,6 +1,6 @@
 import { distinct } from "@std/collections";
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
-import { type MetadataCache, type TFile } from "obsidian";
+import type { MetadataCache, TFile } from "obsidian";
 
 import {
   getChildNotesByParentIDs,
@@ -11,40 +11,31 @@ import {
   getNoteRefsByItemIDs,
   getTrashedNoteItemIDs,
   resolveIndexedKeyLibrary,
-  type ChildNote,
-  type GroupIDMemo,
-  type TagMemo,
 } from "@zotlit/db";
-import { type ImportMode } from "@zotlit/protocol";
+import type { ChildNote, GroupIDMemo, TagMemo } from "@zotlit/db";
+import type { ImportMode } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import {
-  type BatchClassifyControls,
-  type BatchRunControls,
-  type BatchRunResult,
-  classifyChunked,
-  runBatchWrite,
+import { classifyChunked, runBatchWrite } from "@/services/batch-run";
+import type {
+  BatchClassifyControls,
+  BatchRunControls,
+  BatchRunResult,
 } from "@/services/batch-run";
-import {
-  resolveBatchScope,
-  type BatchScopeOptions,
-} from "@/services/batch-scope";
-import { type DatabaseService } from "@/services/database/service";
+import { resolveBatchScope } from "@/services/batch-scope";
+import type { BatchScopeOptions } from "@/services/batch-scope";
+import type { DatabaseService } from "@/services/database/service";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
-import {
-  FlatManifest,
-  type FlatTask,
-  HierarchyManifest,
-  type HierarchyParent,
-} from "@/views/batch-modal";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
+import { FlatManifest, HierarchyManifest } from "@/views/batch-modal";
+import type { FlatTask, HierarchyParent } from "@/views/batch-modal";
 
 import { importRunSummary } from "./batch-import-notices";
-import { type NoteImporter, type WriteOutcome } from "./service";
-import { type NoteImportView } from "./view";
+import type { NoteImporter, WriteOutcome } from "./service";
+import type { NoteImportView } from "./view";
 
 const logger = getLogger("batch-import");
 

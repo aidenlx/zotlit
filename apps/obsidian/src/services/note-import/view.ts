@@ -1,8 +1,10 @@
 // UI seam for note-import: opens the batch modal and the overwrite confirm against the running app.
-import { type App } from "obsidian";
+import type { App } from "obsidian";
 
-import { confirm, type ConfirmOptions } from "@/lib/confirm";
-import { BatchModal, type BatchModalOptions } from "@/views/batch-modal";
+import { confirm } from "@/lib/confirm";
+import type { ConfirmOptions } from "@/lib/confirm";
+import { BatchModal } from "@/views/batch-modal";
+import type { BatchModalOptions } from "@/views/batch-modal";
 
 /**
  * The view capabilities the batch-import runners drive. Bundling them keeps the

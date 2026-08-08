@@ -1,8 +1,8 @@
-import {
-  type OptgroupHTMLAttributes,
-  type OptionHTMLAttributes,
-  type Ref,
-  type SelectHTMLAttributes,
+import type {
+  OptgroupHTMLAttributes,
+  OptionHTMLAttributes,
+  Ref,
+  SelectHTMLAttributes,
 } from "react";
 
 import { cn } from "@/lib/utils";

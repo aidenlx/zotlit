@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { type NoteTemplateContext } from "@zotlit/db";
-import {
-  compileFrontmatterFields,
-  type FrontmatterField,
-} from "@zotlit/templates/frontmatter";
+import type { NoteTemplateContext } from "@zotlit/db";
+import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import { createLiquidEngine } from "@zotlit/templates/liquid";
 
 import {

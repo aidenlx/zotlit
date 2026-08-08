@@ -2,11 +2,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { type IndexSignature, type Library } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { IndexSignature, Library } from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { DatabaseError } from "@/services/database/service";
-import { type Settings } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/service";
 
 import { readConnectionStatus } from "./connection";
 

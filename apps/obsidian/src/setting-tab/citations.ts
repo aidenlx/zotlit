@@ -1,9 +1,9 @@
-import { type SettingDefinitionItem } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
 
 /** Items for the "Citations" sub-page. */

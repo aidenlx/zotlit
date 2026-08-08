@@ -1,12 +1,12 @@
-import { type App } from "obsidian";
+import type { App } from "obsidian";
 
-import { type LanguagePackLifecycle } from "@/lib/i18n";
-import { type AttachmentImportService } from "@/services/attachment-import/service";
-import { type DatabaseService } from "@/services/database/service";
-import { type ReleaseService } from "@/services/release/service";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { LanguagePackLifecycle } from "@/lib/i18n";
+import type { AttachmentImportService } from "@/services/attachment-import/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { ReleaseService } from "@/services/release/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
 /** Settings keys, used to type declarative `control` bindings against the schema. */

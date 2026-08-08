@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, expectTypeOf, test } from "vitest";
 
-import {
-  createLanguagePackRuntime,
-  noopLogger,
-  type DatetimeInput,
-  type LanguagePack,
-  type LanguagePackRuntime,
-  type TargetLocaleMessages,
+import { createLanguagePackRuntime, noopLogger } from "./index.js";
+import type {
+  DatetimeInput,
+  LanguagePack,
+  LanguagePackRuntime,
+  TargetLocaleMessages,
 } from "./index.js";
 
 /** The floor every Message Input accepts, absent a narrowing base-locale usage. */

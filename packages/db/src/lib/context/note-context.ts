@@ -1,26 +1,24 @@
 // Fetches the DB rows a note/annotation template needs and assembles them via the pure zt-* mappers.
 import { distinct } from "@std/collections";
 
-import { type NodeDatabaseClient } from "@/client/node";
-import {
-  annotationToTemplateData,
-  type TemplateAnnotation,
-} from "@/lib/context/zt-template-annot";
-import {
-  resolveTemplateAttachment,
-  type TemplateAttachment,
-} from "@/lib/context/zt-template-attach";
+import type { NodeDatabaseClient } from "@/client/node";
+import { annotationToTemplateData } from "@/lib/context/zt-template-annot";
+import type { TemplateAnnotation } from "@/lib/context/zt-template-annot";
+import { resolveTemplateAttachment } from "@/lib/context/zt-template-attach";
+import type { TemplateAttachment } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
   resolveItemCore,
   withItemPreview,
-  type TemplateItemResolvers,
-  type TemplateParentItemData,
 } from "@/lib/context/zt-template-item";
-import { type Annotation } from "@/lib/zt-annot";
-import { type Attachment } from "@/lib/zt-attach";
-import { type CollectionCache } from "@/lib/zt-collection";
-import { type GroupIDMemo } from "@/queries/_groups";
+import type {
+  TemplateItemResolvers,
+  TemplateParentItemData,
+} from "@/lib/context/zt-template-item";
+import type { Annotation } from "@/lib/zt-annot";
+import type { Attachment } from "@/lib/zt-attach";
+import type { CollectionCache } from "@/lib/zt-collection";
+import type { GroupIDMemo } from "@/queries/_groups";
 import { getCurrentUsername } from "@/queries/account";
 import { getAnnotationsByParent } from "@/queries/annotations";
 import {
@@ -28,15 +26,18 @@ import {
   getAttachmentsByParents,
 } from "@/queries/attachments";
 import { getRelatedKeysByItemID } from "@/queries/item-relations";
-import { getItemsByID, getItemsByKey, type Item } from "@/queries/items";
-import { getChildNotes, type ChildNote } from "@/queries/notes";
-import { resolveItemTagsByIDs, type TagMemo } from "@/queries/tags";
+import { getItemsByID, getItemsByKey } from "@/queries/items";
+import type { Item } from "@/queries/items";
+import { getChildNotes } from "@/queries/notes";
+import type { ChildNote } from "@/queries/notes";
+import { resolveItemTagsByIDs } from "@/queries/tags";
+import type { TagMemo } from "@/queries/tags";
 
-import {
-  buildNoteContext,
-  type AnnotationResolvers,
-  type NoteTemplateContext,
-  type TemplateNoteLink,
+import { buildNoteContext } from "./zt-template-note";
+import type {
+  AnnotationResolvers,
+  NoteTemplateContext,
+  TemplateNoteLink,
 } from "./zt-template-note";
 
 export type { AnnotationResolvers };

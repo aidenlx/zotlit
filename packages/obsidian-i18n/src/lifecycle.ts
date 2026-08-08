@@ -1,10 +1,9 @@
 // Headless locale resolution, consent, device cache, and download for remote Language Packs.
 
 import { languageEndonym } from "./endonyms.js";
-// oxlint-disable-next-line import/consistent-type-specifier-style -- inline type imports emit a side-effect ./language-pack.mjs import under tsdown unbundle, dragging that chunk into the browser lifecycle bundle
 import type { LanguagePack } from "./language-pack.js";
-import { noopLogger, type StructuredLogger } from "./logger.js";
-// oxlint-disable-next-line import/consistent-type-specifier-style -- inline type imports emit a side-effect ./runtime.mjs import under tsdown unbundle, dragging the Temporal polyfill into the browser lifecycle bundle
+import { noopLogger } from "./logger.js";
+import type { StructuredLogger } from "./logger.js";
 import type { LanguagePackRuntime } from "./runtime.js";
 import { validateLanguagePack } from "./validation.js";
 

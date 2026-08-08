@@ -1,5 +1,5 @@
-import { type HTMLAttributes, type Ref } from "react";
-import { type VariantProps } from "tailwind-variants";
+import type { HTMLAttributes, Ref } from "react";
+import type { VariantProps } from "tailwind-variants";
 
 import { tv } from "@/lib/tw";
 

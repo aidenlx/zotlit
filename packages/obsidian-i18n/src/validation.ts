@@ -1,9 +1,7 @@
 // Validates JSON Language Pack data against the bounded runtime contract.
 
-import {
-  isSupportedLanguagePackFormatter,
-  type LanguagePack,
-} from "./language-pack.js";
+import { isSupportedLanguagePackFormatter } from "./language-pack.js";
+import type { LanguagePack } from "./language-pack.js";
 
 export { isSupportedLanguagePackFormatter } from "./language-pack.js";
 

@@ -1,7 +1,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import { type CitekeyClick } from "./service";
+import type { CitekeyClick } from "./service";
 
 /** Render Citation Key Links service events at the Obsidian UI seam. */
 export function registerCitationKeyLinkNotices(

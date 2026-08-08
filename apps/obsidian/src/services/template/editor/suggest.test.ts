@@ -1,4 +1,5 @@
-import { TFile, type App, type Editor } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Editor } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { EtaSuggest } from "./suggest";

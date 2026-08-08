@@ -5,7 +5,8 @@ import { assertNever } from "@std/assert/unstable-never";
 import { notFound } from "next/navigation";
 
 import { ogImage } from "@/app/og/_render";
-import { baseURL, formatReleaseDate, type OgType, ogTypes } from "@/lib/shared";
+import { baseURL, formatReleaseDate, ogTypes } from "@/lib/shared";
+import type { OgType } from "@/lib/shared";
 import { blog, changelog, source } from "@/lib/source";
 
 export const revalidate = false;

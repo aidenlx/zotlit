@@ -3,7 +3,7 @@
 // never syncs to another device and never applies in another vault. Follows the
 // Device Override precedent set by the Zotero profile and data directories.
 
-import { type App } from "obsidian";
+import type { App } from "obsidian";
 
 /** localStorage surface these helpers need — the vault-scoped store. */
 export type DeviceStorage = Pick<App, "loadLocalStorage" | "saveLocalStorage">;

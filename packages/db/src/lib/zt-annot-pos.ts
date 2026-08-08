@@ -1,4 +1,4 @@
-import { type AnnotationPositionRaw } from "@drizzle/schema";
+import type { AnnotationPositionRaw } from "@drizzle/schema";
 import * as v from "valibot";
 
 const RectSchema = v.tuple([v.number(), v.number(), v.number(), v.number()]);

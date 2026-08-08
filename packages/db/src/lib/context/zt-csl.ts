@@ -12,12 +12,12 @@ import {
   tryYearMonth,
   withToString,
   yearOnly,
-  type ItemDate,
 } from "@/lib/zt-date";
+import type { ItemDate } from "@/lib/zt-date";
 import { parseItemExtra } from "@/lib/zt-extra";
 
-import { type TemplateCiteItemData } from "./zt-template-cite";
-import { type TemplateCreator } from "./zt-template-item";
+import type { TemplateCiteItemData } from "./zt-template-cite";
+import type { TemplateCreator } from "./zt-template-item";
 
 /**
  * {@link CREATOR_TYPE_TO_CSL_NAME} inverted into CSL variable → Zotero

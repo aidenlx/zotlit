@@ -1,12 +1,12 @@
-import { type SettingDefinitionItem } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 
-import { type FrontmatterField } from "@zotlit/templates/frontmatter";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { confirm } from "@/lib/confirm";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { openFrontmatterFieldModal } from "./frontmatter-modal";
 import { frontmatterFieldLabel } from "./frontmatter-strategy";
 

@@ -2,7 +2,6 @@
 
 import { Tabs as Primitive } from "@base-ui/react/tabs";
 import {
-  type ComponentProps,
   createContext,
   use,
   useEffectEvent,
@@ -11,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ComponentProps } from "react";
 
 import { mergeRefs } from "@/lib/merge-refs";
 

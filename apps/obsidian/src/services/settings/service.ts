@@ -60,7 +60,8 @@
  *   `saveData()`.
  */
 
-import { debounce, type Plugin } from "obsidian";
+import { debounce } from "obsidian";
+import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
 import { Service } from "@/services/service-base";
@@ -70,9 +71,10 @@ import {
   hydrationOriginOf,
   isPlainObject,
   VERSION_KEY,
-  type HydrationOrigin,
 } from "./classify";
-import { defaults, schema, type Settings } from "./schema";
+import type { HydrationOrigin } from "./classify";
+import { defaults, schema } from "./schema";
+import type { Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
 const CURRENT_VERSION = 3;

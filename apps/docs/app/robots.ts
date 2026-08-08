@@ -1,5 +1,5 @@
 // Crawl rules + sitemap pointer; disallows the non-HTML machine endpoints.
-import { type MetadataRoute } from "next";
+import type { MetadataRoute } from "next";
 
 import { baseURL } from "@/lib/shared";
 

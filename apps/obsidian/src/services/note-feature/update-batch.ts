@@ -1,4 +1,4 @@
-import { type TFile } from "obsidian";
+import type { TFile } from "obsidian";
 
 import {
   CollectionCache,
@@ -6,30 +6,27 @@ import {
   getItemDisplayRefByID,
   getItemRefByID,
   getItemsByID,
-  type GroupIDMemo,
-  type TagMemo,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { GroupIDMemo, TagMemo } from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import {
-  type BatchClassifyControls,
-  type BatchRunControls,
-  type BatchRunResult,
-  classifyChunked,
-  runBatchWrite,
+import { classifyChunked, runBatchWrite } from "@/services/batch-run";
+import type {
+  BatchClassifyControls,
+  BatchRunControls,
+  BatchRunResult,
 } from "@/services/batch-run";
-import {
-  resolveBatchScope,
-  type BatchScopeOptions,
-} from "@/services/batch-scope";
-import { type Settings } from "@/services/settings/schema";
+import { resolveBatchScope } from "@/services/batch-scope";
+import type { BatchScopeOptions } from "@/services/batch-scope";
+import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
 
-import { type UpdateScope } from "./operations";
-import { type SingleUpdateDeps, updateNote } from "./update-single";
+import type { UpdateScope } from "./operations";
+import { updateNote } from "./update-single";
+import type { SingleUpdateDeps } from "./update-single";
 
 const logger = getLogger("batch-update");
 
