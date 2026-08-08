@@ -13,7 +13,7 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import type { BibliographyEntry } from "./engine";
 import type { PandocEngineService } from "./service";
-import { StyleXmlCache } from "./styles";
+import { StyleXmlCache, styleHasEntryMarkers } from "./styles";
 
 const logger = getLogger(["pandoc", "render-cache"]);
 
@@ -43,6 +43,12 @@ export interface BibliographyRenderCacheOptions {
   settings: Pick<SettingsService, "ready" | "subscribe">;
 }
 
+/** A completed bibliography and whether its style supplies Entry Markers. */
+export interface BibliographyRenderResult {
+  entries: readonly BibliographyEntry[];
+  hasEntryMarkers: boolean;
+}
+
 /**
  * Formats whole bibliographies in the References Style, and hands the same
  * render to every consumer that cites the same works in the same order.
@@ -66,7 +72,7 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #styles = new StyleXmlCache();
   /** Bibliography renders by {@link renderKey}. */
   readonly #renders = new BoundedCache<
-    Promise<readonly BibliographyEntry[] | null>
+    Promise<BibliographyRenderResult | null>
   >(HELD_RENDERS);
   /** In-text citation renders, held the same way and dropped by the same signals. */
   readonly #citations = new BoundedCache<
@@ -95,15 +101,13 @@ export class BibliographyRenderCache extends Service<void> {
    * already does.
    *
    * @param items the cited works as CSL-JSON, in the order they are cited.
-   * @returns `null` when no engine is installed, or when the render failed; an
-   *   empty list when nothing is cited.
+   * @returns `null` when no engine is installed, or when the render failed.
    */
   async render(
     items: readonly CslItemData[],
-  ): Promise<readonly BibliographyEntry[] | null> {
+  ): Promise<BibliographyRenderResult | null> {
     await this.ready.catch(() => undefined);
     if (this.#engine.getStatus().kind !== "installed") return null;
-    if (items.length === 0) return [];
 
     const styleId = this.#styleId ?? null;
     return this.#hold({
@@ -228,15 +232,22 @@ export class BibliographyRenderCache extends Service<void> {
   async #runBibliography(
     items: readonly CslItemData[],
     styleId: string | null,
-  ): Promise<readonly BibliographyEntry[] | null> {
+  ): Promise<BibliographyRenderResult | null> {
     try {
-      const engine = await this.#engine.getEngine();
-      const rendered = await engine.renderBibliography({
-        items,
-        styleXml: await this.#styleXml(styleId),
+      const styleXml = await this.#styleXml(styleId);
+      let entries: readonly BibliographyEntry[] = [];
+      if (items.length > 0) {
+        const engine = await this.#engine.getEngine();
+        entries = await engine.renderBibliography({ items, styleXml });
+      }
+      const hasEntryMarkers =
+        styleHasEntryMarkers(styleXml) ||
+        entries.some((entry) => entry.marker !== undefined);
+      logger.debug("Bibliography rendered", {
+        count: entries.length,
+        hasEntryMarkers,
       });
-      logger.debug("Bibliography rendered", { count: rendered.length });
-      return rendered;
+      return { entries, hasEntryMarkers };
     } catch (error) {
       logger.warn("Cannot format the bibliography", { error });
       return null;

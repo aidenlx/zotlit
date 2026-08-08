@@ -86,6 +86,13 @@ export interface RenderedReference {
   content: DocumentFragment;
 }
 
+export interface ReferenceBibliography {
+  /** Entries already formatted, in the style's bibliography order. */
+  entries: ReadonlyMap<string, RenderedReference>;
+  /** Whether these entries are the completed answer for the current sources. */
+  complete: boolean;
+}
+
 interface ReferenceEntryBase {
   /**
    * The entry's identity across re-renders: the Indexed Key of the cited Item,
@@ -102,11 +109,13 @@ interface ReferenceEntryBase {
  * so a `summary` entry is ordinary content rather than a degraded one; a
  * `missing` entry keeps a citation whose Item vanished visible, and an
  * `unresolved` entry does the same for a citekey that names no live Zotero
- * Item — Pandoc warns on an undefined citation rather than dropping it. A
- * `rendered` or `summary` entry's `linkpath` is `null` when its Item has no
- * Literature Note yet, so the open action creates one; a `missing` entry
- * carries the same type, but `null` there means the database could not read
- * the Item at all, and the open action stays disabled.
+ * Item — Pandoc warns on an undefined citation rather than dropping it. An
+ * `unrendered` entry keeps an Item a completed bibliography omitted as an
+ * actionable Reference Error. A `rendered`, `summary`, or `unrendered` entry's
+ * `linkpath` is `null` when its Item has no Literature Note yet, so the open
+ * action creates one; a `missing` entry carries the same type, but `null` there
+ * means the database could not read the Item at all, and the open action stays
+ * disabled.
  */
 export type ReferenceEntry = ReferenceEntryBase &
   (
@@ -116,6 +125,7 @@ export type ReferenceEntry = ReferenceEntryBase &
         linkpath: string | null;
       } & RenderedReference)
     | { kind: "summary"; source: ReferenceSource; linkpath: string | null }
+    | { kind: "unrendered"; source: ReferenceSource; linkpath: string | null }
     | { kind: "missing"; linkpath: string | null }
     | { kind: "unresolved"; citekey: string }
   );
@@ -126,8 +136,9 @@ export type ReferenceEntry = ReferenceEntryBase &
  * A rendered entry takes its place from the bibliography, so the list reads in
  * the order the style itself sorts by. A reference the bibliography holds no
  * place for — an Item the database no longer holds, an id the engine did not
- * render — follows the ordered entries in first-occurrence order, which is the
- * order the whole list keeps when no bibliography is passed at all.
+ * render — follows the ordered entries in first-occurrence order as a Reference
+ * Error. That is also the order the whole list keeps when no bibliography is
+ * passed at all, where source-backed entries are ordinary summaries.
  *
  * A citekey naming no live Zotero Item keeps its raw text and trails the
  * ordered entries with the rest, since the bibliography holds no place for a
@@ -136,13 +147,13 @@ export type ReferenceEntry = ReferenceEntryBase &
  * @param sources cited Items by Indexed Key; an Item the database no longer
  *   holds is simply absent, and its citation becomes a `missing` entry.
  * @param bibliography rendered entries by CSL `id`, in the engine's
- *   bibliography order; omit it, or leave an id out, to fall back to the
- *   minimal reference list.
+ *   bibliography order; omit it for the minimal reference list. A source-backed
+ *   id becomes `unrendered` only when a completed bibliography leaves it out.
  */
 export function buildReferenceEntries(
   citations: readonly Citation[],
   sources: ReadonlyMap<string, ReferenceSource>,
-  bibliography?: ReadonlyMap<string, RenderedReference>,
+  bibliography?: ReferenceBibliography,
 ): ReferenceEntry[] {
   const placed = new Map<string, ReferenceEntry>();
   const trailing: ReferenceEntry[] = [];
@@ -167,16 +178,20 @@ export function buildReferenceEntries(
       trailing.push({ ...base, kind: "missing" });
       continue;
     }
-    const entry = bibliography?.get(source.csl.id);
+    const entry = bibliography?.entries.get(source.csl.id);
     if (!entry) {
-      trailing.push({ ...base, kind: "summary", source });
+      trailing.push({
+        ...base,
+        kind: bibliography?.complete ? "unrendered" : "summary",
+        source,
+      });
       continue;
     }
     placed.set(source.csl.id, { ...base, kind: "rendered", source, ...entry });
   }
 
   const ordered: ReferenceEntry[] = [];
-  for (const id of bibliography?.keys() ?? []) {
+  for (const id of bibliography?.entries.keys() ?? []) {
     const entry = placed.get(id);
     if (entry) ordered.push(entry);
   }

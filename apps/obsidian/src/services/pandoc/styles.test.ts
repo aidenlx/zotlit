@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { listInstalledStyles, loadStyleXml, StyleXmlCache } from "./styles";
+import {
+  listInstalledStyles,
+  loadStyleXml,
+  StyleXmlCache,
+  styleHasEntryMarkers,
+} from "./styles";
 
 let dataDir: string;
 
@@ -158,6 +163,29 @@ describe("loadStyleXml", () => {
     await expect(
       loadStyleXml(dataDir, "http://www.zotero.org/styles/orphan"),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("styleHasEntryMarkers", () => {
+  it("finds a bibliography that separates its second field", () => {
+    expect(
+      styleHasEntryMarkers(`
+        <style>
+          <bibliography hanging-indent="true" second-field-align="flush">
+            <layout />
+          </bibliography>
+        </style>
+      `),
+    ).toBe(true);
+  });
+
+  it("finds no Entry Markers in an inline bibliography or default style", () => {
+    expect(
+      styleHasEntryMarkers(
+        "<style><bibliography><layout /></bibliography></style>",
+      ),
+    ).toBe(false);
+    expect(styleHasEntryMarkers(undefined)).toBe(false);
   });
 });
 

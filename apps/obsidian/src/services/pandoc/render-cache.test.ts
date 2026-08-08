@@ -221,7 +221,8 @@ describe("BibliographyRenderCache", () => {
     expect(engine.requests).toHaveLength(1);
     expect(first).toBe(second);
     expect(first).toBe(third);
-    expect(first?.map((entry) => entry.id)).toEqual(["alpha", "zebra"]);
+    expect(first?.entries.map((entry) => entry.id)).toEqual(["alpha", "zebra"]);
+    expect(first?.hasEntryMarkers).toBe(true);
   });
 
   it("renders again for a different cited set, order included", async () => {
@@ -295,7 +296,10 @@ describe("BibliographyRenderCache", () => {
   it("formats nothing for a document that cites nothing", async () => {
     const { cache, engine } = await makeHarness();
 
-    await expect(cache.render([])).resolves.toEqual([]);
+    await expect(cache.render([])).resolves.toEqual({
+      entries: [],
+      hasEntryMarkers: false,
+    });
     expect(engine.requests).toHaveLength(0);
   });
 

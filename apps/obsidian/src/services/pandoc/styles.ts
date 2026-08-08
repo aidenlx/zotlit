@@ -68,6 +68,16 @@ export async function loadStyleXml(
 }
 
 /**
+ * CSL processors create a left-margin field when `second-field-align` is set;
+ * the citation engine exposes that field as the Entry Marker.
+ */
+export function styleHasEntryMarkers(styleXml: string | undefined): boolean {
+  return (
+    styleXml !== undefined && BIBLIOGRAPHY_WITH_ENTRY_MARKERS.test(styleXml)
+  );
+}
+
+/**
  * The installed style file whose XML renders `styleId`, with a dependent style
  * resolved to its independent parent.
  */
@@ -226,6 +236,8 @@ async function readStyleXml(path: string): Promise<string | undefined> {
 const INFO_BLOCK = regex("<info>(?<info>[\\s\\S]*?)</info>");
 const ID = regex("<id>(?<id>[^<]*)</id>");
 const TITLE = regex("<title>(?<title>[^<]*)</title>");
+const BIBLIOGRAPHY_WITH_ENTRY_MARKERS =
+  /<bibliography\b[^>]*\bsecond-field-align\s*=/;
 const LINK_TAG = /<link\b[^>]*>/g;
 const HREF = regex('href="(?<href>[^"]*)"');
 const REL = regex('rel="(?<rel>[^"]*)"');

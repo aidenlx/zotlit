@@ -123,8 +123,12 @@ _Avoid_: PDF attachment (the format is not the rule), openable file
 An active-document identifier assigned to each distinct Literature Note Citation by first occurrence. It appears in editor widgets and in the References Sidebar's minimal reference list when no engine renders; repeated Citations share the same number, and the Markdown source stays unchanged.
 _Avoid_: citation key, reference index
 
+**Reference Error** _(Obsidian)_:
+A References Sidebar entry for an unresolved citation key, a missing Item, or a source-backed Item omitted from a completed bibliography rendering.
+_Avoid_: broken reference, missing reference (names only one cause)
+
 **References Sidebar** _(Obsidian)_:
-The active-document view that lists each distinct Literature Note Citation once, navigates to its occurrences, and reaches the cited Item and its Openable Attachments in Zotero. Engine-rendered entries keep the selected CSL style's bibliography order and show the style's Entry Marker — or no number when the style has none. References without a place in that order (missing Items, unrendered entries) stay visible after it with their error state. Without the engine, the minimal reference list keeps first-occurrence document order and Reference Numbers.
+The active-document view of each distinct Literature Note Citation and its occurrences, cited Item, and Openable Attachments. Its engine-rendered form follows the References Style's bibliography order and Entry Markers; its minimal form follows first-occurrence order and Reference Numbers.
 _Avoid_: bibliography sidebar, reference list pane
 
 **References Style**:

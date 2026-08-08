@@ -38,6 +38,7 @@ import type {
 } from "./entries";
 import { References } from "./References";
 import { createReferencesStore, ReferencesStoreProvider } from "./store";
+import type { ReferencesListMode } from "./store";
 
 export const REFERENCES_VIEW_TYPE = "zotlit-references";
 
@@ -69,6 +70,8 @@ export class ReferencesView extends ItemView {
    * falls back to its summary mid-edit.
    */
   readonly #rendered = new Map<string, RenderedReference>();
+  /** Marker ownership of the last completed render for the current style. */
+  #listMode: ReferencesListMode = { kind: "minimal" };
   #root: Root | null = null;
   #actions: ReferenceActions | null = null;
   /** Bumped per reload; an older render that finishes late is discarded. */
@@ -221,13 +224,20 @@ export class ReferencesView extends ItemView {
    * makes them stale rather than incomplete.
    */
   #reload({ invalidate = false } = {}): void {
-    if (invalidate) this.#rendered.clear();
+    if (invalidate) {
+      this.#rendered.clear();
+      this.#listMode = { kind: "minimal" };
+    }
     const generation = ++this.#generation;
     const citations = this.#citations;
     const sources = this.#readSources(citations);
 
     this.#store.setState({
-      entries: buildReferenceEntries(citations, sources, this.#rendered),
+      entries: buildReferenceEntries(citations, sources, {
+        entries: this.#rendered,
+        complete: false,
+      }),
+      listMode: this.#listMode,
       engine: this.#deps.pandocEngine.getStatus(),
       dbReady: this.#deps.db.state === "ready",
     });
@@ -312,9 +322,10 @@ export class ReferencesView extends ItemView {
    * from a render another consumer already paid for whenever this document
    * cites the same works in the same order.
    *
-   * Nothing to format, and a cache that cannot format it, both leave the
-   * entries already on screen alone — which is what keeps a formatted entry
-   * from falling back to its summary while a re-render is pending.
+   * A cache that cannot format the list leaves the entries already on screen
+   * alone — which is what keeps a formatted entry from falling back to its
+   * summary while a re-render is pending. A completed render is applied even
+   * when it is empty, so each source it omitted becomes a Reference Error.
    */
   async #render(
     generation: number,
@@ -323,21 +334,30 @@ export class ReferencesView extends ItemView {
   ): Promise<void> {
     const items = [...sources.values()].map((source) => source.csl);
     const rendered = await this.#deps.bibliographyRender.render(items);
-    if (!rendered || rendered.length === 0) return;
+    if (!rendered) return;
     if (generation !== this.#generation) return;
 
     // Refilled rather than merged: the render covers every cited Item, so
     // what it leaves out is no longer cited, and the map's order is the
     // bibliography order the list reads in.
     this.#rendered.clear();
-    for (const { id, marker, content } of rendered) {
+    for (const { id, marker, content } of rendered.entries) {
       this.#rendered.set(id, { marker, content });
     }
+    this.#listMode = {
+      kind: "bibliography",
+      hasEntryMarkers: rendered.hasEntryMarkers,
+    };
     logger.debug("References bibliography rendered", {
-      count: rendered.length,
+      count: rendered.entries.length,
+      hasEntryMarkers: rendered.hasEntryMarkers,
     });
     this.#store.setState({
-      entries: buildReferenceEntries(citations, sources, this.#rendered),
+      entries: buildReferenceEntries(citations, sources, {
+        entries: this.#rendered,
+        complete: true,
+      }),
+      listMode: this.#listMode,
     });
   }
 }

@@ -12,7 +12,7 @@ import type {
 } from "@/services/pandoc/service";
 
 import { useReferenceActions } from "./actions";
-import type { ReferenceEntry } from "./entries";
+import type { ReferenceEntry, ReferenceSource } from "./entries";
 import { useReferencesStore } from "./store";
 
 /**
@@ -22,12 +22,12 @@ import { useReferencesStore } from "./store";
  */
 export function References() {
   const entries = useReferencesStore((s) => s.entries);
+  const listMode = useReferencesStore((s) => s.listMode);
   const engine = useReferencesStore((s) => s.engine);
   const dbReady = useReferencesStore((s) => s.dbReady);
-  // Reference Numbers belong to the minimal list. Once the engine has formatted
-  // an entry, the list reads as the style's own bibliography, and numbering the
-  // rest of it would set a second numbering against the style's markers.
-  const numbered = !entries.some((entry) => entry.kind === "rendered");
+  const numbered = listMode.kind === "minimal";
+  const guttered =
+    numbered || (listMode.kind === "bibliography" && listMode.hasEntryMarkers);
 
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto">
@@ -37,9 +37,21 @@ export function References() {
           {dbReady ? m.references_empty() : m.references_db_unavailable()}
         </div>
       ) : (
-        <ul className="zt:flex zt:flex-col zt:text-sm">
+        <ul
+          className={cn(
+            "zt:grid zt:gap-x-2 zt:text-sm",
+            guttered
+              ? "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]"
+              : "zt:grid-cols-[minmax(0,1fr)_max-content]",
+          )}
+        >
           {entries.map((entry) => (
-            <Reference key={entry.id} entry={entry} numbered={numbered} />
+            <Reference
+              key={entry.id}
+              entry={entry}
+              numbered={numbered}
+              guttered={guttered}
+            />
           ))}
         </ul>
       )}
@@ -71,55 +83,54 @@ const compactIconButton = "zt:p-1 zt:[--icon-size:var(--icon-xs)]";
  *
  * @param numbered whether the list carries Reference Numbers, which the minimal
  *   list does and an engine-rendered one leaves to the style.
+ * @param guttered whether the shared list grid includes its marker column.
  */
 function Reference({
   entry,
   numbered,
+  guttered,
 }: {
   entry: ReferenceEntry;
   numbered: boolean;
+  guttered: boolean;
 }) {
   const actions = useReferenceActions();
-  // Both error states read the same way in the row: a warning gutter, and no
-  // note to open. What differs is the sentence and the tooltip that say why.
-  const inError = entry.kind === "missing" || entry.kind === "unresolved";
+  const presentation = referencePresentation(entry, numbered);
+  const { source } = presentation;
   const occurrenceCount = entry.occurrences.length;
-  const gutter = gutterLabel(entry, numbered);
 
   return (
-    <li>
-      <div className="zt:group zt:flex zt:items-baseline zt:gap-2 zt:border-b zt:border-border zt:px-3 zt:py-2">
-        {/* The gutter is only there when something numbers the entry: a style
-            that numbers nothing gives the entry text the whole row instead of
-            an empty column to start after. It holds its width for the numbers
-            it does carry, and a marker wider than that widens its own row. */}
-        {gutter !== undefined && (
-          <span
-            className={cn(
-              "zt:min-w-5 zt:shrink-0 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums",
-              inError && "zt:text-destructive",
-            )}
-          >
-            {gutter}
-          </span>
-        )}
-        <div className="zt:min-w-0 zt:flex-1">
-          {/* Selectable, so a formatted entry can be copied out of the pane
+    <li className="zt:group zt:col-span-full zt:grid zt:grid-cols-subgrid zt:items-baseline zt:border-b zt:border-border zt:px-3 zt:py-2">
+      {/* Every row participates in the same max-content column when the
+          minimal list numbers its entries or the style supplies an Entry
+          Marker. Reference Errors use that column but never create it. */}
+      {guttered && (
+        <span
+          className={cn(
+            "zt:min-w-5 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums",
+            presentation.warning && "zt:text-destructive",
+          )}
+        >
+          {presentation.gutter}
+        </span>
+      )}
+      <div className="zt:min-w-0">
+        {/* Selectable, so a formatted entry can be copied out of the pane
               whole. Nothing else lives in this flow — the occurrence count
               rides with the jump button instead, where a selection cannot
               sweep it up. */}
-          <div className="zt:select-text">
-            <ReferenceBody entry={entry} />
-          </div>
-          {/* Collapsed to zero height as a class, never an inline style — an
+        <div className="zt:select-text">
+          <ReferenceBody entry={entry} />
+        </div>
+        {/* Collapsed to zero height as a class, never an inline style — an
               inline style on this element would outrank the hover/focus
               classes below and the toolbar could never open. The toolbar
               itself stays live on a missing entry, since the note button
               inside it still has somewhere to go. */}
-          <div className="zt:grid zt:grid-rows-[0fr] zt:transition-[grid-template-rows] zt:delay-0 zt:duration-150 zt:ease-out zt:group-focus-within:grid-rows-[1fr] zt:group-hover:grid-rows-[1fr] zt:group-hover:delay-100">
-            <div className={cn("zt:overflow-hidden", revealOnHover)}>
-              <div className="zt:flex zt:items-center zt:gap-0.5 zt:pt-1">
-                {/* The fade rides the shared wrapper above, never the button:
+        <div className="zt:grid zt:grid-rows-[0fr] zt:transition-[grid-template-rows] zt:delay-0 zt:duration-150 zt:ease-out zt:group-focus-within:grid-rows-[1fr] zt:group-hover:grid-rows-[1fr] zt:group-hover:delay-100">
+          <div className={cn("zt:overflow-hidden", revealOnHover)}>
+            <div className="zt:flex zt:items-center zt:gap-0.5 zt:pt-1">
+              {/* The fade rides the shared wrapper above, never the button:
                     Obsidian's unlayered
                     `.clickable-icon[aria-disabled="true"] { opacity: .4 }`
                     outranks the whole utilities layer, so on a missing entry
@@ -128,100 +139,120 @@ function Reference({
                     button once revealed — disabled rather than hidden there,
                     so the row keeps its shape and the tooltip carries the
                     reason. */}
-                <EntryAction
-                  icon="file-text"
-                  label={openNoteLabel(entry)}
-                  disabled={inError}
-                  onClick={() => actions.onOpenNote(entry)}
-                />
-                {(entry.kind === "rendered" || entry.kind === "summary") && (
-                  <>
-                    <EntryAction
-                      icon="external-link"
-                      label={m.references_open_in_zotero()}
-                      onClick={() => actions.onOpenInZotero(entry.source)}
-                    />
-                    {/* Dropped outright when the Item stores nothing to open —
+              <EntryAction
+                icon="file-text"
+                label={presentation.noteLabel}
+                disabled={presentation.noteDisabled}
+                onClick={() => actions.onOpenNote(entry)}
+              />
+              {source && (
+                <>
+                  <EntryAction
+                    icon="external-link"
+                    label={m.references_open_in_zotero()}
+                    onClick={() => actions.onOpenInZotero(source)}
+                  />
+                  {/* Dropped outright when the Item stores nothing to open —
                         the row keeps "Open in Zotero" either way, so the
                         toolbar never empties. */}
-                    {entry.source.attachments.length > 0 && (
-                      <EntryAction
-                        icon="paperclip"
-                        label={m.references_open_attachment()}
-                        onClick={(event) =>
-                          actions.onOpenAttachment(entry.source, event)
-                        }
-                      />
-                    )}
-                  </>
-                )}
-              </div>
+                  {source.attachments.length > 0 && (
+                    <EntryAction
+                      icon="paperclip"
+                      label={m.references_open_attachment()}
+                      onClick={(event) =>
+                        actions.onOpenAttachment(source, event)
+                      }
+                    />
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
-        {/* Live even on a missing entry: the citation is still in the
-            document, and jumping to it is how the reader goes to fix it. */}
-        <div className="zt:relative zt:shrink-0 zt:self-start">
-          <EntryAction
-            icon="chevron-right"
-            label={m.references_go_to_occurrence({ count: occurrenceCount })}
-            onClick={() => actions.onSelect(entry)}
-          />
-          {/* The count rides in the button's top-left corner, which a
-              chevron leaves empty, rather than beside it — a badge in the
-              flow would widen the column on every multiply-cited row. It is
-              a visual echo only; the button's tooltip already says the count
-              out loud, since a bare number reads as part of the citation
-              rather than as a count of citations. */}
-          {occurrenceCount > 1 && (
-            <span
-              aria-hidden
-              className="zt:pointer-events-none zt:absolute zt:top-0 zt:left-0 zt:text-[0.625rem] zt:leading-none zt:text-muted-foreground zt:tabular-nums"
-            >
-              {occurrenceCount}
-            </span>
-          )}
-        </div>
+      </div>
+      {/* Live even on a missing entry: the citation is still in the document,
+          and jumping to it is how the reader goes to fix it. */}
+      <div className="zt:relative zt:self-start">
+        <EntryAction
+          icon="chevron-right"
+          label={m.references_go_to_occurrence({ count: occurrenceCount })}
+          onClick={() => actions.onSelect(entry)}
+        />
+        {/* The count rides in the button's top-left corner, which a chevron
+            leaves empty, rather than beside it — a badge in the flow would
+            widen the column on every multiply-cited row. It is a visual echo
+            only; the button's tooltip already says the count out loud, since
+            a bare number reads as part of the citation rather than as a count
+            of citations. */}
+        {occurrenceCount > 1 && (
+          <span
+            aria-hidden
+            className="zt:pointer-events-none zt:absolute zt:top-0 zt:left-0 zt:text-[0.625rem] zt:leading-none zt:text-muted-foreground zt:tabular-nums"
+          >
+            {occurrenceCount}
+          </span>
+        )}
       </div>
     </li>
   );
 }
 
-/**
- * What the gutter shows, or `undefined` to leave the row without one: the
- * style's own Entry Marker on a rendered entry, the Reference Number while the
- * list numbers its entries, and the warning state of a missing Item either way.
- */
-function gutterLabel(
+function referencePresentation(
   entry: ReferenceEntry,
   numbered: boolean,
-): string | number | undefined {
+): {
+  gutter: string | number | undefined;
+  warning: boolean;
+  noteLabel: string;
+  noteDisabled: boolean;
+  source: ReferenceSource | undefined;
+} {
   switch (entry.kind) {
     case "rendered":
-      return entry.marker;
+      return {
+        gutter: entry.marker,
+        warning: false,
+        noteLabel: m.references_open_note(),
+        noteDisabled: false,
+        source: entry.source,
+      };
     case "summary":
-      return numbered ? entry.refNumber : undefined;
+      return {
+        gutter: numbered ? entry.refNumber : undefined,
+        warning: false,
+        noteLabel: m.references_open_note(),
+        noteDisabled: false,
+        source: entry.source,
+      };
+    case "unrendered":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_open_note(),
+        noteDisabled: false,
+        source: entry.source,
+      };
     case "missing":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_open_note_missing(),
+        noteDisabled: true,
+        source: undefined,
+      };
     case "unresolved":
-      return "⚠";
-  }
-}
-
-/** Why the note button is there, or why it is dimmed. */
-function openNoteLabel(entry: ReferenceEntry): string {
-  switch (entry.kind) {
-    case "rendered":
-    case "summary":
-      return m.references_open_note();
-    case "missing":
-      return m.references_open_note_missing();
-    case "unresolved":
-      return m.references_open_note_unresolved();
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_open_note_unresolved(),
+        noteDisabled: true,
+        source: undefined,
+      };
   }
 }
 
 function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
-  const textClass = "zt:font-content zt:text-sm zt:leading-snug";
+  const textClass = "zt:font-content zt:text-sm zt:leading-snug zt:break-words";
   switch (entry.kind) {
     case "rendered":
       return (
@@ -231,6 +262,7 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
         />
       );
     case "summary":
+    case "unrendered":
       return (
         <span className={cn(textClass, "zt:text-foreground")}>
           {entry.source.summary}

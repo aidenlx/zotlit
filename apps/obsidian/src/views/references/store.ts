@@ -8,9 +8,15 @@ import type { PandocEngineStatus } from "@/services/pandoc/service";
 
 import type { ReferenceEntry } from "./entries";
 
+export type ReferencesListMode =
+  | { kind: "minimal" }
+  | { kind: "bibliography"; hasEntryMarkers: boolean };
+
 export interface ReferencesState {
   /** Reference list of the active document, in document order. */
   entries: readonly ReferenceEntry[];
+  /** Which list owns the marker column. */
+  listMode: ReferencesListMode;
   /** Drives the one fallback surface above the list. */
   engine: PandocEngineStatus;
   /** `false` while the Zotero database cannot be read. */
@@ -22,6 +28,7 @@ export type ReferencesStore = ReturnType<typeof createReferencesStore>;
 export function createReferencesStore() {
   return createStore<ReferencesState>()(() => ({
     entries: [],
+    listMode: { kind: "minimal" },
     engine: { kind: "absent" },
     dbReady: false,
   }));
