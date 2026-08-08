@@ -114,6 +114,37 @@ describe("scanCitekeys", () => {
     expect(citekeys("a [^@key] b")).toEqual([]);
   });
 
+  it("ignores keys inside inline code spans", () => {
+    expect(citekeys("a `@single` and ``@double`` b")).toEqual([]);
+    expect(citekeys("a ``x ` @embedded`` b")).toEqual([]);
+    expect(citekeys("a `x `` @longer-run` b")).toEqual([]);
+    expect(citekeys("a ``@suffix-opener` b")).toEqual([]);
+  });
+
+  it("ignores a braced key that starts in code and ends outside it", () => {
+    expect(citekeys("`@{foo`} `")).toEqual([]);
+  });
+
+  it("ignores a key inside a multiline code span", () => {
+    expect(citekeys("@before `x\n@inside` @after")).toEqual([
+      "before",
+      "after",
+    ]);
+  });
+
+  it("stops a code span at a paragraph break", () => {
+    expect(citekeys("a `code\n \n@visible`")).toEqual(["visible"]);
+  });
+
+  it("reads a key after an unmatched code-span opener", () => {
+    expect(citekeys("a `@visible b")).toEqual(["visible"]);
+  });
+
+  it("opens a code span only after an even backslash run", () => {
+    expect(citekeys("a \\`@visible\\` b")).toEqual(["visible"]);
+    expect(citekeys("a \\\\`@hidden` b")).toEqual([]);
+  });
+
   it("reads a key inside an inline note or a spaced bracket, which no footnote label allows", () => {
     expect(citekeys("e ^[@key] f")).toEqual(["key"]);
     expect(citekeys("c [^see @key] d")).toEqual(["key"]);

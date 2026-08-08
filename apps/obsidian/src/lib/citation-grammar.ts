@@ -83,7 +83,7 @@ export interface CitationCluster extends TextSpan {
  *   inside citation clusters.
  */
 export function scanCitekeys(text: string): CitekeySpan[] {
-  const notes = noteRefSpans(text);
+  const exclusions = [...noteRefSpans(text), ...codeSpanSpans(text)];
   const found: CitekeySpan[] = [];
   CITEKEY_RE.lastIndex = 0;
   for (
@@ -119,7 +119,9 @@ export function scanCitekeys(text: string): CitekeySpan[] {
   }
   return found.filter(
     (key) =>
-      !notes.some(({ start, end }) => key.start >= start && key.end <= end),
+      !exclusions.some(
+        ({ start, end }) => key.start >= start && key.start < end,
+      ),
   );
 }
 
@@ -145,6 +147,24 @@ function noteRefSpans(text: string): TextSpan[] {
       if (at > open + 2) spans.push({ start: open, end: at + 1 });
       break;
     }
+  }
+  return spans;
+}
+
+function codeSpanSpans(text: string): TextSpan[] {
+  const spans: TextSpan[] = [];
+  for (
+    let open = text.indexOf("`");
+    open >= 0;
+    open = text.indexOf("`", open)
+  ) {
+    const end = readCodeSpan(text, open);
+    if (end === null) {
+      open += 1;
+      continue;
+    }
+    spans.push({ start: open, end });
+    open = end;
   }
   return spans;
 }
@@ -284,6 +304,8 @@ function readCluster(
     if (char === "`") {
       const fenced = readCodeSpan(text, at);
       if (fenced) {
+        const lineBreak = text.indexOf("\n", at);
+        if (lineBreak >= 0 && lineBreak < fenced) return null;
         at = fenced - 1;
         continue;
       }
@@ -313,14 +335,15 @@ function readCluster(
 
 /**
  * @returns offset just past the backtick run that closes the code span opening
- *   at `open`, or `null` when the run never closes on this line.
+ *   at `open`, or `null` when the run never closes.
  */
 function readCodeSpan(text: string, open: number): number | null {
+  if (isBackslashEscaped(text, open)) return null;
   let content = open;
   while (text[content] === "`") content += 1;
   const ticks = content - open;
   for (let at = content; at < text.length; at += 1) {
-    if (text[at] === "\n") return null;
+    if (opensParagraphBreak(text, at)) return null;
     if (text[at] !== "`") continue;
     let runEnd = at;
     while (text[runEnd] === "`") runEnd += 1;
@@ -328,6 +351,20 @@ function readCodeSpan(text: string, open: number): number | null {
     at = runEnd - 1;
   }
   return null;
+}
+
+function opensParagraphBreak(text: string, at: number): boolean {
+  if (text[at] !== "\n") return false;
+  let next = at + 1;
+  while (text[next] === " " || text[next] === "\t") next += 1;
+  if (text[next] === "\r") next += 1;
+  return text[next] === "\n";
+}
+
+function isBackslashEscaped(text: string, at: number): boolean {
+  let firstBackslash = at;
+  while (text[firstBackslash - 1] === "\\") firstBackslash -= 1;
+  return (at - firstBackslash) % 2 === 1;
 }
 
 /**
