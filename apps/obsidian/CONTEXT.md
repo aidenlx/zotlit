@@ -263,11 +263,19 @@ _Avoid_: direct read, read-only mode (all modes are read-only)
 ### Releases and onboarding
 
 **Resource Release**:
-The version-matched release that carries downloadable resources outside the plugin bundle: Language Packs, template data JSON Schemas, and the Pandoc integration files. One exists per plugin release, named for that version, holding assets built from the same commit; the plugin downloads Language Packs at runtime, while agents use CLI guides to download schemas and Pandoc files when needed. The plugin's own release carries only the three files the Obsidian community-plugin scanner accepts.
+The version-matched release that carries downloadable resources outside the plugin bundle: Language Packs and template data JSON Schemas. One exists per plugin release, named for that version, holding assets built from the same commit; the plugin downloads Language Packs at runtime, while agents use CLI guides to download schemas when needed. The installed plugin supplies its matching Pandoc integration files through its own agent and UI surfaces.
 _Avoid_: pack release, asset release
 
+**Pandoc Integration Pair**:
+The matching, co-located `zotlit-cite.lua` and `zotlit.yaml` files for one installed ZotLit version. ZotLit supplies and replaces them as one exact pair.
+_Avoid_: Pandoc bundle, filter files
+
+**Native Pandoc Workflow**:
+One local Markdown input converted by a user-installed Pandoc, with the Pandoc Integration Pair resolving Literature Note Citations through a running Obsidian instance.
+_Avoid_: external export, CLI export
+
 **Pandoc CLI Guide**:
-The agent-facing guide that reports the installed ZotLit version and the exact Resource Release URLs for its matching `zotlit-cite.lua` filter and optional `zotlit.yaml` defaults file. It tells the agent to choose a user-owned workflow directory and keep both exact filenames together; the guide does not download or update the files itself.
+The agent-facing reference for ZotLit's part of native Pandoc export: obtaining the matching integration files and using the resolver contract. It assumes Pandoc knowledge; general Pandoc setup and usage stay outside ZotLit.
 _Avoid_: Pandoc installer, Pandoc setup command
 
 **Welcome View** _(Obsidian)_:
