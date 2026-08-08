@@ -37,14 +37,19 @@ Open this page from **Settings → ZotLit → Citations**.
 
 ### Citation index
 
-| Label                     | Key                           | Control | Default |
-| ------------------------- | ----------------------------- | ------- | ------- |
-| **Citation key indexing** | `citation.citekey-indexing`   | Toggle  | On      |
-| **Wikilink citations**    | `citation.wikilink-citations` | Toggle  | Off     |
+| Label                                        | Key                           | Control | Default |
+| -------------------------------------------- | ----------------------------- | ------- | ------- |
+| **Citation key indexing**                    | `citation.citekey-indexing`   | Toggle  | On      |
+| **Wikilink citations**                       | `citation.wikilink-citations` | Toggle  | Off     |
+| **Show wikilink citations as citation text** | `citation.wikilink-display`   | Toggle  | On      |
 
-**Citation key indexing** tracks Pandoc citation keys such as `@doe2024` across your vault, so ZotLit knows which items each note cites. Keys inside code, math, comments, and frontmatter are ignored.
+**Citation key indexing** enables Citekey Indexing. It tracks literal Pandoc citation keys such as `@doe2024` across your vault. It is the master switch for literal citation key features in the references sidebar, editor, and reading view.
 
-**Wikilink citations** treats links to literature notes as citations, so the references sidebar lists them beside your citation keys. Pandoc export converts those links either way.
+**Wikilink citations** enables Wikilink Citations in the references sidebar. It also allows fragment-less Literature Note wikilinks to use Citation Display Text.
+
+**Show wikilink citations as citation text** changes a fragment-less Literature Note wikilink from its path to Citation Display Text. This applies in Live Preview and reading view. Both wikilink settings must be on. This setting is visible only while **Wikilink citations** is on.
+
+A wikilink with a valid `#cite:` Citation Fragment displays as a citation regardless of both wikilink settings. Pandoc export also converts Literature Note wikilinks regardless of these settings.
 
 ### Editor
 
@@ -58,7 +63,9 @@ Open this page from **Settings → ZotLit → Citations**.
   surface: the references sidebar, the editor, and reading view.
 </Callout>
 
-**Citation key styling** styles citation keys such as `@doe2024` in the editor, and opens the literature note of a key when you click it. In Live Preview and reading view, citations show their formatted text. See [How citation key styling works](/docs/concepts/how-citekey-links-work).
+**Citation key styling** styles citation keys such as `@doe2024` in the editor. It also enables Citekey Navigation and its command-palette commands. Live Preview and reading view show formatted citation text. See [How citation display and navigation work](/docs/concepts/how-citekey-links-work).
+
+Hover preview is available when one citation key resolves to exactly one existing Literature Note. Configure its modifier gating under Obsidian's **Settings → Core plugins → Page preview**, using the source **ZotLit citation key**.
 
 ### References
 
@@ -195,10 +202,10 @@ Actions: **Add folder** (opens a folder picker), and delete on each row. Approva
 
 ## Live updates
 
-| Label                           | Key              | Control                | Default |
-| ------------------------------- | ---------------- | ---------------------- | ------- |
-| **Receive updates from Zotero** | `server.enabled` | Toggle                 | Off     |
-| **Port**                        | `server.port`    | Number (1024 -- 65535) | `9091`  |
+| Label                           | Key              | Control                   | Default |
+| ------------------------------- | ---------------- | ------------------------- | ------- |
+| **Receive updates from Zotero** | `server.enabled` | Toggle                    | Off     |
+| **Port**                        | `server.port`    | Number from 1024 to 65535 | `9091`  |
 
 <Callout type="info">
   **Port** and **Hostname** are visible only when **Receive updates from
