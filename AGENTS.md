@@ -76,7 +76,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 
 ### i18n
 
-User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics.
+User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
 
 User- and agent-facing copy has four sources: MDX under `apps/docs/content/`, i18n messages under `messages/`, Zotero companion locale files under `apps/zotero/locale/`, and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`. Use the canonical terms in [policies/vocabulary.md](policies/vocabulary.md).
 
@@ -102,4 +102,4 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Multi-context layout — `CONTEXT-MAP.md` at the repo root points to per-workspace `CONTEXT.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`.
+Multi-context layout — `CONTEXT-MAP.md` at the repo root points to per-workspace `CONTEXT.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`. Context names there (e.g. "Zotero Data Model") are heading labels for that map; code, comments, and user-facing copy keep the casing their own convention calls for (see i18n above for UI text).

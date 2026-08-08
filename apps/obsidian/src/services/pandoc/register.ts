@@ -1,4 +1,4 @@
-// Registers `zotlit:resolve`, the CLI handler the Pandoc filter's CLI variant calls.
+// Registers the Native Pandoc Workflow CLI surface.
 //
 // Flag and command help text is localized: it is UI text a user reads while
 // discovering the command. The response is the machine surface the filter
@@ -26,6 +26,11 @@ import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import {
+  createPandocIntegrationHandlers,
+  PANDOC_FILES_COMMAND,
+  PANDOC_GUIDE_COMMAND,
+} from "./integration";
 import { resolveCitations } from "./resolve";
 import type { ResolveDocument, ResolvedItem } from "./resolve";
 
@@ -53,6 +58,19 @@ export function registerPandocResolve(
   plugin: Plugin,
   deps: PandocResolveDeps,
 ): void {
+  const integration = createPandocIntegrationHandlers(plugin.manifest.version);
+  plugin.registerCliHandler(
+    PANDOC_FILES_COMMAND,
+    m.cli_pandoc_files_desc(),
+    null,
+    integration[PANDOC_FILES_COMMAND],
+  );
+  plugin.registerCliHandler(
+    PANDOC_GUIDE_COMMAND,
+    m.cli_pandoc_guide_desc(),
+    null,
+    integration[PANDOC_GUIDE_COMMAND],
+  );
   plugin.registerCliHandler(
     RESOLVE_COMMAND,
     m.cli_resolve_desc(),

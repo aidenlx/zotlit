@@ -7,8 +7,7 @@ import {
   AGENT_SKILLS_SCHEMA,
   createAgentSkillsIndex,
   readAgentSkillFiles,
-  SKILL_NAME,
-  SKILL_REPOSITORY_PATH,
+  SKILL_NAMES,
 } from "./agent-skills";
 
 const COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -21,6 +20,16 @@ description: "Author and debug ZotLit templates."
 `);
 const OPENAI_METADATA = new TextEncoder().encode(`interface:
   display_name: "ZotLit Template Workbench"
+`);
+const PANDOC_SKILL = new TextEncoder().encode(`---
+name: zotlit-pandoc
+description: "Run ZotLit's Native Pandoc Workflow."
+---
+
+# ZotLit Native Pandoc Workflow
+`);
+const PANDOC_METADATA = new TextEncoder().encode(`interface:
+  display_name: "ZotLit Native Pandoc Workflow"
 `);
 
 describe("Agent Skill distribution", () => {
@@ -41,46 +50,73 @@ describe("Agent Skill distribution", () => {
     );
   });
 
-  it("builds a pinned discovery index from the archive bytes", () => {
-    const archive = createAgentSkillArchive({
+  it("builds a pinned discovery index from every skill archive", () => {
+    const templateArchive = createAgentSkillArchive({
       skill: SKILL,
       openAiMetadata: OPENAI_METADATA,
     });
+    const pandocArchive = createAgentSkillArchive({
+      skill: PANDOC_SKILL,
+      openAiMetadata: PANDOC_METADATA,
+    });
     const index = JSON.parse(
       createAgentSkillsIndex({
-        skill: SKILL,
-        archive,
+        skills: [
+          { name: "zotlit-template", skill: SKILL, archive: templateArchive },
+          {
+            name: "zotlit-pandoc",
+            skill: PANDOC_SKILL,
+            archive: pandocArchive,
+          },
+        ],
         commitSha: COMMIT_SHA,
       }),
     );
-    const digest = createHash("sha256").update(archive).digest("hex");
+    const templateDigest = createHash("sha256")
+      .update(templateArchive)
+      .digest("hex");
+    const pandocDigest = createHash("sha256")
+      .update(pandocArchive)
+      .digest("hex");
 
     expect(index).toEqual({
       $schema: AGENT_SKILLS_SCHEMA,
       skills: [
         {
-          name: SKILL_NAME,
+          name: "zotlit-template",
           type: "archive",
           description: "Author and debug ZotLit templates.",
-          url: `https://zotlit.aidenlx.site/.well-known/agent-skills/${SKILL_NAME}/${COMMIT_SHA}/archive.zip`,
-          digest: `sha256:${digest}`,
+          url: `https://zotlit.aidenlx.site/.well-known/agent-skills/zotlit-template/${COMMIT_SHA}/archive.zip`,
+          digest: `sha256:${templateDigest}`,
+        },
+        {
+          name: "zotlit-pandoc",
+          type: "archive",
+          description: "Run ZotLit's Native Pandoc Workflow.",
+          url: `https://zotlit.aidenlx.site/.well-known/agent-skills/zotlit-pandoc/${COMMIT_SHA}/archive.zip`,
+          digest: `sha256:${pandocDigest}`,
         },
       ],
     });
   });
 
   it("keeps the root skill directory, frontmatter, and index aligned", async () => {
-    const { skill } = await readAgentSkillFiles();
-    const archive = createAgentSkillArchive({
-      skill,
-      openAiMetadata: OPENAI_METADATA,
-    });
+    const builds = await Promise.all(
+      SKILL_NAMES.map(async (name) => {
+        const files = await readAgentSkillFiles(name);
+        return {
+          name,
+          skill: files.skill,
+          archive: createAgentSkillArchive(files),
+        };
+      }),
+    );
     const index = JSON.parse(
-      createAgentSkillsIndex({ skill, archive, commitSha: COMMIT_SHA }),
+      createAgentSkillsIndex({ skills: builds, commitSha: COMMIT_SHA }),
     );
 
-    expect(SKILL_REPOSITORY_PATH).toBe(`skills/${SKILL_NAME}/SKILL.md`);
-    expect(index.skills).toHaveLength(1);
-    expect(index.skills[0].name).toBe(SKILL_NAME);
+    expect(index.skills.map((skill: { name: string }) => skill.name)).toEqual(
+      SKILL_NAMES,
+    );
   });
 });

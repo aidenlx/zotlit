@@ -11,6 +11,7 @@ import { RESET_SETTING } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { pandocEngineDefinition } from "./pandoc-engine";
+import { pandocIntegrationDefinition } from "./pandoc-integration";
 
 /** Items for the "Citations" sub-page. */
 export function citationsPageItems(
@@ -89,6 +90,7 @@ export function citationsPageItems(
         pandocEngineDefinition(ctx),
       ],
     },
+    pandocIntegrationDefinition(ctx),
   ];
 }
 
