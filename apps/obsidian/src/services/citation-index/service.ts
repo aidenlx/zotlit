@@ -105,6 +105,8 @@ export class CitationIndex extends Service<void> {
   /** Scans by path; a path it covers with matching mtime and size needs no read. */
   readonly #scans = new Map<string, FileScan>();
   readonly #snapshot = new CitekeySnapshot();
+  /** Callers parked on a one-shot readiness signal; disposal flushes them. */
+  readonly #waiters = new Set<() => void>();
   #store?: CitekeyStore;
   /**
    * Which build of the index is current. A reset or a re-enable starts the next
@@ -179,10 +181,7 @@ export class CitationIndex extends Service<void> {
    */
   async whenIndexed(): Promise<void> {
     await this.ready;
-    if (this.#backfilled) return;
-    await new Promise<void>((resolve) =>
-      this.once("backfilled", () => resolve()),
-    );
+    await this.#waitFor("backfilled", this.#backfilled);
   }
 
   /** The Zotero Item a native citation key names, read synchronously. */
@@ -201,10 +200,28 @@ export class CitationIndex extends Service<void> {
    */
   async whenResolved(): Promise<void> {
     await this.ready;
-    if (this.#resolved) return;
-    await new Promise<void>((resolve) =>
-      this.once("resolution-changed", () => resolve()),
-    );
+    await this.#waitFor("resolution-changed", this.#resolved);
+  }
+
+  /**
+   * Waits for a one-shot readiness signal, which disposal settles too: the pass
+   * that would emit the signal returns early once the service is stopped, so a
+   * caller torn down alongside the service would otherwise wait on nothing.
+   */
+  #waitFor(
+    event: "backfilled" | "resolution-changed",
+    settled: boolean,
+  ): Promise<void> {
+    if (settled || this.#stopped) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const wake = (): void => {
+        off();
+        this.#waiters.delete(wake);
+        resolve();
+      };
+      const off = this.once(event, wake);
+      this.#waiters.add(wake);
+    });
   }
 
   /**
@@ -293,6 +310,7 @@ export class CitationIndex extends Service<void> {
     // no-ops instead of writing to a closed store or emitting mid-disposal.
     stack.defer(() => {
       this.#stopped = true;
+      for (const wake of this.#waiters) wake();
     });
     this.commit(stack.move());
   }

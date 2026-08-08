@@ -509,6 +509,16 @@ describe("CitationIndex", () => {
     ]);
   });
 
+  it("settles whenIndexed when disposal precedes the backfill", async () => {
+    const { index } = await makeHarness({ "draft.md": "As @doe2024 wrote." });
+    const waiting = index.whenIndexed();
+
+    await index[Symbol.asyncDispose]();
+
+    await expect(waiting).resolves.toBeUndefined();
+    await expect(index.whenIndexed()).resolves.toBeUndefined();
+  });
+
   it("indexes nothing while Citekey Indexing is off", async () => {
     const { draft, index, metadataCache } = await makeHarness(
       { "draft.md": "As @doe2024 wrote, see [[Roe 2025]]." },
@@ -756,6 +766,17 @@ describe("CitationIndex resolution", () => {
     await index.whenResolved();
 
     expect(index.resolveCitekey("doe2024")).toBeNull();
+  });
+
+  it("settles whenResolved when disposal interrupts the first rebuild", async () => {
+    const db = new DatabaseStub({ readyImmediately: false });
+    const { index } = await makeHarness({}, { db, notes: false });
+    const waiting = index.whenResolved();
+
+    await index[Symbol.asyncDispose]();
+
+    await expect(waiting).resolves.toBeUndefined();
+    await expect(index.whenResolved()).resolves.toBeUndefined();
   });
 
   it("resolves with a Literature Note's path as linkpath", async () => {
