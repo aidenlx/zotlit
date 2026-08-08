@@ -22,8 +22,8 @@ import type { TFile } from "obsidian";
 
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
+import { themeHook } from "@/lib/theme-hooks";
 import {
-  CITATION_CLASS,
   citationContent,
   citationElement,
   citedWorks,
@@ -92,21 +92,18 @@ export interface CitekeyEditorHandlers {
  */
 export const citekeyDecorationsChanged = StateEffect.define<void>();
 
-/** The plugin's own class on every citekey mark, and the hover target. */
-const CITEKEY_CLASS = "zt-citekey";
-
 /**
  * `cm-underline` is Obsidian's own link-text class: it draws the link
  * decoration line and, together with the plugin's cursor rule, gives a
  * recognized citekey the affordance of an internal link.
  */
-const MARK_CLASS = `cm-underline ${CITEKEY_CLASS}`;
+const MARK_CLASS = `cm-underline ${themeHook.citationKey}`;
 
 const CITEKEY_MARK = Decoration.mark({ class: MARK_CLASS });
 
 /** A citekey with no indexed Literature Note: a broken reference. */
 const CITEKEY_MARK_UNRESOLVED = Decoration.mark({
-  class: `${MARK_CLASS} ${CITEKEY_CLASS}-unresolved`,
+  class: `${MARK_CLASS} ${themeHook.citationKeyUnresolved}`,
 });
 
 /** What the decoration pass produced, kept apart so the widgets can be atomic. */
@@ -345,6 +342,8 @@ class CitationWidget extends WidgetType {
   readonly #works;
   readonly #sourcePath;
   readonly #handlers;
+  readonly #themeClasses;
+  readonly #navigable;
 
   constructor(options: {
     source: string;
@@ -352,6 +351,8 @@ class CitationWidget extends WidgetType {
     works: readonly CitedWork[];
     sourcePath: string;
     handlers: CitekeyEditorHandlers;
+    themeClasses: readonly string[];
+    navigable: boolean;
   }) {
     super();
     this.#source = options.source;
@@ -359,6 +360,8 @@ class CitationWidget extends WidgetType {
     this.#works = options.works;
     this.#sourcePath = options.sourcePath;
     this.#handlers = options.handlers;
+    this.#themeClasses = options.themeClasses;
+    this.#navigable = options.navigable;
   }
 
   eq(other: CitationWidget): boolean {
@@ -366,23 +369,28 @@ class CitationWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const element = citationElement(view.dom.ownerDocument, this.#content);
-    attachCitationNavigation(element, {
-      works: this.#works,
-      where: { surface: "editor", editorMode: "live-preview" },
-      open: this.#handlers.open,
-      hoverNotePath: this.#handlers.hoverNotePath,
-      hoverTarget: () => {
-        const info = view.state.field(editorInfoField, false);
-        return info
-          ? {
-              workspace: info.app.workspace,
-              hoverParent: info,
-              sourcePath: this.#sourcePath,
-            }
-          : null;
-      },
-    });
+    const element = citationElement(view.dom.ownerDocument, this.#content, [
+      themeHook.citationKey,
+      ...this.#themeClasses,
+    ]);
+    if (this.#navigable) {
+      attachCitationNavigation(element, {
+        works: this.#works,
+        where: { surface: "editor", editorMode: "live-preview" },
+        open: this.#handlers.open,
+        hoverNotePath: this.#handlers.hoverNotePath,
+        hoverTarget: () => {
+          const info = view.state.field(editorInfoField, false);
+          return info
+            ? {
+                workspace: info.app.workspace,
+                hoverParent: info,
+                sourcePath: this.#sourcePath,
+              }
+            : null;
+        },
+      });
+    }
     return element;
   }
 
@@ -469,23 +477,34 @@ function buildDecorations(
 }
 
 /**
- * @returns the widget for one Citation, or null when there is nothing to show
- *   in its place — no engine formatted it and none of its keys reaches a Zotero
- *   Item — which leaves the marked source text as the author wrote it.
+ * @returns the widget for one Citation. An unresolved Citation keeps its
+ *   source text and error hook, without navigation handlers.
  */
 function citationWidget(
   citation: CitationRange,
   { citations, path }: EditedDocument,
   handlers: CitekeyEditorHandlers,
-): CitationWidget | null {
+): CitationWidget {
   const content = citationContent(citation, citations);
-  if (content === null) return null;
+  const unresolved = citation.keys.filter(
+    (key) => !citations.summaries.has(key.citekey),
+  ).length;
+  const themeClasses =
+    unresolved === 0
+      ? []
+      : [
+          unresolved === citation.keys.length
+            ? themeHook.citationKeyUnresolved
+            : themeHook.citationKeyPartiallyUnresolved,
+        ];
   return new CitationWidget({
     source: citation.source,
-    content,
+    content: content ?? citation.source,
     works: citedWorks(citation, (citekey) => citations.summaries.get(citekey)),
     sourcePath: path,
     handlers,
+    themeClasses,
+    navigable: content !== null,
   });
 }
 
@@ -499,7 +518,7 @@ function citationWidget(
 function citekeyElementAt(event: MouseEvent): HTMLElement | null {
   const { target, relatedTarget } = event;
   if (!(target instanceof HTMLElement)) return null;
-  const targetEl = target.closest<HTMLElement>(`.${CITEKEY_CLASS}`);
+  const targetEl = target.closest<HTMLElement>(`.${themeHook.citationKey}`);
   if (targetEl === null) return null;
   if (relatedTarget instanceof Node && targetEl.contains(relatedTarget)) {
     return null;
@@ -511,7 +530,7 @@ function citekeyElementAt(event: MouseEvent): HTMLElement | null {
 function citationElementAt(event: MouseEvent): HTMLElement | null {
   const { target } = event;
   if (!(target instanceof HTMLElement)) return null;
-  return target.closest<HTMLElement>(`.${CITATION_CLASS}`);
+  return target.closest<HTMLElement>(`.${themeHook.citation}`);
 }
 
 /** @returns the citekey under the pointer, or null when it covers none. */

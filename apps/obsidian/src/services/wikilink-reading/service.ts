@@ -23,7 +23,11 @@ import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
-import { renderCitationRuns, sectionCitationRuns } from "./render";
+import {
+  markLiteratureNoteLinks,
+  renderCitationRuns,
+  sectionCitationRuns,
+} from "./render";
 
 const logger = getLogger("wikilink-reading");
 
@@ -119,19 +123,21 @@ export class WikilinkReading extends Service<void> {
     ctx: MarkdownPostProcessorContext,
   ): Promise<void> {
     if (this.#retired) return;
+    const literatureNote = (linkpath: string) => {
+      const note = resolveLiteratureNote(linkpath, ctx.sourcePath, {
+        app: this.#app,
+      });
+      return (
+        note && {
+          ...note,
+          citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
+        }
+      );
+    };
+    markLiteratureNoteLinks(el, literatureNote);
     const runs = sectionCitationRuns(el, (linktext) =>
       wikilinkCitation(linktext, {
-        literatureNote: (linkpath) => {
-          const note = resolveLiteratureNote(linkpath, ctx.sourcePath, {
-            app: this.#app,
-          });
-          return (
-            note && {
-              ...note,
-              citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
-            }
-          );
-        },
+        literatureNote,
         fragmentlessDisplay: this.#display.fragmentlessDisplay,
       }),
     );

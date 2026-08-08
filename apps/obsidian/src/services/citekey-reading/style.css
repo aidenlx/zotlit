@@ -1,14 +1,22 @@
-/* Reading-mode citations. Every rendered citation is a click target — one that
-   reaches no work stays raw source text and grows no element — so the link
-   affordance goes on the class itself. The colour stays the surrounding text's:
-   a citation is body text that a style formatted, and only its cursor and its
-   hover say that it navigates. */
-.markdown-rendered span.zt-citation {
+/* Reading-mode Citations with a resolved work are click targets. An unresolved
+   Citation keeps its source in a semantic wrapper, with Obsidian's unresolved
+   link variables and no navigation affordance. */
+:where(.markdown-rendered span.zt-citation) {
   cursor: var(--cursor-link);
 }
 
+:where(.markdown-rendered span.zt-citation-key-unresolved) {
+  cursor: text;
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
+  text-decoration-color: var(--link-unresolved-decoration-color);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+}
+
 @media (hover: hover) {
-  .markdown-rendered span.zt-citation:hover {
+  :where(
+    .markdown-rendered span.zt-citation:not(.zt-citation-key-unresolved):hover
+  ) {
     color: var(--link-color-hover);
     text-decoration-line: var(--link-decoration-hover);
   }

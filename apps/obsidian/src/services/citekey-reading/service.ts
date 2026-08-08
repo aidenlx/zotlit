@@ -5,6 +5,7 @@ import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 import { rerenderReadingViews } from "@/lib/reading-view";
+import { themeHook } from "@/lib/theme-hooks";
 import {
   citationContent,
   citationElement,
@@ -133,10 +134,27 @@ export class CitekeyReading extends Service<void> {
     const doc = el.ownerDocument;
     replaceCitations(citations, (citation) => {
       const content = citationContent(citation, text);
-      // A citation none of whose keys reaches a Zotero Item has nothing to
-      // show and nothing to open: its source stays as written, and inert.
-      if (content === null) return null;
-      const element = citationElement(doc, content);
+      const unresolved = citation.keys.filter(
+        (key) => !text.summaries.has(key.citekey),
+      ).length;
+      const themeClasses = [
+        themeHook.citationKey,
+        ...(unresolved === 0
+          ? []
+          : [
+              unresolved === citation.keys.length
+                ? themeHook.citationKeyUnresolved
+                : themeHook.citationKeyPartiallyUnresolved,
+            ]),
+      ];
+      const element = citationElement(
+        doc,
+        content ?? citation.source,
+        themeClasses,
+      );
+      // A citation none of whose keys reaches a Zotero Item remains wrapped so
+      // themes can style its error state, but has no target to navigate to.
+      if (content === null) return element;
       attachCitationNavigation(element, {
         works: citedWorks(citation, summaryOf),
         where: { surface: "reading" },

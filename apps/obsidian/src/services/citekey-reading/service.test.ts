@@ -177,6 +177,46 @@ describe("CitekeyReading", () => {
     await dispose();
   });
 
+  it("exposes the literal theme hooks for each literal Citation resolution state", async () => {
+    const cases = [
+      {
+        body: "[@alpha]",
+        cited: [citation("alpha", ALPHA_KEY)],
+        classes: ["zt-citation", "zt-citation-key"],
+      },
+      {
+        body: "[@alpha; @ghost]",
+        cited: [citation("alpha", ALPHA_KEY), citation("ghost", null)],
+        classes: [
+          "zt-citation",
+          "zt-citation-key",
+          "zt-citation-key-partially-unresolved",
+        ],
+      },
+      {
+        body: "[@ghost]",
+        cited: [citation("ghost", null)],
+        classes: [
+          "zt-citation",
+          "zt-citation-key",
+          "zt-citation-key-unresolved",
+        ],
+      },
+    ];
+    for (const { body, cited, classes } of cases) {
+      const { process, dispose } = await makeHarness({ body, cited });
+      const el = section(`<p>${body}</p>`);
+
+      await process(el, { sourcePath: "note.md" } as never);
+
+      const rendered = el.querySelector("span");
+      for (const className of classes) {
+        expect(rendered?.classList.contains(className)).toBe(true);
+      }
+      await dispose();
+    }
+  });
+
   it("leaves the reading view alone while the treatment is off", async () => {
     for (const overrides of [
       { "citation.citekey-editor": false },
@@ -191,6 +231,7 @@ describe("CitekeyReading", () => {
       await process(el, { sourcePath: "note.md" } as never);
 
       expect(el.textContent).toBe("Blah [@alpha].");
+      expect(el.querySelector(".zt-citation-key")).toBeNull();
       await dispose();
     }
   });

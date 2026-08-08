@@ -11,13 +11,19 @@
    `.cm-hmd-internal-link .cm-underline` — and the widget carries both classes
    on one element, so neither matches. These rules supply them, compounded on
    the plugin's own class so they hold wherever the widget lands in the DOM. */
-.markdown-source-view.mod-cm6 span.zt-wikilink-citation.cm-underline {
+:where(
+  .markdown-source-view.mod-cm6
+    span.zt-citation.zt-literature-note-link.cm-underline
+) {
   color: var(--link-color);
   cursor: var(--cursor-link);
 }
 
 @media (hover: hover) {
-  .markdown-source-view.mod-cm6 span.zt-wikilink-citation.cm-underline:hover {
+  :where(
+    .markdown-source-view.mod-cm6
+      span.zt-citation.zt-literature-note-link.cm-underline:hover
+  ) {
     color: var(--link-color-hover);
     text-decoration-line: var(--link-decoration-hover);
   }

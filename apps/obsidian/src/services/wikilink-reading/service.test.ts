@@ -19,18 +19,25 @@ interface Harness extends AsyncDisposable {
   citationIndex: CitationIndexStub;
   /** Runs the registered post-processor over one link and reads its display. */
   render: (linktext: string) => Promise<string>;
+  /** Runs the registered post-processor and returns the rendered section. */
+  renderSection: (linktext: string, alias?: string) => Promise<HTMLElement>;
+  /** Runs the registered post-processor over an arbitrary rendered section. */
+  renderHtml: (html: string) => Promise<HTMLElement>;
   rerenders: () => number;
 }
 
 async function harness({
   formatted,
   citekeys,
+  sourcePath = "note.md",
   ...overrides
 }: Partial<Settings> & {
   /** The formatted citation the shared text holds, by its Pandoc source. */
   formatted?: Record<string, string>;
   /** The citekey resolution snapshot's answer for each Indexed Key. */
   citekeys?: Record<string, string>;
+  /** The file that owns each rendered section. */
+  sourcePath?: string;
 } = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
@@ -48,8 +55,10 @@ async function harness({
       workspace: { getLeavesOfType: () => [{ view }] },
       vault: { getFileByPath: (path: string) => ({ path }) },
       metadataCache: {
-        getFirstLinkpathDest: (linkpath: string) =>
-          linkpath === WANG ? { path: `${WANG}.md` } : null,
+        getFirstLinkpathDest: (linkpath: string, origin: string) =>
+          linkpath === WANG || (linkpath === "" && origin === `${WANG}.md`)
+            ? { path: `${WANG}.md` }
+            : null,
         getFileCache: () => ({
           frontmatter: { "zotero-key": "ABCD2345" },
         }),
@@ -73,8 +82,18 @@ async function harness({
     citationIndex,
     render: async (linktext) => {
       const root = section(`<p>${internalLink(linktext)}</p>`);
-      await process?.(root, { sourcePath: "note.md" } as never);
+      await process?.(root, { sourcePath } as never);
       return root.textContent ?? "";
+    },
+    renderSection: async (linktext, alias) => {
+      const root = section(`<p>${internalLink(linktext, alias)}</p>`);
+      await process?.(root, { sourcePath } as never);
+      return root;
+    },
+    renderHtml: async (html) => {
+      const root = section(html);
+      await process?.(root, { sourcePath } as never);
+      return root;
     },
     rerenders: () => rerenders,
     [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
@@ -82,6 +101,75 @@ async function harness({
 }
 
 describe("WikilinkReading rendering", () => {
+  it("exposes the literal Literature Note hook independently of display settings", async () => {
+    await using harnessed = await harness({
+      "citation.wikilink-citations": false,
+      "citation.wikilink-display": false,
+    });
+
+    for (const [linktext, alias] of [
+      [WANG, undefined],
+      [`${WANG}#Heading`, undefined],
+      [`${WANG}#^block-id`, undefined],
+      [WANG, "A literature note"],
+    ] as const) {
+      const root = await harnessed.renderSection(linktext, alias);
+      expect(
+        root.querySelector("a")?.classList.contains("zt-literature-note-link"),
+      ).toBe(true);
+    }
+  });
+
+  it("does not expose the Literature Note hook for an unresolved link", async () => {
+    await using harnessed = await harness();
+
+    const root = await harnessed.renderSection("notes/missing");
+
+    expect(
+      root.querySelector("a")?.classList.contains("zt-literature-note-link"),
+    ).toBe(false);
+  });
+
+  it("classifies a self subpath only inside a Literature Note", async () => {
+    await using inside = await harness({ sourcePath: `${WANG}.md` });
+    await using outside = await harness({ sourcePath: "note.md" });
+
+    expect(
+      (await inside.renderSection("#Heading"))
+        .querySelector("a")
+        ?.classList.contains("zt-literature-note-link"),
+    ).toBe(true);
+    expect(
+      (await outside.renderSection("#Heading"))
+        .querySelector("a")
+        ?.classList.contains("zt-literature-note-link"),
+    ).toBe(false);
+  });
+
+  it("exposes both literal hooks when it renders a Literature Note Citation", async () => {
+    await using harnessed = await harness();
+
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+    const rendered = root.querySelector("a");
+
+    expect(rendered?.classList.contains("zt-citation")).toBe(true);
+    expect(rendered?.classList.contains("zt-literature-note-link")).toBe(true);
+  });
+
+  it("exposes the combined literal hooks once on a rendered Citation Run", async () => {
+    await using harnessed = await harness();
+    const root = await harnessed.renderHtml(
+      `<p>${internalLink(`${WANG}#cite:locator=7`)}; ${internalLink(`${WANG}#cite:locator=9`)}</p>`,
+    );
+
+    const rendered = root.querySelectorAll("a");
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0]?.classList.contains("zt-citation")).toBe(true);
+    expect(rendered[0]?.classList.contains("zt-literature-note-link")).toBe(
+      true,
+    );
+  });
+
   it("shows a fragment-carrying link as its Citation Display Text", async () => {
     await using harnessed = await harness();
 

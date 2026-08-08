@@ -13,6 +13,7 @@ import type { TFile } from "obsidian";
 
 import { livePreviewOf } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
+import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import {
   citationContent,
@@ -25,9 +26,6 @@ import type { WikilinkDecoration } from "./decorate";
 import { scanWikilinks } from "./scan";
 import type { TokenNode } from "./scan";
 import "./style.css";
-
-/** The plugin's own class on every display widget, and the styling hook. */
-const WIKILINK_CLASS = "zt-wikilink-citation";
 
 /**
  * Obsidian's own link-text class. Its live-preview click gate looks for it on
@@ -173,7 +171,8 @@ class CitationDisplayWidget extends WidgetType {
     this.#className = [
       ...tokenClasses.map((name) => `cm-${name}`),
       UNDERLINE_CLASS,
-      WIKILINK_CLASS,
+      themeHook.citation,
+      themeHook.literatureNoteLink,
     ].join(" ");
   }
 
@@ -203,10 +202,6 @@ function buildDecorations(
   handlers: WikilinkEditorHandlers,
 ): DecorationSet {
   const { state } = view;
-  // Source mode installs none of Obsidian's live-preview extensions and shows
-  // raw text throughout; the treatment follows it.
-  if (!livePreviewOf(state)) return Decoration.none;
-
   const file = state.field(editorInfoField, false)?.file ?? null;
   const sourcePath = file?.path ?? "";
   const context = {
@@ -217,29 +212,70 @@ function buildDecorations(
     textBetween: (from: number, to: number) => state.doc.sliceString(from, to),
   };
 
-  const decorations: WikilinkDecoration[] = [];
+  const spans = [];
   for (const range of visibleLineRanges(view)) {
-    const spans = scanWikilinks(tokenNodes(state, range));
-    decorations.push(...wikilinkDecorations(spans, context));
+    spans.push(...scanWikilinks(tokenNodes(state, range)));
   }
-  if (decorations.length === 0) return Decoration.none;
+  const links = spans.filter(
+    (span) =>
+      !span.isEmbed &&
+      handlers.literatureNote(linkpathOf(span.linktext), sourcePath) !== null,
+  );
+  if (links.length === 0) return Decoration.none;
+
+  // Source mode adds the semantic mark but keeps Obsidian's own token and
+  // conceal handling. Live Preview replaces only the links that display as a
+  // Citation, while raw links keep the same semantic mark.
+  const decorations: WikilinkDecoration[] = livePreviewOf(state)
+    ? wikilinkDecorations(spans, context)
+    : [];
 
   // Asked for only once a Citation is on screen, so a document that writes none
   // is never read. A document whose citations are not held yet keeps its
   // Citation Display Text, and the read announces itself when it settles, which
   // brings the formatted text in without a document change.
-  const citations = file === null ? null : handlers.citationText(file.path);
-  if (file !== null && citations === null) handlers.requestCitationText(file);
+  const citations =
+    decorations.length === 0 || file === null
+      ? null
+      : handlers.citationText(file.path);
+  if (decorations.length > 0 && file !== null && citations === null) {
+    handlers.requestCitationText(file);
+  }
 
-  const builder = new RangeSetBuilder<Decoration>();
+  const placed: { from: number; to: number; decoration: Decoration }[] = [];
+  for (const link of links) {
+    if (
+      decorations.some(
+        ({ from, to }) => from <= link.inner.from && to >= link.inner.to,
+      )
+    ) {
+      continue;
+    }
+    placed.push({
+      from: link.inner.from,
+      to: link.inner.to,
+      decoration: Decoration.mark({ class: themeHook.literatureNoteLink }),
+    });
+  }
   for (const decoration of decorations) {
-    builder.add(
-      decoration.from,
-      decoration.to,
-      replacement(decoration, citations),
-    );
+    placed.push({
+      from: decoration.from,
+      to: decoration.to,
+      decoration: replacement(decoration, citations),
+    });
+  }
+  placed.sort((a, b) => a.from - b.from);
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const { from, to, decoration } of placed) {
+    builder.add(from, to, decoration);
   }
   return builder.finish();
+}
+
+/** The target part of an internal link, before any heading or block subpath. */
+function linkpathOf(linktext: string): string {
+  const fragment = linktext.indexOf("#");
+  return fragment === -1 ? linktext : linktext.slice(0, fragment);
 }
 
 function replacement(

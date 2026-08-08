@@ -9,7 +9,7 @@ ZotLit adds public CSS classes to citation keys, rendered citations, and Literat
 
 | Class                                  | Meaning                                                                                                                                 |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `zt-citation`                          | A formatted Citation rendered by ZotLit.                                                                                                |
+| `zt-citation`                          | A Citation ZotLit renders or wraps.                                                                                                     |
 | `zt-citation-key`                      | A raw citation key, or a rendered Citation produced from literal citation key syntax.                                                   |
 | `zt-citation-key-unresolved`           | A citation key that does not resolve, or a rendered Citation in which no citation key resolves. The element also has `zt-citation-key`. |
 | `zt-citation-key-partially-unresolved` | A rendered Citation containing both resolved and unresolved citation keys. The element also has `zt-citation-key`.                      |
@@ -41,7 +41,7 @@ CodeMirror can split one source range across multiple elements. ZotLit guarantee
 
 The class does not apply to embeds, unresolved internal links, or self-subpath links outside a Literature Note.
 
-`zt-citation` appears only when ZotLit renders formatted Citation output.
+`zt-citation` appears only when ZotLit renders or wraps a Citation.
 
 ## Default appearance [#defaults]
 

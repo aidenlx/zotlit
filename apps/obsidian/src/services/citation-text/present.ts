@@ -1,14 +1,12 @@
 // How one Citation is presented once its text is known: the works it names, the summary it falls back to, and the element that shows it.
 
 import type { CitationSource } from "@/lib/citation-fragment";
+import { themeHook } from "@/lib/theme-hooks";
 import type { CitedWork } from "@/services/citekey-navigation";
 
 // One citation as a surface holds it: the same shape whether a note wrote it or
 // a wikilink derivation did, which is what lets the two syntaxes share a render.
 export type { CitationKey, CitationSource } from "@/lib/citation-fragment";
-
-/** The class every formatted citation carries, for themes and snippets to reach. */
-export const CITATION_CLASS = "zt-citation";
 
 /** What one document's surfaces need to put text in their citations' place. */
 export interface DocumentCitations {
@@ -107,9 +105,10 @@ export function citationInsert(content: Node | string): Node | string {
 export function citationElement(
   doc: Document,
   content: Node | string,
+  themeClasses: readonly string[] = [],
 ): HTMLElement {
   const element = doc.createElement("span");
-  element.className = CITATION_CLASS;
+  element.classList.add(themeHook.citation, ...themeClasses);
   element.append(citationInsert(content));
   return element;
 }

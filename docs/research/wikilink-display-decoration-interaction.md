@@ -276,7 +276,8 @@ class CitationWidget extends WidgetType {
     el.className = [
       ...this.tokenClasses.map((cls) => `cm-${cls}`),
       "cm-underline",
-      "zt-wikilink-citation",
+      "zt-citation",
+      "zt-literature-note-link",
     ].join(" ");
     el.tabIndex = -1;
     el.draggable = true;

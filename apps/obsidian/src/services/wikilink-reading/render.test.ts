@@ -63,14 +63,15 @@ describe("renderWikilinkCitations", () => {
     expect(root.textContent).toBe("(Wang et al. 2020)");
   });
 
-  it("keeps the target, the class, and every other attribute", () => {
+  it("keeps the target and every native attribute", () => {
     const root = section(`<p>${internalLink("literatures/wang2020")}</p>`);
     renderWikilinkCitations(root, citationOf, display);
 
     const anchor = root.querySelector("a");
     expect(anchor?.getAttribute("data-href")).toBe("literatures/wang2020");
     expect(anchor?.getAttribute("href")).toBe("literatures/wang2020");
-    expect(anchor?.className).toBe("internal-link");
+    expect(anchor?.classList.contains("internal-link")).toBe(true);
+    expect(anchor?.classList.contains("zt-citation")).toBe(true);
   });
 
   it("leaves a link that names no Literature Note alone", () => {

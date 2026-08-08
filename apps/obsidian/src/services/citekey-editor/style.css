@@ -6,21 +6,28 @@
    — which Obsidian tokenizes as a bare link and colours as an external one —
    looks the same as a bare one. Source mode keeps the text cursor, like native
    links; Live Preview supplies the link cursor for its clickable treatment. */
-.markdown-source-view.mod-cm6 span.zt-citekey.cm-underline {
+:where(.markdown-source-view.mod-cm6 span.zt-citation-key.cm-underline) {
   color: var(--link-color);
 }
 
-.markdown-source-view.mod-cm6:not(.is-live-preview)
-  span.zt-citekey.cm-underline {
+:where(
+  .markdown-source-view.mod-cm6:not(.is-live-preview)
+    span.zt-citation-key.cm-underline
+) {
   cursor: text;
 }
 
-.markdown-source-view.mod-cm6.is-live-preview span.zt-citekey.cm-underline {
+:where(
+  .markdown-source-view.mod-cm6.is-live-preview
+    span.zt-citation-key.cm-underline
+) {
   cursor: var(--cursor-link);
 }
 
 @media (hover: hover) {
-  .markdown-source-view.mod-cm6 span.zt-citekey.cm-underline:hover {
+  :where(
+    .markdown-source-view.mod-cm6 span.zt-citation-key.cm-underline:hover
+  ) {
     color: var(--link-color-hover);
     text-decoration-line: var(--link-decoration-hover);
   }
@@ -30,12 +37,12 @@
    surrounding text's — a citation is body text a style formatted — and only
    the cursor and the hover say that it navigates, exactly as the reading-view
    rendering of the same text reads. */
-.markdown-source-view.mod-cm6 span.zt-citation {
+:where(.markdown-source-view.mod-cm6 span.zt-citation) {
   cursor: var(--cursor-link);
 }
 
 @media (hover: hover) {
-  .markdown-source-view.mod-cm6 span.zt-citation:hover {
+  :where(.markdown-source-view.mod-cm6 span.zt-citation:hover) {
     color: var(--link-color-hover);
     text-decoration-line: var(--link-decoration-hover);
   }
@@ -45,7 +52,7 @@
    Obsidian gives an unresolved internal link, so a typo'd or deleted citekey
    reads as broken while writing. Declared after the resolved rules, including
    their :hover, so its higher-specificity selector still wins on hover. */
-.markdown-source-view.mod-cm6 span.zt-citekey-unresolved.cm-underline {
+:where(.markdown-source-view.mod-cm6 span.zt-citation-key-unresolved) {
   color: var(--link-unresolved-color);
   opacity: var(--link-unresolved-opacity);
   text-decoration-color: var(--link-unresolved-decoration-color);
@@ -53,7 +60,7 @@
 }
 
 @media (hover: hover) {
-  .markdown-source-view.mod-cm6 span.zt-citekey-unresolved.cm-underline:hover {
+  :where(.markdown-source-view.mod-cm6 span.zt-citation-key-unresolved:hover) {
     color: var(--link-unresolved-color);
     text-decoration-line: var(--link-decoration-hover);
   }
