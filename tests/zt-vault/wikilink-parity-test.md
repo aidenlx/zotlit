@@ -43,6 +43,11 @@ once rendered, not before:
 
 ## Author-in-text
 
+The citekey editor grammar keeps a bracket after an author-in-text key separate from that key
+(`citation-grammar.ts`), where Pandoc's own `bareloc` rule would merge them into one citation.
+This pair is expected to render **differently**: the wikilink line merges the locator, the
+citekey line does not — that is a pre-existing citekey-syntax scope boundary, not a defect.
+
 - Wikilink: [[literatures/Hensher2011#cite:mode=author-in-text&locator=62]] found inconsistent answers.
 - Citekey: @Hensher2011 [p. 62] found inconsistent answers.
 
