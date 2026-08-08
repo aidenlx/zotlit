@@ -31,6 +31,7 @@ import {
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
+import { WikilinkEditor } from "./wikilink-editor/service";
 import { ZoteroPrefService } from "./zotero-pref/service";
 
 /**
@@ -196,6 +197,10 @@ export function buildServices(
           citationText,
           settings,
         }),
+    })
+    .use({
+      wikilinkEditor: ({ noteIndex, settings }) =>
+        new WikilinkEditor({ app: plugin.app, plugin, noteIndex, settings }),
     })
     .use({
       citekeyReading: ({ citationText, citekeyEditor, settings }) =>

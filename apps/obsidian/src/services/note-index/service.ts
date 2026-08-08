@@ -10,6 +10,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
 import {
+  citationKeyFromFrontmatter,
   diffContributions,
   EMPTY_CONTRIBUTIONS,
   fileContributions,
@@ -42,20 +43,54 @@ export function isLiteratureNote(file: string | TFile, app: App): boolean {
   return itemKeyFromFrontmatter(cache) !== null;
 }
 
+/** The Literature Note a wikilink target points at. */
+export interface ResolvedLiteratureNote {
+  /** The note's vault path. */
+  path: string;
+  /** Its Indexed Key — the frontmatter marker that makes it a Literature Note. */
+  indexedKey: string;
+  /**
+   * Its Citation Key Property value, or `null` when it carries none or when the
+   * caller asked for no property.
+   */
+  citationKey: string | null;
+}
+
 /**
- * Indexed Key of the Literature Note a wikilink target points at, seen from
- * `sourcePath`, or `null` when the target is missing or is an ordinary note.
- * Frontmatter-only like {@link isLiteratureNote}, so it answers before the
- * first scan; every consumer that turns a linkpath into a Citation shares it.
+ * The Literature Note a wikilink target points at, seen from `sourcePath`, or
+ * `null` when the target is missing or is an ordinary note. Frontmatter-only
+ * like {@link isLiteratureNote}, so it answers before the first scan; every
+ * consumer that turns a linkpath into a Citation shares it.
  */
+export function resolveLiteratureNote(
+  linkpath: string,
+  sourcePath: string,
+  options: { app: App; citationKeyProperty: string | null },
+): ResolvedLiteratureNote | null {
+  const { app, citationKeyProperty } = options;
+  const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
+  if (!dest) return null;
+  const cache = app.metadataCache.getFileCache(dest);
+  const indexedKey = itemKeyFromFrontmatter(cache);
+  if (indexedKey === null) return null;
+  return {
+    path: dest.path,
+    indexedKey,
+    citationKey: citationKeyFromFrontmatter(cache, citationKeyProperty),
+  };
+}
+
+/** {@link resolveLiteratureNote}, for a consumer that needs the key alone. */
 export function resolveIndexedKey(
   linkpath: string,
   sourcePath: string,
   app: App,
 ): string | null {
-  const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
-  if (!dest) return null;
-  return itemKeyFromFrontmatter(app.metadataCache.getFileCache(dest));
+  const note = resolveLiteratureNote(linkpath, sourcePath, {
+    app,
+    citationKeyProperty: null,
+  });
+  return note?.indexedKey ?? null;
 }
 
 export class NoteIndex extends Service<void> {

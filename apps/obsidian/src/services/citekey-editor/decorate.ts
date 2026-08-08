@@ -141,19 +141,3 @@ export function marksOutside(
       ),
   );
 }
-
-/**
- * Obsidian's own reveal test, which counts a touch at either end: a collapsed
- * cursor exactly at a widget's start or end brings the raw text back.
- *
- * @param ranges the selection ranges, which a blurred editor reports as none —
- *   blur conceals everything, the way Obsidian's own live preview reads it.
- * @see docs/research/pandoc-citekey-cm6-live-preview.md — section 6.2
- */
-export function overlapsSelection(
-  ranges: readonly { from: number; to: number }[],
-  from: number,
-  to: number,
-): boolean {
-  return ranges.some((range) => range.from <= to && range.to >= from);
-}

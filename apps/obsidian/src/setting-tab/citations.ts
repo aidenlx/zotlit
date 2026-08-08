@@ -58,6 +58,13 @@ export function citationsPageItems(
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
         },
+        {
+          name: m.settings_citation_wikilink_display_name(),
+          desc: m.settings_citation_wikilink_display_desc(),
+          visible: () =>
+            ctx.settings.current?.["citation.wikilink-citations"] ?? false,
+          control: { type: "toggle", key: "citation.wikilink-display" },
+        },
       ],
     },
     {

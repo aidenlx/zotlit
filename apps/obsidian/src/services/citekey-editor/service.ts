@@ -2,13 +2,13 @@
 // CodeMirror extension on and owns the click that opens a citekey's note.
 
 import type { Extension } from "@codemirror/state";
-import { MarkdownView } from "obsidian";
 import type { App, Plugin } from "obsidian";
 
 import { getItemIDByCitekey, getItemsByID, USER_LIBRARY_ID } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { CitationText } from "@/services/citation-text/service";
@@ -166,17 +166,11 @@ export class CitekeyEditor extends Service<void> {
    */
   #decorateAgain(path?: string): number {
     if (!this.#enabled) return 0;
-    let reached = 0;
-    for (const leaf of this.#app.workspace.getLeavesOfType("markdown")) {
-      const { view } = leaf;
-      if (!(view instanceof MarkdownView)) continue;
-      if (path !== undefined && view.file?.path !== path) continue;
-      view.editor.cm.dispatch({
-        effects: citekeyDecorationsChanged.of(undefined),
-      });
-      reached += 1;
-    }
-    return reached;
+    return dispatchToMarkdownEditors(
+      this.#app,
+      citekeyDecorationsChanged.of(undefined),
+      { path },
+    );
   }
 
   #applySettings(settings: Readonly<Settings>): void {

@@ -84,12 +84,12 @@ export function diffContributions(
   };
 }
 
-function citationKeyFromFrontmatter(
-  cache: CachedMetadata,
+export function citationKeyFromFrontmatter(
+  cache: CachedMetadata | null | undefined,
   property: string | null,
 ): string | null {
   if (property === null) return null;
-  const value = cache.frontmatter?.[property];
+  const value = cache?.frontmatter?.[property];
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 

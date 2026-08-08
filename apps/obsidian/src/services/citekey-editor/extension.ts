@@ -17,13 +17,10 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
-import {
-  editorInfoField,
-  editorLivePreviewField,
-  livePreviewState,
-} from "obsidian";
+import { editorInfoField, livePreviewState } from "obsidian";
 import type { TFile } from "obsidian";
 
+import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import {
   CITATION_CLASS,
@@ -49,7 +46,6 @@ import {
   citekeyMarks,
   isExcludedTokenClass,
   marksOutside,
-  overlapsSelection,
   resolveCitekeyMarks,
 } from "./decorate";
 import type { CitationRange } from "./decorate";
@@ -527,11 +523,6 @@ function citekeyAtEvent(view: EditorView, event: MouseEvent): string | null {
 
 function editorModeOf(view: EditorView): EditorMode {
   return view.dom.closest(".is-live-preview") ? "live-preview" : "source";
-}
-
-/** Whether this editor renders Live Preview; Source mode keeps raw text. */
-function livePreviewOf(state: EditorState): boolean {
-  return state.field(editorLivePreviewField, false) ?? false;
 }
 
 /**

@@ -222,8 +222,12 @@ The default-on capability that scans literal Pandoc `@citekey` text vault-wide i
 _Avoid_: citekey scanning (names the mechanism, not the capability)
 
 **Wikilink Citations**:
-The opt-in interpretation of Literature Note wikilinks as Citations in the index-backed UI — References Sidebar entries and, for wikilinks without a Citation Fragment, the Wikilink Editor Treatment and Wikilink Reading Rendering. A wikilink carrying a Citation Fragment shows its Citation Display Text regardless of this toggle, just as Pandoc export converts wikilinks to Citations regardless of it.
+The opt-in interpretation of Literature Note wikilinks as Citations in the index-backed UI — References Sidebar entries and, for wikilinks without a Citation Fragment, the Wikilink Editor Treatment and Wikilink Reading Rendering under Wikilink Citation Display. A wikilink carrying a Citation Fragment shows its Citation Display Text regardless of this toggle, just as Pandoc export converts wikilinks to Citations regardless of it.
 _Avoid_: wikilink as citekey (the working name), link citations
+
+**Wikilink Citation Display**:
+The toggle under Wikilink Citations that decides whether a Literature Note wikilink carrying no Citation Fragment shows its Citation Display Text. It governs the Wikilink Editor Treatment today, and the Wikilink Reading Rendering joins it on the same toggle. A wikilink carrying a Citation Fragment shows its Citation Display Text whatever this toggle says.
+_Avoid_: wikilink preview (a preview is Obsidian's hover popover), prettified wikilink
 
 ### Zotero connection
 
