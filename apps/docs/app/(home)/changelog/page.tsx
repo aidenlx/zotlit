@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CompanionNote } from "@/components/companion-note";
 import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
@@ -73,11 +74,7 @@ export default function ChangelogListPage() {
                     {description}
                   </Link>
                 </h2>
-                {companion && (
-                  <p className="text-[14.5px] text-fd-muted-foreground italic before:mr-1 before:text-fd-primary before:not-italic before:content-['✝']">
-                    Companion {companion} released alongside.
-                  </p>
-                )}
+                {companion && <CompanionNote version={companion} />}
                 <div
                   className={cn(
                     changelogProseRoles,

@@ -1,7 +1,9 @@
+import { ArrowUpRight } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { BackCrumb } from "@/components/back-crumb";
+import { CompanionNote } from "@/components/companion-note";
 import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
 import { cn } from "@/lib/cn";
@@ -67,11 +69,7 @@ export default async function ChangelogVersionPage(
             {formatReleaseDate(date)}
           </p>
         </header>
-        {companion && (
-          <p className="text-[14.5px] text-fd-muted-foreground italic before:mr-1 before:text-fd-primary before:not-italic before:content-['✝']">
-            Companion {companion} released alongside.
-          </p>
-        )}
+        {companion && <CompanionNote version={companion} />}
         {description && (
           <p className="mt-3.5 mb-1.5 text-fd-muted-foreground italic">
             {description}
@@ -89,9 +87,10 @@ export default async function ChangelogVersionPage(
           href={`https://github.com/${gitConfig.user}/${gitConfig.repo}/releases/tag/${version}`}
           target="_blank"
           rel="noreferrer noopener"
-          className="mt-6.5 inline-block border border-fd-border bg-fd-card px-4.5 py-2.25 text-[15px] hover:border-fd-primary hover:text-fd-primary"
+          className="mt-6.5 inline-flex items-center gap-2 border border-fd-border bg-fd-card px-4.5 py-2.25 text-[15px] hover:border-fd-primary hover:text-fd-primary"
         >
-          Open release on GitHub ↗
+          Open release on GitHub
+          <ArrowUpRight aria-hidden className="size-[1.05em] shrink-0" />
         </a>
       </article>
     </main>

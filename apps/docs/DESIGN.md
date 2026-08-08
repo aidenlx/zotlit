@@ -55,6 +55,10 @@ stock sizes to compensate for Gelasio's smaller x-height (~0.48em vs Inter's
 ~0.55em). Blockquotes at 1.125em put Gelasio at optical parity with the
 surrounding sans body.
 
+Apparatus marks come from Lucide or from text-presentation glyphs. Emoji-set
+codepoints stay out: Apple platforms serve them from Apple Color Emoji through
+font fallback, so a mark set in accent orange paints as a color emoji in Safari.
+
 ## The label voice
 
 Apparatus **labels** — short text that names a thing rather than saying a
@@ -122,7 +126,8 @@ body):
 List/detail pages in the `(home)` route group styled with Tailwind over fd
 tokens. Each release: right-aligned gutter (mono-uppercase date, mono version
 badge; latest badge orange-bordered), a serif release title, an optional
-companion note, then the release notes at digest density.
+companion note (`components/companion-note.tsx`) — a leading accent `Puzzle`
+mark on a muted italic line — then the release notes at digest density.
 
 Both views render the release notes with a **sans body**. The `##` category
 dividers (Breaking Changes / What's New / Bug Fixes) speak the **mono-uppercase
