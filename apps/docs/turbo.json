@@ -6,6 +6,7 @@
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "codegen": {
+      "dependsOn": ["^build"],
       "outputs": [".source/**", ".next/types/**", "next-env.d.ts"],
       "outputLogs": "errors-only"
     },
