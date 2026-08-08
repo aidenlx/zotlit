@@ -1,4 +1,10 @@
 {
   "title": "Reference",
-  "pages": ["settings", "commands", "protocol-links", "templates"]
+  "pages": [
+    "settings",
+    "commands",
+    "protocol-links",
+    "theme-hooks",
+    "templates"
+  ]
 }
