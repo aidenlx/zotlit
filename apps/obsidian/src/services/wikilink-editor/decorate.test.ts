@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { citationTarget, wikilinkDecorations } from "./decorate";
-import type { LiteratureNoteTarget, WikilinkDisplayContext } from "./decorate";
+import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+
+import { wikilinkDecorations } from "./decorate";
+import type { WikilinkDisplayContext } from "./decorate";
 import type { WikilinkSpan } from "./scan";
 
 /** A scanned link at fixed offsets: `[[` at 0, the interior from 2. */
@@ -42,41 +44,8 @@ function context(
 
 const WANG_LINK = "literatures/wangMutationalClinicalSpectrum2020a";
 
-describe("citationTarget", () => {
-  it("reads a bare linkpath", () => {
-    expect(citationTarget("literatures/wang2020")).toEqual({
-      linkpath: "literatures/wang2020",
-      fragment: null,
-    });
-  });
-
-  it("reads a Citation Fragment off the subpath", () => {
-    expect(citationTarget("note#cite:locator=7")).toEqual({
-      linkpath: "note",
-      fragment: "locator=7",
-    });
-  });
-
-  it("keeps an empty Citation Fragment, which the parser rejects on its own", () => {
-    expect(citationTarget("note#cite:")).toEqual({
-      linkpath: "note",
-      fragment: "",
-    });
-  });
-
-  it("leaves a heading or block subpath alone", () => {
-    expect(citationTarget("note#Heading")).toBeNull();
-    expect(citationTarget("note#^block-id")).toBeNull();
-  });
-
-  it("leaves a subpath-only link alone, which names no note", () => {
-    expect(citationTarget("#Heading")).toBeNull();
-    expect(citationTarget("")).toBeNull();
-  });
-});
-
 describe("wikilinkDecorations", () => {
-  it("shows a Citation Fragment as its Pandoc citation text", () => {
+  it("replaces the link's interior with its Citation Display Text", () => {
     expect(
       wikilinkDecorations([span(`${WANG_LINK}#cite:locator=7`)], context()),
     ).toEqual([
@@ -89,42 +58,7 @@ describe("wikilinkDecorations", () => {
     ]);
   });
 
-  it("shows a fragment-less link as its Citation Key Property value", () => {
-    const [decoration] = wikilinkDecorations([span(WANG_LINK)], context());
-    expect(decoration?.text).toBe("@wang2020");
-  });
-
-  it("falls back to the filename when the note carries no Citation Key Property", () => {
-    const [decoration] = wikilinkDecorations(
-      [span("literatures/xu2019")],
-      context({
-        literatureNote: () => ({
-          path: "literatures/xuNoCitationKeyProperty2019.md",
-          citationKey: null,
-        }),
-      }),
-    );
-    expect(decoration?.text).toBe("@xuNoCitationKeyProperty2019");
-  });
-
-  it("shows a fragment-carrying link whatever the display toggle says", () => {
-    const decorations = wikilinkDecorations(
-      [span(`${WANG_LINK}#cite:locator=7`)],
-      context({ fragmentlessDisplay: false }),
-    );
-    expect(decorations).toHaveLength(1);
-  });
-
-  it("leaves a fragment-less link alone while the display toggle is off", () => {
-    expect(
-      wikilinkDecorations(
-        [span(WANG_LINK)],
-        context({ fragmentlessDisplay: false }),
-      ),
-    ).toEqual([]);
-  });
-
-  it("leaves a malformed Citation Fragment raw", () => {
+  it("leaves a link with no Citation Display Text alone", () => {
     expect(
       wikilinkDecorations([span(`${WANG_LINK}#cite:page=7`)], context()),
     ).toEqual([]);
@@ -139,18 +73,6 @@ describe("wikilinkDecorations", () => {
   it("leaves an embed alone", () => {
     expect(
       wikilinkDecorations([span(WANG_LINK, { isEmbed: true })], context()),
-    ).toEqual([]);
-  });
-
-  it("leaves a heading subpath alone", () => {
-    expect(
-      wikilinkDecorations([span(`${WANG_LINK}#Methods`)], context()),
-    ).toEqual([]);
-  });
-
-  it("leaves a link that names no Literature Note alone", () => {
-    expect(
-      wikilinkDecorations([span("plain/note#cite:locator=7")], context()),
     ).toEqual([]);
   });
 

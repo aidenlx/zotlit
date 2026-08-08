@@ -4,6 +4,7 @@ import { MarkdownView } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import { getLogger } from "@/lib/log";
+import { rerenderReadingViews } from "@/lib/reading-view";
 import {
   citationContent,
   citationElement,
@@ -175,11 +176,7 @@ export class CitekeyReading extends Service<void> {
 
   /** A reading view holds what a post-processor produced until it renders again. */
   #rerenderReadingViews(): void {
-    const leaves = this.#app.workspace.getLeavesOfType("markdown");
-    logger.debug("Rerendering reading views", { count: leaves.length });
-    for (const leaf of leaves) {
-      const { view } = leaf;
-      if (view instanceof MarkdownView) view.previewMode.rerender(true);
-    }
+    const count = rerenderReadingViews(this.#app);
+    logger.debug("Rerendering reading views", { count });
   }
 }

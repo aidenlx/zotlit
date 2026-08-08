@@ -12,9 +12,10 @@ import { editorInfoField, livePreviewState } from "obsidian";
 
 import { livePreviewOf } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
+import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 
 import { wikilinkDecorations } from "./decorate";
-import type { LiteratureNoteTarget, WikilinkDecoration } from "./decorate";
+import type { WikilinkDecoration } from "./decorate";
 import { scanWikilinks } from "./scan";
 import type { TokenNode } from "./scan";
 import "./style.css";

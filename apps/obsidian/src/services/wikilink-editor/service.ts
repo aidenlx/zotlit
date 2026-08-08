@@ -7,13 +7,13 @@ import type { App, Plugin } from "obsidian";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
+import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
+import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
-import type { LiteratureNoteTarget } from "./decorate";
 import {
   wikilinkDecorationsChanged,
   wikilinkEditorExtension,
@@ -49,8 +49,8 @@ export class WikilinkEditor extends Service<void> {
   /** Registered once; emptied on disposal, which retires the treatment. */
   readonly #extensions: Extension[] = [];
 
-  #fragmentlessDisplay = false;
-  #citationKeyProperty: string | null = null;
+  /** The two settings that decide what a link displays. */
+  readonly #display = new WikilinkDisplaySettings();
 
   ready: Promise<void>;
 
@@ -63,7 +63,7 @@ export class WikilinkEditor extends Service<void> {
     this.#extension = wikilinkEditorExtension({
       literatureNote: (linkpath, sourcePath) =>
         this.#literatureNote(linkpath, sourcePath),
-      fragmentlessDisplay: () => this.#fragmentlessDisplay,
+      fragmentlessDisplay: () => this.#display.fragmentlessDisplay,
     });
     this.ready = this.#load();
   }
@@ -71,16 +71,6 @@ export class WikilinkEditor extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
-
-    // SettingsService.subscribe invokes its listener immediately with this
-    // same snapshot, so seeding the state here makes that first callback a
-    // no-op instead of a startup redraw.
-    const settings = this.#settings.current;
-    if (settings) {
-      const seed = WikilinkEditor.#readSettings(settings);
-      this.#fragmentlessDisplay = seed.fragmentlessDisplay;
-      this.#citationKeyProperty = seed.citationKeyProperty;
-    }
 
     this.#plugin.registerEditorExtension(this.#extensions);
     this.#extensions.push(this.#extension);
@@ -90,11 +80,7 @@ export class WikilinkEditor extends Service<void> {
       this.#app.workspace.updateOptions();
     });
 
-    stack.defer(
-      this.#settings.subscribe((next) => {
-        if (next) this.#applySettings(next);
-      }),
-    );
+    stack.defer(this.#display.watch(this.#settings, () => this.#redraw()));
     // Creating, deleting, or renaming a Literature Note, or editing its
     // Citation Key Property, changes what a link displays without changing any
     // document; the Note Index's own invalidation is coarse, so every change
@@ -105,45 +91,13 @@ export class WikilinkEditor extends Service<void> {
     this.commit(stack.move());
   }
 
-  /**
-   * Everything the decoration build reads out of the settings. Wikilink
-   * Citations is the master switch for reading wikilinks as Citations at all;
-   * the display toggle decides whether the fragment-less ones show their
-   * Citation Display Text.
-   */
-  static #readSettings(settings: Readonly<Settings>): {
-    fragmentlessDisplay: boolean;
-    citationKeyProperty: string;
-  } {
-    return {
-      fragmentlessDisplay:
-        settings["citation.wikilink-citations"] &&
-        settings["citation.wikilink-display"],
-      citationKeyProperty: settings["citation.key-links-frontmatter-key"],
-    };
-  }
-
-  #applySettings(settings: Readonly<Settings>): void {
-    const next = WikilinkEditor.#readSettings(settings);
-    if (
-      next.fragmentlessDisplay === this.#fragmentlessDisplay &&
-      next.citationKeyProperty === this.#citationKeyProperty
-    ) {
-      return;
-    }
-    this.#fragmentlessDisplay = next.fragmentlessDisplay;
-    this.#citationKeyProperty = next.citationKeyProperty;
-    logger.debug("Wikilink display settings changed", next);
-    this.#redraw();
-  }
-
   #literatureNote(
     linkpath: string,
     sourcePath: string,
   ): LiteratureNoteTarget | null {
     return resolveLiteratureNote(linkpath, sourcePath, {
       app: this.#app,
-      citationKeyProperty: this.#citationKeyProperty,
+      citationKeyProperty: this.#display.citationKeyProperty,
     });
   }
 

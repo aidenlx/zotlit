@@ -7,8 +7,9 @@ import type { CitationSource } from "@/services/citation-text/present";
 /**
  * Elements whose text is never a citation. Code, math, and the frontmatter
  * table are the reading-view shape of the same exclusion zones the index masks
- * and the editor's token classes rule out; a link is left to Obsidian, so a
- * wikilink in reading mode stays plain Obsidian.
+ * and the editor's token classes rule out; a link is left out because a
+ * Literature Note wikilink is the Wikilink Reading Rendering's surface, and any
+ * other link is Obsidian's.
  */
 const EXCLUDED_SELECTOR =
   "code, pre, a, .math, mjx-container, .frontmatter, .metadata-container";

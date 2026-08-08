@@ -265,7 +265,7 @@
   "settings_citation_wikilink_citations_name": "Wiki 链接引用",
   "settings_citation_wikilink_citations_desc": "将指向文献笔记的链接视为引用，让参考文献侧边栏在文献引用标识之外也列出它们。",
   "settings_citation_wikilink_display_name": "以引用文本显示 Wiki 链接引用",
-  "settings_citation_wikilink_display_desc": "将指向文献笔记的链接显示为它的引用（例如 `@doe2024`），而不是路径。带有引用细节（例如页码）的链接不受此设置影响，始终这样显示。把光标移到链接上即可查看原文。",
+  "settings_citation_wikilink_display_desc": "将指向文献笔记的链接显示为它的引用（例如 `@doe2024`），而不是路径。带有引用细节（例如页码）的链接不受此设置影响，始终这样显示。在编辑器中，把光标移到链接上即可查看原文。",
   "settings_citation_editor_heading": "编辑器",
   "settings_citation_citekey_editor_name": "文献引用标识样式",
   "settings_citation_citekey_editor_desc": "在编辑器中高亮 `@doe2024` 这样的文献引用标识（citation key），单击即可打开对应的文献笔记。在阅读视图中，引用会显示排版后的文本。",
