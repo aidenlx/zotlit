@@ -1,136 +1,156 @@
 ---
-title: "How citation display and navigation work"
-description: "How ZotLit recognizes, displays, and opens Pandoc citation keys and Literature Note wikilinks across Obsidian views."
+title: "How in-text citation rendering and navigation work"
+description: "How ZotLit selects, formats, lists, and opens citations in the active note."
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 
-ZotLit turns literal Pandoc citation keys and Literature Note wikilinks into readable, navigable citations.
+ZotLit uses one ordered set of citations to format the active note, number its references, and support citation navigation.
 
-The Citation Index tracks each Citation Occurrence in your vault. An occurrence can be a literal citation key or a Literature Note wikilink. The references sidebar and citation treatments read from this shared index.
+## The Document Citation Set
 
-**Citation key indexing** is on by default and controls literal citation keys. **Wikilink citations** is an opt-in setting for Literature Note wikilinks. Both settings are under **Settings → ZotLit → Citations**.
+The Document Citation Set contains the Citation Occurrences from the active note. Each occurrence keeps its source position and citation details.
 
-<Callout type="info" title="Upgrading from Citation Key Links">
-  Citation Key Links is retired. ZotLit moves its stored value to **Citation key
-  styling**, so your existing click preference remains active. The new treatment
-  also recognizes bare citation keys.
-</Callout>
+Two settings under **Settings > ZotLit > Citations** decide which sources join the set:
 
-## Literal citation keys
+| Setting                | Default | Included source                                           |
+| ---------------------- | ------- | --------------------------------------------------------- |
+| **Pandoc citations**   | On      | Literal Pandoc syntax such as `@doe2024` and `[@doe2024]` |
+| **Wikilink citations** | Off     | Eligible wikilinks to Literature Notes                    |
 
-Citekey Indexing recognizes the Pandoc citation syntax you already write:
+You can turn off both sources. The References Sidebar, formatted in-text citations, numeric numbering, and Citekey Navigation then receive an empty set.
+
+An eligible wikilink is unaliased and points to a Literature Note. It has either no fragment or a valid Citation Fragment such as `#cite:locator=33`.
+
+Aliases, embeds, unresolved targets, heading fragments, and block fragments stay outside the set. Malformed Citation Fragments also stay outside it. The References Sidebar reports a malformed fragment as a Reference Error while **Wikilink citations** is on.
+
+The set keeps source order. This order matters because numeric styles assign numbers from the complete note, not from one visible section.
+
+### The Citation Index
+
+The Citation Index is ZotLit's internal, vault-wide record of Citation Occurrences. It stays active and tracks both source types, independent of the two source settings.
+
+The Document Citation Set applies your source settings when a citation feature asks about the active note. Changing either setting recomputes the set without rescanning the vault.
+
+**Reset citation index** remains a recovery action under **Settings > ZotLit > Diagnostics**. It rebuilds derived index data and does not change your notes.
+
+Citation insertion and built-in export use their own membership rules. Turning a source off does not disable insertion or remove that source from export.
+
+## Pandoc citations
+
+Pandoc citations can cite one work or a group of works:
 
 - `@key` is a bare author-in-text citation.
 - `-@key` suppresses the author.
-- `[@key]`, `[@key, p. 3]`, and `[see @a, p. 3; @b]` are Citation Clusters.
+- `[@key]` and `[@key, p. 3]` are Citation Clusters.
+- `[see @a, p. 3; @b]` cites multiple works in one cluster.
 - `@{https://example.com/paper}` is a braced key for characters that a bare key cannot contain.
 
-Trailing punctuation is not part of a citation key. Email addresses and URLs containing `@` remain ordinary text.
+Trailing punctuation is outside a citation key. Email addresses and URLs containing `@` remain ordinary text.
 
-ZotLit also ignores citation-like text inside code, math, `%%` comments, frontmatter, and URLs. These regions do not become Citation Occurrences.
+ZotLit also excludes citation-like text in code, math, `%%` comments, frontmatter, and URLs.
 
 ### Resolution
 
-ZotLit resolves literal citation keys against Zotero's native citation key field in the **Default library**. It does not read the `citekey` frontmatter field for resolution.
+ZotLit resolves Pandoc citation keys against Zotero's native citation key field in the **Default library**. It does not use the `citekey` frontmatter field for resolution.
 
-An item can render as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. A key that matches no item shows unresolved styling and an error in the references sidebar.
+An item can appear as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. An unresolved key stays in its native source and appears as a Reference Error in the sidebar.
 
-Resolution refreshes when the Zotero database changes. A re-keyed item updates after the next refresh.
+The resolution data refreshes when the Zotero database changes. A re-keyed item updates after the next refresh.
 
-## Literal citations in the editor
+## Wikilink citations
 
-**Citation key styling** controls the editor and reading-view treatment for literal citation keys. It is on by default and takes effect while **Citation key indexing** is on.
+An eligible Literature Note wikilink represents the Zotero item associated with that note. A valid Citation Fragment can add Pandoc details such as a prefix, locator, suffix, or author-suppression mode.
 
-### Source mode
+For example, `[[Doe 2020#cite:locator=33]]` represents the Pandoc source `[@doe2020, p. 33]` when the item's citation key is `doe2020`.
 
-Source mode always shows the text you wrote. A plain click places the caret on a citation key.
+Wikilinks keep Obsidian's native link target, click behavior, hover preview, and drag behavior. Source mode always shows the raw wikilink.
 
-Ctrl-click opens the Literature Note in the same tab. Use Cmd-click on macOS. Middle-click and Ctrl+Shift-click, or Cmd+Shift-click on macOS, open it in a new tab.
+## Formatted in-text citations
 
-### Live Preview [#live-preview]
+**Show formatted citations** is on by default. It applies the selected **Citation and references style** in Live Preview and reading view. Source mode always shows Markdown.
 
-Live Preview replaces a citation with formatted text while your cursor is elsewhere. A Citation Cluster renders as one citation, including its prefixes, locators, and suffixes.
+ZotLit asks the Pandoc engine to format the complete Document Citation Set. A complete render keeps numbering and style context consistent across the note. ZotLit swaps the whole document to formatted text only after that render finishes.
 
-ZotLit uses the selected References Style when the Pandoc Engine is available. Otherwise each resolved key shows its `Creators (Year)` summary, while the surrounding source stays visible.
+In Live Preview, the Markdown source returns only for the citation touched by your cursor or selection. Other citations remain formatted.
 
-The raw source returns when your cursor or selection touches the citation. Cursor movement treats a concealed citation as one unit.
+ZotLit leaves the native source visible in these cases:
 
-## Literal citations in reading view [#reading-mode]
+- The Pandoc engine is absent or fails.
+- The selected style is not installed.
+- Conversion fails.
+- Citation resolution fails or the citation is unresolved.
 
-Reading view shows the same formatted citation text as Live Preview. It uses the same References Style and `Creators (Year)` fallback.
+A Citation Cluster with any unresolved item stays completely unchanged. Its resolved items still affect later numeric numbering and the References Sidebar.
 
-Formatted citations also support Citekey Navigation. A citation with one work opens its Literature Note. A citation with several works opens a menu so you can choose a note.
+Turning **Show formatted citations** off leaves every source in Obsidian's native presentation. It does not change set membership, Citekey Navigation, insertion, or export.
+
+## The References Sidebar
+
+Run <Command inline>ZotLit: Open references</Command> to open the References Sidebar for the active note.
+
+When formatting succeeds, the sidebar follows the selected style's bibliography order and Entry Markers. A numeric style can produce markers such as `[1]` or `1.`.
+
+The sidebar stays available without formatted output. It shows a minimal list in first-occurrence order when the engine or selected style is unavailable. A render failure clears stale formatted entries, shows the error, and displays the minimal list.
+
+A Reference Error points to its exact source occurrence so you can correct the note.
 
 ## Citekey Navigation
 
-Citekey Navigation gives recognized literal citation keys one opening flow across the editor and reading view. If the item has no Literature Note, ZotLit creates one before opening it.
+**Open Pandoc citations as links** is on by default. It controls navigation for literal Pandoc citations and works independently of formatted display.
 
-In Live Preview and reading view, a plain click opens the note in place. Modifier clicks follow Obsidian's pane behavior. Source mode uses the modifier behavior described above.
+With **Pandoc citations** and **Open Pandoc citations as links** on, ZotLit supports:
 
-Hover shows Obsidian's page preview only when one citation key resolves to exactly one existing Literature Note. Hover stays silent for unresolved keys, missing notes, and multi-work citations.
+- Click and selection behavior in the editor and reading view.
+- Hover preview for one resolved item with an existing Literature Note.
+- A selection menu for citations with multiple items.
+- Four open-under-cursor commands.
 
-Obsidian controls hover modifier gating under **Settings → Core plugins → Page preview**. The ZotLit source appears there as **ZotLit citation key**.
+A single-item citation opens its Literature Note. ZotLit creates the note first when necessary. A multi-item citation opens a menu so you can choose an item.
 
-Four command-palette commands open the citation key under the cursor:
+Source mode keeps the text editable. Ctrl-click opens a citation on Windows and Linux. Cmd-click opens it on macOS. Modifier clicks follow Obsidian's pane behavior.
+
+Obsidian controls hover modifier gating under **Settings > Core plugins > Page preview**. The ZotLit source is **ZotLit citation key**.
+
+The four commands have no default hotkeys:
 
 - <Command inline>ZotLit: Open citation key under cursor</Command>
 - <Command inline>ZotLit: Open citation key under cursor in new tab</Command>
 - <Command inline>ZotLit: Open citation key under cursor to the right</Command>
 - <Command inline>ZotLit: Open citation key under cursor in new window</Command>
 
-These commands have no default hotkeys. They are available when **Citation key indexing** and **Citation key styling** are on. The cursor must be on a recognized citation key.
+The cursor must be on a recognized Pandoc citation. The commands require **Pandoc citations** and **Open Pandoc citations as links**.
 
-## Literature Note wikilinks
-
-ZotLit can show a Literature Note wikilink as Citation Display Text instead of its path. This treatment works in Live Preview and reading view.
-
-For a wikilink without a fragment, Citation Display Text is `@` followed by the item's native Zotero citation key. The Literature Note filename is the fallback when the item has no citation key.
-
-A valid `#cite:` Citation Fragment produces the equivalent Pandoc citation source. The source includes its mode, prefix, locator, and suffix. For example, `[[Doe 2020#cite:locator=33]]` displays as `[@doe2020, p. 33]` when the item's citation key is `doe2020`.
-
-Fragment-less links need both **Wikilink citations** and **Show wikilink citations as citation text**. A valid Citation Fragment displays as a citation regardless of those settings.
-
-An explicit wikilink alias always wins. Heading and block subpaths, embeds, malformed Citation Fragments, ordinary links, and unresolved links keep Obsidian's display.
-
-### Display and interaction
-
-The wikilink treatment changes its display while preserving Obsidian's click, hover, drag, and reveal behavior. In Live Preview, the raw source returns when your cursor or selection touches the link. Source mode always shows the raw wikilink.
-
-ZotLit uses the References Style when formatted citation text is available. In Live Preview, a decorated wikilink shows Citation Display Text while that result loads. A semicolon-separated run can render as one Citation Cluster and keeps the first link's navigation target.
-
-In reading view, dragging a decorated wikilink out of the note carries its displayed text instead of its raw link path. The context menu's **Copy** action also copies the displayed text.
-
-## References Style and Entry Markers
-
-References Style is the formatting rule selected by **References style**. It controls formatted citations across Live Preview, reading view, and the references sidebar.
-
-The references sidebar also keeps each Entry Marker produced by the style, such as a bibliography number. Citation Occurrences still keep their source positions for navigation.
+Literature Note wikilinks keep Obsidian's native navigation. **Open Pandoc citations as links** does not affect them.
 
 ## Theme hooks [#theme-hooks]
 
-ZotLit adds public CSS classes to citation keys, rendered Citations, and Literature Note links in Source mode, Live Preview, and Reading view. Themes and CSS snippets can style these elements without depending on their DOM structure.
+ZotLit adds public CSS classes only to sources in the Document Citation Set where it supplies rendering or navigation. Excluded sources and sources with both applicable features inactive receive no public ZotLit class.
 
-See [Theme hooks](/docs/reference/theme-hooks) for the selector contract and CSS examples.
+See [Theme hooks](/docs/reference/theme-hooks) for class names, state meanings, and activation rules.
 
 ## See also
 
 <Cards>
   <Card
-    title="Create and open literature notes"
-    description="Open or create a literature note from a citation key, the quick switcher, or Zotero."
-    href="/docs/how-to/create-and-open-notes"
-  />
-  <Card
     title="Insert citations"
-    description="Insert citation markers while typing or from the command palette."
+    description="Insert Markdown citations independently of citation source settings."
     href="/docs/how-to/insert-citations"
   />
   <Card
+    title="Create and open literature notes"
+    description="Open or create a Literature Note from a citation or the quick switcher."
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="Export a note with citations"
+    description="Export the active note as a Word document or web page."
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
     title="Settings"
-    description="Defaults and gating for citation indexing and display."
+    description="Look up citation controls, defaults, storage, and dependencies."
     href="/docs/reference/settings"
   />
 </Cards>

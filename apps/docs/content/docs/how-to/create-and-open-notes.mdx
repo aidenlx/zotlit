@@ -1,6 +1,6 @@
 ---
 title: "Create and open literature notes"
-description: "Open or create a literature note with the quick switcher, a citation key click, or the Zotero menu."
+description: "Open or create a Literature Note with the quick switcher, a Pandoc citation, or the Zotero menu."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -8,7 +8,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 
-ZotLit treats opening and creating a literature note as a single gesture. If a note already exists for a Zotero item, ZotLit opens it. If not, ZotLit creates the note and then opens it.
+Open an existing Literature Note or create one from its Zotero item.
 
 ## Use the quick switcher
 
@@ -37,17 +37,17 @@ The quick switcher searches your Zotero library and opens or creates a literatur
   </Step>
 </Steps>
 
-## Open a note from a citation key
+## Open a note from a Pandoc citation
 
-**Citation key styling** in **Settings → ZotLit → Citations** adds display and navigation to citation keys. It is on by default, and takes effect while **Citation key indexing** is also on.
+Turn on **Pandoc citations** and **Open Pandoc citations as links** under **Settings > ZotLit > Citations**. Both settings are on by default.
 
 Type or paste a Pandoc citation such as `@key` or `[@key]` in an editor.
 
 - In Live Preview, click the citation to open or create its Literature Note.
 - In Source mode, Ctrl-click the citation key. Use Cmd-click on macOS. A plain click places the caret.
-- In reading view, click a formatted citation. A multi-work citation opens a menu.
+- In reading view, click the citation. A single-item citation opens its Literature Note. A multi-item citation opens a menu.
 
-You can also place the cursor on a recognized key and run <Command inline>ZotLit: Open citation key under cursor</Command>. The command is available while **Citation key indexing** and **Citation key styling** are on.
+You can also place the cursor on a recognized citation and run <Command inline>ZotLit: Open citation key under cursor</Command>. This command uses the same two settings.
 
 ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
 
@@ -55,7 +55,9 @@ A click resolves the citation key against Zotero's native citation key field in 
 
 If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
 
-For the recognized syntax, modifiers, hover preview, and other opening commands, see [How citation display and navigation work](/docs/concepts/how-citekey-links-work).
+Hover preview and the four open-under-cursor commands use **Open Pandoc citations as links**. **Show formatted citations** does not control navigation.
+
+Literature Note wikilinks continue to use Obsidian's native navigation. For recognized syntax and the complete interaction model, see [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
 
 ## Create or update notes in bulk [#bulk]
 

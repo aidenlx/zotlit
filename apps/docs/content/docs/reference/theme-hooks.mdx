@@ -1,53 +1,56 @@
 ---
 title: "Theme hooks"
-description: "Public CSS classes for styling ZotLit citation keys, rendered citations, and Literature Note links across Obsidian views."
+description: "Public CSS classes for active citation sources and rendered citations across Obsidian views."
 ---
 
-ZotLit adds public CSS classes to citation keys, rendered citations, and Literature Note links. Themes and CSS snippets can use these classes without depending on ZotLit or Obsidian DOM structure.
+This reference lists ZotLit's public citation CSS classes and their activation rules.
 
 ## Hooks [#hooks]
 
 | Class                                  | Meaning                                                                                                                                 |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `zt-citation`                          | A Citation ZotLit renders or wraps.                                                                                                     |
+| `zt-citation`                          | A Citation that ZotLit renders or makes navigable.                                                                                      |
 | `zt-citation-key`                      | A raw citation key, or a rendered Citation produced from literal citation key syntax.                                                   |
 | `zt-citation-key-unresolved`           | A citation key that does not resolve, or a rendered Citation in which no citation key resolves. The element also has `zt-citation-key`. |
 | `zt-citation-key-partially-unresolved` | A rendered Citation containing both resolved and unresolved citation keys. The element also has `zt-citation-key`.                      |
-| `zt-literature-note-link`              | A resolved internal link to a Literature Note, or a rendered Citation produced from a Literature Note link or Citation Run.             |
+| `zt-literature-note-link`              | A rendered Citation produced from a Literature Note link or Citation Run.                                                               |
 
 A rendered Citation also has the class for its source. A literal Citation Cluster has `zt-citation` and `zt-citation-key`. A Citation Run made from Literature Note links has `zt-citation` and `zt-literature-note-link`.
 
 ## Supported views [#views]
 
-The hooks are available in Source mode, Live Preview, and Reading view.
+Hooks can appear in Source mode, Live Preview, and reading view when their activation rules are met.
 
-| View         | Citation key hook                                                   | Literature Note link hook                                          |
-| ------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Source mode  | Marks the literal citation key source.                              | Marks the internal-link source.                                    |
-| Live Preview | Marks raw source while it is visible, and marks rendered Citations. | Marks native links, Citation Display Text, and rendered Citations. |
-| Reading view | Marks citation keys and rendered Citations.                         | Marks native links, Citation Display Text, and rendered Citations. |
+| View         | Literal Pandoc source                                                                       | Literature Note wikilink                        |
+| ------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Source mode  | Marks an active source while Citekey Navigation supplies interaction.                       | Uses Obsidian's native link surface.            |
+| Live Preview | Marks active raw source for navigation and marks Rendered Citations for formatted display.  | Marks Rendered Citations for formatted display. |
+| Reading view | Marks active native or rendered text while ZotLit supplies navigation or formatted display. | Marks Rendered Citations for formatted display. |
 
 CodeMirror can split one source range across multiple elements. ZotLit guarantees the meaning and activation of each class. It does not guarantee the element type, nesting, number of elements, or native Obsidian and CodeMirror classes.
 
 ## Activation [#activation]
 
-`zt-citation-key` and its state classes are active while both **Citation key indexing** and **Citation key styling** are on.
+ZotLit adds a public class only when both conditions apply:
 
-`zt-literature-note-link` applies to every resolved, non-embed internal link whose target is a Literature Note. It does not depend on **Wikilink citations** or **Show wikilink citations as citation text**. It includes:
+1. The source belongs to the active note's Document Citation Set.
+2. ZotLit supplies formatted rendering or navigation for that source.
 
-- Plain and aliased links.
-- Links to a heading or block in a Literature Note.
-- `[[#Heading]]` and `[[#^block]]` inside a Literature Note.
+`zt-citation-key` and its state classes identify active literal Pandoc sources. **Pandoc citations** controls their membership. **Show formatted citations** and **Open Pandoc citations as links** control the two features that can activate their hooks.
 
-The class does not apply to embeds, unresolved internal links, or self-subpath links outside a Literature Note.
+`zt-literature-note-link` identifies active Wikilink Citation sources. **Wikilink citations** controls their membership. ZotLit applies the hook when **Show formatted citations** supplies their rendering. Obsidian continues to supply wikilink navigation.
 
-`zt-citation` appears only when ZotLit renders or wraps a Citation.
+Aliases, heading links, block links, embeds, unresolved targets, and malformed Citation Fragments stay outside renderable membership. ZotLit gives them no public citation class.
+
+A source also receives no public ZotLit class when both applicable features are inactive. The internal Citation Index alone never activates a class.
+
+`zt-citation` appears only when ZotLit renders a Citation or supplies Citekey Navigation for it.
 
 ## Default appearance [#defaults]
 
 Resolved citation keys use Obsidian's `--link-*` variables. Fully unresolved citation keys use the corresponding `--link-unresolved-*` variables.
 
-ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A partial result therefore keeps the appearance of its resolved works. ZotLit also adds no style to an ordinary `zt-literature-note-link`; the native internal-link appearance remains active.
+ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A partial result therefore keeps the appearance of its resolved works. ZotLit adds no style to a native Literature Note wikilink.
 
 ## CSS examples [#examples]
 

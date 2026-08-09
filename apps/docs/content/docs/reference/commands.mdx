@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 
-This page documents every command registered by ZotLit. Each command is listed with its palette name, additional entry points (ribbon, file menu, context menu), and availability conditions.
+This reference lists every ZotLit command, its entry points, and its availability.
 
 <Callout type="info">
   ZotLit is a desktop-only plugin. These commands are not available on Obsidian
@@ -66,41 +66,57 @@ Opens a modal to search your Zotero library and jump to (or create) the correspo
 
 Opens a modal to search your library and insert a Markdown citation at the cursor.
 
+Insertion remains available independently of **Pandoc citations**, **Wikilink citations**, **Show formatted citations**, and **Open Pandoc citations as links**.
+
 | Entry point      | Details                                                                                                                                                  |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Command palette  | Active when an editor is open                                                                                                                            |
-| Editor suggester | Triggered by typing `[@` in the editor, or `@` at a word boundary when **`@` trigger** is on. Both settings are under **Settings → ZotLit → Citations**. |
+| Editor suggester | Triggered by typing `[@` in the editor, or `@` at a word boundary when **`@` trigger** is on. Both settings are under **Settings > ZotLit > Citations**. |
 
-### Citation key navigation
+### Citation navigation
 
-The following commands provide Citekey Navigation for the recognized citation key under the cursor. They have no default hotkeys.
+The following commands open the recognized Pandoc citation under the cursor. They have no default hotkeys.
 
-| Entry point     | Details                                                                                                         |
-| --------------- | --------------------------------------------------------------------------------------------------------------- |
-| Command palette | Active while **Citation key indexing** and **Citation key styling** are on, with the cursor on a recognized key |
-| Hotkey          | None by default; assign one under **Settings → Hotkeys**                                                        |
+| Entry point     | Details                                                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Active while **Pandoc citations** and **Open Pandoc citations as links** are on, with the cursor on a recognized citation key |
+| Hotkey          | None by default; assign one under **Settings > Hotkeys**                                                                      |
 
 <Command>ZotLit: Open citation key under cursor</Command>
 
 Opens or creates the Literature Note in the current tab.
 
----
-
 <Command>ZotLit: Open citation key under cursor in new tab</Command>
 
 Opens or creates the Literature Note in a new tab.
-
----
 
 <Command>ZotLit: Open citation key under cursor to the right</Command>
 
 Opens or creates the Literature Note in a split to the right.
 
----
-
 <Command>ZotLit: Open citation key under cursor in new window</Command>
 
 Opens or creates the Literature Note in a new window.
+
+### References and export
+
+<Command>ZotLit: Open references</Command>
+
+Opens the References Sidebar for the active note.
+
+| Entry point     | Details          |
+| --------------- | ---------------- |
+| Command palette | Always available |
+
+<Command>ZotLit: Export note with citations</Command>
+
+Opens the built-in export modal for the active Markdown note. The command requires the Pandoc engine when you run it.
+
+The export uses its own citation membership. Citation source, presentation, and navigation settings do not change exported content.
+
+| Entry point     | Details                   |
+| --------------- | ------------------------- |
+| Command palette | Active on a Markdown note |
 
 ## Literature note actions
 
@@ -115,8 +131,6 @@ Re-renders the full literature note (frontmatter and managed body region) from t
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
----
-
 <Command>ZotLit: Update literature note metadata</Command>
 
 Re-renders only the frontmatter of the literature note from the current Zotero data. Body content is unchanged.
@@ -125,8 +139,6 @@ Re-renders only the frontmatter of the literature note from the current Zotero d
 | --------------- | --------------------------- |
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
-
----
 
 <Command>ZotLit: Overwrite literature note</Command>
 
@@ -137,8 +149,6 @@ Destructively replaces the entire literature note with a fresh render. A confirm
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
----
-
 <Command>ZotLit: Import child notes from Zotero</Command>
 
 Imports the Zotero notes attached to the current item into the vault.
@@ -147,8 +157,6 @@ Imports the Zotero notes attached to the current item into the vault.
 | --------------- | --------------------------- |
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
-
----
 
 <Command>ZotLit: Copy item key</Command>
 
@@ -203,8 +211,6 @@ Opens the ZotLit Welcome View for guided setup and v1-to-v2 migration.
 | Command palette | Always available                                    |
 | Automatic       | Opens on first launch, and after a v1-to-v2 upgrade |
 
----
-
 <Command>ZotLit: Open release notes</Command>
 
 Opens the release notes for the installed ZotLit version.
@@ -219,25 +225,27 @@ Opens the release notes for the installed ZotLit version.
 
 | Command                                      | Palette | Ribbon | File menu |         Editor         |
 | -------------------------------------------- | :-----: | :----: | :-------: | :--------------------: |
-| Refresh Zotero database                      |   yes   |   —    |     —     |           —            |
-| Create or update all literature notes        |   yes   |   —    |     —     |           —            |
-| Import all child and standalone notes        |   yes   |   —    |     —     |           —            |
-| Open literature note quick switcher          |   yes   |   —    |     —     |           —            |
-| Insert Markdown citation                     |   yes   |   —    |     —     |  `[@` / `@` suggester  |
-| Open citation key under cursor               |   yes   |   —    |     —     | Cursor on citation key |
-| Open citation key under cursor in new tab    |   yes   |   —    |     —     | Cursor on citation key |
-| Open citation key under cursor to the right  |   yes   |   —    |     —     | Cursor on citation key |
-| Open citation key under cursor in new window |   yes   |   —    |     —     | Cursor on citation key |
-| Update literature note                       |   yes   |   —    |    yes    |           —            |
-| Update literature note metadata              |   yes   |   —    |    yes    |           —            |
-| Overwrite literature note                    |   yes   |   —    |    yes    |           —            |
-| Import child notes from Zotero               |   yes   |   —    |    yes    |           —            |
-| Copy item key                                |   yes   |   —    |    yes    |           —            |
-| Update imported note from Zotero             |   yes   |   —    |    yes    |           —            |
-| Open Zotero annotations                      |   yes   |  yes   |     —     |           —            |
-| Open template data explorer                  |   yes   |   —    |    yes    |           —            |
-| Open welcome view                            |   yes   |   —    |     —     |           —            |
-| Open release notes                           |   yes   |   —    |     —     |           —            |
+| Refresh Zotero database                      |   yes   |   no   |    no     |           no           |
+| Create or update all literature notes        |   yes   |   no   |    no     |           no           |
+| Import all child and standalone notes        |   yes   |   no   |    no     |           no           |
+| Open literature note quick switcher          |   yes   |   no   |    no     |           no           |
+| Insert Markdown citation                     |   yes   |   no   |    no     |  `[@` / `@` suggester  |
+| Open citation key under cursor               |   yes   |   no   |    no     | Cursor on citation key |
+| Open citation key under cursor in new tab    |   yes   |   no   |    no     | Cursor on citation key |
+| Open citation key under cursor to the right  |   yes   |   no   |    no     | Cursor on citation key |
+| Open citation key under cursor in new window |   yes   |   no   |    no     | Cursor on citation key |
+| Open references                              |   yes   |   no   |    no     |           no           |
+| Export note with citations                   |   yes   |   no   |    no     |  Active Markdown note  |
+| Update literature note                       |   yes   |   no   |    yes    |           no           |
+| Update literature note metadata              |   yes   |   no   |    yes    |           no           |
+| Overwrite literature note                    |   yes   |   no   |    yes    |           no           |
+| Import child notes from Zotero               |   yes   |   no   |    yes    |           no           |
+| Copy item key                                |   yes   |   no   |    yes    |           no           |
+| Update imported note from Zotero             |   yes   |   no   |    yes    |           no           |
+| Open Zotero annotations                      |   yes   |  yes   |    no     |           no           |
+| Open template data explorer                  |   yes   |   no   |    yes    |           no           |
+| Open welcome view                            |   yes   |   no   |    no     |           no           |
+| Open release notes                           |   yes   |   no   |    no     |           no           |
 
 ## Template Workbench CLI
 
@@ -255,6 +263,11 @@ The Template Workbench registers additional commands through the Obsidian CLI fo
     title="Settings"
     description="Every ZotLit setting: key, label, default, and location."
     href="/docs/reference/settings"
+  />
+  <Card
+    title="Export a note with citations"
+    description="Export an active Markdown note to a Word document or web page."
+    href="/docs/how-to/export-note-with-citations"
   />
   <Card
     title="Protocol links"
