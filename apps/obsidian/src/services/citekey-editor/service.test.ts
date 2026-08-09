@@ -47,9 +47,9 @@ describe("CitekeyEditor settings lifecycle", () => {
     expect(registered).toEqual([]);
   });
 
-  it("stays off while citekey indexing is off, whatever the editor toggle says", async () => {
+  it("stays off while Pandoc citations are off, whatever the editor toggle says", async () => {
     const settings = new SettingsStub({
-      "citation.citekey-indexing": false,
+      "citation.pandoc-citations": false,
       "citation.citekey-editor": true,
     });
     let registered: Extension[] = [];
@@ -69,9 +69,9 @@ describe("CitekeyEditor settings lifecycle", () => {
     await service.ready;
 
     expect(registered).toEqual([]);
-    settings.update({ "citation.citekey-indexing": true });
+    settings.update({ "citation.pandoc-citations": true });
     expect(registered).toHaveLength(1);
-    settings.update({ "citation.citekey-indexing": false });
+    settings.update({ "citation.pandoc-citations": false });
     expect(registered).toEqual([]);
   });
 });

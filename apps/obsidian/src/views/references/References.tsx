@@ -248,6 +248,14 @@ function referencePresentation(
         noteDisabled: true,
         source: undefined,
       };
+    case "malformed":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_open_note_invalid_fragment(),
+        noteDisabled: true,
+        source: undefined,
+      };
   }
 }
 
@@ -280,6 +288,12 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
           {m.references_citekey_unresolved({ citekey: entry.citekey })}
+        </span>
+      );
+    case "malformed":
+      return (
+        <span className={cn(textClass, "zt:text-destructive")}>
+          {m.references_citation_fragment_invalid()}
         </span>
       );
   }

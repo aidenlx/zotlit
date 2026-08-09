@@ -45,6 +45,8 @@ export interface WikilinkEditorHandlers {
     linkpath: string,
     sourcePath: string,
   ) => LiteratureNoteTarget | null;
+  /** Read once per decoration build to apply the source-membership choice. */
+  enabled: () => boolean;
   /**
    * Read once per decoration build, so the settings behind it reach the
    * builder without the extension being registered again.
@@ -66,7 +68,7 @@ export interface WikilinkEditorHandlers {
  * Dispatched by the wikilink editor service whenever something outside the
  * document changed what these decorations should say — a Literature Note
  * appearing, the Citation Index's resolution snapshot rebuilding, or the
- * settings that gate fragment-less display. Every such invalidation is
+ * source and display settings. Every such invalidation is
  * coarse, so this one effect asks for a rebuild rather than naming what it
  * touched.
  */
@@ -207,6 +209,7 @@ function buildDecorations(
   const context = {
     literatureNote: (linkpath: string) =>
       handlers.literatureNote(linkpath, sourcePath),
+    enabled: handlers.enabled(),
     fragmentlessDisplay: handlers.fragmentlessDisplay(),
     selection: view.hasFocus ? state.selection.ranges : [],
     textBetween: (from: number, to: number) => state.doc.sliceString(from, to),

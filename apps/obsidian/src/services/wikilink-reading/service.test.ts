@@ -147,7 +147,9 @@ describe("WikilinkReading rendering", () => {
   });
 
   it("exposes both literal hooks when it renders a Literature Note Citation", async () => {
-    await using harnessed = await harness();
+    await using harnessed = await harness({
+      "citation.wikilink-citations": true,
+    });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
     const rendered = root.querySelector("a");
@@ -157,7 +159,9 @@ describe("WikilinkReading rendering", () => {
   });
 
   it("exposes the combined literal hooks once on a rendered Citation Run", async () => {
-    await using harnessed = await harness();
+    await using harnessed = await harness({
+      "citation.wikilink-citations": true,
+    });
     const root = await harnessed.renderHtml(
       `<p>${internalLink(`${WANG}#cite:locator=7`)}; ${internalLink(`${WANG}#cite:locator=9`)}</p>`,
     );
@@ -171,7 +175,9 @@ describe("WikilinkReading rendering", () => {
   });
 
   it("shows a fragment-carrying link as its Citation Display Text", async () => {
-    await using harnessed = await harness();
+    await using harnessed = await harness({
+      "citation.wikilink-citations": true,
+    });
 
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
       "[@wang2020, p. 7]",
@@ -192,14 +198,14 @@ describe("WikilinkReading rendering", () => {
     expect(await harnessed.render(WANG)).toBe(WANG);
   });
 
-  it("shows a fragment-carrying link whatever the toggles say", async () => {
+  it("leaves a fragment-carrying link native while Wikilink Citations is off", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
       "citation.wikilink-display": false,
     });
 
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
-      "[@wang2020, p. 7]",
+      `${WANG} > cite:locator=7`,
     );
   });
 
@@ -216,6 +222,7 @@ describe("WikilinkReading rendering", () => {
 
   it("shows the citation a style formatted once the shared text holds one", async () => {
     await using harnessed = await harness({
+      "citation.wikilink-citations": true,
       formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
     });
 

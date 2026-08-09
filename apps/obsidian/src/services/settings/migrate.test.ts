@@ -6,6 +6,7 @@ import {
   migrateV2ToV3,
   migrateV3ToV4,
   migrateV4ToV5,
+  migrateV5ToV6,
 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
@@ -482,5 +483,35 @@ describe("migrateV4ToV5", () => {
       "note.literature-folder": "refs",
       "citation.citekey-indexing": false,
     });
+  });
+});
+
+describe("migrateV5ToV6", () => {
+  it("returns an empty object for non-plain input", () => {
+    expect(migrateV5ToV6(null)).toEqual({});
+    expect(migrateV5ToV6([1, 2, 3])).toEqual({});
+  });
+
+  it.each([true, false])(
+    "renames Citekey Indexing value %s to Pandoc Citations",
+    (enabled) => {
+      expect(
+        migrateV5ToV6({
+          __VERSION__: 5,
+          "citation.citekey-indexing": enabled,
+          "citation.wikilink-citations": true,
+          "citation.references-style": "apa",
+        }),
+      ).toEqual({
+        __VERSION__: 5,
+        "citation.pandoc-citations": enabled,
+        "citation.wikilink-citations": true,
+        "citation.references-style": "apa",
+      });
+    },
+  );
+
+  it("uses the new default when the old key is absent", () => {
+    expect(migrateV5ToV6({ __VERSION__: 5 })).toEqual({ __VERSION__: 5 });
   });
 });

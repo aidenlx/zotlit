@@ -102,10 +102,10 @@ export class CitekeyReading extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    // Citekey Indexing is the master switch for every literal-citekey surface,
+    // Pandoc Citations is the source switch for every literal-citekey surface,
     // so the treatment runs only while both it and the editor toggle are on.
     const enabled =
-      settings["citation.citekey-indexing"] &&
+      settings["citation.pandoc-citations"] &&
       settings["citation.citekey-editor"];
     if (enabled === this.#enabled) return;
     const initial = this.#enabled === undefined;

@@ -17,10 +17,15 @@ import type { Item } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import { citationsEqual } from "@/services/citation-index/service";
+import {
+  citationsEqual,
+  documentCitationErrorsEqual,
+} from "@/services/citation-index/service";
 import type {
   Citation,
   CitationIndex,
+  DocumentCitationError,
+  DocumentCitationSet,
 } from "@/services/citation-index/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
@@ -78,6 +83,8 @@ export class ReferencesView extends ItemView {
   #scan = 0;
   /** Citations of the active document, as the current list was built from. */
   #citations: readonly Citation[] = [];
+  /** Explicit citation-source errors of the active document. */
+  #errors: readonly DocumentCitationError[] = [];
 
   constructor(leaf: WorkspaceLeaf, deps: ReferencesViewDeps) {
     super(leaf);
@@ -175,11 +182,16 @@ export class ReferencesView extends ItemView {
    */
   #rescan(): void {
     const scan = ++this.#scan;
-    void this.#readCitations().then((citations) => {
-      if (scan !== this.#scan || citationsEqual(this.#citations, citations)) {
+    void this.#readCitationSet().then(({ citations, errors }) => {
+      if (
+        scan !== this.#scan ||
+        (citationsEqual(this.#citations, citations) &&
+          documentCitationErrorsEqual(this.#errors, errors))
+      ) {
         return;
       }
       this.#citations = citations;
+      this.#errors = errors;
       logger.trace("References citations changed", {
         path: this.#deps.app.workspace.getActiveFile()?.path,
         count: citations.length,
@@ -189,11 +201,12 @@ export class ReferencesView extends ItemView {
   }
 
   /** Scope is `.md`, the only files the index covers. */
-  async #readCitations(): Promise<Citation[]> {
+  async #readCitationSet(): Promise<DocumentCitationSet> {
     const file = this.#deps.app.workspace.getActiveFile();
-    if (!file || file.extension !== "md") return [];
-    return (await this.#deps.citationIndex.getDocumentCitationSet(file))
-      .citations;
+    if (!file || file.extension !== "md") {
+      return { occurrences: [], citations: [], errors: [] };
+    }
+    return this.#deps.citationIndex.getDocumentCitationSet(file);
   }
 
   /**
@@ -212,8 +225,11 @@ export class ReferencesView extends ItemView {
 
     this.#store.setState({
       entries: buildReferenceEntries(citations, sources, {
-        entries: this.#rendered,
-        complete: false,
+        bibliography: {
+          entries: this.#rendered,
+          complete: false,
+        },
+        errors: this.#errors,
       }),
       listMode: this.#listMode,
       engine: this.#deps.pandocEngine.getStatus(),
@@ -332,8 +348,11 @@ export class ReferencesView extends ItemView {
     });
     this.#store.setState({
       entries: buildReferenceEntries(citations, sources, {
-        entries: this.#rendered,
-        complete: true,
+        bibliography: {
+          entries: this.#rendered,
+          complete: true,
+        },
+        errors: this.#errors,
       }),
       listMode: this.#listMode,
     });

@@ -105,6 +105,7 @@ async function makeHarness({
       (a, b) => a.position.start.offset - b.position.start.offset,
     ),
     citations: cited,
+    errors: [],
   };
 
   const service = new CitationText({

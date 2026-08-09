@@ -207,4 +207,31 @@ describe("References", () => {
     expect(rows[0]!.children[0]!.textContent).toBe("1");
     expect(rows[1]!.children[0]!.textContent).toBe("⚠");
   });
+
+  it("shows a malformed Citation Fragment as an unnumbered Reference Error", async () => {
+    const container = await render(
+      [
+        {
+          id: "malformed:0",
+          occurrences: [{ ...occurrence, kind: "wikilink" }],
+          kind: "malformed",
+        },
+      ],
+      { kind: "minimal" },
+    );
+
+    const row = container.querySelector("li")!;
+    expect(row.children[0]!.textContent).toBe("⚠");
+    expect(row.textContent).toContain(
+      "This link has an invalid citation fragment.",
+    );
+    expect(
+      row.querySelector('[data-icon="file-text"]')?.hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      row
+        .querySelector('[data-icon="chevron-right"]')
+        ?.hasAttribute("disabled"),
+    ).toBe(false);
+  });
 });

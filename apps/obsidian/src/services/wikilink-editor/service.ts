@@ -41,9 +41,8 @@ export interface WikilinkEditorDeps {
  *
  * The extension is registered as a mutable array, the mechanism
  * `registerEditorExtension` documents, and stays installed for the plugin's
- * lifetime: a wikilink carrying a Citation Fragment is decorated whatever the
- * settings say, so only the fragment-less half of the treatment is a toggle,
- * and that half is decided per link while the decorations are built.
+ * lifetime. Source and display choices are read per decoration build, so a
+ * setting change needs no extension re-registration.
  */
 export class WikilinkEditor extends Service<void> {
   readonly #app;
@@ -57,7 +56,7 @@ export class WikilinkEditor extends Service<void> {
   /** Registered once; emptied on disposal, which retires the treatment. */
   readonly #extensions: Extension[] = [];
 
-  /** The two settings that decide what a link displays. */
+  /** The source and display settings that decide what a link displays. */
   readonly #display = new WikilinkDisplaySettings();
 
   ready: Promise<void>;
@@ -73,6 +72,7 @@ export class WikilinkEditor extends Service<void> {
     this.#extension = wikilinkEditorExtension({
       literatureNote: (linkpath, sourcePath) =>
         this.#literatureNote(linkpath, sourcePath),
+      enabled: () => this.#display.enabled,
       fragmentlessDisplay: () => this.#display.fragmentlessDisplay,
       citationText: (path) => this.#citationText.peek(path),
       requestCitationText: (file) => {

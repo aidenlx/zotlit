@@ -65,6 +65,7 @@ function context(
   return {
     literatureNote: (linkpath) =>
       linkpath.startsWith("literatures/wang") ? WANG : null,
+    enabled: true,
     fragmentlessDisplay: true,
     selection: [],
     textBetween: () => "",
@@ -101,6 +102,15 @@ describe("wikilinkDecorations", () => {
   it("leaves a link with no Citation Display Text alone", () => {
     expect(
       wikilinkDecorations([span(`${WANG_LINK}#cite:page=7`)], context()),
+    ).toEqual([]);
+  });
+
+  it("leaves a valid Citation Fragment native while Wikilink Citations is off", () => {
+    expect(
+      wikilinkDecorations(
+        [span(`${WANG_LINK}#cite:locator=7`)],
+        context({ enabled: false }),
+      ),
     ).toEqual([]);
   });
 

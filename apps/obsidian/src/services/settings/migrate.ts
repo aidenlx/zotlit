@@ -301,3 +301,15 @@ export function migrateV4ToV5(raw: unknown): Record<string, unknown> {
   const { "citation.key-links-frontmatter-key": _retired, ...rest } = raw;
   return rest;
 }
+
+/**
+ * Rename Citekey Indexing to the Pandoc citation source control. The stored
+ * value keeps the user's existing literal-citation membership choice.
+ */
+export function migrateV5ToV6(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.citekey-indexing": citekeyIndexing, ...rest } = raw;
+  return typeof citekeyIndexing === "boolean"
+    ? { ...rest, "citation.pandoc-citations": citekeyIndexing }
+    : rest;
+}

@@ -62,11 +62,12 @@ export interface WikilinkCitationContext {
    * so the editor and the sidebar cannot disagree about what a Citation is.
    */
   literatureNote: (linkpath: string) => LiteratureNoteTarget | null;
+  /** Whether Literature Note wikilinks participate in citation features. */
+  enabled: boolean;
   /**
    * Whether a link carrying no Citation Fragment may show a Citation Display
-   * Text — Wikilink Citations and the wikilink display toggle both on. A link
-   * that carries one shows it either way: the fragment is unambiguous ZotLit
-   * intent, and Pandoc export honors it regardless of settings.
+   * Text — Wikilink Citations and the wikilink display toggle both on. A valid
+   * Citation Fragment only needs Wikilink Citations itself.
    */
   fragmentlessDisplay: boolean;
 }
@@ -101,6 +102,7 @@ export function wikilinkCitation(
 ): WikilinkCitation | null {
   const target = citationTarget(linktext);
   if (target === null) return null;
+  if (!context.enabled) return null;
   if (target.fragment === null && !context.fragmentlessDisplay) return null;
   const note = context.literatureNote(target.linkpath);
   if (note === null) return null;
@@ -204,7 +206,13 @@ const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
  * two settings without either restating which ones they are.
  */
 export class WikilinkDisplaySettings {
+  #enabled = false;
   #fragmentlessDisplay = false;
+
+  /** {@link WikilinkCitationContext.enabled} */
+  get enabled(): boolean {
+    return this.#enabled;
+  }
 
   /** {@link WikilinkCitationContext.fragmentlessDisplay} */
   get fragmentlessDisplay(): boolean {
@@ -234,13 +242,16 @@ export class WikilinkDisplaySettings {
       // Wikilink Citations is the master switch for reading wikilinks as
       // Citations at all; the display toggle decides whether the fragment-less
       // ones show their Citation Display Text.
-      const fragmentlessDisplay =
-        next["citation.wikilink-citations"] &&
-        next["citation.wikilink-display"];
-      const changed = fragmentlessDisplay !== this.#fragmentlessDisplay;
+      const enabled = next["citation.wikilink-citations"];
+      const fragmentlessDisplay = enabled && next["citation.wikilink-display"];
+      const changed =
+        enabled !== this.#enabled ||
+        fragmentlessDisplay !== this.#fragmentlessDisplay;
+      this.#enabled = enabled;
       this.#fragmentlessDisplay = fragmentlessDisplay;
       if (seeding || !changed) return;
       logger.debug("Wikilink display settings changed", {
+        enabled,
         fragmentlessDisplay,
       });
       redraw();

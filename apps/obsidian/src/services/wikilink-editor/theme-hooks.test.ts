@@ -78,6 +78,7 @@ function viewOf(doc: string) {
       extensions: wikilinkEditorExtension({
         literatureNote: (linkpath) =>
           linkpath === "literatures/example" ? LITERATURE_NOTE : null,
+        enabled: () => true,
         fragmentlessDisplay: () => true,
         citationText: () => null,
         requestCitationText: () => undefined,

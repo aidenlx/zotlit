@@ -34,6 +34,7 @@ function context(
   return {
     literatureNote: (linkpath) =>
       linkpath.startsWith("literatures/wang") ? WANG : null,
+    enabled: true,
     fragmentlessDisplay: true,
     ...overrides,
   };
@@ -65,13 +66,22 @@ describe("wikilinkCitation", () => {
     ).toBe("@xuNoCitekey2019");
   });
 
-  it("shows a fragment-carrying link whatever the display toggle says", () => {
+  it("shows a fragment-carrying link while display text is off", () => {
     expect(
       displayText(
         `${WANG_LINK}#cite:locator=7`,
         context({ fragmentlessDisplay: false }),
       ),
     ).toBe("[@wang2020, p. 7]");
+  });
+
+  it("leaves a fragment-carrying link native while Wikilink Citations is off", () => {
+    expect(
+      displayText(
+        `${WANG_LINK}#cite:locator=7`,
+        context({ enabled: false, fragmentlessDisplay: false }),
+      ),
+    ).toBeNull();
   });
 
   it("leaves a fragment-less link alone while the display toggle is off", () => {
@@ -183,6 +193,7 @@ describe("WikilinkDisplaySettings", () => {
     display.watch(settings, () => redraws++);
 
     expect(display.fragmentlessDisplay).toBe(true);
+    expect(display.enabled).toBe(true);
     expect(redraws).toBe(0);
   });
 
@@ -202,6 +213,7 @@ describe("WikilinkDisplaySettings", () => {
       "citation.wikilink-citations": false,
     });
     expect(display.fragmentlessDisplay).toBe(false);
+    expect(display.enabled).toBe(false);
   });
 
   it("asks for a redraw when a later snapshot changes what a link displays", () => {
@@ -238,6 +250,7 @@ describe("WikilinkDisplaySettings", () => {
     settings.update({ "citation.wikilink-citations": true });
 
     expect(display.fragmentlessDisplay).toBe(false);
+    expect(display.enabled).toBe(false);
     expect(redraws).toBe(0);
   });
 });

@@ -69,7 +69,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
 }
 
 describe("WikilinkEditor registration", () => {
-  it("installs the extension whatever the settings say, since a Citation Fragment is decorated either way", async () => {
+  it("installs the extension once so source settings can change live", async () => {
     const { service, registered, reconfigures } = await harness({
       "citation.wikilink-citations": false,
       "citation.wikilink-display": false,

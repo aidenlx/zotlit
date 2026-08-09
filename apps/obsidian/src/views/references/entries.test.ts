@@ -179,7 +179,7 @@ describe("buildReferenceEntries", () => {
     );
 
     expect(
-      buildReferenceEntries(citations, sources, bibliography),
+      buildReferenceEntries(citations, sources, { bibliography }),
     ).toStrictEqual([
       {
         id: "ALPHA002",
@@ -210,7 +210,7 @@ describe("buildReferenceEntries", () => {
     const bibliography = completed(new Map([["ref-book", rendered("Book")]]));
 
     expect(
-      buildReferenceEntries(citations, sources, bibliography),
+      buildReferenceEntries(citations, sources, { bibliography }),
     ).toMatchObject([{ kind: "rendered", marker: undefined }]);
   });
 
@@ -231,10 +231,9 @@ describe("buildReferenceEntries", () => {
     );
 
     expect(
-      buildReferenceEntries(citations, sources, bibliography).map((entry) => [
-        entry.id,
-        entry.kind,
-      ]),
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (entry) => [entry.id, entry.kind],
+      ),
     ).toStrictEqual([
       ["BOOK0003", "rendered"],
       ["GONE0001", "missing"],
@@ -266,7 +265,7 @@ describe("buildReferenceEntries", () => {
     };
 
     expect(
-      buildReferenceEntries(citations, sources, bibliography).map(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
         (entry) => entry.kind,
       ),
     ).toStrictEqual(["rendered", "summary"]);
@@ -281,7 +280,7 @@ describe("buildReferenceEntries", () => {
     const bibliography = completed(new Map([["ref-one", rendered("One")]]));
 
     expect(
-      buildReferenceEntries(citations, sources, bibliography).map(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
         (e) => e.kind,
       ),
     ).toStrictEqual(["rendered", "unrendered"]);
@@ -292,7 +291,9 @@ describe("buildReferenceEntries", () => {
     const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
 
     expect(
-      buildReferenceEntries(citations, sources, completed(new Map())),
+      buildReferenceEntries(citations, sources, {
+        bibliography: completed(new Map()),
+      }),
     ).toMatchObject([
       {
         kind: "unrendered",
@@ -392,7 +393,7 @@ describe("buildReferenceEntries", () => {
     );
 
     expect(
-      buildReferenceEntries(citations, sources, bibliography).map(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
         (entry) => entry.kind,
       ),
     ).toStrictEqual(["rendered", "unresolved"]);

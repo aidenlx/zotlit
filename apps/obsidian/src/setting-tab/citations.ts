@@ -46,24 +46,17 @@ export function citationsPageItems(
     },
     {
       type: "group",
-      heading: m.settings_citation_index_heading(),
+      heading: m.settings_citation_sources_heading(),
       items: [
         {
-          name: m.settings_citation_citekey_indexing_name(),
-          desc: m.settings_citation_citekey_indexing_desc(),
-          control: { type: "toggle", key: "citation.citekey-indexing" },
+          name: m.settings_citation_pandoc_citations_name(),
+          desc: m.settings_citation_pandoc_citations_desc(),
+          control: { type: "toggle", key: "citation.pandoc-citations" },
         },
         {
           name: m.settings_citation_wikilink_citations_name(),
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
-        },
-        {
-          name: m.settings_citation_wikilink_display_name(),
-          desc: m.settings_citation_wikilink_display_desc(),
-          visible: () =>
-            ctx.settings.current?.["citation.wikilink-citations"] ?? false,
-          control: { type: "toggle", key: "citation.wikilink-display" },
         },
       ],
     },
@@ -71,6 +64,13 @@ export function citationsPageItems(
       type: "group",
       heading: m.settings_citation_editor_heading(),
       items: [
+        {
+          name: m.settings_citation_wikilink_display_name(),
+          desc: m.settings_citation_wikilink_display_desc(),
+          visible: () =>
+            ctx.settings.current?.["citation.wikilink-citations"] ?? false,
+          control: { type: "toggle", key: "citation.wikilink-display" },
+        },
         {
           name: m.settings_citation_citekey_editor_name(),
           desc: m.settings_citation_citekey_editor_desc(),

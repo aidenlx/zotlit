@@ -21,6 +21,11 @@ export interface CitationOccurrence {
   position: Pos;
 }
 
+/** A Citation Fragment that declares citation intent but cannot be parsed. */
+export interface MalformedWikilinkCitation {
+  occurrence: CitationOccurrence;
+}
+
 /**
  * Exclusion is masking plus the grammar's own rules: the body is blanked
  * wherever Markdown puts text out of reach — frontmatter, fenced and indented
@@ -60,33 +65,47 @@ export function scanDocumentCitations(text: string): CitationSpan[] {
  * Wikilink occurrences derive from Obsidian's own link cache, which already
  * omits links inside code, so they need no masking and are never stored.
  *
- * @returns `stored` and the link cache's occurrences in one document-ordered list.
+ * @returns eligible and malformed wikilink citation intent.
  */
-export function documentOccurrences(
-  stored: readonly CitationOccurrence[],
-  links: readonly LinkCache[],
-): CitationOccurrence[] {
-  const occurrences = [...stored];
+export function documentWikilinks(links: readonly LinkCache[]): {
+  occurrences: CitationOccurrence[];
+  malformed: MalformedWikilinkCitation[];
+} {
+  const occurrences: CitationOccurrence[] = [];
+  const malformed: MalformedWikilinkCitation[] = [];
   for (const link of links) {
-    const path = wikilinkCitationPath(link);
-    if (path === null) continue;
-    occurrences.push({ kind: "wikilink", raw: path, position: link.position });
+    const classified = classifyWikilinkCitation(link);
+    if (classified === null) continue;
+    const occurrence = {
+      kind: "wikilink" as const,
+      raw: classified.path,
+      position: link.position,
+    };
+    if (classified.kind === "eligible") {
+      occurrences.push(occurrence);
+    } else {
+      malformed.push({ occurrence });
+    }
   }
-  return occurrences.sort(
-    (a, b) => a.position.start.offset - b.position.start.offset,
-  );
+  return { occurrences, malformed };
 }
 
-function wikilinkCitationPath(link: LinkCache): string | null {
+function classifyWikilinkCitation(
+  link: LinkCache,
+):
+  | { kind: "eligible"; path: string }
+  | { kind: "malformed"; path: string }
+  | null {
   if (!link.original.startsWith("[[") || link.original.includes("|")) {
     return null;
   }
   const { path, subpath } = parseLinktext(link.link);
   if (path === "") return null;
-  if (subpath === "") return path;
+  if (subpath === "") return { kind: "eligible", path };
   const prefix = "#cite:";
   if (!subpath.startsWith(prefix)) return null;
-  return parseCitationFragment(subpath.slice(prefix.length)).ok ? path : null;
+  const parsed = parseCitationFragment(subpath.slice(prefix.length));
+  return parsed.ok ? { kind: "eligible", path } : { kind: "malformed", path };
 }
 
 /**

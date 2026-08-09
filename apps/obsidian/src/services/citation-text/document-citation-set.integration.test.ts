@@ -175,13 +175,15 @@ async function sidebarEntries(
     styleXml: NUMERIC_STYLE,
   });
   return buildReferenceEntries(citations, sources, {
-    complete: true,
-    entries: new Map(
-      bibliography.map(({ id, marker, content }: BibliographyEntry) => [
-        id,
-        { marker, content },
-      ]),
-    ),
+    bibliography: {
+      complete: true,
+      entries: new Map(
+        bibliography.map(({ id, marker, content }: BibliographyEntry) => [
+          id,
+          { marker, content },
+        ]),
+      ),
+    },
   });
 }
 

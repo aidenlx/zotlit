@@ -47,10 +47,8 @@ export interface WikilinkReadingDeps {
  * its Citation Display Text until that render lands, while the link's target,
  * navigation, and hover stay Obsidian's.
  *
- * A post-processor stays registered for the plugin's lifetime, so the toggles
- * are read per render rather than by adding and removing it: a wikilink
- * carrying a Citation Fragment is rendered whatever the settings say, and only
- * the fragment-less half of the treatment is a toggle.
+ * A post-processor stays registered for the plugin's lifetime, so source and
+ * display choices are read per render rather than by adding and removing it.
  *
  * Two behavior changes come with replacing an anchor's text, both intended and
  * documented for the user: dragging such a link out of reading mode and the
@@ -66,7 +64,7 @@ export class WikilinkReading extends Service<void> {
   readonly #settings;
   readonly #citationIndex;
 
-  /** The two settings that decide what a link displays. */
+  /** The source and display settings that decide what a link displays. */
   readonly #display = new WikilinkDisplaySettings();
   /** Set on disposal, which retires the treatment the post-processor applies. */
   #retired = false;
@@ -138,6 +136,7 @@ export class WikilinkReading extends Service<void> {
     const runs = sectionCitationRuns(el, (linktext) =>
       wikilinkCitation(linktext, {
         literatureNote,
+        enabled: this.#display.enabled,
         fragmentlessDisplay: this.#display.fragmentlessDisplay,
       }),
     );

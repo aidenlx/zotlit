@@ -178,10 +178,10 @@ export class CitekeyEditor extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    // Citekey Indexing is the master switch for every literal-citekey surface,
+    // Pandoc Citations is the source switch for every literal-citekey surface,
     // so the treatment runs only while both it and the editor toggle are on.
     const enabled =
-      settings["citation.citekey-indexing"] &&
+      settings["citation.pandoc-citations"] &&
       settings["citation.citekey-editor"];
 
     if (enabled === this.#enabled) return;
@@ -193,7 +193,7 @@ export class CitekeyEditor extends Service<void> {
   }
 
   /**
-   * Whether the editor treatment runs: Citekey Indexing and the citekey
+   * Whether the editor treatment runs: Pandoc Citations and the citekey
    * editor toggle are both on. The palette commands gate on it.
    */
   get enabled(): boolean {

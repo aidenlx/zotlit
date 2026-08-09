@@ -321,6 +321,7 @@ export class CitationText extends Service<void> {
           }
         );
       },
+      enabled: true,
       fragmentlessDisplay: true,
     };
 

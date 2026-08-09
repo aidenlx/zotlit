@@ -153,6 +153,35 @@ describe("CitationIndex", () => {
         ({ kind }) => kind,
       ),
     ).toEqual(["citekey"]);
+    settings.update({
+      "citation.pandoc-citations": false,
+      "citation.wikilink-citations": true,
+    });
+    expect(
+      (await index.getDocumentCitationSet(draft)).occurrences.map(
+        ({ kind }) => kind,
+      ),
+    ).toEqual(["wikilink"]);
+
+    expect(changed).toBe(1);
+    expect(vault.reads).toEqual(["draft.md"]);
+  });
+
+  it("applies all four independent source combinations", async () => {
+    const body = "See @roe2025 and [[Doe 2024]].";
+    const { draft, index, metadataCache, settings } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", body.indexOf("[["))],
+    } as CachedMetadata);
+
+    expect(
+      (await index.getDocumentCitationSet(draft)).occurrences.map(
+        ({ kind }) => kind,
+      ),
+    ).toEqual(["citekey"]);
+
     settings.update({ "citation.wikilink-citations": true });
     expect(
       (await index.getDocumentCitationSet(draft)).occurrences.map(
@@ -160,8 +189,45 @@ describe("CitationIndex", () => {
       ),
     ).toEqual(["citekey", "wikilink"]);
 
-    expect(changed).toBe(1);
-    expect(vault.reads).toEqual(["draft.md"]);
+    settings.update({ "citation.pandoc-citations": false });
+    expect(
+      (await index.getDocumentCitationSet(draft)).occurrences.map(
+        ({ kind }) => kind,
+      ),
+    ).toEqual(["wikilink"]);
+
+    settings.update({ "citation.wikilink-citations": false });
+    expect(await index.getDocumentCitationSet(draft)).toMatchObject({
+      occurrences: [],
+      citations: [],
+      errors: [],
+    });
+  });
+
+  it("reports malformed Citation Fragments without numbering them", async () => {
+    const body = "Bad [[Doe 2024#cite:locator=]] then @roe2025.";
+    const { draft, index, metadataCache } = await makeHarness(
+      { "draft.md": body },
+      { settings: { "citation.wikilink-citations": true } },
+    );
+    const offset = body.indexOf("[[");
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024#cite:locator=", offset)],
+    } as CachedMetadata);
+
+    const set = await index.getDocumentCitationSet(draft);
+
+    expect(set.citations).toMatchObject([{ indexedKey: KEY_B, refNumber: 1 }]);
+    expect(set.errors).toEqual([
+      {
+        kind: "malformed-wikilink",
+        occurrence: {
+          kind: "wikilink",
+          raw: "Doe 2024",
+          position: link("Doe 2024#cite:locator=", offset).position,
+        },
+      },
+    ]);
   });
 
   it("leaves wikilinks out while Wikilink Citations is off", async () => {
@@ -335,16 +401,17 @@ describe("CitationIndex", () => {
     await expect(index.whenIndexed()).resolves.toBeUndefined();
   });
 
-  it("indexes nothing while Citekey Indexing is off", async () => {
-    const { draft, index, metadataCache } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote, see [[Roe 2025]]." },
-      {
-        settings: {
-          "citation.citekey-indexing": false,
-          "citation.wikilink-citations": true,
+  it("keeps internal scans active while Pandoc Citations is off", async () => {
+    const { draft, index, metadataCache, settings, vault, workspace } =
+      await makeHarness(
+        { "draft.md": "As @doe2024 wrote, see [[Roe 2025]]." },
+        {
+          settings: {
+            "citation.pandoc-citations": false,
+            "citation.wikilink-citations": true,
+          },
         },
-      },
-    );
+      );
     metadataCache.fileCache.set("draft.md", {
       links: [link("Roe 2025", 23)],
     } as CachedMetadata);
@@ -352,21 +419,27 @@ describe("CitationIndex", () => {
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
-  });
+    expect(index.resolveCitekey("doe2024")).toMatchObject({
+      indexedKey: KEY_A,
+    });
 
-  it("rebuilds when Citekey Indexing is turned back on", async () => {
-    const { draft, index, settings, workspace } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { settings: { "citation.citekey-indexing": false } },
-    );
-    workspace.layoutReady();
-
-    settings.update({ "citation.citekey-indexing": true });
-    await index.whenIndexed();
-
+    metadataCache.change(draft, "As @roe2025 wrote, see [[Roe 2025]].");
+    settings.update({ "citation.pandoc-citations": true });
     expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A },
+      {
+        indexedKey: KEY_B,
+        refNumber: 1,
+        occurrences: [{ kind: "citekey", raw: "roe2025" }],
+      },
     ]);
+
+    settings.update({ "citation.pandoc-citations": false });
+    workspace.layoutReady();
+    await index.whenIndexed();
+    vault.reads.length = 0;
+    await index.reset();
+    await index.whenIndexed();
+    expect(vault.reads).toContain("draft.md");
   });
 
   it("stops indexing after disposal", async () => {

@@ -58,7 +58,13 @@ export function createReferenceActions(
     onOpenNote(entry) {
       // An unresolved citekey reaches no note, and a missing entry's Item
       // could not be read at all; both keep their row's action disabled.
-      if (entry.kind === "unresolved" || entry.kind === "missing") return;
+      if (
+        entry.kind === "unresolved" ||
+        entry.kind === "missing" ||
+        entry.kind === "malformed"
+      ) {
+        return;
+      }
       // No Literature Note yet — the citekey editor's one create-then-open
       // flow makes it, then opens it.
       if (entry.linkpath === null) {

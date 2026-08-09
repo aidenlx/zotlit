@@ -223,7 +223,7 @@ describe("CitekeyReading", () => {
   it("leaves the reading view alone while the treatment is off", async () => {
     for (const overrides of [
       { "citation.citekey-editor": false },
-      { "citation.citekey-indexing": false },
+      { "citation.pandoc-citations": false },
     ]) {
       const { process, dispose } = await makeHarness({
         body: "Blah [@alpha].",

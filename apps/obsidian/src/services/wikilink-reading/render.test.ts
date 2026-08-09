@@ -27,6 +27,7 @@ const citationOf = (linktext: string): WikilinkCitation | null =>
             citationKey: linkpath.slice("literatures/".length),
           }
         : null,
+    enabled: true,
     fragmentlessDisplay: true,
   });
 

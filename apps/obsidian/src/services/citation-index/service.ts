@@ -19,7 +19,7 @@ import type { SettingsService } from "@/services/settings/service";
 import { groupCitations } from "./query";
 import type { Citation, ResolvedNote } from "./query";
 import {
-  documentOccurrences,
+  documentWikilinks,
   occurrencesEqual,
   scanCitekeyOccurrences,
 } from "./scan";
@@ -39,6 +39,7 @@ export {
   scanDocumentCitations,
   type CitationOccurrence,
   type CitationSyntax,
+  type MalformedWikilinkCitation,
 } from "./scan";
 export type { SnapshotItem } from "./snapshot";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
@@ -49,6 +50,29 @@ export interface DocumentCitationSet {
   occurrences: CitationOccurrence[];
   /** The same occurrences grouped for reference-list consumers. */
   citations: Citation[];
+  /** Invalid explicit citation intent, excluded from CSL membership. */
+  errors: DocumentCitationError[];
+}
+
+/** One citation source error a document-aware surface can help correct. */
+export interface DocumentCitationError {
+  kind: "malformed-wikilink";
+  occurrence: CitationOccurrence;
+}
+
+/** Structural equality for document citation errors and their exact ranges. */
+export function documentCitationErrorsEqual(
+  prev: readonly DocumentCitationError[],
+  next: readonly DocumentCitationError[],
+): boolean {
+  if (prev.length !== next.length) return false;
+  return prev.every((error, index) => {
+    const other = next[index]!;
+    return (
+      error.kind === other.kind &&
+      occurrencesEqual([error.occurrence], [other.occurrence])
+    );
+  });
 }
 
 const logger = getLogger("citation-index");
@@ -119,12 +143,12 @@ export class CitationIndex extends Service<void> {
   readonly #waiters = new Set<() => void>();
   #store?: CitekeyStore;
   /**
-   * Which build of the index is current. A reset or a re-enable starts the next
-   * one, which is what keeps a backfill still in flight from writing the build
-   * it belongs to into a store that has moved on.
+   * Which build of the index is current. A reset starts the next one, which is
+   * what keeps a backfill still in flight from writing the build it belongs to
+   * into a store that has moved on.
    */
   #build = 0;
-  #indexing = true;
+  #includePandocCitations = true;
   #includeWikilinkCitations = false;
   #backfilled = false;
   #stopped = false;
@@ -156,18 +180,28 @@ export class CitationIndex extends Service<void> {
    */
   async getDocumentCitationSet(file: TFile): Promise<DocumentCitationSet> {
     await this.ready;
-    const citekeys = await this.#coverFile(file);
+    const scanned = await this.#coverFile(file);
+    const citekeys = this.#includePandocCitations ? scanned : [];
     const links = this.#includeWikilinkCitations
       ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
       : [];
+    const wikilinks = documentWikilinks(links);
     const citations = groupCitations(
-      documentOccurrences(citekeys, links),
+      [...citekeys, ...wikilinks.occurrences].sort(
+        (a, b) => a.position.start.offset - b.position.start.offset,
+      ),
       (occurrence) => this.#resolve(occurrence, file.path),
     );
     const occurrences = citations
       .flatMap((citation) => citation.occurrences)
       .sort((a, b) => a.position.start.offset - b.position.start.offset);
-    return { occurrences, citations };
+    const errors = wikilinks.malformed
+      .filter(({ occurrence }) => this.#resolve(occurrence, file.path) !== null)
+      .map(({ occurrence }) => ({
+        kind: "malformed-wikilink" as const,
+        occurrence,
+      }));
+    return { occurrences, citations, errors };
   }
 
   on<K extends keyof CitationIndexEvents>(
@@ -258,7 +292,7 @@ export class CitationIndex extends Service<void> {
     await this.#settings.ready;
     const initial = this.#settings.current;
     if (initial) {
-      this.#indexing = initial["citation.citekey-indexing"];
+      this.#includePandocCitations = initial["citation.pandoc-citations"];
       this.#includeWikilinkCitations = initial["citation.wikilink-citations"];
     }
     stack.defer(
@@ -369,9 +403,9 @@ export class CitationIndex extends Service<void> {
     }
   }
 
-  /** Whether a build other than `build` has taken over, or none should run at all. */
+  /** Whether a build other than `build` has taken over. */
   #stale(build: number): boolean {
-    return this.#stopped || !this.#indexing || build !== this.#build;
+    return this.#stopped || build !== this.#build;
   }
 
   /**
@@ -412,7 +446,6 @@ export class CitationIndex extends Service<void> {
 
   /** Idempotent: a content-identical touch stores the same list and wakes nobody. */
   #scan(file: TFile, body: string): CitationOccurrence[] {
-    if (!this.#indexing) return [];
     const occurrences = scanCitekeyOccurrences(body);
     const prev = this.#scans.get(file.path);
     const { mtime, size } = file.stat;
@@ -443,7 +476,6 @@ export class CitationIndex extends Service<void> {
   }
 
   async #coverFile(file: TFile): Promise<CitationOccurrence[]> {
-    if (!this.#indexing) return [];
     const known = this.#covered(file);
     if (known) return known;
     const body = await this.#app.vault.cachedRead(file);
@@ -508,12 +540,7 @@ export class CitationIndex extends Service<void> {
     return { indexedKey: item.indexedKey, linkpath: note?.path ?? null };
   }
 
-  /**
-   * Citekey Indexing is the master switch: turning it off drops every scan the
-   * index holds in memory, while the store keeps its records for the next
-   * launch to start from. Turning it back on within the same session starts the
-   * next build, which reads the vault again.
-   */
+  /** Apply citation settings without stopping the internal scan or resolution. */
   #applySettings(settings: Readonly<Settings>): void {
     const nextLibraryID = settings["zotero.citation-library"];
     if (nextLibraryID !== this.#libraryID) {
@@ -525,24 +552,19 @@ export class CitationIndex extends Service<void> {
       void this.#rebuildSnapshot();
     }
 
+    const nextPandoc = settings["citation.pandoc-citations"];
     const nextWikilinks = settings["citation.wikilink-citations"];
-    if (nextWikilinks !== this.#includeWikilinkCitations) {
-      this.#includeWikilinkCitations = nextWikilinks;
-      this.#emitter.emit("membership-changed");
-    }
-
-    const nextIndexing = settings["citation.citekey-indexing"];
-    if (nextIndexing === this.#indexing) return;
-    this.#indexing = nextIndexing;
-    logger.info("Citation indexing changed", { enabled: nextIndexing });
-    const covered = [...this.#scans.keys()];
-    if (!nextIndexing) this.#scans.clear();
-    for (const path of covered) this.#emitter.emit("changed", path);
-    if (nextIndexing) {
-      this.#build += 1;
-      this.#backfilled = false;
-      void this.#runBackfill();
-    }
+    const membershipChanged =
+      nextPandoc !== this.#includePandocCitations ||
+      nextWikilinks !== this.#includeWikilinkCitations;
+    if (!membershipChanged) return;
+    this.#includePandocCitations = nextPandoc;
+    this.#includeWikilinkCitations = nextWikilinks;
+    logger.debug("Citation source membership changed", {
+      pandocCitations: nextPandoc,
+      wikilinkCitations: nextWikilinks,
+    });
+    this.#emitter.emit("membership-changed");
   }
 }
 

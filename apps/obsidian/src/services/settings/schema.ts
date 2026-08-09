@@ -65,8 +65,8 @@ export const schema = v.object({
   "citation.editor-suggester": v.boolean(),
   "citation.at-trigger": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
-  /** Master switch for every literal-citekey surface of the Citation Index. */
-  "citation.citekey-indexing": v.boolean(),
+  /** Include Pandoc citation syntax in the shared document citation set. */
+  "citation.pandoc-citations": v.boolean(),
   /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
   "citation.wikilink-citations": v.boolean(),
   /**
@@ -119,7 +119,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.editor-suggester": true,
   "citation.at-trigger": false,
   "citation.show-citekey-in-suggester": false,
-  "citation.citekey-indexing": true,
+  "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
   "citation.wikilink-display": true,
   "citation.citekey-editor": true,

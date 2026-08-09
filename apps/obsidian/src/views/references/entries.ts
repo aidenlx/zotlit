@@ -6,6 +6,7 @@ import { parseAttachmentPath } from "@zotlit/db/path";
 import type {
   Citation,
   CitationOccurrence,
+  DocumentCitationError,
 } from "@/services/citation-index/service";
 
 /** One Attachment the entry offers to open in Zotero's reader. */
@@ -99,9 +100,12 @@ interface ReferenceEntryBase {
    * or the raw citekey when no Literature Note carries it.
    */
   id: string;
+  occurrences: readonly CitationOccurrence[];
+}
+
+interface NumberedReferenceEntryBase extends ReferenceEntryBase {
   /** Reference Number the index assigned by first occurrence. */
   refNumber: number;
-  occurrences: readonly CitationOccurrence[];
 }
 
 /**
@@ -117,7 +121,7 @@ interface ReferenceEntryBase {
  * means the database could not read the Item at all, and the open action stays
  * disabled.
  */
-export type ReferenceEntry = ReferenceEntryBase &
+type CitationReferenceEntry = NumberedReferenceEntryBase &
   (
     | ({
         kind: "rendered";
@@ -129,6 +133,16 @@ export type ReferenceEntry = ReferenceEntryBase &
     | { kind: "missing"; linkpath: string | null }
     | { kind: "unresolved"; citekey: string }
   );
+
+type MalformedReferenceEntry = ReferenceEntryBase & { kind: "malformed" };
+
+export type ReferenceEntry = CitationReferenceEntry | MalformedReferenceEntry;
+
+export interface ReferenceBuildOptions {
+  bibliography?: ReferenceBibliography;
+  /** Citation source errors that stay outside the CSL bibliography. */
+  errors?: readonly DocumentCitationError[];
+}
 
 /**
  * Assemble the reference list of one document.
@@ -146,15 +160,16 @@ export type ReferenceEntry = ReferenceEntryBase &
  *
  * @param sources cited Items by Indexed Key; an Item the database no longer
  *   holds is simply absent, and its citation becomes a `missing` entry.
- * @param bibliography rendered entries by CSL `id`, in the engine's
- *   bibliography order; omit it for the minimal reference list. A source-backed
- *   id becomes `unrendered` only when a completed bibliography leaves it out.
+ * @param options rendered bibliography data and citation source errors. Omit
+ *   the bibliography for the minimal reference list. A source-backed id becomes
+ *   `unrendered` only when a completed bibliography leaves it out.
  */
 export function buildReferenceEntries(
   citations: readonly Citation[],
   sources: ReadonlyMap<string, ReferenceSource>,
-  bibliography?: ReferenceBibliography,
+  options: ReferenceBuildOptions = {},
 ): ReferenceEntry[] {
+  const { bibliography, errors = [] } = options;
   const placed = new Map<string, ReferenceEntry>();
   const trailing: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, linkpath, occurrences } of citations) {
@@ -189,6 +204,19 @@ export function buildReferenceEntries(
     }
     placed.set(source.csl.id, { ...base, kind: "rendered", source, ...entry });
   }
+
+  for (const { occurrence } of errors) {
+    trailing.push({
+      id: `malformed:${occurrence.position.start.offset}`,
+      occurrences: [occurrence],
+      kind: "malformed",
+    });
+  }
+  trailing.sort(
+    (left, right) =>
+      left.occurrences[0]!.position.start.offset -
+      right.occurrences[0]!.position.start.offset,
+  );
 
   const ordered: ReferenceEntry[] = [];
   for (const id of bibliography?.entries.keys() ?? []) {
