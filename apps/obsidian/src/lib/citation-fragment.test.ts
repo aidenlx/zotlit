@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { CITATION_FRAGMENT_FIXTURES } from "./__fixtures__/citation-fragments";
 import {
-  citationDisplay,
+  citationRunItem,
   citationRunSource,
   isRenderableCitation,
   parseCitationFragment,
@@ -26,55 +26,68 @@ describe("parseCitationFragment", () => {
   }
 });
 
-describe("citationDisplay", () => {
+const derivedSource = (
+  source: Parameters<typeof citationRunItem>[0],
+): string | null => {
+  const item = citationRunItem(source);
+  return item === null ? null : citationRunSource([item]).source;
+};
+
+describe("citationRunItem", () => {
   it("uses the native citation key", () => {
     expect(
-      citationDisplay({
+      derivedSource({
         citationKey: "wang2020",
         notePath: "literatures/wangMutationalClinicalSpectrum2020a.md",
         fragment: null,
       }),
-    ).toHaveProperty("text", "@wang2020");
+    ).toBe("[@wang2020]");
   });
 
   it("falls back to the note's filename, never the folder path", () => {
     expect(
-      citationDisplay({
+      derivedSource({
         citationKey: null,
         notePath: "literatures/wangMutationalClinicalSpectrum2020a.md",
         fragment: null,
       }),
-    ).toHaveProperty("text", "@wangMutationalClinicalSpectrum2020a");
+    ).toBe("[@wangMutationalClinicalSpectrum2020a]");
   });
 
   it("treats an empty native citation key as missing", () => {
     expect(
-      citationDisplay({
+      derivedSource({
         citationKey: "",
         notePath: "Doe 2020.md",
         fragment: null,
       }),
-    ).toHaveProperty("text", "@Doe 2020");
+    ).toBe("[@Doe 2020]");
   });
 
   it("keeps the filename fallback inside a fragment rendering", () => {
     expect(
-      citationDisplay({
+      derivedSource({
         citationKey: null,
         notePath: "Doe 2020.md",
         fragment: "locator=33",
       }),
-    ).toHaveProperty("text", "[@Doe 2020, p. 33]");
+    ).toBe("[@Doe 2020, p. 33]");
   });
 
   for (const fixture of CITATION_FRAGMENT_FIXTURES) {
     it(`renders ${fixture.name} from the shared fixtures`, () => {
-      const result = citationDisplay({
+      const result = derivedSource({
         citationKey: "doe2020",
         notePath: "Doe 2020.md",
         fragment: fixture.fragment,
       });
-      expect(result?.text ?? null).toBe(fixture.error ? null : fixture.display);
+      expect(result).toBe(
+        fixture.error
+          ? null
+          : fixture.fragment === null
+            ? "[@doe2020]"
+            : fixture.display,
+      );
     });
   }
 
@@ -100,12 +113,12 @@ describe("citationDisplay", () => {
     };
     for (const [label, short] of Object.entries(shortForms)) {
       expect(
-        citationDisplay({
+        derivedSource({
           citationKey: "doe2020",
           notePath: "Doe 2020.md",
           fragment: `label=${label}&locator=3`,
         }),
-      ).toHaveProperty("text", `[@doe2020, ${short} 3]`);
+      ).toBe(`[@doe2020, ${short} 3]`);
     }
   });
 });

@@ -6,8 +6,8 @@ import type { CitationSource } from "@/lib/citation-fragment";
 import { overlapsSelection } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
 import {
+  citationOfRun,
   citationRuns,
-  runDisplay,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { WikilinkCitationContext } from "@/lib/wikilink-citation";
@@ -41,8 +41,6 @@ export interface WikilinkDisplayContext extends WikilinkCitationContext {
 export interface WikilinkDecoration extends DocRange {
   /** The Pandoc source of the Citation, which a formatted render is keyed by. */
   citation: CitationSource;
-  /** The Citation Display Text, shown until a formatted render stands in. */
-  fallback: string;
   /** {@link WikilinkSpan.tokenClasses} */
   tokenClasses: readonly string[];
 }
@@ -79,12 +77,11 @@ export function wikilinkDecorations(
     if (overlapsSelection(context.selection, first.group.from, last.group.to)) {
       continue;
     }
-    const { citation, text } = runDisplay(run);
+    const citation = citationOfRun(run);
     decorations.push({
       from: first.inner.from,
       to: last.inner.to,
       citation,
-      fallback: text,
       tokenClasses: first.tokenClasses,
     });
   }

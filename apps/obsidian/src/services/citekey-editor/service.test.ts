@@ -11,12 +11,20 @@ import type { Settings } from "@/services/settings/schema";
 import { CitekeyEditor } from "./service";
 
 describe("CitekeyEditor settings lifecycle", () => {
-  it("registers the extension only while enabled", async () => {
-    const settings = new SettingsStub({ "citation.citekey-editor": false });
+  it("registers the extension while formatting or navigation is enabled", async () => {
+    const settings = new SettingsStub({
+      "citation.show-formatted": false,
+      "citation.citekey-editor": false,
+    });
     let registered: Extension[] = [];
     let reconfigures = 0;
     const service = new CitekeyEditor({
-      app: { workspace: { updateOptions: () => reconfigures++ } },
+      app: {
+        workspace: {
+          updateOptions: () => reconfigures++,
+          getLeavesOfType: () => [],
+        },
+      },
       plugin: {
         registerEditorExtension: (extension: Extension) => {
           registered = extension as Extension[];
@@ -32,16 +40,21 @@ describe("CitekeyEditor settings lifecycle", () => {
 
     expect(registered).toEqual([]);
     expect(service.enabled).toBe(false);
+    settings.update({ "citation.show-formatted": true });
+    expect(registered).toHaveLength(1);
+    expect(service.enabled).toBe(false);
+
     settings.update({ "citation.citekey-editor": true });
     expect(registered).toHaveLength(1);
     expect(service.enabled).toBe(true);
     expect(reconfigures).toBe(1);
 
+    settings.update({ "citation.show-formatted": false });
+    expect(registered).toHaveLength(1);
+    expect(service.enabled).toBe(true);
     settings.update({ "citation.citekey-editor": false });
     expect(registered).toEqual([]);
     expect(service.enabled).toBe(false);
-    settings.update({ "citation.citekey-editor": true });
-    expect(registered).toHaveLength(1);
 
     await service[Symbol.asyncDispose]();
     expect(registered).toEqual([]);

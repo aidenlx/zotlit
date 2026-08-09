@@ -65,6 +65,7 @@ async function makeHarness({
   body,
   cited = [citation("alpha", ALPHA_KEY)],
   formats = true,
+  formatCitations,
   links = [],
   notes = {},
   settings = {},
@@ -74,6 +75,10 @@ async function makeHarness({
   cited?: Citation[];
   /** Whether an engine is installed, which is what the cache answers for. */
   formats?: boolean;
+  /** A render-cache answer used when a test needs generation control. */
+  formatCitations?: (
+    citations: readonly string[],
+  ) => Promise<readonly DocumentFragment[] | null>;
   /** The wikilinks Obsidian's metadata cache reports for the document. */
   links?: LinkCache[];
   /** The Literature Note each linkpath names, by linkpath. */
@@ -145,6 +150,7 @@ async function makeHarness({
     bibliographyRender: {
       renderCitations: (citations: readonly string[]) => {
         citationRequests.push({ citations });
+        if (formatCitations) return formatCitations(citations);
         return Promise.resolve(
           formats ? citations.map((source) => fragment(`«${source}»`)) : null,
         );
@@ -245,6 +251,33 @@ describe("CitationText", () => {
     expect(citationRequests).toEqual([{ citations: [] }]);
     await dispose();
   });
+
+  it("keeps resolved items from a partial cluster in the document render context", async () => {
+    const body = "Partial [@alpha; @ghost], then complete [@alpha].";
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      cited: [citation("alpha"), citation("ghost", null)],
+    });
+
+    const { formatted } = await service.load(NOTE);
+
+    expect(citationRequests).toEqual([{ citations: ["[@alpha]", "[@alpha]"] }]);
+    expect(formatted.has("[@alpha; @ghost]")).toBe(false);
+    expect(formatted.get("[@alpha]")?.textContent).toBe("«[@alpha]»");
+    await dispose();
+  });
+
+  it("withholds a generation whose render result is incomplete", async () => {
+    const { service, dispose } = await makeHarness({
+      body: "First [@alpha], then [see @alpha, p. 3].",
+      formatCitations: async ([first]) => [fragment(`«${first}»`)],
+    });
+
+    const { formatted } = await service.load(NOTE);
+
+    expect(formatted.size).toBe(0);
+    await dispose();
+  });
 });
 
 describe("CitationText over wikilink Citations", () => {
@@ -326,7 +359,7 @@ describe("CitationText over wikilink Citations", () => {
     await dispose();
   });
 
-  it("keeps a fragment-less member in the render context while its legacy display is off", async () => {
+  it("keeps a fragment-less member in the render context while presentation is off", async () => {
     const body = `Claim [[${LIT}]].`;
     const { service, citationRequests, dispose } = await makeHarness({
       body,
@@ -335,7 +368,7 @@ describe("CitationText over wikilink Citations", () => {
       notes,
       settings: {
         "citation.wikilink-citations": true,
-        "citation.wikilink-display": false,
+        "citation.show-formatted": false,
       },
     });
 
@@ -415,6 +448,39 @@ describe("CitationText over wikilink Citations", () => {
 });
 
 describe("CitationText staleness", () => {
+  it("does not publish a generation superseded while its render was running", async () => {
+    let finishFirst: ((value: readonly DocumentFragment[]) => void) | undefined;
+    let generation = 0;
+    const { service, citationRequests, indexChanged, dispose } =
+      await makeHarness({
+        body: "Blah [@alpha].",
+        formatCitations: async () => {
+          generation += 1;
+          if (generation === 1) {
+            return new Promise((resolve) => {
+              finishFirst = resolve;
+            });
+          }
+          return [fragment("fresh")];
+        },
+      });
+
+    const superseded = service.load(NOTE);
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(1));
+    indexChanged(NOTE.path);
+    const current = service.load(NOTE);
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
+    finishFirst?.([fragment("stale")]);
+
+    expect((await superseded).formatted.get("[@alpha]")?.textContent).toBe(
+      "fresh",
+    );
+    expect((await current).formatted.get("[@alpha]")?.textContent).toBe(
+      "fresh",
+    );
+    await dispose();
+  });
+
   it("answers a synchronous caller only once the read settled", async () => {
     const { service, dispose } = await makeHarness({ body: "Blah [@alpha]." });
 

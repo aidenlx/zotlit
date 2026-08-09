@@ -48,16 +48,9 @@ export interface WikilinkEditorHandlers {
   /** Read once per decoration build to apply the source-membership choice. */
   enabled: () => boolean;
   /**
-   * Read once per decoration build, so the settings behind it reach the
-   * builder without the extension being registered again.
-   *
-   * @see ./decorate.ts — `WikilinkDisplayContext.fragmentlessDisplay`
-   */
-  fragmentlessDisplay: () => boolean;
-  /**
    * The formatted citations held for one document, or null while none are —
    * decorations are built synchronously, so a widget can only show text that is
-   * already there, and until then it shows the Citation Display Text.
+   * already there, and until then it keeps native wikilink presentation.
    */
   citationText: (path: string) => DocumentCitations | null;
   /** Asks for a document's citations, so a later rebuild finds them held. */
@@ -142,8 +135,7 @@ export function wikilinkEditorExtension(
 }
 
 /**
- * One decorated wikilink Citation, shown as the text a style formatted or — until
- * a render lands, and with no engine installed — as its Citation Display Text.
+ * One decorated wikilink Citation, shown as the text a style formatted.
  *
  * The element carries exactly what Obsidian's own rendering would have put on
  * the replaced text: the `cm-*` classes of the token it stands for, the class
@@ -180,8 +172,7 @@ class CitationDisplayWidget extends WidgetType {
 
   /**
    * Formatted content is the very object the document's held citations carry,
-   * so a fresh read of that document is a fresh object and redraws, while
-   * Citation Display Text compares by value.
+   * so a fresh read of that document is a fresh object and redraws.
    */
   eq(other: CitationDisplayWidget): boolean {
     return (
@@ -210,7 +201,6 @@ function buildDecorations(
     literatureNote: (linkpath: string) =>
       handlers.literatureNote(linkpath, sourcePath),
     enabled: handlers.enabled(),
-    fragmentlessDisplay: handlers.fragmentlessDisplay(),
     selection: view.hasFocus ? state.selection.ranges : [],
     textBetween: (from: number, to: number) => state.doc.sliceString(from, to),
   };
@@ -227,15 +217,15 @@ function buildDecorations(
   if (links.length === 0) return Decoration.none;
 
   // Source mode adds the semantic mark but keeps Obsidian's own token and
-  // conceal handling. Live Preview replaces only the links that display as a
-  // Citation, while raw links keep the same semantic mark.
+  // conceal handling. Live Preview replaces only links with complete formatted
+  // text, while raw links keep the same semantic mark.
   const decorations: WikilinkDecoration[] = livePreviewOf(state)
     ? wikilinkDecorations(spans, context)
     : [];
 
   // Asked for only once a Citation is on screen, so a document that writes none
-  // is never read. A document whose citations are not held yet keeps its
-  // Citation Display Text, and the read announces itself when it settles, which
+  // is never read. A document whose citations are not held yet keeps native
+  // link presentation, and the read announces itself when it settles, which
   // brings the formatted text in without a document change.
   const citations =
     decorations.length === 0 || file === null
@@ -245,10 +235,19 @@ function buildDecorations(
     handlers.requestCitationText(file);
   }
 
+  const replacements =
+    citations === null
+      ? []
+      : decorations.flatMap((candidate) => {
+          const decoration = replacement(candidate, citations);
+          return decoration === null
+            ? []
+            : [{ from: candidate.from, to: candidate.to, decoration }];
+        });
   const placed: { from: number; to: number; decoration: Decoration }[] = [];
   for (const link of links) {
     if (
-      decorations.some(
+      replacements.some(
         ({ from, to }) => from <= link.inner.from && to >= link.inner.to,
       )
     ) {
@@ -260,13 +259,7 @@ function buildDecorations(
       decoration: Decoration.mark({ class: themeHook.literatureNoteLink }),
     });
   }
-  for (const decoration of decorations) {
-    placed.push({
-      from: decoration.from,
-      to: decoration.to,
-      decoration: replacement(decoration, citations),
-    });
-  }
+  placed.push(...replacements);
   placed.sort((a, b) => a.from - b.from);
   const builder = new RangeSetBuilder<Decoration>();
   for (const { from, to, decoration } of placed) {
@@ -283,15 +276,12 @@ function linkpathOf(linktext: string): string {
 
 function replacement(
   decoration: WikilinkDecoration,
-  citations: DocumentCitations | null,
-): Decoration {
-  const formatted =
-    citations === null ? null : citationContent(decoration.citation, citations);
+  citations: DocumentCitations,
+): Decoration | null {
+  const formatted = citationContent(decoration.citation, citations);
+  if (formatted === null) return null;
   return Decoration.replace({
-    widget: new CitationDisplayWidget(
-      formatted ?? decoration.fallback,
-      decoration.tokenClasses,
-    ),
+    widget: new CitationDisplayWidget(formatted, decoration.tokenClasses),
   });
 }
 

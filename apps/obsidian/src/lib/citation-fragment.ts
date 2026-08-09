@@ -1,4 +1,4 @@
-// Citation Fragment parsing and Citation Display Text derivation for wikilinks.
+// Citation Fragment parsing and Pandoc Citation derivation for wikilinks.
 
 import { citekeyToken, scanCitations } from "./citation-grammar";
 import type { TextSpan } from "./citation-grammar";
@@ -239,7 +239,7 @@ function isControlByte(byte: number): boolean {
 }
 
 /** The resolved Literature Note plus the raw fragment a wikilink carries. */
-export interface CitationDisplaySource {
+export interface CitationRunItemSource {
   /**
    * The Item's native Zotero citation key, from the Citation Index's
    * resolution snapshot, or `null`/`""` when the Item carries none — the
@@ -256,44 +256,23 @@ export interface CitationDisplaySource {
   fragment: string | null;
 }
 
-/** The Citation one wikilink writes, and the text it shows on its own. */
-export interface CitationDisplay {
-  item: CitationRunItem;
-  /**
-   * The Citation Display Text: `@` plus the Item's native Zotero citation key
-   * from the resolution snapshot, falling back to `@` plus the note's
-   * filename, never the folder path, and a Citation Fragment as the
-   * equivalent Pandoc citation source text.
-   *
-   * A fragment-less link keeps the bare `@citekey` here while
-   * {@link citationRunSource} writes it as the parenthetical `[@citekey]` the
-   * exporter produces: this is the text shown until a render lands, and the
-   * exporter's own form only once one has.
-   */
-  text: string;
-}
-
 /**
- * The Citation a resolved Literature Note and the fragment naming it write.
+ * The Citation item a resolved Literature Note and its fragment contribute.
  *
  * @returns null for anything the exporter would reject, so a caller shows raw
  *   text rather than a guess.
  */
-export function citationDisplay(
-  source: CitationDisplaySource,
-): CitationDisplay | null {
+export function citationRunItem(
+  source: CitationRunItemSource,
+): CitationRunItem | null {
   const citekey =
     source.citationKey || basenameWithoutExtension(source.notePath);
   if (source.fragment === null) {
-    return {
-      item: { citekey, details: NORMAL_CITATION },
-      text: `@${citekey}`,
-    };
+    return { citekey, details: NORMAL_CITATION };
   }
   const parsed = parseCitationFragment(source.fragment);
   if (!parsed.ok) return null;
-  const item = { citekey, details: parsed.details };
-  return { item, text: citationRunSource([item]).source };
+  return { citekey, details: parsed.details };
 }
 
 /** A fragment-less wikilink, which is a normal-mode Citation of its note. */
@@ -359,8 +338,8 @@ export function citationRunSource(
     if (position > 0) source += "; ";
     if (details.prefix) source += `${details.prefix} `;
     const start = source.length;
-    // The suppression `-` belongs to the key it marks, which is what lets a
-    // summary fallback take the whole token's place.
+    // The suppression `-` belongs to the key it marks, so the recorded range
+    // covers the complete citation token.
     if (details.mode === "suppress-author") source += "-";
     source += citekeyToken(citekey);
     keys.push({ citekey, start, end: source.length });
@@ -382,7 +361,7 @@ export function citationRunSource(
  * what Pandoc reads, so the check is a round trip through it — a citation
  * that starts where the derivation started and names the same keys in the
  * same order is one the engine will format as meant. Anything else stays out
- * of the render, and the Citation Display Text stands in its place.
+ * of the render, and the native source stays in place.
  *
  * The span's end is left out: a standalone author-in-text Citation writes its
  * locator in a trailing bracket that the grammar reads as text of its own,

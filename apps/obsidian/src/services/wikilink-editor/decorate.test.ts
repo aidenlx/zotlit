@@ -66,7 +66,6 @@ function context(
     literatureNote: (linkpath) =>
       linkpath.startsWith("literatures/wang") ? WANG : null,
     enabled: true,
-    fragmentlessDisplay: true,
     selection: [],
     textBetween: () => "",
     ...overrides,
@@ -87,19 +86,18 @@ describe("wikilinkDecorations", () => {
           source: "[@wang2020, p. 7]",
           keys: [{ citekey: "wang2020", start: 1, end: 10 }],
         },
-        fallback: "[@wang2020, p. 7]",
         tokenClasses: ["hmd-internal-link"],
       },
     ]);
   });
 
-  it("keeps a fragment-less link reading as the bare citekey until a render lands", () => {
+  it("derives the render source of a fragment-less link", () => {
     expect(wikilinkDecorations([span(WANG_LINK)], context())).toMatchObject([
-      { citation: { source: "[@wang2020]" }, fallback: "@wang2020" },
+      { citation: { source: "[@wang2020]" } },
     ]);
   });
 
-  it("leaves a link with no Citation Display Text alone", () => {
+  it("leaves a malformed Citation Fragment alone", () => {
     expect(
       wikilinkDecorations([span(`${WANG_LINK}#cite:page=7`)], context()),
     ).toEqual([]);
@@ -177,7 +175,6 @@ describe("wikilinkDecorations over a Citation Run", () => {
         from: spans[0]!.inner.from,
         to: spans[1]!.inner.to,
         citation: { source: "[@wang2020, p. 7; @wang2020]" },
-        fallback: "[@wang2020, p. 7; @wang2020]",
       },
     ]);
   });

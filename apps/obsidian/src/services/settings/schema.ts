@@ -69,12 +69,8 @@ export const schema = v.object({
   "citation.pandoc-citations": v.boolean(),
   /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
   "citation.wikilink-citations": v.boolean(),
-  /**
-   * Show a Literature Note wikilink as its Citation Display Text. Gates the
-   * fragment-less links only; one carrying a Citation Fragment shows it either
-   * way.
-   */
-  "citation.wikilink-display": v.boolean(),
+  /** Show recognized Citations with the selected CSL style. */
+  "citation.show-formatted": v.boolean(),
   /** Mark and click literal `@citekey` text in the editor. */
   "citation.citekey-editor": v.boolean(),
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
@@ -121,7 +117,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.show-citekey-in-suggester": false,
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
-  "citation.wikilink-display": true,
+  "citation.show-formatted": true,
   "citation.citekey-editor": true,
   "citation.references-style": null,
   "note.literature-folder": "literatures",

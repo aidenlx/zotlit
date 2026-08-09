@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { scanCitations } from "@/lib/citation-grammar";
 
-import { citationElement, citedWorks, summarizeCitation } from "./present";
+import { citationContent, citationElement, citedWorks } from "./present";
 import type { CitationSource } from "./present";
 
 /** One citation, read out of the source text that is nothing but that citation. */
@@ -62,25 +62,14 @@ describe("citedWorks", () => {
   });
 });
 
-describe("summarizeCitation", () => {
-  it("puts each key's summary in its place, keeping what the author wrote", () => {
+describe("citationContent", () => {
+  it("keeps source presentation when no complete formatted result exists", () => {
     expect(
-      summarizeCitation(citation("[see @a, p. 3; -@b]"), (key) =>
-        key === "a" ? "Zeta (2020)" : "Adams (2018)",
-      ),
-    ).toBe("[see Zeta (2020), p. 3; Adams (2018)]");
-  });
-
-  it("leaves a key that reaches no item as written", () => {
-    expect(
-      summarizeCitation(citation("[@a; @b]"), (key) =>
-        key === "a" ? "Zeta (2020)" : undefined,
-      ),
-    ).toBe("[Zeta (2020); @b]");
-  });
-
-  it("answers nothing when no key resolves", () => {
-    expect(summarizeCitation(citation("[@a; @b]"), () => undefined)).toBeNull();
+      citationContent(citation("[see @a, p. 3]"), {
+        formatted: new Map(),
+        summaries: new Map([["a", "Zeta (2020)"]]),
+      }),
+    ).toBeNull();
   });
 });
 

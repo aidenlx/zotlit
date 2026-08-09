@@ -14,8 +14,8 @@ A wikilink citation supplies its own parentheses in normal mode, exactly as a br
 citekey cluster does, so neither side carries literal parentheses around the citation. A pair
 that renders `((Doe 2020))` on one side is a defect, not a fixture typo.
 
-**Settings for a full pass**: Citekey Indexing on, Wikilink Citations on, wikilink display
-toggle on, citekey editor treatment on, Pandoc Engine installed.
+**Settings for a full pass**: Pandoc Citations on, Wikilink Citations on, Show Formatted
+Citations on, and the Pandoc Engine installed.
 
 ## Single citation
 
@@ -25,8 +25,7 @@ toggle on, citekey editor treatment on, Pandoc Engine installed.
 ## Fragment-less wikilink
 
 A fragment-less wikilink is a normal-mode Citation, so its rendered form matches a bracketed
-citekey. Its Citation Display Text stays the bare `@citekey` from #663 — the two forms agree
-once rendered, not before:
+citekey after one complete document render:
 
 - Wikilink: Nebulin sets thin filament length [[literatures/wittNebulinRegulatesThin2006]].
 - Citekey: Nebulin sets thin filament length [@wittNebulinRegulatesThin2006].
@@ -108,21 +107,19 @@ citekey [@wittNebulinRegulatesThin2006, p. 5] in one paragraph.
 
 ## Pending-render fallback
 
-While a render is pending or superseded, the Citation Display Text from #663 stays visible —
-raw source never flashes. Force a pending state and watch every case above:
+While a render is pending or superseded, each citation keeps its source. All eligible
+citations switch together after one complete document render. Force a pending state and
+watch every case above:
 
 1. Change the References Style and watch every citation re-render.
 2. Restart the Pandoc Engine and watch the same.
 3. Edit one of these items in Zotero and watch its citations follow.
 
-At each step, a wikilink citation must show its Citation Display Text in the gap — for the
-single-citation case, `[@wittNebulinRegulatesThin2006, p. 4]`, never
-`literatures/wittNebulinRegulatesThin2006 > cite:locator=4`.
+At each step, every wikilink stays a native wikilink until the new generation is complete.
 
 ## No-engine fallback
 
-Uninstall or disable the Pandoc Engine and reload. Both syntaxes fall back to the shared
-`Creators (Year)` item summary, and both stay identical to each other:
+Uninstall or disable the Pandoc Engine and reload. Both syntaxes stay as Markdown source:
 
 - Wikilink: [[literatures/wittNebulinRegulatesThin2006#cite:locator=4]]
 - Citekey: [@wittNebulinRegulatesThin2006, p. 4]

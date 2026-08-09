@@ -6,7 +6,7 @@ zotero-key: 7ZQK4M8T
 ---
 # A Literature Note whose Zotero item carries no native citation key
 
-A fixture for the Citation Display Text fallback in #663 and #675: `zotero-key` alone makes a
+A fixture for Pandoc citation source derivation: `zotero-key` alone makes a
 file a Literature Note, so this note is indexed, and a wikilink to it must display
 `@xuNoCitationKeyProperty2019` — the filename, never the folder path.
 

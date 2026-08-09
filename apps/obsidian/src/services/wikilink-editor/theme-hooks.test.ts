@@ -62,6 +62,20 @@ vi.mock("@codemirror/language", async (importOriginal) => {
   };
 });
 
+vi.mock("obsidian", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("obsidian")>();
+  const { StateField } = await import("@codemirror/state");
+  return {
+    ...actual,
+    editorInfoField: StateField.define({
+      create: () => ({ file: { path: "note.md" } }),
+      update: (value) => value,
+    }),
+  };
+});
+
+import { editorInfoField } from "obsidian";
+
 import { wikilinkEditorExtension } from "./extension";
 
 const LITERATURE_NOTE = {
@@ -75,14 +89,23 @@ function viewOf(doc: string) {
     parent: document.body,
     state: EditorState.create({
       doc,
-      extensions: wikilinkEditorExtension({
-        literatureNote: (linkpath) =>
-          linkpath === "literatures/example" ? LITERATURE_NOTE : null,
-        enabled: () => true,
-        fragmentlessDisplay: () => true,
-        citationText: () => null,
-        requestCitationText: () => undefined,
-      }),
+      extensions: [
+        editorInfoField,
+        wikilinkEditorExtension({
+          literatureNote: (linkpath) =>
+            linkpath === "literatures/example" ? LITERATURE_NOTE : null,
+          enabled: () => true,
+          citationText: () => {
+            const formatted = document.createDocumentFragment();
+            formatted.append("(Example 2020, p. 7)");
+            return {
+              formatted: new Map([["[@example, p. 7]", formatted]]),
+              summaries: new Map([["example", "Example (2020)"]]),
+            };
+          },
+          requestCitationText: () => undefined,
+        }),
+      ],
     }),
   });
   return Object.assign(view, { [Symbol.dispose]: () => view.destroy() });

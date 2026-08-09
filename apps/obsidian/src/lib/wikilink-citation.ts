@@ -1,11 +1,8 @@
-// The shared core of wikilink citation display: which Literature Note
-// wikilinks show a Citation Display Text, and what that text says. Live Preview
-// and reading mode both derive their display here, so the two surfaces cannot
-// disagree about what one link shows.
+// The shared core that derives Citations from Literature Note wikilinks.
 
 import type { SettingsService } from "@/services/settings/service";
 
-import { citationDisplay, citationRunSource } from "./citation-fragment";
+import { citationRunItem, citationRunSource } from "./citation-fragment";
 import type { CitationRunItem, CitationSource } from "./citation-fragment";
 import { getLogger } from "./log";
 
@@ -64,25 +61,14 @@ export interface WikilinkCitationContext {
   literatureNote: (linkpath: string) => LiteratureNoteTarget | null;
   /** Whether Literature Note wikilinks participate in citation features. */
   enabled: boolean;
-  /**
-   * Whether a link carrying no Citation Fragment may show a Citation Display
-   * Text — Wikilink Citations and the wikilink display toggle both on. A valid
-   * Citation Fragment only needs Wikilink Citations itself.
-   */
-  fragmentlessDisplay: boolean;
 }
 
-/** The Citation one Literature Note wikilink writes, and how it reads alone. */
+/** The Citation one Literature Note wikilink writes. */
 export interface WikilinkCitation {
   /** The work the Citation names, as a derived Pandoc source would name it. */
   item: CitationRunItem;
   /** {@link LiteratureNoteTarget.indexedKey} of the work it names. */
   indexedKey: string;
-  /**
-   * The Citation Display Text this link shows on its own — the text a surface
-   * shows until a rendered citation stands in its place.
-   */
-  displayText: string;
 }
 
 /**
@@ -90,7 +76,7 @@ export interface WikilinkCitation {
  *
  * Left alone, each for its own reason: a heading or block subpath, because it
  * is not a Citation Fragment; a link resolving to no Literature Note; a
- * fragment-less link while the display toggle is off; and a malformed Citation
+ * link while the caller disables citation treatment; and a malformed Citation
  * Fragment, which stays raw rather than guessing at what the exporter would
  * reject.
  *
@@ -103,19 +89,17 @@ export function wikilinkCitation(
   const target = citationTarget(linktext);
   if (target === null) return null;
   if (!context.enabled) return null;
-  if (target.fragment === null && !context.fragmentlessDisplay) return null;
   const note = context.literatureNote(target.linkpath);
   if (note === null) return null;
-  const display = citationDisplay({
+  const item = citationRunItem({
     citationKey: note.citationKey,
     notePath: note.path,
     fragment: target.fragment,
   });
-  if (display === null) return null;
+  if (item === null) return null;
   return {
-    item: display.item,
+    item,
     indexedKey: note.indexedKey,
-    displayText: display.text,
   };
 }
 
@@ -126,30 +110,8 @@ export interface RunMember<T> {
   citation: WikilinkCitation;
 }
 
-/**
- * What one Citation Run renders as, and what it shows until a render lands.
- * The run analogue of {@link citationDisplay}.
- */
-export interface RunDisplay {
-  /** The Pandoc source of the whole run, which is what a render is keyed by. */
-  citation: CitationSource;
-  /**
-   * The Citation Display Text of the whole run: a lone link keeps its own text,
-   * so a fragment-less one still reads as the bare `@citekey`, while a run of
-   * several reads as the grouped source the exporter writes.
-   */
-  text: string;
-}
-
-/**
- * The Citation a whole run writes.
- *
- * @param run one Citation Run, as {@link citationRuns} grouped it.
- */
-export function runDisplay<T>(run: readonly RunMember<T>[]): RunDisplay {
-  const citation = citationRunSource(run.map(({ citation }) => citation.item));
-  const only = run.length === 1 ? run[0]!.citation : null;
-  return { citation, text: only?.displayText ?? citation.source };
+export function citationOfRun<T>(run: readonly RunMember<T>[]): CitationSource {
+  return citationRunSource(run.map(({ citation }) => citation.item));
 }
 
 /**
@@ -207,16 +169,10 @@ const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
  */
 export class WikilinkDisplaySettings {
   #enabled = false;
-  #fragmentlessDisplay = false;
 
   /** {@link WikilinkCitationContext.enabled} */
   get enabled(): boolean {
     return this.#enabled;
-  }
-
-  /** {@link WikilinkCitationContext.fragmentlessDisplay} */
-  get fragmentlessDisplay(): boolean {
-    return this.#fragmentlessDisplay;
   }
 
   /**
@@ -239,21 +195,12 @@ export class WikilinkDisplaySettings {
       const seeding = !seeded;
       seeded = true;
       if (!next) return;
-      // Wikilink Citations is the master switch for reading wikilinks as
-      // Citations at all; the display toggle decides whether the fragment-less
-      // ones show their Citation Display Text.
-      const enabled = next["citation.wikilink-citations"];
-      const fragmentlessDisplay = enabled && next["citation.wikilink-display"];
-      const changed =
-        enabled !== this.#enabled ||
-        fragmentlessDisplay !== this.#fragmentlessDisplay;
+      const enabled =
+        next["citation.wikilink-citations"] && next["citation.show-formatted"];
+      const changed = enabled !== this.#enabled;
       this.#enabled = enabled;
-      this.#fragmentlessDisplay = fragmentlessDisplay;
       if (seeding || !changed) return;
-      logger.debug("Wikilink display settings changed", {
-        enabled,
-        fragmentlessDisplay,
-      });
+      logger.debug("Wikilink display settings changed", { enabled });
       redraw();
     });
   }

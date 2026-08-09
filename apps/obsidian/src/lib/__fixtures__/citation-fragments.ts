@@ -1,8 +1,8 @@
 // Shared Citation Fragment vectors: the one corpus both the TypeScript parser
 // and the Lua filter's checks run, so the grammar's two implementations cannot
 // drift. `plain` is the Lua check's citeproc rendering for `[[Doe 2020#cite:<fragment>]]`;
-// `display` is the Citation Display Text the TypeScript derivation renders for
-// citation key `doe2020` / note `Doe 2020.md`.
+// `display` is the Pandoc citation source that the TypeScript derivation builds
+// for citation key `doe2020` / note `Doe 2020.md`.
 
 import type { CitationFragment } from "@/lib/citation-fragment";
 
@@ -16,7 +16,7 @@ export interface CitationFragmentFixture {
   error?: string;
   /** Expected citeproc plain rendering, used only by the Lua filter check. */
   plain?: string;
-  /** Expected Citation Display Text, used only by the TypeScript tests. */
+  /** Expected Pandoc citation source, used only by the TypeScript tests. */
   display?: string;
 }
 

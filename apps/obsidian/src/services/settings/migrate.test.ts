@@ -500,6 +500,7 @@ describe("migrateV5ToV6", () => {
           __VERSION__: 5,
           "citation.citekey-indexing": enabled,
           "citation.wikilink-citations": true,
+          "citation.wikilink-display": false,
           "citation.references-style": "apa",
         }),
       ).toEqual({

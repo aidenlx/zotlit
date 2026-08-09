@@ -308,7 +308,11 @@ export function migrateV4ToV5(raw: unknown): Record<string, unknown> {
  */
 export function migrateV5ToV6(raw: unknown): Record<string, unknown> {
   if (!isPlainObject(raw)) return {};
-  const { "citation.citekey-indexing": citekeyIndexing, ...rest } = raw;
+  const {
+    "citation.citekey-indexing": citekeyIndexing,
+    "citation.wikilink-display": _retiredWikilinkDisplay,
+    ...rest
+  } = raw;
   return typeof citekeyIndexing === "boolean"
     ? { ...rest, "citation.pandoc-citations": citekeyIndexing }
     : rest;

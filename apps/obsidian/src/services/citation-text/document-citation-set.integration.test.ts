@@ -155,6 +155,39 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     expect(excludedText.formatted.has("[@doe2024]")).toBe(false);
     expect(markers(excludedEntries)).toEqual(["[1]"]);
   });
+
+  it("keeps resolved items from a partial cluster in numeric context", async () => {
+    const body = "Partial [@doe2024; @ghost], then complete @roe2025.";
+    await using harness = await createCitationIndexHarness({
+      "draft.md": body,
+    });
+    const { app, draft, index, noteIndex, db } = harness;
+    await using engine = await openEngine();
+    await using text = new CitationText({
+      app,
+      db,
+      citationIndex: index,
+      noteIndex,
+      bibliographyRender: {
+        renderCitations: (citations, items) =>
+          engine.renderCitations({
+            citations,
+            items,
+            styleXml: NUMERIC_STYLE,
+          }),
+        on: () => () => undefined,
+      },
+    });
+    await text.ready;
+
+    const set = await index.getDocumentCitationSet(draft);
+    const rendered = await text.load(draft);
+    const entries = await sidebarEntries(engine, set.citations);
+
+    expect(rendered.formatted.has("[@doe2024; @ghost]")).toBe(false);
+    expect(rendered.formatted.get("@roe2025")?.textContent).toBe("[2]");
+    expect(markers(entries)).toEqual(["[1]", "[2]", undefined]);
+  });
 });
 
 async function openEngine(): Promise<CitationEngine> {

@@ -68,7 +68,9 @@ export class CitekeyEditor extends Service<void> {
   /** Registered once; its contents are the on/off switch. */
   readonly #extensions: Extension[] = [];
 
+  #active = false;
   #enabled = false;
+  #showFormatted = false;
 
   ready: Promise<void>;
 
@@ -88,6 +90,8 @@ export class CitekeyEditor extends Service<void> {
       },
       hoverNotePath: (citekey) => this.hoverNotePath(citekey),
       resolves: (citekey) => this.#resolves(citekey),
+      navigationEnabled: () => this.#enabled,
+      showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
       requestCitationText: (file) => {
         // The read announces itself when it settles, which is what brings the
@@ -169,7 +173,7 @@ export class CitekeyEditor extends Service<void> {
    * @returns how many editors the effect reached.
    */
   #decorateAgain(path?: string): number {
-    if (!this.#enabled) return 0;
+    if (!this.#active) return 0;
     return dispatchToMarkdownEditors(
       this.#app,
       citekeyDecorationsChanged.of(undefined),
@@ -178,23 +182,46 @@ export class CitekeyEditor extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    // Pandoc Citations is the source switch for every literal-citekey surface,
-    // so the treatment runs only while both it and the editor toggle are on.
-    const enabled =
-      settings["citation.pandoc-citations"] &&
-      settings["citation.citekey-editor"];
-
-    if (enabled === this.#enabled) return;
+    const pandocCitations = settings["citation.pandoc-citations"];
+    const enabled = pandocCitations && settings["citation.citekey-editor"];
+    const showFormatted =
+      pandocCitations && settings["citation.show-formatted"];
+    const active = enabled || showFormatted;
+    if (
+      active === this.#active &&
+      enabled === this.#enabled &&
+      showFormatted === this.#showFormatted
+    ) {
+      return;
+    }
+    const activeChanged = active !== this.#active;
+    const treatmentChanged =
+      enabled !== this.#enabled || showFormatted !== this.#showFormatted;
+    this.#active = active;
     this.#enabled = enabled;
-    this.#extensions.length = 0;
-    if (enabled) this.#extensions.push(this.#extension);
-    this.#app.workspace.updateOptions();
-    logger.info(enabled ? "Citekey editor enabled" : "Citekey editor disabled");
+    this.#showFormatted = showFormatted;
+    if (activeChanged) {
+      this.#extensions.length = 0;
+      if (active) this.#extensions.push(this.#extension);
+      this.#app.workspace.updateOptions();
+    } else if (treatmentChanged) {
+      this.#decorateAgain();
+    }
+    if (activeChanged) {
+      logger.info(
+        active ? "Citekey editor enabled" : "Citekey editor disabled",
+      );
+    } else {
+      logger.debug("Citekey editor treatment changed", {
+        navigationEnabled: enabled,
+        showFormatted,
+      });
+    }
   }
 
   /**
-   * Whether the editor treatment runs: Pandoc Citations and the citekey
-   * editor toggle are both on. The palette commands gate on it.
+   * Whether literal Citation navigation runs. The palette commands gate on
+   * this independently from formatted presentation.
    */
   get enabled(): boolean {
     return this.#enabled;

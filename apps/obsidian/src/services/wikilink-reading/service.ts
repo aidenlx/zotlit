@@ -9,7 +9,7 @@ import { getLogger } from "@/lib/log";
 import { rerenderReadingViews } from "@/lib/reading-view";
 import {
   WikilinkDisplaySettings,
-  runDisplay,
+  citationOfRun,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -36,16 +36,16 @@ export interface WikilinkReadingDeps {
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   noteIndex: Pick<NoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "load" | "on">;
+  citationText: Pick<CitationText, "load" | "on" | "peek">;
   settings: SettingsService;
   citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
 }
 
 /**
  * The Wikilink Reading Rendering: in reading mode a Literature Note wikilink —
- * and a whole Citation Run of them — shows the citation a style formatted, or
- * its Citation Display Text until that render lands, while the link's target,
- * navigation, and hover stay Obsidian's.
+ * and a whole Citation Run of them — shows the citation a style formatted.
+ * Native link presentation stays in place until that render lands, while the
+ * target, navigation, and hover stay Obsidian's.
  *
  * A post-processor stays registered for the plugin's lifetime, so source and
  * display choices are read per render rather than by adding and removing it.
@@ -86,8 +86,6 @@ export class WikilinkReading extends Service<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
 
-    // The promise is handed back, so Obsidian shows the section only once the
-    // citations settled and no raw source ever flashes.
     this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),
     );
@@ -104,6 +102,7 @@ export class WikilinkReading extends Service<void> {
     // A reading view holds what a post-processor produced, so text that went
     // stale keeps showing until the view renders that section again.
     stack.defer(this.#citationText.on("invalidated", () => this.#rerender()));
+    stack.defer(this.#citationText.on("changed", () => this.#rerender()));
     // A reading view holds the text this service wrote, so the views render
     // again without it once it is gone. The flag goes first: the post-processor
     // may still be registered while this runs.
@@ -115,11 +114,8 @@ export class WikilinkReading extends Service<void> {
     this.commit(stack.move());
   }
 
-  /** Shows every wikilink Citation of one rendered section as its own text. */
-  async #process(
-    el: HTMLElement,
-    ctx: MarkdownPostProcessorContext,
-  ): Promise<void> {
+  /** Replaces eligible links when complete formatted text is held. */
+  #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
     if (this.#retired) return;
     const literatureNote = (linkpath: string) => {
       const note = resolveLiteratureNote(linkpath, ctx.sourcePath, {
@@ -137,22 +133,24 @@ export class WikilinkReading extends Service<void> {
       wikilinkCitation(linktext, {
         literatureNote,
         enabled: this.#display.enabled,
-        fragmentlessDisplay: this.#display.fragmentlessDisplay,
       }),
     );
     if (runs.length === 0) return;
 
     // Read only once a Citation is on screen, so a section that writes none
-    // waits for nothing. The section is shown when the read settles, which is
-    // what keeps the raw source from ever flashing.
+    // waits for nothing. Native links stay in place while the read settles.
     const file = this.#app.vault.getFileByPath(ctx.sourcePath);
-    const text = file === null ? null : await this.#citationText.load(file);
+    const text = file === null ? null : this.#citationText.peek(file.path);
+    if (file !== null && text === null) {
+      void this.#citationText.load(file);
+      return;
+    }
     if (this.#retired) return;
 
     const shown = renderCitationRuns(runs, (run) => {
-      const { citation, text: displayText } = runDisplay(run);
+      const citation = citationOfRun(run);
       const formatted = text === null ? null : citationContent(citation, text);
-      return formatted === null ? displayText : citationInsert(formatted);
+      return formatted === null ? null : citationInsert(formatted);
     });
     if (shown > 0) {
       logger.trace("Rendered wikilink citations", {

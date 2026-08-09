@@ -74,6 +74,10 @@ export interface CitekeyEditorHandlers {
   open: OpenCitekey;
   hoverNotePath: ResolveHoverNote;
   resolves: ResolveCitekey;
+  /** Whether literal Citations expose ZotLit navigation. */
+  navigationEnabled: () => boolean;
+  /** Whether Live Preview replaces complete Citations with formatted text. */
+  showFormatted: () => boolean;
   /**
    * The formatted citations held for one document, or null while none are —
    * decorations are built synchronously, so a widget can only show text that is
@@ -115,9 +119,9 @@ interface CitekeyDecorations {
 }
 
 /**
- * Marks every recognized `@citekey` in the visible ranges, replaces each
- * Citation with its formatted text in Live Preview, makes both open their
- * Literature Note on click, and previews that note on hover.
+ * Marks every recognized `@citekey` in the visible ranges and replaces each
+ * Citation with its formatted text in Live Preview. Navigation handlers apply
+ * independently when their setting is enabled.
  *
  * Marks and widgets are provided from a view plugin, which the CodeMirror
  * provisioning rule allows because nothing here changes the vertical block
@@ -171,6 +175,7 @@ export function citekeyEditorExtension(
        *   tells CodeMirror to stop handling the event.
        */
       openAt(event: MouseEvent, view: EditorView): boolean {
+        if (!handlers.navigationEnabled()) return false;
         // A widget runs its own handlers on its own element, so this delegated
         // one leaves everything the widget covers to it.
         if (citationElementAt(event) !== null) return false;
@@ -225,6 +230,7 @@ export function citekeyEditorExtension(
        * popover itself; this shell only names the source and the target.
        */
       hoverAt(event: MouseEvent, view: EditorView): void {
+        if (!handlers.navigationEnabled()) return;
         const targetEl = citekeyElementAt(event);
         if (targetEl === null) return;
 
@@ -273,6 +279,7 @@ export function citekeyEditorExtension(
        * place until it settles.
        */
       #editedDocument(view: EditorView): EditedDocument | null {
+        if (!handlers.showFormatted()) return null;
         if (!livePreviewOf(view.state)) return null;
         const file = view.state.field(editorInfoField, false)?.file;
         if (!file) return null;
@@ -328,13 +335,12 @@ interface EditedDocument {
 }
 
 /**
- * One Citation shown as the text a style formatted, or — with no engine
- * installed — as the item summaries of the works it names.
+ * One Citation shown as the text a style formatted.
  *
  * Two widgets are the same when they stand for the same source and show the
  * same content: formatted content is the very object the document's held
  * citations carry, so a fresh read of that document is a fresh object and
- * redraws, while summary text compares by value.
+ * redraws.
  */
 class CitationWidget extends WidgetType {
   readonly #source;
@@ -484,8 +490,9 @@ function citationWidget(
   citation: CitationRange,
   { citations, path }: EditedDocument,
   handlers: CitekeyEditorHandlers,
-): CitationWidget {
+): CitationWidget | null {
   const content = citationContent(citation, citations);
+  if (content === null) return null;
   const unresolved = citation.keys.filter(
     (key) => !citations.summaries.has(key.citekey),
   ).length;
@@ -499,12 +506,12 @@ function citationWidget(
         ];
   return new CitationWidget({
     source: citation.source,
-    content: content ?? citation.source,
+    content,
     works: citedWorks(citation, (citekey) => citations.summaries.get(citekey)),
     sourcePath: path,
     handlers,
     themeClasses,
-    navigable: content !== null,
+    navigable: handlers.navigationEnabled(),
   });
 }
 

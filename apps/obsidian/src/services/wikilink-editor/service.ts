@@ -35,9 +35,9 @@ export interface WikilinkEditorDeps {
 
 /**
  * The Wikilink Editor Treatment: in Live Preview a Literature Note wikilink —
- * and a whole Citation Run of them — shows the citation a style formatted, or
- * its Citation Display Text until that render lands, while click, hover, drag,
- * and conceal interaction stay Obsidian's.
+ * and a whole Citation Run of them — shows the citation a style formatted.
+ * Native wikilink presentation stays in place until that render lands, while
+ * click, hover, drag, and conceal interaction stay Obsidian's.
  *
  * The extension is registered as a mutable array, the mechanism
  * `registerEditorExtension` documents, and stays installed for the plugin's
@@ -73,7 +73,6 @@ export class WikilinkEditor extends Service<void> {
       literatureNote: (linkpath, sourcePath) =>
         this.#literatureNote(linkpath, sourcePath),
       enabled: () => this.#display.enabled,
-      fragmentlessDisplay: () => this.#display.fragmentlessDisplay,
       citationText: (path) => this.#citationText.peek(path),
       requestCitationText: (file) => {
         // The read announces itself when it settles, which is what brings the
@@ -108,7 +107,7 @@ export class WikilinkEditor extends Service<void> {
     );
     // A citation's formatted text is read asynchronously and shared with every
     // other surface, so the editors showing that document draw again when it
-    // lands or goes stale — until then they keep the Citation Display Text.
+    // lands or goes stale — until then they keep native presentation.
     stack.defer(this.#citationText.on("changed", (path) => this.#redraw(path)));
     stack.defer(this.#citationText.on("invalidated", () => this.#redraw()));
 

@@ -23,6 +23,11 @@ interface Harness extends AsyncDisposable {
   renderSection: (linktext: string, alias?: string) => Promise<HTMLElement>;
   /** Runs the registered post-processor over an arbitrary rendered section. */
   renderHtml: (html: string) => Promise<HTMLElement>;
+  /** Starts a post-processor pass without waiting for citation text. */
+  beginRender: (linktext: string) => {
+    root: HTMLElement;
+    completion: Promise<void>;
+  };
   rerenders: () => number;
 }
 
@@ -30,10 +35,13 @@ async function harness({
   formatted,
   citekeys,
   sourcePath = "note.md",
+  pending,
   ...overrides
 }: Partial<Settings> & {
   /** The formatted citation the shared text holds, by its Pandoc source. */
   formatted?: Record<string, string>;
+  /** Keep the citation-text read pending. */
+  pending?: boolean;
   /** The citekey resolution snapshot's answer for each Indexed Key. */
   citekeys?: Record<string, string>;
   /** The file that owns each rendered section. */
@@ -41,7 +49,7 @@ async function harness({
 } = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
-  const citationText = new CitationTextStub(formatted ?? {});
+  const citationText = new CitationTextStub(formatted ?? {}, pending);
   const citationIndex = new CitationIndexStub(
     citekeys ?? { ABCD2345: "wang2020" },
   );
@@ -95,6 +103,13 @@ async function harness({
       await process?.(root, { sourcePath } as never);
       return root;
     },
+    beginRender: (linktext) => {
+      const root = section(`<p>${internalLink(linktext)}</p>`);
+      return {
+        root,
+        completion: Promise.resolve(process?.(root, { sourcePath } as never)),
+      };
+    },
     rerenders: () => rerenders,
     [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
@@ -104,7 +119,7 @@ describe("WikilinkReading rendering", () => {
   it("exposes the literal Literature Note hook independently of display settings", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
-      "citation.wikilink-display": false,
+      "citation.show-formatted": false,
     });
 
     for (const [linktext, alias] of [
@@ -149,6 +164,7 @@ describe("WikilinkReading rendering", () => {
   it("exposes both literal hooks when it renders a Literature Note Citation", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
+      formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
     });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
@@ -161,6 +177,9 @@ describe("WikilinkReading rendering", () => {
   it("exposes the combined literal hooks once on a rendered Citation Run", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
+      formatted: {
+        "[@wang2020, p. 7; @wang2020, p. 9]": "(Wang et al. 2020, pp. 7, 9)",
+      },
     });
     const root = await harnessed.renderHtml(
       `<p>${internalLink(`${WANG}#cite:locator=7`)}; ${internalLink(`${WANG}#cite:locator=9`)}</p>`,
@@ -174,22 +193,22 @@ describe("WikilinkReading rendering", () => {
     );
   });
 
-  it("shows a fragment-carrying link as its Citation Display Text", async () => {
+  it("keeps a fragment-carrying link native without a formatted result", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
     });
 
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
-      "[@wang2020, p. 7]",
+      `${WANG} > cite:locator=7`,
     );
   });
 
-  it("shows a fragment-less link under both wikilink toggles", async () => {
+  it("keeps a fragment-less link native without a formatted result", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
     });
 
-    expect(await harnessed.render(WANG)).toBe("@wang2020");
+    expect(await harnessed.render(WANG)).toBe(WANG);
   });
 
   it("leaves a fragment-less link raw while Wikilink Citations is off", async () => {
@@ -201,7 +220,7 @@ describe("WikilinkReading rendering", () => {
   it("leaves a fragment-carrying link native while Wikilink Citations is off", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
-      "citation.wikilink-display": false,
+      "citation.show-formatted": false,
     });
 
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
@@ -209,15 +228,13 @@ describe("WikilinkReading rendering", () => {
     );
   });
 
-  it("falls back to the filename when the Item carries no native citation key", async () => {
+  it("keeps a native link when the Item carries no native citation key", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
       citekeys: {},
     });
 
-    expect(await harnessed.render(WANG)).toBe(
-      "@wangMutationalClinicalSpectrum2020a",
-    );
+    expect(await harnessed.render(WANG)).toBe(WANG);
   });
 
   it("shows the citation a style formatted once the shared text holds one", async () => {
@@ -229,6 +246,37 @@ describe("WikilinkReading rendering", () => {
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
       "(Wang et al. 2020, p. 7)",
     );
+  });
+
+  it("keeps the native link while formatted citation presentation is off", async () => {
+    await using harnessed = await harness({
+      "citation.wikilink-citations": true,
+      "citation.show-formatted": false,
+      formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
+    });
+
+    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
+      `${WANG} > cite:locator=7`,
+    );
+  });
+
+  it("keeps the native link visible while citation text is pending", async () => {
+    await using harnessed = await harness({
+      "citation.wikilink-citations": true,
+      pending: true,
+    });
+
+    const { root, completion } = harnessed.beginRender(
+      `${WANG}#cite:locator=7`,
+    );
+    let completed = false;
+    void completion.then(() => {
+      completed = true;
+    });
+    await Promise.resolve();
+
+    expect(completed).toBe(true);
+    expect(root.textContent).toBe(`${WANG} > cite:locator=7`);
   });
 
   it("leaves a link that names no Literature Note alone", async () => {
@@ -268,7 +316,7 @@ describe("WikilinkReading rerender", () => {
     settings.update({ "citation.wikilink-citations": true });
     expect(rerenders()).toBe(1);
 
-    settings.update({ "citation.wikilink-display": false });
+    settings.update({ "citation.show-formatted": false });
     expect(rerenders()).toBe(2);
   });
 
@@ -284,6 +332,13 @@ describe("WikilinkReading rerender", () => {
     await using harnessed = await harness();
 
     harnessed.citationText.emit();
+    expect(harnessed.rerenders()).toBe(1);
+  });
+
+  it("renders again when pending citation text settles", async () => {
+    await using harnessed = await harness();
+
+    harnessed.citationText.emit("changed");
     expect(harnessed.rerenders()).toBe(1);
   });
 
@@ -304,32 +359,52 @@ describe("WikilinkReading rerender", () => {
 
 class CitationTextStub {
   readonly #formatted: Record<string, string>;
-  readonly #listeners = new Set<() => void>();
+  readonly #pending: boolean;
+  readonly #listeners: Record<"changed" | "invalidated", Set<() => void>> = {
+    changed: new Set(),
+    invalidated: new Set(),
+  };
 
-  constructor(formatted: Record<string, string>) {
+  constructor(formatted: Record<string, string>, pending = false) {
     this.#formatted = formatted;
+    this.#pending = pending;
   }
 
   load(): Promise<{
     formatted: Map<string, DocumentFragment>;
     summaries: Map<string, string>;
   }> {
+    if (this.#pending) return new Promise(() => undefined);
+    return Promise.resolve(this.#text());
+  }
+
+  peek(): {
+    formatted: Map<string, DocumentFragment>;
+    summaries: Map<string, string>;
+  } | null {
+    return this.#pending ? null : this.#text();
+  }
+
+  #text(): {
+    formatted: Map<string, DocumentFragment>;
+    summaries: Map<string, string>;
+  } {
     const formatted = new Map<string, DocumentFragment>();
     for (const [source, text] of Object.entries(this.#formatted)) {
       const content = document.createDocumentFragment();
       content.append(text);
       formatted.set(source, content);
     }
-    return Promise.resolve({ formatted, summaries: new Map() });
+    return { formatted, summaries: new Map() };
   }
 
-  on(_event: "invalidated", cb: () => void): () => void {
-    this.#listeners.add(cb);
-    return () => this.#listeners.delete(cb);
+  on(event: "changed" | "invalidated", cb: () => void): () => void {
+    this.#listeners[event].add(cb);
+    return () => this.#listeners[event].delete(cb);
   }
 
-  emit(): void {
-    for (const cb of this.#listeners) cb();
+  emit(event: "changed" | "invalidated" = "invalidated"): void {
+    for (const cb of this.#listeners[event]) cb();
   }
 }
 

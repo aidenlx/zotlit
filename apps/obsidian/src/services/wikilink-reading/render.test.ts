@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { wikilinkCitation } from "@/lib/wikilink-citation";
+import { citationOfRun, wikilinkCitation } from "@/lib/wikilink-citation";
 import type { RunMember, WikilinkCitation } from "@/lib/wikilink-citation";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
@@ -28,15 +28,23 @@ const citationOf = (linktext: string): WikilinkCitation | null =>
           }
         : null,
     enabled: true,
-    fragmentlessDisplay: true,
   });
 
-/** The Citation Display Text of a run, which is what a pending render shows. */
-const display = (run: readonly RunMember<HTMLAnchorElement>[]): string =>
-  run.length === 1 ? run[0]!.citation.displayText : `run(${run.length})`;
+/** Stand-in formatted text used to exercise the generic DOM swap. */
+const display = (run: readonly RunMember<HTMLAnchorElement>[]): string => {
+  const only = run.length === 1 ? run[0]!.citation.item : null;
+  const details = only?.details;
+  return only &&
+    details?.mode === "normal" &&
+    details.prefix === null &&
+    details.locator === null &&
+    details.suffix === null
+    ? `@${only.citekey}`
+    : citationOfRun(run).source;
+};
 
 describe("renderWikilinkCitations", () => {
-  it("shows the Citation Display Text in the anchor's place", () => {
+  it("shows supplied text in the anchor's place", () => {
     const root = section(
       `<p>Claim (${internalLink("literatures/wang2020")}).</p>`,
     );

@@ -65,11 +65,9 @@ export function citationsPageItems(
       heading: m.settings_citation_editor_heading(),
       items: [
         {
-          name: m.settings_citation_wikilink_display_name(),
-          desc: m.settings_citation_wikilink_display_desc(),
-          visible: () =>
-            ctx.settings.current?.["citation.wikilink-citations"] ?? false,
-          control: { type: "toggle", key: "citation.wikilink-display" },
+          name: m.settings_citation_show_formatted_name(),
+          desc: m.settings_citation_show_formatted_desc(),
+          control: { type: "toggle", key: "citation.show-formatted" },
         },
         {
           name: m.settings_citation_citekey_editor_name(),

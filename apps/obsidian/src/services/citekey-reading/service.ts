@@ -27,7 +27,7 @@ export interface CitekeyReadingDeps {
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "load" | "on">;
+  citationText: Pick<CitationText, "load" | "on" | "peek">;
   /** The open-or-create flow and the hover resolution every citekey surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   settings: Pick<SettingsService, "ready" | "subscribe">;
@@ -40,13 +40,12 @@ export interface CitekeyReadingDeps {
  * A citation is formatted from the shared citation text of its document, so
  * this surface, the editor's cluster widgets, and the References Sidebar agree
  * on the References Style and go stale together. With no engine installed the
- * citation keeps its own brackets, prefixes, and locators, and each key it
- * names shows the shared `Creators (Year)` item summary instead.
+ * citation keeps its native source text.
  *
- * A rendered citation is also a click target carrying Citekey Navigation: the
- * one work it names opens on click, several works open a menu at the cursor,
- * and hover previews the Literature Note of a single resolved key. A citation
- * none of whose keys reaches a Zotero Item stays raw source text and inert.
+ * Navigation is independent: when enabled, one work opens on click, several
+ * works open a menu at the cursor, and hover previews the Literature Note of a
+ * single resolved key. A citation none of whose keys reaches a Zotero Item
+ * stays raw source text and inert.
  *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
  * are read per render rather than by adding and removing it.
@@ -59,7 +58,9 @@ export class CitekeyReading extends Service<void> {
   readonly #settings;
 
   /** `undefined` until the first settings snapshot decides the treatment. */
-  #enabled: boolean | undefined;
+  #active: boolean | undefined;
+  #showFormatted = false;
+  #navigationEnabled = false;
 
   ready: Promise<void>;
 
@@ -90,11 +91,14 @@ export class CitekeyReading extends Service<void> {
     stack.defer(
       this.#citationText.on("invalidated", () => this.#rerenderReadingViews()),
     );
+    stack.defer(
+      this.#citationText.on("changed", () => this.#rerenderReadingViews()),
+    );
     // A rendered citation carries this service's own click and hover handlers,
     // so the reading views render again without it once it is gone. The flag
     // goes first: the post-processor may still be registered while this runs.
     stack.defer(() => {
-      this.#enabled = false;
+      this.#active = false;
       this.#rerenderReadingViews();
     });
 
@@ -102,38 +106,58 @@ export class CitekeyReading extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    // Pandoc Citations is the source switch for every literal-citekey surface,
-    // so the treatment runs only while both it and the editor toggle are on.
-    const enabled =
-      settings["citation.pandoc-citations"] &&
-      settings["citation.citekey-editor"];
-    if (enabled === this.#enabled) return;
-    const initial = this.#enabled === undefined;
-    this.#enabled = enabled;
-    logger.info(
-      enabled ? "Citekey reading enabled" : "Citekey reading disabled",
-    );
+    const pandocCitations = settings["citation.pandoc-citations"];
+    const showFormatted =
+      pandocCitations && settings["citation.show-formatted"];
+    const navigationEnabled =
+      pandocCitations && settings["citation.citekey-editor"];
+    const active = showFormatted || navigationEnabled;
+    if (
+      active === this.#active &&
+      showFormatted === this.#showFormatted &&
+      navigationEnabled === this.#navigationEnabled
+    ) {
+      return;
+    }
+    const initial = this.#active === undefined;
+    const activeChanged = active !== this.#active;
+    this.#active = active;
+    this.#showFormatted = showFormatted;
+    this.#navigationEnabled = navigationEnabled;
+    if (activeChanged) {
+      logger.info(
+        active ? "Citekey reading enabled" : "Citekey reading disabled",
+      );
+    } else {
+      logger.debug("Citekey reading treatment changed", {
+        navigationEnabled,
+        showFormatted,
+      });
+    }
     if (initial) return;
     this.#rerenderReadingViews();
   }
 
-  /** Formats every citation of one rendered section and makes it navigate. */
-  async #process(
-    el: HTMLElement,
-    ctx: MarkdownPostProcessorContext,
-  ): Promise<void> {
-    if (this.#enabled !== true) return;
+  /** Formats one rendered section and adds enabled navigation handlers. */
+  #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
+    if (this.#active !== true) return;
     const citations = sectionCitations(el);
     if (citations.length === 0) return;
     const file = this.#app.vault.getFileByPath(ctx.sourcePath);
     if (!file) return;
 
-    const text = await this.#citationText.load(file);
+    const text = this.#citationText.peek(file.path);
+    if (text === null) {
+      void this.#citationText.load(file);
+      return;
+    }
     const summaryOf = (citekey: string): string | undefined =>
       text.summaries.get(citekey);
     const doc = el.ownerDocument;
     replaceCitations(citations, (citation) => {
-      const content = citationContent(citation, text);
+      const content = this.#showFormatted
+        ? citationContent(citation, text)
+        : null;
       const unresolved = citation.keys.filter(
         (key) => !text.summaries.has(key.citekey),
       ).length;
@@ -154,7 +178,9 @@ export class CitekeyReading extends Service<void> {
       );
       // A citation none of whose keys reaches a Zotero Item remains wrapped so
       // themes can style its error state, but has no target to navigate to.
-      if (content === null) return element;
+      if (!this.#navigationEnabled || unresolved === citation.keys.length) {
+        return element;
+      }
       attachCitationNavigation(element, {
         works: citedWorks(citation, summaryOf),
         where: { surface: "reading" },

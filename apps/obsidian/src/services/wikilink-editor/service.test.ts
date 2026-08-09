@@ -72,7 +72,7 @@ describe("WikilinkEditor registration", () => {
   it("installs the extension once so source settings can change live", async () => {
     const { service, registered, reconfigures } = await harness({
       "citation.wikilink-citations": false,
-      "citation.wikilink-display": false,
+      "citation.show-formatted": false,
     });
 
     expect(registered).toHaveLength(1);
@@ -107,7 +107,7 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual(["note.md", "other.md"]);
 
     dispatched.length = 0;
-    settings.update({ "citation.wikilink-display": false });
+    settings.update({ "citation.show-formatted": false });
     expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
@@ -139,13 +139,13 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
-  it("leaves the editors alone when Wikilink Citations is off, since the display toggle then changes nothing", async () => {
+  it("leaves the editors alone when Wikilink Citations is off and formatted presentation changes", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
     });
     const { settings, dispatched } = harnessed;
 
-    settings.update({ "citation.wikilink-display": false });
+    settings.update({ "citation.show-formatted": false });
     expect(dispatched).toEqual([]);
   });
 });

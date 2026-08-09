@@ -1,17 +1,19 @@
 ---
-title: Wikilink Display Test
+title: Wikilink Citation Test
 ---
-# Wikilink Display Test
+# Wikilink Citation Test
 
 This note exercises the Wikilink Editor Treatment (#663, Live Preview) and the Wikilink
-Reading Rendering (#675, reading mode). Both surfaces show the same Citation Display Text,
-so every case below applies to both.
+Reading Rendering (#675, reading mode). With **Show formatted citations** on, both surfaces
+show the selected citation and references style after one complete document render. With the
+control off or formatting unavailable, each case keeps its native Markdown source.
 
-Expected display text is written in `inline code` beside each case. Inline code is masked out
-of the Citation Index, so the expected values never register as citations themselves.
+Pandoc source derived from each link is written in `inline code` beside each case. Inline code
+is masked out of the Citation Index, so the examples never register as citations themselves.
 
-**Settings for a full pass**: Citekey Indexing on, Wikilink Citations on, wikilink display
-toggle on. The "Gating" section below tells you what to switch off for the second pass.
+**Settings for a full pass**: Wikilink Citations on, Show Formatted Citations on, and the
+Pandoc Engine installed. The "Gating" section below tells you what to switch off for the
+second pass.
 
 ## Fragment-less Literature Note wikilink
 
@@ -24,7 +26,7 @@ Expect `@wittNebulinRegulatesThin2006`.
 Distal myopathy follows from nebulin mutations ([[literatures/wallgren-petterssonDistalMyopathyCaused2007]]).
 Expect `@wallgren-petterssonDistalMyopathyCaused2007`.
 
-## No native citation key: filename fallback
+## No native citation key: filename source
 
 A Literature Note whose Zotero item carries no native citation key falls back to its filename —
 never its folder path:
@@ -140,17 +142,14 @@ An embed renders its target, not a citation:
 
 ## Gating
 
-Second pass — switch **Wikilink Citations** off, or switch the **wikilink display toggle**
-off, and read this section again:
+Second pass — switch **Show formatted citations** off and read this section again. Both links
+stay as native wikilinks:
 
-- Fragment-less link, gated: [[literatures/wittNebulinRegulatesThin2006]] shows raw text while
-  either toggle is off, `@wittNebulinRegulatesThin2006` while both are on.
-- Fragment-carrying link, unconditional: [[literatures/wittNebulinRegulatesThin2006#cite:locator=4]]
-  shows `[@wittNebulinRegulatesThin2006, p. 4]` under every combination of both toggles.
+- Fragment-less link: [[literatures/wittNebulinRegulatesThin2006]]
+- Fragment-carrying link: [[literatures/wittNebulinRegulatesThin2006#cite:locator=4]]
 
-Third pass — switch **Citekey Indexing** off. It is the master switch for the literal-citekey
-surfaces, so every link above reads exactly as it did in the pass before: a wikilink is a
-separate syntax and answers to the two wikilink toggles alone.
+Third pass — switch **Wikilink Citations** off. The links stay native and leave the Document
+Citation Set. Literal Pandoc citations and the References Sidebar keep their existing behavior.
 
 ## Reveal on cursor and selection contact
 
@@ -190,21 +189,17 @@ A link inside a blockquote:
 
 > Quoted claim [[literatures/Hensher2011#cite:mode=author-in-text&locator=13]] with a source.
 
-A link inside a table cell. This is the one adjacency position the Wikilink Editor Treatment
-leaves alone: Live Preview renders a table through the reading-mode pipeline, so each cell
-carries Obsidian's own `a.internal-link` rather than a Live Preview widget. The cells therefore
-show Obsidian's `#`-split breadcrumb until the Wikilink Reading Rendering (#675) lands, and
-their Citation Display Text after it.
+A link inside a table cell is rendered through the reading-mode pipeline. With formatted
+citations on, the cell shows the selected citation and references style. With the control off,
+it keeps Obsidian's native internal link.
 
 | Claim           | Source                                                      |
 | --------------- | ----------------------------------------------------------- |
 | Thin filament   | [[literatures/wittNebulinRegulatesThin2006#cite:locator=14]] |
 | Distal myopathy | [[literatures/wallgren-petterssonDistalMyopathyCaused2007]]  |
 
-Expect `literatures/wittNebulinRegulatesThin2006 > cite:locator=14` and
-`literatures/wallgren-petterssonDistalMyopathyCaused2007` on this ticket; expect
-`[@wittNebulinRegulatesThin2006, p. 14]` and `@wallgren-petterssonDistalMyopathyCaused2007`
-once #675 ships.
+The two links must use the same style and numbering context as equivalent literal Pandoc
+citations elsewhere in this document.
 
 A link inside a heading:
 
@@ -247,14 +242,14 @@ does on an undecorated wikilink, because the plugin registers no handlers:
 6. The right-click context menu offers the native link entries.
 
 Reading mode carries two deliberate differences, documented in the user docs (#666): drag out
-of reading mode and the context menu's **Copy** both carry the displayed Citation Display Text.
+of reading mode and the context menu's **Copy** both carry the formatted citation text.
 
 ## Index refresh
 
 Each action below must refresh open editors and reading views with no reopen:
 
 1. Re-key the item in Zotero and let the database refresh, and watch this note's
-   `@wittNebulinRegulatesThin2006` displays follow it.
+   formatted citations follow it.
 2. Rename that Literature Note and watch the links follow.
 3. Delete a Literature Note and watch its links fall back to Obsidian's rendering.
 4. Create `literatures/noSuchLiteratureNote2099.md` with a `zotero-key` for its Zotero item

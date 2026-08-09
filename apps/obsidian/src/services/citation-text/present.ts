@@ -1,4 +1,4 @@
-// How one Citation is presented once its text is known: the works it names, the summary it falls back to, and the element that shows it.
+// How one Citation is presented once its formatted text is known.
 
 import type { CitationSource } from "@/lib/citation-fragment";
 import { themeHook } from "@/lib/theme-hooks";
@@ -12,7 +12,7 @@ export type { CitationKey, CitationSource } from "@/lib/citation-fragment";
 export interface DocumentCitations {
   /** The formatted citation of one source, for every source the engine rendered. */
   formatted: ReadonlyMap<string, DocumentFragment>;
-  /** `Creators (Year)` by citekey, the text a citation falls back to. */
+  /** `Creators (Year)` by citekey, used for navigation labels. */
   summaries: ReadonlyMap<string, string>;
 }
 
@@ -21,34 +21,6 @@ export interface DocumentCitations {
  * reaches no Zotero Item.
  */
 export type SummaryOf = (citekey: string) => string | undefined;
-
-/**
- * The citation's own source with each key it names replaced by that work's
- * summary — the fallback for a citation no engine formatted, which keeps the
- * prefixes, locators, and brackets the author wrote.
- *
- * The summary names the creators, so Pandoc's author-suppression `-` goes with
- * the key it belongs to: only a style can suppress an author, and no style runs
- * here.
- *
- * @returns `null` when no key resolved, so the source stays as written.
- */
-export function summarizeCitation(
-  { source, keys }: CitationSource,
-  summaryOf: SummaryOf,
-): string | null {
-  let text = "";
-  let at = 0;
-  let resolved = false;
-  for (const key of keys) {
-    const summary = summaryOf(key.citekey);
-    if (summary === undefined) continue;
-    text += source.slice(at, key.start) + summary;
-    at = key.end;
-    resolved = true;
-  }
-  return resolved ? text + source.slice(at) : null;
-}
 
 /**
  * The works one rendered citation names, in the order it names them.
@@ -73,21 +45,16 @@ export function citedWorks(
 }
 
 /**
- * What one Citation shows: the text the engine formatted for its source, or —
- * with no engine, or with a source no render covered — the item summaries of
- * the works it names.
+ * What one Citation shows: the text the engine formatted for its source.
  *
- * @returns `null` when no key of the citation reaches a Zotero Item, which
- *   leaves its source as the author wrote it.
+ * @returns `null` until a complete document render supplies this citation,
+ *   which leaves its native source presentation unchanged.
  */
 export function citationContent(
   citation: CitationSource,
-  { formatted, summaries }: DocumentCitations,
+  { formatted }: DocumentCitations,
 ): DocumentFragment | string | null {
-  return (
-    formatted.get(citation.source) ??
-    summarizeCitation(citation, (citekey) => summaries.get(citekey))
-  );
+  return formatted.get(citation.source) ?? null;
 }
 
 /**

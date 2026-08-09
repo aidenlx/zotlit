@@ -51,6 +51,8 @@ describe("citekeyEditorExtension theme hooks", () => {
           open: () => undefined,
           hoverNotePath: () => null,
           resolves: (citekey) => citekey === "resolved",
+          navigationEnabled: () => true,
+          showFormatted: () => true,
           citationText: () => null,
           requestCitationText: () => undefined,
         }),

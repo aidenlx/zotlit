@@ -18,8 +18,8 @@ import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import {
+  citationOfRun,
   citationRuns,
-  runDisplay,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import { scanDocumentCitations } from "@/services/citation-index/service";
@@ -93,8 +93,8 @@ export interface CitationTextDeps {
  * Text comes from the plugin-wide bibliography render cache, which is also the
  * References Sidebar's source, so all three surfaces agree on the References
  * Style and go stale together. With no engine installed there is no formatted
- * text and each surface falls back to the shared `Creators (Year)` item
- * summaries held beside it.
+ * text, so every surface keeps native source presentation. Item summaries stay
+ * available for navigation labels.
  *
  * Nothing is read eagerly: a surface asks for a document, and asks again when
  * {@link CitationTextEvents} says what it holds no longer stands.
@@ -216,8 +216,9 @@ export class CitationText extends Service<void> {
         .then((text) => {
           // A drop while the read ran leaves this answer superseded, and
           // whatever took its place is not this record's to touch.
-          if (this.#documents.peek(file.path) !== held) {
-            return text ?? NO_CITATIONS;
+          const current = this.#documents.peek(file.path);
+          if (current !== held) {
+            return current?.promise ?? NO_CITATIONS;
           }
           if (text === null) {
             // A failed read is not an answer to hold: the next ask tries again.
@@ -260,15 +261,16 @@ export class CitationText extends Service<void> {
 
     // Both syntaxes go to one render in document order, so a numbering style
     // counts every citation of the document once and in the order it reads.
-    const sources = [
+    const citations = [
       ...literalCitations(body, set.occurrences),
       ...wikilinks.citations,
     ]
       .sort((a, b) => a.start - b.start)
-      .filter((citation) =>
-        citation.keys.every((key) => summaries.has(key.citekey)),
-      )
-      .map(({ source }) => source);
+      .flatMap((citation) => {
+        const context = renderContextCitation(citation, summaries);
+        return context === null ? [] : [context];
+      });
+    const sources = citations.map(({ renderSource }) => renderSource);
 
     const rendered = await this.#bibliographyRender.renderCitations(
       sources,
@@ -276,10 +278,14 @@ export class CitationText extends Service<void> {
     );
     const formatted = new Map<string, DocumentFragment>();
     // Identical sources render alike, so the first answer stands for them all.
-    rendered?.forEach((fragment, index) => {
-      const source = sources[index]!;
-      if (!formatted.has(source)) formatted.set(source, fragment);
-    });
+    if (rendered?.length === citations.length) {
+      rendered.forEach((fragment, index) => {
+        const citation = citations[index]!;
+        if (citation.complete && !formatted.has(citation.source)) {
+          formatted.set(citation.source, fragment);
+        }
+      });
+    }
     logger.debug("Document citations read", {
       path: file.path,
       citations: sources.length,
@@ -322,7 +328,6 @@ export class CitationText extends Service<void> {
         );
       },
       enabled: true,
-      fragmentlessDisplay: true,
     };
 
     const runs = citationRuns(
@@ -340,9 +345,9 @@ export class CitationText extends Service<void> {
       for (const { citation } of run) {
         works.set(citation.item.citekey, citation.indexedKey);
       }
-      const { citation } = runDisplay(run);
+      const citation = citationOfRun(run);
       // A derivation the engine would read back as something else stays out of
-      // the render, and the run shows its Citation Display Text instead.
+      // the render and keeps its native wikilink presentation.
       if (!isRenderableCitation(citation)) {
         logger.debug("Wikilink citation is not Pandoc source", {
           path: file.path,
@@ -420,6 +425,13 @@ interface PlacedCitation extends CitationSource {
   start: number;
 }
 
+/** One engine input and whether its output may replace the native source. */
+interface RenderContextCitation {
+  source: string;
+  renderSource: string;
+  complete: boolean;
+}
+
 /** What one document's Literature Note wikilinks cite. */
 interface DocumentWikilinks {
   /** The Citations they write, one per Citation Run, in document order. */
@@ -449,6 +461,48 @@ function literalCitations(
         end: key.end - start,
       })),
     }));
+}
+
+/**
+ * Keeps every resolved item in CSL's document context. A partial Citation
+ * Cluster enters that context with only its resolved members, while its output
+ * is discarded so the author still sees the complete native source.
+ */
+function renderContextCitation(
+  citation: CitationSource,
+  summaries: ReadonlyMap<string, string>,
+): RenderContextCitation | null {
+  const resolved = citation.keys.map(({ citekey }) => summaries.has(citekey));
+  if (resolved.every(Boolean)) {
+    return {
+      source: citation.source,
+      renderSource: citation.source,
+      complete: true,
+    };
+  }
+  if (!resolved.some(Boolean)) return null;
+
+  const { source, keys } = citation;
+  if (!source.startsWith("[") || !source.endsWith("]")) return null;
+  const separators: number[] = [];
+  for (let index = 0; index < keys.length - 1; index += 1) {
+    const separator = source.indexOf(";", keys[index]!.end);
+    if (separator === -1 || separator >= keys[index + 1]!.start) return null;
+    separators.push(separator);
+  }
+  const members: string[] = [];
+  for (const [index, isResolved] of resolved.entries()) {
+    if (!isResolved) continue;
+    const from = index === 0 ? 1 : separators[index - 1]! + 1;
+    const to =
+      index === keys.length - 1 ? source.length - 1 : separators[index]!;
+    members.push(source.slice(from, to).trim());
+  }
+  return {
+    source,
+    renderSource: `[${members.join("; ")}]`,
+    complete: false,
+  };
 }
 
 /**

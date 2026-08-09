@@ -56,6 +56,39 @@ describe("citation source settings", () => {
   });
 });
 
+describe("in-text citation settings", () => {
+  it("shows one formatted-citation control with the approved copy", () => {
+    const ctx = {
+      settings: { current: defaults },
+      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      plugin: { manifest: { version: "test" } },
+    } as unknown as SettingTabContext;
+    const group = citationsPageItems(ctx).find(
+      (item) =>
+        "type" in item &&
+        item.type === "group" &&
+        item.heading === "In-text citations",
+    );
+
+    if (!group || !("items" in group) || !group.items) {
+      throw new Error("in-text citation group missing");
+    }
+    expect(group.items[0]).toMatchObject({
+      name: "Show formatted citations",
+      desc: "Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.",
+      control: { type: "toggle", key: "citation.show-formatted" },
+    });
+    expect(group.items).not.toContainEqual(
+      expect.objectContaining({
+        control: expect.objectContaining({
+          key: "citation.wikilink-display",
+        }),
+      }),
+    );
+    expect(defaults["citation.show-formatted"]).toBe(true);
+  });
+});
+
 describe("referencesStyleOptions", () => {
   it("offers the embedded default ahead of the installed styles", () => {
     expect(referencesStyleOptions([APA, NATURE], STYLE_DEFAULT)).toEqual([

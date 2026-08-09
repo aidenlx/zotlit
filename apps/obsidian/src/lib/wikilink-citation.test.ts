@@ -5,8 +5,8 @@ import type { Settings } from "@/services/settings/schema";
 
 import {
   WikilinkDisplaySettings,
+  citationOfRun,
   citationRuns,
-  runDisplay,
   wikilinkCitation,
 } from "./wikilink-citation";
 import type {
@@ -22,11 +22,15 @@ const WANG: LiteratureNoteTarget = {
 
 const WANG_LINK = "literatures/wangMutationalClinicalSpectrum2020a";
 
-/** The Citation Display Text a link shows on its own, or null when it shows none. */
-const displayText = (
+const citationSource = (
   linktext: string,
   ctx: WikilinkCitationContext,
-): string | null => wikilinkCitation(linktext, ctx)?.displayText ?? null;
+): string | null => {
+  const citation = wikilinkCitation(linktext, ctx);
+  return citation === null
+    ? null
+    : citationOfRun([{ source: linktext, citation }]).source;
+};
 
 function context(
   overrides: Partial<WikilinkCitationContext> = {},
@@ -35,25 +39,24 @@ function context(
     literatureNote: (linkpath) =>
       linkpath.startsWith("literatures/wang") ? WANG : null,
     enabled: true,
-    fragmentlessDisplay: true,
     ...overrides,
   };
 }
 
 describe("wikilinkCitation", () => {
   it("shows a bare linkpath as its native Zotero citation key", () => {
-    expect(displayText(WANG_LINK, context())).toBe("@wang2020");
+    expect(citationSource(WANG_LINK, context())).toBe("[@wang2020]");
   });
 
   it("shows a Citation Fragment as its Pandoc citation text", () => {
-    expect(displayText(`${WANG_LINK}#cite:locator=7`, context())).toBe(
+    expect(citationSource(`${WANG_LINK}#cite:locator=7`, context())).toBe(
       "[@wang2020, p. 7]",
     );
   });
 
   it("falls back to the filename when the Item carries no native citation key", () => {
     expect(
-      displayText(
+      citationSource(
         "literatures/xu2019",
         context({
           literatureNote: () => ({
@@ -63,50 +66,39 @@ describe("wikilinkCitation", () => {
           }),
         }),
       ),
-    ).toBe("@xuNoCitekey2019");
-  });
-
-  it("shows a fragment-carrying link while display text is off", () => {
-    expect(
-      displayText(
-        `${WANG_LINK}#cite:locator=7`,
-        context({ fragmentlessDisplay: false }),
-      ),
-    ).toBe("[@wang2020, p. 7]");
+    ).toBe("[@xuNoCitekey2019]");
   });
 
   it("leaves a fragment-carrying link native while Wikilink Citations is off", () => {
     expect(
-      displayText(
+      citationSource(
         `${WANG_LINK}#cite:locator=7`,
-        context({ enabled: false, fragmentlessDisplay: false }),
+        context({ enabled: false }),
       ),
     ).toBeNull();
   });
 
-  it("leaves a fragment-less link alone while the display toggle is off", () => {
-    expect(
-      displayText(WANG_LINK, context({ fragmentlessDisplay: false })),
-    ).toBeNull();
+  it("leaves a fragment-less link alone while rendering is off", () => {
+    expect(citationSource(WANG_LINK, context({ enabled: false }))).toBeNull();
   });
 
   it("leaves a malformed Citation Fragment raw", () => {
-    expect(displayText(`${WANG_LINK}#cite:page=7`, context())).toBeNull();
-    expect(displayText(`${WANG_LINK}#cite:`, context())).toBeNull();
+    expect(citationSource(`${WANG_LINK}#cite:page=7`, context())).toBeNull();
+    expect(citationSource(`${WANG_LINK}#cite:`, context())).toBeNull();
   });
 
   it("leaves a heading or block subpath alone", () => {
-    expect(displayText(`${WANG_LINK}#Methods`, context())).toBeNull();
-    expect(displayText(`${WANG_LINK}#^b7c1a2`, context())).toBeNull();
+    expect(citationSource(`${WANG_LINK}#Methods`, context())).toBeNull();
+    expect(citationSource(`${WANG_LINK}#^b7c1a2`, context())).toBeNull();
   });
 
   it("leaves a subpath-only link alone, which names no note", () => {
-    expect(displayText("#Methods", context())).toBeNull();
-    expect(displayText("", context())).toBeNull();
+    expect(citationSource("#Methods", context())).toBeNull();
+    expect(citationSource("", context())).toBeNull();
   });
 
   it("leaves a link that names no Literature Note alone", () => {
-    expect(displayText("plain/note#cite:locator=7", context())).toBeNull();
+    expect(citationSource("plain/note#cite:locator=7", context())).toBeNull();
   });
 });
 
@@ -157,28 +149,27 @@ describe("citationRuns", () => {
   });
 });
 
-describe("runDisplay", () => {
+describe("citationOfRun", () => {
   /** One run member; the surface it came from is nothing this reads. */
   const member = (linktext: string) => ({
     source: linktext,
     citation: wikilinkCitation(linktext, context())!,
   });
 
-  it("keeps a lone fragment-less link reading as the bare citekey", () => {
-    expect(runDisplay([member(WANG_LINK)])).toEqual({
-      citation: { source: "[@wang2020]", keys: expect.anything() },
-      text: "@wang2020",
+  it("derives a lone fragment-less link as a parenthetical Citation", () => {
+    expect(citationOfRun([member(WANG_LINK)])).toEqual({
+      source: "[@wang2020]",
+      keys: expect.anything(),
     });
   });
 
   it("reads a run as the grouped source the exporter writes", () => {
-    const run = runDisplay([
+    const citation = citationOfRun([
       member(`${WANG_LINK}#cite:locator=7`),
       member(WANG_LINK),
     ]);
 
-    expect(run.citation.source).toBe("[@wang2020, p. 7; @wang2020]");
-    expect(run.text).toBe("[@wang2020, p. 7; @wang2020]");
+    expect(citation.source).toBe("[@wang2020, p. 7; @wang2020]");
   });
 });
 
@@ -192,27 +183,25 @@ describe("WikilinkDisplaySettings", () => {
 
     display.watch(settings, () => redraws++);
 
-    expect(display.fragmentlessDisplay).toBe(true);
     expect(display.enabled).toBe(true);
     expect(redraws).toBe(0);
   });
 
-  it("shows fragment-less links only while both wikilink toggles are on", () => {
+  it("shows wikilinks only while their source and formatted presentation are on", () => {
     const settings = new SettingsStub({
       "citation.wikilink-citations": true,
-      "citation.wikilink-display": true,
+      "citation.show-formatted": true,
     });
     const display = new WikilinkDisplaySettings();
     display.watch(settings, () => undefined);
 
-    settings.update({ "citation.wikilink-display": false });
-    expect(display.fragmentlessDisplay).toBe(false);
+    settings.update({ "citation.show-formatted": false });
+    expect(display.enabled).toBe(false);
 
     settings.update({
-      "citation.wikilink-display": true,
+      "citation.show-formatted": true,
       "citation.wikilink-citations": false,
     });
-    expect(display.fragmentlessDisplay).toBe(false);
     expect(display.enabled).toBe(false);
   });
 
@@ -227,7 +216,7 @@ describe("WikilinkDisplaySettings", () => {
     settings.update({ "citation.wikilink-citations": true });
     expect(redraws).toBe(1);
 
-    settings.update({ "citation.wikilink-display": false });
+    settings.update({ "citation.show-formatted": false });
     expect(redraws).toBe(2);
   });
 
@@ -249,7 +238,6 @@ describe("WikilinkDisplaySettings", () => {
     display.watch(settings, () => redraws++)();
     settings.update({ "citation.wikilink-citations": true });
 
-    expect(display.fragmentlessDisplay).toBe(false);
     expect(display.enabled).toBe(false);
     expect(redraws).toBe(0);
   });
