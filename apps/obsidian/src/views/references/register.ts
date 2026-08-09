@@ -39,7 +39,6 @@ export function registerReferencesView(
     citekeyEditor: deps.citekeyEditor,
     pandocEngine: deps.pandocEngine,
     bibliographyRender: deps.bibliographyRender,
-    settings: deps.settings,
     openSettings: () => {
       revealSetting(
         plugin.app,

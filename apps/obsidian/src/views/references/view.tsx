@@ -26,7 +26,6 @@ import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
-import type { SettingsService } from "@/services/settings/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { ReferenceActions } from "./actions";
@@ -47,7 +46,7 @@ const logger = getLogger(["views", "references"]);
 export interface ReferencesViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
-  citationIndex: Pick<CitationIndex, "getCitations" | "on">;
+  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Opens the Literature Note a citekey names, creating it first when it has none. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   pandocEngine: Pick<
@@ -56,7 +55,6 @@ export interface ReferencesViewDeps {
   >;
   /** The plugin-wide render cache, which owns the References Style and the engine. */
   bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
-  settings: Pick<SettingsService, "current" | "subscribe">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
 }
@@ -80,8 +78,6 @@ export class ReferencesView extends ItemView {
   #scan = 0;
   /** Citations of the active document, as the current list was built from. */
   #citations: readonly Citation[] = [];
-  /** Whether wikilinks count as Citations here — the Wikilink Citations setting. */
-  #wikilinks = false;
 
   constructor(leaf: WorkspaceLeaf, deps: ReferencesViewDeps) {
     super(leaf);
@@ -110,10 +106,8 @@ export class ReferencesView extends ItemView {
       citekeyEditor,
       pandocEngine,
       bibliographyRender,
-      settings,
     } = this.#deps;
 
-    this.#wikilinks = this.#wikilinkCitations();
     this.#actions = createReferenceActions({
       app,
       getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
@@ -149,6 +143,7 @@ export class ReferencesView extends ItemView {
     // different Item — or a citekey that resolved before now resolves to
     // none — regardless of which document changed to trigger the rebuild.
     this.register(citationIndex.on("resolution-changed", () => this.#rescan()));
+    this.register(citationIndex.on("membership-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
     this.register(db.on("changed", () => this.#reload()));
     this.register(pandocEngine.subscribe(() => this.#reload()));
@@ -160,16 +155,6 @@ export class ReferencesView extends ItemView {
         this.#reload({ invalidate: true }),
       ),
     );
-    this.register(
-      settings.subscribe(() => {
-        const wikilinks = this.#wikilinkCitations();
-        if (wikilinks !== this.#wikilinks) {
-          this.#wikilinks = wikilinks;
-          this.#rescan();
-        }
-      }),
-    );
-
     this.#reload();
     this.#rescan();
     await db.ready;
@@ -180,12 +165,6 @@ export class ReferencesView extends ItemView {
     this.#root?.unmount();
     this.#root = null;
     this.#actions = null;
-  }
-
-  #wikilinkCitations(): boolean {
-    return (
-      this.#deps.settings.current?.["citation.wikilink-citations"] ?? false
-    );
   }
 
   /**
@@ -213,9 +192,8 @@ export class ReferencesView extends ItemView {
   async #readCitations(): Promise<Citation[]> {
     const file = this.#deps.app.workspace.getActiveFile();
     if (!file || file.extension !== "md") return [];
-    return this.#deps.citationIndex.getCitations(file, {
-      wikilinks: this.#wikilinks,
-    });
+    return (await this.#deps.citationIndex.getDocumentCitationSet(file))
+      .citations;
   }
 
   /**

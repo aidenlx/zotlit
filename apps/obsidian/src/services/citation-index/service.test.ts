@@ -1,298 +1,37 @@
-import { basename } from "node:path/posix";
-import { TFile } from "obsidian";
-import type {
-  App,
-  CachedMetadata,
-  EventRef,
-  FileStats,
-  LinkCache,
-} from "obsidian";
+import type { CachedMetadata, TFile } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { LibraryCitekey } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-
-import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { yieldToMain } from "@/lib/yield-to-main";
-import type { DatabaseEvents } from "@/services/database/service";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 
-import { CitationIndex } from "./service";
-import type { CitekeyRecord, CitekeyStore } from "./service";
-import type { ReadCitekeys } from "./snapshot";
+import type { Citation, CitationIndex } from "./service";
+import {
+  createCitationIndexHarness,
+  DatabaseStub,
+  KEY_A,
+  KEY_B,
+  link,
+  MemoryStore,
+} from "./test-harness";
+import type {
+  CitationIndexHarness,
+  CitationIndexHarnessOptions,
+} from "./test-harness";
 
-const KEY_A = "ABCD2345";
-const KEY_B = "ZZZ99999g7";
-
-type Callback = (...args: unknown[]) => void;
-
-class MockMetadataCache {
-  readonly fileCache = new Map<string, CachedMetadata>();
-  readonly files = new Map<string, TFile>();
-  /** Set by {@link MockVault}, which owns the bodies a save writes. */
-  vault?: MockVault;
-
-  readonly #listeners: Record<string, Set<Callback>> = {
-    changed: new Set(),
-    deleted: new Set(),
-  };
-
-  getFileCache(file: TFile): CachedMetadata | null {
-    return this.fileCache.get(file.path) ?? null;
-  }
-
-  getCache(path: string): CachedMetadata | null {
-    return this.fileCache.get(path) ?? null;
-  }
-
-  /** Exact-path resolution; enough to tell a hit from a dangling link. */
-  getFirstLinkpathDest(linkpath: string, _sourcePath: string): TFile | null {
-    return this.files.get(`${linkpath}.md`) ?? null;
-  }
-
-  on(name: string, callback: Callback): EventRef {
-    this.#listeners[name]!.add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
-  }
-
-  offref(ref: EventRef): void {
-    const { name, callback } = ref as unknown as {
-      name: string;
-      callback: Callback;
-    };
-    this.#listeners[name]!.delete(callback);
-  }
-
-  /** A save: the body and its stat move, then the cache reparses and notifies. */
-  change(file: TFile, body: string, links: LinkCache[] = []): void {
-    this.vault?.write(file, body);
-    const cache = { links } as CachedMetadata;
-    this.fileCache.set(file.path, cache);
-    this.#emit("changed", file, body, cache);
-  }
-
-  delete(file: TFile): void {
-    this.fileCache.delete(file.path);
-    this.files.delete(file.path);
-    this.#emit("deleted", file, null);
-  }
-
-  #emit(name: string, ...args: unknown[]): void {
-    for (const callback of this.#listeners[name]!) callback(...args);
-  }
-}
-
-class MockVault {
-  readonly bodies = new Map<string, string>();
-  /** Every path read, in order — what tells an adopted scan from a rescan. */
-  readonly reads: string[] = [];
-  readonly #listeners = new Set<Callback>();
-  readonly #held = new Map<string, PromiseWithResolvers<void>>();
-
-  constructor(readonly metadataCache: MockMetadataCache) {
-    metadataCache.vault = this;
-  }
-
-  getMarkdownFiles(): TFile[] {
-    return [...this.metadataCache.files.values()].filter(
-      (file) => file.extension === "md",
-    );
-  }
-
-  cachedRead(file: TFile): Promise<string> {
-    this.reads.push(file.path);
-    const body = this.bodies.get(file.path) ?? "";
-    const gate = this.#held.get(file.path);
-    if (!gate) return Promise.resolve(body);
-    this.#held.delete(file.path);
-    // The body is captured now, so a later write leaves this read holding a
-    // stale one — which is what a superseded backfill would try to store.
-    return gate.promise.then(() => body);
-  }
-
-  /** Parks the next read of `path`; the returned callback lets it finish. */
-  hold(path: string): () => void {
-    const gate = Promise.withResolvers<void>();
-    this.#held.set(path, gate);
-    return () => gate.resolve();
-  }
-
-  /** Writes a body with no event, as an edit made while the app was closed. */
-  write(file: TFile, body: string): void {
-    this.bodies.set(file.path, body);
-    file.stat = statOf(body);
-  }
-
-  on(_name: "rename", callback: Callback): EventRef {
-    this.#listeners.add(callback);
-    return { e: this, callback } as unknown as EventRef;
-  }
-
-  offref(ref: EventRef): void {
-    const { callback } = ref as unknown as { callback: Callback };
-    this.#listeners.delete(callback);
-  }
-
-  deleteFile(file: TFile): void {
-    this.bodies.delete(file.path);
-    this.metadataCache.delete(file);
-  }
-
-  rename(file: TFile, path: string): void {
-    const oldPath = file.path;
-    const cache = this.metadataCache.fileCache.get(oldPath);
-    this.metadataCache.files.delete(oldPath);
-    this.metadataCache.fileCache.delete(oldPath);
-    this.bodies.set(path, this.bodies.get(oldPath) ?? "");
-    this.bodies.delete(oldPath);
-    updateFilePath(file, path);
-    this.metadataCache.files.set(path, file);
-    if (cache) this.metadataCache.fileCache.set(path, cache);
-    for (const callback of this.#listeners) callback(file, oldPath);
-  }
-}
-
-class MockWorkspace {
-  readonly #pending: (() => void)[] = [];
-
-  onLayoutReady(callback: () => void): void {
-    this.#pending.push(callback);
-  }
-
-  layoutReady(): void {
-    for (const callback of this.#pending.splice(0)) callback();
-  }
-}
-
-class NoteIndexStub {
-  /** Literature Notes by Indexed Key. */
-  readonly notes = new Map<string, TFile>();
-
-  getNotesByItemKey(indexedKey: string): TFile[] {
-    const note = this.notes.get(indexedKey);
-    return note ? [note] : [];
-  }
-}
-
-/** The database double: a mutable `state`, a `client` stand-in, and a `changed` event. */
-class DatabaseStub {
-  state: "loading" | "ready" | "degraded" = "ready";
-  readonly client = {} as NodeDatabaseClient;
-  readonly #listeners = new Set<() => void>();
-  readonly #ready = Promise.withResolvers<void>();
-
-  constructor({ readyImmediately = true } = {}) {
-    if (readyImmediately) this.#ready.resolve();
-  }
-
-  get ready(): Promise<void> {
-    return this.#ready.promise;
-  }
-
-  /** Settles `ready` for a harness that parked it to model a cold start. */
-  settle(): void {
-    this.#ready.resolve();
-  }
-
-  on<K extends keyof DatabaseEvents>(
-    event: K,
-    cb: DatabaseEvents[K],
-  ): () => void {
-    const listener = cb as () => void;
-    if (event === "changed") this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  changed(): void {
-    for (const listener of this.#listeners) listener();
-  }
-}
-
-/** Rows the snapshot rebuild reads, plus which `libraryID` it was called with. */
-class CitekeysStub {
-  rows: LibraryCitekey[];
-  readonly calls: number[] = [];
-
-  constructor(rows: LibraryCitekey[]) {
-    this.rows = rows;
-  }
-
-  read: ReadCitekeys = (_db, libraryID) => {
-    this.calls.push(libraryID);
-    return this.rows;
-  };
-}
-
-/** The default citekeys the snapshot resolves, mirroring the two Literature Notes. */
-function defaultCitekeys(): LibraryCitekey[] {
-  return [
-    { itemID: 1, key: "DOE2024", indexedKey: KEY_A, citekey: "doe2024" },
-    { itemID: 2, key: "ROE2025", indexedKey: KEY_B, citekey: "roe2025" },
-  ];
-}
-
-/** The persisted store, in memory: it outlives an index the way a database does. */
-class MemoryStore implements CitekeyStore {
-  readonly records = new Map<string, CitekeyRecord>();
-  /** Every path written, in order — what tells a per-file write from a wholesale one. */
-  readonly writes: string[] = [];
-
-  load(): Promise<CitekeyRecord[]> {
-    return Promise.resolve([...this.records.values()]);
-  }
-
-  put(record: CitekeyRecord): Promise<void> {
-    this.writes.push(record.path);
-    this.records.set(record.path, structuredClone(record));
-    return Promise.resolve();
-  }
-
-  drop(path: string): Promise<void> {
-    this.records.delete(path);
-    return Promise.resolve();
-  }
-
-  clear(): Promise<void> {
-    this.records.clear();
-    return Promise.resolve();
-  }
-
-  [Symbol.dispose](): void {}
-}
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
-  }
-}
-
-const services: CitationIndex[] = [];
+const harnesses: CitationIndexHarness[] = [];
 
 afterEach(async () => {
-  for (const service of services.splice(0).reverse()) {
-    await service[Symbol.asyncDispose]();
+  for (const harness of harnesses.splice(0).reverse()) {
+    await harness[Symbol.asyncDispose]();
   }
 });
+
+async function citationsOf(
+  index: CitationIndex,
+  file: TFile,
+): Promise<Citation[]> {
+  return (await index.getDocumentCitationSet(file)).citations;
+}
 
 describe("CitationIndex", () => {
   it("lists the literal citekeys of a document with their Reference Numbers", async () => {
@@ -300,7 +39,7 @@ describe("CitationIndex", () => {
       "draft.md": "Cited by @doe2024 and @roe2025, then @doe2024 again.",
     });
 
-    const citations = await index.getCitations(draft);
+    const citations = await citationsOf(index, draft);
 
     expect(citations).toMatchObject([
       { indexedKey: KEY_A, linkpath: "Doe 2024.md", refNumber: 1 },
@@ -314,7 +53,7 @@ describe("CitationIndex", () => {
       "draft.md": "See @typo2024.",
     });
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: null, linkpath: null, refNumber: 1 },
     ]);
   });
@@ -324,7 +63,7 @@ describe("CitationIndex", () => {
       "draft.md": "# Title\n\nAs @doe2024 wrote.\n",
     });
 
-    const [citation] = await index.getCitations(draft);
+    const [citation] = await citationsOf(index, draft);
 
     expect(citation!.occurrences[0]!.position).toEqual({
       start: { line: 2, col: 3, offset: 12 },
@@ -333,14 +72,15 @@ describe("CitationIndex", () => {
   });
 
   it("merges wikilink occurrences from the metadata cache in document order", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "As @roe2025 wrote, see [[Doe 2024]].",
-    });
+    const { draft, index, metadataCache } = await makeHarness(
+      { "draft.md": "As @roe2025 wrote, see [[Doe 2024]]." },
+      { settings: { "citation.wikilink-citations": true } },
+    );
     metadataCache.fileCache.set("draft.md", {
       links: [link("Doe 2024", 23)],
     } as CachedMetadata);
 
-    const citations = await index.getCitations(draft);
+    const citations = await citationsOf(index, draft);
 
     expect(citations).toMatchObject([
       { indexedKey: KEY_B, refNumber: 1 },
@@ -348,7 +88,83 @@ describe("CitationIndex", () => {
     ]);
   });
 
-  it("leaves the wikilinks out for a consumer that does not count them", async () => {
+  it("returns one ordered Document Citation Set for both consumers", async () => {
+    const body = "First @roe2025, then [[Doe 2024]], then @roe2025.";
+    const { draft, index, metadataCache } = await makeHarness(
+      { "draft.md": body },
+      { settings: { "citation.wikilink-citations": true } },
+    );
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", body.indexOf("[["))],
+    } as CachedMetadata);
+
+    const set = await index.getDocumentCitationSet(draft);
+
+    expect(set.occurrences.map(({ kind, raw }) => [kind, raw])).toEqual([
+      ["citekey", "roe2025"],
+      ["wikilink", "Doe 2024"],
+      ["citekey", "roe2025"],
+    ]);
+    expect(set.citations).toMatchObject([
+      { indexedKey: KEY_B, refNumber: 1, occurrences: [{}, {}] },
+      { indexedKey: KEY_A, refNumber: 2, occurrences: [{}] },
+    ]);
+  });
+
+  it("admits only eligible Literature Note wikilinks to the shared set", async () => {
+    const { draft, index, metadataCache } = await makeHarness(
+      { "draft.md": "links" },
+      { settings: { "citation.wikilink-citations": true } },
+    );
+    metadataCache.fileCache.set("draft.md", {
+      links: [
+        link("Doe 2024", 0),
+        link("Doe 2024#cite:locator=4", 20),
+        link("Doe 2024#cite:", 40),
+        link("Doe 2024#Heading", 60),
+        link("Doe 2024#^block", 80),
+        link("Doe 2024", 100, "[[Doe 2024|Doe]]"),
+        link("Doe 2024", 120, "![[Doe 2024]]"),
+        link("Doe 2024", 140, "[Doe](Doe 2024)"),
+      ],
+    } as CachedMetadata);
+
+    const set = await index.getDocumentCitationSet(draft);
+
+    expect(set.occurrences.map(({ raw }) => raw)).toEqual([
+      "Doe 2024",
+      "Doe 2024",
+    ]);
+  });
+
+  it("recomputes membership after a source choice without rebuilding the scan", async () => {
+    const body = "See @roe2025 and [[Doe 2024]].";
+    const { draft, index, metadataCache, settings, vault } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", body.indexOf("[["))],
+    } as CachedMetadata);
+    let changed = 0;
+    index.on("membership-changed", () => changed++);
+
+    expect(
+      (await index.getDocumentCitationSet(draft)).occurrences.map(
+        ({ kind }) => kind,
+      ),
+    ).toEqual(["citekey"]);
+    settings.update({ "citation.wikilink-citations": true });
+    expect(
+      (await index.getDocumentCitationSet(draft)).occurrences.map(
+        ({ kind }) => kind,
+      ),
+    ).toEqual(["citekey", "wikilink"]);
+
+    expect(changed).toBe(1);
+    expect(vault.reads).toEqual(["draft.md"]);
+  });
+
+  it("leaves wikilinks out while Wikilink Citations is off", async () => {
     const { draft, index, metadataCache } = await makeHarness({
       "draft.md": "As @roe2025 wrote, see [[Doe 2024]].",
     });
@@ -356,9 +172,9 @@ describe("CitationIndex", () => {
       links: [link("Doe 2024", 23)],
     } as CachedMetadata);
 
-    expect(await index.getCitations(draft, { wikilinks: false })).toMatchObject(
-      [{ indexedKey: KEY_B, refNumber: 1 }],
-    );
+    expect(await citationsOf(index, draft)).toMatchObject([
+      { indexedKey: KEY_B, refNumber: 1 },
+    ]);
   });
 
   it("leaves citekeys inside code, math, comments, and frontmatter out", async () => {
@@ -384,7 +200,7 @@ describe("CitationIndex", () => {
       ].join("\n"),
     });
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
   });
@@ -404,7 +220,7 @@ describe("CitationIndex", () => {
       ].join("\n"),
     });
 
-    const citations = await index.getCitations(draft);
+    const citations = await citationsOf(index, draft);
 
     expect(citations).toMatchObject([
       { indexedKey: KEY_A, refNumber: 1 },
@@ -417,11 +233,11 @@ describe("CitationIndex", () => {
     const { draft, index, metadataCache } = await makeHarness({
       "draft.md": "As @doe2024 wrote.",
     });
-    await index.getCitations(draft);
+    await citationsOf(index, draft);
 
     metadataCache.change(draft, "As @roe2025 wrote.");
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
   });
@@ -430,7 +246,7 @@ describe("CitationIndex", () => {
     const { draft, index, metadataCache } = await makeHarness({
       "draft.md": "As @doe2024 wrote.",
     });
-    await index.getCitations(draft);
+    await citationsOf(index, draft);
     let notified = 0;
     index.on("changed", () => notified++);
 
@@ -443,7 +259,7 @@ describe("CitationIndex", () => {
     const { draft, index, metadataCache } = await makeHarness({
       "draft.md": "As @doe2024 wrote.",
     });
-    await index.getCitations(draft);
+    await citationsOf(index, draft);
     const changed: string[] = [];
     index.on("changed", (path) => changed.push(path));
 
@@ -456,11 +272,11 @@ describe("CitationIndex", () => {
     const { draft, index, vault } = await makeHarness({
       "draft.md": "As @doe2024 wrote.",
     });
-    await index.getCitations(draft);
+    await citationsOf(index, draft);
 
     vault.rename(draft, "Notes/paper.md");
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
     expect(vault.bodies.has("draft.md")).toBe(false);
@@ -478,7 +294,7 @@ describe("CitationIndex", () => {
     vault.deleteFile(draft);
 
     expect(changed).toEqual(["draft.md"]);
-    expect(await index.getCitations(draft)).toEqual([]);
+    expect(await citationsOf(index, draft)).toEqual([]);
   });
 
   it("answers for a document the backfill has not reached", async () => {
@@ -486,7 +302,7 @@ describe("CitationIndex", () => {
       "draft.md": "As @doe2024 wrote.",
     });
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
   });
@@ -504,7 +320,7 @@ describe("CitationIndex", () => {
     await index.whenIndexed();
 
     const other = metadataCache.files.get("other.md")!;
-    expect(await index.getCitations(other)).toMatchObject([
+    expect(await citationsOf(index, other)).toMatchObject([
       { indexedKey: KEY_B },
     ]);
   });
@@ -522,13 +338,18 @@ describe("CitationIndex", () => {
   it("indexes nothing while Citekey Indexing is off", async () => {
     const { draft, index, metadataCache } = await makeHarness(
       { "draft.md": "As @doe2024 wrote, see [[Roe 2025]]." },
-      { settings: { "citation.citekey-indexing": false } },
+      {
+        settings: {
+          "citation.citekey-indexing": false,
+          "citation.wikilink-citations": true,
+        },
+      },
     );
     metadataCache.fileCache.set("draft.md", {
       links: [link("Roe 2025", 23)],
     } as CachedMetadata);
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
   });
@@ -543,7 +364,7 @@ describe("CitationIndex", () => {
     settings.update({ "citation.citekey-indexing": true });
     await index.whenIndexed();
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
   });
@@ -552,7 +373,7 @@ describe("CitationIndex", () => {
     const { draft, index, metadataCache, store } = await makeHarness({
       "draft.md": "As @doe2024 wrote.",
     });
-    await index.getCitations(draft);
+    await citationsOf(index, draft);
     store.writes.length = 0;
     const changed: string[] = [];
     index.on("changed", (path) => changed.push(path));
@@ -578,7 +399,7 @@ describe("CitationIndex persistence", () => {
     await index.whenIndexed();
 
     expect(vault.reads).toEqual([]);
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A, refNumber: 1 },
     ]);
   });
@@ -595,7 +416,7 @@ describe("CitationIndex persistence", () => {
     await index.whenIndexed();
 
     expect(vault.reads).toEqual(["draft.md"]);
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
   });
@@ -643,7 +464,7 @@ describe("CitationIndex persistence", () => {
 
     expect(vault.reads).toContain("draft.md");
     expect(store.records.has("draft.md")).toBe(true);
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
   });
@@ -675,7 +496,7 @@ describe("CitationIndex persistence", () => {
     await restored.index.whenIndexed();
 
     expect(restored.vault.reads).toEqual([]);
-    expect(await restored.index.getCitations(restored.draft)).toMatchObject([
+    expect(await citationsOf(restored.index, restored.draft)).toMatchObject([
       { indexedKey: KEY_B },
     ]);
   });
@@ -688,7 +509,7 @@ describe("CitationIndex resolution", () => {
       { notes: false },
     );
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A, linkpath: null },
     ]);
     expect(index.citekeyOf(KEY_A)).toBe("doe2024");
@@ -784,7 +605,7 @@ describe("CitationIndex resolution", () => {
       "draft.md": "As @doe2024 wrote.",
     });
 
-    expect(await index.getCitations(draft)).toMatchObject([
+    expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A, linkpath: "Doe 2024.md" },
     ]);
   });
@@ -801,150 +622,11 @@ async function warmVault(
   await index[Symbol.asyncDispose]();
 }
 
-interface Harness {
-  draft: TFile;
-  index: CitationIndex;
-  metadataCache: MockMetadataCache;
-  settings: SettingsStub;
-  store: MemoryStore;
-  vault: MockVault;
-  workspace: MockWorkspace;
-  db: DatabaseStub;
-  citekeys: CitekeysStub;
-}
-
-/**
- * A vault of two Literature Notes — `doe2024` and `roe2025` — plus the passed
- * documents, none of which the index covers until an event, a query, or the
- * backfill reaches it. The resolution snapshot resolves `doe2024`/`roe2025` to
- * `KEY_A`/`KEY_B` by default.
- *
- * @param options.store carry one across two harnesses to model a restart: the
- *   second index starts over the scans the first left behind.
- * @param options.db a caller-controlled database double (e.g. one whose
- *   `ready` is parked) — skips the harness's own wait for the first
- *   resolution rebuild, leaving that to the test.
- * @param options.notes set `false` to omit the two Literature Notes, so a
- *   resolved citekey carries no `linkpath`.
- */
 async function makeHarness(
   documents: Record<string, string>,
-  options: {
-    settings?: Partial<Settings>;
-    store?: MemoryStore;
-    citekeys?: LibraryCitekey[];
-    db?: DatabaseStub;
-    notes?: boolean;
-  } = {},
-): Promise<Harness> {
-  const metadataCache = new MockMetadataCache();
-  const vault = new MockVault(metadataCache);
-  const workspace = new MockWorkspace();
-  const noteIndex = new NoteIndexStub();
-  const store = options.store ?? new MemoryStore();
-  const db = options.db ?? new DatabaseStub();
-  const citekeys = new CitekeysStub(options.citekeys ?? defaultCitekeys());
-
-  const addFile = (path: string, body: string): TFile => {
-    const file = makeFile(path, body);
-    metadataCache.files.set(path, file);
-    vault.bodies.set(path, body);
-    return file;
-  };
-  const withNotes = options.notes ?? true;
-  if (withNotes) {
-    for (const [citekey, indexedKey] of [
-      ["doe2024", KEY_A],
-      ["roe2025", KEY_B],
-    ] as const) {
-      const path = citekey === "doe2024" ? "Doe 2024.md" : "Roe 2025.md";
-      const note = addFile(path, "");
-      metadataCache.fileCache.set(path, {
-        frontmatter: {
-          [FIELD_ZOTERO_KEY]: indexedKey,
-          [FIELD_CITEKEY]: citekey,
-        },
-      } as CachedMetadata);
-      noteIndex.notes.set(indexedKey, note);
-    }
-  }
-  for (const [path, body] of Object.entries(documents)) {
-    addFile(path, body);
-    metadataCache.fileCache.set(path, {
-      links: [],
-    } as unknown as CachedMetadata);
-  }
-
-  const app = { metadataCache, vault, workspace } as unknown as App;
-  const settings = new SettingsStub(options.settings);
-  const index = new CitationIndex({
-    app,
-    noteIndex,
-    settings,
-    db,
-    readCitekeys: citekeys.read,
-    openStore: () => Promise.resolve(store),
-  });
-  services.push(index);
-  await index.ready;
-  // A caller-supplied `db` controls its own readiness (e.g. a parked one), so
-  // only the harness's own default double is waited on here.
-  if (!options.db) await index.whenResolved();
-  vault.reads.length = 0;
-  store.writes.length = 0;
-
-  return {
-    draft: metadataCache.files.get("draft.md")!,
-    index,
-    metadataCache,
-    settings,
-    store,
-    vault,
-    workspace,
-    db,
-    citekeys,
-  };
-}
-
-function link(target: string, offset: number): LinkCache {
-  return {
-    link: target,
-    original: `[[${target}]]`,
-    position: {
-      start: { line: 0, col: offset, offset },
-      end: {
-        line: 0,
-        col: offset + target.length + 4,
-        offset: offset + target.length + 4,
-      },
-    },
-  };
-}
-
-function makeFile(path: string, body: string): TFile {
-  const file = new TFile();
-  file.stat = statOf(body);
-  updateFilePath(file, path);
-  return file;
-}
-
-/**
- * The stat the vault reports for a body. It is a function of the body alone, so
- * a restart over untouched content sees the stat the stored scan ran against,
- * and any edit — including one that keeps the length — moves it.
- */
-function statOf(body: string): FileStats {
-  let mtime = 0;
-  for (let at = 0; at < body.length; at += 1) {
-    mtime = (mtime * 31 + body.charCodeAt(at)) | 0;
-  }
-  return { ctime: 0, mtime: mtime >>> 0, size: body.length };
-}
-
-function updateFilePath(file: TFile, path: string): void {
-  const name = basename(path);
-  file.path = path;
-  file.name = name;
-  file.basename = name.replace(/\.[^.]+$/, "");
-  file.extension = name.includes(".") ? name.split(".").at(-1)! : "";
+  options: CitationIndexHarnessOptions = {},
+): Promise<CitationIndexHarness> {
+  const harness = await createCitationIndexHarness(documents, options);
+  harnesses.push(harness);
+  return harness;
 }

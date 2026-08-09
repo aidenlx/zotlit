@@ -10,6 +10,7 @@ import {
   ALPHA_KEY,
   citation,
   fragment,
+  literalOccurrences,
 } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
 import { defaults } from "@/services/settings/schema";
@@ -59,6 +60,7 @@ async function makeHarness({
   overrides?: Partial<Settings>;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
+  const occurrences = literalOccurrences(body);
   let process: MarkdownPostProcessor | undefined;
 
   const citationText = new CitationText({
@@ -71,7 +73,8 @@ async function makeHarness({
     },
     db: { state: "ready", client: {} },
     citationIndex: {
-      getCitations: () => Promise.resolve(cited),
+      getDocumentCitationSet: () =>
+        Promise.resolve({ occurrences, citations: cited }),
       citekeyOf: () => null,
       whenResolved: () => Promise.resolve(),
       on: () => () => undefined,

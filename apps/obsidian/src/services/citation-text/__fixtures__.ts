@@ -1,6 +1,10 @@
 // The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
 
-import type { Citation } from "@/services/citation-index/service";
+import { scanDocumentCitations } from "@/services/citation-index/service";
+import type {
+  Citation,
+  CitationOccurrence,
+} from "@/services/citation-index/service";
 
 export const ALPHA_KEY = "1/ALPHA123";
 
@@ -49,6 +53,19 @@ export function citation(
       },
     ],
   };
+}
+
+export function literalOccurrences(body: string): CitationOccurrence[] {
+  return scanDocumentCitations(body)
+    .flatMap((source) => source.keys)
+    .map((key) => ({
+      kind: "citekey",
+      raw: key.citekey,
+      position: {
+        start: { line: 0, col: key.start, offset: key.start },
+        end: { line: 0, col: key.end, offset: key.end },
+      },
+    }));
 }
 
 /** One formatted citation, as the render cache hands it over. */

@@ -1,6 +1,6 @@
 // The formatted text of one document's Citations, held for every surface that shows them.
 
-import type { App, LinkCache, TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 
 import {
   getItemsByKey,
@@ -18,7 +18,6 @@ import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import {
-  WikilinkDisplaySettings,
   citationRuns,
   runDisplay,
   wikilinkCitation,
@@ -27,13 +26,13 @@ import { scanDocumentCitations } from "@/services/citation-index/service";
 import type {
   Citation,
   CitationIndex,
+  CitationOccurrence,
 } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
 
 import type { CitationSource, DocumentCitations } from "./present";
 
@@ -73,14 +72,12 @@ export interface CitationTextDeps {
   db: Pick<DatabaseService, "state" | "client">;
   citationIndex: Pick<
     CitationIndex,
-    "getCitations" | "citekeyOf" | "whenResolved" | "on"
+    "getDocumentCitationSet" | "citekeyOf" | "whenResolved" | "on"
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   /** The plugin-wide render cache, which owns the References Style and the engine. */
   bibliographyRender: Pick<BibliographyRenderCache, "renderCitations" | "on">;
-  /** The settings that decide which wikilinks are Citations at all. */
-  settings: SettingsService;
 }
 
 /**
@@ -108,12 +105,8 @@ export class CitationText extends Service<void> {
   readonly #citationIndex;
   readonly #noteIndex;
   readonly #bibliographyRender;
-  readonly #settings;
   readonly #emitter = createNanoEvents<CitationTextEvents>();
   readonly #documents = new BoundedCache<HeldCitations>(HELD_DOCUMENTS);
-
-  /** The two settings that decide which wikilinks write a Citation. */
-  readonly #display = new WikilinkDisplaySettings();
 
   ready: Promise<void>;
 
@@ -124,7 +117,6 @@ export class CitationText extends Service<void> {
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
     this.#bibliographyRender = deps.bibliographyRender;
-    this.#settings = deps.settings;
     this.ready = this.#load();
   }
 
@@ -153,11 +145,9 @@ export class CitationText extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
-
-    // Which wikilinks are Citations decides what every document's citations
-    // say.
-    stack.defer(this.#display.watch(this.#settings, () => this.#dropAll()));
+    stack.defer(
+      this.#citationIndex.on("membership-changed", () => this.#dropAll()),
+    );
     // A document's own citekeys decide what its citations say.
     stack.defer(this.#citationIndex.on("changed", (path) => this.#drop(path)));
     // So does everything else the document writes around them: a locator or a
@@ -261,17 +251,19 @@ export class CitationText extends Service<void> {
       this.#citationIndex.whenResolved(),
     ]);
     const body = await this.#app.vault.cachedRead(file);
-    const wikilinks = this.#wikilinkCitations(file, body);
-    const cited = await this.#citationIndex.getCitations(file, {
-      wikilinks: false,
-    });
+    const set = await this.#citationIndex.getDocumentCitationSet(file);
+    const wikilinks = this.#wikilinkCitations(file, body, set.occurrences);
+    const cited = set.citations;
     const { items, summaries } = this.#readCited(
       citekeysByItem(cited, wikilinks.works),
     );
 
     // Both syntaxes go to one render in document order, so a numbering style
     // counts every citation of the document once and in the order it reads.
-    const sources = [...literalCitations(body), ...wikilinks.citations]
+    const sources = [
+      ...literalCitations(body, set.occurrences),
+      ...wikilinks.citations,
+    ]
       .sort((a, b) => a.start - b.start)
       .filter((citation) =>
         citation.keys.every((key) => summaries.has(key.citekey)),
@@ -307,7 +299,16 @@ export class CitationText extends Service<void> {
    * that joins them. A Markdown-syntax link and an aliased one stay out, the
    * same two exclusions the display surfaces make.
    */
-  #wikilinkCitations(file: TFile, body: string): DocumentWikilinks {
+  #wikilinkCitations(
+    file: TFile,
+    body: string,
+    occurrences: readonly CitationOccurrence[],
+  ): DocumentWikilinks {
+    const members = new Set(
+      occurrences
+        .filter((occurrence) => occurrence.kind === "wikilink")
+        .map((occurrence) => occurrence.position.start.offset),
+    );
     const context = {
       literatureNote: (linkpath: string) => {
         const note = resolveLiteratureNote(linkpath, file.path, {
@@ -320,13 +321,14 @@ export class CitationText extends Service<void> {
           }
         );
       },
-      fragmentlessDisplay: this.#display.fragmentlessDisplay,
+      fragmentlessDisplay: true,
     };
 
     const runs = citationRuns(
-      this.#app.metadataCache.getFileCache(file)?.links ?? [],
-      (link) =>
-        isWikilink(link) ? wikilinkCitation(link.link, context) : null,
+      (this.#app.metadataCache.getFileCache(file)?.links ?? []).filter((link) =>
+        members.has(link.position.start.offset),
+      ),
+      (link) => wikilinkCitation(link.link, context),
       (previous, next) =>
         body.slice(previous.position.end.offset, next.position.start.offset),
     );
@@ -425,27 +427,27 @@ interface DocumentWikilinks {
   works: Map<string, string>;
 }
 
-/**
- * Whether a link is a wikilink whose display the treatment owns. A
- * Markdown-syntax link is not, and neither is an aliased one — the alias is the
- * display the author already chose, the same exclusion the display surfaces
- * make.
- */
-function isWikilink(link: LinkCache): boolean {
-  return link.original.startsWith("[[") && !link.original.includes("|");
-}
-
 /** The literal Citation Clusters of a document body, in document order. */
-function literalCitations(body: string): PlacedCitation[] {
-  return scanDocumentCitations(body).map(({ start, end, keys }) => ({
-    start,
-    source: body.slice(start, end),
-    keys: keys.map((key) => ({
-      citekey: key.citekey,
-      start: key.start - start,
-      end: key.end - start,
-    })),
-  }));
+function literalCitations(
+  body: string,
+  occurrences: readonly CitationOccurrence[],
+): PlacedCitation[] {
+  const members = new Set(
+    occurrences
+      .filter((occurrence) => occurrence.kind === "citekey")
+      .map((occurrence) => occurrence.position.start.offset),
+  );
+  return scanDocumentCitations(body)
+    .filter(({ keys }) => keys.every((key) => members.has(key.start)))
+    .map(({ start, end, keys }) => ({
+      start,
+      source: body.slice(start, end),
+      keys: keys.map((key) => ({
+        citekey: key.citekey,
+        start: key.start - start,
+        end: key.end - start,
+      })),
+    }));
 }
 
 /**
@@ -465,7 +467,9 @@ function citekeysByItem(
   };
   for (const { indexedKey, occurrences } of cited) {
     if (indexedKey === null) continue;
-    for (const { raw } of occurrences) add(indexedKey, raw);
+    for (const { kind, raw } of occurrences) {
+      if (kind === "citekey") add(indexedKey, raw);
+    }
   }
   for (const [citekey, indexedKey] of works) add(indexedKey, citekey);
   return byItem;

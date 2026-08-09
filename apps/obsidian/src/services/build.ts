@@ -179,20 +179,13 @@ export function buildServices(
         }),
     })
     .use({
-      citationText: ({
-        db,
-        citationIndex,
-        noteIndex,
-        bibliographyRender,
-        settings,
-      }) =>
+      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
         new CitationText({
           app: plugin.app,
           db,
           citationIndex,
           noteIndex,
           bibliographyRender,
-          settings,
         }),
     })
     .use({

@@ -4,11 +4,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
-import type { Citation } from "@/services/citation-index/service";
+import type {
+  Citation,
+  CitationOccurrence,
+  DocumentCitationSet,
+} from "@/services/citation-index/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
-import { ALPHA, ALPHA_KEY, citation, fragment } from "./__fixtures__";
+import {
+  ALPHA,
+  ALPHA_KEY,
+  citation,
+  fragment,
+  literalOccurrences,
+} from "./__fixtures__";
 import { CitationText } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -58,6 +68,7 @@ async function makeHarness({
   links = [],
   notes = {},
   settings = {},
+  documentCitationSet,
 }: {
   body: string;
   cited?: Citation[];
@@ -68,6 +79,7 @@ async function makeHarness({
   /** The Literature Note each linkpath names, by linkpath. */
   notes?: Record<string, { citekey: string | undefined }>;
   settings?: Partial<Settings>;
+  documentCitationSet?: DocumentCitationSet;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
   const listeners = new Map<string, (payload?: never) => void>();
@@ -79,6 +91,20 @@ async function makeHarness({
     };
   const fire = (key: string, payload?: unknown): void => {
     listeners.get(key)?.(payload as never);
+  };
+  const wikilinkOccurrences: CitationOccurrence[] =
+    settings["citation.wikilink-citations"] === true
+      ? links.map((entry) => ({
+          kind: "wikilink",
+          raw: entry.link.split("#", 1)[0]!,
+          position: entry.position,
+        }))
+      : [];
+  const set = documentCitationSet ?? {
+    occurrences: [...literalOccurrences(body), ...wikilinkOccurrences].sort(
+      (a, b) => a.position.start.offset - b.position.start.offset,
+    ),
+    citations: cited,
   };
 
   const service = new CitationText({
@@ -101,7 +127,7 @@ async function makeHarness({
     },
     db: { state: "ready", client: {} },
     citationIndex: {
-      getCitations: () => Promise.resolve(cited),
+      getDocumentCitationSet: () => Promise.resolve(set),
       // Every Literature Note stand-in shares one Indexed Key, so one entry
       // answers for however many linkpaths the test names.
       citekeyOf: (indexedKey: string) =>
@@ -249,6 +275,7 @@ describe("CitationText over wikilink Citations", () => {
       cited: [],
       links: [link(`${LIT}#cite:locator=4`, body.indexOf("[["))],
       notes,
+      settings: WIKILINK_CITATIONS,
     });
 
     const { formatted } = await service.load(NOTE);
@@ -298,6 +325,25 @@ describe("CitationText over wikilink Citations", () => {
     await dispose();
   });
 
+  it("keeps a fragment-less member in the render context while its legacy display is off", async () => {
+    const body = `Claim [[${LIT}]].`;
+    const { service, citationRequests, dispose } = await makeHarness({
+      body,
+      cited: [],
+      links: [link(LIT, body.indexOf("[["))],
+      notes,
+      settings: {
+        "citation.wikilink-citations": true,
+        "citation.wikilink-display": false,
+      },
+    });
+
+    await service.load(NOTE);
+
+    expect(citationRequests).toEqual([{ citations: ["[@alpha]"] }]);
+    await dispose();
+  });
+
   it("leaves an aliased wikilink out, as the display surfaces do", async () => {
     const body = `Claim [[${LIT}|Alpha]].`;
     const { service, citationRequests, dispose } = await makeHarness({
@@ -319,6 +365,7 @@ describe("CitationText over wikilink Citations", () => {
       body,
       links: [link(`${LIT}#cite:locator=5`, body.indexOf("[["))],
       notes,
+      settings: WIKILINK_CITATIONS,
     });
 
     await service.load(NOTE);

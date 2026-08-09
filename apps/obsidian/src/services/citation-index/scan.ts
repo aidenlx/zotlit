@@ -3,6 +3,7 @@
 import { parseLinktext } from "obsidian";
 import type { LinkCache, Loc, Pos } from "obsidian";
 
+import { parseCitationFragment } from "@/lib/citation-fragment";
 import { scanCitations, scanCitekeys } from "@/lib/citation-grammar";
 import type { CitationSpan } from "@/lib/citation-grammar";
 
@@ -67,13 +68,25 @@ export function documentOccurrences(
 ): CitationOccurrence[] {
   const occurrences = [...stored];
   for (const link of links) {
-    const { path } = parseLinktext(link.link);
-    if (path === "") continue;
+    const path = wikilinkCitationPath(link);
+    if (path === null) continue;
     occurrences.push({ kind: "wikilink", raw: path, position: link.position });
   }
   return occurrences.sort(
     (a, b) => a.position.start.offset - b.position.start.offset,
   );
+}
+
+function wikilinkCitationPath(link: LinkCache): string | null {
+  if (!link.original.startsWith("[[") || link.original.includes("|")) {
+    return null;
+  }
+  const { path, subpath } = parseLinktext(link.link);
+  if (path === "") return null;
+  if (subpath === "") return path;
+  const prefix = "#cite:";
+  if (!subpath.startsWith(prefix)) return null;
+  return parseCitationFragment(subpath.slice(prefix.length)).ok ? path : null;
 }
 
 /**

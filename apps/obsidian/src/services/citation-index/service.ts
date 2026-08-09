@@ -43,6 +43,14 @@ export {
 export type { SnapshotItem } from "./snapshot";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
 
+/** One document's active Citation Occurrences and its distinct cited works. */
+export interface DocumentCitationSet {
+  /** Eligible occurrences in document order, including repeated works. */
+  occurrences: CitationOccurrence[];
+  /** The same occurrences grouped for reference-list consumers. */
+  citations: Citation[];
+}
+
 const logger = getLogger("citation-index");
 
 /** Files the backfill scans between two yields to the host. */
@@ -58,6 +66,8 @@ interface CitationIndexEvents {
    * Vault-wide, unlike `changed`: every surface that resolves a citekey redraws.
    */
   "resolution-changed": () => void;
+  /** The source choices changed the Document Citation Set of every document. */
+  "membership-changed": () => void;
 }
 
 export interface CitationIndexOptions {
@@ -115,6 +125,7 @@ export class CitationIndex extends Service<void> {
    */
   #build = 0;
   #indexing = true;
+  #includeWikilinkCitations = false;
   #backfilled = false;
   #stopped = false;
   /** Which build of the resolution snapshot is current; a rebuild bumps it. */
@@ -138,25 +149,25 @@ export class CitationIndex extends Service<void> {
   }
 
   /**
-   * The Citations of one document, in first-occurrence order with their
-   * Reference Numbers. A document the backfill has not reached is scanned on
-   * demand, so the active document is answered without waiting for the vault.
+   * The active document's shared citation membership and source order.
    *
-   * @param wikilinks whether Literature Note wikilinks count as Citations — the
-   *   Wikilink Citations setting, which each consumer applies for itself.
-   *   Leaving it out answers with everything the index knows.
+   * A document the backfill has not reached is scanned on demand, so the
+   * active document is answered without waiting for the vault-wide pass.
    */
-  async getCitations(
-    file: TFile,
-    { wikilinks = true }: { wikilinks?: boolean } = {},
-  ): Promise<Citation[]> {
+  async getDocumentCitationSet(file: TFile): Promise<DocumentCitationSet> {
+    await this.ready;
     const citekeys = await this.#coverFile(file);
-    const links = wikilinks
+    const links = this.#includeWikilinkCitations
       ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
       : [];
-    return groupCitations(documentOccurrences(citekeys, links), (occurrence) =>
-      this.#resolve(occurrence, file.path),
+    const citations = groupCitations(
+      documentOccurrences(citekeys, links),
+      (occurrence) => this.#resolve(occurrence, file.path),
     );
+    const occurrences = citations
+      .flatMap((citation) => citation.occurrences)
+      .sort((a, b) => a.position.start.offset - b.position.start.offset);
+    return { occurrences, citations };
   }
 
   on<K extends keyof CitationIndexEvents>(
@@ -246,7 +257,10 @@ export class CitationIndex extends Service<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
     const initial = this.#settings.current;
-    if (initial) this.#indexing = initial["citation.citekey-indexing"];
+    if (initial) {
+      this.#indexing = initial["citation.citekey-indexing"];
+      this.#includeWikilinkCitations = initial["citation.wikilink-citations"];
+    }
     stack.defer(
       this.#settings.subscribe((settings) => {
         if (settings) this.#applySettings(settings);
@@ -511,14 +525,20 @@ export class CitationIndex extends Service<void> {
       void this.#rebuildSnapshot();
     }
 
-    const next = settings["citation.citekey-indexing"];
-    if (next === this.#indexing) return;
-    this.#indexing = next;
-    logger.info("Citation indexing changed", { enabled: next });
+    const nextWikilinks = settings["citation.wikilink-citations"];
+    if (nextWikilinks !== this.#includeWikilinkCitations) {
+      this.#includeWikilinkCitations = nextWikilinks;
+      this.#emitter.emit("membership-changed");
+    }
+
+    const nextIndexing = settings["citation.citekey-indexing"];
+    if (nextIndexing === this.#indexing) return;
+    this.#indexing = nextIndexing;
+    logger.info("Citation indexing changed", { enabled: nextIndexing });
     const covered = [...this.#scans.keys()];
-    if (!next) this.#scans.clear();
+    if (!nextIndexing) this.#scans.clear();
     for (const path of covered) this.#emitter.emit("changed", path);
-    if (next) {
+    if (nextIndexing) {
       this.#build += 1;
       this.#backfilled = false;
       void this.#runBackfill();
