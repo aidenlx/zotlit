@@ -24,6 +24,7 @@ export function References() {
   const entries = useReferencesStore((s) => s.entries);
   const listMode = useReferencesStore((s) => s.listMode);
   const engine = useReferencesStore((s) => s.engine);
+  const formattingFailed = useReferencesStore((s) => s.formattingFailed);
   const dbReady = useReferencesStore((s) => s.dbReady);
   const numbered = listMode.kind === "minimal";
   const guttered =
@@ -32,6 +33,11 @@ export function References() {
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto">
       <EngineSurface status={engine} />
+      {formattingFailed && engine.kind === "installed" && (
+        <Banner tone="warning" title={m.references_format_failed_title()}>
+          {m.references_format_failed_body()}
+        </Banner>
+      )}
       {entries.length === 0 ? (
         <div className="pane-empty zt:p-2">
           {dbReady ? m.references_empty() : m.references_db_unavailable()}

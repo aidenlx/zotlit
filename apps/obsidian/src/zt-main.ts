@@ -12,7 +12,7 @@ import {
 } from "./lib/i18n/install-toast";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
-import { openSettingsTab } from "./lib/open-settings";
+import { openSettingsTab, revealSetting } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
@@ -22,6 +22,7 @@ import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
+import { registerCitationStyleNotice } from "./services/pandoc/notices";
 import { registerPandocResolve } from "./services/pandoc/register";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
@@ -259,6 +260,15 @@ export default class ZotLitPlugin extends Plugin {
       templates: services.template,
     });
 
+    stack.defer(
+      registerCitationStyleNotice(services.bibliographyRender, () => {
+        revealSetting(
+          this.app,
+          this.manifest.id,
+          m.settings_citation_references_style_name(),
+        );
+      }),
+    );
     registerReferencesView(this, {
       app: this.app,
       db: services.db,

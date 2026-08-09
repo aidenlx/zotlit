@@ -31,7 +31,7 @@ export interface PandocExportChoices {
 export interface PandocExportModalOptions {
   /** Zotero data directory the installed styles are listed from. */
   dataDir: string;
-  /** References style ID — where the style picker starts. */
+  /** Citation and References Style ID — where the style picker starts. */
   referencesStyleId: string | null;
   /** Absolute path of the note being exported; seeds the destination. */
   notePath: string;

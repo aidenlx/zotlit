@@ -19,9 +19,9 @@ const STYLES_DIR = "styles";
 const HIDDEN_DIR = "hidden";
 const CSL_EXT = ".csl";
 
-/** One installed style, as the References style picker lists it. */
+/** One installed style, as the Citation and References Style picker lists it. */
 export interface InstalledCslStyle {
-  /** `<info><id>` — the identity the References style setting stores. */
+  /** `<info><id>` — the identity the Citation and References Style setting stores. */
   id: string;
   /** `<info><title>`, or the filename stem when the style declares none. */
   title: string;
@@ -33,6 +33,12 @@ interface StyleFile extends InstalledCslStyle {
   parentId: string | undefined;
 }
 
+/** The selected style, preserving Default and an unavailable selection as distinct states. */
+export type ResolvedStyleXml =
+  | { kind: "default" }
+  | { kind: "installed"; xml: string }
+  | { kind: "missing"; styleId: string };
+
 /**
  * The styles a user can select, sorted by title. Zotero owns installation, so
  * an install ZotLit cannot read simply offers nothing to select.
@@ -43,8 +49,14 @@ interface StyleFile extends InstalledCslStyle {
 export async function listInstalledStyles(
   dataDir: string,
 ): Promise<InstalledCslStyle[]> {
-  const styles = indexById(await readStyleDir(join(dataDir, STYLES_DIR)));
-  return [...styles.values()]
+  const root = join(dataDir, STYLES_DIR);
+  const visible = indexById(await readStyleDir(root));
+  const all = indexById([
+    ...visible.values(),
+    ...(await readStyleDir(join(root, HIDDEN_DIR))),
+  ]);
+  return [...visible.values()]
+    .filter(({ parentId }) => parentId === undefined || all.has(parentId))
     .map(({ id, title }) => ({ id, title }))
     .sort((a, b) => a.title.localeCompare(b.title));
 }
@@ -61,10 +73,22 @@ export async function loadStyleXml(
   dataDir: string,
   styleId: string | null,
 ): Promise<string | undefined> {
-  if (!styleId) return undefined;
+  const resolved = await resolveStyleXml(dataDir, styleId);
+  return resolved.kind === "installed" ? resolved.xml : undefined;
+}
+
+/** Resolve the selected style without collapsing an unavailable selection into Default. */
+export async function resolveStyleXml(
+  dataDir: string,
+  styleId: string | null,
+): Promise<ResolvedStyleXml> {
+  if (!styleId) return { kind: "default" };
   const file = await resolveStyleFile(dataDir, styleId);
-  if (!file) return undefined;
-  return readStyleXml(file.path);
+  if (!file) return { kind: "missing", styleId };
+  const xml = await readStyleXml(file.path);
+  return xml === undefined
+    ? { kind: "missing", styleId }
+    : { kind: "installed", xml };
 }
 
 /**
@@ -134,34 +158,34 @@ interface HeldStyle {
 export class StyleXmlCache {
   #held: HeldStyle | undefined;
 
-  /** Same answer as {@link loadStyleXml}, from the held copy where it stands. */
-  async load(
+  /** Same answer as {@link resolveStyleXml}, from the held copy where it stands. */
+  async resolve(
     dataDir: string,
     styleId: string | null,
-  ): Promise<string | undefined> {
-    if (!styleId) return undefined;
+  ): Promise<ResolvedStyleXml> {
+    if (!styleId) return { kind: "default" };
 
     const held = this.#held;
     if (held && held.dataDir === dataDir && held.styleId === styleId) {
       if ((await mtimeOf(held.path)) === held.mtime) {
         logger.trace("CSL style cache hit", { styleId });
-        return held.xml;
+        return { kind: "installed", xml: held.xml };
       }
     }
     this.#held = undefined;
 
     const file = await resolveStyleFile(dataDir, styleId);
-    if (!file) return undefined;
+    if (!file) return { kind: "missing", styleId };
     // Read the mtime first: a file written between the read and its stat would
     // otherwise be held under an mtime it no longer has, and never re-read.
     const mtime = await mtimeOf(file.path);
     const xml = await readStyleXml(file.path);
-    if (xml === undefined) return undefined;
+    if (xml === undefined) return { kind: "missing", styleId };
     if (mtime !== undefined) {
       this.#held = { dataDir, styleId, path: file.path, mtime, xml };
     }
     logger.debug("CSL style loaded", { styleId, path: file.path });
-    return xml;
+    return { kind: "installed", xml };
   }
 }
 

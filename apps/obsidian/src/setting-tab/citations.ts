@@ -82,7 +82,7 @@ export function citationsPageItems(
       items: [
         {
           name: m.settings_citation_references_style_name(),
-          desc: referencesStyleDescription(),
+          desc: referencesStyleDescription(false),
           render: (setting) => renderReferencesStyleRow(setting, ctx),
         },
         pandocEngineDefinition(ctx),
@@ -95,7 +95,7 @@ export function citationsPageItems(
 /** Dropdown sentinel for the embedded default style; a style ID is never empty. */
 export const STYLE_DEFAULT = "";
 
-/** One entry of the References style picker. */
+/** One entry of the Citation and References Style picker. */
 export interface ReferencesStyleOption {
   value: string;
   label: string;
@@ -127,7 +127,7 @@ export function referencesStyleOptions(
 }
 
 /**
- * References style picker, listing the styles installed in the Zotero data
+ * Citation and References Style picker, listing the styles installed in the Zotero data
  * directory. Zotero owns style installation, so the list is read-only, and the
  * row follows both the Zotero data directory and the stored setting, which
  * vault sync can rewrite while the tab is open.
@@ -140,6 +140,7 @@ function renderReferencesStyleRow(
 
   let dropdown: DropdownComponent | undefined;
   let styles: readonly InstalledCslStyle[] = [];
+  let stylesLoaded = false;
   let disposed = false;
   stack.defer(() => {
     disposed = true;
@@ -151,6 +152,13 @@ function renderReferencesStyleRow(
   const repopulate = (): void => {
     if (!dropdown) return;
     const current = selectedValue();
+    setting.setDesc(
+      referencesStyleDescription(
+        stylesLoaded &&
+          current !== STYLE_DEFAULT &&
+          !styles.some((style) => style.id === current),
+      ),
+    );
     dropdown.selectEl.replaceChildren();
     for (const { value, label } of referencesStyleOptions(styles, current)) {
       dropdown.addOption(value, label);
@@ -168,6 +176,7 @@ function renderReferencesStyleRow(
     void listInstalledStyles(ctx.zoteroPref.dataDir).then((installed) => {
       if (disposed || read !== latestRead) return;
       styles = installed;
+      stylesLoaded = true;
       repopulate();
     });
   };
@@ -203,17 +212,12 @@ function renderReferencesStyleRow(
   return () => stack.dispose();
 }
 
-/** Zotero's guide to installing CSL styles from the Zotero Style Repository. */
-const ZOTERO_STYLES_URL = "https://www.zotero.org/support/styles";
-
-function referencesStyleDescription(): DocumentFragment {
+export function referencesStyleDescription(missing: boolean): DocumentFragment {
   const desc = createFragment();
-  desc.append(`${m.settings_citation_references_style_desc()} `);
-  const link = createEl("a");
-  link.href = ZOTERO_STYLES_URL;
-  link.textContent = m.settings_citation_references_style_docs();
-  link.target = "_blank";
-  link.rel = "noopener";
-  desc.append(link);
+  desc.append(
+    missing
+      ? m.settings_citation_references_style_warning()
+      : m.settings_citation_references_style_desc(),
+  );
   return desc;
 }

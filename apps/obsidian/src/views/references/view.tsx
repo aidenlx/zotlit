@@ -41,7 +41,11 @@ import type {
   RenderedReference,
 } from "./entries";
 import { References } from "./References";
-import { createReferencesStore, ReferencesStoreProvider } from "./store";
+import {
+  createReferencesStore,
+  minimalReferencesState,
+  ReferencesStoreProvider,
+} from "./store";
 import type { ReferencesListMode } from "./store";
 
 export const REFERENCES_VIEW_TYPE = "zotlit-references";
@@ -58,7 +62,7 @@ export interface ReferencesViewDeps {
     PandocEngineService,
     "getStatus" | "subscribe" | "decline"
   >;
-  /** The plugin-wide render cache, which owns the References Style and the engine. */
+  /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
@@ -75,6 +79,8 @@ export class ReferencesView extends ItemView {
   readonly #rendered = new Map<string, RenderedReference>();
   /** Marker ownership of the last completed render for the current style. */
   #listMode: ReferencesListMode = { kind: "minimal" };
+  /** The current list is minimal because a completed formatting attempt failed. */
+  #formattingFailed = false;
   #root: Root | null = null;
   #actions: ReferenceActions | null = null;
   /** Bumped per reload; an older render that finishes late is discarded. */
@@ -155,7 +161,7 @@ export class ReferencesView extends ItemView {
     this.register(db.on("changed", () => this.#reload()));
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
-    // for a Zotero change, a References Style change, or an engine that came or
+    // for a Zotero change, a Citation and References Style change, or an engine that came or
     // went — is the one signal that makes the formatted entries here stale.
     this.register(
       bibliographyRender.on("invalidated", () =>
@@ -218,6 +224,7 @@ export class ReferencesView extends ItemView {
     if (invalidate) {
       this.#rendered.clear();
       this.#listMode = { kind: "minimal" };
+      this.#formattingFailed = false;
     }
     const generation = ++this.#generation;
     const citations = this.#citations;
@@ -233,6 +240,7 @@ export class ReferencesView extends ItemView {
       }),
       listMode: this.#listMode,
       engine: this.#deps.pandocEngine.getStatus(),
+      formattingFailed: this.#formattingFailed,
       dbReady: this.#deps.db.state === "ready",
     });
     void this.#render(generation, citations, sources);
@@ -316,10 +324,11 @@ export class ReferencesView extends ItemView {
    * from a render another consumer already paid for whenever this document
    * cites the same works in the same order.
    *
-   * A cache that cannot format the list leaves the entries already on screen
-   * alone — which is what keeps a formatted entry from falling back to its
-   * summary while a re-render is pending. A completed render is applied even
-   * when it is empty, so each source it omitted becomes a Reference Error.
+   * Formatted entries stay on screen while a render is pending. An unavailable
+   * style or engine returns the list to its supported minimal state. A failed
+   * completed render also shows the failure state. A completed render is
+   * applied even when it is empty, so each source it omitted becomes a
+   * Reference Error.
    */
   async #render(
     generation: number,
@@ -327,24 +336,29 @@ export class ReferencesView extends ItemView {
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
     const items = [...sources.values()].map((source) => source.csl);
-    const rendered = await this.#deps.bibliographyRender.render(items);
-    if (!rendered) return;
+    const outcome = await this.#deps.bibliographyRender.render(items);
     if (generation !== this.#generation) return;
+
+    if (outcome.kind !== "rendered") {
+      this.#showMinimal(citations, sources, outcome.kind === "failed");
+      return;
+    }
 
     // Refilled rather than merged: the render covers every cited Item, so
     // what it leaves out is no longer cited, and the map's order is the
     // bibliography order the list reads in.
     this.#rendered.clear();
-    for (const { id, marker, content } of rendered.entries) {
+    for (const { id, marker, content } of outcome.entries) {
       this.#rendered.set(id, { marker, content });
     }
     this.#listMode = {
       kind: "bibliography",
-      hasEntryMarkers: rendered.hasEntryMarkers,
+      hasEntryMarkers: outcome.hasEntryMarkers,
     };
+    this.#formattingFailed = false;
     logger.debug("References bibliography rendered", {
-      count: rendered.entries.length,
-      hasEntryMarkers: rendered.hasEntryMarkers,
+      count: outcome.entries.length,
+      hasEntryMarkers: outcome.hasEntryMarkers,
     });
     this.#store.setState({
       entries: buildReferenceEntries(citations, sources, {
@@ -355,6 +369,26 @@ export class ReferencesView extends ItemView {
         errors: this.#errors,
       }),
       listMode: this.#listMode,
+      formattingFailed: false,
     });
+  }
+
+  /** Replace stale formatted entries with the current minimal reference list. */
+  #showMinimal(
+    citations: readonly Citation[],
+    sources: ReadonlyMap<string, ReferenceSource>,
+    formattingFailed: boolean,
+  ): void {
+    this.#rendered.clear();
+    this.#listMode = { kind: "minimal" };
+    this.#formattingFailed = formattingFailed;
+    this.#store.setState(
+      minimalReferencesState({
+        citations,
+        sources,
+        errors: this.#errors,
+        formattingFailed,
+      }),
+    );
   }
 }

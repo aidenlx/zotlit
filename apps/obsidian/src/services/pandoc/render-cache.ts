@@ -31,6 +31,8 @@ interface BibliographyRenderEvents {
    * asks for its own render again.
    */
   invalidated: () => void;
+  /** The first formatting attempt whose selected style is unavailable. */
+  "style-missing": (styleId: string) => void;
 }
 
 export interface BibliographyRenderCacheOptions {
@@ -49,15 +51,26 @@ export interface BibliographyRenderResult {
   hasEntryMarkers: boolean;
 }
 
+/** What the References Sidebar needs to replace or preserve its current list. */
+export type BibliographyRenderOutcome =
+  | ({ kind: "rendered" } & BibliographyRenderResult)
+  | { kind: "unavailable"; reason: "engine-absent" | "style-missing" }
+  | { kind: "failed" };
+
+type RenderAttempt<T> =
+  | { kind: "rendered"; value: T }
+  | { kind: "style-missing" }
+  | { kind: "failed" };
+
 /**
- * Formats whole bibliographies in the References Style, and hands the same
+ * Formats whole bibliographies in the Citation and References Style, and hands the same
  * render to every consumer that cites the same works in the same order.
  *
  * A bibliography entry is not a pure function of its Item — Entry Markers and
  * disambiguation depend on the whole cited set — so the whole list is the unit
- * that is cached, keyed by References Style and the ordered cited set. What
+ * that is cached, keyed by Citation and References Style and the ordered cited set. What
  * makes a render stale makes every render stale: a Zotero database change, a
- * References Style change, and an engine that came or went each drop the cache
+ * Citation and References Style change, and an engine that came or went each drop the cache
  * whole and announce it through {@link BibliographyRenderEvents.invalidated}.
  *
  * Nothing is written to disk: a render is derived from the library and the
@@ -72,14 +85,16 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #styles = new StyleXmlCache();
   /** Bibliography renders by {@link renderKey}. */
   readonly #renders = new BoundedCache<
-    Promise<BibliographyRenderResult | null>
+    Promise<RenderAttempt<BibliographyRenderResult>>
   >(HELD_RENDERS);
   /** In-text citation renders, held the same way and dropped by the same signals. */
   readonly #citations = new BoundedCache<
-    Promise<readonly DocumentFragment[] | null>
+    Promise<RenderAttempt<readonly DocumentFragment[]>>
   >(HELD_RENDERS);
   /** `undefined` until the first settings snapshot names the selected style. */
   #styleId: string | null | undefined;
+  /** The first unavailable selected style found in this plugin lifecycle. */
+  #missingStyle: string | null = null;
 
   ready: Promise<void>;
 
@@ -93,7 +108,7 @@ export class BibliographyRenderCache extends Service<void> {
   }
 
   /**
-   * The whole bibliography of `items`, formatted in the References Style.
+   * The whole bibliography of `items`, formatted in the Citation and References Style.
    *
    * Entries come back in the style's own bibliography order, and the entry
    * content is shared with every other consumer of the same render — a consumer
@@ -101,25 +116,39 @@ export class BibliographyRenderCache extends Service<void> {
    * already does.
    *
    * @param items the cited works as CSL-JSON, in the order they are cited.
-   * @returns `null` when no engine is installed, or when the render failed.
+   * @returns the formatted bibliography, or the unavailable or failed state
+   *   that tells the sidebar to show its plain list.
    */
   async render(
     items: readonly CslItemData[],
-  ): Promise<BibliographyRenderResult | null> {
+  ): Promise<BibliographyRenderOutcome> {
     await this.ready.catch(() => undefined);
-    if (this.#engine.getStatus().kind !== "installed") return null;
+    if (this.#engine.getStatus().kind !== "installed") {
+      return { kind: "unavailable", reason: "engine-absent" };
+    }
+    if (items.length === 0) {
+      return { kind: "rendered", entries: [], hasEntryMarkers: false };
+    }
 
     const styleId = this.#styleId ?? null;
-    return this.#hold({
+    const attempt = await this.#hold({
       held: this.#renders,
       key: renderKey(styleId, items),
       format: () => this.#runBibliography(items, styleId),
       kind: "bibliography",
     });
+    switch (attempt.kind) {
+      case "rendered":
+        return { kind: "rendered", ...attempt.value };
+      case "style-missing":
+        return { kind: "unavailable", reason: "style-missing" };
+      case "failed":
+        return { kind: "failed" };
+    }
   }
 
   /**
-   * One document's in-text citations, formatted in the References Style.
+   * One document's in-text citations, formatted in the Citation and References Style.
    *
    * A style that numbers counts citations across the whole document, so the
    * unit rendered — and the unit cached — is every citation the document
@@ -130,7 +159,7 @@ export class BibliographyRenderCache extends Service<void> {
    * @param items the works those citekeys resolve to, each `id` the citekey the
    *   source writes.
    * @returns one formatted citation per source, in the same order; `null` when
-   *   no engine is installed or the render failed.
+   *   the engine or selected style is unavailable, or the render failed.
    */
   async renderCitations(
     citations: readonly string[],
@@ -142,12 +171,13 @@ export class BibliographyRenderCache extends Service<void> {
 
     const styleId = this.#styleId ?? null;
     const key = renderKey(styleId, items, citations);
-    return this.#hold({
+    const attempt = await this.#hold({
       held: this.#citations,
       key,
       format: () => this.#runCitations(citations, items, styleId),
       kind: "citations",
     });
+    return attempt.kind === "rendered" ? attempt.value : null;
   }
 
   on<K extends keyof BibliographyRenderEvents>(
@@ -155,6 +185,13 @@ export class BibliographyRenderCache extends Service<void> {
     cb: BibliographyRenderEvents[K],
   ): () => void {
     return this.#emitter.on(event, cb);
+  }
+
+  /** Subscribe to the first unavailable selected style, including one already found. */
+  onStyleMissing(cb: BibliographyRenderEvents["style-missing"]): () => void {
+    const unsubscribe = this.#emitter.on("style-missing", cb);
+    if (this.#missingStyle !== null) cb(this.#missingStyle);
+    return unsubscribe;
   }
 
   async #load(): Promise<void> {
@@ -187,7 +224,9 @@ export class BibliographyRenderCache extends Service<void> {
     const initial = this.#styleId === undefined;
     this.#styleId = next;
     logger.info(
-      initial ? "References style selected" : "References style changed",
+      initial
+        ? "Citation and references style selected"
+        : "Citation and references style changed",
       { styleId: next },
     );
     if (!initial) this.#invalidate();
@@ -213,44 +252,48 @@ export class BibliographyRenderCache extends Service<void> {
     format,
     kind,
   }: {
-    held: BoundedCache<Promise<T | null>>;
+    held: BoundedCache<Promise<RenderAttempt<T>>>;
     key: string;
-    format: () => Promise<T | null>;
+    format: () => Promise<RenderAttempt<T>>;
     kind: "bibliography" | "citations";
-  }): Promise<T | null> {
+  }): Promise<RenderAttempt<T>> {
     if (held.peek(key) !== undefined) {
       logger.trace("Render cache hit", { kind });
     }
     const running = held.hold(key, format);
-    const rendered = await running;
-    // A failed render is not an answer to hold: the next ask tries again.
-    if (rendered === null && held.peek(key) === running) held.delete(key);
-    return rendered;
+    const attempt = await running;
+    // An unavailable or failed render is not an answer to hold: the next ask
+    // tries again after the user changes the prerequisite or fixes the failure.
+    if (attempt.kind !== "rendered" && held.peek(key) === running) {
+      held.delete(key);
+    }
+    return attempt;
   }
 
-  /** A failed render is a missing one: the consumer falls back to its own text. */
   async #runBibliography(
     items: readonly CslItemData[],
     styleId: string | null,
-  ): Promise<BibliographyRenderResult | null> {
+  ): Promise<RenderAttempt<BibliographyRenderResult>> {
     try {
-      const styleXml = await this.#styleXml(styleId);
-      let entries: readonly BibliographyEntry[] = [];
-      if (items.length > 0) {
-        const engine = await this.#engine.getEngine();
-        entries = await engine.renderBibliography({ items, styleXml });
-      }
+      const styleXml = await this.#resolveStyle(styleId);
+      if (styleXml.kind === "missing") return { kind: "style-missing" };
+      const xml = styleXml.kind === "installed" ? styleXml.xml : undefined;
+      const engine = await this.#engine.getEngine();
+      const entries = await engine.renderBibliography({ items, styleXml: xml });
       const hasEntryMarkers =
-        styleHasEntryMarkers(styleXml) ||
+        styleHasEntryMarkers(xml) ||
         entries.some((entry) => entry.marker !== undefined);
       logger.debug("Bibliography rendered", {
         count: entries.length,
         hasEntryMarkers,
       });
-      return { entries, hasEntryMarkers };
+      return {
+        kind: "rendered",
+        value: { entries, hasEntryMarkers },
+      };
     } catch (error) {
       logger.warn("Cannot format the bibliography", { error });
-      return null;
+      return { kind: "failed" };
     }
   }
 
@@ -258,24 +301,34 @@ export class BibliographyRenderCache extends Service<void> {
     citations: readonly string[],
     items: readonly CslItemData[],
     styleId: string | null,
-  ): Promise<readonly DocumentFragment[] | null> {
+  ): Promise<RenderAttempt<readonly DocumentFragment[]>> {
     try {
+      const styleXml = await this.#resolveStyle(styleId);
+      if (styleXml.kind === "missing") return { kind: "style-missing" };
       const engine = await this.#engine.getEngine();
       const rendered = await engine.renderCitations({
         citations,
         items,
-        styleXml: await this.#styleXml(styleId),
+        styleXml: styleXml.kind === "installed" ? styleXml.xml : undefined,
       });
       logger.debug("Citations rendered", { count: rendered.length });
-      return rendered;
+      return { kind: "rendered", value: rendered };
     } catch (error) {
       logger.warn("Cannot format the citations", { error });
-      return null;
+      return { kind: "failed" };
     }
   }
 
-  #styleXml(styleId: string | null): Promise<string | undefined> {
-    return this.#styles.load(this.#zoteroPref.dataDir, styleId);
+  async #resolveStyle(styleId: string | null) {
+    const style = await this.#styles.resolve(this.#zoteroPref.dataDir, styleId);
+    if (style.kind === "missing" && this.#missingStyle === null) {
+      this.#missingStyle = style.styleId;
+      logger.debug("Selected citation style is unavailable", {
+        styleId: style.styleId,
+      });
+      this.#emitter.emit("style-missing", style.styleId);
+    }
+    return style;
   }
 }
 

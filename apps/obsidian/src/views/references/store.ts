@@ -4,9 +4,14 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
+import type {
+  Citation,
+  DocumentCitationError,
+} from "@/services/citation-index/service";
 import type { PandocEngineStatus } from "@/services/pandoc/service";
 
-import type { ReferenceEntry } from "./entries";
+import { buildReferenceEntries } from "./entries";
+import type { ReferenceEntry, ReferenceSource } from "./entries";
 
 export type ReferencesListMode =
   | { kind: "minimal" }
@@ -19,6 +24,8 @@ export interface ReferencesState {
   listMode: ReferencesListMode;
   /** Drives the one fallback surface above the list. */
   engine: PandocEngineStatus;
+  /** A completed formatting attempt failed while the engine remained available. */
+  formattingFailed: boolean;
   /** `false` while the Zotero database cannot be read. */
   dbReady: boolean;
 }
@@ -30,8 +37,24 @@ export function createReferencesStore() {
     entries: [],
     listMode: { kind: "minimal" },
     engine: { kind: "absent" },
+    formattingFailed: false,
     dbReady: false,
   }));
+}
+
+/** The current plain-list state after formatted entries become unusable. */
+export function minimalReferencesState(options: {
+  citations: readonly Citation[];
+  sources: ReadonlyMap<string, ReferenceSource>;
+  errors: readonly DocumentCitationError[];
+  formattingFailed: boolean;
+}): Pick<ReferencesState, "entries" | "listMode" | "formattingFailed"> {
+  const { citations, sources, errors, formattingFailed } = options;
+  return {
+    entries: buildReferenceEntries(citations, sources, { errors }),
+    listMode: { kind: "minimal" },
+    formattingFailed,
+  };
 }
 
 const ReferencesStoreContext = createContext<ReferencesStore | null>(null);

@@ -6,6 +6,7 @@ import { defaults } from "@/services/settings/schema";
 
 import {
   citationsPageItems,
+  referencesStyleDescription,
   referencesStyleOptions,
   STYLE_DEFAULT,
 } from "./citations";
@@ -143,5 +144,43 @@ describe("referencesStyleOptions", () => {
         label: m.settings_citation_references_style_default(),
       },
     ]);
+  });
+});
+
+describe("citation formatting settings", () => {
+  it("groups the approved style and engine controls under Formatting", () => {
+    const ctx = {
+      settings: { current: defaults },
+      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      plugin: { manifest: { version: "test" } },
+    } as unknown as SettingTabContext;
+    const group = citationsPageItems(ctx).find(
+      (item) =>
+        "type" in item &&
+        item.type === "group" &&
+        item.heading === "Formatting",
+    );
+
+    if (!group || !("items" in group) || !group.items) {
+      throw new Error("formatting group missing");
+    }
+    expect(group.items[0]).toMatchObject({
+      name: "Citation and references style",
+    });
+    expect(referencesStyleDescription(false).textContent).toBe(
+      "CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.",
+    );
+    expect(group.items[1]).toMatchObject({
+      name: "Pandoc engine",
+      desc: expect.stringMatching(
+        /^Formats in-text citations, references, and exports\. Installation applies to every vault on this device\./,
+      ),
+    });
+  });
+
+  it("shows the approved recovery message for an unavailable selection", () => {
+    expect(referencesStyleDescription(true).textContent).toBe(
+      "This style isn’t installed in Zotero. Install it in Zotero or select another style.",
+    );
   });
 });

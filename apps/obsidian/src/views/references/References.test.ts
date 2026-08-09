@@ -68,11 +68,13 @@ afterEach(async () => {
 async function render(
   entries: readonly ReferenceEntry[],
   listMode: ReferencesListMode,
+  formattingFailed = false,
 ): Promise<HTMLElement> {
   state = {
     entries,
     listMode,
     engine: { kind: "installed", version: "test" },
+    formattingFailed,
     dbReady: true,
   };
   const container = document.createElement("div");
@@ -233,5 +235,28 @@ describe("References", () => {
         .querySelector('[data-icon="chevron-right"]')
         ?.hasAttribute("disabled"),
     ).toBe(false);
+  });
+
+  it("shows a visible error above the current minimal list after formatting fails", async () => {
+    const container = await render(
+      [
+        {
+          id: "BOOK0001",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "summary",
+          source,
+          linkpath: "notes/BOOK0001",
+        },
+      ],
+      { kind: "minimal" },
+      true,
+    );
+
+    expect(container.textContent).toContain(
+      "ZotLit could not format these references",
+    );
+    expect(container.textContent).toContain("Rivers (2020): Book");
+    expect(container.querySelector("li")!.children[0]!.textContent).toBe("1");
   });
 });

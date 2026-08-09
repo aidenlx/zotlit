@@ -76,7 +76,7 @@ export interface CitationTextDeps {
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
-  /** The plugin-wide render cache, which owns the References Style and the engine. */
+  /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<BibliographyRenderCache, "renderCitations" | "on">;
 }
 

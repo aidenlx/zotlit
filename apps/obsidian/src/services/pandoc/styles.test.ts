@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   listInstalledStyles,
   loadStyleXml,
+  resolveStyleXml,
   StyleXmlCache,
   styleHasEntryMarkers,
 } from "./styles";
@@ -94,6 +95,16 @@ describe("listInstalledStyles", () => {
     ]);
   });
 
+  it("omits a dependent style whose independent parent is unavailable", async () => {
+    await writeStyle("orphan.csl", {
+      id: "http://www.zotero.org/styles/orphan",
+      title: "Orphan",
+      parentId: "http://www.zotero.org/styles/uninstalled",
+    });
+
+    await expect(listInstalledStyles(dataDir)).resolves.toEqual([]);
+  });
+
   it("decodes entities in a title and falls back to the filename", async () => {
     await writeStyle("ampersand.csl", {
       id: "http://www.zotero.org/styles/ampersand",
@@ -146,23 +157,30 @@ describe("loadStyleXml", () => {
     ).resolves.toContain("<id>http://www.zotero.org/styles/nature</id>");
   });
 
-  it("falls back to the embedded default style", async () => {
+  it("distinguishes the embedded default from an unavailable selection", async () => {
     await writeStyle("orphan.csl", {
       id: "http://www.zotero.org/styles/orphan",
       title: "Orphan",
       parentId: "http://www.zotero.org/styles/uninstalled",
     });
 
-    // Unset setting.
-    await expect(loadStyleXml(dataDir, null)).resolves.toBeUndefined();
+    await expect(resolveStyleXml(dataDir, null)).resolves.toEqual({
+      kind: "default",
+    });
     // Style file removed or renamed since it was selected.
     await expect(
-      loadStyleXml(dataDir, "http://www.zotero.org/styles/removed"),
-    ).resolves.toBeUndefined();
+      resolveStyleXml(dataDir, "http://www.zotero.org/styles/removed"),
+    ).resolves.toEqual({
+      kind: "missing",
+      styleId: "http://www.zotero.org/styles/removed",
+    });
     // Dependent style whose independent parent is not installed.
     await expect(
-      loadStyleXml(dataDir, "http://www.zotero.org/styles/orphan"),
-    ).resolves.toBeUndefined();
+      resolveStyleXml(dataDir, "http://www.zotero.org/styles/orphan"),
+    ).resolves.toEqual({
+      kind: "missing",
+      styleId: "http://www.zotero.org/styles/orphan",
+    });
   });
 });
 
@@ -202,22 +220,25 @@ describe("StyleXmlCache", () => {
     await utimes(path, PINNED, PINNED);
 
     const styles = new StyleXmlCache();
-    await expect(styles.load(dataDir, APA)).resolves.toContain(
-      "<title>APA</title>",
-    );
+    await expect(styles.resolve(dataDir, APA)).resolves.toMatchObject({
+      kind: "installed",
+      xml: expect.stringContaining("<title>APA</title>"),
+    });
 
     // A body written under the timestamp the read already ran against is a
     // body no read looks at.
     await writeStyle("apa.csl", { id: APA, title: "APA Revised" });
     await utimes(path, PINNED, PINNED);
-    await expect(styles.load(dataDir, APA)).resolves.toContain(
-      "<title>APA</title>",
-    );
+    await expect(styles.resolve(dataDir, APA)).resolves.toMatchObject({
+      kind: "installed",
+      xml: expect.stringContaining("<title>APA</title>"),
+    });
 
     await utimes(path, PINNED + 1, PINNED + 1);
-    await expect(styles.load(dataDir, APA)).resolves.toContain(
-      "<title>APA Revised</title>",
-    );
+    await expect(styles.resolve(dataDir, APA)).resolves.toMatchObject({
+      kind: "installed",
+      xml: expect.stringContaining("<title>APA Revised</title>"),
+    });
   });
 
   it("reads the style the setting names, and re-reads on a change of style", async () => {
@@ -225,27 +246,36 @@ describe("StyleXmlCache", () => {
     await writeStyle("ieee.csl", { id: IEEE, title: "IEEE" });
     const styles = new StyleXmlCache();
 
-    await expect(styles.load(dataDir, APA)).resolves.toContain(
-      `<id>${APA}</id>`,
-    );
-    await expect(styles.load(dataDir, IEEE)).resolves.toContain(
-      `<id>${IEEE}</id>`,
-    );
-    await expect(styles.load(dataDir, APA)).resolves.toContain(
-      `<id>${APA}</id>`,
-    );
+    await expect(styles.resolve(dataDir, APA)).resolves.toMatchObject({
+      kind: "installed",
+      xml: expect.stringContaining(`<id>${APA}</id>`),
+    });
+    await expect(styles.resolve(dataDir, IEEE)).resolves.toMatchObject({
+      kind: "installed",
+      xml: expect.stringContaining(`<id>${IEEE}</id>`),
+    });
+    await expect(styles.resolve(dataDir, APA)).resolves.toMatchObject({
+      kind: "installed",
+      xml: expect.stringContaining(`<id>${APA}</id>`),
+    });
   });
 
-  it("holds nothing for an unset or uninstalled style", async () => {
+  it("keeps Default and an unavailable style distinct without holding either", async () => {
     const styles = new StyleXmlCache();
 
-    await expect(styles.load(dataDir, null)).resolves.toBeUndefined();
-    await expect(styles.load(dataDir, APA)).resolves.toBeUndefined();
+    await expect(styles.resolve(dataDir, null)).resolves.toEqual({
+      kind: "default",
+    });
+    await expect(styles.resolve(dataDir, APA)).resolves.toEqual({
+      kind: "missing",
+      styleId: APA,
+    });
 
     // A style installed after the miss is still found.
     await writeStyle("apa.csl", { id: APA, title: "APA" });
-    await expect(styles.load(dataDir, APA)).resolves.toContain(
-      `<id>${APA}</id>`,
-    );
+    await expect(styles.resolve(dataDir, APA)).resolves.toMatchObject({
+      kind: "installed",
+      xml: expect.stringContaining(`<id>${APA}</id>`),
+    });
   });
 });
