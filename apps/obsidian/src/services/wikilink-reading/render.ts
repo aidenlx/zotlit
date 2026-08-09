@@ -54,27 +54,6 @@ export type FormatWikilinkRun = (
 /** The Citation Runs of one rendered section, as their anchors carry them. */
 export type SectionRuns = RunMember<HTMLAnchorElement>[][];
 
-/** Resolves an internal link target to a Literature Note when it names one. */
-export type LiteratureNoteOf = (linkpath: string) => object | null;
-
-/** Adds the public identity hook to each resolved Literature Note link. */
-export function markLiteratureNoteLinks(
-  root: HTMLElement,
-  literatureNoteOf: LiteratureNoteOf,
-): void {
-  for (const anchor of root.querySelectorAll<HTMLAnchorElement>(
-    INTERNAL_LINK,
-  )) {
-    const linktext = anchor.dataset["href"];
-    if (linktext === undefined) continue;
-    const fragment = linktext.indexOf("#");
-    const linkpath = fragment === -1 ? linktext : linktext.slice(0, fragment);
-    if (literatureNoteOf(linkpath) !== null) {
-      anchor.classList.add(themeHook.literatureNoteLink);
-    }
-  }
-}
-
 /**
  * The Citation Runs of one rendered section, in document order.
  *
@@ -102,7 +81,8 @@ export function sectionCitationRuns(
 /**
  * Shows each Citation Run as what `format` returns for it. It keeps Obsidian's
  * native link classes, `href`, and `data-href`, then appends the public
- * Citation hook, so the target, navigation, and hover stay Obsidian's.
+ * Citation and Literature Note link hooks, so the target, navigation, and
+ * hover stay Obsidian's.
  *
  * A run of several works collapses into its first anchor, so the whole run
  * navigates to the first work it names — the same narrowing the Live Preview
@@ -127,7 +107,7 @@ export function renderCitationRuns(
       source.remove();
     }
     first.replaceChildren(content);
-    first.classList.add(themeHook.citation);
+    first.classList.add(themeHook.citation, themeHook.literatureNoteLink);
     rendered += 1;
   }
   return rendered;

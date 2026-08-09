@@ -186,7 +186,7 @@ describe("CitekeyReading", () => {
     await service.ready;
     expect(rerender).not.toHaveBeenCalled();
 
-    notify?.({ ...defaults, "citation.open-pandoc-links": true });
+    notify?.({ ...defaults, "citation.open-pandoc-links": false });
 
     expect(rerender).toHaveBeenCalledExactlyOnceWith(true);
   });

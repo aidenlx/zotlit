@@ -116,7 +116,7 @@ async function harness({
 }
 
 describe("WikilinkReading rendering", () => {
-  it("exposes the literal Literature Note hook independently of display settings", async () => {
+  it("keeps inactive and excluded Literature Note links outside the hook", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
       "citation.show-formatted": false,
@@ -131,7 +131,7 @@ describe("WikilinkReading rendering", () => {
       const root = await harnessed.renderSection(linktext, alias);
       expect(
         root.querySelector("a")?.classList.contains("zt-literature-note-link"),
-      ).toBe(true);
+      ).toBe(false);
     }
   });
 
@@ -145,7 +145,7 @@ describe("WikilinkReading rendering", () => {
     ).toBe(false);
   });
 
-  it("classifies a self subpath only inside a Literature Note", async () => {
+  it("keeps self subpaths outside the hook", async () => {
     await using inside = await harness({ sourcePath: `${WANG}.md` });
     await using outside = await harness({ sourcePath: "note.md" });
 
@@ -153,7 +153,7 @@ describe("WikilinkReading rendering", () => {
       (await inside.renderSection("#Heading"))
         .querySelector("a")
         ?.classList.contains("zt-literature-note-link"),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       (await outside.renderSection("#Heading"))
         .querySelector("a")
@@ -198,9 +198,10 @@ describe("WikilinkReading rendering", () => {
       "citation.wikilink-citations": true,
     });
 
-    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
-      `${WANG} > cite:locator=7`,
-    );
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    expect(root.textContent).toBe(`${WANG} > cite:locator=7`);
+    expect(root.querySelector(".zt-literature-note-link")).toBeNull();
   });
 
   it("keeps a fragment-less link native without a formatted result", async () => {
@@ -255,9 +256,10 @@ describe("WikilinkReading rendering", () => {
       formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
     });
 
-    expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
-      `${WANG} > cite:locator=7`,
-    );
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    expect(root.textContent).toBe(`${WANG} > cite:locator=7`);
+    expect(root.querySelector(".zt-literature-note-link")).toBeNull();
   });
 
   it("keeps the native link visible while citation text is pending", async () => {
@@ -277,6 +279,7 @@ describe("WikilinkReading rendering", () => {
 
     expect(completed).toBe(true);
     expect(root.textContent).toBe(`${WANG} > cite:locator=7`);
+    expect(root.querySelector(".zt-literature-note-link")).toBeNull();
   });
 
   it("leaves a link that names no Literature Note alone", async () => {

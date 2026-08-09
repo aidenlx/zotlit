@@ -23,11 +23,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
-import {
-  markLiteratureNoteLinks,
-  renderCitationRuns,
-  sectionCitationRuns,
-} from "./render";
+import { renderCitationRuns, sectionCitationRuns } from "./render";
 
 const logger = getLogger("wikilink-reading");
 
@@ -128,7 +124,6 @@ export class WikilinkReading extends Service<void> {
         }
       );
     };
-    markLiteratureNoteLinks(el, literatureNote);
     const runs = sectionCitationRuns(el, (linktext) =>
       wikilinkCitation(linktext, {
         literatureNote,

@@ -84,7 +84,13 @@ const LITERATURE_NOTE = {
   citationKey: "example",
 };
 
-function viewOf(doc: string) {
+function viewOf(
+  doc: string,
+  {
+    enabled = true,
+    formatted = true,
+  }: { enabled?: boolean; formatted?: boolean } = {},
+) {
   const view = new EditorView({
     parent: document.body,
     state: EditorState.create({
@@ -94,12 +100,13 @@ function viewOf(doc: string) {
         wikilinkEditorExtension({
           literatureNote: (linkpath) =>
             linkpath === "literatures/example" ? LITERATURE_NOTE : null,
-          enabled: () => true,
+          enabled: () => enabled,
           citationText: () => {
-            const formatted = document.createDocumentFragment();
-            formatted.append("(Example 2020, p. 7)");
+            if (!formatted) return null;
+            const citation = document.createDocumentFragment();
+            citation.append("(Example 2020, p. 7)");
             return {
-              formatted: new Map([["[@example, p. 7]", formatted]]),
+              formatted: new Map([["[@example, p. 7]", citation]]),
               summaries: new Map([["example", "Example (2020)"]]),
             };
           },
@@ -112,12 +119,11 @@ function viewOf(doc: string) {
 }
 
 describe("wikilinkEditorExtension theme hooks", () => {
-  it("marks a resolved Literature Note link without its source brackets", () => {
+  it("keeps Source mode Literature Note links outside the hook", () => {
     livePreview.mockReturnValue(false);
     using view = viewOf("[[literatures/example|Example]]");
 
-    const link = view.dom.querySelector(".zt-literature-note-link");
-    expect(link?.textContent).toBe("literatures/example|Example");
+    expect(view.dom.querySelector(".zt-literature-note-link")).toBeNull();
   });
 
   it("adds the literal combined hooks to a rendered Literature Note Citation", () => {
@@ -128,10 +134,18 @@ describe("wikilinkEditorExtension theme hooks", () => {
     expect(citation?.classList.contains("zt-literature-note-link")).toBe(true);
   });
 
-  it("leaves embeds and unresolved links outside the hook", () => {
-    livePreview.mockReturnValue(false);
-    for (const doc of ["![[literatures/example]]", "[[notes/missing]]"]) {
-      using view = viewOf(doc);
+  it("leaves native, excluded, and unresolved links outside the hook", () => {
+    livePreview.mockReturnValue(true);
+    for (const [doc, options] of [
+      ["[[literatures/example#cite:locator=7]]", { enabled: false }],
+      ["[[literatures/example#cite:locator=7]]", { formatted: false }],
+      ["[[literatures/example|Example]]", {}],
+      ["[[literatures/example#Heading]]", {}],
+      ["[[literatures/example#^block-id]]", {}],
+      ["![[literatures/example]]", {}],
+      ["[[notes/missing]]", {}],
+    ] as const) {
+      using view = viewOf(doc, options);
 
       expect(view.dom.querySelector(".zt-literature-note-link")).toBeNull();
     }

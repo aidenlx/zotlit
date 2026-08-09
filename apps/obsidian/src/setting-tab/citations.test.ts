@@ -94,7 +94,7 @@ describe("in-text citation settings", () => {
     expect(defaults["citation.show-formatted"]).toBe(true);
     expect(Object.entries(defaults)).toContainEqual([
       "citation.open-pandoc-links",
-      false,
+      true,
     ]);
   });
 });

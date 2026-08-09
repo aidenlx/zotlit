@@ -209,29 +209,19 @@ function buildDecorations(
   for (const range of visibleLineRanges(view)) {
     spans.push(...scanWikilinks(tokenNodes(state, range)));
   }
-  const links = spans.filter(
-    (span) =>
-      !span.isEmbed &&
-      handlers.literatureNote(linkpathOf(span.linktext), sourcePath) !== null,
-  );
-  if (links.length === 0) return Decoration.none;
-
-  // Source mode adds the semantic mark but keeps Obsidian's own token and
-  // conceal handling. Live Preview replaces only links with complete formatted
-  // text, while raw links keep the same semantic mark.
+  // Live Preview replaces only links with complete formatted text. Source mode
+  // and native Live Preview links keep Obsidian's presentation and classes.
   const decorations: WikilinkDecoration[] = livePreviewOf(state)
     ? wikilinkDecorations(spans, context)
     : [];
+  if (decorations.length === 0) return Decoration.none;
 
   // Asked for only once a Citation is on screen, so a document that writes none
   // is never read. A document whose citations are not held yet keeps native
   // link presentation, and the read announces itself when it settles, which
   // brings the formatted text in without a document change.
-  const citations =
-    decorations.length === 0 || file === null
-      ? null
-      : handlers.citationText(file.path);
-  if (decorations.length > 0 && file !== null && citations === null) {
+  const citations = file === null ? null : handlers.citationText(file.path);
+  if (file !== null && citations === null) {
     handlers.requestCitationText(file);
   }
 
@@ -244,34 +234,12 @@ function buildDecorations(
             ? []
             : [{ from: candidate.from, to: candidate.to, decoration }];
         });
-  const placed: { from: number; to: number; decoration: Decoration }[] = [];
-  for (const link of links) {
-    if (
-      replacements.some(
-        ({ from, to }) => from <= link.inner.from && to >= link.inner.to,
-      )
-    ) {
-      continue;
-    }
-    placed.push({
-      from: link.inner.from,
-      to: link.inner.to,
-      decoration: Decoration.mark({ class: themeHook.literatureNoteLink }),
-    });
-  }
-  placed.push(...replacements);
-  placed.sort((a, b) => a.from - b.from);
+  replacements.sort((a, b) => a.from - b.from);
   const builder = new RangeSetBuilder<Decoration>();
-  for (const { from, to, decoration } of placed) {
+  for (const { from, to, decoration } of replacements) {
     builder.add(from, to, decoration);
   }
   return builder.finish();
-}
-
-/** The target part of an internal link, before any heading or block subpath. */
-function linkpathOf(linktext: string): string {
-  const fragment = linktext.indexOf("#");
-  return fragment === -1 ? linktext : linktext.slice(0, fragment);
 }
 
 function replacement(
