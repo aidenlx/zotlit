@@ -118,7 +118,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
   "citation.show-formatted": true,
-  "citation.open-pandoc-links": false,
+  "citation.open-pandoc-links": true,
   "citation.references-style": null,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
