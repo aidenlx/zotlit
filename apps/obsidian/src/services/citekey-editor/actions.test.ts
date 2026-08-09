@@ -32,7 +32,7 @@ function setup(enabled: boolean): {
   const plugin = createMockPlugin();
   addCitekeyEditorActions(plugin, {
     citekeyEditor: {
-      enabled,
+      navigationEnabled: enabled,
       openCitekey: vi.fn((citekey: string, pane: NavigationPane) => {
         opened.push([citekey, pane]);
         return Promise.resolve();

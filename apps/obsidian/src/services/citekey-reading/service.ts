@@ -110,7 +110,7 @@ export class CitekeyReading extends Service<void> {
     const showFormatted =
       pandocCitations && settings["citation.show-formatted"];
     const navigationEnabled =
-      pandocCitations && settings["citation.citekey-editor"];
+      pandocCitations && settings["citation.open-pandoc-links"];
     const active = showFormatted || navigationEnabled;
     if (
       active === this.#active &&

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -157,6 +158,39 @@ beforeEach(() => {
 });
 
 describe("CitekeyReading", () => {
+  it("rerenders open reading views when Pandoc navigation changes", async () => {
+    let notify: ((settings: Readonly<Settings>) => void) | undefined;
+    const rerender = vi.fn();
+    const view = Object.assign(
+      Object.create(MarkdownView.prototype) as MarkdownView,
+      { previewMode: { rerender } },
+    );
+    await using service = new CitekeyReading({
+      app: {
+        workspace: { getLeavesOfType: () => [{ view }] },
+      },
+      plugin: { registerMarkdownPostProcessor: () => undefined },
+      citationText: {
+        on: () => () => undefined,
+      },
+      citekeyEditor: {},
+      settings: {
+        ready: Promise.resolve(),
+        subscribe: (listener: (settings: Readonly<Settings>) => void) => {
+          notify = listener;
+          listener(defaults);
+          return () => undefined;
+        },
+      },
+    } as never);
+    await service.ready;
+    expect(rerender).not.toHaveBeenCalled();
+
+    notify?.({ ...defaults, "citation.open-pandoc-links": true });
+
+    expect(rerender).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
   it("puts the engine's formatted citation in the source's place", async () => {
     await using harnessed = await makeHarness({
       body: "Blah [see @alpha, p. 3] blah.",
@@ -281,7 +315,7 @@ describe("CitekeyReading", () => {
     for (const overrides of [
       {
         "citation.show-formatted": false,
-        "citation.citekey-editor": false,
+        "citation.open-pandoc-links": false,
       },
       { "citation.pandoc-citations": false },
     ]) {

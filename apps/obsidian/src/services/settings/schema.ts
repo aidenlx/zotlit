@@ -71,8 +71,8 @@ export const schema = v.object({
   "citation.wikilink-citations": v.boolean(),
   /** Show recognized Citations with the selected CSL style. */
   "citation.show-formatted": v.boolean(),
-  /** Mark and click literal `@citekey` text in the editor. */
-  "citation.citekey-editor": v.boolean(),
+  /** Open and preview Literature Notes from Pandoc Citations. */
+  "citation.open-pandoc-links": v.boolean(),
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
   "citation.references-style": v.nullable(v.string()),
 
@@ -118,7 +118,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
   "citation.show-formatted": true,
-  "citation.citekey-editor": true,
+  "citation.open-pandoc-links": false,
   "citation.references-style": null,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,

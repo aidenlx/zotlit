@@ -14,7 +14,7 @@ import type { CitekeyEditor } from "./service";
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorActionDeps {
-  citekeyEditor: Pick<CitekeyEditor, "enabled" | "openCitekey">;
+  citekeyEditor: Pick<CitekeyEditor, "navigationEnabled" | "openCitekey">;
 }
 
 export function addCitekeyEditorActions(
@@ -53,8 +53,7 @@ function addOpenCitekeyCommand(
     id: command.id,
     name: command.name,
     editorCheckCallback(checking, editor) {
-      // The treatment is the master switch for every literal-citekey surface.
-      if (!deps.citekeyEditor.enabled) return false;
+      if (!deps.citekeyEditor.navigationEnabled) return false;
       const { state } = editor.cm;
       const citekey = citekeyAtPos(state, state.selection.main.head);
       if (!citekey) return false;

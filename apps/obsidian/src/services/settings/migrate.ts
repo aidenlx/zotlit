@@ -317,3 +317,12 @@ export function migrateV5ToV6(raw: unknown): Record<string, unknown> {
     ? { ...rest, "citation.pandoc-citations": citekeyIndexing }
     : rest;
 }
+
+/** Rename Citekey Editor Treatment to the Pandoc navigation control. */
+export function migrateV6ToV7(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.citekey-editor": citekeyEditor, ...rest } = raw;
+  return typeof citekeyEditor === "boolean"
+    ? { ...rest, "citation.open-pandoc-links": citekeyEditor }
+    : rest;
+}

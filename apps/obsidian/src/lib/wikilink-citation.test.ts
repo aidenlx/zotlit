@@ -226,7 +226,7 @@ describe("WikilinkDisplaySettings", () => {
     let redraws = 0;
     display.watch(settings, () => redraws++);
 
-    settings.update({ "citation.citekey-editor": false });
+    settings.update({ "citation.open-pandoc-links": false });
     expect(redraws).toBe(0);
   });
 

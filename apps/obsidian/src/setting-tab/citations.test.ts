@@ -57,7 +57,7 @@ describe("citation source settings", () => {
 });
 
 describe("in-text citation settings", () => {
-  it("shows one formatted-citation control with the approved copy", () => {
+  it("shows independent presentation and Pandoc navigation controls", () => {
     const ctx = {
       settings: { current: defaults },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
@@ -78,6 +78,11 @@ describe("in-text citation settings", () => {
       desc: "Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.",
       control: { type: "toggle", key: "citation.show-formatted" },
     });
+    expect(group.items[1]).toMatchObject({
+      name: "Open Pandoc citations as links",
+      desc: "Open and preview literature notes from Pandoc citations. This setting does not change how citations are shown.",
+      control: { type: "toggle", key: "citation.open-pandoc-links" },
+    });
     expect(group.items).not.toContainEqual(
       expect.objectContaining({
         control: expect.objectContaining({
@@ -86,6 +91,10 @@ describe("in-text citation settings", () => {
       }),
     );
     expect(defaults["citation.show-formatted"]).toBe(true);
+    expect(Object.entries(defaults)).toContainEqual([
+      "citation.open-pandoc-links",
+      false,
+    ]);
   });
 });
 

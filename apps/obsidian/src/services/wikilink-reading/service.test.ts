@@ -345,7 +345,7 @@ describe("WikilinkReading rerender", () => {
   it("leaves the reading views alone when an unrelated setting changes", async () => {
     await using harnessed = await harness();
 
-    harnessed.settings.update({ "citation.citekey-editor": false });
+    harnessed.settings.update({ "citation.open-pandoc-links": false });
     expect(harnessed.rerenders()).toBe(0);
   });
 

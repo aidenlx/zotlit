@@ -14,7 +14,7 @@ describe("CitekeyEditor settings lifecycle", () => {
   it("registers the extension while formatting or navigation is enabled", async () => {
     const settings = new SettingsStub({
       "citation.show-formatted": false,
-      "citation.citekey-editor": false,
+      "citation.open-pandoc-links": false,
     });
     let registered: Extension[] = [];
     let reconfigures = 0;
@@ -39,22 +39,22 @@ describe("CitekeyEditor settings lifecycle", () => {
     await service.ready;
 
     expect(registered).toEqual([]);
-    expect(service.enabled).toBe(false);
+    expect(service.navigationEnabled).toBe(false);
     settings.update({ "citation.show-formatted": true });
     expect(registered).toHaveLength(1);
-    expect(service.enabled).toBe(false);
+    expect(service.navigationEnabled).toBe(false);
 
-    settings.update({ "citation.citekey-editor": true });
+    settings.update({ "citation.open-pandoc-links": true });
     expect(registered).toHaveLength(1);
-    expect(service.enabled).toBe(true);
+    expect(service.navigationEnabled).toBe(true);
     expect(reconfigures).toBe(1);
 
     settings.update({ "citation.show-formatted": false });
     expect(registered).toHaveLength(1);
-    expect(service.enabled).toBe(true);
-    settings.update({ "citation.citekey-editor": false });
+    expect(service.navigationEnabled).toBe(true);
+    settings.update({ "citation.open-pandoc-links": false });
     expect(registered).toEqual([]);
-    expect(service.enabled).toBe(false);
+    expect(service.navigationEnabled).toBe(false);
 
     await service[Symbol.asyncDispose]();
     expect(registered).toEqual([]);
@@ -63,7 +63,7 @@ describe("CitekeyEditor settings lifecycle", () => {
   it("stays off while Pandoc citations are off, whatever the editor toggle says", async () => {
     const settings = new SettingsStub({
       "citation.pandoc-citations": false,
-      "citation.citekey-editor": true,
+      "citation.open-pandoc-links": true,
     });
     let registered: Extension[] = [];
     await using service = new CitekeyEditor({

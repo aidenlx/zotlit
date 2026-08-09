@@ -69,7 +69,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #extensions: Extension[] = [];
 
   #active = false;
-  #enabled = false;
+  #navigationEnabled = false;
   #showFormatted = false;
 
   ready: Promise<void>;
@@ -90,7 +90,7 @@ export class CitekeyEditor extends Service<void> {
       },
       hoverNotePath: (citekey) => this.hoverNotePath(citekey),
       resolves: (citekey) => this.#resolves(citekey),
-      navigationEnabled: () => this.#enabled,
+      navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
       requestCitationText: (file) => {
@@ -183,22 +183,24 @@ export class CitekeyEditor extends Service<void> {
 
   #applySettings(settings: Readonly<Settings>): void {
     const pandocCitations = settings["citation.pandoc-citations"];
-    const enabled = pandocCitations && settings["citation.citekey-editor"];
+    const navigationEnabled =
+      pandocCitations && settings["citation.open-pandoc-links"];
     const showFormatted =
       pandocCitations && settings["citation.show-formatted"];
-    const active = enabled || showFormatted;
+    const active = navigationEnabled || showFormatted;
     if (
       active === this.#active &&
-      enabled === this.#enabled &&
+      navigationEnabled === this.#navigationEnabled &&
       showFormatted === this.#showFormatted
     ) {
       return;
     }
     const activeChanged = active !== this.#active;
     const treatmentChanged =
-      enabled !== this.#enabled || showFormatted !== this.#showFormatted;
+      navigationEnabled !== this.#navigationEnabled ||
+      showFormatted !== this.#showFormatted;
     this.#active = active;
-    this.#enabled = enabled;
+    this.#navigationEnabled = navigationEnabled;
     this.#showFormatted = showFormatted;
     if (activeChanged) {
       this.#extensions.length = 0;
@@ -213,18 +215,15 @@ export class CitekeyEditor extends Service<void> {
       );
     } else {
       logger.debug("Citekey editor treatment changed", {
-        navigationEnabled: enabled,
+        navigationEnabled,
         showFormatted,
       });
     }
   }
 
-  /**
-   * Whether literal Citation navigation runs. The palette commands gate on
-   * this independently from formatted presentation.
-   */
-  get enabled(): boolean {
-    return this.#enabled;
+  /** The palette commands gate on this independently from presentation. */
+  get navigationEnabled(): boolean {
+    return this.#navigationEnabled;
   }
 
   /**

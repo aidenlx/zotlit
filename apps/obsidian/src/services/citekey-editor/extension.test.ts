@@ -1,9 +1,36 @@
 // @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { citekeyAtPos, citekeyEditorExtension } from "./extension";
+const { livePreview } = vi.hoisted(() => ({
+  livePreview: vi.fn(() => false),
+}));
+
+vi.mock("@/lib/editor-decoration", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/editor-decoration")>()),
+  livePreviewOf: livePreview,
+}));
+
+vi.mock("obsidian", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("obsidian")>();
+  const { StateField } = await import("@codemirror/state");
+  return {
+    ...actual,
+    editorInfoField: StateField.define({
+      create: () => ({ file: { path: "note.md" } }),
+      update: (value) => value,
+    }),
+  };
+});
+
+import { editorInfoField } from "obsidian";
+
+import {
+  citekeyAtPos,
+  citekeyDecorationsChanged,
+  citekeyEditorExtension,
+} from "./extension";
 
 const stateOf = (doc: string): EditorState => EditorState.create({ doc });
 
@@ -43,6 +70,7 @@ describe("citekeyAtPos", () => {
 
 describe("citekeyEditorExtension theme hooks", () => {
   it("adds literal resolved and unresolved citation-key hooks in Source mode", () => {
+    livePreview.mockReturnValue(false);
     using view = editorView({
       parent: document.body,
       state: EditorState.create({
@@ -66,5 +94,47 @@ describe("citekeyEditorExtension theme hooks", () => {
       view.dom.querySelectorAll(".zt-citation-key-unresolved").item(0)
         .textContent,
     ).toBe("@unresolved");
+  });
+
+  it("removes formatted-citation navigation when the setting turns off", () => {
+    livePreview.mockReturnValue(true);
+    let navigationEnabled = true;
+    const opened: string[] = [];
+    const formatted = document.createDocumentFragment();
+    formatted.append("Doe (2024)");
+    using view = editorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "[@doe2024]",
+        extensions: [
+          editorInfoField,
+          citekeyEditorExtension({
+            open: (citekey) => opened.push(citekey),
+            hoverNotePath: () => null,
+            resolves: () => true,
+            navigationEnabled: () => navigationEnabled,
+            showFormatted: () => true,
+            citationText: () => ({
+              formatted: new Map([["[@doe2024]", formatted]]),
+              summaries: new Map([["doe2024", "Doe (2024)"]]),
+            }),
+            requestCitationText: () => undefined,
+          }),
+        ],
+      }),
+    });
+
+    view.dom
+      .querySelector(".zt-citation")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(opened).toEqual(["doe2024"]);
+
+    navigationEnabled = false;
+    view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+    view.dom
+      .querySelector(".zt-citation")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(opened).toEqual(["doe2024"]);
   });
 });

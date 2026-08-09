@@ -371,7 +371,11 @@ class CitationWidget extends WidgetType {
   }
 
   eq(other: CitationWidget): boolean {
-    return other.#source === this.#source && other.#content === this.#content;
+    return (
+      other.#source === this.#source &&
+      other.#content === this.#content &&
+      other.#navigable === this.#navigable
+    );
   }
 
   toDOM(view: EditorView): HTMLElement {

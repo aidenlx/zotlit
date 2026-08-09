@@ -7,6 +7,7 @@ import {
   migrateV3ToV4,
   migrateV4ToV5,
   migrateV5ToV6,
+  migrateV6ToV7,
 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
@@ -514,5 +515,31 @@ describe("migrateV5ToV6", () => {
 
   it("uses the new default when the old key is absent", () => {
     expect(migrateV5ToV6({ __VERSION__: 5 })).toEqual({ __VERSION__: 5 });
+  });
+});
+
+describe("migrateV6ToV7", () => {
+  it.each([
+    [true, true],
+    [false, false],
+  ] as const)(
+    "maps the citekey editor value %s to Pandoc citation navigation",
+    (input, expected) => {
+      expect(
+        migrateV6ToV7({
+          __VERSION__: 6,
+          "citation.citekey-editor": input,
+          "citation.show-formatted": false,
+        }),
+      ).toEqual({
+        __VERSION__: 6,
+        "citation.open-pandoc-links": expected,
+        "citation.show-formatted": false,
+      });
+    },
+  );
+
+  it("keeps the new navigation setting absent when the old value is absent", () => {
+    expect(migrateV6ToV7({ __VERSION__: 6 })).toEqual({ __VERSION__: 6 });
   });
 });
