@@ -17,6 +17,7 @@
 # --- Packages the docs build never imports ---
 /packages/item-lookup
 /packages/obsidian-api
+/packages/obsidian-i18n
 /packages/pdfjs-dist
 /packages/protocol
 /packages/templates
