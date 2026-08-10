@@ -34,6 +34,10 @@ Content lives in `content/`; collections and schemas are defined in `source.conf
 
 Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
 
+### Release availability
+
+Every page sets `introduced` and `updated` to exact full ZotLit semvers. The expected next ZotLit version is required author input: when the request does not provide it, ask for it before creating a page or advancing either field. Use the supplied version instead of inferring one from repository state. For a new page, set both fields to that release. In a feature PR, advance `updated` on every existing page whose main-subject guidance materially changes; wording-only edits preserve it. Use prerelease semvers while their Stable Release Line is ahead of Stable. The site derives `NEW` and `UPDATED` from the current version in `apps/obsidian/package.json`; the normalized release-line classifier lives in `lib/docs-availability.ts`.
+
 Image attachments (screenshots, etc.) go under `public/img/<collection>/` as `.webp`, not `.png`/`.jpg` — convert with `cwebp` before committing.
 
 # Docs site design
