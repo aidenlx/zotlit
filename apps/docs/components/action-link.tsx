@@ -1,4 +1,4 @@
-import { Download, Link } from "lucide-react";
+import { ArrowUpRight, Download, Link } from "lucide-react";
 import type { ReactNode } from "react";
 
 import ObsidianMark from "@/assets/obsidian.svg?svgr";
@@ -30,8 +30,8 @@ export interface ActionLinkProps {
 }
 
 /**
- * Square hairline-bordered link with a leading kind glyph and a trailing `↗`,
- * matching the changelog's "Open release ↗" device. `download` saves the asset;
+ * Square hairline-bordered link with a leading kind glyph and a trailing arrow,
+ * matching the changelog's "Open release" device. `download` saves the asset;
  * `obsidian` opens an `obsidian://` deep link in the app; `external` opens a web
  * page in a new tab.
  */
@@ -60,9 +60,10 @@ export function ActionLink({
       >
         <Icon className="size-[1.05em] shrink-0 text-fd-primary" />
         <span>{children}</span>
-        <span aria-hidden className="text-fd-primary">
-          ↗
-        </span>
+        <ArrowUpRight
+          aria-hidden
+          className="size-[1.05em] shrink-0 text-fd-primary"
+        />
       </a>
       {filename && (
         <span className="font-mono text-[0.76rem] text-fd-muted-foreground">

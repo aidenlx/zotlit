@@ -19,6 +19,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 - `mise` pins to Node 26 version (see `mise.toml`). It also runs `corepack enable` post-install to activate pnpm at the version declared in root `package.json`.
 - `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
+- Resolve tool availability from the current workspace environment. Use `pnpm exec` for workspace binaries; use the Mise-managed toolchain defined by `mise.toml`.
 
 ## Commands
 

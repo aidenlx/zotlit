@@ -1,3 +1,5 @@
+import { ArrowUpRight } from "lucide-react";
+
 import { Banner } from "@/components/banner";
 import { zotlitLegacyUrl } from "@/lib/shared";
 
@@ -18,9 +20,10 @@ export function LegacyBanner() {
           className="ms-0.5 font-medium whitespace-nowrap text-fd-primary underline decoration-fd-primary/40 underline-offset-[3px] transition-[text-decoration-color] hover:decoration-fd-primary"
         >
           Read the v1 docs
-          <span aria-hidden className="ms-0.5">
-            ↗
-          </span>
+          <ArrowUpRight
+            aria-hidden
+            className="ms-0.5 inline size-[1.05em] shrink-0 align-[-0.14em]"
+          />
         </a>
       </p>
     </Banner>
