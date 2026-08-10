@@ -1,9 +1,9 @@
 import { type Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
 
 import { BackCrumb } from "@/components/back-crumb";
 import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
+import { notFoundOrBetaRedirect } from "@/lib/beta-redirect";
 import { cn } from "@/lib/cn";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageMetadata } from "@/lib/seo";
@@ -12,8 +12,6 @@ import {
   changelogRoute,
   formatReleaseDate,
   gitConfig,
-  isProductionDeployment,
-  zotlitBetaUrl,
 } from "@/lib/shared";
 import { changelog, getChangelogPages } from "@/lib/source";
 import {
@@ -26,14 +24,6 @@ import {
 // there on the production deployment instead of 404ing.
 export const dynamicParams = true;
 
-/** 307s to the beta site's copy of `version` on the production deployment; 404s elsewhere. */
-function notFoundOrBetaRedirect(version: string): never {
-  if (isProductionDeployment) {
-    redirect(`${zotlitBetaUrl}${changelogRoute}/${version}`);
-  }
-  notFound();
-}
-
 function isLatest(version: string): boolean {
   const [latest] = getChangelogPages();
   return latest?.data.version === version;
@@ -44,7 +34,7 @@ export default async function ChangelogVersionPage(
 ) {
   const params = await props.params;
   const page = changelog.getPage([params.version]);
-  if (!page) notFoundOrBetaRedirect(params.version);
+  if (!page) notFoundOrBetaRedirect(`${changelogRoute}/${params.version}`);
 
   const { version, date, description, companion, body: MDX } = page.data;
 
@@ -122,7 +112,7 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const params = await props.params;
   const page = changelog.getPage([params.version]);
-  if (!page) notFoundOrBetaRedirect(params.version);
+  if (!page) notFoundOrBetaRedirect(`${changelogRoute}/${params.version}`);
 
   const { version, description, date } = page.data;
 
