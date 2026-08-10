@@ -1,5 +1,4 @@
-import { notFound } from "next/navigation";
-
+import { notFoundOrBetaRedirect } from "@/lib/beta-redirect";
 import {
   changelog,
   getChangelogIndexLLMText,
@@ -23,7 +22,8 @@ export async function GET(
   }
 
   const page = changelog.getPage(path);
-  if (!page) notFound();
+  if (!page)
+    notFoundOrBetaRedirect(`/llms.mdx/changelog/${path.join("/")}/content.md`);
 
   return new Response(await getChangelogLLMText(page), { headers });
 }
