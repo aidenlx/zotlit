@@ -57,8 +57,10 @@ export function getPageMarkdownUrl(page: (typeof source)["$inferPage"]) {
 export async function getLLMText(page: (typeof source)["$inferPage"]) {
   const processed = await page.data.getText("processed");
   const resolved = resolveDocsAvailability(page.data.introduced);
-  const changelogUrl = changelog.getPage([page.data.introduced])?.url;
-  const availability = `${renderAvailabilityMarkdown(resolved, changelogUrl)}\n\n`;
+  // Unset for a page that hasn't gone through a release cycle yet — see ADR 0002.
+  const availability = resolved
+    ? `${renderAvailabilityMarkdown(resolved, changelog.getPage([resolved.introduced])?.url)}\n\n`
+    : "";
 
   return `# ${page.data.title} (${page.url})
 

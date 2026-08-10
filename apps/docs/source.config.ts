@@ -66,10 +66,18 @@ export const docs = defineDocs({
   docs: {
     schema: v.object({
       ...pageSchema.entries,
-      /** First ZotLit release that contained the page's main subject. */
-      introduced: semverSchema,
-      /** Latest ZotLit release that materially changed the page's main subject. */
-      updated: semverSchema,
+      /**
+       * First ZotLit release that contained the page's main subject. Unset
+       * until `release.ts`'s docs-availability phase assigns it at release
+       * time — see ADR 0002.
+       */
+      introduced: v.optional(semverSchema),
+      /**
+       * Latest ZotLit release that materially changed the page's main
+       * subject. Unset until `release.ts`'s docs-availability phase assigns
+       * it at release time — see ADR 0002.
+       */
+      updated: v.optional(semverSchema),
     }),
     files: ["**/*.mdx", "!**/_*.mdx"],
     postprocess: {

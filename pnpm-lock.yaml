@@ -711,6 +711,9 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../config
+      arkregex:
+        specifier: 'catalog:'
+        version: 0.0.5
       semver:
         specifier: ^7.8.0
         version: 7.8.5

@@ -31,7 +31,9 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const MDX = page.data.body;
   const markdownUrl = getPageMarkdownUrl(page).url;
   const availability = resolveDocsAvailability(page.data.introduced);
-  const changelogUrl = changelog.getPage([page.data.introduced])?.url;
+  const changelogUrl = page.data.introduced
+    ? changelog.getPage([page.data.introduced])?.url
+    : undefined;
 
   const treeCrumbs = getBreadcrumbItems(page.url, source.pageTree, {
     includePage: true,

@@ -45,6 +45,10 @@ describe("getDocsAvailability", () => {
       "ahead of current Docs Release Line",
     );
   });
+
+  it("is undefined for a page with no Introduced Release yet", () => {
+    assertEquals(getDocsAvailability(undefined, "2.1.0-beta.4"), undefined);
+  });
 });
 
 describe("getDocsSidebarBadge", () => {
@@ -105,6 +109,17 @@ describe("getDocsSidebarBadge", () => {
       "predates Introduced Release",
     );
   });
+
+  it("leaves a page with no release history yet unbadged", () => {
+    assertEquals(getDocsSidebarBadge({}, "2.1.0-beta.4"), undefined);
+  });
+
+  it("leaves a partially-set page unbadged", () => {
+    assertEquals(
+      getDocsSidebarBadge({ introduced: "2.0.0" }, "2.1.0-beta.4"),
+      undefined,
+    );
+  });
 });
 
 describe("withDocsAvailability", () => {
@@ -137,6 +152,25 @@ describe("withDocsAvailability", () => {
       undefined,
     );
     assertEquals(result.$id, "docs:release-2.0.1");
+  });
+
+  it("leaves an unreleased page unbadged", () => {
+    const page: PageTree.Item = {
+      type: "page",
+      name: "Export a note with citations",
+      url: "/docs/how-to/export-note-with-citations",
+    };
+    const tree: PageTree.Root = {
+      $id: "docs",
+      name: "Docs",
+      children: [page],
+    };
+    const result = withDocsAvailability(tree, () => ({}), "2.0.1");
+
+    assertEquals(
+      (result.children[0] as DocsPageTreeItem).docsAvailability,
+      undefined,
+    );
   });
 });
 

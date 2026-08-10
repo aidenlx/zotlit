@@ -193,6 +193,12 @@ Every page shows a quiet mono metadata row:
 `AVAILABLE SINCE ZotLit <Introduced Release>`. The release links to the
 matching Changelog Entry when one exists.
 
+A page with no Introduced Release yet — it hasn't gone through a release
+cycle (see ADR 0002) — shows neither the sidebar pill nor the metadata row.
+This is a normal, expected state, not an error: Pre-release Docs deploys
+continuously from `next`, so an unreleased page can sit on a live site for a
+while before the next release assigns it.
+
 ### Comments
 
 Mounted via the docs page footer slot after prev/next cards.

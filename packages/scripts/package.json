@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "imports": {
+    "#docs-availability-scan": "./lib/docs-availability-scan.ts",
+    "#mdx-frontmatter": "./lib/mdx-frontmatter.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
     "#package-roots": "./lib/package-roots.ts",
     "#test-vault": "./lib/test-vault.ts"
@@ -15,6 +17,7 @@
   },
   "scripts": {
     "release": "node scripts/release.ts",
+    "preview-docs-availability": "node scripts/preview-docs-availability.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -23,6 +26,7 @@
     "@types/node": "catalog:",
     "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
+    "arkregex": "catalog:",
     "semver": "^7.8.0",
     "typescript": "catalog:",
     "valibot": "catalog:",

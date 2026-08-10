@@ -3,7 +3,8 @@
   "compilerOptions": {
     "isolatedDeclarations": false,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": ["./lib/**/*.ts", "./scripts/**/*.ts"],
   "exclude": ["./node_modules"]

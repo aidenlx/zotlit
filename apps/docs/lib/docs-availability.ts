@@ -1,9 +1,10 @@
 import type * as PageTree from "fumadocs-core/page-tree";
 import { gt, lt, major, minor, patch, valid } from "semver";
 
-import packageJson from "@/../obsidian/package.json" with { type: "json" };
+// `release.ts`'s docs-availability phase is the sole writer — see ADR 0002.
+import zotlitRelease from "@/zotlit-release.json" with { type: "json" };
 
-export const DOCS_RELEASE_VERSION = packageJson.version;
+export const DOCS_RELEASE_VERSION = zotlitRelease.version;
 
 export interface DocsAvailability {
   introduced: string;
@@ -13,9 +14,13 @@ export interface DocsAvailability {
 export type DocsAvailabilityState = "new" | "historical";
 export type DocsSidebarBadge = "new" | "updated";
 
+/**
+ * A page's Introduced/Updated Release. Both are unset for a page that
+ * hasn't gone through a release cycle yet — see ADR 0002.
+ */
 export interface DocsReleaseMetadata {
-  introduced: string;
-  updated: string;
+  introduced?: string;
+  updated?: string;
 }
 
 export type DocsPageTreeItem = PageTree.Item & {
@@ -44,11 +49,24 @@ function getDocsReleaseState(
   return releaseLine === docsReleaseLine ? "new" : "historical";
 }
 
-/** Resolve page-level availability from its Introduced Release. */
+/**
+ * Resolve page-level availability from its Introduced Release.
+ * @returns undefined for a page with no Introduced Release yet (has not gone
+ *   through a release cycle — see ADR 0002).
+ */
 export function getDocsAvailability(
   introduced: string,
+  docsRelease?: string,
+): DocsAvailability;
+export function getDocsAvailability(
+  introduced: string | undefined,
+  docsRelease?: string,
+): DocsAvailability | undefined;
+export function getDocsAvailability(
+  introduced: string | undefined,
   docsRelease = DOCS_RELEASE_VERSION,
-): DocsAvailability {
+): DocsAvailability | undefined {
+  if (introduced === undefined) return undefined;
   const docsReleaseLine = getStableReleaseLine(docsRelease);
   return {
     introduced,
@@ -56,28 +74,37 @@ export function getDocsAvailability(
   };
 }
 
-/** Derive one sidebar badge from a page's feature and content history. */
+/**
+ * Derive one sidebar badge from a page's feature and content history.
+ * @returns undefined when either release is unset (unreleased page) or
+ *   neither release falls in the current Docs Release Line.
+ */
 export function getDocsSidebarBadge(
   metadata: DocsReleaseMetadata,
   docsRelease = DOCS_RELEASE_VERSION,
 ): DocsSidebarBadge | undefined {
-  if (lt(metadata.updated, metadata.introduced)) {
+  const { introduced, updated } = metadata;
+  if (introduced === undefined || updated === undefined) return undefined;
+
+  if (lt(updated, introduced)) {
     throw new Error(
-      `Updated Release ${metadata.updated} predates Introduced Release ${metadata.introduced}`,
+      `Updated Release ${updated} predates Introduced Release ${introduced}`,
     );
   }
 
   const docsReleaseLine = getStableReleaseLine(docsRelease);
-  const introduced = getDocsReleaseState(metadata.introduced, docsReleaseLine);
-  const updated = getDocsReleaseState(metadata.updated, docsReleaseLine);
+  const introducedState = getDocsReleaseState(introduced, docsReleaseLine);
+  const updatedState = getDocsReleaseState(updated, docsReleaseLine);
 
-  if (introduced === "new") return "new";
-  if (updated === "new") return "updated";
+  if (introducedState === "new") return "new";
+  if (updatedState === "new") return "updated";
   return undefined;
 }
 
-/** Resolve current availability from the checked-out Obsidian package version. */
-export function resolveDocsAvailability(introduced: string): DocsAvailability {
+/** Resolve current availability against the current Docs Release Line. */
+export function resolveDocsAvailability(
+  introduced: string | undefined,
+): DocsAvailability | undefined {
   return getDocsAvailability(introduced);
 }
 

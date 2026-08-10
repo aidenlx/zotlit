@@ -24,9 +24,12 @@ export function DocsAvailability({
   availability,
   changelogUrl,
 }: {
-  availability: Availability;
+  availability?: Availability;
   changelogUrl?: string;
 }) {
+  // Unset for a page that hasn't gone through a release cycle yet — see ADR 0002.
+  if (!availability) return null;
+
   const version = (
     <Version version={availability.introduced} changelogUrl={changelogUrl} />
   );
