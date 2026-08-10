@@ -1,12 +1,14 @@
 ---
 title: "Settings"
 description: "Every ZotLit setting: key, label, default value, and location in the settings tab."
+introduced: "2.0.0"
+updated: "2.0.0"
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-This page documents every setting exposed by ZotLit, grouped by the settings tab where it appears. Each entry lists the UI label, internal key, control type, and default value.
+This reference lists every ZotLit setting, its default, dependencies, and storage scope.
 
 Open settings from **Settings > Community plugins > ZotLit**.
 
@@ -21,36 +23,81 @@ The hub page shows when you first open ZotLit settings.
 
 ## Citations
 
-Open this page from **Settings → ZotLit → Citations**.
+Open this page from **Settings > ZotLit > Citations**.
 
 ### Citation suggestions
 
-| Label                                | Key                                  | Control | Default |
-| ------------------------------------ | ------------------------------------ | ------- | ------- |
-| **Citation suggester**               | `citation.editor-suggester`          | Toggle  | On      |
-| **`@` trigger**                      | `citation.at-trigger`                | Toggle  | Off     |
-| **Show citation key in suggestions** | `citation.show-citekey-in-suggester` | Toggle  | Off     |
+| Label                                | Key                                  | Control | Default | Dependency                   | Storage |
+| ------------------------------------ | ------------------------------------ | ------- | ------- | ---------------------------- | ------- |
+| **Citation suggester**               | `citation.editor-suggester`          | Toggle  | On      | None                         | Synced  |
+| **`@` trigger**                      | `citation.at-trigger`                | Toggle  | Off     | **Citation suggester** is on | Synced  |
+| **Show citation key in suggestions** | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                         | Synced  |
 
 <Callout type="info">
   **`@` trigger** is visible only when **Citation suggester** is on.
 </Callout>
 
-### Citation key links
+### Citation sources
 
-| Label                     | Key                                  | Control | Default   |
-| ------------------------- | ------------------------------------ | ------- | --------- |
-| **Citation key links**    | `citation.key-links`                 | Toggle  | Off       |
-| **Citation key property** | `citation.key-links-frontmatter-key` | Text    | `citekey` |
+| Label                  | Key                           | Control | Default | Dependency | Storage |
+| ---------------------- | ----------------------------- | ------- | ------- | ---------- | ------- |
+| **Pandoc citations**   | `citation.pandoc-citations`   | Toggle  | On      | None       | Synced  |
+| **Wikilink citations** | `citation.wikilink-citations` | Toggle  | Off     | None       | Synced  |
 
-<Callout type="info">
-  **Citation key property** is visible only when **Citation key links** is on.
-  Earlier settings migrations keep **Citation key links** on. New installs use
-  the off default.
-</Callout>
+**Pandoc citations:** Include Pandoc citations such as `@doe2024` in the references sidebar and ZotLit’s in-text features. This setting does not change citation insertion or export.
 
-**Citation key links** opens bracketed citation keys in Live Preview and Source mode. The setting description links to [How citation key links work](/docs/concepts/how-citekey-links-work) and notes that the feature uses an internal Obsidian editor integration.
+**Wikilink citations:** Include unaliased links to literature notes in the references sidebar and ZotLit’s in-text features. Heading links, block links, and invalid citation fragments stay as links. This setting does not change export.
 
-**Citation key property** names the Literature Note frontmatter property used for citation key lookup. The value must be non-empty and cannot start or end with spaces.
+Both settings can be off. ZotLit's internal Citation Index remains active, and **Reset citation index** remains available under Diagnostics.
+
+### In-text citations
+
+| Label                              | Key                          | Control | Default | Dependency                                                                              | Storage |
+| ---------------------------------- | ---------------------------- | ------- | ------- | --------------------------------------------------------------------------------------- | ------- |
+| **Show formatted citations**       | `citation.show-formatted`    | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text             | Synced  |
+| **Open Pandoc citations as links** | `citation.open-pandoc-links` | Toggle  | On      | **Pandoc citations** is on and the cursor or pointer is on a recognized Pandoc citation | Synced  |
+
+**Show formatted citations:** Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.
+
+**Open Pandoc citations as links:** Open and preview literature notes from Pandoc citations. This setting does not change how citations are shown.
+
+The navigation setting also controls the four open-under-cursor commands. Literature Note wikilinks retain Obsidian's navigation.
+
+### Formatting
+
+| Label                             | Key                         | Control                           | Default                       | Dependency             | Storage    |
+| --------------------------------- | --------------------------- | --------------------------------- | ----------------------------- | ---------------------- | ---------- |
+| **Citation and references style** | `citation.references-style` | Dropdown (lists installed styles) | Default (Chicago author-date) | Zotero style directory | Synced     |
+| **Pandoc engine**                 | None                        | Install or uninstall action       | Not installed                 | Network for install    | Per device |
+
+**Citation and references style:** CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.
+
+The dropdown stores the CSL style ID. Default uses ZotLit's embedded style. ZotLit uses the embedded style only while Default is selected.
+
+An unavailable style remains selected. In-text citations stay native, and the References Sidebar shows its minimal list. The row shows this warning:
+
+> This style isn’t installed in Zotero. Install it in Zotero or select another style.
+
+The first formatting attempt shows this notice once per plugin lifecycle: "The selected citation and references style isn’t installed in Zotero." Its **Open settings** action opens the Citations page.
+
+**Pandoc engine:** Formats in-text citations, references, and exports. Installation applies to every vault on this device.
+
+Before installation, its status is: "Not installed. References stay a plain list until you install it." This supported state does not show a lifecycle notice.
+
+### Native Pandoc workflow [#native-pandoc]
+
+These rows support conversion with a user-installed Pandoc CLI. They are separate from ZotLit's built-in export command.
+
+| Label                       | Key  | Control                           | Default | Dependency               | Storage                    |
+| --------------------------- | ---- | --------------------------------- | ------- | ------------------------ | -------------------------- |
+| **Pandoc CLI guide**        | None | Read-only guide action            | None    | None                     | Per plugin installation    |
+| **Pandoc integration pair** | None | **Save integration files** action | None    | A selected output folder | Writes the selected folder |
+
+**Pandoc CLI guide:** ZotLit reference for the native Pandoc workflow.
+
+**Pandoc integration pair:** Save the version-matched filter and defaults file to one folder. Keep both files together.
+
+**Save integration files** writes the pair to the folder you select. See [Export a note with citations](/docs/how-to/export-note-with-citations) for ZotLit's built-in workflow.
 
 ## Zotero database
 
@@ -65,7 +112,7 @@ Open this page from **Settings → ZotLit → Citations**.
 | Label                 | Key                   | Control                                | Default     | Storage    |
 | --------------------- | --------------------- | -------------------------------------- | ----------- | ---------- |
 | **Zotero profile**    | (device-local)        | Profile picker                         | Auto-detect | Per device |
-| **Zotero database**   | (read-only)           | Displays resolved `zotero.sqlite` path | —           | —          |
+| **Zotero database**   | (read-only)           | Displays resolved `zotero.sqlite` path | None        | None       |
 | **Read mode**         | `zotero.read-mode`    | Dropdown                               | Auto        | Synced     |
 | **Watch for changes** | `zotero.auto-refresh` | Toggle                                 | On          | Synced     |
 
@@ -83,7 +130,7 @@ Open this page from **Settings → ZotLit → Citations**.
 | Label                       | Key            | Control                                                                  | Default     | Storage    |
 | --------------------------- | -------------- | ------------------------------------------------------------------------ | ----------- | ---------- |
 | **Data directory override** | (device-local) | Folder picker                                                            | Auto-detect | Per device |
-| **Source ID**               | (read-only)    | Displays the 8-character hex identifier for the connected Zotero install | —           | —          |
+| **Source ID**               | (read-only)    | Displays the 8-character hex identifier for the connected Zotero install | None        | None       |
 
 ## Templates
 
@@ -173,10 +220,10 @@ Actions: **Add folder** (opens a folder picker), and delete on each row. Approva
 
 ## Live updates
 
-| Label                           | Key              | Control                | Default |
-| ------------------------------- | ---------------- | ---------------------- | ------- |
-| **Receive updates from Zotero** | `server.enabled` | Toggle                 | Off     |
-| **Port**                        | `server.port`    | Number (1024 -- 65535) | `9091`  |
+| Label                           | Key              | Control                   | Default |
+| ------------------------------- | ---------------- | ------------------------- | ------- |
+| **Receive updates from Zotero** | `server.enabled` | Toggle                    | Off     |
+| **Port**                        | `server.port`    | Number from 1024 to 65535 | `9091`  |
 
 <Callout type="info">
   **Port** and **Hostname** are visible only when **Receive updates from
@@ -204,6 +251,8 @@ When **Write logs to file** is on, logs append to `zotlit.log.jsonl` inside the 
 - **Save log archive:** exports the log file for sharing.
 
 Both actions are disabled while **Write logs to file** is off.
+
+**Reset citation index** clears the stored citation key scans and reads your notes again. ZotLit keeps a scan per note so that a restart only re-reads the notes that changed, and the scans are rebuilt from your vault, so nothing in your vault changes. Use it when the references sidebar disagrees with what a note cites. The rebuild runs in the background after you confirm.
 
 **Reset language packs** removes the downloaded language packs stored on this device and forgets whether ZotLit already offered them. The pack loaded at startup stays in place until you restart Obsidian, after which ZotLit offers to install it again. Use it when translated text looks wrong or outdated.
 

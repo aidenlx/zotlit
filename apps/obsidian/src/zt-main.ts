@@ -12,22 +12,27 @@ import {
 } from "./lib/i18n/install-toast";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
-import { openSettingsTab } from "./lib/open-settings";
+import { openSettingsTab, revealSetting } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
-import { registerCitationKeyLinkNotices } from "./services/citekey-click/notices";
+import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
+import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
+import { registerCitationStyleNotice } from "./services/pandoc/notices";
+import { registerPandocResolve } from "./services/pandoc/register";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
+import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
+import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
 import { registerWelcomeView } from "./views/welcome/register";
 import "./zt-main.css";
@@ -180,8 +185,10 @@ export default class ZotLitPlugin extends Plugin {
         db: services.db,
         zoteroPref: services.zoteroPref,
         attachmentImport: services.attachmentImport,
+        citationIndex: services.citationIndex,
         template: services.template,
         release: services.release,
+        pandocEngine: services.pandocEngine,
         languagePack,
       }),
     );
@@ -189,6 +196,7 @@ export default class ZotLitPlugin extends Plugin {
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
+    addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
     registerIndexedKeyFileMenu(this);
     addNoteFeatureActions(this, {
       app: this.app,
@@ -252,6 +260,25 @@ export default class ZotLitPlugin extends Plugin {
       templates: services.template,
     });
 
+    stack.defer(
+      registerCitationStyleNotice(services.bibliographyRender, () => {
+        revealSetting(
+          this.app,
+          this.manifest.id,
+          m.settings_citation_references_style_name(),
+        );
+      }),
+    );
+    registerReferencesView(this, {
+      app: this.app,
+      db: services.db,
+      citationIndex: services.citationIndex,
+      citekeyEditor: services.citekeyEditor,
+      pandocEngine: services.pandocEngine,
+      bibliographyRender: services.bibliographyRender,
+      settings: services.settings,
+    });
+
     registerTemplateWorkbench(this, {
       app: this.app,
       db: services.db,
@@ -259,6 +286,24 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
       templates: services.template,
       zoteroPref: services.zoteroPref,
+    });
+
+    registerPandocResolve(this, {
+      app: this.app,
+      db: services.db,
+      zoteroPref: services.zoteroPref,
+    });
+
+    registerPandocExport(this, {
+      app: this.app,
+      db: services.db,
+      pandocEngine: services.pandocEngine,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
+      openSettings: () => {
+        this.app.setting.open();
+        this.app.setting.openTabById(this.manifest.id);
+      },
     });
 
     registerWelcomeView(this, {
@@ -279,7 +324,7 @@ export default class ZotLitPlugin extends Plugin {
         },
       }),
     );
-    stack.defer(registerCitationKeyLinkNotices(services.citekeyClick));
+    stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
 
     // A Zotero item add/modify/trash push means the database changed; feed it
     // into the same coalesced refresh lane as the filesystem watchers.

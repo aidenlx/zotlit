@@ -2,7 +2,7 @@ import type { TFile } from "obsidian";
 
 import {
   CollectionCache,
-  getCurrentUsername,
+  getZoteroIdentity,
   getItemDisplayRefByID,
   getItemRefByID,
   getItemsByID,
@@ -259,7 +259,7 @@ async function executeBatchActions(
   // The signed-in username is an account-wide scalar, resolved once under the
   // batch's own read lease (the client `runBatchWrite` pins) rather than via a
   // separate lease a refresh could swap. `undefined` marks it unresolved —
-  // unreachable as a `getCurrentUsername` result — so the first task resolves it
+  // unreachable as a `getZoteroIdentity` result — so the first task resolves it
   // and the rest reuse the value.
   let username: string | null | undefined;
 
@@ -269,7 +269,7 @@ async function executeBatchActions(
     controls,
     concurrency: 32,
     run: async (task, client) => {
-      if (username === undefined) username = getCurrentUsername(client);
+      if (username === undefined) username = getZoteroIdentity(client).username;
       await runAction(deps, task, { ...baseContext, client, username });
       return task.kind === "create" ? "created" : "updated";
     },

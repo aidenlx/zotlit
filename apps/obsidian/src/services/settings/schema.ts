@@ -58,15 +58,6 @@ const serverPort = v.pipe(
   v.maxValue(65535),
 );
 
-export const citationKeyPropertySchema = v.pipe(
-  v.string(),
-  v.nonEmpty("Citation key property is required"),
-  v.check(
-    (value) => value === value.trim(),
-    "Citation key property must not start or end with whitespace",
-  ),
-);
-
 export const schema = v.object({
   "log.level": logLevel,
   "log.to-file": v.boolean(),
@@ -74,8 +65,16 @@ export const schema = v.object({
   "citation.editor-suggester": v.boolean(),
   "citation.at-trigger": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
-  "citation.key-links": v.boolean(),
-  "citation.key-links-frontmatter-key": citationKeyPropertySchema,
+  /** Include Pandoc citation syntax in the shared document citation set. */
+  "citation.pandoc-citations": v.boolean(),
+  /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
+  "citation.wikilink-citations": v.boolean(),
+  /** Show recognized Citations with the selected CSL style. */
+  "citation.show-formatted": v.boolean(),
+  /** Open and preview Literature Notes from Pandoc Citations. */
+  "citation.open-pandoc-links": v.boolean(),
+  /** CSL style ID; `null` renders with the citation engine's embedded style. */
+  "citation.references-style": v.nullable(v.string()),
 
   "note.literature-folder": v.string(),
   "note.frontmatter-fields": frontmatterFieldsSchema,
@@ -116,8 +115,11 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.editor-suggester": true,
   "citation.at-trigger": false,
   "citation.show-citekey-in-suggester": false,
-  "citation.key-links": false,
-  "citation.key-links-frontmatter-key": "citekey",
+  "citation.pandoc-citations": true,
+  "citation.wikilink-citations": false,
+  "citation.show-formatted": true,
+  "citation.open-pandoc-links": true,
+  "citation.references-style": null,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",

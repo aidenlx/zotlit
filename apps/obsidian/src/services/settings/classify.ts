@@ -6,6 +6,10 @@ export type DiskClassification =
   | { kind: "v1"; raw: Record<string, unknown> }
   | { kind: "v2"; raw: Record<string, unknown> }
   | { kind: "v3"; raw: Record<string, unknown> }
+  | { kind: "v4"; raw: Record<string, unknown> }
+  | { kind: "v5"; raw: Record<string, unknown> }
+  | { kind: "v6"; raw: Record<string, unknown> }
+  | { kind: "v7"; raw: Record<string, unknown> }
   | { kind: "future"; version: number }
   | { kind: "malformed"; reason: string };
 
@@ -13,8 +17,8 @@ export type DiskClassification =
  * Bucketed origin of a completed settings load, for the release service's
  * same-launch onboarding branch. `legacy` = ZotLit v1 Legacy Data was detected
  * and migrated this launch; `absent`/`malformed` both mean no usable data on
- * disk (first-install onboarding); `current` = existing v1/v2/v3/future data
- * loaded normally.
+ * disk (first-install onboarding); `current` = existing versioned data loaded
+ * normally.
  */
 export type HydrationOrigin = "legacy" | "absent" | "malformed" | "current";
 
@@ -31,6 +35,10 @@ export function hydrationOriginOf(
     case "v1":
     case "v2":
     case "v3":
+    case "v4":
+    case "v5":
+    case "v6":
+    case "v7":
     case "future":
       return "current";
   }
@@ -59,7 +67,11 @@ export function classifyDiskData(raw: unknown): DiskClassification {
   if (version === 1) return { kind: "v1", raw };
   if (version === 2) return { kind: "v2", raw };
   if (version === 3) return { kind: "v3", raw };
-  if (version > 3) return { kind: "future", version };
+  if (version === 4) return { kind: "v4", raw };
+  if (version === 5) return { kind: "v5", raw };
+  if (version === 6) return { kind: "v6", raw };
+  if (version === 7) return { kind: "v7", raw };
+  if (version > 7) return { kind: "future", version };
   return {
     kind: "malformed",
     reason: `__VERSION__ is not a positive integer (got ${version})`,

@@ -277,3 +277,52 @@ export function migrateV2ToV3(raw: unknown): Record<string, unknown> {
   }
   return out;
 }
+
+/**
+ * Absorb Citation Key Links into the citekey editor treatment. The stored value
+ * carries over verbatim — an absent key meant the v3 default, off — so an
+ * upgrade never changes whether citekeys are clickable, while the new default
+ * governs fresh installs only.
+ */
+export function migrateV3ToV4(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+
+  const { "citation.key-links": keyLinks, ...rest } = raw;
+  return { ...rest, "citation.citekey-editor": keyLinks === true };
+}
+
+/**
+ * Retire the Citation Key Property. Citekeys resolve against Zotero's native
+ * citation keys, so no frontmatter property participates; the managed
+ * `citekey` field stays as template output and is left untouched.
+ */
+export function migrateV4ToV5(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.key-links-frontmatter-key": _retired, ...rest } = raw;
+  return rest;
+}
+
+/**
+ * Rename Citekey Indexing to the Pandoc citation source control. The stored
+ * value keeps the user's existing literal-citation membership choice.
+ */
+export function migrateV5ToV6(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const {
+    "citation.citekey-indexing": citekeyIndexing,
+    "citation.wikilink-display": _retiredWikilinkDisplay,
+    ...rest
+  } = raw;
+  return typeof citekeyIndexing === "boolean"
+    ? { ...rest, "citation.pandoc-citations": citekeyIndexing }
+    : rest;
+}
+
+/** Rename Citekey Editor Treatment to the Pandoc navigation control. */
+export function migrateV6ToV7(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.citekey-editor": citekeyEditor, ...rest } = raw;
+  return typeof citekeyEditor === "boolean"
+    ? { ...rest, "citation.open-pandoc-links": citekeyEditor }
+    : rest;
+}

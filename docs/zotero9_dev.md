@@ -227,7 +227,7 @@ Unchanged surface. `Zotero.Notifier` gained no new event types in 9.0 that are d
 ### 2.6 Data Model
 
 - "Added By" / "Modified By" for group libraries — a UI surfacing of existing schema. The columns `groupItems.createdByUserID` and `groupItems.lastModifiedByUserID` (foreign keys to `users.userID`) have existed for years; Zotero 9 simply exposes them as columns in the items list and as item-pane metadata rows in group libraries. **No schema change.** If you read group libraries, you already have these.
-- "Citation Key" column in the items list — surfaces the citation key stored under the `citationKey` field on the item (for Better BibTeX users) or computed by Zotero. No schema change.
+- "Citation Key" column in the items list — surfaces the citation key stored under the `citationKey` field on the item. Zotero never computes this key; a user types it by hand or Better BibTeX generates it. No schema change.
 - "Recently Read" — see §2.4.
 
 ### 2.7 Preferences / Settings API

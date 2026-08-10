@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateLegacyV0, migrateV1ToV2, migrateV2ToV3 } from "./migrate";
+import {
+  migrateLegacyV0,
+  migrateV1ToV2,
+  migrateV2ToV3,
+  migrateV3ToV4,
+  migrateV4ToV5,
+  migrateV5ToV6,
+  migrateV6ToV7,
+} from "./migrate";
 
 describe("migrateLegacyV0", () => {
   it("returns an empty object for non-plain inputs", () => {
@@ -403,5 +411,135 @@ describe("migrateV2ToV3", () => {
       "citation.key-links-frontmatter-key": "citekey",
       "note.frontmatter-fields": "not-an-array",
     });
+  });
+});
+
+describe("migrateV3ToV4", () => {
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV3ToV4(null)).toEqual({});
+    expect(migrateV3ToV4([1, 2, 3])).toEqual({});
+  });
+
+  it("carries an enabled citation key links setting into the citekey editor", () => {
+    expect(
+      migrateV3ToV4({ __VERSION__: 3, "citation.key-links": true }),
+    ).toEqual({
+      __VERSION__: 3,
+      "citation.citekey-editor": true,
+    });
+  });
+
+  it("keeps the citekey editor off for a user who had citation key links off", () => {
+    expect(migrateV3ToV4({ "citation.key-links": false })).toEqual({
+      "citation.citekey-editor": false,
+    });
+  });
+
+  it("treats an absent citation key links override as the v3 default, off", () => {
+    expect(
+      migrateV3ToV4({ "citation.key-links-frontmatter-key": "bibkey" }),
+    ).toEqual({
+      "citation.citekey-editor": false,
+      "citation.key-links-frontmatter-key": "bibkey",
+    });
+  });
+
+  it("leaves every other override untouched", () => {
+    expect(
+      migrateV3ToV4({
+        "citation.key-links": true,
+        "note.literature-folder": "refs",
+        "citation.citekey-indexing": false,
+      }),
+    ).toEqual({
+      "citation.citekey-editor": true,
+      "note.literature-folder": "refs",
+      "citation.citekey-indexing": false,
+    });
+  });
+});
+
+describe("migrateV4ToV5", () => {
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV4ToV5(null)).toEqual({});
+    expect(migrateV4ToV5([1, 2, 3])).toEqual({});
+  });
+
+  it("drops the retired Citation Key Property override", () => {
+    expect(
+      migrateV4ToV5({
+        __VERSION__: 4,
+        "citation.key-links-frontmatter-key": "bibkey",
+      }),
+    ).toEqual({ __VERSION__: 4 });
+  });
+
+  it("leaves every other override untouched", () => {
+    expect(
+      migrateV4ToV5({
+        "note.literature-folder": "refs",
+        "citation.citekey-indexing": false,
+      }),
+    ).toEqual({
+      "note.literature-folder": "refs",
+      "citation.citekey-indexing": false,
+    });
+  });
+});
+
+describe("migrateV5ToV6", () => {
+  it("returns an empty object for non-plain input", () => {
+    expect(migrateV5ToV6(null)).toEqual({});
+    expect(migrateV5ToV6([1, 2, 3])).toEqual({});
+  });
+
+  it.each([true, false])(
+    "renames Citekey Indexing value %s to Pandoc Citations",
+    (enabled) => {
+      expect(
+        migrateV5ToV6({
+          __VERSION__: 5,
+          "citation.citekey-indexing": enabled,
+          "citation.wikilink-citations": true,
+          "citation.wikilink-display": false,
+          "citation.references-style": "apa",
+        }),
+      ).toEqual({
+        __VERSION__: 5,
+        "citation.pandoc-citations": enabled,
+        "citation.wikilink-citations": true,
+        "citation.references-style": "apa",
+      });
+    },
+  );
+
+  it("uses the new default when the old key is absent", () => {
+    expect(migrateV5ToV6({ __VERSION__: 5 })).toEqual({ __VERSION__: 5 });
+  });
+});
+
+describe("migrateV6ToV7", () => {
+  it.each([
+    [true, true],
+    [false, false],
+  ] as const)(
+    "maps the citekey editor value %s to Pandoc citation navigation",
+    (input, expected) => {
+      expect(
+        migrateV6ToV7({
+          __VERSION__: 6,
+          "citation.citekey-editor": input,
+          "citation.show-formatted": false,
+        }),
+      ).toEqual({
+        __VERSION__: 6,
+        "citation.open-pandoc-links": expected,
+        "citation.show-formatted": false,
+      });
+    },
+  );
+
+  it("keeps the new navigation setting absent when the old value is absent", () => {
+    expect(migrateV6ToV7({ __VERSION__: 6 })).toEqual({ __VERSION__: 6 });
   });
 });

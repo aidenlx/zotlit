@@ -34,6 +34,12 @@ Content lives in `content/`; collections and schemas are defined in `source.conf
 
 Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
 
+### Release availability
+
+Don't hand-write `introduced`/`updated` — leave both unset when creating or editing a page. They're optional; an unset page renders with no badge and no "Available since" line, which is normal for a page that hasn't shipped yet.
+
+`release.ts`'s docs-availability phase assigns them at release time: it diffs `content/docs/**/*.mdx` against the previous Stable Release Line git tag, auto-accepts brand-new pages (`introduced = updated` = the release being cut), and interactively reviews every changed or moved page — with its diff shown inline — before writing `updated`. That review step is where "wording-only edits preserve `updated`" actually gets decided; a mechanical diff can't tell wording from a material change on its own. Run `pnpm --filter @zotlit/scripts preview-docs-availability` for a read-only dry run of the same scan. See [ADR 0002](docs/adr/0002-release-availability-is-git-diff-assisted-not-hand-authored.md) and `lib/docs-availability.ts` for the release-line classifier. The site derives `NEW`/`UPDATED` from `apps/docs/zotlit-release.json`, written by the same phase.
+
 Image attachments (screenshots, etc.) go under `public/img/<collection>/` as `.webp`, not `.png`/`.jpg` — convert with `cwebp` before committing.
 
 # Docs site design

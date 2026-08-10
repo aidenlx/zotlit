@@ -2,7 +2,10 @@ import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
-import { CitekeyClick } from "./citekey-click/service";
+import { CitationIndex } from "./citation-index/service";
+import { CitationText } from "./citation-text/service";
+import { CitekeyEditor } from "./citekey-editor/service";
+import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
@@ -16,15 +19,23 @@ import { createNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
+import { BibliographyRenderCache } from "./pandoc/render-cache";
+import { createPandocEngineService } from "./pandoc/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import {
   migrateLegacyV0,
   migrateV1ToV2,
   migrateV2ToV3,
+  migrateV3ToV4,
+  migrateV4ToV5,
+  migrateV5ToV6,
+  migrateV6ToV7,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
+import { WikilinkEditor } from "./wikilink-editor/service";
+import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroPrefService } from "./zotero-pref/service";
 
 /**
@@ -53,6 +64,10 @@ export function buildServices(
           migrateLegacy: migrateLegacyV0,
           migrateV1: migrateV1ToV2,
           migrateV2: migrateV2ToV3,
+          migrateV3: migrateV3ToV4,
+          migrateV4: migrateV4ToV5,
+          migrateV5: migrateV5ToV6,
+          migrateV6: migrateV6ToV7,
         }),
     })
     .use({
@@ -75,8 +90,7 @@ export function buildServices(
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
-      noteIndex: ({ settings }) =>
-        new NoteIndex({ plugin, app: plugin.app, settings }),
+      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
       liveUpdate: ({ settings, zoteroPref, noteIndex }) =>
@@ -153,12 +167,80 @@ export function buildServices(
         }),
     })
     .use({
-      citekeyClick: ({ noteIndex, noteFeature, db, settings }) =>
-        new CitekeyClick({
+      citationIndex: ({ noteIndex, settings, db }) =>
+        new CitationIndex({ app: plugin.app, noteIndex, settings, db }),
+    })
+    .use({
+      pandocEngine: () => createPandocEngineService(plugin.app),
+    })
+    .use({
+      bibliographyRender: ({ db, pandocEngine, zoteroPref, settings }) =>
+        new BibliographyRenderCache({
+          db,
+          pandocEngine,
+          zoteroPref,
+          settings,
+        }),
+    })
+    .use({
+      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
+        new CitationText({
           app: plugin.app,
+          db,
+          citationIndex,
+          noteIndex,
+          bibliographyRender,
+        }),
+    })
+    .use({
+      citekeyEditor: ({
+        noteIndex,
+        noteFeature,
+        db,
+        citationText,
+        settings,
+        citationIndex,
+      }) =>
+        new CitekeyEditor({
+          app: plugin.app,
+          plugin,
           noteIndex,
           noteFeature,
           db,
+          citationText,
+          settings,
+          citationIndex,
+        }),
+    })
+    .use({
+      wikilinkEditor: ({ noteIndex, citationText, settings, citationIndex }) =>
+        new WikilinkEditor({
+          app: plugin.app,
+          plugin,
+          noteIndex,
+          citationText,
+          settings,
+          citationIndex,
+        }),
+    })
+    .use({
+      wikilinkReading: ({ noteIndex, citationText, settings, citationIndex }) =>
+        new WikilinkReading({
+          app: plugin.app,
+          plugin,
+          noteIndex,
+          citationText,
+          settings,
+          citationIndex,
+        }),
+    })
+    .use({
+      citekeyReading: ({ citationText, citekeyEditor, settings }) =>
+        new CitekeyReading({
+          app: plugin.app,
+          plugin,
+          citationText,
+          citekeyEditor,
           settings,
         }),
     });

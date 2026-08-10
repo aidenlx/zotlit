@@ -1,0 +1,15 @@
+/* Let the React tree own the full pane: strip Obsidian's default content
+   padding and make the leaf a flex column so the reference list scrolls inside
+   it. Scoped to the view's own root classes, not to Obsidian's internal
+   `.view-content` markup. Obsidian's own `.workspace-leaf-content
+   .view-content` padding rule carries two classes' worth of specificity, so
+   this compounds both of the view's own classes to match it. */
+.zt-root.zt-references-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+}

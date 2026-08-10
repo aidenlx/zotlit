@@ -30,6 +30,9 @@ projects by the Corporation for Digital Scholarship:
 
 Derived files include (non-exhaustive):
 
+  packages/db/src/lib/zt-csl-item.ts    — itemToCSLJSON algorithm
+  packages/db/src/lib/zt-csl-name.ts    — parseParticles algorithm
+  packages/db/src/lib/zt-extra-to-csl.ts — extraToCSL algorithm
   packages/db/src/lib/zt-lang.ts        — languageToISO6391 algorithm
   packages/db/src/lib/zt-annot-pos.ts   — annotation position schemas
   packages/db/src/lib/zt-color.ts       — annotation color palettes

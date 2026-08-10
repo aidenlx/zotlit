@@ -33,6 +33,7 @@ import { getTestVaultDir, getTestVaultTemplateDir } from "#test-vault";
 
 const usage = `Usage:
   obsidian-vault.ts create [vault-path]           register this worktree's debug vault
+  obsidian-vault.ts sync [vault-path] [--purge]   re-copy the template fixture over an existing vault; --purge deletes it first
   obsidian-vault.ts remove [vault-path] [--purge] unregister it; --purge also deletes the folder
   obsidian-vault.ts list                          list known vaults
   obsidian-vault.ts id [vault-path]               print the vault id for a path
@@ -302,6 +303,33 @@ async function create(vaultPath: string): Promise<void> {
 }
 
 /**
+ * Re-copy the template fixture over an already-created vault, so edits to
+ * `tests/zt-vault` land without the remove/create round trip. The vault
+ * folder path stays the same, so Obsidian's registry needs no update.
+ */
+async function sync(vaultPath: string, purge: boolean): Promise<void> {
+  const abs = resolve(vaultPath);
+
+  await access(abs).catch(() => {
+    throw new Error(`no vault at ${abs}. Run 'create' first.`);
+  });
+
+  // `--purge` deletes the folder first, so fixture files renamed or removed
+  // from the template drop out too, not just the ones the template still has.
+  // This also clears the built plugin bundle — rebuild before debugging again.
+  if (purge) {
+    await purgeVault(abs);
+    await mkdir(abs, { recursive: true });
+  }
+
+  // `force: true` overwrites existing files with the template's, so fixture
+  // updates actually land instead of being skipped like a fresh `create`.
+  await cp(templateVault, abs, { recursive: true, force: true });
+
+  console.error(`synced ${templateVault} -> ${abs}`);
+}
+
+/**
  * Unregister without a running app, by editing the registry file directly.
  * Safe only while Obsidian is shut: a running main process holds the registry
  * in memory and would overwrite the file on its next save. The shared-origin
@@ -457,6 +485,9 @@ async function main(): Promise<void> {
   switch (command) {
     case "create":
       await create(target);
+      break;
+    case "sync":
+      await sync(target, rest.includes("--purge"));
       break;
     case "remove":
       await remove(target, rest.includes("--purge"));

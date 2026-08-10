@@ -31,6 +31,18 @@ basename match, which is why every worktree needs its own name. Tear down with
 `packages/scripts/scripts/obsidian-vault.ts remove --purge`; `wt`'s `pre-remove`
 hook already runs that when the worktree goes.
 
+Editing a fixture under `tests/zt-vault/` changes the template, not the vault the app has
+open. Copy the edit across before you go looking for it in Obsidian:
+
+```bash
+packages/scripts/scripts/obsidian-vault.ts sync
+```
+
+`sync` overwrites changed files in place, so the vault keeps its id and its built bundle. It
+errors when the vault does not exist yet — run `create` first. `--purge` deletes the folder
+before copying, so fixtures renamed or removed from the template drop out too; that clears
+the bundle as well, so rebuild after it.
+
 ## Commands
 
 | Command | What it does |

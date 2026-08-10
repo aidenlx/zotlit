@@ -11,6 +11,8 @@ declare module "obsidian" {
     on(name: "initialized", callback: () => any, ctx?: any): EventRef;
   }
   interface App {
+    /** Stable per-vault id, the namespace Obsidian gives its own IndexedDB databases. */
+    appId: string;
     plugins: {
       plugins: Record<string, unknown>;
     };
@@ -100,6 +102,11 @@ declare module "obsidian" {
   }
   interface Editor {
     getClickableTokenAt(pos: EditorPosition): ClickableToken | null;
+    /**
+     * The CodeMirror 6 view behind the editor. Obsidian's own `Editor` methods
+     * read it unconditionally, so every editor handed to a command has it.
+     */
+    cm: import("@codemirror/view").EditorView;
   }
   interface MarkdownView {
     /** Live-preview / source edit sub-view; absent in pure reading mode. */

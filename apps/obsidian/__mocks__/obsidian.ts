@@ -15,6 +15,8 @@ import type {
   EditorSuggestContext,
   Instruction,
   Modifier,
+  PaneType,
+  UserEvent,
 } from "obsidian";
 
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
@@ -40,7 +42,22 @@ export class Notice {
   hide(): void {}
 }
 
+// The three CodeMirror facets/fields Obsidian adds to its editors. A state
+// without them answers `state.field(field, false)` with `undefined` and
+// `view.plugin(plugin)` with `null`, which is what an editor-less test needs.
 export const editorInfoField = {};
+export const editorLivePreviewField = {};
+export const livePreviewState = {};
+
+/**
+ * Constructible stand-in for `MarkdownView`, enough for the `instanceof` narrow
+ * that reaches a leaf's reading view.
+ */
+export class MarkdownView {
+  previewMode = {
+    rerender(_full?: boolean): void {},
+  };
+}
 
 export class TAbstractFile {
   vault: Vault = undefined as unknown as Vault;
@@ -83,8 +100,30 @@ export class FileSystemAdapter {
   }
 }
 
+/**
+ * Parses like the real `sanitizeHTMLToDom`, but sanitizes nothing — Obsidian
+ * runs the markup through DOMPurify, which the plugin does not depend on.
+ * A test that asserts on sanitizing belongs against the real Obsidian runtime.
+ * Needs a DOM, so its callers run under `// @vitest-environment happy-dom`.
+ */
+export function sanitizeHTMLToDom(html: string): DocumentFragment {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return template.content;
+}
+
 export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replaceAll(/\/+/g, "/").replace(/\/$/, "");
+}
+
+/** Splits a linktext at its first `#`; the subpath keeps that separator. */
+export function parseLinktext(linktext: string): {
+  path: string;
+  subpath: string;
+} {
+  const hash = linktext.indexOf("#");
+  if (hash < 0) return { path: linktext, subpath: "" };
+  return { path: linktext.slice(0, hash), subpath: linktext.slice(hash) };
 }
 
 export function stringifyYaml(data: Record<string, unknown>): string {
@@ -129,6 +168,9 @@ export abstract class SuggestModal<T> {
 
 export const Keymap = {
   isModifier(_evt: MouseEvent | KeyboardEvent, _modifier: Modifier): boolean {
+    return false;
+  },
+  isModEvent(_evt?: UserEvent | null): PaneType | boolean {
     return false;
   },
 };

@@ -3,11 +3,9 @@ import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef, Plugin } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
+import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 
-import { isLiteratureNote, NoteIndex } from "./service";
+import { isLiteratureNote, NoteIndex, resolveIndexedKey } from "./service";
 
 const ITEM_A = "ABCD2345";
 const ITEM_B = "ZZZ99999";
@@ -141,32 +139,6 @@ interface Harness {
   metadataCache: MockMetadataCache;
   service: NoteIndex;
   vault: MockVault;
-  settings: SettingsStub;
-}
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
-  }
 }
 
 const services: NoteIndex[] = [];
@@ -233,11 +205,8 @@ describe("NoteIndex", () => {
 
   it("builds indices on resolved and emits rebuilt once", async () => {
     const { metadataCache, service } = await makeHarness({
-      "Notes/a.md": cache({
-        itemKey: ITEM_A,
-        citekey: "doe2024",
-      }),
-      "Notes/b.md": cache({ itemKey: `${ITEM_B}g7`, citekey: "roe2025" }),
+      "Notes/a.md": cache({ itemKey: ITEM_A }),
+      "Notes/b.md": cache({ itemKey: `${ITEM_B}g7` }),
     });
     let rebuilt = 0;
     service.on("rebuilt", () => {
@@ -248,14 +217,14 @@ describe("NoteIndex", () => {
 
     expect(rebuilt).toBe(1);
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["Notes/a.md"]);
-    expect(paths(service.getNotesByCitationKey("roe2025"))).toEqual([
+    expect(paths(service.getNotesByItemKey(`${ITEM_B}g7`))).toEqual([
       "Notes/b.md",
     ]);
   });
 
   it("updates indices and emits changed for metadata edits", async () => {
     const { service, vault, metadataCache } = await makeHarness({
-      "paper.md": cache({ citekey: "doe2024" }),
+      "paper.md": cache({}),
     });
     metadataCache.resolve();
     const changed: string[] = [];
@@ -263,7 +232,7 @@ describe("NoteIndex", () => {
 
     metadataCache.change(
       vault.files.get("paper.md")!,
-      cache({ itemKey: ITEM_A, citekey: "doe2024" }),
+      cache({ itemKey: ITEM_A }),
     );
 
     expect(changed).toEqual(["paper.md"]);
@@ -272,7 +241,7 @@ describe("NoteIndex", () => {
 
   it("does not emit changed for no-op metadata updates", async () => {
     const { service, vault, metadataCache } = await makeHarness({
-      "paper.md": cache({ itemKey: ITEM_A, citekey: "doe2024" }),
+      "paper.md": cache({ itemKey: ITEM_A }),
     });
     metadataCache.resolve();
     const changed: string[] = [];
@@ -280,7 +249,7 @@ describe("NoteIndex", () => {
 
     metadataCache.change(
       vault.files.get("paper.md")!,
-      cache({ itemKey: ITEM_A, citekey: "doe2024" }),
+      cache({ itemKey: ITEM_A }),
     );
 
     expect(changed).toEqual([]);
@@ -303,19 +272,13 @@ describe("NoteIndex", () => {
 
   it("reflects vault renames without a rename handler", async () => {
     const { service, vault, metadataCache } = await makeHarness({
-      "paper.md": cache({
-        itemKey: ITEM_A,
-        citekey: "doe2024",
-      }),
+      "paper.md": cache({ itemKey: ITEM_A }),
     });
     metadataCache.resolve();
 
     vault.renameFile("paper.md", "Notes/paper.md");
 
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
-      "Notes/paper.md",
-    ]);
-    expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
       "Notes/paper.md",
     ]);
   });
@@ -340,83 +303,15 @@ describe("NoteIndex", () => {
     ]);
   });
 
-  it("drops note and citekey indices on delete", async () => {
+  it("drops the item index on delete", async () => {
     const { service, vault, metadataCache } = await makeHarness({
-      "paper.md": cache({
-        itemKey: ITEM_A,
-        citekey: "doe2024",
-      }),
+      "paper.md": cache({ itemKey: ITEM_A }),
     });
     metadataCache.resolve();
 
     vault.deleteFile("paper.md");
 
     expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
-    expect(service.getNotesByCitationKey("doe2024")).toEqual([]);
-  });
-
-  it("indexes citation keys only from Literature Notes", async () => {
-    const { metadataCache, service } = await makeHarness({
-      "literature.md": cache({ itemKey: ITEM_A, citekey: "doe2024" }),
-      "ordinary.md": cache({ citekey: "doe2024" }),
-    });
-
-    metadataCache.resolve();
-
-    expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
-      "literature.md",
-    ]);
-  });
-
-  it("rebuilds the citation-key index when its property changes", async () => {
-    const { metadataCache, service, settings } = await makeHarness({
-      "paper.md": cache({
-        itemKey: ITEM_A,
-        citekey: "old-key",
-        properties: { bibkey: "new-key" },
-      }),
-    });
-    metadataCache.resolve();
-
-    settings.update({ "citation.key-links-frontmatter-key": "bibkey" });
-
-    expect(service.getNotesByCitationKey("old-key")).toEqual([]);
-    expect(paths(service.getNotesByCitationKey("new-key"))).toEqual([
-      "paper.md",
-    ]);
-  });
-
-  it("clears and restores the citation-key index as the feature changes", async () => {
-    const { metadataCache, service, settings } = await makeHarness({
-      "paper.md": cache({ itemKey: ITEM_A, citekey: "doe2024" }),
-    });
-    metadataCache.resolve();
-
-    settings.update({ "citation.key-links": false });
-    expect(service.getNotesByCitationKey("doe2024")).toEqual([]);
-
-    settings.update({ "citation.key-links": true });
-    expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
-      "paper.md",
-    ]);
-  });
-
-  it("clears partial citation-key mappings when disabled before the first scan", async () => {
-    const { metadataCache, service, settings, vault } = await makeHarness({
-      "paper.md": cache({ itemKey: ITEM_A, citekey: "doe2024" }),
-    });
-    metadataCache.change(
-      vault.files.get("paper.md")!,
-      cache({ itemKey: ITEM_A, citekey: "doe2024" }),
-    );
-    expect(paths(service.getNotesByCitationKey("doe2024"))).toEqual([
-      "paper.md",
-    ]);
-
-    settings.update({ "citation.key-links": false });
-
-    expect(service.getNotesByCitationKey("doe2024")).toEqual([]);
-    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
   it("checks literature notes from frontmatter only", async () => {
@@ -429,11 +324,30 @@ describe("NoteIndex", () => {
     expect(isLiteratureNote("paper.md", app)).toBe(true);
     expect(isLiteratureNote("invalid.md", app)).toBe(false);
   });
+
+  it("resolves a linkpath to the Indexed Key of the Literature Note it points at", () => {
+    const notes = new Map([
+      ["Doe 2024.md", cache({ itemKey: ITEM_A })],
+      ["Ordinary.md", cache({})],
+    ]);
+    // Exact-path resolution; enough to tell a hit from a dangling link.
+    const app = {
+      metadataCache: {
+        getFirstLinkpathDest: (linkpath: string) =>
+          notes.has(`${linkpath}.md`) ? makeFile(`${linkpath}.md`) : null,
+        getFileCache: (file: TFile) => notes.get(file.path) ?? null,
+      },
+    } as unknown as App;
+
+    expect(resolveIndexedKey("Doe 2024", "source.md", app)).toBe(ITEM_A);
+    expect(resolveIndexedKey("Ordinary", "source.md", app)).toBeNull();
+    expect(resolveIndexedKey("Missing", "source.md", app)).toBeNull();
+  });
 });
 
 async function makeHarness(
   files: Record<string, CachedMetadata>,
-  options: { initialized?: boolean; settings?: Partial<Settings> } = {},
+  options: { initialized?: boolean } = {},
 ): Promise<Harness> {
   const metadataCache = new MockMetadataCache();
   metadataCache.initialized = options.initialized ?? false;
@@ -446,27 +360,19 @@ async function makeHarness(
 
   const app = { metadataCache, vault } as unknown as App;
   const plugin = { app } as unknown as Plugin;
-  const settings = new SettingsStub({
-    "citation.key-links": true,
-    "citation.key-links-frontmatter-key": FIELD_CITEKEY,
-    ...options.settings,
-  });
-  const service = new NoteIndex({ plugin, app, settings });
+  const service = new NoteIndex({ plugin, app });
   services.push(service);
   await service.ready;
-  return { app, metadataCache, service, settings, vault };
+  return { app, metadataCache, service, vault };
 }
 
 function cache(options: {
   itemKey?: unknown;
-  citekey?: unknown;
   properties?: Record<string, unknown>;
 }): CachedMetadata {
   const frontmatter: Record<string, unknown> = { ...options.properties };
   if (options.itemKey !== undefined)
     frontmatter[FIELD_ZOTERO_KEY] = options.itemKey;
-  if (options.citekey !== undefined)
-    frontmatter[FIELD_CITEKEY] = options.citekey;
 
   return {
     frontmatter: Object.keys(frontmatter).length > 0 ? frontmatter : undefined,

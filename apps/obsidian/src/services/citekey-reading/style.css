@@ -1,0 +1,28 @@
+/* Literal Citations are internal-link equivalents. They lack an anchor, so
+   consume the same documented variables directly. An unresolved Citation keeps
+   its source in a semantic wrapper, with no navigation affordance. */
+:where(.markdown-rendered span.zt-citation.zt-citation-key) {
+  cursor: var(--cursor-link);
+  text-decoration-line: var(--link-decoration);
+  --font-weight: var(--link-weight);
+  color: var(--link-color);
+  transition: opacity var(--anim-duration-fast) ease-in-out;
+}
+
+:where(.markdown-rendered span.zt-citation-key-unresolved) {
+  cursor: text;
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
+  text-decoration-color: var(--link-unresolved-decoration-color);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+}
+
+@media (hover: hover) {
+  :where(
+    .markdown-rendered
+      span.zt-citation.zt-citation-key:not(.zt-citation-key-unresolved):hover
+  ) {
+    color: var(--link-color-hover);
+    text-decoration-line: var(--link-decoration-hover);
+  }
+}

@@ -83,9 +83,14 @@ vi.mock("@zotlit/db", async (importOriginal) => {
       }
     },
     resolveItemTags: () => [],
-    // The single-item create / update paths resolve the account username from the
-    // pinned client; stub it so the note-feature flow under test stays DB-free.
-    getCurrentUsername: () => null,
+    // The single-item create / update paths resolve the account identity from
+    // the pinned client; stub it so the note-feature flow under test stays
+    // DB-free.
+    getZoteroIdentity: () => ({
+      userID: null,
+      localUserKey: null,
+      username: null,
+    }),
     // `fetchNoteContext` normally fetches every row from the DB; each test
     // stubs it to apply the caller's resolvers to a small fixture instead, so
     // resolver wiring (notePath / noteLink resolution) is exercised without a

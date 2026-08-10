@@ -101,6 +101,18 @@
   --shadow-md: var(--shadow-s);
   --shadow-lg: var(--shadow-l);
 
+  /* ===== Cursors ===== */
+  /* Obsidian's whole cursor vocabulary is these two, and both flip with the
+     user's Appearance setting — `--cursor` also becomes `pointer` on mobile.
+     Mapped rather than hardcoding `cursor-pointer`, so plugin UI follows that
+     setting the way Obsidian's own chrome does.
+
+     `--cursor-clickable` is deliberately not named `--cursor-default`: that
+     would shadow Tailwind's built-in `cursor-default` utility. `--cursor-link`
+     is a same-name token, kept compile-time only by the `reference` above. */
+  --cursor-clickable: var(--cursor);
+  --cursor-link: var(--cursor-link);
+
   /* ===== Animation ===== */
   --default-transition-duration: var(--anim-duration-moderate);
   --default-transition-timing-function: var(--anim-motion-smooth);

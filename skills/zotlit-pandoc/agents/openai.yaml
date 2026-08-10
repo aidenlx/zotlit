@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZotLit Native Pandoc Workflow"
+  short_description: "Run native Pandoc with ZotLit citations"
+  default_prompt: "Use $zotlit-pandoc to set up, run, refresh, or diagnose ZotLit's Native Pandoc Workflow."

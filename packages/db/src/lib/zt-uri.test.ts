@@ -4,6 +4,7 @@ import {
   annotationOpenUri,
   attachmentOpenUri,
   itemSelectUri,
+  itemUri,
   itemWebUrl,
 } from "./zt-uri";
 
@@ -103,5 +104,49 @@ describe("itemWebUrl", () => {
     expect(itemWebUrl("ABC12345", null, "user@name!")).toBe(
       "https://www.zotero.org/username/items/ABC12345",
     );
+  });
+});
+
+describe("itemUri", () => {
+  const synced = {
+    userID: 475425,
+    localUserKey: "v3aG8nQf",
+    username: "aidenlx",
+  };
+  const local = { userID: null, localUserKey: "v3aG8nQf", username: null };
+
+  it("uses the numeric account id once the account has synced", () => {
+    expect(itemUri("ABC12345", null, synced)).toBe(
+      "http://zotero.org/users/475425/items/ABC12345",
+    );
+  });
+
+  it("uses the local key for a never-synced account", () => {
+    expect(itemUri("ABC12345", null, local)).toBe(
+      "http://zotero.org/users/local/v3aG8nQf/items/ABC12345",
+    );
+  });
+
+  it("uses the groupID for a group item, whatever the account identity", () => {
+    expect(itemUri("ABC12345", 42, synced)).toBe(
+      "http://zotero.org/groups/42/items/ABC12345",
+    );
+    expect(
+      itemUri("ABC12345", 42, {
+        userID: null,
+        localUserKey: null,
+        username: null,
+      }),
+    ).toBe("http://zotero.org/groups/42/items/ABC12345");
+  });
+
+  it("returns null for a personal item on an account carrying neither id", () => {
+    expect(
+      itemUri("ABC12345", null, {
+        userID: null,
+        localUserKey: null,
+        username: null,
+      }),
+    ).toBeNull();
   });
 });

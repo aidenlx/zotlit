@@ -181,6 +181,24 @@ type carries:
 
 The mobile header carries the same double-hairline signature as the home nav.
 
+### Docs release availability
+
+Release badges use the mono-uppercase apparatus voice with `NEW`, then
+`UPDATED` precedence. An Introduced Release whose Stable Release Line matches
+the Docs Release Line becomes the compact orange `NEW` pill. An Updated Release
+whose Stable Release Line matches the Docs Release Line becomes a quieter
+orange-outline `UPDATED` pill for an existing page.
+
+Every page shows a quiet mono metadata row:
+`AVAILABLE SINCE ZotLit <Introduced Release>`. The release links to the
+matching Changelog Entry when one exists.
+
+A page with no Introduced Release yet — it hasn't gone through a release
+cycle (see ADR 0002) — shows neither the sidebar pill nor the metadata row.
+This is a normal, expected state, not an error: Pre-release Docs deploys
+continuously from `next`, so an unreleased page can sit on a live site for a
+while before the next release assigns it.
+
 ### Comments
 
 Mounted via the docs page footer slot after prev/next cards.
