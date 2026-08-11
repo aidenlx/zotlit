@@ -174,6 +174,7 @@ function SearchRow() {
         onChange={setFilterQuery}
         autoFocus
         placeholder={m.annot_view_search_placeholder()}
+        clearLabel={m.annot_view_clear_search()}
       />
     </div>
   );

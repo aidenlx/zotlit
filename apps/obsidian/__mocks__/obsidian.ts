@@ -13,6 +13,8 @@ import type {
   Command,
   Debouncer,
   EditorSuggestContext,
+  EventRef,
+  WorkspaceLeaf,
   Instruction,
   Modifier,
   PaneType,
@@ -77,6 +79,50 @@ export class TFolder extends TAbstractFile {
 
   isRoot(): boolean {
     return this.parent === null;
+  }
+}
+
+/** Minimal ItemView shell for tests of plugin-registered views. */
+export class ItemView {
+  readonly contentEl: HTMLElement;
+
+  constructor(readonly leaf: WorkspaceLeaf) {
+    const content = globalThis.document?.createElement("div");
+    if (!content) {
+      this.contentEl = {
+        addClass: (..._classes: string[]) => {},
+      } as unknown as HTMLElement;
+      return;
+    }
+    (
+      content as HTMLElement & { addClass: (...classes: string[]) => void }
+    ).addClass = (...classes) => content.classList.add(...classes);
+    this.contentEl = content;
+  }
+
+  registerEvent(_event: EventRef): void {}
+  register<T extends () => void>(disposer: T): T {
+    return disposer;
+  }
+
+  protected onOpen(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  protected onClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  getViewType(): string {
+    return "";
+  }
+
+  getDisplayText(): string {
+    return "";
+  }
+
+  getIcon(): string {
+    return "";
   }
 }
 
