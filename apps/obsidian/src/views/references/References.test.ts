@@ -87,6 +87,15 @@ async function render(
 }
 
 describe("References", () => {
+  it("owns its empty-state presentation", async () => {
+    const container = await render([], { kind: "minimal" });
+    const empty = container.querySelector("[data-references-empty]");
+
+    expect(empty).not.toBeNull();
+    expect(empty?.classList).toContain("zt:text-faint");
+    expect(container.querySelector(".pane-empty")).toBeNull();
+  });
+
   it("hides the warning gutter when the style shows no Entry Marker", async () => {
     const container = await render(
       [

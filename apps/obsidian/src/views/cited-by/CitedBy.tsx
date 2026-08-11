@@ -1,10 +1,16 @@
 // The rendered Cited By Sidebar list.
 import { useEffect } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
+import { Icon } from "@/components/obsidian/icon";
+import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
-import type { CitedByGroup } from "@/services/citation-index/service";
+import { cn, tooltipAttrs } from "@/lib/utils";
+import type {
+  CitedByGroup,
+  CitedBySnapshot,
+} from "@/services/citation-index/service";
 
 import { useCitedByActions } from "./actions";
 import { occurrenceID, useCitedByStore } from "./store";
@@ -16,15 +22,25 @@ export function CitedBy() {
   const { indexedKey, snapshot, search, collapsed, previews, activePath } =
     state;
   if (!indexedKey) {
-    return <p className="zt:p-3">{m.cited_by_open_literature_note()}</p>;
+    return <EmptyState>{m.cited_by_open_literature_note()}</EmptyState>;
   }
   const { groups, coverage, resolution } = snapshot;
+  const statuses = citedByStatuses(coverage, resolution);
   if (
     groups.length === 0 &&
     coverage === "complete" &&
     resolution === "ready"
   ) {
-    return <p className="zt:p-3">{m.cited_by_empty()}</p>;
+    return <EmptyState>{m.cited_by_empty()}</EmptyState>;
+  }
+  if (groups.length === 0) {
+    return (
+      <EmptyState>
+        {statuses.map(({ key, message }) => (
+          <div key={key}>{message}</div>
+        ))}
+      </EmptyState>
+    );
   }
 
   const visibleGroups = filterGroups(groups, {
@@ -39,8 +55,9 @@ export function CitedBy() {
   );
 
   return (
-    <>
-      <div className="zt:border-b zt:border-border zt:p-3">
+    <div className="zt:min-h-full">
+      {statuses.length > 0 && <StatusStrip statuses={statuses} />}
+      <div className="zt:mx-3 zt:mt-3 zt:mb-2">
         <SearchInput
           className="zt:w-full"
           value={search}
@@ -49,53 +66,34 @@ export function CitedBy() {
           aria-label={m.cited_by_search_placeholder()}
           clearLabel={m.cited_by_clear_search()}
         />
-        <div className="zt:mt-2 zt:flex zt:items-center zt:justify-between zt:gap-2 zt:text-sm zt:text-muted-foreground">
-          <span>
-            {m.cited_by_note_count({ count: groups.length })}
-            {" · "}
-            {m.cited_by_occurrence_count({ count: occurrenceCount })}
-          </span>
-          <span className="zt:flex zt:gap-1">
-            <button
-              type="button"
-              onClick={() =>
-                actions.expandAll(visibleGroups.map(({ path }) => path))
-              }
-            >
-              {m.cited_by_expand_all()}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                actions.collapseAll(visibleGroups.map(({ path }) => path))
-              }
-            >
-              {m.cited_by_collapse_all()}
-            </button>
-          </span>
-        </div>
       </div>
-      {coverage === "indexing" && (
-        <p className="zt:px-3 zt:py-2 zt:text-muted-foreground">
-          {m.cited_by_indexing()}
-        </p>
-      )}
-      {coverage === "degraded" && (
-        <p className="zt:px-3 zt:py-2 zt:text-warning">
-          {m.cited_by_coverage_degraded()}
-        </p>
-      )}
-      {resolution === "resolving" && (
-        <p className="zt:px-3 zt:py-2 zt:text-muted-foreground">
-          {m.cited_by_resolving()}
-        </p>
-      )}
-      {resolution === "degraded" && (
-        <p className="zt:px-3 zt:py-2 zt:text-warning">
-          {m.cited_by_resolution_degraded()}
-        </p>
-      )}
-      <ul className="zt:m-0 zt:list-none zt:p-0">
+      <div className="zt:flex zt:min-w-0 zt:items-center zt:justify-between zt:gap-2 zt:border-b-(length:--border-width) zt:border-(--background-modifier-border) zt:px-3 zt:pb-2 zt:text-xs zt:whitespace-nowrap zt:text-(--text-muted)">
+        <span className="zt:min-w-0 zt:truncate zt:tabular-nums">
+          {m.cited_by_note_count({ count: groups.length })}
+          {" · "}
+          {m.cited_by_occurrence_count({ count: occurrenceCount })}
+        </span>
+        <span className="zt:flex zt:gap-1">
+          <IconButton
+            icon="chevrons-up-down"
+            {...tooltipAttrs(m.cited_by_expand_all())}
+            onClick={() =>
+              actions.expandAll(visibleGroups.map(({ path }) => path))
+            }
+          />
+          <IconButton
+            icon="chevrons-down-up"
+            {...tooltipAttrs(m.cited_by_collapse_all())}
+            onClick={() =>
+              actions.collapseAll(visibleGroups.map(({ path }) => path))
+            }
+          />
+        </span>
+      </div>
+      <ul
+        className="zt:m-0 zt:list-none zt:px-3 zt:pt-1 zt:pb-4"
+        data-cited-by-results
+      >
         {visibleGroups.map((group) => (
           <CitedBySource
             group={group}
@@ -107,7 +105,73 @@ export function CitedBy() {
           />
         ))}
       </ul>
-    </>
+    </div>
+  );
+}
+
+function EmptyState({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
+      data-cited-by-empty
+    >
+      {children}
+    </div>
+  );
+}
+
+interface CitedByStatus {
+  key: string;
+  message: string;
+  warning: boolean;
+}
+
+function citedByStatuses(
+  coverage: CitedBySnapshot["coverage"],
+  resolution: CitedBySnapshot["resolution"],
+): readonly CitedByStatus[] {
+  const statuses: CitedByStatus[] = [];
+  if (coverage === "indexing") {
+    statuses.push({
+      key: "indexing",
+      message: m.cited_by_indexing(),
+      warning: false,
+    });
+  } else if (coverage === "degraded") {
+    statuses.push({
+      key: "coverage-degraded",
+      message: m.cited_by_coverage_degraded(),
+      warning: true,
+    });
+  }
+  if (resolution === "resolving") {
+    statuses.push({
+      key: "resolving",
+      message: m.cited_by_resolving(),
+      warning: false,
+    });
+  } else if (resolution === "degraded") {
+    statuses.push({
+      key: "resolution-degraded",
+      message: m.cited_by_resolution_degraded(),
+      warning: true,
+    });
+  }
+  return statuses;
+}
+
+function StatusStrip({ statuses }: { statuses: readonly CitedByStatus[] }) {
+  return (
+    <div
+      className="zt:sticky zt:top-0 zt:z-1 zt:flex zt:flex-col zt:gap-1 zt:bg-muted zt:p-3 zt:ps-6 zt:text-sm zt:leading-snug"
+      role="status"
+    >
+      {statuses.map(({ key, message, warning }) => (
+        <div className={cn(warning && "zt:text-(--text-warning)")} key={key}>
+          {message}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -129,60 +193,111 @@ function CitedBySource({
   }, [actions, collapsed, group, preview]);
 
   return (
-    <li className="zt:border-b zt:border-border zt:px-3 zt:py-2">
-      <div className="zt:flex zt:items-center zt:gap-1">
-        <button
-          type="button"
+    <li className="zt:break-words" data-cited-by-result>
+      <div
+        className={cn(
+          "zt:group zt:relative zt:mb-(--nav-item-margin-bottom) zt:flex zt:items-center zt:rounded-(--nav-item-radius) zt:p-(--nav-item-padding) zt:pe-0 zt:text-(length:--nav-item-size) zt:leading-(--line-height-tight) zt:font-(--nav-item-weight) zt:[corner-shape:var(--corner-shape)] zt:focus-within:bg-(--nav-item-background-hover) zt:hover:bg-(--nav-item-background-hover) zt:hover:font-(--nav-item-weight-hover) zt:hover:text-(--nav-item-color-hover)",
+          collapsed
+            ? "zt:text-(--nav-item-color)"
+            : "zt:text-(--nav-item-color-active)",
+        )}
+        data-cited-by-source-header
+      >
+        <div
+          className="zt:absolute zt:inset-0 zt:cursor-clickable zt:rounded-(--nav-item-radius) zt:[corner-shape:var(--corner-shape)]"
+          role="button"
+          tabIndex={0}
           aria-expanded={!collapsed}
+          data-cited-by-source-toggle
           {...tooltipAttrs(
             collapsed
               ? m.cited_by_expand_source()
               : m.cited_by_collapse_source(),
           )}
           onClick={() => actions.toggleGroup(group.path)}
+          onKeyDown={activateWithKeyboard}
+        />
+        <div
+          aria-hidden
+          className="zt:pointer-events-none zt:absolute zt:start-0.5 zt:top-1/2 zt:z-1 zt:flex zt:size-5 zt:-translate-y-1/2 zt:items-center zt:justify-center zt:text-(--nav-collapse-icon-color) zt:opacity-(--icon-opacity)"
+          data-cited-by-source-chevron
         >
-          {collapsed ? "›" : "⌄"}
-        </button>
-        <button
-          className="zt:min-w-0 zt:truncate zt:font-medium"
-          type="button"
-          data-source={group.path}
-          onClick={(event) => actions.openSource(group.path, event)}
+          <Icon
+            name={collapsed ? "chevron-right" : "chevron-down"}
+            size={12}
+            strokeWidth={3}
+          />
+        </div>
+        <div
+          className="zt:pointer-events-none zt:z-1 zt:min-w-0 zt:flex-1 zt:overflow-hidden zt:whitespace-pre-wrap zt:[unicode-bidi:plaintext]"
+          data-cited-by-source-label
         >
           {label}
-        </button>
+        </div>
+        <span
+          className="zt:pointer-events-none zt:z-1 zt:ms-auto zt:flex zt:shrink-0 zt:items-center zt:ps-1"
+          data-cited-by-source-count
+        >
+          <span className="zt:rounded-sm zt:text-xs zt:leading-none zt:text-faint zt:group-hover:text-(--text-muted)">
+            {group.occurrences.length}
+          </span>
+        </span>
+        <div
+          className="zt:z-1 zt:ms-0.5 zt:flex zt:size-5 zt:shrink-0 zt:cursor-clickable zt:items-center zt:justify-center zt:rounded-sm zt:text-(--text-faint) zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal) zt:focus-visible:bg-(--background-modifier-hover) zt:focus-visible:text-(--text-normal)"
+          data-source={group.path}
+          role="button"
+          tabIndex={0}
+          {...tooltipAttrs(m.cited_by_open_source())}
+          onClick={(event) => actions.openSource(group.path, event)}
+          onKeyDown={activateWithKeyboard}
+        >
+          <Icon name="arrow-up-right" size={14} />
+        </div>
       </div>
       {!collapsed && (
-        <ul className="zt:mt-1 zt:list-none zt:p-0 zt:text-sm zt:text-muted-foreground">
+        <ul className="zt:mt-1 zt:mb-2 zt:overflow-hidden zt:rounded-(--radius-s) zt:bg-(--search-result-background) zt:text-xs zt:leading-(--line-height-tight) zt:text-(--text-muted) zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border)] zt:empty:hidden">
           {preview?.status === "unavailable" && (
-            <li>{m.cited_by_preview_unavailable()}</li>
+            <li className="zt:flex zt:gap-2 zt:px-3 zt:py-2 zt:text-(--text-error)">
+              <span aria-hidden>⚠</span>
+              <span>{m.cited_by_preview_unavailable()}</span>
+            </li>
           )}
           {preview?.status === "ready" &&
             group.occurrences.map((occurrence) => {
               const context = preview.contexts[occurrenceID(occurrence)];
               if (!context) return null;
               return (
-                <li key={occurrenceID(occurrence)}>
-                  <button
-                    className="zt:block zt:w-full zt:truncate zt:text-left"
-                    type="button"
-                    data-occurrence={occurrenceID(occurrence)}
-                    onClick={(event) =>
-                      actions.openOccurrence(group, occurrence, event)
-                    }
-                  >
-                    {context.status === "unavailable" ? (
-                      m.cited_by_preview_unavailable()
-                    ) : (
-                      <>
-                        {context.before}
-                        <mark className="zt:bg-transparent zt:font-semibold zt:text-foreground">
-                          {context.token}
-                        </mark>
-                        {context.after}
-                      </>
-                    )}
-                  </button>
+                <li
+                  className={cn(
+                    "zt:relative zt:w-full zt:cursor-clickable zt:border-b-(length:--border-width) zt:border-(--background-modifier-border) zt:py-2 zt:ps-3 zt:pe-5 zt:whitespace-pre-wrap zt:[unicode-bidi:plaintext] zt:last:border-b-0 zt:hover:bg-(--text-selection) zt:hover:text-(--text-normal)",
+                    context.status === "unavailable" &&
+                      "zt:text-(--text-error) zt:hover:text-(--text-error)",
+                  )}
+                  key={occurrenceID(occurrence)}
+                  role="button"
+                  tabIndex={0}
+                  data-occurrence={occurrenceID(occurrence)}
+                  onClick={(event) =>
+                    actions.openOccurrence(group, occurrence, event)
+                  }
+                  onKeyDown={activateWithKeyboard}
+                >
+                  {context.status === "unavailable" ? (
+                    <>
+                      <span aria-hidden className="zt:mr-2">
+                        ⚠
+                      </span>
+                      {m.cited_by_preview_unavailable()}
+                    </>
+                  ) : (
+                    <>
+                      {context.before}
+                      <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
+                        {context.token}
+                      </mark>
+                      {context.after}
+                    </>
+                  )}
                 </li>
               );
             })}
@@ -190,6 +305,12 @@ function CitedBySource({
       )}
     </li>
   );
+}
+
+function activateWithKeyboard(event: KeyboardEvent<HTMLElement>): void {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  event.currentTarget.click();
 }
 
 function filterGroups(

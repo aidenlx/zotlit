@@ -108,6 +108,8 @@ describe("CitedByView", () => {
       app,
       citationIndex: { observeCitedBy },
     });
+    expect(view.getIcon()).toBe("file-input");
+    expect(view.contentEl.classList).toContain("zt-cited-by-view");
     document.body.append(view.contentEl);
     await act(() => view!.open());
 

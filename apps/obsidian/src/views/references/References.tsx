@@ -39,7 +39,10 @@ export function References() {
         </Banner>
       )}
       {entries.length === 0 ? (
-        <div className="pane-empty zt:p-2">
+        <div
+          className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
+          data-references-empty
+        >
           {dbReady ? m.references_empty() : m.references_db_unavailable()}
         </div>
       ) : (

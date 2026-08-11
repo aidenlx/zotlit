@@ -1,4 +1,5 @@
 // Registration and the explicit command for the Cited By Sidebar.
+import "./style.css";
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";

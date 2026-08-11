@@ -14,12 +14,23 @@ import type {
   Debouncer,
   EditorSuggestContext,
   EventRef,
+  IconName,
   WorkspaceLeaf,
   Instruction,
   Modifier,
   PaneType,
   UserEvent,
 } from "obsidian";
+
+export function getIcon(name: IconName): SVGSVGElement | null {
+  const svg = globalThis.document?.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "svg",
+  );
+  if (!svg) return null;
+  svg.setAttribute("class", `svg-icon lucide-${name}`);
+  return svg;
+}
 
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
 // Provide it for tests that exercise that code path.

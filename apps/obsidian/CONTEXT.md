@@ -131,6 +131,14 @@ _Avoid_: broken reference, missing reference (names only one cause)
 The active-document view of each distinct Literature Note Citation and its occurrences, cited Item, and Openable Attachments. Its engine-rendered form follows the Citation and References Style's bibliography order and Entry Markers. Its minimal form follows first-occurrence order and Reference Numbers when the Pandoc Engine or selected style is unavailable; a rendering failure also shows its error instead of retaining stale formatted entries.
 _Avoid_: bibliography sidebar, reference list pane
 
+**Cited By Sidebar** _(Obsidian)_:
+The active-Literature-Note view of every Citation Occurrence in the vault that resolves to the same Item, grouped by citing note. It reports Citation Index facts independently of the Document Citation Set's source choices.
+_Avoid_: backlinks (Obsidian's view omits literal Pandoc citations), reverse references, incoming citations
+
+**Citation Context** _(Obsidian)_:
+The raw source range shown around one Citation Occurrence in the Cited By Sidebar. Its initial range contains every source line spanned by the occurrence, and the user can extend it independently before or after.
+_Avoid_: matched line, context preview, source preview
+
 **Citation and References Style**:
 The CSL style used for both Document Citation Text and rendered entries in the References Sidebar, stored in synced settings as a CSL style ID. Zotero owns the available styles; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
 _Avoid_: citation style (conflicts with the `cite` Template's format), references style (omits in-text Citations), CSL file (names the file, not the selection)

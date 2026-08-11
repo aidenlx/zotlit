@@ -34,12 +34,7 @@ export class CitedByView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, deps: CitedByViewDeps) {
     super(leaf);
-    this.contentEl.addClass(
-      "zt-root",
-      "zt:h-full",
-      "zt:overflow-y-auto",
-      "zt:p-0",
-    );
+    this.contentEl.addClass("zt-root", "zt-cited-by-view");
     this.#deps = deps;
     this.#actions = createCitedByActions({ app: deps.app, store: this.#store });
   }
@@ -53,7 +48,7 @@ export class CitedByView extends ItemView {
   }
 
   override getIcon(): string {
-    return "quote";
+    return "file-input";
   }
 
   protected override async onOpen(): Promise<void> {

@@ -167,6 +167,8 @@ describe("CitedBy", () => {
     expect(container.textContent).toBe(
       "Open a literature note to see citations.",
     );
+    expect(container.querySelector("[data-cited-by-empty]")).not.toBeNull();
+    expect(container.querySelector(".pane-empty")).toBeNull();
   });
 
   it("keeps partial results visible while indexing", async () => {
@@ -175,6 +177,10 @@ describe("CitedBy", () => {
     });
     expect(container.textContent).toContain("Indexing citations…");
     expect(container.textContent).toContain("draft");
+    expect(container.querySelector('[role="status"]')?.classList).toContain(
+      "zt:bg-muted",
+    );
+    expect(container.querySelector("[data-cited-by-empty]")).toBeNull();
   });
 
   it("distinguishes degraded coverage and citation-key resolution", async () => {
@@ -189,6 +195,7 @@ describe("CitedBy", () => {
       "Some citations that use citation keys may be unavailable.",
     );
     expect(container.textContent).toContain("draft");
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
   });
 
   it("shows degraded resolution instead of a final empty result", async () => {
@@ -206,6 +213,7 @@ describe("CitedBy", () => {
     expect(container.textContent).not.toContain(
       "No notes cite this literature note.",
     );
+    expect(container.querySelector("[data-cited-by-empty]")).not.toBeNull();
   });
 
   it("shows that citation-key resolution is still in progress", async () => {
@@ -221,6 +229,7 @@ describe("CitedBy", () => {
     expect(container.textContent).not.toContain(
       "No notes cite this literature note.",
     );
+    expect(container.querySelector("[data-cited-by-empty]")).not.toBeNull();
   });
 
   it("shows the final empty result after complete ready coverage", async () => {
@@ -229,6 +238,7 @@ describe("CitedBy", () => {
     });
 
     expect(container.textContent).toBe("No notes cite this literature note.");
+    expect(container.querySelector("[data-cited-by-empty]")).not.toBeNull();
   });
 
   it("moves from reset progress to its final truthful state", async () => {
@@ -290,11 +300,53 @@ describe("CitedBy", () => {
     });
     expect(container.textContent).toContain("draft");
     expect(container.textContent).toContain("Preview unavailable");
+    const warning = container.querySelector(
+      '[class~="zt:text-(--text-error)"]',
+    );
+    expect(warning?.textContent).toContain("Preview unavailable");
   });
 
-  it("opens source headings with Obsidian modifier behavior", async () => {
+  it("owns the Backlinks-style result presentation", async () => {
+    const { container } = await render({});
+    const result = container.querySelector("[data-cited-by-result]");
+    const results = container.querySelector("[data-cited-by-results]");
+    const header = result?.querySelector("[data-cited-by-source-header]");
+    const open = result?.querySelector("[data-source]");
+    const occurrence = result?.querySelector("[data-occurrence]");
+
+    expect(result).not.toBeNull();
+    expect(
+      result?.matches(".tree-item, .search-result") ||
+        result?.querySelector(
+          ".tree-item-self, .tree-item-inner, .tree-item-flair, .search-result-file-matches, .search-result-file-match",
+        ),
+    ).toBeFalsy();
+    expect(results?.classList).toContain("zt:px-3");
+    expect(header?.classList).toContain("zt:p-(--nav-item-padding)");
+    expect(header?.classList).toContain("zt:pe-0");
+    expect(header?.classList).toContain("zt:items-center");
+    expect(open?.classList).toContain("zt:size-5");
+    expect(open?.classList).not.toContain("clickable-icon");
+    expect(occurrence?.classList).toContain("zt:hover:bg-(--text-selection)");
+    expect(result?.querySelector("mark")?.classList).toContain(
+      "zt:bg-(--text-highlight-bg)",
+    );
+  });
+
+  it("toggles a source row and opens its note from the dedicated button", async () => {
     vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
     const { container, openLinkText } = await render({});
+    const toggle = container.querySelector(
+      "[data-cited-by-source-toggle]",
+    ) as HTMLElement;
+
+    await act(() => toggle.click());
+    expect(container.querySelector("[data-occurrence]")).toBeNull();
+    expect(openLinkText).not.toHaveBeenCalled();
+
+    await act(() => toggle.click());
+    await act(async () => Promise.resolve());
+    expect(container.querySelector("[data-occurrence]")).not.toBeNull();
 
     await act(() =>
       (
@@ -303,6 +355,10 @@ describe("CitedBy", () => {
     );
 
     expect(openLinkText).toHaveBeenCalledWith("Notes/draft.md", "", "tab");
+    expect(container.querySelector("[data-occurrence]")).not.toBeNull();
+    expect(container.querySelector("[data-source] svg")?.classList).toContain(
+      "lucide-arrow-up-right",
+    );
   });
 
   it("reveals the new modifier-click leaf when the source was already open", async () => {
@@ -451,10 +507,16 @@ describe("CitedBy", () => {
     await act(() => actions.collapseAll());
     expect(container.querySelector("[data-occurrence]")).toBeNull();
     expect(container.querySelector("[aria-expanded=false]")).not.toBeNull();
+    expect(
+      container.querySelector("[data-cited-by-source-header] svg")?.classList,
+    ).toContain("lucide-chevron-right");
 
     await act(() => actions.expandAll());
     await act(async () => Promise.resolve());
     expect(container.querySelector("[data-occurrence]")).not.toBeNull();
+    expect(
+      container.querySelector("[data-cited-by-source-header] svg")?.classList,
+    ).toContain("lucide-chevron-down");
   });
 
   it("preserves search and expands groups when the target changes", async () => {
