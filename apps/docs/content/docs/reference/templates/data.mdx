@@ -31,7 +31,7 @@ The annotation template (`zotlit-annotation.liquid.md`) receives a single annota
 
 ## Filename template [#filename-template]
 
-The `zt` root of the `filename` template: an item's own fields, its collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`, `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`, `authorsShort`, or `notes` — so naming a note stays a single-item read.
+The `zt` root of the `filename` template: an item's own fields, its collections, Primary Creators, an Author Summary, and inert `notePath` / `noteLink` stubs. It reads only this item when naming a note.
 
 The filename template (`zotlit-filename.liquid.md`) receives exactly the properties below.
 
@@ -83,7 +83,7 @@ Parent literature item as seen from the standalone `annotation` template. The an
 
 One creator of an item, in the template vocabulary. Coerces to [`fullName`](#creators-fullName) in string contexts.
 
-`zt.creators` lists every creator on the item; `zt.authors` narrows them to the item's primary creator type, falling back to all creators when none matches. Institutional creators (Zotero `fieldMode=1`) set `literal` and leave `family` and `given` empty.
+`zt.creators` lists every creator on the item. `zt.authors` lists the creators in the first populated role: the item's primary creator role, editor, director, then contributor. Institutional creators (Zotero `fieldMode=1`) set `literal` and leave `family` and `given` empty.
 
 <ContractTable section="creators" />
 

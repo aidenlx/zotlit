@@ -24,6 +24,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { TemplateError } from "@zotlit/templates/facade";
 
 import { annotationCitation } from "@/lib/annotation-render";
+import { creatorSummary } from "@/lib/item-summary";
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
@@ -107,6 +108,7 @@ export async function loadTemplateData(
           collectionCache
             .byItemIDs(lease.client, item.libraryID, [item.itemID])
             .get(item.itemID) ?? [],
+        authorsShort: creatorSummary,
       }),
     };
   }

@@ -33,6 +33,11 @@ describe("normalizeFilename", () => {
     ["dot collapses to empty", ".", ""],
     ["dotdot collapses to empty", "..", ""],
     ["empty stays empty", "", ""],
+    [
+      "bidirectional formatting controls retained",
+      "Smith\u2068 and \u2069Jones",
+      "Smith\u2068 and \u2069Jones",
+    ],
   ])("%s", (_label, input, expected) => {
     expect(normalizeFilename(input)).toBe(expected);
   });
@@ -85,6 +90,11 @@ describe("resolveNoteRelPath", () => {
     ["dotdot folder segment dropped", "../x", "x"],
     ["dot folder segment dropped", "./x", "x"],
     ["sanitizes per segment", "a:b/c?d", "a_b/c_d"],
+    [
+      "strips bidirectional formatting controls",
+      "Smith\u2068 and \u2069Jones",
+      "Smith and Jones",
+    ],
   ])("%s → %s", (_label, input, expected) => {
     expect(resolveNoteRelPath(input)).toBe(expected);
   });

@@ -1,9 +1,7 @@
-import { parseItemDate } from "@zotlit/db";
+import { creatorTypePriority, parseItemDate } from "@zotlit/db";
 import type { Creator, Item } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
-
-const FALLBACK_CREATOR_TYPES = ["editor", "director", "contributor"] as const;
 
 export type SummaryItem = Pick<Item, "key" | "creators" | "primaryCreatorType">;
 export type SummaryItemFields = {
@@ -47,13 +45,6 @@ export function creatorSummary(
     return summarizeCreators(creators);
   }
   return "";
-}
-
-function creatorTypePriority(primaryCreatorType: string | null): string[] {
-  const priority = primaryCreatorType
-    ? [primaryCreatorType, ...FALLBACK_CREATOR_TYPES]
-    : FALLBACK_CREATOR_TYPES;
-  return [...new Set(priority)];
 }
 
 function summarizeCreators(creators: readonly Creator[]): string {

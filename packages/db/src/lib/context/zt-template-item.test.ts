@@ -6,7 +6,7 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import type { BaseItem, Item } from "@/queries/items";
 
-import { itemToTemplateBaseData } from "./zt-template-item";
+import { itemToTemplateBaseData, resolveItemCore } from "./zt-template-item";
 import type { TemplateCreator } from "./zt-template-item";
 
 function makeItem(
@@ -239,5 +239,67 @@ describe("itemToTemplateBaseData", () => {
 
     expect(result.myCustomField).toBeUndefined();
     expect("myCustomField" in result).toBe(false);
+  });
+});
+
+describe("resolveItemCore", () => {
+  it.each([
+    {
+      label: "prefers the populated primary role",
+      creators: [
+        { firstName: "Ada", lastName: "Lovelace", creatorType: "author" },
+        { firstName: "Ruth", lastName: "Davis", creatorType: "editor" },
+      ],
+      primaryCreatorType: "author",
+      family: "Lovelace",
+      role: "author",
+    },
+    {
+      label: "falls back to editors",
+      creators: [
+        { firstName: "Ruth", lastName: "Davis", creatorType: "editor" },
+      ],
+      primaryCreatorType: "author",
+      family: "Davis",
+      role: "editor",
+    },
+    {
+      label: "falls back to directors after editors",
+      creators: [
+        { firstName: "Ruth", lastName: "Davis", creatorType: "director" },
+        { firstName: "Con", lastName: "Tribe", creatorType: "contributor" },
+      ],
+      primaryCreatorType: "author",
+      family: "Davis",
+      role: "director",
+    },
+    {
+      label: "falls back to contributors",
+      creators: [
+        { firstName: "Con", lastName: "Tribe", creatorType: "contributor" },
+      ],
+      primaryCreatorType: "author",
+      family: "Tribe",
+      role: "contributor",
+    },
+  ] as const)("$label", ({ creators, primaryCreatorType, family, role }) => {
+    const item = makeItem(
+      { itemType: "book" },
+      {
+        primaryCreatorType,
+        creators: creators.map((creator) => ({ ...creator, fieldMode: 0 })),
+      },
+    );
+    const baseData = itemToTemplateBaseData({ item, tags: [] });
+
+    const result = resolveItemCore({
+      item,
+      baseData,
+      username: null,
+      authorsShort: () => family,
+    });
+
+    expect(result.authors).toMatchObject([{ family, role }]);
+    expect(result.authorsShort).toBe(family);
   });
 });

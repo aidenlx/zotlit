@@ -115,6 +115,7 @@ export function resolveNotePath(
     item,
     tags: options.itemTags,
     collections: options.itemCollections,
+    authorsShort: creatorSummary,
   });
   const rendered = ctx.template.renderFilename(data);
   const rel = resolveRenderedRelPath(folderSetting, rendered, {

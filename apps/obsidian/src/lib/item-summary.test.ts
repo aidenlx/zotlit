@@ -203,6 +203,33 @@ describe("creatorSummary", () => {
     ).toBe("Davis");
   });
 
+  it("falls back to director before contributor", () => {
+    expect(
+      creatorSummary(
+        makeItem({
+          key: "A",
+          creators: [
+            creator("Con", "Tribe", "contributor"),
+            creator("Ruth", "Davis", "director"),
+          ],
+          primaryCreatorType: "author",
+        }),
+      ),
+    ).toBe("Davis");
+  });
+
+  it("falls back to contributor", () => {
+    expect(
+      creatorSummary(
+        makeItem({
+          key: "A",
+          creators: [creator("Con", "Tribe", "contributor")],
+          primaryCreatorType: "author",
+        }),
+      ),
+    ).toBe("Tribe");
+  });
+
   it("uses organization literals from the lastName slot", () => {
     expect(
       creatorSummary(

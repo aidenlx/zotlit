@@ -106,7 +106,9 @@ export {
   type TemplateAnnotation,
 } from "./lib/context/zt-template-annot";
 export {
+  creatorTypePriority,
   type FallibleTemplateLink,
+  type TemplateAuthorData,
   type TemplateFilenameItemData,
   type TemplateItemData,
   type TemplateLink,

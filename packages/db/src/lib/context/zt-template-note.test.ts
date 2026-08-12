@@ -655,11 +655,36 @@ describe("buildNoteContext", () => {
 });
 
 describe("buildFilenameContext", () => {
+  it("exposes the primary creators and injected author summary", () => {
+    const ctx = buildFilenameContext({
+      item: makeItem(
+        { itemType: "book", title: "Edited Work" },
+        {
+          creators: [
+            {
+              firstName: "Ruth",
+              lastName: "Davis",
+              creatorType: "editor",
+              fieldMode: 0,
+            },
+          ],
+        },
+      ),
+      tags: [],
+      collections: [],
+      authorsShort: () => "Davis",
+    });
+
+    expect(ctx.authors).toMatchObject([{ family: "Davis", role: "editor" }]);
+    expect(ctx.authorsShort).toBe("Davis");
+  });
+
   it("stubs notePath/noteLink to empty strings instead of omitting them", () => {
     const ctx = buildFilenameContext({
       item: makeItem({ itemType: "journalArticle", title: "A Study" }),
       tags: [],
       collections: [],
+      authorsShort: () => "",
     });
 
     // A filename template referencing `zt.noteLink()`/`zt.notePath` (the note
