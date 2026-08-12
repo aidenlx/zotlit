@@ -68,6 +68,11 @@ export type CitedBySortMode = (typeof CITED_BY_SORT_GROUPS)[number][number];
 
 export const DEFAULT_CITED_BY_SORT: CitedBySortMode = "alphabetical";
 
+/** Whether one value out of the workspace layout names a sort mode. */
+export function isCitedBySortMode(value: unknown): value is CitedBySortMode {
+  return CITED_BY_SORT_GROUPS.flat().includes(value as CitedBySortMode);
+}
+
 export interface CitedByState {
   indexedKey: string | null;
   activePath: string | null;
