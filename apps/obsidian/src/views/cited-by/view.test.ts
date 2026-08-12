@@ -146,15 +146,15 @@ describe("CitedByView", () => {
 
     activeFile = ordinary;
     await act(() => onActiveLeafChange?.());
-    expect(view.contentEl.textContent).toBe(
-      "Open a literature note to see citations.",
-    );
+    expect(
+      view.contentEl.querySelector("[data-cited-by-empty]")?.textContent,
+    ).toBe("Open a literature note to see citations.");
 
     activeFile = null;
     await act(() => onActiveLeafChange?.());
-    expect(view.contentEl.textContent).toBe(
-      "Open a literature note to see citations.",
-    );
+    expect(
+      view.contentEl.querySelector("[data-cited-by-empty]")?.textContent,
+    ).toBe("Open a literature note to see citations.");
 
     activeFile = file;
     await act(() => onActiveLeafChange?.());
@@ -197,9 +197,9 @@ describe("CitedByView", () => {
 
     await act(() => onDelete?.(file));
 
-    expect(view.contentEl.textContent).toBe(
-      "Open a literature note to see citations.",
-    );
+    expect(
+      view.contentEl.querySelector("[data-cited-by-empty]")?.textContent,
+    ).toBe("Open a literature note to see citations.");
   });
 
   it("drops manual excerpt expansions when the active note changes", async () => {
@@ -428,6 +428,49 @@ describe("CitedByView", () => {
     );
     expect(excerpt()).toBe(truncated);
   });
+
+  it("keeps the toolbar node through a same-note leaf change that starts mid-press", async () => {
+    const harness = makeHarness();
+    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    document.body.append(view.contentEl);
+    await act(() => view!.open());
+    await act(() => harness.publish());
+    await act(settle);
+
+    const button = view.contentEl.querySelector(
+      "[data-cited-by-show-search]",
+    ) as HTMLElement;
+    button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    await act(() => harness.activate(harness.note));
+    await act(() => harness.publish());
+    await act(settle);
+    expect(view.contentEl.contains(button)).toBe(true);
+    await act(() => button.click());
+    expect(view.getState()).toMatchObject({ searchVisible: true });
+  });
+
+  it("keeps the toolbar node through a transient empty snapshot", async () => {
+    const harness = makeHarness();
+    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    document.body.append(view.contentEl);
+    await act(() => view!.open());
+    await act(() => harness.publish());
+    await act(settle);
+
+    const button = view.contentEl.querySelector("[data-cited-by-show-search]");
+    await act(() =>
+      harness.publishSnapshot({
+        groups: [],
+        coverage: "indexing",
+        resolution: "resolving",
+      }),
+    );
+    expect(view.contentEl.querySelector("[data-cited-by-show-search]")).toBe(
+      button,
+    );
+    expect(view.contentEl.textContent).toContain("Indexing citations…");
+    expect(view.contentEl.textContent).toContain("Resolving citations…");
+  });
 });
 
 const CITING_BODY = "Alpha cites @doe2024 here.\nMore text follows.\n";
@@ -485,6 +528,7 @@ function makeHarness() {
         coverage: "complete",
         resolution: "ready",
       }),
+    publishSnapshot: (snapshot: CitedBySnapshot) => publish?.(snapshot),
     activate: (file: TFile) => {
       activeFile = file;
       onActiveLeafChange?.();

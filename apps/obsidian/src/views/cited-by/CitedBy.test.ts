@@ -373,10 +373,9 @@ async function chooseSort(container: Element, title: string): Promise<void> {
 describe("CitedBy", () => {
   it("asks for a literature note outside the Literature Note context", async () => {
     const { container } = await render({ indexedKey: null });
-    expect(container.textContent).toBe(
+    expect(container.querySelector("[data-cited-by-empty]")?.textContent).toBe(
       "Open a literature note to see citations.",
     );
-    expect(container.querySelector("[data-cited-by-empty]")).not.toBeNull();
     expect(container.querySelector(".pane-empty")).toBeNull();
   });
 
@@ -446,8 +445,9 @@ describe("CitedBy", () => {
       snapshot: snapshot({ groups: [], coverage: "complete" }),
     });
 
-    expect(container.textContent).toBe("No notes cite this literature note.");
-    expect(container.querySelector("[data-cited-by-empty]")).not.toBeNull();
+    expect(container.querySelector("[data-cited-by-empty]")?.textContent).toBe(
+      "No notes cite this literature note.",
+    );
   });
 
   it("moves from reset progress to its final truthful state", async () => {
@@ -466,7 +466,9 @@ describe("CitedBy", () => {
         snapshot: snapshot({ groups: [], coverage: "complete" }),
       }),
     );
-    expect(container.textContent).toBe("No notes cite this literature note.");
+    expect(container.querySelector("[data-cited-by-empty]")?.textContent).toBe(
+      "No notes cite this literature note.",
+    );
   });
 
   it("reads context for a collapsed group, then expands it without a load wait", async () => {

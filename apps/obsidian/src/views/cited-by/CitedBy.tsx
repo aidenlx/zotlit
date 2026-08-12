@@ -53,11 +53,70 @@ export function CitedBy() {
     actions.loadPreviews(snapshot.groups);
     return () => actions.loadPreviews([]);
   }, [actions, snapshot]);
+  const { groups, coverage, resolution } = snapshot;
+  const statuses = citedByStatuses(coverage, resolution);
+  const visibleGroups = actions.sortGroups(
+    filterGroups(groups, { search, previews, moreContext, expansions }),
+    sort,
+  );
+  const duplicateNames = duplicateNoteNames(groups);
+  const occurrenceCount = visibleGroups.reduce(
+    (total, group) => total + group.occurrences.length,
+    0,
+  );
+
+  return (
+    <div className="zt:min-h-full">
+      {statuses.length > 0 && groups.length > 0 && (
+        <StatusStrip statuses={statuses} />
+      )}
+      <Toolbar
+        occurrenceCount={occurrenceCount}
+        paths={visibleGroups.map(({ path }) => path)}
+      />
+      {searchVisible && <SearchFilter />}
+      <Results
+        activePath={activePath}
+        coverage={coverage}
+        duplicateNames={duplicateNames}
+        groups={groups}
+        indexedKey={indexedKey}
+        resolution={resolution}
+        statuses={statuses}
+        visibleGroups={visibleGroups}
+      />
+    </div>
+  );
+}
+
+/**
+ * The results region: a Literature Note prompt, the final or in-progress
+ * empty state, or the source list, in that priority order. Keys on the raw
+ * `groups` emptiness (not `visibleGroups`) so a query that filters every
+ * group out still shows the (empty) results list rather than an empty state.
+ */
+function Results({
+  activePath,
+  coverage,
+  duplicateNames,
+  groups,
+  indexedKey,
+  resolution,
+  statuses,
+  visibleGroups,
+}: {
+  activePath: string | null;
+  coverage: CitedBySnapshot["coverage"];
+  duplicateNames: ReadonlySet<string>;
+  groups: readonly CitedByGroup[];
+  indexedKey: string | null;
+  resolution: CitedBySnapshot["resolution"];
+  statuses: readonly CitedByStatus[];
+  visibleGroups: readonly CitedByGroup[];
+}) {
   if (!indexedKey) {
     return <EmptyState>{m.cited_by_open_literature_note()}</EmptyState>;
   }
-  const { groups, coverage, resolution } = snapshot;
-  const statuses = citedByStatuses(coverage, resolution);
   if (
     groups.length === 0 &&
     coverage === "complete" &&
@@ -75,40 +134,22 @@ export function CitedBy() {
     );
   }
 
-  const visibleGroups = actions.sortGroups(
-    filterGroups(groups, { search, previews, moreContext, expansions }),
-    sort,
-  );
-  const duplicateNames = duplicateNoteNames(groups);
-  const occurrenceCount = visibleGroups.reduce(
-    (total, group) => total + group.occurrences.length,
-    0,
-  );
-
   return (
-    <div className="zt:min-h-full">
-      {statuses.length > 0 && <StatusStrip statuses={statuses} />}
-      <Toolbar
-        occurrenceCount={occurrenceCount}
-        paths={visibleGroups.map(({ path }) => path)}
-      />
-      {searchVisible && <SearchFilter />}
-      <ul
-        className="zt:m-0 zt:list-none zt:px-3 zt:pt-1 zt:pb-4"
-        data-cited-by-results
-      >
-        {visibleGroups.map((group) => (
-          <CitedBySource
-            group={group}
-            key={group.path}
-            label={sourceLabel(group.path, {
-              activePath,
-              duplicateNames,
-            })}
-          />
-        ))}
-      </ul>
-    </div>
+    <ul
+      className="zt:m-0 zt:list-none zt:px-3 zt:pt-1 zt:pb-4"
+      data-cited-by-results
+    >
+      {visibleGroups.map((group) => (
+        <CitedBySource
+          group={group}
+          key={group.path}
+          label={sourceLabel(group.path, {
+            activePath,
+            duplicateNames,
+          })}
+        />
+      ))}
+    </ul>
   );
 }
 
