@@ -15,7 +15,7 @@ import type {
 } from "@/services/citation-index/service";
 
 import { useCitedByActions } from "./actions";
-import { contextParts, occurrenceID, useCitedByStore } from "./store";
+import { contextParts, noteName, occurrenceID, useCitedByStore } from "./store";
 import type { CitedByPreview, OccurrenceContext } from "./store";
 
 /** Milliseconds between the last input change and the query it applies. */
@@ -33,6 +33,7 @@ export function CitedBy() {
     search,
     searchVisible,
     moreContext,
+    sort,
     sectionCollapsed,
     previews,
     activePath,
@@ -63,11 +64,10 @@ export function CitedBy() {
     );
   }
 
-  const visibleGroups = filterGroups(groups, {
-    search,
-    previews,
-    moreContext,
-  });
+  const visibleGroups = actions.sortGroups(
+    filterGroups(groups, { search, previews, moreContext }),
+    sort,
+  );
   const duplicateNames = duplicateNoteNames(groups);
   const occurrenceCount = visibleGroups.reduce(
     (total, group) => total + group.occurrences.length,
@@ -133,6 +133,13 @@ function Toolbar({ paths }: { paths: readonly string[] }) {
           data-cited-by-show-more-context
           {...tooltipAttrs(m.cited_by_show_more_context())}
           onClick={actions.toggleMoreContext}
+        />
+        <IconButton
+          className="nav-action-button"
+          icon="sort-asc"
+          data-cited-by-sort
+          {...tooltipAttrs(m.cited_by_change_sort_order())}
+          onClick={actions.showSortMenu}
         />
         <IconButton
           className="nav-action-button"
@@ -524,10 +531,4 @@ function sourceLabel(
   const slash = path.lastIndexOf("/");
   const folder = slash === -1 ? "/" : path.slice(0, slash);
   return `${name} — ${folder}`;
-}
-
-function noteName(path: string): string {
-  const slash = path.lastIndexOf("/");
-  const filename = path.slice(slash + 1);
-  return filename.endsWith(".md") ? filename.slice(0, -3) : filename;
 }

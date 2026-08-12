@@ -318,6 +318,7 @@ export function requireApiVersion(_version: string): boolean {
 export class MenuItem {
   #title = "";
   #section = "";
+  #checked: boolean | null = null;
   #onClick: ((evt: MouseEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
@@ -325,6 +326,11 @@ export class MenuItem {
 
   get title(): string {
     return this.#title;
+  }
+
+  /** `null` for an item that carries no check mark, as in Obsidian. */
+  get checked(): boolean | null {
+    return this.#checked;
   }
 
   /** `""` for an unsectioned item, as in Obsidian. */
@@ -343,6 +349,11 @@ export class MenuItem {
 
   setSection(section: string): this {
     this.#section = section;
+    return this;
+  }
+
+  setChecked(checked: boolean | null): this {
+    this.#checked = checked;
     return this;
   }
 
@@ -394,7 +405,15 @@ export class Menu {
     return this;
   }
 
+  setNoIcon(): this {
+    return this;
+  }
+
   showAtMouseEvent(_evt: MouseEvent): this {
+    return this;
+  }
+
+  showAtPosition(_position: { x: number; y: number }): this {
     return this;
   }
 }

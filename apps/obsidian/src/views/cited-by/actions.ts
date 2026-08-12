@@ -1,9 +1,10 @@
 // Preview loading, collapse controls, and source navigation for one Cited By Sidebar.
-import { Keymap, TFile } from "obsidian";
+import { Keymap, Menu, TFile } from "obsidian";
 import type { App } from "obsidian";
 import { createContext, useContext } from "react";
 import type { MouseEvent } from "react";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type {
   CitedByGroup,
@@ -11,11 +12,31 @@ import type {
 } from "@/services/citation-index/service";
 
 import { currentOccurrence, openCitedByOccurrence } from "./navigation";
-import { citationContext, occurrenceID } from "./store";
-import type { CitedByPreview, CitedByStore, OccurrenceContext } from "./store";
+import {
+  citationContext,
+  CITED_BY_SORT_GROUPS,
+  occurrenceID,
+  sortCitedByGroups,
+} from "./store";
+import type {
+  CitedByPreview,
+  CitedBySortMode,
+  CitedByStore,
+  OccurrenceContext,
+} from "./store";
 
 /** Source notes previewed between two yields to the host. */
 const PREVIEW_CHUNK = 5;
+
+/** The menu title of every sort mode. */
+const SORT_LABELS: Record<CitedBySortMode, () => string> = {
+  alphabetical: m.cited_by_sort_alphabetical,
+  alphabeticalReverse: m.cited_by_sort_alphabetical_reverse,
+  byModifiedTime: m.cited_by_sort_modified_time,
+  byModifiedTimeReverse: m.cited_by_sort_modified_time_reverse,
+  byCreatedTime: m.cited_by_sort_created_time,
+  byCreatedTimeReverse: m.cited_by_sort_created_time_reverse,
+};
 
 export interface CitedByActions {
   setSearch: (search: string) => void;
@@ -23,6 +44,13 @@ export interface CitedByActions {
   toggleSearch: () => void;
   /** Switch every excerpt between its compact line and its enclosing block. */
   toggleMoreContext: () => void;
+  /** Offer the six sort modes, with the one in force marked. */
+  showSortMenu: (event: MouseEvent) => void;
+  /** Order source groups by one mode, reading vault metadata now. */
+  sortGroups: (
+    groups: readonly CitedByGroup[],
+    mode: CitedBySortMode,
+  ) => readonly CitedByGroup[];
   /**
    * Stream a preview into every group of the current snapshot, replacing any
    * work still queued for an earlier one.
@@ -142,6 +170,20 @@ export function createCitedByActions(options: {
     toggleMoreContext() {
       store.setState(({ moreContext }) => ({ moreContext: !moreContext }));
     },
+    showSortMenu(event) {
+      openSortMenu(event, {
+        current: store.getState().sort,
+        select: (sort) => store.setState({ sort }),
+      });
+    },
+    sortGroups(groups, mode) {
+      return sortCitedByGroups(groups, mode, (path) => {
+        const file = app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) return null;
+        const { mtime, ctime } = file.stat;
+        return { name: file.basename, mtime, ctime };
+      });
+    },
     loadPreviews(groups) {
       queued = [...groups];
       void drain();
@@ -203,6 +245,39 @@ export function createCitedByActions(options: {
       void openCitedByOccurrence(app, { group, occurrence, event });
     },
   };
+}
+
+/**
+ * The sort menu, one section per Backlinks mode pair. A keyboard click carries
+ * no pointer position (`detail` of `0`), so the menu takes the button's own
+ * corner instead of the window's.
+ */
+function openSortMenu(
+  event: MouseEvent,
+  options: {
+    current: CitedBySortMode;
+    select: (mode: CitedBySortMode) => void;
+  },
+): void {
+  const menu = new Menu().setNoIcon();
+  for (const pair of CITED_BY_SORT_GROUPS) {
+    for (const mode of pair) {
+      menu.addItem((item) =>
+        item
+          .setTitle(SORT_LABELS[mode]())
+          .setChecked(mode === options.current)
+          .onClick(() => options.select(mode)),
+      );
+    }
+    menu.addSeparator();
+  }
+
+  if (event.detail === 0) {
+    const { left, bottom } = event.currentTarget.getBoundingClientRect();
+    menu.showAtPosition({ x: left, y: bottom });
+    return;
+  }
+  menu.showAtMouseEvent(event.nativeEvent);
 }
 
 function contextsFrom(options: {

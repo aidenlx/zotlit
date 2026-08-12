@@ -6,6 +6,7 @@ import { createStore } from "zustand/vanilla";
 
 import type {
   CitationOccurrence,
+  CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
 
@@ -42,6 +43,19 @@ export type CitedByPreview =
       contexts: Readonly<Record<string, OccurrenceContext>>;
     };
 
+/** The six Backlinks sort modes, in the pairs the sort menu groups them by. */
+export const CITED_BY_SORT_GROUPS = [
+  ["alphabetical", "alphabeticalReverse"],
+  ["byModifiedTime", "byModifiedTimeReverse"],
+  ["byCreatedTime", "byCreatedTimeReverse"],
+] as const;
+
+/** The presentation order of the source groups. */
+export type CitedBySortMode = (typeof CITED_BY_SORT_GROUPS)[number][number];
+
+/** The mode the view starts in: file name, A to Z. */
+export const DEFAULT_CITED_BY_SORT: CitedBySortMode = "alphabetical";
+
 export interface CitedByState {
   indexedKey: string | null;
   activePath: string | null;
@@ -51,6 +65,8 @@ export interface CitedByState {
   searchVisible: boolean;
   /** Whether every excerpt shows its enclosing block instead of its line. */
   moreContext: boolean;
+  /** The order the source groups render in. */
+  sort: CitedBySortMode;
   collapsed: readonly string[];
   sectionCollapsed: boolean;
   previews: Readonly<Record<string, CitedByPreview>>;
@@ -72,6 +88,7 @@ export function createCitedByStore() {
     search: "",
     searchVisible: false,
     moreContext: false,
+    sort: DEFAULT_CITED_BY_SORT,
     collapsed: [],
     sectionCollapsed: false,
     previews: {},
@@ -87,6 +104,66 @@ export function useCitedByStore<T>(selector: (state: CitedByState) => T): T {
     throw new Error("useCitedByStore must be used within CitedByStoreProvider");
   }
   return useStore(store, selector);
+}
+
+/** The vault facts the sort modes read from one citing note. */
+export interface SourceFileFacts {
+  name: string;
+  mtime: number;
+  ctime: number;
+}
+
+/** Obsidian's own file-name order: case-insensitive and number-aware. */
+const nameOrder = new Intl.Collator(undefined, {
+  usage: "sort",
+  sensitivity: "base",
+  numeric: true,
+});
+
+const SORT_COMPARATORS: Record<
+  CitedBySortMode,
+  (a: SourceFileFacts, b: SourceFileFacts) => number
+> = {
+  alphabetical: (a, b) => nameOrder.compare(a.name, b.name),
+  alphabeticalReverse: (a, b) => nameOrder.compare(b.name, a.name),
+  byModifiedTime: (a, b) => b.mtime - a.mtime,
+  byModifiedTimeReverse: (a, b) => a.mtime - b.mtime,
+  byCreatedTime: (a, b) => b.ctime - a.ctime,
+  byCreatedTimeReverse: (a, b) => a.ctime - b.ctime,
+};
+
+/**
+ * The source groups in presentation order. The Citation Index emits them in
+ * canonical vault path order, and this sort is stable, so that path order
+ * breaks every tie. Occurrences inside a group keep their source position.
+ *
+ * @param facts the vault metadata of one citing note, `null` once its file
+ * left the vault: such a group sorts by its own name at time zero.
+ */
+export function sortCitedByGroups(
+  groups: readonly CitedByGroup[],
+  mode: CitedBySortMode,
+  facts: (path: string) => SourceFileFacts | null,
+): readonly CitedByGroup[] {
+  const compare = SORT_COMPARATORS[mode];
+  return groups
+    .map((group) => ({
+      group,
+      facts: facts(group.path) ?? {
+        name: noteName(group.path),
+        mtime: 0,
+        ctime: 0,
+      },
+    }))
+    .sort((a, b) => compare(a.facts, b.facts))
+    .map(({ group }) => group);
+}
+
+/** The name one vault path shows, without its Markdown extension. */
+export function noteName(path: string): string {
+  const slash = path.lastIndexOf("/");
+  const filename = path.slice(slash + 1);
+  return filename.endsWith(".md") ? filename.slice(0, -3) : filename;
 }
 
 /** The Citation Context of one occurrence: its own lines and its block. */

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Menu } from "@mock/obsidian";
 import { Keymap, MarkdownView, TFile } from "obsidian";
 import type {
   App,
@@ -139,6 +140,20 @@ const headingSections: SectionCache[] = [
   { type: "paragraph", position: span(headingBody, "Body paragraph.") },
 ];
 
+/** Three citing notes in vault-path order, two of them sharing a name. */
+const sortedGroups: CitedByGroup[] = [
+  { ...group, path: "A/beta.md" },
+  { ...group, path: "B/alpha.md" },
+  { ...group, path: "C/alpha.md" },
+];
+
+/** Vault times that give each time mode an order of its own. */
+const sortedStats: Record<string, { ctime: number; mtime: number }> = {
+  "A/beta.md": { ctime: 3, mtime: 2 },
+  "B/alpha.md": { ctime: 1, mtime: 3 },
+  "C/alpha.md": { ctime: 2, mtime: 1 },
+};
+
 let root: Root | undefined;
 
 /** Settles awaited work without letting a macrotask yield run. */
@@ -163,14 +178,17 @@ function snapshot(overrides: Partial<CitedBySnapshot> = {}): CitedBySnapshot {
   };
 }
 
-function makeFile(path: string = group.path): TFile {
+function makeFile(
+  path: string = group.path,
+  stats: { ctime: number; mtime: number } = { ctime: 0, mtime: 1 },
+): TFile {
   const file = new TFile();
   const name = path.slice(path.lastIndexOf("/") + 1);
   file.path = path;
   file.name = name;
   file.basename = name.slice(0, -".md".length);
   file.extension = "md";
-  file.stat = { ctime: 0, mtime: 1, size: body.length };
+  file.stat = { ...stats, size: body.length };
   return file;
 }
 
@@ -186,10 +204,13 @@ async function render(options: {
   sections?: SectionCache[];
   listItems?: ListItemCache[];
   duplicateSourceLeaf?: boolean;
+  stats?: Readonly<Record<string, { ctime: number; mtime: number }>>;
 }) {
   const shown = options.snapshot ?? snapshot();
   const files = new Map(
-    shown.groups.map(({ path }) => [path, makeFile(path)] as const),
+    shown.groups.map(
+      ({ path }) => [path, makeFile(path, options.stats?.[path])] as const,
+    ),
   );
   const file = files.get(group.path) ?? makeFile();
   const read = vi.fn(options.read ?? (() => Promise.resolve(body)));
@@ -271,6 +292,31 @@ async function render(options: {
     setEphemeralState,
     store,
   };
+}
+
+/** The source-group labels, in the order the sidebar shows them. */
+function sourceLabels(container: Element): (string | null)[] {
+  return [...container.querySelectorAll("[data-cited-by-source-label]")].map(
+    (label) => label.textContent,
+  );
+}
+
+async function openSortMenu(container: Element): Promise<Menu> {
+  Menu.instances.length = 0;
+  await act(() =>
+    (container.querySelector("[data-cited-by-sort]") as HTMLElement).click(),
+  );
+  const menu = Menu.instances.at(-1);
+  if (!menu) throw new Error("the sort action opened no menu");
+  return menu;
+}
+
+/** Open the sort menu and pick the mode of one title. */
+async function chooseSort(container: Element, title: string): Promise<void> {
+  const menu = await openSortMenu(container);
+  const item = menu.items.find((entry) => entry.title === title);
+  if (!item) throw new Error(`the sort menu offers no "${title}"`);
+  await act(() => item.click());
 }
 
 describe("CitedBy", () => {
@@ -1075,6 +1121,106 @@ describe("CitedBy", () => {
       search: "",
       collapsed: [],
     });
+  });
+
+  it("offers the six Backlinks sort modes and marks the one in force", async () => {
+    const { container } = await render({});
+    const action = container.querySelector("[data-cited-by-sort]");
+    expect(action?.getAttribute("aria-label")).toBe("Change sort order");
+    expect(action?.querySelector("svg")?.classList).toContain(
+      "lucide-sort-asc",
+    );
+
+    const menu = await openSortMenu(container);
+    expect(menu.items.map((item) => item.title)).toEqual([
+      "File name (A to Z)",
+      "File name (Z to A)",
+      "Modified time (new to old)",
+      "Modified time (old to new)",
+      "Created time (new to old)",
+      "Created time (old to new)",
+    ]);
+    expect(menu.items.map((item) => item.checked)).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+
+    await chooseSort(container, "Created time (old to new)");
+    const reopened = await openSortMenu(container);
+    expect(reopened.items.map((item) => item.checked)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+  });
+
+  it("orders source groups by every mode, breaking ties by vault path", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: sortedGroups }),
+      stats: sortedStats,
+    });
+    expect(sourceLabels(container)).toEqual(["alpha — B", "alpha — C", "beta"]);
+
+    await chooseSort(container, "File name (Z to A)");
+    expect(sourceLabels(container)).toEqual(["beta", "alpha — B", "alpha — C"]);
+
+    await chooseSort(container, "Modified time (new to old)");
+    expect(sourceLabels(container)).toEqual(["alpha — B", "beta", "alpha — C"]);
+
+    await chooseSort(container, "Modified time (old to new)");
+    expect(sourceLabels(container)).toEqual(["alpha — C", "beta", "alpha — B"]);
+
+    await chooseSort(container, "Created time (new to old)");
+    expect(sourceLabels(container)).toEqual(["beta", "alpha — C", "alpha — B"]);
+
+    await chooseSort(container, "Created time (old to new)");
+    expect(sourceLabels(container)).toEqual(["alpha — B", "alpha — C", "beta"]);
+  });
+
+  it("keeps every group's occurrences in source order in every mode", async () => {
+    const { container } = await render({
+      snapshot: snapshot({
+        groups: [
+          { ...multiGroup, path: "A/first.md" },
+          { ...multiGroup, path: "B/second.md" },
+        ],
+      }),
+      read: () => Promise.resolve(multiBody),
+      stats: {
+        "A/first.md": { ctime: 1, mtime: 2 },
+        "B/second.md": { ctime: 2, mtime: 1 },
+      },
+    });
+    await act(async () => Promise.resolve());
+    const excerpts = () =>
+      [...container.querySelectorAll("[data-occurrence]")].map(
+        (card) => card.textContent,
+      );
+    const inSourceOrder = [
+      "Alpha cites @doe2024 here.…",
+      "…Beta cites @doe2024 there.",
+      "Alpha cites @doe2024 here.…",
+      "…Beta cites @doe2024 there.",
+    ];
+    expect(excerpts()).toEqual(inSourceOrder);
+
+    for (const mode of [
+      "File name (Z to A)",
+      "Modified time (new to old)",
+      "Modified time (old to new)",
+      "Created time (new to old)",
+      "Created time (old to new)",
+    ]) {
+      await chooseSort(container, mode);
+      expect(excerpts()).toEqual(inSourceOrder);
+    }
   });
 
   it("does not match context cached for the previous target", async () => {
