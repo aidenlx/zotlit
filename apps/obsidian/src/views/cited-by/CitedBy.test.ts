@@ -1,6 +1,15 @@
 // @vitest-environment happy-dom
 import { Keymap, MarkdownView, TFile } from "obsidian";
-import type { App, CachedMetadata, LinkCache, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  CachedMetadata,
+  LinkCache,
+  ListItemCache,
+  Loc,
+  Pos,
+  SectionCache,
+  WorkspaceLeaf,
+} from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -63,6 +72,73 @@ const multiGroup: CitedByGroup = {
   })),
 };
 
+function locAt(source: string, offset: number): Loc {
+  const before = source.slice(0, offset);
+  return {
+    line: before.split("\n").length - 1,
+    col: offset - (before.lastIndexOf("\n") + 1),
+    offset,
+  };
+}
+
+/** Where one fixture body carries a given piece of text. */
+function span(source: string, text: string): Pos {
+  const offset = source.indexOf(text);
+  return {
+    start: locAt(source, offset),
+    end: locAt(source, offset + text.length),
+  };
+}
+
+/** The group of the single `@doe2024` citation of one fixture body. */
+function citedIn(source: string): CitedByGroup {
+  return {
+    path: group.path,
+    occurrences: [
+      { kind: "citekey", raw: "doe2024", position: span(source, "@doe2024") },
+    ],
+  };
+}
+
+const paragraphBody =
+  "Intro line.\n\nA reason cites @doe2024 here.\nSecond line of the block.\n";
+const paragraphSections: SectionCache[] = [
+  { type: "paragraph", position: span(paragraphBody, "Intro line.") },
+  {
+    type: "paragraph",
+    position: span(
+      paragraphBody,
+      "A reason cites @doe2024 here.\nSecond line of the block.",
+    ),
+  },
+];
+
+const listBody =
+  "- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n";
+const listSections: SectionCache[] = [
+  {
+    type: "list",
+    position: span(
+      listBody,
+      "- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.",
+    ),
+  },
+];
+const listItems: ListItemCache[] = [
+  { parent: -1, position: span(listBody, "- Alpha cites @doe2024 here.") },
+  { parent: 0, position: span(listBody, "- Nested detail.") },
+  { parent: -1, position: span(listBody, "- Beta item.") },
+];
+
+const headingBody = "# Heading cites @doe2024 here\n\nBody paragraph.\n";
+const headingSections: SectionCache[] = [
+  {
+    type: "heading",
+    position: span(headingBody, "# Heading cites @doe2024 here"),
+  },
+  { type: "paragraph", position: span(headingBody, "Body paragraph.") },
+];
+
 let root: Root | undefined;
 
 /** Settles awaited work without letting a macrotask yield run. */
@@ -107,6 +183,8 @@ async function render(options: {
   search?: string;
   searchVisible?: boolean;
   links?: LinkCache[];
+  sections?: SectionCache[];
+  listItems?: ListItemCache[];
   duplicateSourceLeaf?: boolean;
 }) {
   const shown = options.snapshot ?? snapshot();
@@ -136,7 +214,12 @@ async function render(options: {
       cachedRead: read,
     },
     metadataCache: {
-      getFileCache: () => ({ links: options.links ?? [] }) as CachedMetadata,
+      getFileCache: () =>
+        ({
+          links: options.links ?? [],
+          sections: options.sections,
+          listItems: options.listItems,
+        }) as CachedMetadata,
     },
     workspace: {
       activeLeaf: sourceLeaf,
@@ -741,6 +824,98 @@ describe("CitedBy", () => {
     expect(container.querySelector("[data-source]")).toBeNull();
   });
 
+  it("switches every excerpt between its line and its enclosing block", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: [citedIn(paragraphBody)] }),
+      read: () => Promise.resolve(paragraphBody),
+      sections: paragraphSections,
+    });
+    await act(async () => Promise.resolve());
+    const card = () => container.querySelector("[data-occurrence]");
+    const toggle = container.querySelector(
+      "[data-cited-by-show-more-context]",
+    ) as HTMLElement;
+    expect(card()?.textContent).toBe("…A reason cites @doe2024 here.…");
+
+    await act(() => toggle.click());
+    expect(card()?.textContent).toBe(
+      "…A reason cites @doe2024 here.\nSecond line of the block.",
+    );
+    expect(card()?.querySelector("mark")?.textContent).toBe("@doe2024");
+
+    await act(() => toggle.click());
+    expect(card()?.textContent).toBe("…A reason cites @doe2024 here.…");
+  });
+
+  it("expands an occurrence inside a list to its item and descendants", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: [citedIn(listBody)] }),
+      read: () => Promise.resolve(listBody),
+      sections: listSections,
+      listItems,
+    });
+    await act(async () => Promise.resolve());
+    const card = () => container.querySelector("[data-occurrence]");
+    expect(card()?.textContent).toBe("- Alpha cites @doe2024 here.…");
+
+    await act(() =>
+      (
+        container.querySelector(
+          "[data-cited-by-show-more-context]",
+        ) as HTMLElement
+      ).click(),
+    );
+
+    expect(card()?.textContent).toBe(
+      "- Alpha cites @doe2024 here.\n  - Nested detail.…",
+    );
+  });
+
+  it("keeps an occurrence inside a heading on its own line", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: [citedIn(headingBody)] }),
+      read: () => Promise.resolve(headingBody),
+      sections: headingSections,
+    });
+    await act(async () => Promise.resolve());
+    const card = () => container.querySelector("[data-occurrence]");
+    expect(card()?.textContent).toBe("# Heading cites @doe2024 here…");
+
+    await act(() =>
+      (
+        container.querySelector(
+          "[data-cited-by-show-more-context]",
+        ) as HTMLElement
+      ).click(),
+    );
+
+    expect(card()?.textContent).toBe("# Heading cites @doe2024 here…");
+  });
+
+  it("marks the context mode active and toggles it from the keyboard", async () => {
+    const { container, store } = await render({});
+    await act(async () => Promise.resolve());
+    const toggle = container.querySelector(
+      "[data-cited-by-show-more-context]",
+    ) as HTMLElement;
+    expect(toggle.classList).not.toContain("is-active");
+    expect(
+      container.querySelector("[data-cited-by-show-more-context] svg")
+        ?.classList,
+    ).toContain("lucide-move-vertical");
+
+    await act(() => {
+      toggle.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+
+    expect(store.getState().moreContext).toBe(true);
+    expect(
+      container.querySelector("[data-cited-by-show-more-context]")?.classList,
+    ).toContain("is-active");
+  });
+
   it("keeps the search field out of view until the toolbar action opens it", async () => {
     const { container } = await render({});
     expect(container.querySelector("[data-cited-by-search]")).toBeNull();
@@ -819,7 +994,7 @@ describe("CitedBy", () => {
     await act(() => actions.expandAll());
     const cards = container.querySelectorAll("[data-occurrence]");
     expect(cards).toHaveLength(1);
-    expect(cards[0]?.textContent).toBe("Beta cites @doe2024 there.");
+    expect(cards[0]?.textContent).toBe("…Beta cites @doe2024 there.");
     expect(read).toHaveBeenCalledOnce();
   });
 

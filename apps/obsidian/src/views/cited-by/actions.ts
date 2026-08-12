@@ -21,6 +21,8 @@ export interface CitedByActions {
   setSearch: (search: string) => void;
   /** Show or hide the search field; hiding also drops the applied query. */
   toggleSearch: () => void;
+  /** Switch every excerpt between its compact line and its enclosing block. */
+  toggleMoreContext: () => void;
   /**
    * Stream a preview into every group of the current snapshot, replacing any
    * work still queued for an earlier one.
@@ -137,6 +139,9 @@ export function createCitedByActions(options: {
           : { searchVisible: true },
       );
     },
+    toggleMoreContext() {
+      store.setState(({ moreContext }) => ({ moreContext: !moreContext }));
+    },
     loadPreviews(groups) {
       queued = [...groups];
       void drain();
@@ -207,12 +212,14 @@ function contextsFrom(options: {
   occurrences: readonly CitationOccurrence[];
 }): Record<string, OccurrenceContext> {
   const { app, file, source, occurrences } = options;
+  const cache = app.metadataCache.getFileCache(file);
   return Object.fromEntries(
     occurrences.map((occurrence) => [
       occurrenceID(occurrence),
       citationContext(
         source,
         currentOccurrence({ app, file, source, occurrence }),
+        cache,
       ),
     ]),
   );

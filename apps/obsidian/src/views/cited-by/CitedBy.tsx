@@ -21,6 +21,9 @@ import type { CitedByPreview, OccurrenceContext } from "./store";
 /** Milliseconds between the last input change and the query it applies. */
 const SEARCH_DEBOUNCE = 300;
 
+/** What an excerpt end that leaves out source text shows. */
+const ELLIPSIS = "…";
+
 export function CitedBy() {
   const state = useCitedByStore((current) => current);
   const actions = useCitedByActions();
@@ -29,6 +32,7 @@ export function CitedBy() {
     snapshot,
     search,
     searchVisible,
+    moreContext,
     sectionCollapsed,
     previews,
     activePath,
@@ -59,7 +63,11 @@ export function CitedBy() {
     );
   }
 
-  const visibleGroups = filterGroups(groups, { search, previews });
+  const visibleGroups = filterGroups(groups, {
+    search,
+    previews,
+    moreContext,
+  });
   const duplicateNames = duplicateNoteNames(groups);
   const occurrenceCount = visibleGroups.reduce(
     (total, group) => total + group.occurrences.length,
@@ -101,6 +109,7 @@ function Toolbar({ paths }: { paths: readonly string[] }) {
   const actions = useCitedByActions();
   const collapsed = useCitedByStore((state) => state.collapsed);
   const searchVisible = useCitedByStore((state) => state.searchVisible);
+  const moreContext = useCitedByStore((state) => state.moreContext);
   const allCollapsed =
     paths.length > 0 && paths.every((path) => collapsed.includes(path));
 
@@ -116,6 +125,14 @@ function Toolbar({ paths }: { paths: readonly string[] }) {
           onClick={() =>
             allCollapsed ? actions.expandAll(paths) : actions.collapseAll(paths)
           }
+        />
+        <IconButton
+          className="nav-action-button"
+          icon="move-vertical"
+          active={moreContext}
+          data-cited-by-show-more-context
+          {...tooltipAttrs(m.cited_by_show_more_context())}
+          onClick={actions.toggleMoreContext}
         />
         <IconButton
           className="nav-action-button"
@@ -397,8 +414,11 @@ function OccurrenceCard({
   source: string;
 }) {
   const actions = useCitedByActions();
+  const moreContext = useCitedByStore((state) => state.moreContext);
   const excerpt =
-    context.status === "ready" ? contextParts(source, context) : null;
+    context.status === "ready"
+      ? contextParts(source, context, moreContext)
+      : null;
 
   return (
     <li
@@ -417,11 +437,13 @@ function OccurrenceCard({
     >
       {excerpt ? (
         <>
+          {excerpt.clippedStart && ELLIPSIS}
           {excerpt.before}
           <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
             {excerpt.token}
           </mark>
           {excerpt.after}
+          {excerpt.clippedEnd && ELLIPSIS}
         </>
       ) : (
         <>
@@ -452,6 +474,7 @@ function filterGroups(
   options: {
     search: string;
     previews: Readonly<Record<string, CitedByPreview>>;
+    moreContext: boolean;
   },
 ): readonly CitedByGroup[] {
   const query = options.search.trim();
@@ -468,7 +491,11 @@ function filterGroups(
     const occurrences = group.occurrences.filter((occurrence) => {
       const context = preview.contexts[occurrenceID(occurrence)];
       if (context?.status !== "ready") return false;
-      const { before, token, after } = contextParts(preview.source, context);
+      const { before, token, after } = contextParts(
+        preview.source,
+        context,
+        options.moreContext,
+      );
       return matches(`${before}${token}${after}`) !== null;
     });
     if (occurrences.length > 0) kept.push({ ...group, occurrences });
