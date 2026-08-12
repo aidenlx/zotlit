@@ -635,6 +635,12 @@ importers:
 
   packages/obsidian-i18n:
     dependencies:
+      '@inlang/plugin-m-function-matcher':
+        specifier: 2.2.9
+        version: 2.2.9
+      '@inlang/plugin-message-format':
+        specifier: 4.4.1
+        version: 4.4.1
       '@inlang/sdk':
         specifier: 2.9.3
         version: 2.9.3
@@ -2089,6 +2095,16 @@ packages:
     engines: {node: '>=20.9.0'}
     cpu: [x64]
     os: [win32]
+
+  '@inlang/plugin-m-function-matcher@2.2.9':
+    resolution: {integrity: sha512-FqrEw6p5UKn0fVLedILx5vjEAPAl01Uuv1xlF6pQ9XMxpDsTUSOAPrjWuus1jiPBnYEdbK8cP43Ni0e3IPz9aQ==}
+
+  '@inlang/plugin-message-format@4.4.1':
+    resolution: {integrity: sha512-gI918CgIbOzrSk8BdETtARYVo3WcojjD33ASmn+taeNunkgrN5U4TkEqpC3yDJ+G0tMZm1mhEzS3dn3JwJpQoA==}
+
+  '@inlang/sdk@2.10.2':
+    resolution: {integrity: sha512-O1ki72SNK6LPagaGrvlioBb1mWKvump7cO7P85hfGZjdFTmDdn3icI0A6MvaBsB3P9KQHAjzyubnN1OslGufTw==}
+    engines: {node: '>=20.0.0'}
 
   '@inlang/sdk@2.9.3':
     resolution: {integrity: sha512-E/SxcSji8WIt4DqQG9APlOs6tVtJxrrOUS3dE4ho3pWRCLLIY0PIVzgNwSukuFT+m8LuJDFwpRY5VY3ryzyGWQ==}
@@ -4724,6 +4740,11 @@ packages:
   flat-cache@4.0.1:
     resolution: {integrity: sha512-f7ccFPK3SXFHpx15UIGyRJ/FJQctuKZ0zVuN3frBo4HnK3cay9VEW0R6yPYFHC0AgqhukPzKjq22t5DmAyqGyw==}
     engines: {node: '>=16'}
+
+  flat@6.0.1:
+    resolution: {integrity: sha512-/3FfIa8mbrg3xE7+wAhWeV+bd7L2Mof+xtZb5dRDKZ+wDvYJK4WDYeIOuOhre5Yv5aQObZrlbRmk3RTSiuQBtw==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
@@ -8260,6 +8281,26 @@ snapshots:
   '@img/sharp-win32-x64@0.35.3':
     optional: true
 
+  '@inlang/plugin-m-function-matcher@2.2.9':
+    dependencies:
+      '@inlang/sdk': 2.10.2
+    transitivePeerDependencies:
+      - babel-plugin-macros
+
+  '@inlang/plugin-message-format@4.4.1':
+    dependencies:
+      flat: 6.0.1
+
+  '@inlang/sdk@2.10.2':
+    dependencies:
+      '@lix-js/sdk': 0.4.10
+      '@sinclair/typebox': 0.31.28
+      kysely: 0.28.17
+      sqlite-wasm-kysely: 0.3.0(kysely@0.28.17)
+      uuid: 14.0.0
+    transitivePeerDependencies:
+      - babel-plugin-macros
+
   '@inlang/sdk@2.9.3':
     dependencies:
       '@lix-js/sdk': 0.4.10
@@ -9240,7 +9281,7 @@ snapshots:
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.1.2
 
   '@types/yauzl@2.10.3':
     dependencies:
@@ -10636,6 +10677,8 @@ snapshots:
       flatted: 3.4.4
       keyv: 4.5.4
 
+  flat@6.0.1: {}
+
   flatted@3.4.4: {}
 
   for-each@0.3.5:
@@ -10842,7 +10885,7 @@ snapshots:
 
   happy-dom@20.9.0:
     dependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.1.2
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.1
       entities: 7.0.1

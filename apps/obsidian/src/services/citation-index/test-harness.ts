@@ -33,6 +33,8 @@ export class MockMetadataCache {
   readonly #listeners: Record<string, Set<Callback>> = {
     changed: new Set(),
     deleted: new Set(),
+    resolve: new Set(),
+    resolved: new Set(),
   };
 
   getFileCache(file: TFile): CachedMetadata | null {
@@ -62,6 +64,7 @@ export class MockMetadataCache {
 
   change(file: TFile, body: string, links: LinkCache[] = []): void {
     this.vault?.write(file, body);
+    this.files.set(file.path, file);
     const cache = { links } as CachedMetadata;
     this.fileCache.set(file.path, cache);
     this.#emit("changed", file, body, cache);
@@ -71,6 +74,14 @@ export class MockMetadataCache {
     this.fileCache.delete(file.path);
     this.files.delete(file.path);
     this.#emit("deleted", file, null);
+  }
+
+  resolve(file: TFile): void {
+    this.#emit("resolve", file);
+  }
+
+  resolved(): void {
+    this.#emit("resolved");
   }
 
   #emit(name: string, ...args: unknown[]): void {
@@ -83,6 +94,7 @@ export class MockVault {
   readonly reads: string[] = [];
   readonly #listeners = new Set<Callback>();
   readonly #held = new Map<string, PromiseWithResolvers<void>>();
+  readonly #failures = new Map<string, unknown>();
 
   constructor(readonly metadataCache: MockMetadataCache) {
     metadataCache.vault = this;
@@ -96,6 +108,8 @@ export class MockVault {
 
   cachedRead(file: TFile): Promise<string> {
     this.reads.push(file.path);
+    const failure = this.#failures.get(file.path);
+    if (failure) return Promise.reject(failure);
     const body = this.bodies.get(file.path) ?? "";
     const gate = this.#held.get(file.path);
     if (!gate) return Promise.resolve(body);
@@ -109,6 +123,10 @@ export class MockVault {
     const gate = Promise.withResolvers<void>();
     this.#held.set(path, gate);
     return () => gate.resolve();
+  }
+
+  fail(path: string, error: unknown = new Error("read failed")): void {
+    this.#failures.set(path, error);
   }
 
   write(file: TFile, body: string): void {
@@ -208,6 +226,7 @@ export class DatabaseStub {
 
 export class CitekeysStub {
   rows: LibraryCitekey[];
+  error: unknown = null;
   readonly calls: number[] = [];
 
   constructor(rows: LibraryCitekey[]) {
@@ -216,6 +235,7 @@ export class CitekeysStub {
 
   read: ReadCitekeys = (_db, libraryID) => {
     this.calls.push(libraryID);
+    if (this.error) throw this.error;
     return this.rows;
   };
 }
@@ -256,13 +276,25 @@ export class MemoryStore implements CitekeyStore {
 
 export class SettingsStub {
   current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
+  readonly #ready = Promise.withResolvers<void>();
   readonly #listeners = new Set<
     (settings: Readonly<Settings> | null) => void
   >();
 
-  constructor(overrides: Partial<Settings> = {}) {
+  constructor(
+    overrides: Partial<Settings> = {},
+    options: { readyImmediately?: boolean } = {},
+  ) {
     this.current = { ...defaults, ...overrides };
+    if (options.readyImmediately ?? true) this.#ready.resolve();
+  }
+
+  get ready(): Promise<void> {
+    return this.#ready.promise;
+  }
+
+  settle(): void {
+    this.#ready.resolve();
   }
 
   subscribe(
@@ -299,6 +331,8 @@ export interface CitationIndexHarnessOptions {
   citekeys?: LibraryCitekey[];
   db?: DatabaseStub;
   notes?: boolean;
+  settingsService?: SettingsStub;
+  awaitReady?: boolean;
 }
 
 export async function createCitationIndexHarness(
@@ -342,7 +376,8 @@ export async function createCitationIndexHarness(
   }
 
   const app = { metadataCache, vault, workspace } as unknown as App;
-  const settings = new SettingsStub(options.settings);
+  const settings =
+    options.settingsService ?? new SettingsStub(options.settings);
   const index = stack.use(
     new CitationIndex({
       app,
@@ -353,8 +388,9 @@ export async function createCitationIndexHarness(
       openStore: () => Promise.resolve(store),
     }),
   );
-  await index.ready;
-  if (!options.db) await index.whenResolved();
+  const awaitReady = options.awaitReady ?? true;
+  if (awaitReady) await index.ready;
+  if (awaitReady && !options.db) await index.whenResolved();
   vault.reads.length = 0;
   store.writes.length = 0;
   const resources = stack.move();

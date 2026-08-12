@@ -55,11 +55,10 @@ export async function createFixtureProject(
     join(projectPath, "settings.json"),
     `${JSON.stringify(
       {
+        // No `modules`: the compiler supplies the message-format and
+        // m-function-matcher plugins directly (see `INLANG_PLUGINS` in
+        // compiler.ts), so fixtures never trigger a network fetch.
         $schema: "https://inlang.com/schema/project-settings",
-        modules: [
-          "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4.0.0/dist/index.js",
-          "https://cdn.jsdelivr.net/npm/@inlang/plugin-m-function-matcher@2.2.9/dist/index.js",
-        ],
         baseLocale: "en",
         locales: ["en"],
         "plugin.inlang.messageFormat": {

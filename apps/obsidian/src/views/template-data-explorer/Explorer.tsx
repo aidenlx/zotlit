@@ -102,6 +102,7 @@ export function Explorer(): React.ReactElement {
               value={filterQuery}
               onChange={(next) => actions.onFilter(next)}
               placeholder={m.template_data_explorer_filter_placeholder()}
+              clearLabel={m.template_data_explorer_clear_search()}
             />
           </div>
           <div className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:py-1 zt:pr-2 zt:pl-1">

@@ -1,13 +1,13 @@
 // What a References Sidebar entry can do: navigate the document, and reach the Item in Zotero.
 
-import { MarkdownView, Menu } from "obsidian";
-import type { App, WorkspaceLeaf } from "obsidian";
+import { Menu } from "obsidian";
+import type { App } from "obsidian";
 import { createContext, useContext } from "react";
 import type { MouseEvent } from "react";
 
 import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
 
-import type { CitationOccurrence } from "@/services/citation-index/service";
+import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 import type {
   OpenableAttachment,
@@ -53,7 +53,11 @@ export function createReferenceActions(
       const next =
         ((cursors.get(entry.id) ?? -1) + 1) % entry.occurrences.length;
       cursors.set(entry.id, next);
-      revealOccurrence(deps.app, sourcePath, entry.occurrences[next]!);
+      revealMarkdownOccurrence({
+        app: deps.app,
+        sourcePath,
+        occurrence: entry.occurrences[next]!,
+      });
     },
     onOpenNote(entry) {
       // An unresolved citekey reaches no note, and a missing entry's Item
@@ -123,42 +127,6 @@ function showAttachmentMenu(
     return;
   }
   menu.showAtMouseEvent(event.nativeEvent);
-}
-
-/**
- * Scroll one citation into view and flash it, in the document the references
- * were scanned from. `setEphemeralState` is the same path search results and
- * the core Outline plugin take; the method is public but the state fields are
- * not (read from the Obsidian 1.13 runtime). One object serves both modes:
- * editing mode reads `startLoc`/`endLoc` and flashes the exact range as an
- * `is-flashing` CM6 decoration that stays until Escape, a click, or the next
- * flash; reading view reads only `line` and flashes the enclosing block for
- * 3 s. `endLoc` must accompany `startLoc` (`null` means to end of document),
- * and `match` must stay out when `line` is set — reading view would queue two
- * scrolls. A document no editor holds open has nothing to reveal.
- */
-function revealOccurrence(
-  app: App,
-  sourcePath: string,
-  occurrence: CitationOccurrence,
-): void {
-  const leaf = app.workspace
-    .getLeavesOfType("markdown")
-    .find((candidate) => markdownViewOf(candidate)?.file?.path === sourcePath);
-  const view = leaf && markdownViewOf(leaf);
-  if (!leaf || !view) return;
-
-  const { start, end } = occurrence.position;
-  app.workspace.setActiveLeaf(leaf, { focus: true });
-  view.setEphemeralState({
-    startLoc: start,
-    endLoc: end,
-    line: start.line,
-  });
-}
-
-function markdownViewOf(leaf: WorkspaceLeaf): MarkdownView | null {
-  return leaf.view instanceof MarkdownView ? leaf.view : null;
 }
 
 export const ReferenceActionsContext = createContext<ReferenceActions | null>(

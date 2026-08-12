@@ -1,7 +1,7 @@
 // The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
 
 import { TFile } from "obsidian";
-import type { App, TAbstractFile } from "obsidian";
+import type { App, LinkCache, TAbstractFile } from "obsidian";
 
 import { getCitekeysByLibrary, USER_LIBRARY_ID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -43,6 +43,42 @@ export {
 } from "./scan";
 export type { SnapshotItem } from "./snapshot";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
+
+/** The Citation Occurrences in one citing Markdown note. */
+export interface CitedByGroup {
+  readonly path: string;
+  readonly occurrences: readonly CitationOccurrence[];
+}
+
+export type CitationCoverage = "indexing" | "complete" | "degraded";
+export type CitationKeyResolution = "resolving" | "ready" | "degraded";
+
+/** The reverse observation for one Literature Note's Item. */
+export interface CitedBySnapshot {
+  groups: readonly CitedByGroup[];
+  coverage: CitationCoverage;
+  resolution: CitationKeyResolution;
+}
+
+export function citedBySnapshotsEqual(
+  prev: CitedBySnapshot,
+  next: CitedBySnapshot,
+): boolean {
+  if (
+    prev.coverage !== next.coverage ||
+    prev.resolution !== next.resolution ||
+    prev.groups.length !== next.groups.length
+  ) {
+    return false;
+  }
+  return prev.groups.every((group, index) => {
+    const other = next.groups[index]!;
+    return (
+      group.path === other.path &&
+      occurrencesEqual(group.occurrences, other.occurrences)
+    );
+  });
+}
 
 /** One document's active Citation Occurrences and its distinct cited works. */
 export interface DocumentCitationSet {
@@ -86,12 +122,14 @@ interface CitationIndexEvents {
   /** The vault-wide backfill finished; the index covers every Markdown file. */
   backfilled: () => void;
   /**
-   * The citekey resolution snapshot was rebuilt and now answers differently.
+   * The citation-key resolution snapshot was rebuilt and now answers differently.
    * Vault-wide, unlike `changed`: every surface that resolves a citekey redraws.
    */
   "resolution-changed": () => void;
   /** The source choices changed the Document Citation Set of every document. */
   "membership-changed": () => void;
+  /** A reverse observation input or readiness state changed. */
+  "cited-by-invalidated": () => void;
 }
 
 export interface CitationIndexOptions {
@@ -151,10 +189,12 @@ export class CitationIndex extends Service<void> {
   #includePandocCitations = true;
   #includeWikilinkCitations = false;
   #backfilled = false;
+  #coverage: CitationCoverage = "indexing";
   #stopped = false;
   /** Which build of the resolution snapshot is current; a rebuild bumps it. */
   #rebuildSeq = 0;
   #resolved = false;
+  #resolution: CitationKeyResolution = "resolving";
   #libraryID: number;
 
   ready: Promise<void>;
@@ -180,11 +220,10 @@ export class CitationIndex extends Service<void> {
    */
   async getDocumentCitationSet(file: TFile): Promise<DocumentCitationSet> {
     await this.ready;
-    const scanned = await this.#coverFile(file);
-    const citekeys = this.#includePandocCitations ? scanned : [];
-    const links = this.#includeWikilinkCitations
-      ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
-      : [];
+    const { citekeys, links } = this.#admitted(
+      file,
+      await this.#coverFile(file),
+    );
     const wikilinks = documentWikilinks(links);
     const citations = groupCitations(
       [...citekeys, ...wikilinks.occurrences].sort(
@@ -227,6 +266,61 @@ export class CitationIndex extends Service<void> {
   async whenIndexed(): Promise<void> {
     await this.ready;
     await this.#waitFor("backfilled", this.#backfilled);
+  }
+
+  /**
+   * Observe the citations in the vault that resolve to an Item, under the same
+   * source choices as the Document Citation Set.
+   * The first snapshot waits for listener registration; later snapshots follow
+   * progressive scans, citation-key resolution changes, and source choices.
+   */
+  observeCitedBy(
+    indexedKey: string,
+    callback: (snapshot: CitedBySnapshot) => void,
+    includeNote: (file: TFile) => boolean = () => true,
+  ): () => void {
+    using listeners = new DisposableStack();
+    let disposed = false;
+    let published = false;
+    let queued = false;
+    let previous: CitedBySnapshot | null = null;
+
+    const publish = (): void => {
+      if (disposed || this.#stopped || !published) return;
+      const next = this.#citedBy(indexedKey, includeNote);
+      if (previous && citedBySnapshotsEqual(previous, next)) return;
+      previous = next;
+      try {
+        callback(next);
+      } catch (error) {
+        logger.warn("Cited-by observer failed", { error });
+      }
+    };
+    const onChange = (): void => {
+      if (disposed || queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        publish();
+      });
+    };
+    listeners.defer(this.on("changed", onChange));
+    listeners.defer(this.on("resolution-changed", onChange));
+    listeners.defer(this.on("cited-by-invalidated", onChange));
+    listeners.defer(this.on("backfilled", onChange));
+    listeners.defer(this.on("membership-changed", onChange));
+
+    void this.ready.then(() => {
+      if (disposed || this.#stopped) return;
+      published = true;
+      publish();
+    });
+
+    const ownedListeners = listeners.move();
+    return () => {
+      disposed = true;
+      ownedListeners.dispose();
+    };
   }
 
   /** The Zotero Item a native citation key names, read synchronously. */
@@ -282,7 +376,13 @@ export class CitationIndex extends Service<void> {
     logger.debug("Citation index reset", { covered: covered.length });
     this.#scans.clear();
     this.#backfilled = false;
-    await this.#store?.clear();
+    this.#coverage = "indexing";
+    this.#emitter.emit("cited-by-invalidated");
+    try {
+      await this.#store?.clear();
+    } catch (error) {
+      logger.warn("Failed to clear citation scans", { error });
+    }
     for (const path of covered) this.#emitter.emit("changed", path);
     void this.#runBackfill();
   }
@@ -305,7 +405,9 @@ export class CitationIndex extends Service<void> {
     stack.use(
       registerEvent(
         metadataCache.on("changed", (file, data) => {
-          if (isMarkdownFile(file)) this.#scan(file, data);
+          if (!isMarkdownFile(file)) return;
+          this.#scan(file, data);
+          this.#emitter.emit("cited-by-invalidated");
         }),
       ),
     );
@@ -313,6 +415,21 @@ export class CitationIndex extends Service<void> {
       registerEvent(
         metadataCache.on("deleted", (file) => {
           this.#drop(file.path);
+          this.#emitter.emit("cited-by-invalidated");
+        }),
+      ),
+    );
+    stack.use(
+      registerEvent(
+        metadataCache.on("resolve", () => {
+          this.#emitter.emit("cited-by-invalidated");
+        }),
+      ),
+    );
+    stack.use(
+      registerEvent(
+        metadataCache.on("resolved", () => {
+          this.#emitter.emit("cited-by-invalidated");
         }),
       ),
     );
@@ -321,6 +438,7 @@ export class CitationIndex extends Service<void> {
       registerEvent(
         vault.on("rename", (file, oldPath) => {
           this.#move(oldPath, file.path);
+          this.#emitter.emit("cited-by-invalidated");
         }),
       ),
     );
@@ -367,14 +485,17 @@ export class CitationIndex extends Service<void> {
   async #runBackfill(): Promise<void> {
     const build = this.#build;
     logger.debug("Citation index backfill started", { build });
+    let failed = false;
     try {
-      await this.#backfill(build);
+      failed = await this.#backfill(build);
     } catch (error) {
       logger.error("Citation index backfill failed", { error });
+      failed = true;
     }
     if (this.#stopped || build !== this.#build) return;
     logger.debug("Citation index backfilled", { count: this.#scans.size });
     this.#backfilled = true;
+    this.#coverage = failed ? "degraded" : "complete";
     this.#emitter.emit("backfilled");
   }
 
@@ -382,18 +503,38 @@ export class CitationIndex extends Service<void> {
    * The vault pass that covers the files neither an event nor the store reached.
    * It streams one body at a time rather than holding the vault in memory, and
    * yields to the host between chunks so a large vault never freezes the app.
+   *
+   * @returns Whether at least one note could not be read.
    */
-  async #backfill(build: number): Promise<void> {
+  async #backfill(build: number): Promise<boolean> {
     let scanned = 0;
+    let failed = false;
     const present = new Set<string>();
     for (const file of this.#app.vault.getMarkdownFiles()) {
-      if (this.#stale(build)) return;
+      if (this.#stale(build)) return failed;
       present.add(file.path);
       if (this.#covered(file)) continue;
-      const body = await this.#app.vault.cachedRead(file);
-      // The read yields, so this build may have been superseded meanwhile.
-      if (this.#stale(build)) return;
-      this.#scan(file, body);
+      while (!this.#covered(file)) {
+        const { mtime, size } = file.stat;
+        let body: string;
+        try {
+          body = await this.#app.vault.cachedRead(file);
+        } catch (error) {
+          failed = true;
+          logger.warn("Citation backfill could not read note", {
+            path: file.path,
+            error,
+          });
+          break;
+        }
+        // The read yields, so a new build or a fresher metadata event may have
+        // taken over. A file edited without an event is read again at its new
+        // state rather than pairing the old body with the new file stats.
+        if (this.#stale(build)) return failed;
+        if (this.#covered(file)) break;
+        if (file.stat.mtime !== mtime || file.stat.size !== size) continue;
+        this.#scan(file, body);
+      }
       if ((scanned += 1) % BACKFILL_CHUNK === 0) await yieldToMain();
     }
     // A file deleted while the app was closed fires no event of its own, so the
@@ -401,6 +542,7 @@ export class CitationIndex extends Service<void> {
     for (const path of this.#scans.keys().toArray()) {
       if (!present.has(path)) this.#drop(path);
     }
+    return failed;
   }
 
   /** Whether a build other than `build` has taken over. */
@@ -417,11 +559,21 @@ export class CitationIndex extends Service<void> {
   async #rebuildSnapshot(): Promise<void> {
     this.#rebuildSeq += 1;
     const seq = this.#rebuildSeq;
-    await this.#db.ready;
+    this.#setResolution("resolving");
+    try {
+      await this.#db.ready;
+    } catch (error) {
+      logger.warn("Resolution snapshot database unavailable", { error });
+      if (this.#stopped || seq !== this.#rebuildSeq) return;
+      this.#settleResolution("degraded", false);
+      return;
+    }
     if (this.#stopped || seq !== this.#rebuildSeq) return;
 
     let changed = false;
+    let resolution: CitationKeyResolution = "ready";
     if (this.#db.state !== "ready") {
+      resolution = "degraded";
       logger.debug("Resolution snapshot rebuild skipped, database not ready", {
         libraryID: this.#libraryID,
       });
@@ -435,12 +587,29 @@ export class CitationIndex extends Service<void> {
           changed,
         });
       } catch (error) {
+        resolution = "degraded";
         logger.warn("Resolution snapshot rebuild failed", { error });
       }
     }
 
+    this.#settleResolution(resolution, changed);
+  }
+
+  #setResolution(resolution: CitationKeyResolution): void {
+    if (resolution === this.#resolution) return;
+    this.#resolution = resolution;
+    this.#emitter.emit("cited-by-invalidated");
+  }
+
+  #settleResolution(
+    resolution: Exclude<CitationKeyResolution, "resolving">,
+    changed: boolean,
+  ): void {
     const firstSettle = !this.#resolved;
+    const stateChanged = resolution !== this.#resolution;
     this.#resolved = true;
+    this.#resolution = resolution;
+    if (stateChanged) this.#emitter.emit("cited-by-invalidated");
     if (changed || firstSettle) this.#emitter.emit("resolution-changed");
   }
 
@@ -498,6 +667,7 @@ export class CitationIndex extends Service<void> {
     this.#scans.set(path, scan);
     this.#forget(oldPath);
     this.#persist({ path, ...scan });
+    if (scan.occurrences.length > 0) this.#emitter.emit("changed", path);
   }
 
   /**
@@ -520,6 +690,62 @@ export class CitationIndex extends Service<void> {
     void this.#store?.drop(path).catch((error: unknown) => {
       logger.error("Failed to drop a citation scan", { path, error });
     });
+  }
+
+  /**
+   * The scanned occurrences and cache links the source choices admit, the one
+   * gate both membership surfaces pass through: the active document's
+   * {@link getDocumentCitationSet} and the vault-wide reverse observation.
+   *
+   * @param scanned the file's literal-citekey scan, already acquired: the
+   * document surface awaits a scan on demand, the reverse one takes what the
+   * backfill has covered so far.
+   */
+  #admitted(
+    file: TFile,
+    scanned: readonly CitationOccurrence[],
+  ): { citekeys: readonly CitationOccurrence[]; links: readonly LinkCache[] } {
+    return {
+      citekeys: this.#includePandocCitations ? scanned : [],
+      links: this.#includeWikilinkCitations
+        ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
+        : [],
+    };
+  }
+
+  #citedBy(
+    indexedKey: string,
+    includeNote: (file: TFile) => boolean,
+  ): CitedBySnapshot {
+    const groups: CitedByGroup[] = [];
+    const files = this.#app.vault
+      .getMarkdownFiles()
+      .filter(includeNote)
+      .sort((a, b) => comparePaths(a.path, b.path));
+    for (const file of files) {
+      const { citekeys, links } = this.#admitted(
+        file,
+        this.#covered(file) ?? [],
+      );
+      const literals = citekeys.filter(
+        (occurrence) =>
+          this.#snapshot.byCitekey(occurrence.raw)?.indexedKey === indexedKey,
+      );
+      const wikilinks = documentWikilinks(links).occurrences.filter(
+        (occurrence) =>
+          resolveIndexedKey(occurrence.raw, file.path, this.#app) ===
+          indexedKey,
+      );
+      const occurrences = [...literals, ...wikilinks].sort(compareOccurrences);
+      if (occurrences.length > 0) {
+        groups.push({ path: file.path, occurrences });
+      }
+    }
+    return {
+      groups,
+      coverage: this.#coverage,
+      resolution: this.#resolution,
+    };
   }
 
   #resolve(
@@ -570,4 +796,19 @@ export class CitationIndex extends Service<void> {
 
 function isMarkdownFile(file: TAbstractFile): file is TFile {
   return file instanceof TFile && file.extension === "md";
+}
+
+function comparePaths(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function compareOccurrences(
+  a: CitationOccurrence,
+  b: CitationOccurrence,
+): number {
+  return (
+    a.position.start.offset - b.position.start.offset ||
+    a.position.end.offset - b.position.end.offset ||
+    comparePaths(a.raw, b.raw)
+  );
 }

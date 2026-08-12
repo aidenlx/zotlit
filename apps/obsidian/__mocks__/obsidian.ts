@@ -13,11 +13,46 @@ import type {
   Command,
   Debouncer,
   EditorSuggestContext,
+  EventRef,
+  IconName,
+  WorkspaceLeaf,
   Instruction,
   Modifier,
   PaneType,
+  SearchMatchPart,
+  SearchResult,
   UserEvent,
 } from "obsidian";
+
+/**
+ * Stand-in for Obsidian's simple search: every whitespace-separated term of the
+ * query must appear in the text, case-insensitively.
+ */
+export function prepareSimpleSearch(
+  query: string,
+): (text: string) => SearchResult | null {
+  const terms = query.toLowerCase().split(/\s+/u).filter(Boolean);
+  return (text) => {
+    const haystack = text.toLowerCase();
+    const matches: SearchMatchPart[] = [];
+    for (const term of terms) {
+      const at = haystack.indexOf(term);
+      if (at === -1) return null;
+      matches.push([at, at + term.length]);
+    }
+    return { score: -matches.length, matches };
+  };
+}
+
+export function getIcon(name: IconName): SVGSVGElement | null {
+  const svg = globalThis.document?.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "svg",
+  );
+  if (!svg) return null;
+  svg.setAttribute("class", `svg-icon lucide-${name}`);
+  return svg;
+}
 
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
 // Provide it for tests that exercise that code path.
@@ -77,6 +112,58 @@ export class TFolder extends TAbstractFile {
 
   isRoot(): boolean {
     return this.parent === null;
+  }
+}
+
+/** Minimal ItemView shell for tests of plugin-registered views. */
+export class ItemView {
+  readonly contentEl: HTMLElement;
+
+  constructor(readonly leaf: WorkspaceLeaf) {
+    const content = globalThis.document?.createElement("div");
+    if (!content) {
+      this.contentEl = {
+        addClass: (..._classes: string[]) => {},
+      } as unknown as HTMLElement;
+      return;
+    }
+    (
+      content as HTMLElement & { addClass: (...classes: string[]) => void }
+    ).addClass = (...classes) => content.classList.add(...classes);
+    this.contentEl = content;
+  }
+
+  registerEvent(_event: EventRef): void {}
+  register<T extends () => void>(disposer: T): T {
+    return disposer;
+  }
+
+  protected onOpen(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  protected onClose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  getViewType(): string {
+    return "";
+  }
+
+  getDisplayText(): string {
+    return "";
+  }
+
+  getIcon(): string {
+    return "";
+  }
+
+  getState(): Record<string, unknown> {
+    return {};
+  }
+
+  setState(_state: unknown, _result: unknown): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -239,6 +326,7 @@ export function requireApiVersion(_version: string): boolean {
 export class MenuItem {
   #title = "";
   #section = "";
+  #checked: boolean | null = null;
   #onClick: ((evt: MouseEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
@@ -246,6 +334,11 @@ export class MenuItem {
 
   get title(): string {
     return this.#title;
+  }
+
+  /** `null` for an item that carries no check mark, as in Obsidian. */
+  get checked(): boolean | null {
+    return this.#checked;
   }
 
   /** `""` for an unsectioned item, as in Obsidian. */
@@ -264,6 +357,11 @@ export class MenuItem {
 
   setSection(section: string): this {
     this.#section = section;
+    return this;
+  }
+
+  setChecked(checked: boolean | null): this {
+    this.#checked = checked;
     return this;
   }
 
@@ -315,7 +413,15 @@ export class Menu {
     return this;
   }
 
+  setNoIcon(): this {
+    return this;
+  }
+
   showAtMouseEvent(_evt: MouseEvent): this {
+    return this;
+  }
+
+  showAtPosition(_position: { x: number; y: number }): this {
     return this;
   }
 }

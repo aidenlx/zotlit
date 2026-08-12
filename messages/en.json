@@ -226,6 +226,7 @@
   "annot_view_search_placeholder": "Search annotations…",
   "annot_view_filter_no_match": "No annotations match the current filters",
   "annot_view_clear_filters": "Clear filters",
+  "annot_view_clear_search": "Clear search",
   "annot_view_filter_count": "{shown} of {total}",
   "annot_view_filter_clear": "Clear",
   "annot_view_filter_trigger_selected": "{count} more selected tags",
@@ -335,6 +336,53 @@
   "notice_pandoc_integration_save_failed": "Could not save the Pandoc integration pair. The prior pair was restored.",
   "notice_pandoc_integration_restore_failed": "Could not save or restore the Pandoc integration pair. Check both files before use.",
   "command_open_references_view_name": "Open references",
+  "command_show_cited_by_name": "Show cited by",
+  "cited_by_view_name": "Cited by",
+  "cited_by_open_literature_note": "Open a literature note to see citations.",
+  "cited_by_empty": "No notes cite this literature note.",
+  "cited_by_indexing": "Indexing citations…",
+  "cited_by_resolving": "Resolving citations…",
+  "cited_by_coverage_degraded": "Some notes could not be indexed.",
+  "cited_by_resolution_degraded": "Some citations that use citation keys may be unavailable.",
+  "cited_by_preview_unavailable": "Preview unavailable",
+  "cited_by_search_placeholder": "Search citations…",
+  "cited_by_clear_search": "Clear search",
+  "cited_by_show_search_filter": "Show search filter",
+  "cited_by_show_more_context": "Show more context",
+  "cited_by_show_context_above": "Show more context above",
+  "cited_by_show_context_below": "Show more context below",
+  "cited_by_collapse_results": "Collapse results",
+  "cited_by_change_sort_order": "Change sort order",
+  "cited_by_sort_alphabetical": "File name (A to Z)",
+  "cited_by_sort_alphabetical_reverse": "File name (Z to A)",
+  "cited_by_sort_modified_time": "Modified time (new to old)",
+  "cited_by_sort_modified_time_reverse": "Modified time (old to new)",
+  "cited_by_sort_created_time": "Created time (new to old)",
+  "cited_by_sort_created_time_reverse": "Created time (old to new)",
+  "cited_by_expand_source": "Expand source note",
+  "cited_by_collapse_source": "Collapse source note",
+  "cited_by_open_source": "Open source note",
+  "cited_by_this_note": "This note",
+  "cited_by_note_count": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 note",
+        "category=*": "{count} notes"
+      }
+    }
+  ],
+  "cited_by_occurrence_count": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 citation",
+        "category=*": "{count} citations"
+      }
+    }
+  ],
   "references_view_name": "References",
   "references_empty": "The active note cites no literature notes.",
   "references_db_unavailable": "Open the Zotero database to see references.",
@@ -619,6 +667,7 @@
   "template_data_explorer_copied_path": "Path copied",
   "template_data_explorer_copied_value": "Value copied",
   "template_data_explorer_filter_placeholder": "Filter properties…",
+  "template_data_explorer_clear_search": "Clear search",
   "template_data_explorer_copy_failed": "Failed to copy to clipboard",
   "template_data_explorer_refresh_tooltip": "Refresh Zotero database",
   "template_data_explorer_refreshing": "Refreshing database…",

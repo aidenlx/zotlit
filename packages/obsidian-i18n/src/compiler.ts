@@ -1,10 +1,13 @@
 // Compiles an Inlang project into typed wrappers and JSON Language Packs.
 
+import mFunctionMatcherPlugin from "@inlang/plugin-m-function-matcher";
+import messageFormatPlugin from "@inlang/plugin-message-format";
 import { loadProjectFromDirectory, selectBundleNested } from "@inlang/sdk";
 import type {
   BundleNested,
   Declaration,
   Expression,
+  InlangPlugin,
   InlangProject,
   Match,
   Pattern,
@@ -217,6 +220,19 @@ const RESERVED_IDENTIFIERS = new Set([
   "yield",
 ]);
 
+/**
+ * The two Inlang plugins a project's `settings.json` normally declares as
+ * `modules` and the SDK fetches from jsdelivr at load time. Supplying them
+ * here keeps every compile hermetic — no network round trip, no dependency on
+ * the CDN being reachable. A project whose `settings.json` still lists them
+ * (e.g. for the Sherlock IDE extension) is unaffected: the SDK loads its own
+ * fetched copies alongside these.
+ */
+export const INLANG_PLUGINS: InlangPlugin[] = [
+  messageFormatPlugin,
+  mFunctionMatcherPlugin,
+];
+
 export async function compile(
   options: CompileOptions = {},
 ): Promise<CompileResult> {
@@ -225,6 +241,7 @@ export async function compile(
   const project = await loadProjectFromDirectory({
     path: projectPath,
     fs,
+    providePlugins: INLANG_PLUGINS,
   }).catch(async (error: unknown) => {
     const sourceCatalogs =
       await readConfiguredSourceCatalogsForDiagnostics(projectPath);

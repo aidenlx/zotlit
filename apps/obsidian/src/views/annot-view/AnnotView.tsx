@@ -71,13 +71,12 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
   const toggleSearchOpen = useToggleSearchOpen();
 
   return (
-    <div className="nav-header zt:flex zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
-      <div className="nav-buttons-container zt:@sm:w-auto zt:@sm:shrink-0">
+    <div className="zt:flex zt:flex-col zt:gap-2 zt:p-2 zt:@sm:flex-row zt:@sm:items-center">
+      <div className="zt:flex zt:flex-wrap zt:justify-center zt:gap-0.5 zt:@sm:w-auto zt:@sm:shrink-0">
         <FollowControls />
         {hasItem && (
           <>
             <IconButton
-              className="nav-action-button"
               icon={collapsed ? "chevrons-up-down" : "chevrons-down-up"}
               onClick={onToggleCollapsed}
               {...tooltipAttrs(
@@ -87,13 +86,11 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
               )}
             />
             <IconButton
-              className="nav-action-button"
               icon="refresh-ccw"
               onClick={() => actions.onRefresh()}
               {...tooltipAttrs(m.annot_view_refresh_tooltip())}
             />
             <IconButton
-              className="nav-action-button"
               icon="search"
               active={searchOpen}
               onClick={toggleSearchOpen}
@@ -124,7 +121,7 @@ function FollowControls() {
   return (
     <>
       <IconButton
-        className="nav-action-button zt:data-[active]:text-accent-foreground"
+        className="zt:data-[active]:text-accent-foreground"
         icon="book-open"
         active={followingReader}
         data-active={followingReader ? "" : undefined}
@@ -133,7 +130,7 @@ function FollowControls() {
         {...tooltipAttrs(readerTooltip)}
       />
       <IconButton
-        className="nav-action-button zt:data-[active]:text-accent-foreground"
+        className="zt:data-[active]:text-accent-foreground"
         icon={isLinked ? "unlink" : "link"}
         active={isLinked}
         data-active={isLinked ? "" : undefined}
@@ -174,6 +171,7 @@ function SearchRow() {
         onChange={setFilterQuery}
         autoFocus
         placeholder={m.annot_view_search_placeholder()}
+        clearLabel={m.annot_view_clear_search()}
       />
     </div>
   );

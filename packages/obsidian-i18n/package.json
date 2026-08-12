@@ -33,6 +33,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@inlang/plugin-m-function-matcher": "2.2.9",
+    "@inlang/plugin-message-format": "4.4.1",
     "@inlang/sdk": "2.9.3"
   },
   "devDependencies": {

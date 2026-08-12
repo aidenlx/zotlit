@@ -30,6 +30,7 @@ import { registerTemplateWorkbench } from "./services/template-workbench/registe
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
+import { registerCitedByView } from "./views/cited-by/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
@@ -277,6 +278,11 @@ export default class ZotLitPlugin extends Plugin {
       pandocEngine: services.pandocEngine,
       bibliographyRender: services.bibliographyRender,
       settings: services.settings,
+    });
+
+    registerCitedByView(this, {
+      app: this.app,
+      citationIndex: services.citationIndex,
     });
 
     registerTemplateWorkbench(this, {
