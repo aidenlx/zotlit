@@ -14,6 +14,7 @@ import {
   formatCompilerWarnings,
   compile,
   compileProject,
+  INLANG_PLUGINS,
   writeOutput,
 } from "./compiler.js";
 import type { CompileResult, GeneratedArtifacts } from "./compiler.js";
@@ -454,6 +455,7 @@ describe("generateLanguagePacks", () => {
     const project = await loadProjectFromDirectory({
       path: projectPath,
       fs,
+      providePlugins: INLANG_PLUGINS,
     });
     try {
       await expect(
