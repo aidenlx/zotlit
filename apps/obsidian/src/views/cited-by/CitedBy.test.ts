@@ -25,7 +25,7 @@ import type {
 
 import { CitedByActionsContext, createCitedByActions } from "./actions";
 import { CitedBy } from "./CitedBy";
-import { createCitedByStore, CitedByStoreProvider } from "./store";
+import { COMPACT_CAP, createCitedByStore, CitedByStoreProvider } from "./store";
 
 vi.mock("zustand", async () => {
   const { useSyncExternalStore } = await import("preact/compat");
@@ -159,6 +159,20 @@ const expansionListItems: ListItemCache[] = [
   { parent: -1, position: span(expansionBody, "- Alpha cites @doe2024 here.") },
   { parent: 4, position: span(expansionBody, "- Nested detail.") },
   { parent: -1, position: span(expansionBody, "- Beta item.") },
+];
+
+/**
+ * A citing note with a line long enough to trigger the compact-excerpt cap.
+ * The padding on each side exceeds {@link COMPACT_CAP}, so compact mode clips
+ * the line and the "show more context" toggle reveals the full paragraph.
+ * Spaces separate the padding from the citekey so the scanner recognises it.
+ */
+const longParagraph = `${"x ".repeat(COMPACT_CAP)}@doe2024${" y".repeat(COMPACT_CAP)}`;
+const longLineBody = `Preamble.\n\n${longParagraph}\n\nEpilogue.\n`;
+const longLineSections: SectionCache[] = [
+  { type: "paragraph", position: span(longLineBody, "Preamble.") },
+  { type: "paragraph", position: span(longLineBody, longParagraph) },
+  { type: "paragraph", position: span(longLineBody, "Epilogue.") },
 ];
 
 /** Three citing notes in vault-path order, two of them sharing a name. */
@@ -932,6 +946,40 @@ describe("CitedBy", () => {
     );
 
     expect(card()?.textContent).toBe("# Heading cites @doe2024 here…");
+  });
+
+  it("caps the compact excerpt and reveals the full paragraph on toggle", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: [citedIn(longLineBody)] }),
+      read: () => Promise.resolve(longLineBody),
+      sections: longLineSections,
+    });
+    await act(async () => Promise.resolve());
+    const card = () => container.querySelector("[data-occurrence]");
+    const compactText = `…${"x ".repeat(COMPACT_CAP / 2)}@doe2024${" y".repeat(COMPACT_CAP / 2)}…`;
+
+    // Compact mode: only COMPACT_CAP characters on each side of the match.
+    expect(card()?.textContent).toBe(compactText);
+
+    // Toggle reveals the full single-line paragraph.
+    await act(() =>
+      (
+        container.querySelector(
+          "[data-cited-by-show-more-context]",
+        ) as HTMLElement
+      ).click(),
+    );
+    expect(card()?.textContent).toBe(`…${longParagraph}…`);
+
+    // Toggle back returns to the capped compact excerpt.
+    await act(() =>
+      (
+        container.querySelector(
+          "[data-cited-by-show-more-context]",
+        ) as HTMLElement
+      ).click(),
+    );
+    expect(card()?.textContent).toBe(compactText);
   });
 
   it("offers no chevron on a card that already shows the whole note", async () => {

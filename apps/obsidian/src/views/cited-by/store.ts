@@ -188,6 +188,12 @@ export function noteName(path: string): string {
   return filename.endsWith(".md") ? filename.slice(0, -3) : filename;
 }
 
+/**
+ * Characters the compact excerpt extends on each side of the match before
+ * stopping, the same cap Obsidian's own search results use.
+ */
+export const COMPACT_CAP = 100;
+
 /** The Citation Context of one occurrence: its own lines and its block. */
 export function citationContext(
   source: string,
@@ -196,19 +202,49 @@ export function citationContext(
 ): OccurrenceContext {
   if (!occurrence) return { status: "unavailable" };
   const { start, end } = occurrence.position;
-  const lineStart = source.lastIndexOf("\n", Math.max(0, start.offset - 1)) + 1;
-  const nextBreak = source.indexOf("\n", end.offset);
   const token = { start: start.offset, end: end.offset };
-  const range = {
+  const lineRange = enclosingLine(source, token);
+  return {
+    status: "ready",
+    range: compactExcerpt(source, token),
+    block: enclosingBlock(cache, token) ?? lineRange,
+    token,
+  };
+}
+
+/** The full source line(s) one token spans, from newline to newline. */
+function enclosingLine(source: string, token: SourceRange): SourceRange {
+  const lineStart = source.lastIndexOf("\n", Math.max(0, token.start - 1)) + 1;
+  const nextBreak = source.indexOf("\n", token.end);
+  return {
     start: lineStart,
     end: nextBreak === -1 ? source.length : nextBreak,
   };
-  return {
-    status: "ready",
-    range,
-    block: enclosingBlock(cache, token) ?? range,
-    token,
-  };
+}
+
+/**
+ * The match plus up to {@link COMPACT_CAP} characters on each side, stopping
+ * at a newline. This gives the compact mode a narrow window that the
+ * extra-context toggle can visibly widen.
+ */
+function compactExcerpt(source: string, token: SourceRange): SourceRange {
+  let start = token.start - 1;
+  let back = 0;
+  while (back < COMPACT_CAP && start >= 0) {
+    if (source.charCodeAt(start) === 10) break;
+    start -= 1;
+    back += 1;
+  }
+  start += 1;
+
+  let end = token.end;
+  let fwd = 0;
+  while (fwd < COMPACT_CAP && end < source.length) {
+    if (source.charCodeAt(end) === 10) break;
+    end += 1;
+    fwd += 1;
+  }
+  return { start, end };
 }
 
 /**
