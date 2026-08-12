@@ -28,7 +28,6 @@ import type {
 /** Source notes previewed between two yields to the host. */
 const PREVIEW_CHUNK = 5;
 
-/** The menu title of every sort mode. */
 const SORT_LABELS: Record<CitedBySortMode, () => string> = {
   alphabetical: m.cited_by_sort_alphabetical,
   alphabeticalReverse: m.cited_by_sort_alphabetical_reverse,

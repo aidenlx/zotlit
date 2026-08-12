@@ -205,12 +205,16 @@ async function render(options: {
   listItems?: ListItemCache[];
   duplicateSourceLeaf?: boolean;
   stats?: Readonly<Record<string, { ctime: number; mtime: number }>>;
+  /** Citing notes the snapshot still holds whose file left the vault. */
+  missingPaths?: readonly string[];
 }) {
   const shown = options.snapshot ?? snapshot();
   const files = new Map(
-    shown.groups.map(
-      ({ path }) => [path, makeFile(path, options.stats?.[path])] as const,
-    ),
+    shown.groups
+      .filter(({ path }) => !options.missingPaths?.includes(path))
+      .map(
+        ({ path }) => [path, makeFile(path, options.stats?.[path])] as const,
+      ),
   );
   const file = files.get(group.path) ?? makeFile();
   const read = vi.fn(options.read ?? (() => Promise.resolve(body)));
@@ -1182,6 +1186,46 @@ describe("CitedBy", () => {
 
     await chooseSort(container, "Created time (old to new)");
     expect(sourceLabels(container)).toEqual(["alpha — B", "alpha — C", "beta"]);
+  });
+
+  it("breaks equal-time ties by vault path in every time mode", async () => {
+    const tied = { ctime: 7, mtime: 7 };
+    const { container } = await render({
+      snapshot: snapshot({ groups: sortedGroups }),
+      stats: {
+        "A/beta.md": tied,
+        "B/alpha.md": tied,
+        "C/alpha.md": tied,
+      },
+    });
+    for (const mode of [
+      "Modified time (new to old)",
+      "Modified time (old to new)",
+      "Created time (new to old)",
+      "Created time (old to new)",
+    ]) {
+      await chooseSort(container, mode);
+      expect(sourceLabels(container)).toEqual([
+        "beta",
+        "alpha — B",
+        "alpha — C",
+      ]);
+    }
+  });
+
+  it("sorts a group whose file left the vault by its name at time zero", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: sortedGroups }),
+      stats: sortedStats,
+      missingPaths: ["B/alpha.md"],
+    });
+    expect(sourceLabels(container)).toEqual(["alpha — B", "alpha — C", "beta"]);
+
+    await chooseSort(container, "Modified time (new to old)");
+    expect(sourceLabels(container)).toEqual(["beta", "alpha — C", "alpha — B"]);
+
+    await chooseSort(container, "Created time (new to old)");
+    expect(sourceLabels(container)).toEqual(["beta", "alpha — C", "alpha — B"]);
   });
 
   it("keeps every group's occurrences in source order in every mode", async () => {

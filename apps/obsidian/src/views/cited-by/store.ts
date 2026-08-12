@@ -53,7 +53,6 @@ export const CITED_BY_SORT_GROUPS = [
 /** The presentation order of the source groups. */
 export type CitedBySortMode = (typeof CITED_BY_SORT_GROUPS)[number][number];
 
-/** The mode the view starts in: file name, A to Z. */
 export const DEFAULT_CITED_BY_SORT: CitedBySortMode = "alphabetical";
 
 export interface CitedByState {
