@@ -405,6 +405,58 @@ describe("CitedBy", () => {
     );
   });
 
+  it("renders every occurrence as a search-result card", async () => {
+    const { container } = await render({});
+    const card = container.querySelector("[data-occurrence]");
+    const cards = container.querySelector("[data-cited-by-cards]");
+
+    expect(card?.parentElement).toBe(cards);
+    expect(cards?.classList).toContain("zt:bg-(--search-result-background)");
+    expect(cards?.classList).toContain(
+      "zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border)]",
+    );
+    expect(cards?.classList).toContain("zt:rounded-(--radius-s)");
+    expect(card?.classList).toContain(
+      "zt:border-(--background-modifier-border)",
+    );
+    expect(card?.classList).toContain("zt:hover:bg-(--text-selection)");
+    expect(card?.classList).toContain("zt:focus-visible:bg-(--text-selection)");
+    expect(card?.classList).toContain(
+      "zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
+    );
+  });
+
+  it("highlights the citation inside its surrounding context", async () => {
+    const { container } = await render({});
+    const card = container.querySelector("[data-occurrence]");
+    const highlight = card?.querySelector("mark");
+
+    expect(card?.textContent).toBe("A reason cites @doe2024 here.");
+    expect(highlight?.textContent).toBe("@doe2024");
+    expect(highlight?.previousSibling?.textContent).toBe("A reason cites ");
+    expect(highlight?.nextSibling?.textContent).toBe(" here.");
+  });
+
+  it("activates card navigation from the keyboard and from a mod-click", async () => {
+    const { container, openLinkText, setEphemeralState } = await render({});
+    const card = container.querySelector("[data-occurrence]") as HTMLElement;
+
+    await act(() => {
+      card.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    await act(async () => Promise.resolve());
+    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+    expect(setEphemeralState).toHaveBeenCalledOnce();
+
+    vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
+    await act(() => card.click());
+    await act(async () => Promise.resolve());
+    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", "tab");
+    expect(setEphemeralState).toHaveBeenCalledTimes(2);
+  });
+
   it("toggles a source row and opens its note from the dedicated button", async () => {
     vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
     const { container, openLinkText } = await render({});

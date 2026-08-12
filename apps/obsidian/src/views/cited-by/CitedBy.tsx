@@ -8,13 +8,14 @@ import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
+  CitationOccurrence,
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
 
 import { useCitedByActions } from "./actions";
 import { contextParts, occurrenceID, useCitedByStore } from "./store";
-import type { CitedByPreview } from "./store";
+import type { CitedByPreview, OccurrenceContext } from "./store";
 
 export function CitedBy() {
   const state = useCitedByStore((current) => current);
@@ -315,7 +316,10 @@ function CitedBySource({
         </div>
       </div>
       {!collapsed && (
-        <ul className="zt:mt-1 zt:mb-2 zt:overflow-hidden zt:rounded-(--radius-s) zt:bg-(--search-result-background) zt:text-xs zt:leading-(--line-height-tight) zt:text-(--text-muted) zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border)] zt:empty:hidden">
+        <ul
+          className="zt:mt-1 zt:mb-2 zt:overflow-hidden zt:rounded-(--radius-s) zt:bg-(--search-result-background) zt:text-xs zt:leading-(--line-height-tight) zt:text-(--text-muted) zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border)] zt:empty:hidden"
+          data-cited-by-cards
+        >
           {preview?.status === "unavailable" && (
             <li className="zt:flex zt:gap-2 zt:px-3 zt:py-2 zt:text-(--text-error)">
               <span aria-hidden>⚠</span>
@@ -326,46 +330,71 @@ function CitedBySource({
             group.occurrences.map((occurrence) => {
               const context = preview.contexts[occurrenceID(occurrence)];
               if (!context) return null;
-              const excerpt =
-                context.status === "ready"
-                  ? contextParts(preview.source, context)
-                  : null;
               return (
-                <li
-                  className={cn(
-                    "zt:relative zt:w-full zt:cursor-clickable zt:border-b-(length:--border-width) zt:border-(--background-modifier-border) zt:py-2 zt:ps-3 zt:pe-5 zt:whitespace-pre-wrap zt:[unicode-bidi:plaintext] zt:last:border-b-0 zt:hover:bg-(--text-selection) zt:hover:text-(--text-normal)",
-                    context.status === "unavailable" &&
-                      "zt:text-(--text-error) zt:hover:text-(--text-error)",
-                  )}
+                <OccurrenceCard
+                  context={context}
+                  group={group}
                   key={occurrenceID(occurrence)}
-                  role="button"
-                  tabIndex={0}
-                  data-occurrence={occurrenceID(occurrence)}
-                  onClick={(event) =>
-                    actions.openOccurrence(group, occurrence, event)
-                  }
-                  onKeyDown={activateWithKeyboard}
-                >
-                  {excerpt ? (
-                    <>
-                      {excerpt.before}
-                      <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
-                        {excerpt.token}
-                      </mark>
-                      {excerpt.after}
-                    </>
-                  ) : (
-                    <>
-                      <span aria-hidden className="zt:mr-2">
-                        ⚠
-                      </span>
-                      {m.cited_by_preview_unavailable()}
-                    </>
-                  )}
-                </li>
+                  occurrence={occurrence}
+                  source={preview.source}
+                />
               );
             })}
         </ul>
+      )}
+    </li>
+  );
+}
+
+/**
+ * One Citation Occurrence as a search-result card: the Citation Context with
+ * the citation highlighted inside it, selected on hover and on keyboard focus.
+ */
+function OccurrenceCard({
+  context,
+  group,
+  occurrence,
+  source,
+}: {
+  context: OccurrenceContext;
+  group: CitedByGroup;
+  occurrence: CitationOccurrence;
+  source: string;
+}) {
+  const actions = useCitedByActions();
+  const excerpt =
+    context.status === "ready" ? contextParts(source, context) : null;
+
+  return (
+    <li
+      className={cn(
+        "zt:relative zt:w-full zt:cursor-clickable zt:border-b-(length:--border-width) zt:border-(--background-modifier-border) zt:py-2 zt:ps-3 zt:pe-5 zt:whitespace-pre-wrap zt:[unicode-bidi:plaintext] zt:last:border-b-0",
+        "zt:hover:bg-(--text-selection) zt:hover:text-(--text-normal)",
+        "zt:focus-visible:rounded-sm zt:focus-visible:bg-(--text-selection) zt:focus-visible:text-(--text-normal) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
+        context.status === "unavailable" &&
+          "zt:text-(--text-error) zt:hover:text-(--text-error) zt:focus-visible:text-(--text-error)",
+      )}
+      role="button"
+      tabIndex={0}
+      data-occurrence={occurrenceID(occurrence)}
+      onClick={(event) => actions.openOccurrence(group, occurrence, event)}
+      onKeyDown={activateWithKeyboard}
+    >
+      {excerpt ? (
+        <>
+          {excerpt.before}
+          <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
+            {excerpt.token}
+          </mark>
+          {excerpt.after}
+        </>
+      ) : (
+        <>
+          <span aria-hidden className="zt:mr-2">
+            ⚠
+          </span>
+          {m.cited_by_preview_unavailable()}
+        </>
       )}
     </li>
   );
