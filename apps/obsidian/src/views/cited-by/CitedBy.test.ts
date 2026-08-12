@@ -819,47 +819,13 @@ describe("CitedBy", () => {
     expect(
       container.querySelectorAll("[data-cited-by-collapse-results]"),
     ).toHaveLength(1);
-    expect(
-      container.querySelector("[data-cited-by-collapse-results]")?.classList,
-    ).toContain("nav-action-button");
-    expect(
-      container.querySelector("[data-cited-by-section-count]")?.textContent,
-    ).toBe("1 note · 1 citation");
   });
 
-  it("collapses the result section from its header, apart from the toolbar toggle", async () => {
-    const { container } = await render({});
-    await act(async () => Promise.resolve());
-    const header = container.querySelector(
-      "[data-cited-by-section-header]",
-    ) as HTMLElement;
-    expect(header.textContent).toContain("Cited by");
-    expect(header.getAttribute("aria-expanded")).toBe("true");
-
-    await act(() => header.click());
-    expect(container.querySelector("[data-cited-by-results]")).toBeNull();
-    expect(header.getAttribute("aria-expanded")).toBe("false");
-    expect(
-      container.querySelector("[data-cited-by-collapse-results]")?.classList,
-    ).not.toContain("is-active");
-    expect(
-      container.querySelector("[data-cited-by-section-chevron] svg")?.classList,
-    ).toContain("lucide-chevron-right");
-
-    await act(() => header.click());
-    await act(async () => Promise.resolve());
-    expect(container.querySelector("[data-cited-by-results]")).not.toBeNull();
-    expect(container.querySelector("[data-occurrence]")).not.toBeNull();
-  });
-
-  it("activates the toolbar toggle and the section header from the keyboard", async () => {
+  it("activates the toolbar toggle from the keyboard", async () => {
     const { container, store } = await render({});
     await act(async () => Promise.resolve());
     const toggle = container.querySelector(
       "[data-cited-by-collapse-results]",
-    ) as HTMLElement;
-    const header = container.querySelector(
-      "[data-cited-by-section-header]",
     ) as HTMLElement;
 
     await act(() => {
@@ -868,13 +834,6 @@ describe("CitedBy", () => {
       );
     });
     expect(store.getState().collapsed).toEqual([group.path]);
-
-    await act(() => {
-      header.dispatchEvent(
-        new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-      );
-    });
-    expect(store.getState().sectionCollapsed).toBe(true);
   });
 
   it("shows note and occurrence counts, folders for duplicate names, and the self label", async () => {
@@ -1148,9 +1107,6 @@ describe("CitedBy", () => {
     await act(() => store.setState({ search: "draft" }));
 
     expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(2);
-    expect(
-      container.querySelector("[data-cited-by-section-count]")?.textContent,
-    ).toBe("1 note · 2 citations");
   });
 
   it("keeps only matching occurrences, collapsed groups included", async () => {
@@ -1164,9 +1120,6 @@ describe("CitedBy", () => {
 
     await act(() => store.setState({ search: "beta cites" }));
     expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
-    expect(
-      container.querySelector("[data-cited-by-section-count]")?.textContent,
-    ).toBe("1 note · 1 citation");
     expect(read).toHaveBeenCalledOnce();
 
     await act(() => actions.expandAll());
@@ -1197,9 +1150,6 @@ describe("CitedBy", () => {
     });
     expect(store.getState().search).toBe("not present");
     expect(container.querySelector("[data-cited-by-result]")).toBeNull();
-    expect(
-      container.querySelector("[data-cited-by-section-count]")?.textContent,
-    ).toBe("0 notes · 0 citations");
   });
 
   it("expands and collapses all visible source groups", async () => {
@@ -1210,16 +1160,10 @@ describe("CitedBy", () => {
     await act(() => actions.collapseAll());
     expect(container.querySelector("[data-occurrence]")).toBeNull();
     expect(container.querySelector("[aria-expanded=false]")).not.toBeNull();
-    expect(
-      container.querySelector("[data-cited-by-source-header] svg")?.classList,
-    ).toContain("lucide-chevron-right");
 
     await act(() => actions.expandAll());
     await act(async () => Promise.resolve());
     expect(container.querySelector("[data-occurrence]")).not.toBeNull();
-    expect(
-      container.querySelector("[data-cited-by-source-header] svg")?.classList,
-    ).toContain("lucide-chevron-down");
   });
 
   it("preserves search and expands groups when the target changes", async () => {

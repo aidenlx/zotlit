@@ -69,7 +69,6 @@ export interface CitedByActions {
   loadPreviews: (groups: readonly CitedByGroup[]) => void;
   invalidatePreview: (path: string) => void;
   toggleGroup: (path: string) => void;
-  toggleSection: () => void;
   expandAll: (paths?: readonly string[]) => void;
   collapseAll: (paths?: readonly string[]) => void;
   openSource: (path: string, event: MouseEvent) => void;
@@ -247,11 +246,6 @@ export function createCitedByActions(options: {
         collapsed: collapsed.includes(path)
           ? collapsed.filter((item) => item !== path)
           : [...collapsed, path],
-      }));
-    },
-    toggleSection() {
-      store.setState(({ sectionCollapsed }) => ({
-        sectionCollapsed: !sectionCollapsed,
       }));
     },
     expandAll(paths) {

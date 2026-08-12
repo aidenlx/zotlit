@@ -45,7 +45,6 @@ export function CitedBy() {
     searchVisible,
     moreContext,
     sort,
-    sectionCollapsed,
     previews,
     expansions,
     activePath,
@@ -89,35 +88,42 @@ export function CitedBy() {
   return (
     <div className="zt:min-h-full">
       {statuses.length > 0 && <StatusStrip statuses={statuses} />}
-      <Toolbar paths={visibleGroups.map(({ path }) => path)} />
-      {searchVisible && <SearchFilter />}
-      <SectionHeader
-        noteCount={visibleGroups.length}
+      <Toolbar
         occurrenceCount={occurrenceCount}
+        paths={visibleGroups.map(({ path }) => path)}
       />
-      {!sectionCollapsed && (
-        <ul
-          className="zt:m-0 zt:list-none zt:px-3 zt:pt-1 zt:pb-4"
-          data-cited-by-results
-        >
-          {visibleGroups.map((group) => (
-            <CitedBySource
-              group={group}
-              key={group.path}
-              label={sourceLabel(group.path, {
-                activePath,
-                duplicateNames,
-              })}
-            />
-          ))}
-        </ul>
-      )}
+      {searchVisible && <SearchFilter />}
+      <ul
+        className="zt:m-0 zt:list-none zt:px-3 zt:pt-1 zt:pb-4"
+        data-cited-by-results
+      >
+        {visibleGroups.map((group) => (
+          <CitedBySource
+            group={group}
+            key={group.path}
+            label={sourceLabel(group.path, {
+              activePath,
+              duplicateNames,
+            })}
+          />
+        ))}
+      </ul>
     </div>
   );
 }
 
-/** The native-looking nav header that carries the view-wide actions. */
-function Toolbar({ paths }: { paths: readonly string[] }) {
+/**
+ * The native-looking nav header that carries the view-wide actions and the
+ * counts. Both counts describe the groups it receives, so a query narrows them
+ * with the list below.
+ */
+function Toolbar({
+  occurrenceCount,
+  paths,
+}: {
+  occurrenceCount: number;
+  paths: readonly string[];
+}) {
   const actions = useCitedByActions();
   const collapsed = useCitedByStore((state) => state.collapsed);
   const searchVisible = useCitedByStore((state) => state.searchVisible);
@@ -126,8 +132,11 @@ function Toolbar({ paths }: { paths: readonly string[] }) {
     paths.length > 0 && paths.every((path) => collapsed.includes(path));
 
   return (
-    <div className="nav-header">
-      <div className="nav-buttons-container">
+    // Below the width where the icon row and both counts fit together, the
+    // counts take a row of their own under a centered icon row, the way the
+    // native header centers its actions when it stands alone.
+    <div className="nav-header zt:@container zt:flex zt:flex-wrap zt:items-center">
+      <div className="nav-buttons-container zt:w-full zt:@3xs:w-auto zt:@3xs:flex-1 zt:@3xs:justify-start">
         <IconButton
           className="nav-action-button"
           icon="list"
@@ -162,6 +171,14 @@ function Toolbar({ paths }: { paths: readonly string[] }) {
           onClick={actions.toggleSearch}
         />
       </div>
+      <span
+        className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
+        data-cited-by-stats
+      >
+        {m.cited_by_note_count({ count: paths.length })}
+        {" · "}
+        {m.cited_by_occurrence_count({ count: occurrenceCount })}
+      </span>
     </div>
   );
 }
@@ -192,55 +209,6 @@ function SearchFilter() {
         aria-label={m.cited_by_search_placeholder()}
         clearLabel={m.cited_by_clear_search()}
       />
-    </div>
-  );
-}
-
-function SectionHeader({
-  noteCount,
-  occurrenceCount,
-}: {
-  noteCount: number;
-  occurrenceCount: number;
-}) {
-  const actions = useCitedByActions();
-  const collapsed = useCitedByStore((state) => state.sectionCollapsed);
-
-  return (
-    <div
-      className={cn(
-        "zt:mx-3 zt:flex zt:cursor-clickable zt:items-center zt:rounded-(--nav-item-radius) zt:p-(--nav-item-padding) zt:ps-1 zt:text-(length:--nav-item-size) zt:leading-(--line-height-tight) zt:font-(--nav-heading-weight) zt:[corner-shape:var(--corner-shape)] zt:hover:bg-(--nav-item-background-hover)",
-        collapsed
-          ? "zt:text-(--nav-heading-color-collapsed) zt:hover:text-(--nav-heading-color-collapsed-hover)"
-          : "zt:text-(--nav-heading-color) zt:hover:text-(--nav-heading-color-hover)",
-      )}
-      role="button"
-      tabIndex={0}
-      aria-expanded={!collapsed}
-      data-cited-by-section-header
-      onClick={actions.toggleSection}
-      onKeyDown={activateWithKeyboard}
-    >
-      <span
-        aria-hidden
-        className="zt:flex zt:size-5 zt:shrink-0 zt:items-center zt:justify-center zt:text-(--nav-collapse-icon-color) zt:opacity-(--icon-opacity)"
-        data-cited-by-section-chevron
-      >
-        <Icon
-          name={collapsed ? "chevron-right" : "chevron-down"}
-          size={12}
-          strokeWidth={3}
-        />
-      </span>
-      <span className="zt:min-w-0 zt:truncate">{m.cited_by_view_name()}</span>
-      <span
-        className="zt:ms-auto zt:shrink-0 zt:ps-1 zt:text-xs zt:whitespace-nowrap zt:text-faint zt:tabular-nums"
-        data-cited-by-section-count
-      >
-        {m.cited_by_note_count({ count: noteCount })}
-        {" · "}
-        {m.cited_by_occurrence_count({ count: occurrenceCount })}
-      </span>
     </div>
   );
 }

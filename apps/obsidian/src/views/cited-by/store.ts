@@ -85,7 +85,6 @@ export interface CitedByState {
   /** The order the source groups render in. */
   sort: CitedBySortMode;
   collapsed: readonly string[];
-  sectionCollapsed: boolean;
   previews: Readonly<Record<string, CitedByPreview>>;
   /**
    * The manual chevron expansions in force, keyed by {@link excerptKey}. Held
@@ -113,7 +112,6 @@ export function createCitedByStore() {
     moreContext: false,
     sort: DEFAULT_CITED_BY_SORT,
     collapsed: [],
-    sectionCollapsed: false,
     previews: {},
     expansions: {},
   }));
