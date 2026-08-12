@@ -32,11 +32,12 @@ export class CitedByView extends ItemView {
   readonly #actions: CitedByActions;
   #root: Root | null = null;
   #stopObserving: (() => void) | null = null;
-  #indexedKey: string | null = null;
   /** The subscription target `#followActiveNote()` last settled on, so a
    * repeat call for the same target (a plain leaf-change, an edit that
    * leaves `zotero-key` alone) can skip the teardown that would otherwise
-   * wipe collapse state, excerpt expansions, and the subscription. */
+   * wipe collapse state, excerpt expansions, and the subscription. Also
+   * doubles as the late-publish guard: `null` after close rejects a publish
+   * from a subscription that has already been torn down. */
   #followed: { indexedKey: string | null; activePath: string | null } | null =
     null;
 
@@ -177,7 +178,6 @@ export class CitedByView extends ItemView {
 
     this.#stopObserving?.();
     this.#stopObserving = null;
-    this.#indexedKey = indexedKey;
     this.#followed = { indexedKey, activePath };
     this.#store.setState({
       indexedKey,
@@ -191,7 +191,7 @@ export class CitedByView extends ItemView {
     this.#stopObserving = this.#deps.citationIndex.observeCitedBy(
       indexedKey,
       (snapshot) => {
-        if (this.#indexedKey !== indexedKey) return;
+        if (this.#followed?.indexedKey !== indexedKey) return;
         this.#store.setState({ snapshot });
       },
     );

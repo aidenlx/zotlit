@@ -192,10 +192,8 @@ describe("CitedByView", () => {
     );
 
     expect(activeFile).toBe(file);
-    // A same-key path change (the duplicate switch, the rename) no longer
-    // disposes and resubscribes: initial ABCD2345, second ZZZ99999g7, back to
-    // ABCD2345, metadata change to ZZZ99999g7, metadata change back to
-    // ABCD2345 — five subscriptions, four disposals ahead of them.
+    // A same-key path change carries only activePath; the subscription
+    // stays, so only the four key changes above resubscribe.
     expect(observeCitedBy).toHaveBeenCalledTimes(5);
     expect(dispose).toHaveBeenCalledTimes(4);
     expect(view.contentEl.textContent).toContain("This note");
