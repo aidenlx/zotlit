@@ -30,7 +30,7 @@ import type {
 } from "./store";
 
 /** Milliseconds between the last input change and the query it applies. */
-const SEARCH_DEBOUNCE = 300;
+export const SEARCH_DEBOUNCE = 300;
 
 /** What an excerpt end that leaves out source text shows. */
 const ELLIPSIS = "…";

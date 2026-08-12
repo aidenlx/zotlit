@@ -16,6 +16,7 @@ import type {
   CitedBySnapshot,
 } from "@/services/citation-index/service";
 
+import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
 
 vi.mock("zustand", async () => {
@@ -382,7 +383,7 @@ describe("CitedByView", () => {
     });
   });
 
-  it("keeps its controls but not its collapse across a note switch", async () => {
+  it("keeps its controls but not its collapse or expansions across a note switch", async () => {
     const harness = makeHarness();
     view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
     await view.setState(
@@ -398,6 +399,13 @@ describe("CitedByView", () => {
     await act(() => view!.open());
     await act(() => harness.publish());
     await act(settle);
+
+    const excerpt = () =>
+      view!.contentEl.querySelector("[data-occurrence]")?.textContent;
+    const truncated = excerpt();
+    await act(() => click(view!.contentEl, '[data-cited-by-expand="after"]'));
+    const expanded = excerpt();
+    expect(expanded).not.toBe(truncated);
 
     await act(() => click(view!.contentEl, "[data-cited-by-source-toggle]"));
     expect(view.contentEl.querySelectorAll("[data-occurrence]")).toHaveLength(
@@ -418,11 +426,9 @@ describe("CitedByView", () => {
     expect(view.contentEl.querySelectorAll("[data-occurrence]")).toHaveLength(
       2,
     );
+    expect(excerpt()).toBe(truncated);
   });
 });
-
-/** Milliseconds the search field waits before it applies a typed query. */
-const SEARCH_DEBOUNCE = 300;
 
 const CITING_BODY = "Alpha cites @doe2024 here.\nMore text follows.\n";
 const CITING_PATHS = ["Notes/alpha.md", "Notes/beta.md"] as const;

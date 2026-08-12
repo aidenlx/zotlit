@@ -59,7 +59,7 @@ export class CitedByView extends ItemView {
    * manual excerpt expansions stay in memory, so they never appear here.
    */
   override getState(): Record<string, unknown> {
-    return { ...layoutState(this.#store.getState()) };
+    return layoutState(this.#store.getState());
   }
 
   override async setState(
