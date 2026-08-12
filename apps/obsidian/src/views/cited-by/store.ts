@@ -25,6 +25,7 @@ export interface CitedByState {
   snapshot: CitedBySnapshot;
   search: string;
   collapsed: readonly string[];
+  sectionCollapsed: boolean;
   previews: Readonly<Record<string, CitedByPreview>>;
 }
 
@@ -43,6 +44,7 @@ export function createCitedByStore() {
     snapshot: EMPTY_CITED_BY_SNAPSHOT,
     search: "",
     collapsed: [],
+    sectionCollapsed: false,
     previews: {},
   }));
 }

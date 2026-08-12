@@ -469,6 +469,105 @@ describe("CitedBy", () => {
     });
   });
 
+  it("collapses and expands every source group from one toolbar toggle", async () => {
+    const { container } = await render({
+      snapshot: snapshot({
+        groups: [
+          { ...group, path: "Folder A/draft.md" },
+          { ...group, path: "Folder B/draft.md" },
+        ],
+      }),
+    });
+    await act(async () => Promise.resolve());
+    const toggle = container.querySelector(
+      "[data-cited-by-collapse-results]",
+    ) as HTMLElement;
+    const expanded = () =>
+      [...container.querySelectorAll("[data-cited-by-source-toggle]")].map(
+        (source) => source.getAttribute("aria-expanded"),
+      );
+    expect(expanded()).toEqual(["true", "true"]);
+    expect(toggle.classList).not.toContain("is-active");
+    expect(
+      container.querySelector("[data-cited-by-collapse-results] svg")
+        ?.classList,
+    ).toContain("lucide-list");
+
+    await act(() => toggle.click());
+    expect(expanded()).toEqual(["false", "false"]);
+    expect(toggle.classList).toContain("is-active");
+
+    await act(() => toggle.click());
+    await act(async () => Promise.resolve());
+    expect(expanded()).toEqual(["true", "true"]);
+    expect(toggle.classList).not.toContain("is-active");
+  });
+
+  it("drops the counts row and the expand all / collapse all pair", async () => {
+    const { container } = await render({});
+    expect(container.textContent).not.toContain("Expand all");
+    expect(container.textContent).not.toContain("Collapse all");
+    expect(
+      container.querySelectorAll("[data-cited-by-collapse-results]"),
+    ).toHaveLength(1);
+    expect(
+      container.querySelector("[data-cited-by-collapse-results]")?.classList,
+    ).toContain("nav-action-button");
+    expect(
+      container.querySelector("[data-cited-by-section-count]")?.textContent,
+    ).toBe("1 note · 1 citation");
+  });
+
+  it("collapses the result section from its header, apart from the toolbar toggle", async () => {
+    const { container } = await render({});
+    await act(async () => Promise.resolve());
+    const header = container.querySelector(
+      "[data-cited-by-section-header]",
+    ) as HTMLElement;
+    expect(header.textContent).toContain("Cited by");
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+
+    await act(() => header.click());
+    expect(container.querySelector("[data-cited-by-results]")).toBeNull();
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      container.querySelector("[data-cited-by-collapse-results]")?.classList,
+    ).not.toContain("is-active");
+    expect(
+      container.querySelector("[data-cited-by-section-chevron] svg")?.classList,
+    ).toContain("lucide-chevron-right");
+
+    await act(() => header.click());
+    await act(async () => Promise.resolve());
+    expect(container.querySelector("[data-cited-by-results]")).not.toBeNull();
+    expect(container.querySelector("[data-occurrence]")).not.toBeNull();
+  });
+
+  it("activates the toolbar toggle and the section header from the keyboard", async () => {
+    const { container, store } = await render({});
+    await act(async () => Promise.resolve());
+    const toggle = container.querySelector(
+      "[data-cited-by-collapse-results]",
+    ) as HTMLElement;
+    const header = container.querySelector(
+      "[data-cited-by-section-header]",
+    ) as HTMLElement;
+
+    await act(() => {
+      toggle.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    expect(store.getState().collapsed).toEqual([group.path]);
+
+    await act(() => {
+      header.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+      );
+    });
+    expect(store.getState().sectionCollapsed).toBe(true);
+  });
+
   it("shows note and occurrence counts, folders for duplicate names, and the self label", async () => {
     const duplicateGroups: CitedByGroup[] = [
       { ...group, path: "Folder A/draft.md" },
