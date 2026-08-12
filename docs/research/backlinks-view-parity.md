@@ -127,8 +127,9 @@ safe-area-aware bottom padding, and nav-heading tokens for section headers
 
 Implement these behaviors for Cited By:
 
-- [ ] A native-looking `.nav-header`-style toolbar with icon actions for collapse all, show more
-  context, sort, and search.
+- [ ] A native-looking toolbar with icon actions for collapse all, show more context, sort, and
+  search. The row is plugin-owned: it reproduces the native header with utilities over Obsidian
+  size tokens, so the DOM shape stays private, per the theme-hooks policy.
 - [ ] A sort menu with the six Backlinks modes; file name A–Z is the default, and occurrences
   inside a group keep source-position order in every mode.
 - [ ] Search is hidden by default; opening it focuses the field; closing it clears the active
@@ -136,8 +137,8 @@ Implement these behaviors for Cited By:
 - [ ] Query filtering applies to the Cited By source-file and occurrence data.
 - [ ] The toolbar shows the note count and the citation count, and both follow the active
   filter. Cited By has no section-level collapse. In a narrow sidebar the counts take a row
-  of their own below a centered icon row; where both fit on one line, the icons move to the
-  start of that line.
+  of their own at the end of it, below a centered icon row; where both fit on one line, the
+  icons move to the start and the counts stay at the end.
 - [ ] Results group occurrences by source file; each group shows the file name and occurrence
   count and can collapse independently.
 - [ ] A compact match excerpt contains normal context and a semantic matched-range highlight.

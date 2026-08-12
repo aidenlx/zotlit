@@ -133,12 +133,12 @@ function Toolbar({
 
   return (
     // Below the width where the icon row and both counts fit together, the
-    // counts take a row of their own under a centered icon row, the way the
-    // native header centers its actions when it stands alone.
-    <div className="nav-header zt:@container zt:flex zt:flex-wrap zt:items-center">
-      <div className="nav-buttons-container zt:w-full zt:@3xs:w-auto zt:@3xs:flex-1 zt:@3xs:justify-start">
+    // counts take a row of their own at the end of it, under an icon row that
+    // centers itself the way the native header centers actions that stand
+    // alone.
+    <div className="zt:@container zt:flex zt:flex-wrap zt:items-center zt:p-(--size-4-2)">
+      <div className="zt:flex zt:w-full zt:flex-wrap zt:justify-center zt:gap-(--size-2-1) zt:@3xs:w-auto zt:@3xs:flex-1 zt:@3xs:justify-start">
         <IconButton
-          className="nav-action-button"
           icon="list"
           active={allCollapsed}
           data-cited-by-collapse-results
@@ -148,7 +148,6 @@ function Toolbar({
           }
         />
         <IconButton
-          className="nav-action-button"
           icon="move-vertical"
           active={moreContext}
           data-cited-by-show-more-context
@@ -156,14 +155,12 @@ function Toolbar({
           onClick={actions.toggleMoreContext}
         />
         <IconButton
-          className="nav-action-button"
           icon="sort-asc"
           data-cited-by-sort
           {...tooltipAttrs(m.cited_by_change_sort_order())}
           onClick={actions.showSortMenu}
         />
         <IconButton
-          className="nav-action-button"
           icon="search"
           active={searchVisible}
           data-cited-by-show-search
@@ -172,7 +169,7 @@ function Toolbar({
         />
       </div>
       <span
-        className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
+        className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-end zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
         data-cited-by-stats
       >
         {m.cited_by_note_count({ count: paths.length })}
