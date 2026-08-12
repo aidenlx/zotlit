@@ -1,7 +1,7 @@
 // The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
 
 import { TFile } from "obsidian";
-import type { App, TAbstractFile } from "obsidian";
+import type { App, LinkCache, TAbstractFile } from "obsidian";
 
 import { getCitekeysByLibrary, USER_LIBRARY_ID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -220,11 +220,10 @@ export class CitationIndex extends Service<void> {
    */
   async getDocumentCitationSet(file: TFile): Promise<DocumentCitationSet> {
     await this.ready;
-    const scanned = await this.#coverFile(file);
-    const citekeys = this.#includePandocCitations ? scanned : [];
-    const links = this.#includeWikilinkCitations
-      ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
-      : [];
+    const { citekeys, links } = this.#admitted(
+      file,
+      await this.#coverFile(file),
+    );
     const wikilinks = documentWikilinks(links);
     const citations = groupCitations(
       [...citekeys, ...wikilinks.occurrences].sort(
@@ -270,10 +269,10 @@ export class CitationIndex extends Service<void> {
   }
 
   /**
-   * Observe the literal citations in the vault that resolve to an Item.
-   * Membership is independent of the configured Document Citation Set.
+   * Observe the citations in the vault that resolve to an Item, under the same
+   * source choices as the Document Citation Set.
    * The first snapshot waits for listener registration; later snapshots follow
-   * progressive scans and citation-key resolution changes.
+   * progressive scans, citation-key resolution changes, and source choices.
    */
   observeCitedBy(
     indexedKey: string,
@@ -309,6 +308,7 @@ export class CitationIndex extends Service<void> {
     listeners.defer(this.on("resolution-changed", onChange));
     listeners.defer(this.on("cited-by-invalidated", onChange));
     listeners.defer(this.on("backfilled", onChange));
+    listeners.defer(this.on("membership-changed", onChange));
 
     void this.ready.then(() => {
       if (disposed || this.#stopped) return;
@@ -692,6 +692,27 @@ export class CitationIndex extends Service<void> {
     });
   }
 
+  /**
+   * The scanned occurrences and cache links the source choices admit, the one
+   * gate both membership surfaces pass through: the active document's
+   * {@link getDocumentCitationSet} and the vault-wide reverse observation.
+   *
+   * @param scanned the file's literal-citekey scan, already acquired: the
+   * document surface awaits a scan on demand, the reverse one takes what the
+   * backfill has covered so far.
+   */
+  #admitted(
+    file: TFile,
+    scanned: readonly CitationOccurrence[],
+  ): { citekeys: readonly CitationOccurrence[]; links: readonly LinkCache[] } {
+    return {
+      citekeys: this.#includePandocCitations ? scanned : [],
+      links: this.#includeWikilinkCitations
+        ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
+        : [],
+    };
+  }
+
   #citedBy(
     indexedKey: string,
     includeNote: (file: TFile) => boolean,
@@ -702,13 +723,15 @@ export class CitationIndex extends Service<void> {
       .filter(includeNote)
       .sort((a, b) => comparePaths(a.path, b.path));
     for (const file of files) {
-      const literals = (this.#covered(file) ?? []).filter(
+      const { citekeys, links } = this.#admitted(
+        file,
+        this.#covered(file) ?? [],
+      );
+      const literals = citekeys.filter(
         (occurrence) =>
           this.#snapshot.byCitekey(occurrence.raw)?.indexedKey === indexedKey,
       );
-      const wikilinks = documentWikilinks(
-        this.#app.metadataCache.getFileCache(file)?.links ?? [],
-      ).occurrences.filter(
+      const wikilinks = documentWikilinks(links).occurrences.filter(
         (occurrence) =>
           resolveIndexedKey(occurrence.raw, file.path, this.#app) ===
           indexedKey,

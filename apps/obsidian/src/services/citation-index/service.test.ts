@@ -709,9 +709,10 @@ describe("CitationIndex resolution", () => {
   });
 
   it("orders occurrences with the same start position deterministically", async () => {
-    const { draft, index, metadataCache, workspace } = await makeHarness({
-      "draft.md": "@doe2024",
-    });
+    const { draft, index, metadataCache, workspace } = await makeHarness(
+      { "draft.md": "@doe2024" },
+      { settings: { "citation.wikilink-citations": true } },
+    );
     metadataCache.fileCache.set(draft.path, {
       links: [link("Doe 2024", 0)],
     } as CachedMetadata);
@@ -770,8 +771,8 @@ describe("CitationIndex resolution", () => {
     expect(snapshots).toEqual([]);
   });
 
-  it("observes literal membership while Pandoc citation membership is off", async () => {
-    const { index, settings, workspace } = await makeHarness(
+  it("omits literal occurrences while Pandoc citation membership is off", async () => {
+    const { index, workspace } = await makeHarness(
       { "draft.md": "@doe2024." },
       { settings: { "citation.pandoc-citations": false } },
     );
@@ -781,13 +782,50 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(snapshots).toMatchObject([
-      { groups: [] },
-      { groups: [{ path: "draft.md" }] },
-      { coverage: "complete" },
-    ]);
+    expect(snapshots.at(-1)).toMatchObject({
+      groups: [],
+      coverage: "complete",
+    });
+  });
+
+  it("omits wikilink occurrences while Wikilink citation membership is off", async () => {
+    const body = "See [[Doe 2024]].";
+    const { index, metadataCache, workspace } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", body.indexOf("[["))],
+    } as CachedMetadata);
+    const snapshots: CitedBySnapshot[] = [];
+    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(snapshots.at(-1)).toMatchObject({
+      groups: [],
+      coverage: "complete",
+    });
+  });
+
+  it("republishes the reverse observation after a source choice", async () => {
+    const { index, settings, workspace } = await makeHarness(
+      { "draft.md": "@doe2024." },
+      { settings: { "citation.pandoc-citations": false } },
+    );
+    const snapshots: CitedBySnapshot[] = [];
+    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+    workspace.layoutReady();
+    await index.whenIndexed();
+    expect(snapshots.at(-1)).toMatchObject({ groups: [] });
+
     settings.update({ "citation.pandoc-citations": true });
-    expect(snapshots).toHaveLength(3);
+    await yieldToMain();
+
+    expect(snapshots.at(-1)).toMatchObject({
+      groups: [{ path: "draft.md" }],
+    });
   });
 
   it("omits a restored scan that no longer describes its file", async () => {
@@ -848,7 +886,7 @@ describe("CitationIndex resolution", () => {
     const body = "See [[Doe 2024]].";
     const { draft, index, metadataCache, workspace } = await makeHarness(
       { "draft.md": body },
-      { db },
+      { db, settings: { "citation.wikilink-citations": true } },
     );
     metadataCache.fileCache.set("draft.md", {
       links: [link("Doe 2024", body.indexOf("[["))],
@@ -905,7 +943,10 @@ describe("CitationIndex resolution", () => {
       "[[missing]]",
     ].join(" ");
     const { draft, index, metadataCache, settings, workspace } =
-      await makeHarness({ "draft.md": body, "ordinary.md": "" });
+      await makeHarness(
+        { "draft.md": body, "ordinary.md": "" },
+        { settings: { "citation.wikilink-citations": true } },
+      );
     metadataCache.fileCache.set("draft.md", {
       links: [
         link("Doe 2024", body.indexOf("[[Doe 2024]]")),
@@ -950,7 +991,7 @@ describe("CitationIndex resolution", () => {
       "citation.wikilink-citations": false,
     });
     await yieldToMain();
-    expect(snapshots.at(-1)?.groups[0]?.occurrences).toHaveLength(3);
+    expect(snapshots.at(-1)?.groups).toEqual([]);
   });
 
   it("observes a Literature Note that cites its own Item", async () => {
@@ -989,6 +1030,7 @@ describe("CitationIndex resolution", () => {
               citekey: "doe2024",
             },
           ],
+          settings: { "citation.wikilink-citations": true },
         },
       );
     metadataCache.fileCache.set(draft.path, {
@@ -1062,9 +1104,10 @@ describe("CitationIndex resolution", () => {
 
   it("refreshes wikilink-only metadata and link-resolution changes", async () => {
     const body = "See [[Doe 2024]].";
-    const { draft, index, metadataCache, workspace } = await makeHarness({
-      "draft.md": body,
-    });
+    const { draft, index, metadataCache, workspace } = await makeHarness(
+      { "draft.md": body },
+      { settings: { "citation.wikilink-citations": true } },
+    );
     const snapshots: CitedBySnapshot[] = [];
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
     workspace.layoutReady();
@@ -1089,6 +1132,7 @@ describe("CitationIndex resolution", () => {
     const body = "See [[Doe 2024]].";
     const { draft, index, metadataCache, vault, workspace } = await makeHarness(
       { "draft.md": body },
+      { settings: { "citation.wikilink-citations": true } },
     );
     metadataCache.fileCache.set(draft.path, {
       links: [link("Doe 2024", body.indexOf("[["))],

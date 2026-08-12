@@ -132,7 +132,7 @@ The active-document view of each distinct Literature Note Citation and its occur
 _Avoid_: bibliography sidebar, reference list pane
 
 **Cited By Sidebar** _(Obsidian)_:
-The active-Literature-Note view of every Citation Occurrence in the vault that resolves to the same Item, grouped by citing note. It reports Citation Index facts independently of the Document Citation Set's source choices.
+The active-Literature-Note view of every Citation Occurrence in the vault that resolves to the same Item, grouped by citing note. Each citing note contributes the occurrences its own Document Citation Set holds, so the Pandoc Citations and Wikilink Citations choices decide membership here as they do on every other citation-aware surface, and a source change refreshes the view immediately.
 _Avoid_: backlinks (Obsidian's view omits literal Pandoc citations), reverse references, incoming citations
 
 **Citation Context** _(Obsidian)_:
@@ -226,7 +226,7 @@ One appearance of a Citation in one file — its syntax kind (literal citekey or
 _Avoid_: citation instance, match, hit
 
 **Document Citation Set**:
-The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, and malformed Citation Fragments stay outside the set. The References Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
+The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, and malformed Citation Fragments stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
 _Avoid_: citation universe, rendered citations (presentation, not membership)
 
 **Citation Cluster**:
