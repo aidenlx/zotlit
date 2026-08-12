@@ -23,11 +23,15 @@ export interface SourceRange {
 
 export interface ReadyOccurrenceContext {
   status: "ready";
-  /** The compact Citation Context: every source line the occurrence spans. */
+  /** The compact Citation Context: the match ± up to {@link COMPACT_CAP} characters. */
   range: SourceRange;
+  /** Whether the {@link COMPACT_CAP} cap (not a newline) cut the text on each side. */
+  rangeClippedStart: boolean;
+  rangeClippedEnd: boolean;
   /**
    * The Citation Context the Show more context mode shows: the enclosing
-   * logical block, or {@link range} where the metadata cache resolves none.
+   * logical block, or the full source line where the metadata cache resolves
+   * none.
    */
   block: SourceRange;
   /** The occurrence itself, always inside both ranges. */
@@ -204,9 +208,12 @@ export function citationContext(
   const { start, end } = occurrence.position;
   const token = { start: start.offset, end: end.offset };
   const lineRange = enclosingLine(source, token);
+  const compact = compactExcerpt(source, token);
   return {
     status: "ready",
-    range: compactExcerpt(source, token),
+    range: compact.range,
+    rangeClippedStart: compact.clippedStart,
+    rangeClippedEnd: compact.clippedEnd,
     block: enclosingBlock(cache, token) ?? lineRange,
     token,
   };
@@ -224,14 +231,17 @@ function enclosingLine(source: string, token: SourceRange): SourceRange {
 
 /**
  * The match plus up to {@link COMPACT_CAP} characters on each side, stopping
- * at a newline. This gives the compact mode a narrow window that the
- * extra-context toggle can visibly widen.
+ * at a newline. The clipping flags tell whether the cap (not a newline) cut
+ * the text — those drive the ellipsis in compact mode.
  */
-function compactExcerpt(source: string, token: SourceRange): SourceRange {
+function compactExcerpt(
+  source: string,
+  token: SourceRange,
+): { range: SourceRange; clippedStart: boolean; clippedEnd: boolean } {
   let start = token.start - 1;
   let back = 0;
   while (back < COMPACT_CAP && start >= 0) {
-    if (source.charCodeAt(start) === 10) break;
+    if (source.charCodeAt(start) === 10) break; // \n
     start -= 1;
     back += 1;
   }
@@ -240,11 +250,15 @@ function compactExcerpt(source: string, token: SourceRange): SourceRange {
   let end = token.end;
   let fwd = 0;
   while (fwd < COMPACT_CAP && end < source.length) {
-    if (source.charCodeAt(end) === 10) break;
+    if (source.charCodeAt(end) === 10) break; // \n
     end += 1;
     fwd += 1;
   }
-  return { start, end };
+  return {
+    range: { start, end },
+    clippedStart: back === COMPACT_CAP,
+    clippedEnd: fwd === COMPACT_CAP,
+  };
 }
 
 /**
@@ -306,9 +320,12 @@ export interface ContextParts {
   before: string;
   token: string;
   after: string;
-  /** Source text the excerpt leaves out; such an end shows an ellipsis. */
-  clippedStart: boolean;
-  clippedEnd: boolean;
+  /** The compact-mode cap cut the text on this side (shows an ellipsis). */
+  ellipsisBefore: boolean;
+  ellipsisAfter: boolean;
+  /** Source text the excerpt leaves out on this side (shows a chevron). */
+  canExpandBefore: boolean;
+  canExpandAfter: boolean;
 }
 
 export interface ExcerptOptions {
@@ -332,7 +349,13 @@ export function excerptRange(
   };
 }
 
-/** The excerpt one Citation Context renders, split around its occurrence. */
+/**
+ * The excerpt one Citation Context renders, split around its occurrence.
+ *
+ * Ellipsis appears only in compact mode without a manual expansion, and only
+ * when the {@link COMPACT_CAP} cap — not a newline — cut the text. Chevrons
+ * appear whenever source text the excerpt omits sits on that side.
+ */
 export function contextParts(
   source: string,
   context: ReadyOccurrenceContext,
@@ -340,12 +363,15 @@ export function contextParts(
 ): ContextParts {
   const { token } = context;
   const range = excerptRange(context, options);
+  const showEllipsis = !options.moreContext && !options.expansion;
   return {
     before: source.slice(range.start, token.start),
     token: source.slice(token.start, token.end),
     after: source.slice(token.end, range.end),
-    clippedStart: hasText(source, 0, range.start),
-    clippedEnd: hasText(source, range.end, source.length),
+    ellipsisBefore: showEllipsis && context.rangeClippedStart,
+    ellipsisAfter: showEllipsis && context.rangeClippedEnd,
+    canExpandBefore: hasText(source, 0, range.start),
+    canExpandAfter: hasText(source, range.end, source.length),
   };
 }
 

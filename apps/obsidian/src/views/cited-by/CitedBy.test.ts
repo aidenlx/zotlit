@@ -891,16 +891,16 @@ describe("CitedBy", () => {
     const toggle = container.querySelector(
       "[data-cited-by-show-more-context]",
     ) as HTMLElement;
-    expect(card()?.textContent).toBe("…A reason cites @doe2024 here.…");
+    expect(card()?.textContent).toBe("A reason cites @doe2024 here.");
 
     await act(() => toggle.click());
     expect(card()?.textContent).toBe(
-      "…A reason cites @doe2024 here.\nSecond line of the block.",
+      "A reason cites @doe2024 here.\nSecond line of the block.",
     );
     expect(card()?.querySelector("mark")?.textContent).toBe("@doe2024");
 
     await act(() => toggle.click());
-    expect(card()?.textContent).toBe("…A reason cites @doe2024 here.…");
+    expect(card()?.textContent).toBe("A reason cites @doe2024 here.");
   });
 
   it("expands an occurrence inside a list to its item and descendants", async () => {
@@ -912,7 +912,7 @@ describe("CitedBy", () => {
     });
     await act(async () => Promise.resolve());
     const card = () => container.querySelector("[data-occurrence]");
-    expect(card()?.textContent).toBe("- Alpha cites @doe2024 here.…");
+    expect(card()?.textContent).toBe("- Alpha cites @doe2024 here.");
 
     await act(() =>
       (
@@ -923,7 +923,7 @@ describe("CitedBy", () => {
     );
 
     expect(card()?.textContent).toBe(
-      "- Alpha cites @doe2024 here.\n  - Nested detail.…",
+      "- Alpha cites @doe2024 here.\n  - Nested detail.",
     );
   });
 
@@ -935,7 +935,7 @@ describe("CitedBy", () => {
     });
     await act(async () => Promise.resolve());
     const card = () => container.querySelector("[data-occurrence]");
-    expect(card()?.textContent).toBe("# Heading cites @doe2024 here…");
+    expect(card()?.textContent).toBe("# Heading cites @doe2024 here");
 
     await act(() =>
       (
@@ -945,7 +945,7 @@ describe("CitedBy", () => {
       ).click(),
     );
 
-    expect(card()?.textContent).toBe("# Heading cites @doe2024 here…");
+    expect(card()?.textContent).toBe("# Heading cites @doe2024 here");
   });
 
   it("caps the compact excerpt and reveals the full paragraph on toggle", async () => {
@@ -969,7 +969,7 @@ describe("CitedBy", () => {
         ) as HTMLElement
       ).click(),
     );
-    expect(card()?.textContent).toBe(`…${longParagraph}…`);
+    expect(card()?.textContent).toBe(longParagraph);
 
     // Toggle back returns to the capped compact excerpt.
     await act(() =>
@@ -1001,7 +1001,7 @@ describe("CitedBy", () => {
     });
     await act(async () => Promise.resolve());
     const card = () => container.querySelector("[data-occurrence]");
-    expect(card()?.textContent).toBe("…- Alpha cites @doe2024 here.…");
+    expect(card()?.textContent).toBe("- Alpha cites @doe2024 here.");
     const chevron = container.querySelector(
       '[data-cited-by-expand="after"]',
     ) as HTMLElement;
@@ -1011,17 +1011,17 @@ describe("CitedBy", () => {
 
     await expandContext(container, "after");
     expect(card()?.textContent).toBe(
-      "…- Alpha cites @doe2024 here.\n  - Nested detail.…",
+      "- Alpha cites @doe2024 here.\n  - Nested detail.",
     );
 
     await expandContext(container, "after");
     expect(card()?.textContent).toBe(
-      "…- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.…",
+      "- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.",
     );
 
     await expandContext(container, "after");
     expect(card()?.textContent).toBe(
-      "…- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n\nClosing paragraph.",
+      "- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n\nClosing paragraph.",
     );
     expect(
       container.querySelector('[data-cited-by-expand="after"]'),
@@ -1029,7 +1029,7 @@ describe("CitedBy", () => {
 
     await expandContext(container, "before");
     expect(card()?.textContent).toBe(
-      "…Intro paragraph.\n\n- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n\nClosing paragraph.",
+      "Intro paragraph.\n\n- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n\nClosing paragraph.",
     );
 
     await expandContext(container, "before");
@@ -1044,7 +1044,7 @@ describe("CitedBy", () => {
     });
     await act(async () => Promise.resolve());
     const card = () => container.querySelector("[data-occurrence]");
-    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.…");
+    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.");
     expect(
       container.querySelector('[data-cited-by-expand="before"]'),
     ).toBeNull();
@@ -1173,7 +1173,7 @@ describe("CitedBy", () => {
     await act(() => actions.expandAll());
     const cards = container.querySelectorAll("[data-occurrence]");
     expect(cards).toHaveLength(1);
-    expect(cards[0]?.textContent).toBe("…Beta cites @doe2024 there.");
+    expect(cards[0]?.textContent).toBe("Beta cites @doe2024 there.");
     expect(read).toHaveBeenCalledOnce();
   });
 
@@ -1368,10 +1368,10 @@ describe("CitedBy", () => {
         (card) => card.textContent,
       );
     const inSourceOrder = [
-      "Alpha cites @doe2024 here.…",
-      "…Beta cites @doe2024 there.",
-      "Alpha cites @doe2024 here.…",
-      "…Beta cites @doe2024 there.",
+      "Alpha cites @doe2024 here.",
+      "Beta cites @doe2024 there.",
+      "Alpha cites @doe2024 here.",
+      "Beta cites @doe2024 there.",
     ];
     expect(excerpts()).toEqual(inSourceOrder);
 

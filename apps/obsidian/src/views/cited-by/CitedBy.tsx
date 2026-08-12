@@ -425,30 +425,26 @@ function OccurrenceCard({
     >
       {excerpt ? (
         <>
-          {excerpt.clippedStart && (
-            <>
-              <ExpandContext
-                direction="before"
-                group={group}
-                occurrence={occurrence}
-              />
-              {ELLIPSIS}
-            </>
+          {excerpt.canExpandBefore && (
+            <ExpandContext
+              direction="before"
+              group={group}
+              occurrence={occurrence}
+            />
           )}
+          {excerpt.ellipsisBefore && ELLIPSIS}
           {excerpt.before}
           <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
             {excerpt.token}
           </mark>
           {excerpt.after}
-          {excerpt.clippedEnd && (
-            <>
-              {ELLIPSIS}
-              <ExpandContext
-                direction="after"
-                group={group}
-                occurrence={occurrence}
-              />
-            </>
+          {excerpt.ellipsisAfter && ELLIPSIS}
+          {excerpt.canExpandAfter && (
+            <ExpandContext
+              direction="after"
+              group={group}
+              occurrence={occurrence}
+            />
           )}
         </>
       ) : (

@@ -272,7 +272,7 @@ describe("CitedByView", () => {
     await act(() => publish?.(cited));
     await act(settle);
     const card = () => view!.contentEl.querySelector("[data-occurrence]");
-    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.…");
+    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.");
 
     await act(() =>
       (
@@ -290,7 +290,7 @@ describe("CitedByView", () => {
     await act(() => publish?.(cited));
     await act(settle);
 
-    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.…");
+    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.");
   });
 
   it("carries its controls into the workspace layout", async () => {
