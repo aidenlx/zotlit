@@ -136,8 +136,8 @@ function Toolbar({
     // counts take a row of their own at the end of it, under an icon row that
     // centers itself the way the native header centers actions that stand
     // alone.
-    <div className="zt:@container zt:flex zt:flex-wrap zt:items-center zt:p-(--size-4-2)">
-      <div className="zt:flex zt:w-full zt:flex-wrap zt:justify-center zt:gap-(--size-2-1) zt:@3xs:w-auto zt:@3xs:flex-1 zt:@3xs:justify-start">
+    <div className="zt:@container zt:flex zt:flex-wrap zt:items-center zt:p-2">
+      <div className="zt:flex zt:w-full zt:flex-wrap zt:justify-center zt:gap-0.5 zt:@3xs:w-auto zt:@3xs:flex-1 zt:@3xs:justify-start">
         <IconButton
           icon="list"
           active={allCollapsed}

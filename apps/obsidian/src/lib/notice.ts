@@ -86,10 +86,6 @@ export class BaseNotice extends Notice {
     super(message, duration);
     this.containerEl.addClasses(["zt-notice", "zt:max-w-[300px]"]);
     const messageEl = this.containerEl.querySelector(".notice-message");
-    messageEl?.addClasses([
-      "zt:flex",
-      "zt:flex-col",
-      "zt:gap-[var(--size-2-3)]",
-    ]);
+    messageEl?.addClasses(["zt:flex", "zt:flex-col", "zt:gap-1.5"]);
   }
 }
