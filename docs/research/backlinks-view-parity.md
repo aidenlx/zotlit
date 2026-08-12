@@ -113,9 +113,9 @@ The Backlinks-specific control set is:
 | --- | --- | --- |
 | Collapse results | Collapses or expands every source-file group. | Include. |
 | Show more context | Switches all match excerpts between compact and logical context. | Include. |
-| Sort | A–Z/Z–A, newest/oldest modified, newest/oldest created. | Exclude. Cited By keeps the stable vault-path order required by #689. |
+| Sort | A–Z/Z–A, newest/oldest modified, newest/oldest created. | Include. All six modes, default file name A–Z. The Citation Index keeps its vault-path order as the canonical base; the sidebar re-sorts for presentation. |
 | Search filter | Default-hidden query input; clears its query when closed. | Include. |
-| Linked section | Header, count, independent collapse. | Include as the Cited By result section. |
+| Linked section | Header, count, independent collapse. | Include the counts only, in the toolbar. Cited By holds one result section, so a section-level collapse duplicates the Collapse results action. |
 | Unlinked mentions | Full-text basename/alias search plus a **Link** rewrite action. | Exclude. It is specific to ordinary Markdown links and writes files. |
 
 Backlinks starts the linked section expanded and its unlinked section collapsed
@@ -128,11 +128,16 @@ safe-area-aware bottom padding, and nav-heading tokens for section headers
 Implement these behaviors for Cited By:
 
 - [ ] A native-looking `.nav-header`-style toolbar with icon actions for collapse all, show more
-  context, and search.
+  context, sort, and search.
+- [ ] A sort menu with the six Backlinks modes; file name A–Z is the default, and occurrences
+  inside a group keep source-position order in every mode.
 - [ ] Search is hidden by default; opening it focuses the field; closing it clears the active
   query and restores the unfiltered list.
 - [ ] Query filtering applies to the Cited By source-file and occurrence data.
-- [ ] A section header shows the Cited By count and independently collapses its contents.
+- [ ] The toolbar shows the note count and the citation count, and both follow the active
+  filter. Cited By has no section-level collapse. In a narrow sidebar the counts take a row
+  of their own below a centered icon row; where both fit on one line, the icons move to the
+  start of that line.
 - [ ] Results group occurrences by source file; each group shows the file name and occurrence
   count and can collapse independently.
 - [ ] A compact match excerpt contains normal context and a semantic matched-range highlight.
