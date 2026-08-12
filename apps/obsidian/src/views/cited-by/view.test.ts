@@ -189,6 +189,97 @@ describe("CitedByView", () => {
       "Open a literature note to see citations.",
     );
   });
+
+  it("drops manual excerpt expansions when the active note changes", async () => {
+    const note = makeFile("Literature/Item.md");
+    const plain = makeFile("Notes/Plain.md");
+    const citing = makeFile("Notes/draft.md");
+    const source = "Alpha cites @doe2024 here.\nBeta cites @doe2024 there.\n";
+    let activeFile: TFile = note;
+    let onActiveLeafChange: (() => void) | undefined;
+    const caches = new Map<TFile, CachedMetadata>([
+      [note, { frontmatter: { "zotero-key": "ABCD2345" } } as CachedMetadata],
+      [plain, {} as CachedMetadata],
+      [citing, {} as CachedMetadata],
+    ]);
+    const app = {
+      workspace: {
+        getActiveFile: () => activeFile,
+        on: (event: string, callback: () => void) => {
+          if (event === "active-leaf-change") onActiveLeafChange = callback;
+          return {} as EventRef;
+        },
+      },
+      metadataCache: {
+        getFileCache: (target: TFile) => caches.get(target) ?? null,
+        on: () => ({}) as EventRef,
+      },
+      vault: {
+        getAbstractFileByPath: (path: string) =>
+          path === citing.path ? citing : null,
+        cachedRead: () => Promise.resolve(source),
+        on: () => ({}) as EventRef,
+      },
+    } as unknown as App;
+    let publish: ((snapshot: CitedBySnapshot) => void) | undefined;
+    const observeCitedBy = vi.fn(
+      (_indexedKey: string, callback: (snapshot: CitedBySnapshot) => void) => {
+        publish = callback;
+        return () => {};
+      },
+    );
+    view = new TestCitedByView({} as WorkspaceLeaf, {
+      app,
+      citationIndex: { observeCitedBy },
+    });
+    document.body.append(view.contentEl);
+    await act(() => view!.open());
+
+    const cited: CitedBySnapshot = {
+      groups: [
+        {
+          path: citing.path,
+          occurrences: [
+            {
+              kind: "citekey",
+              raw: "doe2024",
+              position: {
+                start: { line: 0, col: 12, offset: 12 },
+                end: { line: 0, col: 20, offset: 20 },
+              },
+            },
+          ],
+        },
+      ],
+      coverage: "complete",
+      resolution: "ready",
+    };
+    const settle = async () => {
+      for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+    };
+    await act(() => publish?.(cited));
+    await act(settle);
+    const card = () => view!.contentEl.querySelector("[data-occurrence]");
+    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.…");
+
+    await act(() =>
+      (
+        view!.contentEl.querySelector(
+          '[data-cited-by-expand="after"]',
+        ) as HTMLElement
+      ).click(),
+    );
+    expect(card()?.textContent).toBe(source.trimEnd());
+
+    activeFile = plain;
+    await act(() => onActiveLeafChange?.());
+    activeFile = note;
+    await act(() => onActiveLeafChange?.());
+    await act(() => publish?.(cited));
+    await act(settle);
+
+    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.…");
+  });
 });
 
 function makeFile(path: string): TFile {

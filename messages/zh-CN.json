@@ -303,6 +303,8 @@
   "cited_by_clear_search": "清除搜索",
   "cited_by_show_search_filter": "显示搜索筛选器",
   "cited_by_show_more_context": "显示更多上下文",
+  "cited_by_show_context_above": "显示上方更多上下文",
+  "cited_by_show_context_below": "显示下方更多上下文",
   "cited_by_collapse_results": "折叠结果",
   "cited_by_change_sort_order": "更改排序顺序",
   "cited_by_sort_alphabetical": "文件名（A 到 Z）",

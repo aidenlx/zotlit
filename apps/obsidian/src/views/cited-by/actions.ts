@@ -15,13 +15,19 @@ import { currentOccurrence, openCitedByOccurrence } from "./navigation";
 import {
   citationContext,
   CITED_BY_SORT_GROUPS,
+  excerptKey,
+  excerptKeyIn,
+  excerptRange,
+  expandExcerptRange,
   occurrenceID,
   sortCitedByGroups,
+  sourceOutline,
 } from "./store";
 import type {
   CitedByPreview,
   CitedBySortMode,
   CitedByStore,
+  ExpandDirection,
   OccurrenceContext,
 } from "./store";
 
@@ -43,6 +49,12 @@ export interface CitedByActions {
   toggleSearch: () => void;
   /** Switch every excerpt between its compact line and its enclosing block. */
   toggleMoreContext: () => void;
+  /** Reveal the logical chunk next to one excerpt on one of its sides. */
+  expandExcerpt: (options: {
+    group: CitedByGroup;
+    occurrence: CitationOccurrence;
+    direction: ExpandDirection;
+  }) => void;
   /** Offer the six sort modes, with the one in force marked. */
   showSortMenu: (event: MouseEvent) => void;
   /** Order source groups by one mode, reading vault metadata now. */
@@ -131,6 +143,7 @@ export function createCitedByActions(options: {
       status: "ready",
       mtime,
       source,
+      outline: sourceOutline(app.metadataCache.getFileCache(file)),
       contexts: contextsFrom({
         app,
         file,
@@ -169,6 +182,24 @@ export function createCitedByActions(options: {
     toggleMoreContext() {
       store.setState(({ moreContext }) => ({ moreContext: !moreContext }));
     },
+    expandExcerpt({ group, occurrence, direction }) {
+      const { expansions, moreContext, previews } = store.getState();
+      const preview = previews[group.path];
+      if (preview?.status !== "ready") return;
+      const context = preview.contexts[occurrenceID(occurrence)];
+      if (context?.status !== "ready") return;
+      const key = excerptKey(group.path, occurrence);
+      const range = expandExcerptRange({
+        source: preview.source,
+        outline: preview.outline,
+        range: excerptRange(context, {
+          moreContext,
+          expansion: expansions[key],
+        }),
+        direction,
+      });
+      store.setState({ expansions: { ...expansions, [key]: range } });
+    },
     showSortMenu(event) {
       openSortMenu(event, {
         current: store.getState().sort,
@@ -189,11 +220,20 @@ export function createCitedByActions(options: {
     },
     invalidatePreview(path) {
       generations.set(path, (generations.get(path) ?? 0) + 1);
-      store.setState(({ previews }) => {
-        if (!(path in previews)) return {};
+      store.setState(({ expansions, previews }) => {
+        // Every expansion holds offsets into the source that just changed, so
+        // this note's excerpts start from their mode range again.
+        const kept = Object.entries(expansions).filter(
+          ([key]) => !excerptKeyIn(key, path),
+        );
+        const stale = kept.length !== Object.keys(expansions).length;
+        if (!(path in previews) && !stale) return {};
         const next = { ...previews };
         delete next[path];
-        return { previews: next };
+        return {
+          previews: next,
+          ...(stale && { expansions: Object.fromEntries(kept) }),
+        };
       });
       const group = store
         .getState()

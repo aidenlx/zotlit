@@ -117,6 +117,7 @@ export class CitedByView extends ItemView {
       activePath: file?.path ?? null,
       snapshot: EMPTY_CITED_BY_SNAPSHOT,
       collapsed: [],
+      expansions: {},
     });
     if (!this.#indexedKey) return;
 

@@ -1,5 +1,10 @@
 // Per-instance state for one Cited By Sidebar.
-import type { CachedMetadata, Pos } from "obsidian";
+import type {
+  CachedMetadata,
+  ListItemCache,
+  Pos,
+  SectionCache,
+} from "obsidian";
 import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
@@ -33,6 +38,12 @@ export type OccurrenceContext =
   | { status: "unavailable" }
   | ReadyOccurrenceContext;
 
+/** The logical Markdown structure one citing note's excerpts expand through. */
+export interface SourceOutline {
+  listItems: readonly ListItemCache[];
+  sections: readonly SectionCache[];
+}
+
 export type CitedByPreview =
   | { status: "loading"; mtime: number }
   | { status: "unavailable"; mtime: number }
@@ -40,6 +51,8 @@ export type CitedByPreview =
       status: "ready";
       mtime: number;
       source: string;
+      /** Read together with {@link source}, so both describe one revision. */
+      outline: SourceOutline;
       contexts: Readonly<Record<string, OccurrenceContext>>;
     };
 
@@ -69,6 +82,12 @@ export interface CitedByState {
   collapsed: readonly string[];
   sectionCollapsed: boolean;
   previews: Readonly<Record<string, CitedByPreview>>;
+  /**
+   * The manual chevron expansions in force, keyed by {@link excerptKey}. Held
+   * in memory only: they leave with the active Literature Note and never reach
+   * the workspace layout.
+   */
+  expansions: Readonly<Record<string, SourceRange>>;
 }
 
 export const EMPTY_CITED_BY_SNAPSHOT: CitedBySnapshot = {
@@ -91,6 +110,7 @@ export function createCitedByStore() {
     collapsed: [],
     sectionCollapsed: false,
     previews: {},
+    expansions: {},
   }));
 }
 
@@ -202,17 +222,10 @@ function enclosingBlock(
   const index = items.findIndex(({ position }) => encloses(position, token));
   const item = items[index];
   if (item) {
-    const lines = new Set([item.position.start.line]);
-    let last = item;
-    for (const candidate of items.slice(index + 1)) {
-      if (!lines.has(candidate.parent)) break;
-      lines.add(candidate.position.start.line);
-      last = candidate;
-    }
     return {
       // From the start of the item's line, so its marker and indent stay.
-      start: item.position.start.offset - item.position.start.col,
-      end: last.position.end.offset,
+      start: lineStartOf(item.position),
+      end: listItemEnd(items, index),
     };
   }
   const section = cache?.sections?.find(
@@ -231,6 +244,25 @@ function encloses(position: Pos, token: SourceRange): boolean {
   );
 }
 
+/** Where one list item ends together with every descendant it owns. */
+function listItemEnd(items: readonly ListItemCache[], index: number): number {
+  const item = items[index];
+  if (!item) return 0;
+  const lines = new Set([item.position.start.line]);
+  let last = item;
+  for (const candidate of items.slice(index + 1)) {
+    if (!lines.has(candidate.parent)) break;
+    lines.add(candidate.position.start.line);
+    last = candidate;
+  }
+  return last.position.end.offset;
+}
+
+/** Where the line that carries one cache entry begins. */
+function lineStartOf(position: Pos): number {
+  return position.start.offset - position.start.col;
+}
+
 export interface ContextParts {
   before: string;
   token: string;
@@ -240,18 +272,35 @@ export interface ContextParts {
   clippedEnd: boolean;
 }
 
-/**
- * The excerpt one Citation Context renders, split around its occurrence.
- *
- * @param moreContext show the enclosing block instead of the compact line.
- */
+export interface ExcerptOptions {
+  /** Show the enclosing block instead of the compact line. */
+  moreContext?: boolean;
+  /** The manual chevron expansion in force, which only ever widens. */
+  expansion?: SourceRange | undefined;
+}
+
+/** The source range one excerpt shows under the current mode and expansion. */
+export function excerptRange(
+  context: ReadyOccurrenceContext,
+  options: ExcerptOptions = {},
+): SourceRange {
+  const mode = options.moreContext ? context.block : context.range;
+  const { expansion } = options;
+  if (!expansion) return mode;
+  return {
+    start: Math.min(mode.start, expansion.start),
+    end: Math.max(mode.end, expansion.end),
+  };
+}
+
+/** The excerpt one Citation Context renders, split around its occurrence. */
 export function contextParts(
   source: string,
   context: ReadyOccurrenceContext,
-  moreContext = false,
+  options: ExcerptOptions = {},
 ): ContextParts {
   const { token } = context;
-  const range = moreContext ? context.block : context.range;
+  const range = excerptRange(context, options);
   return {
     before: source.slice(range.start, token.start),
     token: source.slice(token.start, token.end),
@@ -269,6 +318,105 @@ function hasText(source: string, from: number, to: number): boolean {
     if (!WHITESPACE.test(source.charAt(at))) return true;
   }
   return false;
+}
+
+/** The side of an excerpt one chevron reveals more source text on. */
+export type ExpandDirection = "before" | "after";
+
+/** The logical Markdown structure of one citing note, as the cache holds it. */
+export function sourceOutline(cache: CachedMetadata | null): SourceOutline {
+  return { listItems: cache?.listItems ?? [], sections: cache?.sections ?? [] };
+}
+
+/**
+ * The excerpt range one chevron activation reveals: the adjacent logical
+ * Markdown chunk — the list item with its descendants first, then a Markdown
+ * section, then the adjacent line. Whitespace-only lines carry no chunk of
+ * their own, so one activation crosses them and lands on the next chunk. A
+ * range that already reaches its end of the file comes back unchanged.
+ */
+export function expandExcerptRange(options: {
+  source: string;
+  outline: SourceOutline;
+  range: SourceRange;
+  direction: ExpandDirection;
+}): SourceRange {
+  const { source, outline, range, direction } = options;
+  if (direction === "before") {
+    let at = range.start;
+    while (at > 0) {
+      at -= 1;
+      const chunkStart = chunkStartAt(source, outline, at);
+      if (chunkStart < at) {
+        at = chunkStart;
+        break;
+      }
+    }
+    return { start: at, end: range.end };
+  }
+  let at = range.end;
+  while (at < source.length) {
+    at += 1;
+    const chunkEnd = chunkEndAt(source, outline, at);
+    if (chunkEnd > at) {
+      at = chunkEnd;
+      break;
+    }
+  }
+  return { start: range.start, end: at };
+}
+
+/** Where the logical chunk that covers one offset begins. */
+function chunkStartAt(
+  source: string,
+  outline: SourceOutline,
+  at: number,
+): number {
+  const item = outline.listItems[coveringIndex(outline.listItems, at)];
+  if (item) return lineStartOf(item.position);
+  const section = outline.sections[coveringIndex(outline.sections, at)];
+  if (section && section.type !== "list") return lineStartOf(section.position);
+  return source.lastIndexOf("\n", at - 1) + 1;
+}
+
+/** Where the logical chunk that covers one offset ends. */
+function chunkEndAt(
+  source: string,
+  outline: SourceOutline,
+  at: number,
+): number {
+  const index = coveringIndex(outline.listItems, at);
+  if (index !== -1) return listItemEnd(outline.listItems, index);
+  const section = outline.sections[coveringIndex(outline.sections, at)];
+  if (section && section.type !== "list") return section.position.end.offset;
+  const lineBreak = source.indexOf("\n", at);
+  return lineBreak === -1 ? source.length : lineBreak;
+}
+
+/**
+ * The innermost cache entry that covers one offset, from the start of its own
+ * line so that a list marker and its indent count as part of the item.
+ */
+function coveringIndex(
+  entries: readonly { position: Pos }[],
+  at: number,
+): number {
+  return entries.findLastIndex(
+    ({ position }) => lineStartOf(position) <= at && at <= position.end.offset,
+  );
+}
+
+/** The key one manual excerpt expansion is held under. */
+export function excerptKey(
+  path: string,
+  occurrence: CitationOccurrence,
+): string {
+  return `${path}\n${occurrenceID(occurrence)}`;
+}
+
+/** Whether one expansion key belongs to a given citing note. */
+export function excerptKeyIn(key: string, path: string): boolean {
+  return key.startsWith(`${path}\n`);
 }
 
 export function occurrenceID(options: {

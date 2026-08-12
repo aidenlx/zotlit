@@ -15,8 +15,19 @@ import type {
 } from "@/services/citation-index/service";
 
 import { useCitedByActions } from "./actions";
-import { contextParts, noteName, occurrenceID, useCitedByStore } from "./store";
-import type { CitedByPreview, OccurrenceContext } from "./store";
+import {
+  contextParts,
+  excerptKey,
+  noteName,
+  occurrenceID,
+  useCitedByStore,
+} from "./store";
+import type {
+  CitedByPreview,
+  ExpandDirection,
+  OccurrenceContext,
+  SourceRange,
+} from "./store";
 
 /** Milliseconds between the last input change and the query it applies. */
 const SEARCH_DEBOUNCE = 300;
@@ -36,6 +47,7 @@ export function CitedBy() {
     sort,
     sectionCollapsed,
     previews,
+    expansions,
     activePath,
   } = state;
   useEffect(() => {
@@ -65,7 +77,7 @@ export function CitedBy() {
   }
 
   const visibleGroups = actions.sortGroups(
-    filterGroups(groups, { search, previews, moreContext }),
+    filterGroups(groups, { search, previews, moreContext, expansions }),
     sort,
   );
   const duplicateNames = duplicateNoteNames(groups);
@@ -408,6 +420,7 @@ function CitedBySource({
 /**
  * One Citation Occurrence as a search-result card: the Citation Context with
  * the citation highlighted inside it, selected on hover and on keyboard focus.
+ * A chevron on each clipped end reveals more of the citing note.
  */
 function OccurrenceCard({
   context,
@@ -422,15 +435,18 @@ function OccurrenceCard({
 }) {
   const actions = useCitedByActions();
   const moreContext = useCitedByStore((state) => state.moreContext);
+  const expansion = useCitedByStore(
+    (state) => state.expansions[excerptKey(group.path, occurrence)],
+  );
   const excerpt =
     context.status === "ready"
-      ? contextParts(source, context, moreContext)
+      ? contextParts(source, context, { moreContext, expansion })
       : null;
 
   return (
     <li
       className={cn(
-        "zt:relative zt:w-full zt:cursor-clickable zt:border-b-(length:--border-width) zt:border-(--background-modifier-border) zt:py-2 zt:ps-3 zt:pe-5 zt:whitespace-pre-wrap zt:[unicode-bidi:plaintext] zt:last:border-b-0",
+        "zt:group zt:relative zt:w-full zt:cursor-clickable zt:border-b-(length:--border-width) zt:border-(--background-modifier-border) zt:py-2 zt:ps-3 zt:pe-5 zt:whitespace-pre-wrap zt:[unicode-bidi:plaintext] zt:last:border-b-0",
         "zt:hover:bg-(--text-selection) zt:hover:text-(--text-normal)",
         "zt:focus-visible:rounded-sm zt:focus-visible:bg-(--text-selection) zt:focus-visible:text-(--text-normal) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
         context.status === "unavailable" &&
@@ -444,13 +460,31 @@ function OccurrenceCard({
     >
       {excerpt ? (
         <>
-          {excerpt.clippedStart && ELLIPSIS}
+          {excerpt.clippedStart && (
+            <>
+              <ExpandContext
+                direction="before"
+                group={group}
+                occurrence={occurrence}
+              />
+              {ELLIPSIS}
+            </>
+          )}
           {excerpt.before}
           <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
             {excerpt.token}
           </mark>
           {excerpt.after}
-          {excerpt.clippedEnd && ELLIPSIS}
+          {excerpt.clippedEnd && (
+            <>
+              {ELLIPSIS}
+              <ExpandContext
+                direction="after"
+                group={group}
+                occurrence={occurrence}
+              />
+            </>
+          )}
         </>
       ) : (
         <>
@@ -464,10 +498,63 @@ function OccurrenceCard({
   );
 }
 
+/**
+ * The chevron that reveals the logical chunk next to one excerpt. It rides the
+ * end edge of its card, out of view until the pointer or keyboard focus
+ * reaches the card, the way Obsidian's own search results present it.
+ */
+function ExpandContext({
+  direction,
+  group,
+  occurrence,
+}: {
+  direction: ExpandDirection;
+  group: CitedByGroup;
+  occurrence: CitationOccurrence;
+}) {
+  const actions = useCitedByActions();
+  const before = direction === "before";
+
+  return (
+    <span
+      className={cn(
+        "zt:absolute zt:end-0.5 zt:z-1 zt:flex zt:cursor-clickable zt:rounded-sm zt:px-[3px] zt:py-px zt:text-faint zt:opacity-0 zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--text-normal)",
+        // Out of reach as well as out of view, so a card click stays a card
+        // click until the chevron shows itself.
+        "zt:pointer-events-none zt:group-focus-within:pointer-events-auto zt:group-focus-within:opacity-100 zt:group-hover:pointer-events-auto zt:group-hover:opacity-100",
+        before ? "zt:top-0.5" : "zt:bottom-0.5",
+      )}
+      role="button"
+      tabIndex={0}
+      data-cited-by-expand={direction}
+      {...tooltipAttrs(
+        before
+          ? m.cited_by_show_context_above()
+          : m.cited_by_show_context_below(),
+        { placement: before ? "top" : "bottom" },
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        actions.expandExcerpt({ group, occurrence, direction });
+      }}
+      onKeyDown={activateNestedWithKeyboard}
+    >
+      <Icon name={before ? "chevron-up" : "chevron-down"} size={12} />
+    </span>
+  );
+}
+
 function activateWithKeyboard(event: KeyboardEvent<HTMLElement>): void {
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   event.currentTarget.click();
+}
+
+/** Activation that stays with the control, leaving its card's own alone. */
+function activateNestedWithKeyboard(event: KeyboardEvent<HTMLElement>): void {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.stopPropagation();
+  activateWithKeyboard(event);
 }
 
 /**
@@ -482,6 +569,7 @@ function filterGroups(
     search: string;
     previews: Readonly<Record<string, CitedByPreview>>;
     moreContext: boolean;
+    expansions: Readonly<Record<string, SourceRange>>;
   },
 ): readonly CitedByGroup[] {
   const query = options.search.trim();
@@ -498,11 +586,10 @@ function filterGroups(
     const occurrences = group.occurrences.filter((occurrence) => {
       const context = preview.contexts[occurrenceID(occurrence)];
       if (context?.status !== "ready") return false;
-      const { before, token, after } = contextParts(
-        preview.source,
-        context,
-        options.moreContext,
-      );
+      const { before, token, after } = contextParts(preview.source, context, {
+        moreContext: options.moreContext,
+        expansion: options.expansions[excerptKey(group.path, occurrence)],
+      });
       return matches(`${before}${token}${after}`) !== null;
     });
     if (occurrences.length > 0) kept.push({ ...group, occurrences });

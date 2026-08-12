@@ -349,6 +349,8 @@
   "cited_by_clear_search": "Clear search",
   "cited_by_show_search_filter": "Show search filter",
   "cited_by_show_more_context": "Show more context",
+  "cited_by_show_context_above": "Show more context above",
+  "cited_by_show_context_below": "Show more context below",
   "cited_by_collapse_results": "Collapse results",
   "cited_by_change_sort_order": "Change sort order",
   "cited_by_sort_alphabetical": "File name (A to Z)",

@@ -140,6 +140,27 @@ const headingSections: SectionCache[] = [
   { type: "paragraph", position: span(headingBody, "Body paragraph.") },
 ];
 
+/** A citing note whose citation has a logical chunk on either side of it. */
+const expansionBody =
+  "# Overview\n\nIntro paragraph.\n\n- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n\nClosing paragraph.\n";
+const expansionSections: SectionCache[] = [
+  { type: "heading", position: span(expansionBody, "# Overview") },
+  { type: "paragraph", position: span(expansionBody, "Intro paragraph.") },
+  {
+    type: "list",
+    position: span(
+      expansionBody,
+      "- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.",
+    ),
+  },
+  { type: "paragraph", position: span(expansionBody, "Closing paragraph.") },
+];
+const expansionListItems: ListItemCache[] = [
+  { parent: -1, position: span(expansionBody, "- Alpha cites @doe2024 here.") },
+  { parent: 4, position: span(expansionBody, "- Nested detail.") },
+  { parent: -1, position: span(expansionBody, "- Beta item.") },
+];
+
 /** Three citing notes in vault-path order, two of them sharing a name. */
 const sortedGroups: CitedByGroup[] = [
   { ...group, path: "A/beta.md" },
@@ -313,6 +334,18 @@ async function openSortMenu(container: Element): Promise<Menu> {
   const menu = Menu.instances.at(-1);
   if (!menu) throw new Error("the sort action opened no menu");
   return menu;
+}
+
+/** Activate the chevron on one side of the first occurrence card. */
+async function expandContext(
+  container: Element,
+  direction: "before" | "after",
+): Promise<void> {
+  const chevron = container.querySelector(
+    `[data-cited-by-expand="${direction}"]`,
+  );
+  if (!chevron) throw new Error(`no card offers more context ${direction} it`);
+  await act(() => (chevron as HTMLElement).click());
 }
 
 /** Open the sort menu and pick the mode of one title. */
@@ -940,6 +973,101 @@ describe("CitedBy", () => {
     );
 
     expect(card()?.textContent).toBe("# Heading cites @doe2024 here…");
+  });
+
+  it("offers no chevron on a card that already shows the whole note", async () => {
+    const { container } = await render({});
+    await act(async () => Promise.resolve());
+
+    expect(container.querySelector("[data-occurrence]")?.textContent).toBe(
+      "A reason cites @doe2024 here.",
+    );
+    expect(container.querySelector("[data-cited-by-expand]")).toBeNull();
+  });
+
+  it("reveals one logical chunk per chevron activation, on either side", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: [citedIn(expansionBody)] }),
+      read: () => Promise.resolve(expansionBody),
+      sections: expansionSections,
+      listItems: expansionListItems,
+    });
+    await act(async () => Promise.resolve());
+    const card = () => container.querySelector("[data-occurrence]");
+    expect(card()?.textContent).toBe("…- Alpha cites @doe2024 here.…");
+    const chevron = container.querySelector(
+      '[data-cited-by-expand="after"]',
+    ) as HTMLElement;
+    expect(chevron.classList).toContain("zt:opacity-0");
+    expect(chevron.classList).toContain("zt:group-hover:opacity-100");
+    expect(chevron.classList).toContain("zt:group-focus-within:opacity-100");
+
+    await expandContext(container, "after");
+    expect(card()?.textContent).toBe(
+      "…- Alpha cites @doe2024 here.\n  - Nested detail.…",
+    );
+
+    await expandContext(container, "after");
+    expect(card()?.textContent).toBe(
+      "…- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.…",
+    );
+
+    await expandContext(container, "after");
+    expect(card()?.textContent).toBe(
+      "…- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n\nClosing paragraph.",
+    );
+    expect(
+      container.querySelector('[data-cited-by-expand="after"]'),
+    ).toBeNull();
+
+    await expandContext(container, "before");
+    expect(card()?.textContent).toBe(
+      "…Intro paragraph.\n\n- Alpha cites @doe2024 here.\n  - Nested detail.\n- Beta item.\n\nClosing paragraph.",
+    );
+
+    await expandContext(container, "before");
+    expect(card()?.textContent).toBe(expansionBody.trimEnd());
+    expect(container.querySelector("[data-cited-by-expand]")).toBeNull();
+  });
+
+  it("reveals the adjacent line where the cache resolves no chunk", async () => {
+    const { container } = await render({
+      snapshot: snapshot({ groups: [citedIn(multiBody)] }),
+      read: () => Promise.resolve(multiBody),
+    });
+    await act(async () => Promise.resolve());
+    const card = () => container.querySelector("[data-occurrence]");
+    expect(card()?.textContent).toBe("Alpha cites @doe2024 here.…");
+    expect(
+      container.querySelector('[data-cited-by-expand="before"]'),
+    ).toBeNull();
+
+    await expandContext(container, "after");
+
+    expect(card()?.textContent).toBe(multiBody.trimEnd());
+    expect(container.querySelector("[data-cited-by-expand]")).toBeNull();
+  });
+
+  it("expands from the keyboard and leaves the citing note closed", async () => {
+    const { container, openLinkText } = await render({
+      snapshot: snapshot({ groups: [citedIn(multiBody)] }),
+      read: () => Promise.resolve(multiBody),
+    });
+    await act(async () => Promise.resolve());
+    const chevron = container.querySelector(
+      '[data-cited-by-expand="after"]',
+    ) as HTMLElement;
+
+    await act(() => {
+      chevron.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+
+    expect(container.querySelector("[data-occurrence]")?.textContent).toBe(
+      multiBody.trimEnd(),
+    );
+    expect(openLinkText).not.toHaveBeenCalled();
   });
 
   it("marks the context mode active and toggles it from the keyboard", async () => {
