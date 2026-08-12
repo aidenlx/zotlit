@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { yieldToMain } from "@/lib/yield-to-main";
 import type {
   CitedByGroup,
   CitedBySnapshot,
@@ -48,6 +49,11 @@ const group: CitedByGroup = {
 
 let root: Root | undefined;
 
+/** Settles awaited work without letting a macrotask yield run. */
+async function flushMicrotasks(): Promise<void> {
+  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   await act(() => root?.unmount());
@@ -64,11 +70,12 @@ function snapshot(overrides: Partial<CitedBySnapshot> = {}): CitedBySnapshot {
   };
 }
 
-function makeFile(): TFile {
+function makeFile(path: string = group.path): TFile {
   const file = new TFile();
-  file.path = group.path;
-  file.name = "draft.md";
-  file.basename = "draft";
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  file.path = path;
+  file.name = name;
+  file.basename = name.slice(0, -".md".length);
   file.extension = "md";
   file.stat = { ctime: 0, mtime: 1, size: body.length };
   return file;
@@ -77,14 +84,18 @@ function makeFile(): TFile {
 async function render(options: {
   indexedKey?: string | null;
   snapshot?: CitedBySnapshot;
-  read?: () => Promise<string>;
+  read?: (file: TFile) => Promise<string>;
   collapsed?: boolean;
   activePath?: string | null;
   search?: string;
   links?: LinkCache[];
   duplicateSourceLeaf?: boolean;
 }) {
-  const file = makeFile();
+  const shown = options.snapshot ?? snapshot();
+  const files = new Map(
+    shown.groups.map(({ path }) => [path, makeFile(path)] as const),
+  );
+  const file = files.get(group.path) ?? makeFile();
   const read = vi.fn(options.read ?? (() => Promise.resolve(body)));
   const openLinkText = vi.fn(() => Promise.resolve());
   const setEphemeralState = vi.fn();
@@ -103,8 +114,7 @@ async function render(options: {
   const setActiveLeaf = vi.fn();
   const app = {
     vault: {
-      getAbstractFileByPath: (path: string) =>
-        path === file.path ? file : null,
+      getAbstractFileByPath: (path: string) => files.get(path) ?? null,
       cachedRead: read,
     },
     metadataCache: {
@@ -124,7 +134,7 @@ async function render(options: {
   store.setState({
     indexedKey:
       options.indexedKey === undefined ? "ABCD2345" : options.indexedKey,
-    snapshot: options.snapshot ?? snapshot(),
+    snapshot: shown,
     collapsed: options.collapsed ? [group.path] : [],
     activePath: options.activePath ?? null,
     search: options.search ?? "",
@@ -260,15 +270,13 @@ describe("CitedBy", () => {
     expect(container.textContent).toBe("No notes cite this literature note.");
   });
 
-  it("reads expanded context lazily, emphasizes the token, and reuses the mtime cache", async () => {
+  it("reads context for a collapsed group, then expands it without a load wait", async () => {
     const { actions, container, read } = await render({ collapsed: true });
-    expect(read).not.toHaveBeenCalled();
-
-    await act(async () => {
-      actions.expandAll();
-      await Promise.resolve();
-    });
     await act(async () => Promise.resolve());
+    expect(read).toHaveBeenCalledOnce();
+    expect(container.querySelector("[data-occurrence]")).toBeNull();
+
+    await act(() => actions.expandAll());
     expect(read).toHaveBeenCalledOnce();
     expect(container.textContent).toContain("A reason cites @doe2024 here.");
     expect(container.querySelector("mark")?.textContent).toBe("@doe2024");
@@ -281,8 +289,72 @@ describe("CitedBy", () => {
     expect(read).toHaveBeenCalledOnce();
   });
 
+  it("streams every group one read at a time, yielding between batches", async () => {
+    const groups: CitedByGroup[] = Array.from({ length: 7 }, (_, index) => ({
+      ...group,
+      path: `Notes/source-${index}.md`,
+    }));
+    const paths = groups.map(({ path }) => path);
+    const pendingReads: ((source: string) => void)[] = [];
+    const { container, read } = await render({
+      snapshot: snapshot({ groups }),
+      read: () =>
+        new Promise<string>((resolve) => {
+          pendingReads.push(resolve);
+        }),
+    });
+    const readPaths = () => read.mock.calls.map(([file]) => file.path);
+    const finishReads = async (count: number) => {
+      await act(async () => {
+        for (let done = 0; done < count; done += 1) {
+          pendingReads.shift()?.(body);
+          await flushMicrotasks();
+        }
+      });
+    };
+
+    await act(flushMicrotasks);
+    expect(readPaths()).toEqual(paths.slice(0, 1));
+
+    await finishReads(5);
+    expect(readPaths()).toEqual(paths.slice(0, 5));
+
+    await act(async () => yieldToMain());
+    expect(readPaths()).toEqual(paths.slice(0, 6));
+
+    await finishReads(2);
+    await act(async () => yieldToMain());
+    expect(readPaths()).toEqual(paths);
+    expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(7);
+  });
+
+  it("stops streaming once the view is gone", async () => {
+    const pendingReads: ((source: string) => void)[] = [];
+    const { read } = await render({
+      snapshot: snapshot({
+        groups: [group, { ...group, path: "Notes/other.md" }],
+      }),
+      read: () =>
+        new Promise<string>((resolve) => {
+          pendingReads.push(resolve);
+        }),
+    });
+    await act(flushMicrotasks);
+    expect(read).toHaveBeenCalledOnce();
+
+    await act(() => root?.unmount());
+    root = undefined;
+    await act(async () => {
+      pendingReads.shift()?.(body);
+      await flushMicrotasks();
+    });
+
+    expect(read).toHaveBeenCalledOnce();
+  });
+
   it("invalidates cached context when the note modification time changes", async () => {
     const { actions, file, read } = await render({});
+    await act(async () => Promise.resolve());
     expect(read).toHaveBeenCalledOnce();
 
     file.stat = { ...file.stat, mtime: 2 };
@@ -584,8 +656,8 @@ describe("CitedBy", () => {
     expect(container.textContent).toContain("draft — Folder B");
   });
 
-  it("filters by note path and loaded visible context", async () => {
-    const { container, store } = await render({});
+  it("filters by note path and by loaded context, collapsed groups included", async () => {
+    const { container, store } = await render({ collapsed: true });
     await act(async () => Promise.resolve());
 
     await act(() => store.setState({ search: "notes/draft" }));

@@ -3,11 +3,28 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import type { CitedBySnapshot } from "@/services/citation-index/service";
+import type {
+  CitationOccurrence,
+  CitedBySnapshot,
+} from "@/services/citation-index/service";
+
+/** A half-open `[start, end)` offset range into a citing note's source. */
+export interface SourceRange {
+  start: number;
+  end: number;
+}
+
+export interface ReadyOccurrenceContext {
+  status: "ready";
+  /** The Citation Context: the source range shown around the occurrence. */
+  range: SourceRange;
+  /** The occurrence itself, always inside {@link range}. */
+  token: SourceRange;
+}
 
 export type OccurrenceContext =
   | { status: "unavailable" }
-  | { status: "ready"; before: string; token: string; after: string };
+  | ReadyOccurrenceContext;
 
 export type CitedByPreview =
   | { status: "loading"; mtime: number }
@@ -58,6 +75,38 @@ export function useCitedByStore<T>(selector: (state: CitedByState) => T): T {
     throw new Error("useCitedByStore must be used within CitedByStoreProvider");
   }
   return useStore(store, selector);
+}
+
+/** The Citation Context of one occurrence: every source line it spans. */
+export function citationContext(
+  source: string,
+  occurrence: CitationOccurrence | null,
+): OccurrenceContext {
+  if (!occurrence) return { status: "unavailable" };
+  const { start, end } = occurrence.position;
+  const lineStart = source.lastIndexOf("\n", Math.max(0, start.offset - 1)) + 1;
+  const nextBreak = source.indexOf("\n", end.offset);
+  return {
+    status: "ready",
+    range: {
+      start: lineStart,
+      end: nextBreak === -1 ? source.length : nextBreak,
+    },
+    token: { start: start.offset, end: end.offset },
+  };
+}
+
+/** The excerpt one Citation Context renders, split around its occurrence. */
+export function contextParts(
+  source: string,
+  context: ReadyOccurrenceContext,
+): { before: string; token: string; after: string } {
+  const { range, token } = context;
+  return {
+    before: source.slice(range.start, token.start),
+    token: source.slice(token.start, token.end),
+    after: source.slice(token.end, range.end),
+  };
 }
 
 export function occurrenceID(options: {

@@ -13,7 +13,7 @@ import type {
 } from "@/services/citation-index/service";
 
 import { useCitedByActions } from "./actions";
-import { occurrenceID, useCitedByStore } from "./store";
+import { contextParts, occurrenceID, useCitedByStore } from "./store";
 import type { CitedByPreview } from "./store";
 
 export function CitedBy() {
@@ -23,11 +23,14 @@ export function CitedBy() {
     indexedKey,
     snapshot,
     search,
-    collapsed,
     sectionCollapsed,
     previews,
     activePath,
   } = state;
+  useEffect(() => {
+    actions.loadPreviews(snapshot.groups);
+    return () => actions.loadPreviews([]);
+  }, [actions, snapshot]);
   if (!indexedKey) {
     return <EmptyState>{m.cited_by_open_literature_note()}</EmptyState>;
   }
@@ -50,11 +53,7 @@ export function CitedBy() {
     );
   }
 
-  const visibleGroups = filterGroups(groups, {
-    search,
-    collapsed,
-    previews,
-  });
+  const visibleGroups = filterGroups(groups, { search, previews });
   const duplicateNames = duplicateNoteNames(groups);
   const occurrenceCount = groups.reduce(
     (total, group) => total + group.occurrences.length,
@@ -253,10 +252,6 @@ function CitedBySource({
   );
   const preview = useCitedByStore((state) => state.previews[group.path]);
 
-  useEffect(() => {
-    if (!collapsed) actions.requestPreview(group);
-  }, [actions, collapsed, group, preview]);
-
   return (
     <li className="zt:break-words" data-cited-by-result>
       <div
@@ -331,6 +326,10 @@ function CitedBySource({
             group.occurrences.map((occurrence) => {
               const context = preview.contexts[occurrenceID(occurrence)];
               if (!context) return null;
+              const excerpt =
+                context.status === "ready"
+                  ? contextParts(preview.source, context)
+                  : null;
               return (
                 <li
                   className={cn(
@@ -347,20 +346,20 @@ function CitedBySource({
                   }
                   onKeyDown={activateWithKeyboard}
                 >
-                  {context.status === "unavailable" ? (
+                  {excerpt ? (
+                    <>
+                      {excerpt.before}
+                      <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
+                        {excerpt.token}
+                      </mark>
+                      {excerpt.after}
+                    </>
+                  ) : (
                     <>
                       <span aria-hidden className="zt:mr-2">
                         ⚠
                       </span>
                       {m.cited_by_preview_unavailable()}
-                    </>
-                  ) : (
-                    <>
-                      {context.before}
-                      <mark className="zt:bg-(--text-highlight-bg) zt:text-foreground">
-                        {context.token}
-                      </mark>
-                      {context.after}
                     </>
                   )}
                 </li>
@@ -382,7 +381,6 @@ function filterGroups(
   groups: readonly CitedByGroup[],
   options: {
     search: string;
-    collapsed: readonly string[];
     previews: Readonly<Record<string, CitedByPreview>>;
   },
 ): readonly CitedByGroup[] {
@@ -390,17 +388,13 @@ function filterGroups(
   if (!query) return groups;
   return groups.filter((group) => {
     if (group.path.toLocaleLowerCase().includes(query)) return true;
-    if (options.collapsed.includes(group.path)) return false;
     const preview = options.previews[group.path];
     if (preview?.status !== "ready") return false;
     return group.occurrences.some((occurrence) => {
       const context = preview.contexts[occurrenceID(occurrence)];
-      return (
-        context?.status === "ready" &&
-        `${context.before}${context.token}${context.after}`
-          .toLocaleLowerCase()
-          .includes(query)
-      );
+      if (context?.status !== "ready") return false;
+      const { before, token, after } = contextParts(preview.source, context);
+      return `${before}${token}${after}`.toLocaleLowerCase().includes(query);
     });
   });
 }
