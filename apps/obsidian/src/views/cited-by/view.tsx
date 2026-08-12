@@ -33,6 +33,12 @@ export class CitedByView extends ItemView {
   #root: Root | null = null;
   #stopObserving: (() => void) | null = null;
   #indexedKey: string | null = null;
+  /** The subscription target `#followActiveNote()` last settled on, so a
+   * repeat call for the same target (a plain leaf-change, an edit that
+   * leaves `zotero-key` alone) can skip the teardown that would otherwise
+   * wipe collapse state, excerpt expansions, and the subscription. */
+  #followed: { indexedKey: string | null; activePath: string | null } | null =
+    null;
 
   constructor(leaf: WorkspaceLeaf, deps: CitedByViewDeps) {
     super(leaf);
@@ -135,31 +141,53 @@ export class CitedByView extends ItemView {
   protected override async onClose(): Promise<void> {
     this.#stopObserving?.();
     this.#stopObserving = null;
+    this.#followed = null;
     this.#root?.unmount();
     this.#root = null;
   }
 
+  /**
+   * Follows the active note, but only tears down and resubscribes when the
+   * followed `indexedKey` actually changes. A same-key path change (a
+   * rename, or a switch between duplicate Literature Notes of one Item)
+   * only carries `activePath` across; a same-key, same-path call is a no-op.
+   */
   #followActiveNote(
     file: TFile | null = this.#deps.app.workspace.getActiveFile(),
   ): void {
-    this.#stopObserving?.();
-    this.#stopObserving = null;
-    this.#indexedKey =
+    const indexedKey =
       file?.extension === "md"
         ? itemKeyFromFrontmatter(
             this.#deps.app.metadataCache.getFileCache(file),
           )
         : null;
+    const activePath = file?.path ?? null;
+
+    if (
+      this.#followed?.indexedKey === indexedKey &&
+      this.#followed.activePath === activePath
+    ) {
+      return;
+    }
+    if (this.#followed?.indexedKey === indexedKey) {
+      this.#followed = { indexedKey, activePath };
+      this.#store.setState({ activePath });
+      return;
+    }
+
+    this.#stopObserving?.();
+    this.#stopObserving = null;
+    this.#indexedKey = indexedKey;
+    this.#followed = { indexedKey, activePath };
     this.#store.setState({
-      indexedKey: this.#indexedKey,
-      activePath: file?.path ?? null,
+      indexedKey,
+      activePath,
       snapshot: EMPTY_CITED_BY_SNAPSHOT,
       collapsed: [],
       expansions: {},
     });
-    if (!this.#indexedKey) return;
+    if (!indexedKey) return;
 
-    const indexedKey = this.#indexedKey;
     this.#stopObserving = this.#deps.citationIndex.observeCitedBy(
       indexedKey,
       (snapshot) => {

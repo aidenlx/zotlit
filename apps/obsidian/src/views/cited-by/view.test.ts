@@ -11,6 +11,7 @@ import type {
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type {
   CitedByGroup,
   CitedBySnapshot,
@@ -191,8 +192,12 @@ describe("CitedByView", () => {
     );
 
     expect(activeFile).toBe(file);
-    expect(observeCitedBy).toHaveBeenCalledTimes(7);
-    expect(dispose).toHaveBeenCalledTimes(6);
+    // A same-key path change (the duplicate switch, the rename) no longer
+    // disposes and resubscribes: initial ABCD2345, second ZZZ99999g7, back to
+    // ABCD2345, metadata change to ZZZ99999g7, metadata change back to
+    // ABCD2345 — five subscriptions, four disposals ahead of them.
+    expect(observeCitedBy).toHaveBeenCalledTimes(5);
+    expect(dispose).toHaveBeenCalledTimes(4);
     expect(view.contentEl.textContent).toContain("This note");
 
     await act(() => onDelete?.(file));
@@ -471,6 +476,85 @@ describe("CitedByView", () => {
     expect(view.contentEl.textContent).toContain("Indexing citations…");
     expect(view.contentEl.textContent).toContain("Resolving citations…");
   });
+
+  it("keeps collapse and excerpt expansions across a same-note leaf change", async () => {
+    const harness = makeHarness();
+    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    document.body.append(view.contentEl);
+    await act(() => view!.open());
+    await act(() => harness.publish());
+    await act(settle);
+
+    const excerpt = () =>
+      view!.contentEl.querySelector("[data-occurrence]")?.textContent;
+    const truncated = excerpt();
+    // Expand the first source's excerpt, then collapse the SECOND source
+    // (not the one holding the expanded excerpt), so the surviving
+    // `[data-occurrence]` after the collapse is still the expanded one.
+    await act(() => click(view!.contentEl, '[data-cited-by-expand="after"]'));
+    const expanded = excerpt();
+    expect(expanded).not.toBe(truncated);
+    const toggles = view.contentEl.querySelectorAll(
+      "[data-cited-by-source-toggle]",
+    );
+    await act(() => (toggles[1] as HTMLElement).click());
+    expect(view.contentEl.querySelectorAll("[data-occurrence]")).toHaveLength(
+      1,
+    );
+
+    await act(() => harness.activate(harness.note));
+
+    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(1);
+    expect(view.contentEl.querySelectorAll("[data-occurrence]")).toHaveLength(
+      1,
+    );
+    expect(excerpt()).toBe(expanded);
+  });
+
+  it("keeps its subscription across a switch to a duplicate Literature Note", async () => {
+    const harness = makeHarness();
+    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    document.body.append(view.contentEl);
+    await act(() => view!.open());
+    await act(() => harness.publish());
+    await act(settle);
+
+    const excerpt = () =>
+      view!.contentEl.querySelector("[data-occurrence]")?.textContent;
+    const truncated = excerpt();
+    await act(() => click(view!.contentEl, '[data-cited-by-expand="after"]'));
+    const expanded = excerpt();
+    expect(expanded).not.toBe(truncated);
+
+    await act(() => harness.activate(harness.duplicate));
+
+    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(1);
+    expect(harness.dispose).not.toHaveBeenCalled();
+    expect(excerpt()).toBe(expanded);
+    expect(sourceLabels(view.contentEl)).toContain(m.cited_by_this_note());
+  });
+
+  it("resubscribes on a close then re-open", async () => {
+    const harness = makeHarness();
+    view = new TestCitedByView({} as WorkspaceLeaf, harness.deps);
+    document.body.append(view.contentEl);
+    await act(() => view!.open());
+    await act(() => harness.publish());
+    await act(settle);
+
+    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(1);
+
+    await act(() => view!.close());
+    await act(() => view!.open());
+
+    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(2);
+
+    await act(() => harness.publish());
+    await act(settle);
+    expect(view.contentEl.querySelectorAll("[data-occurrence]")).toHaveLength(
+      2,
+    );
+  });
 });
 
 const CITING_BODY = "Alpha cites @doe2024 here.\nMore text follows.\n";
@@ -481,9 +565,17 @@ function makeHarness() {
   const note = makeFile("Literature/Item.md");
   const plain = makeFile("Notes/Plain.md");
   const citing = CITING_PATHS.map((path) => makeFile(path));
+  // A duplicate Literature Note of the same Item, at a path one citing group
+  // already uses, so activating it exercises both the same-key/different-path
+  // seam and the "This note" label switch.
+  const duplicate = makeFile(CITING_PATHS[0]);
   const caches = new Map<TFile, CachedMetadata>([
     [note, { frontmatter: { "zotero-key": "ABCD2345" } } as CachedMetadata],
     [plain, {} as CachedMetadata],
+    [
+      duplicate,
+      { frontmatter: { "zotero-key": "ABCD2345" } } as CachedMetadata,
+    ],
     ...citing.map((file) => [file, {} as CachedMetadata] as const),
   ]);
   const files = new Map(citing.map((file) => [file.path, file]));
@@ -510,10 +602,11 @@ function makeHarness() {
     },
   } as unknown as App;
   let publish: ((snapshot: CitedBySnapshot) => void) | undefined;
+  const dispose = vi.fn();
   const observeCitedBy = vi.fn(
     (_indexedKey: string, callback: (snapshot: CitedBySnapshot) => void) => {
       publish = callback;
-      return () => {};
+      return dispose;
     },
   );
 
@@ -521,6 +614,8 @@ function makeHarness() {
     deps: { app, citationIndex: { observeCitedBy } },
     note,
     plain,
+    duplicate,
+    dispose,
     requestSaveLayout,
     publish: () =>
       publish?.({
