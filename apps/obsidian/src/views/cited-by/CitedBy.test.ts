@@ -47,6 +47,22 @@ const group: CitedByGroup = {
   ],
 };
 
+const multiBody = "Alpha cites @doe2024 here.\nBeta cites @doe2024 there.\n";
+const multiGroup: CitedByGroup = {
+  path: group.path,
+  occurrences: [
+    multiBody.indexOf("@doe2024"),
+    multiBody.lastIndexOf("@doe2024"),
+  ].map((offset, line) => ({
+    kind: "citekey",
+    raw: "doe2024",
+    position: {
+      start: { line, col: 0, offset },
+      end: { line, col: 8, offset: offset + 8 },
+    },
+  })),
+};
+
 let root: Root | undefined;
 
 /** Settles awaited work without letting a macrotask yield run. */
@@ -56,6 +72,7 @@ async function flushMicrotasks(): Promise<void> {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   await act(() => root?.unmount());
   root = undefined;
   document.body.replaceChildren();
@@ -88,6 +105,7 @@ async function render(options: {
   collapsed?: boolean;
   activePath?: string | null;
   search?: string;
+  searchVisible?: boolean;
   links?: LinkCache[];
   duplicateSourceLeaf?: boolean;
 }) {
@@ -138,6 +156,7 @@ async function render(options: {
     collapsed: options.collapsed ? [group.path] : [],
     activePath: options.activePath ?? null,
     search: options.search ?? "",
+    searchVisible: options.searchVisible ?? false,
   });
   const actions = createCitedByActions({ app, store });
   const container = document.createElement("div");
@@ -720,6 +739,114 @@ describe("CitedBy", () => {
 
     await act(() => store.setState({ search: "not present" }));
     expect(container.querySelector("[data-source]")).toBeNull();
+  });
+
+  it("keeps the search field out of view until the toolbar action opens it", async () => {
+    const { container } = await render({});
+    expect(container.querySelector("[data-cited-by-search]")).toBeNull();
+    const action = container.querySelector(
+      "[data-cited-by-show-search]",
+    ) as HTMLElement;
+    expect(action.classList).not.toContain("is-active");
+    expect(
+      container.querySelector("[data-cited-by-show-search] svg")?.classList,
+    ).toContain("lucide-search");
+
+    await act(() => {
+      action.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+
+    const input = container.querySelector(
+      "[data-cited-by-search] input",
+    ) as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(document.activeElement).toBe(input);
+    expect(
+      container.querySelector("[data-cited-by-show-search]")?.classList,
+    ).toContain("is-active");
+  });
+
+  it("clears the query and restores every result when the search closes", async () => {
+    const { container, store } = await render({ searchVisible: true });
+    await act(async () => Promise.resolve());
+    await act(() => store.setState({ search: "not present" }));
+    expect(container.querySelector("[data-cited-by-result]")).toBeNull();
+
+    await act(() =>
+      (
+        container.querySelector("[data-cited-by-show-search]") as HTMLElement
+      ).click(),
+    );
+
+    expect(store.getState().search).toBe("");
+    expect(container.querySelector("[data-cited-by-search]")).toBeNull();
+    expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
+  });
+
+  it("keeps every occurrence of a group whose note name matches", async () => {
+    const { container, store } = await render({
+      snapshot: snapshot({ groups: [multiGroup] }),
+      read: () => Promise.resolve(multiBody),
+    });
+    await act(async () => Promise.resolve());
+
+    await act(() => store.setState({ search: "draft" }));
+
+    expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(2);
+    expect(
+      container.querySelector("[data-cited-by-section-count]")?.textContent,
+    ).toBe("1 note · 2 citations");
+  });
+
+  it("keeps only matching occurrences, collapsed groups included", async () => {
+    const { actions, container, read, store } = await render({
+      collapsed: true,
+      snapshot: snapshot({ groups: [multiGroup] }),
+      read: () => Promise.resolve(multiBody),
+    });
+    await act(async () => Promise.resolve());
+    expect(read).toHaveBeenCalledOnce();
+
+    await act(() => store.setState({ search: "beta cites" }));
+    expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
+    expect(
+      container.querySelector("[data-cited-by-section-count]")?.textContent,
+    ).toBe("1 note · 1 citation");
+    expect(read).toHaveBeenCalledOnce();
+
+    await act(() => actions.expandAll());
+    const cards = container.querySelectorAll("[data-occurrence]");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.textContent).toBe("Beta cites @doe2024 there.");
+    expect(read).toHaveBeenCalledOnce();
+  });
+
+  it("applies a typed query only after the input debounce elapses", async () => {
+    const { container, store } = await render({ searchVisible: true });
+    await act(async () => Promise.resolve());
+    vi.useFakeTimers();
+    const input = container.querySelector(
+      "[data-cited-by-search] input",
+    ) as HTMLInputElement;
+
+    await act(() => {
+      input.value = "not present";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(input.value).toBe("not present");
+    expect(store.getState().search).toBe("");
+    expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
+
+    await act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(store.getState().search).toBe("not present");
+    expect(container.querySelector("[data-cited-by-result]")).toBeNull();
+    expect(
+      container.querySelector("[data-cited-by-section-count]")?.textContent,
+    ).toBe("0 notes · 0 citations");
   });
 
   it("expands and collapses all visible source groups", async () => {

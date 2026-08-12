@@ -40,7 +40,9 @@ export interface CitedByState {
   indexedKey: string | null;
   activePath: string | null;
   snapshot: CitedBySnapshot;
+  /** The applied filter query; empty while the search field stays closed. */
   search: string;
+  searchVisible: boolean;
   collapsed: readonly string[];
   sectionCollapsed: boolean;
   previews: Readonly<Record<string, CitedByPreview>>;
@@ -60,6 +62,7 @@ export function createCitedByStore() {
     activePath: null,
     snapshot: EMPTY_CITED_BY_SNAPSHOT,
     search: "",
+    searchVisible: false,
     collapsed: [],
     sectionCollapsed: false,
     previews: {},

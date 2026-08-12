@@ -19,8 +19,30 @@ import type {
   Instruction,
   Modifier,
   PaneType,
+  SearchMatchPart,
+  SearchResult,
   UserEvent,
 } from "obsidian";
+
+/**
+ * Stand-in for Obsidian's simple search: every whitespace-separated term of the
+ * query must appear in the text, case-insensitively.
+ */
+export function prepareSimpleSearch(
+  query: string,
+): (text: string) => SearchResult | null {
+  const terms = query.toLowerCase().split(/\s+/u).filter(Boolean);
+  return (text) => {
+    const haystack = text.toLowerCase();
+    const matches: SearchMatchPart[] = [];
+    for (const term of terms) {
+      const at = haystack.indexOf(term);
+      if (at === -1) return null;
+      matches.push([at, at + term.length]);
+    }
+    return { score: -matches.length, matches };
+  };
+}
 
 export function getIcon(name: IconName): SVGSVGElement | null {
   const svg = globalThis.document?.createElementNS(

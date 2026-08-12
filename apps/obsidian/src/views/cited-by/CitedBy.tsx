@@ -1,5 +1,6 @@
 // The rendered Cited By Sidebar list.
-import { useEffect } from "react";
+import { prepareSimpleSearch } from "obsidian";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -17,6 +18,9 @@ import { useCitedByActions } from "./actions";
 import { contextParts, occurrenceID, useCitedByStore } from "./store";
 import type { CitedByPreview, OccurrenceContext } from "./store";
 
+/** Milliseconds between the last input change and the query it applies. */
+const SEARCH_DEBOUNCE = 300;
+
 export function CitedBy() {
   const state = useCitedByStore((current) => current);
   const actions = useCitedByActions();
@@ -24,6 +28,7 @@ export function CitedBy() {
     indexedKey,
     snapshot,
     search,
+    searchVisible,
     sectionCollapsed,
     previews,
     activePath,
@@ -56,7 +61,7 @@ export function CitedBy() {
 
   const visibleGroups = filterGroups(groups, { search, previews });
   const duplicateNames = duplicateNoteNames(groups);
-  const occurrenceCount = groups.reduce(
+  const occurrenceCount = visibleGroups.reduce(
     (total, group) => total + group.occurrences.length,
     0,
   );
@@ -65,18 +70,9 @@ export function CitedBy() {
     <div className="zt:min-h-full">
       {statuses.length > 0 && <StatusStrip statuses={statuses} />}
       <Toolbar paths={visibleGroups.map(({ path }) => path)} />
-      <div className="zt:mx-3 zt:mt-1 zt:mb-2">
-        <SearchInput
-          className="zt:w-full"
-          value={search}
-          onChange={actions.setSearch}
-          placeholder={m.cited_by_search_placeholder()}
-          aria-label={m.cited_by_search_placeholder()}
-          clearLabel={m.cited_by_clear_search()}
-        />
-      </div>
+      {searchVisible && <SearchFilter />}
       <SectionHeader
-        noteCount={groups.length}
+        noteCount={visibleGroups.length}
         occurrenceCount={occurrenceCount}
       />
       {!sectionCollapsed && (
@@ -104,6 +100,7 @@ export function CitedBy() {
 function Toolbar({ paths }: { paths: readonly string[] }) {
   const actions = useCitedByActions();
   const collapsed = useCitedByStore((state) => state.collapsed);
+  const searchVisible = useCitedByStore((state) => state.searchVisible);
   const allCollapsed =
     paths.length > 0 && paths.every((path) => collapsed.includes(path));
 
@@ -120,7 +117,45 @@ function Toolbar({ paths }: { paths: readonly string[] }) {
             allCollapsed ? actions.expandAll(paths) : actions.collapseAll(paths)
           }
         />
+        <IconButton
+          className="nav-action-button"
+          icon="search"
+          active={searchVisible}
+          data-cited-by-show-search
+          {...tooltipAttrs(m.cited_by_show_search_filter())}
+          onClick={actions.toggleSearch}
+        />
       </div>
+    </div>
+  );
+}
+
+/** The hidden-by-default query field: focused on open, debounced on input. */
+function SearchFilter() {
+  const actions = useCitedByActions();
+  const search = useCitedByStore((state) => state.search);
+  const [text, setText] = useState(search);
+  const field = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    field.current?.querySelector("input")?.focus();
+  }, []);
+  useEffect(() => {
+    if (text === search) return;
+    const timer = setTimeout(() => actions.setSearch(text), SEARCH_DEBOUNCE);
+    return () => clearTimeout(timer);
+  }, [actions, search, text]);
+
+  return (
+    <div className="zt:mx-3 zt:mt-1 zt:mb-2" data-cited-by-search ref={field}>
+      <SearchInput
+        className="zt:w-full"
+        value={text}
+        onChange={setText}
+        placeholder={m.cited_by_search_placeholder()}
+        aria-label={m.cited_by_search_placeholder()}
+        clearLabel={m.cited_by_clear_search()}
+      />
     </div>
   );
 }
@@ -406,6 +441,12 @@ function activateWithKeyboard(event: KeyboardEvent<HTMLElement>): void {
   event.currentTarget.click();
 }
 
+/**
+ * The groups one query keeps: a matching note path keeps the group whole,
+ * otherwise the group keeps only occurrences whose Citation Context matches.
+ * Every group is tested, collapsed ones included, because their text is
+ * already loaded; filtering never reads a file itself.
+ */
 function filterGroups(
   groups: readonly CitedByGroup[],
   options: {
@@ -413,19 +454,26 @@ function filterGroups(
     previews: Readonly<Record<string, CitedByPreview>>;
   },
 ): readonly CitedByGroup[] {
-  const query = options.search.trim().toLocaleLowerCase();
+  const query = options.search.trim();
   if (!query) return groups;
-  return groups.filter((group) => {
-    if (group.path.toLocaleLowerCase().includes(query)) return true;
+  const matches = prepareSimpleSearch(query);
+  const kept: CitedByGroup[] = [];
+  for (const group of groups) {
+    if (matches(group.path)) {
+      kept.push(group);
+      continue;
+    }
     const preview = options.previews[group.path];
-    if (preview?.status !== "ready") return false;
-    return group.occurrences.some((occurrence) => {
+    if (preview?.status !== "ready") continue;
+    const occurrences = group.occurrences.filter((occurrence) => {
       const context = preview.contexts[occurrenceID(occurrence)];
       if (context?.status !== "ready") return false;
       const { before, token, after } = contextParts(preview.source, context);
-      return `${before}${token}${after}`.toLocaleLowerCase().includes(query);
+      return matches(`${before}${token}${after}`) !== null;
     });
-  });
+    if (occurrences.length > 0) kept.push({ ...group, occurrences });
+  }
+  return kept;
 }
 
 function duplicateNoteNames(groups: readonly CitedByGroup[]): Set<string> {

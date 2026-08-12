@@ -19,6 +19,8 @@ const PREVIEW_CHUNK = 5;
 
 export interface CitedByActions {
   setSearch: (search: string) => void;
+  /** Show or hide the search field; hiding also drops the applied query. */
+  toggleSearch: () => void;
   /**
    * Stream a preview into every group of the current snapshot, replacing any
    * work still queued for an earlier one.
@@ -127,6 +129,13 @@ export function createCitedByActions(options: {
   return {
     setSearch(search) {
       store.setState({ search });
+    },
+    toggleSearch() {
+      store.setState(({ searchVisible }) =>
+        searchVisible
+          ? { searchVisible: false, search: "" }
+          : { searchVisible: true },
+      );
     },
     loadPreviews(groups) {
       queued = [...groups];
