@@ -18,9 +18,9 @@ import { useReferencesStore } from "./store";
 import type { ReferencesCopyBlock } from "./store";
 
 /**
- * The pane: the fixed toolbar above, the engine surface under it, then one
- * scrolling region holding the reference list. The list is a `ul` — a bare `ol`
- * keeps Obsidian's own unlayered numbering, which would double the numbers the
+ * The pane: the fixed toolbar above, then one scrolling region holding the
+ * engine surface and the reference list. The list is a `ul` — a bare `ol` keeps
+ * Obsidian's own unlayered numbering, which would double the numbers the
  * entries already carry.
  */
 export function References() {
@@ -36,20 +36,18 @@ export function References() {
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
       <Toolbar />
-      {/* The banners sit between the toolbar and the scrolling region, so they
-          ride above the list they describe, the toolbar keeps its own place,
-          and the list scrolls in the space left below them rather than passing
-          under their translucent tint. */}
-      <EngineSurface status={engine} />
-      {formattingFailed && engine.kind === "installed" && (
-        <Banner tone="warning" title={m.references_format_failed_title()}>
-          {m.references_format_failed_body()}
-        </Banner>
-      )}
       <div
         className="zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-y-auto"
         data-references-scroll
       >
+        {/* The banners head this region rather than the pane, so they travel
+            with the list they describe and the toolbar keeps its own place. */}
+        <EngineSurface status={engine} />
+        {formattingFailed && engine.kind === "installed" && (
+          <Banner tone="warning" title={m.references_format_failed_title()}>
+            {m.references_format_failed_body()}
+          </Banner>
+        )}
         {entries.length === 0 ? (
           <div
             className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
@@ -481,9 +479,9 @@ function failureSentence(failure: PandocEngineFailure): string {
 /**
  * A strip across the head of the pane, in the shape of the docs site banner: a
  * flat alternate surface flush with the pane edges, the message ranged left,
- * and the action and close button on the trailing edge. It sits outside the
- * scrolling region, so the notice stays put and the list it describes scrolls
- * below it rather than through its translucent tint.
+ * and the action and close button on the trailing edge. It scrolls with the
+ * list it describes, so the list travels below it rather than through its
+ * translucent tint and the toolbar above keeps its own place.
  */
 function Banner({
   tone = "normal",

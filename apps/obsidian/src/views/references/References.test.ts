@@ -291,8 +291,8 @@ describe("References banners", () => {
   };
 
   /**
-   * Outside the scrolling region, so a banner keeps its place without the list
-   * passing through its translucent tint.
+   * Inside the scrolling region, so a banner travels with the list it
+   * describes and the toolbar above keeps its own place.
    */
   it.each([
     [
@@ -322,14 +322,14 @@ describe("References banners", () => {
       { formattingFailed: true } satisfies Partial<ReferencesState>,
       "ZotLit could not format these references",
     ],
-  ])("holds %s above the scrolling list region", async (_, state, title) => {
+  ])("keeps %s with the scrolling list region", async (_, state, title) => {
     const container = await render([summaryEntry], { kind: "minimal" }, state);
     const banner = container.querySelector("[data-references-banner]");
 
     expect(banner?.textContent).toContain(title);
     expect(
       container.querySelector("[data-references-scroll]")!.contains(banner),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
