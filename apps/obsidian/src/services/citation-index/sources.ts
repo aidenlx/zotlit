@@ -29,6 +29,20 @@ export interface OpenableAttachment {
   label: string;
 }
 
+/** Whether the Zotero database answered the source-join read. */
+export type DatabaseReadability = "ready" | "unreadable";
+
+/** The cited Items of one document, with the state that says what an Item the join left out means. */
+export interface ReferenceSourceJoin {
+  /** The readable sources by Indexed Key. */
+  sources: Map<string, ReferenceSource>;
+  /**
+   * `"unreadable"` leaves `sources` empty or partial, so a caller reports the
+   * state itself rather than the Items it never read as missing.
+   */
+  database: DatabaseReadability;
+}
+
 /** One cited Zotero Item, in the identities a reference entry reports and acts on. */
 export interface ReferenceSource {
   /** The item as the engine reads it; its `id` addresses the rendered entry. */
@@ -103,16 +117,16 @@ function filename(path: string): string {
  *
  * @param citations the document's Citations, whose linkpath each source carries
  *   through so one call answers the whole identity of a reference entry.
- * @returns the readable sources by Indexed Key. Empty while the database is
- *   unavailable, which the caller reports as its own state rather than as
- *   missing Items.
+ * @returns the readable sources by Indexed Key, beside the `database` state a
+ *   caller reports rather than the Items it names as missing.
  */
 export function readReferenceSources(
   db: Pick<DatabaseService, "state" | "client">,
   citations: readonly Citation[],
-): Map<string, ReferenceSource> {
+): ReferenceSourceJoin {
   const sources = new Map<string, ReferenceSource>();
-  if (db.state !== "ready" || citations.length === 0) return sources;
+  if (db.state !== "ready") return { sources, database: "unreadable" };
+  if (citations.length === 0) return { sources, database: "ready" };
 
   try {
     const user = getZoteroIdentity(db.client);
@@ -172,6 +186,7 @@ export function readReferenceSources(
     }
   } catch (error) {
     logger.warn("Cannot read the cited items", { error });
+    return { sources, database: "unreadable" };
   }
-  return sources;
+  return { sources, database: "ready" };
 }

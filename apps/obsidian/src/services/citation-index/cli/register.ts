@@ -98,6 +98,7 @@ export function registerCitationsCli(
       resolveCitekey: (citekey) => deps.citationIndex.resolveCitekey(citekey),
       citekeyOf: (indexedKey) => deps.citationIndex.citekeyOf(indexedKey),
       getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
+      resolution: () => deps.citationIndex.resolution,
     },
     lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
     readDocument: (path) => readDocument(deps, path),
@@ -133,11 +134,8 @@ async function readDocument(
   if (!file || file.extension !== "md") return null;
   const { citations, errors } =
     await deps.citationIndex.getDocumentCitationSet(file);
-  return {
-    citations,
-    errors,
-    sources: readReferenceSources(deps.db, citations),
-  };
+  const { sources, database } = readReferenceSources(deps.db, citations);
+  return { citations, errors, sources, database };
 }
 
 /** A well-formed Zotero key names an Item only when the connected library

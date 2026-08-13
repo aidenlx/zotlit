@@ -57,7 +57,6 @@ export function parseCitedByRequest(
   return invalid("key", `${SELECTOR_EXCLUSIVITY_MESSAGE} Neither was set.`);
 }
 
-/** The one document `references` reports the Citations of. */
 export interface ReferencesSelector {
   /** Vault-relative path of the document. */
   file: string;

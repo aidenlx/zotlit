@@ -215,7 +215,7 @@ export class ReferencesView extends ItemView {
     }
     const generation = ++this.#generation;
     const citations = this.#citations;
-    const sources = readReferenceSources(this.#deps.db, citations);
+    const { sources } = readReferenceSources(this.#deps.db, citations);
 
     this.#store.setState({
       entries: buildReferenceEntries(citations, sources, {

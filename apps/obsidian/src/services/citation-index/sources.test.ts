@@ -97,7 +97,7 @@ describe("readReferenceSources", () => {
     const cited = item(KEY);
     vi.mocked(getItemsByKey).mockReturnValue([cited]);
 
-    const sources = readReferenceSources(ready, [
+    const { sources } = readReferenceSources(ready, [
       citation(KEY, "Notes/Doe 2024.md"),
     ]);
 
@@ -115,7 +115,7 @@ describe("readReferenceSources", () => {
   it("carries a null linkpath through for an Item with no Literature Note", () => {
     vi.mocked(getItemsByKey).mockReturnValue([item(KEY)]);
 
-    const sources = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
 
     expect(sources.get(KEY)?.linkpath).toBeNull();
   });
@@ -125,13 +125,13 @@ describe("readReferenceSources", () => {
       item(KEY, { citationKey: null }),
     ]);
 
-    const sources = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
 
     expect(sources.get(KEY)?.citekey).toBeNull();
   });
 
   it("leaves out a citekey that names no live Zotero Item", () => {
-    const sources = readReferenceSources(ready, [citation(null, null)]);
+    const { sources } = readReferenceSources(ready, [citation(null, null)]);
 
     expect(sources.size).toBe(0);
     expect(getItemsByKey).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe("readReferenceSources", () => {
       keys[0] === KEY ? [item(KEY)] : [],
     );
 
-    const sources = readReferenceSources(ready, [
+    const { sources } = readReferenceSources(ready, [
       citation(KEY, null),
       citation(OTHER_KEY, null),
     ]);
@@ -161,7 +161,7 @@ describe("readReferenceSources", () => {
       }),
     ]);
 
-    const sources = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
 
     expect(sources.get(KEY)?.attachments).toStrictEqual([
       { key: "ATCH2345", groupID: null, label: "Doe_2024.pdf" },
@@ -174,26 +174,32 @@ describe("readReferenceSources", () => {
       throw new Error("attachments unavailable");
     });
 
-    const sources = readReferenceSources(ready, [citation(KEY, null)]);
+    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
 
     expect(sources.get(KEY)?.attachments).toStrictEqual([]);
   });
 
-  it("answers empty when the item read fails", () => {
+  it("answers empty and unreadable when the item read fails", () => {
     vi.mocked(getItemsByKey).mockImplementation(() => {
       throw new Error("database locked");
     });
 
-    expect(readReferenceSources(ready, [citation(KEY, null)]).size).toBe(0);
+    const { sources, database } = readReferenceSources(ready, [
+      citation(KEY, null),
+    ]);
+
+    expect(sources.size).toBe(0);
+    expect(database).toBe("unreadable");
   });
 
-  it("reads nothing while the database is unavailable", () => {
-    const sources = readReferenceSources(
+  it("reads nothing while the database is unavailable, and says so", () => {
+    const { sources, database } = readReferenceSources(
       { state: "loading", client: {} as NodeDatabaseClient },
       [citation(KEY, null)],
     );
 
     expect(sources.size).toBe(0);
+    expect(database).toBe("unreadable");
     expect(getItemsByKey).not.toHaveBeenCalled();
   });
 });

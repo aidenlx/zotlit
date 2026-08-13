@@ -4,6 +4,7 @@ import type { CslItemData } from "@zotlit/db";
 
 import type {
   Citation,
+  CitationKeyResolution,
   CitationOccurrence,
   CitationSettleOutcome,
   CitationSyntax,
@@ -112,6 +113,7 @@ const DOCUMENT: DocumentReferences = {
   citations: CITATIONS,
   errors: [{ kind: "malformed-wikilink", occurrence: MALFORMED_OCCURRENCE }],
   sources: new Map([[ITEM_KEY, SOURCE]]),
+  database: "ready",
 };
 
 interface SetupOptions {
@@ -121,6 +123,7 @@ interface SetupOptions {
   presence?: ItemPresence;
   citekeyItem?: SnapshotItem | null;
   document?: DocumentReferences | null;
+  resolution?: CitationKeyResolution;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -136,10 +139,17 @@ function setup(options: SetupOptions = {}) {
   const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
   const lookupItem = vi.fn(() => presence);
   const readDocument = vi.fn(() => Promise.resolve(documentReferences));
+  const resolution = vi.fn(() => options.resolution ?? "ready");
   const handlers = createCitationsCliHandlers({
     getIdentity,
     settleTimeoutMs: options.settleTimeoutMs,
-    index: { waitUntilSettled, resolveCitekey, citekeyOf, getCitedBy },
+    index: {
+      waitUntilSettled,
+      resolveCitekey,
+      citekeyOf,
+      getCitedBy,
+      resolution,
+    },
     lookupItem,
     readDocument,
   });
@@ -371,6 +381,7 @@ describe("zotlit:cited-by", () => {
           order.push("cited-by");
           return CITED;
         },
+        resolution: () => "ready",
       },
       lookupItem: () => {
         order.push("lookup");
@@ -425,6 +436,28 @@ describe("zotlit:references", () => {
           occurrences: [MISSING_OCCURRENCE],
         },
       ],
+      database: "ready",
+      resolution: "ready",
+    });
+  });
+
+  it("reports an unreadable Zotero database as payload state, not as missing items", async () => {
+    const { references } = setup({
+      document: {
+        citations: CITATIONS,
+        errors: [],
+        sources: new Map(),
+        database: "unreadable",
+      },
+      resolution: "degraded",
+    });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      database: "unreadable",
+      resolution: "degraded",
     });
   });
 
@@ -439,7 +472,12 @@ describe("zotlit:references", () => {
 
   it("answers a document that cites nothing with no entries", async () => {
     const { references } = setup({
-      document: { citations: [], errors: [], sources: new Map() },
+      document: {
+        citations: [],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
     });
 
     expect(
@@ -576,6 +614,7 @@ describe("zotlit:citations-guide", () => {
       "degraded",
       "resolving",
       "ready",
+      "unreadable",
     ]) {
       expect(output).toContain(state);
     }

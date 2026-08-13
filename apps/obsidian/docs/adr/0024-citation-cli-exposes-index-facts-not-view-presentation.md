@@ -16,9 +16,11 @@ create a second surface for the same facts.
 - The References Sidebar's six entry kinds collapse to four in CLI output —
   `resolved`, `unresolved`, `missing`, `malformed` — because the
   rendered/summary/unrendered distinction only reports Pandoc Engine state.
-- `degraded` coverage or resolution is settled data in the payload, not a
-  failure; only the transitional `indexing`/`resolving` states gate the
-  settle-wait.
+- `degraded` coverage or resolution, and an `unreadable` database, are settled
+  data in the payload, not a failure; only the transitional
+  `indexing`/`resolving` states gate the settle-wait. A degraded read is
+  therefore reported as its own state, never as entries the source no longer
+  holds.
 - An agent that wants excerpt text or a formatted bibliography composes it from
   the positions and `zotlit:template-data` / the Pandoc export workflow instead
   of asking these commands for it.

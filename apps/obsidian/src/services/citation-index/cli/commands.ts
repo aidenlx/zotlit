@@ -4,8 +4,10 @@ import type { CliData, CliHandler } from "obsidian";
 
 import type {
   Citation,
+  CitationKeyResolution,
   CitationSettleOutcome,
   CitedBySnapshot,
+  DatabaseReadability,
   DocumentCitationError,
   ReferenceSource,
   SnapshotItem,
@@ -60,6 +62,9 @@ export interface DocumentReferences {
   errors: readonly DocumentCitationError[];
   /** The source-join by Indexed Key; an Item the database no longer holds is absent. */
   sources: ReadonlyMap<string, ReferenceSource>;
+  /** Whether the join read the database at all, which is what says whether an
+   *  absent Item is one the source no longer holds. */
+  database: DatabaseReadability;
 }
 
 interface CitationsCliDeps {
@@ -72,6 +77,9 @@ interface CitationsCliDeps {
     resolveCitekey: (citekey: string) => SnapshotItem | null;
     citekeyOf: (indexedKey: string) => string | null;
     getCitedBy: (indexedKey: string) => CitedBySnapshot;
+    /** How well citation keys resolve now; a references answer reports it, the
+     *  cited-by snapshot carries its own. */
+    resolution: () => CitationKeyResolution;
   };
   lookupItem: (indexedKey: string) => ItemPresence;
   /**
@@ -183,6 +191,8 @@ export function createCitationsCliHandlers(
         ok: true,
         ...echoed,
         entries: referenceEntries(references),
+        database: references.database,
+        resolution: deps.index.resolution(),
       });
     },
 

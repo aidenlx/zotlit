@@ -45,8 +45,10 @@ export type { SnapshotItem } from "./snapshot";
 export {
   readReferenceSources,
   toOpenableAttachments,
+  type DatabaseReadability,
   type OpenableAttachment,
   type ReferenceSource,
+  type ReferenceSourceJoin,
 } from "./sources";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
 
@@ -358,6 +360,15 @@ export class CitationIndex extends Service<void> {
         resolve("settled");
       });
     });
+  }
+
+  /**
+   * How well citation keys currently resolve, for a caller that answers one
+   * question and reports the state beside its facts — the agent-facing CLI. The
+   * reverse observation carries the same state inside its snapshot.
+   */
+  get resolution(): CitationKeyResolution {
+    return this.#resolution;
   }
 
   /** The Zotero Item a native citation key names, read synchronously. */

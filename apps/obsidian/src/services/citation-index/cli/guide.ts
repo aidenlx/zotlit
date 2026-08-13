@@ -10,6 +10,7 @@ import type {
   CitationCoverage,
   CitationKeyResolution,
   CitationSyntax,
+  DatabaseReadability,
 } from "@/services/citation-index/service";
 
 import { DIAGNOSTIC_HINTS } from "./envelope";
@@ -65,6 +66,13 @@ const RESOLUTION_STATES = {
     "The Zotero database could not be read, so the snapshot is stale or empty and a citation key may resolve to nothing.",
 } as const satisfies Record<CitationKeyResolution, string>;
 
+/** Whether the connected Zotero source answered the references entry join. */
+const DATABASE_STATES = {
+  ready: "The connected Zotero source answered the entry join.",
+  unreadable:
+    "The Zotero source could not be read, so every cited work reports as missing whether or not the source still holds it.",
+} as const satisfies Record<DatabaseReadability, string>;
+
 const LABEL_WIDTH = 12;
 const PAGE_WIDTH = 78;
 
@@ -119,6 +127,8 @@ REFERENCES PAYLOAD
   entries     The document's cited works in first-occurrence order, each as
               { refNumber, kind, occurrences } plus the fields its kind adds.
               refNumber is the reference number the document gives the work.
+  database    See INDEX STATE.
+  resolution  See INDEX STATE.
 
 ENTRY KINDS
 ${rows(ENTRY_KINDS)}
@@ -138,15 +148,19 @@ ${rows(OCCURRENCE_KINDS)}
   excluded before the index reads a note.
 
 INDEX STATE
-  coverage
+  coverage (cited-by)
 ${rows(COVERAGE_STATES, 4)}
 
-  resolution
+  resolution (both commands)
 ${rows(RESOLUTION_STATES, 4)}
 
+  database (references)
+${rows(DATABASE_STATES, 4)}
+
   Both commands wait out the transitional states, indexing and resolving, and
-  answer INDEX_NOT_READY when either persists. degraded is settled data rather
-  than a failure: the answer is partial, so report the state with it.
+  answer INDEX_NOT_READY when either persists. degraded and unreadable are
+  settled data rather than a failure: the answer is partial, so report the
+  state with it.
 
 DIAGNOSTICS
   A failed call answers ok:false with diagnostic { code, message, hint,

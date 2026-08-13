@@ -128,6 +128,7 @@ describe("Citations CLI registration", () => {
         citationIndex: {
           waitUntilSettled: () => Promise.resolve("settled"),
           getDocumentCitationSet,
+          resolution: "ready",
         },
         db: { state: "loading" },
         zoteroPref: {
@@ -163,6 +164,8 @@ describe("Citations CLI registration", () => {
             occurrences: [OCCURRENCE],
           },
         ],
+        // The fake database never became readable, which the payload reports.
+        database: "unreadable",
       });
     });
 

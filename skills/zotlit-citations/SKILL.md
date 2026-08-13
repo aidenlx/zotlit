@@ -23,7 +23,7 @@ Put `vault=<vault-name>` first when the working directory does not select the va
 obsidian-cli vault=MyVault zotlit:citations-guide
 ```
 
-Without it, the vault containing the working directory answers; outside a vault, the most recently focused one does. `obsidian-cli vault` shows the active vault, `obsidian-cli vaults` lists all known vaults. Confirm `identity.vault` once, then keep the same prefix.
+`obsidian-cli vault` shows the active vault, `obsidian-cli vaults` lists all known vaults. Confirm `identity.vault` once, then keep the same prefix.
 
 Keep `expect-source=` on every call rather than trusting the library to stay connected. A user with more than one Zotero profile gets a wrong answer, not an error, when it is left off.
 

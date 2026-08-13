@@ -10,6 +10,7 @@ import type {
   CitationKeyResolution,
   CitationOccurrence,
   CitedByGroup,
+  DatabaseReadability,
 } from "@/services/citation-index/service";
 
 /** The wire format of the `zotlit:` citation commands, versioned on its own. */
@@ -73,7 +74,6 @@ export function diagnostic(
   return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
 }
 
-/** The commands the citations namespace answers. */
 export type CitationsCommand =
   | "zotlit:cited-by"
   | "zotlit:references"
@@ -124,10 +124,22 @@ export type ReferenceEntry = { occurrences: readonly CitationOccurrence[] } & (
   | { kind: "malformed" }
 );
 
-/** `zotlit:references`'s result: index facts, never view presentation (ADR 0024). */
+/**
+ * `zotlit:references`'s result: index facts, never view presentation (ADR 0024).
+ *
+ * The two states are what an entry kind means: they report a degraded read as
+ * data instead of as entries. Coverage stays out — a document is read on
+ * demand, so the vault-wide scan cannot change this answer.
+ */
 interface ReferencesPayload {
   /** The document's entries in first-occurrence order. */
   entries: readonly ReferenceEntry[];
+  /** `"unreadable"` reports every cited work as `missing`, whether or not the
+   *  Zotero source still holds it. */
+  database: DatabaseReadability;
+  /** An `unresolved` entry names a citation key no Item carries only while
+   *  this is `"ready"`; a stale snapshot resolves a live key to nothing. */
+  resolution: CitationKeyResolution;
 }
 
 /** The facts a command echoes back beside its result, both optional because a
