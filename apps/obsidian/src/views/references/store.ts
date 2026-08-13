@@ -92,7 +92,7 @@ export function referencesCopyState({
   entries,
   formatting,
 }: {
-  /** The active Markdown note, or `null` when none answers for the list. */
+  /** The Markdown note the entries answer for, or `null` when none does. */
   path: string | null;
   /** The render generation the entries were built for. */
   generation: number;

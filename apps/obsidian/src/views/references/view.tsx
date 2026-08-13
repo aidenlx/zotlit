@@ -98,10 +98,14 @@ export class ReferencesView extends ItemView {
   #generation = 0;
   /** Bumped per rescan, the same way, since a query may await a file read. */
   #scan = 0;
-  /** Citations of the active document, as the current list was built from. */
+  /** Path of the Markdown note the current list was read from; `null` for none. */
+  #path: string | null = null;
+  /** Citations of that note, as the current list was built from. */
   #citations: readonly Citation[] = [];
-  /** Explicit citation-source errors of the active document. */
+  /** Explicit citation-source errors of that note. */
   #errors: readonly DocumentCitationError[] = [];
+  /** Where the current list's render stands, as copy readiness reads it. */
+  #formatting: ReferencesFormatting = "pending";
   /** Copy readiness as it was last published, so only a change is logged. */
   #copyLabel: "ready" | ReferencesCopyBlock = "no-note";
   /** The bibliography a copy would take; `null` while copy is unavailable. */
@@ -161,7 +165,7 @@ export class ReferencesView extends ItemView {
     // whichever document that is, and every signal that can change its
     // Citations: its own citekeys through the index, its wikilinks and the
     // frontmatter that resolves either syntax through the metadata cache. A
-    // rescan that finds the same Citations rebuilds nothing.
+    // rescan that finds the same Citations of the same note rebuilds nothing.
     this.registerEvent(
       app.workspace.on("active-leaf-change", () => this.#rescan()),
     );
@@ -204,34 +208,52 @@ export class ReferencesView extends ItemView {
    * answer differs. The query is answered from the index, so a document the
    * vault-wide backfill has not reached is scanned on demand rather than waited
    * for; the read yields, so a stale answer is discarded.
+   *
+   * A rescan starts when the active note may have moved on, while the list
+   * still answers for the note its Citations were read from, so copy readiness
+   * is republished before the read rather than after it. The note is part of
+   * the answer, so a switch to a note citing the same works rebuilds the list
+   * all the same, and the copy it offers names the note now on screen.
    */
   #rescan(): void {
     const scan = ++this.#scan;
-    void this.#readCitationSet().then(({ citations, errors }) => {
+    this.#refreshCopy();
+    void this.#readCitationSet().then(({ path, citations, errors }) => {
       if (
         scan !== this.#scan ||
-        (citationsEqual(this.#citations, citations) &&
+        (path === this.#path &&
+          citationsEqual(this.#citations, citations) &&
           documentCitationErrorsEqual(this.#errors, errors))
       ) {
         return;
       }
+      this.#path = path;
       this.#citations = citations;
       this.#errors = errors;
       logger.trace("References citations changed", {
-        path: this.#deps.app.workspace.getActiveFile()?.path,
+        path,
         count: citations.length,
       });
       this.#reload();
     });
   }
 
-  /** Scope is `.md`, the only files the index covers. */
-  async #readCitationSet(): Promise<DocumentCitationSet> {
+  /**
+   * Scope is `.md`, the only files the index covers. The note travels with the
+   * answer, so the list keeps naming the note it was read from however the
+   * active note moves while the read runs.
+   */
+  async #readCitationSet(): Promise<
+    DocumentCitationSet & { path: string | null }
+  > {
     const file = this.#deps.app.workspace.getActiveFile();
     if (!file || file.extension !== "md") {
-      return { occurrences: [], citations: [], errors: [] };
+      return { path: null, occurrences: [], citations: [], errors: [] };
     }
-    return this.#deps.citationIndex.getDocumentCitationSet(file);
+    return {
+      path: file.path,
+      ...(await this.#deps.citationIndex.getDocumentCitationSet(file)),
+    };
   }
 
   /**
@@ -257,19 +279,16 @@ export class ReferencesView extends ItemView {
       errors: this.#errors,
     });
 
+    // Retained formatted entries answer for the render that is about to be
+    // replaced, so the reload alone puts copy out of reach.
+    this.#formatting = engine.kind === "installed" ? "pending" : "unavailable";
     this.#store.setState({
       entries,
       listMode: this.#listMode,
       engine,
       formattingFailed: this.#formattingFailed,
       dbReady: this.#deps.db.state === "ready",
-      // Retained formatted entries answer for the render that is about to be
-      // replaced, so the reload alone puts copy out of reach.
-      copy: this.#trackCopy(
-        entries,
-        engine.kind === "installed" ? "pending" : "unavailable",
-        generation,
-      ),
+      copy: this.#trackCopy(entries),
     });
     void this.#render(generation, citations, sources);
   }
@@ -277,20 +296,26 @@ export class ReferencesView extends ItemView {
   /**
    * Publish copy readiness, and hold the bibliography a ready copy takes.
    *
+   * The note travels with the Citations the list was built from, rather than
+   * being read back off the workspace here: once another note takes over, the
+   * list on screen answers for the note it was read from alone, so copy waits
+   * for the rescan that follows the switch whatever this render did.
+   *
    * The snapshot names the note and the generation it answers for, so the copy
    * action can refuse a write once either has moved on.
    */
-  #trackCopy(
-    entries: readonly ReferenceEntry[],
-    formatting: ReferencesFormatting,
-    generation: number,
-  ): ReferencesCopyState {
-    const path = this.#activeMarkdownPath();
+  #trackCopy(entries: readonly ReferenceEntry[]): ReferencesCopyState {
+    const path = this.#path;
+    const generation = this.#generation;
     const copy = referencesCopyState({
       path,
       generation,
       entries,
-      formatting,
+      // A list the active note has moved past is the previous note's until the
+      // rescan that follows the switch hands this pane the new note's own
+      // Citations, so it waits on that rescan the way it waits on a render.
+      formatting:
+        this.#activeMarkdownPath() === path ? this.#formatting : "pending",
     });
     this.#copySnapshot =
       copy.kind === "ready"
@@ -307,6 +332,19 @@ export class ReferencesView extends ItemView {
       });
     }
     return copy;
+  }
+
+  /**
+   * Republish copy readiness alone, for a change that leaves the list itself
+   * standing: the active note moving away from the note the list answers for,
+   * and back to it. The readiness label carries that whole change — neither the
+   * note nor the generation of a ready copy moves without a reload — so an
+   * unchanged label publishes nothing and the pane stays put.
+   */
+  #refreshCopy(): void {
+    const label = this.#copyLabel;
+    const copy = this.#trackCopy(this.#store.getState().entries);
+    if (label !== this.#copyLabel) this.#store.setState({ copy });
   }
 
   /** The active file when it is a note the citation index answers for. */
@@ -425,6 +463,7 @@ export class ReferencesView extends ItemView {
       hasEntryMarkers: outcome.hasEntryMarkers,
     };
     this.#formattingFailed = false;
+    this.#formatting = "complete";
     logger.debug("References bibliography rendered", {
       count: outcome.entries.length,
       hasEntryMarkers: outcome.hasEntryMarkers,
@@ -440,7 +479,7 @@ export class ReferencesView extends ItemView {
       entries,
       listMode: this.#listMode,
       formattingFailed: false,
-      copy: this.#trackCopy(entries, "complete", generation),
+      copy: this.#trackCopy(entries),
     });
   }
 
@@ -453,6 +492,7 @@ export class ReferencesView extends ItemView {
     this.#rendered.clear();
     this.#listMode = { kind: "minimal" };
     this.#formattingFailed = formattingFailed;
+    this.#formatting = formattingFailed ? "failed" : "unavailable";
     const minimal = minimalReferencesState({
       citations,
       sources,
@@ -461,11 +501,7 @@ export class ReferencesView extends ItemView {
     });
     this.#store.setState({
       ...minimal,
-      copy: this.#trackCopy(
-        minimal.entries,
-        formattingFailed ? "failed" : "unavailable",
-        this.#generation,
-      ),
+      copy: this.#trackCopy(minimal.entries),
     });
   }
 }

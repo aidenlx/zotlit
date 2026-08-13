@@ -82,8 +82,21 @@ function renderedOutcome(): BibliographyRenderOutcome {
 
 let view: TestReferencesView | undefined;
 let renders: PromiseWithResolvers<BibliographyRenderOutcome>[] = [];
+let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
+let activeFile: TFile;
+let otherFile: TFile;
 let onDbChanged: (() => void) | undefined;
 let onInvalidated: (() => void) | undefined;
+let onActiveLeafChange: (() => void) | undefined;
+
+function markdownFile(basename: string): TFile {
+  const file = new TFile();
+  file.basename = basename;
+  file.extension = "md";
+  file.name = `${basename}.md`;
+  file.path = `notes/${file.name}`;
+  return file;
+}
 
 function copyAction(): HTMLElement {
   return view!.contentEl.querySelector<HTMLElement>(
@@ -104,17 +117,30 @@ async function finishRender(): Promise<void> {
   await settle();
 }
 
+/** Answer the citation-set read the newest rescan is waiting on. */
+async function finishScan(): Promise<void> {
+  scans.at(-1)!.resolve(citationSet);
+  await settle();
+}
+
+/** Follow another note, which the pane learns of before its rescan answers. */
+async function followOtherNote(): Promise<void> {
+  activeFile = otherFile;
+  await act(() => onActiveLeafChange!());
+}
+
 beforeEach(async () => {
   renders = [];
-  const file = new TFile();
-  file.path = "notes/tidal.md";
-  file.name = "tidal.md";
-  file.basename = "tidal";
-  file.extension = "md";
+  scans = [];
+  activeFile = markdownFile("tidal");
+  otherFile = markdownFile("estuary");
   const app = {
     workspace: {
-      getActiveFile: () => file,
-      on: () => ({}) as EventRef,
+      getActiveFile: () => activeFile,
+      on: (event: string, callback: () => void) => {
+        if (event === "active-leaf-change") onActiveLeafChange = callback;
+        return {} as EventRef;
+      },
     },
     metadataCache: { on: () => ({}) as EventRef },
   } as unknown as App;
@@ -133,7 +159,11 @@ beforeEach(async () => {
         },
       },
       citationIndex: {
-        getDocumentCitationSet: () => Promise.resolve(citationSet),
+        getDocumentCitationSet: () => {
+          const deferred = Promise.withResolvers<DocumentCitationSet>();
+          scans.push(deferred);
+          return deferred.promise;
+        },
         on: () => () => undefined,
       },
       citekeyEditor: { openCitekey: () => Promise.resolve() },
@@ -160,7 +190,7 @@ beforeEach(async () => {
 
   document.body.append(view.contentEl);
   await act(() => view!.open());
-  await settle();
+  await finishScan();
 });
 
 afterEach(async () => {
@@ -168,6 +198,7 @@ afterEach(async () => {
   view = undefined;
   onDbChanged = undefined;
   onInvalidated = undefined;
+  onActiveLeafChange = undefined;
   document.body.replaceChildren();
 });
 
@@ -203,6 +234,40 @@ describe("ReferencesView copy readiness", () => {
     await act(() => onInvalidated?.());
 
     expect(view!.contentEl.textContent).not.toContain("Rivers, A. (2020).");
+    expect(copyAction().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("takes copy back the moment the pane follows another note", async () => {
+    await finishRender();
+    expect(copyAction().hasAttribute("disabled")).toBe(false);
+
+    await followOtherNote();
+
+    expect(copyAction().getAttribute("aria-label")).toBe(
+      "Wait for the references to finish formatting",
+    );
+    expect(copyAction().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("offers the new note its own copy once its rescan and render land", async () => {
+    await finishRender();
+    await followOtherNote();
+
+    // The note cites the same works, which leaves the list on screen as it is
+    // and still hands copy over to the note that now owns it.
+    await finishScan();
+    expect(copyAction().hasAttribute("disabled")).toBe(true);
+
+    await finishRender();
+
+    expect(copyAction().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps copy out of reach when the previous note's render lands", async () => {
+    await followOtherNote();
+
+    await finishRender();
+
     expect(copyAction().hasAttribute("disabled")).toBe(true);
   });
 });
