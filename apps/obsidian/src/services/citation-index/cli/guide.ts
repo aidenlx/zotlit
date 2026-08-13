@@ -45,7 +45,7 @@ const ENTRY_KINDS = {
 /** Which syntax wrote an occurrence. */
 const OCCURRENCE_KINDS = {
   citekey:
-    "A citation key written literally in the note body, with its leading '@'.",
+    "A citation key written literally in the note body. Its position covers the written form: '@key', '-@key' where the author is suppressed, and '@{key}' where braces carry the key.",
   wikilink:
     "A wikilink to a Literature Note, alone or with a '#cite:' Citation Fragment.",
 } as const satisfies Record<CitationSyntax, string>;
@@ -151,8 +151,8 @@ OCCURRENCES
   Every occurrence is { kind, raw, position }.
 
 ${rows(OCCURRENCE_KINDS)}
-  raw         The literal citation key, or the wikilink's linkpath with its
-              subpath removed.
+  raw         The identifier alone: the citation key without its '@' and
+              braces, or the wikilink's linkpath with its subpath removed.
   position    { start, end }, each { line, col, offset }. line and col count
               from 1, matching editor and grep line numbers; offset counts
               UTF-16 code units from 0. start is inclusive and end is
