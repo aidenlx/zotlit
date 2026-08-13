@@ -43,6 +43,31 @@ export function isExcludedTokenClass(classes: string): boolean {
 }
 
 /**
+ * Obsidian's class for the superscript run of a footnote: the marker of a
+ * `[^ref]`, and the whole body of an inline note `^[...]`. It carries the
+ * smaller type and the raised baseline, so text that loses it drops out of the
+ * note it is written in.
+ */
+const FOOTNOTE_CLASS = "footref";
+
+/**
+ * @param classes {@link isExcludedTokenClass}
+ * @returns whether a span covered by that node is footnote text.
+ */
+export function isFootnoteTokenClass(classes: string): boolean {
+  return classes.split(" ").includes(FOOTNOTE_CLASS);
+}
+
+/**
+ * The class a widget standing in footnote text carries itself, when the run it
+ * sits in passes nothing down — the same way the wikilink surface hands its
+ * citation widget the classes of the text it hides. Only this one class
+ * carries over: the rest describe the markup the widget takes the place of,
+ * which it no longer shows.
+ */
+export const FOOTNOTE_WIDGET_CLASS = `cm-${FOOTNOTE_CLASS}`;
+
+/**
  * The mark covers `@citekey` itself, leaving Pandoc's author-suppression `-`
  * outside it: the `@` and the key are the text a click resolves.
  *

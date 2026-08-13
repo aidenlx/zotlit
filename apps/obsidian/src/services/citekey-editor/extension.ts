@@ -44,7 +44,9 @@ import type {
 import {
   citationRanges,
   citekeyMarks,
+  FOOTNOTE_WIDGET_CLASS,
   isExcludedTokenClass,
+  isFootnoteTokenClass,
   marksOutside,
   resolveCitekeyMarks,
 } from "./decorate";
@@ -349,6 +351,7 @@ class CitationWidget extends WidgetType {
   readonly #sourcePath;
   readonly #handlers;
   readonly #themeClasses;
+  readonly #footnote;
   readonly #navigable;
 
   constructor(options: {
@@ -358,6 +361,8 @@ class CitationWidget extends WidgetType {
     sourcePath: string;
     handlers: CitekeyEditorHandlers;
     themeClasses: readonly string[];
+    /** Whether the Citation is written inside a footnote. */
+    footnote: boolean;
     navigable: boolean;
   }) {
     super();
@@ -367,6 +372,7 @@ class CitationWidget extends WidgetType {
     this.#sourcePath = options.sourcePath;
     this.#handlers = options.handlers;
     this.#themeClasses = options.themeClasses;
+    this.#footnote = options.footnote;
     this.#navigable = options.navigable;
   }
 
@@ -374,7 +380,8 @@ class CitationWidget extends WidgetType {
     return (
       other.#source === this.#source &&
       other.#content === this.#content &&
-      other.#navigable === this.#navigable
+      other.#navigable === this.#navigable &&
+      other.#footnote === this.#footnote
     );
   }
 
@@ -382,6 +389,7 @@ class CitationWidget extends WidgetType {
     const element = citationElement(view.dom.ownerDocument, this.#content, [
       themeHook.citationKey,
       ...this.#themeClasses,
+      ...(this.#footnote ? [FOOTNOTE_WIDGET_CLASS] : []),
     ]);
     if (this.#navigable) {
       attachCitationNavigation(element, {
@@ -449,7 +457,10 @@ function buildDecorations(
           const from = line.from + citation.start;
           const to = line.from + citation.end;
           if (overlapsSelection(selection, from, to)) continue;
-          const widget = citationWidget(citation, edited, handlers);
+          const widget = citationWidget(citation, edited, {
+            handlers,
+            footnote: statesFootnoteTreatment(state, from, to),
+          });
           if (widget === null) continue;
           replaced.push(citation);
           placed.push({
@@ -493,7 +504,10 @@ function buildDecorations(
 function citationWidget(
   citation: CitationRange,
   { citations, path }: EditedDocument,
-  handlers: CitekeyEditorHandlers,
+  {
+    handlers,
+    footnote,
+  }: { handlers: CitekeyEditorHandlers; footnote: boolean },
 ): CitationWidget | null {
   const content = citationContent(citation, citations);
   if (content === null) return null;
@@ -515,6 +529,7 @@ function citationWidget(
     sourcePath: path,
     handlers,
     themeClasses,
+    footnote,
     navigable: handlers.navigationEnabled(),
   });
 }
@@ -574,6 +589,43 @@ export function citekeyAtPos(state: EditorState, pos: number): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Whether a widget over `[from, to)` has to carry the footnote treatment
+ * itself, which the range's own tokens decide.
+ *
+ * A node meeting the range only at a boundary describes the text beside it —
+ * the `^[` opening an inline note is such a neighbor — so the range's own
+ * tokens are the ones that overlap it. Of those, a footnote run reaching past
+ * both ends is one CodeMirror wraps the replacement in, which passes the
+ * treatment down on its own; the class would then shrink the same em-relative
+ * step a second time. Every other footnote range leaves the replacement
+ * outside the run, with nothing to inherit from.
+ *
+ * @see FOOTNOTE_WIDGET_CLASS
+ */
+function statesFootnoteTreatment(
+  state: EditorState,
+  from: number,
+  to: number,
+): boolean {
+  let inside = false;
+  let wrapped = false;
+  syntaxTree(state).iterate({
+    from,
+    to,
+    enter(node) {
+      if (wrapped) return false;
+      if (node.to <= from || node.from >= to) return false;
+      const classes = node.type.prop(tokenClassNodeProp);
+      if (classes === undefined || !isFootnoteTokenClass(classes)) return true;
+      inside = true;
+      wrapped = node.from < from && node.to > to;
+      return !wrapped;
+    },
+  });
+  return inside && !wrapped;
 }
 
 /** Whether Obsidian's syntax tree classifies `[from, to)` as non-citation text. */

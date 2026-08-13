@@ -4,6 +4,7 @@ import {
   citationRanges,
   citekeyMarks,
   isExcludedTokenClass,
+  isFootnoteTokenClass,
   marksOutside,
   resolveCitekeyMarks,
 } from "./decorate";
@@ -85,6 +86,18 @@ describe("isExcludedTokenClass", () => {
     expect(isExcludedTokenClass("")).toBe(false);
     expect(isExcludedTokenClass("hmd-barelink link")).toBe(false);
     expect(isExcludedTokenClass("em")).toBe(false);
+  });
+});
+
+describe("isFootnoteTokenClass", () => {
+  it("reads the body of an inline note and a footnote marker as footnote text", () => {
+    expect(isFootnoteTokenClass("footref inline-footnote")).toBe(true);
+    expect(isFootnoteTokenClass("footref hmd-barelink link")).toBe(true);
+  });
+
+  it("leaves ordinary text alone", () => {
+    expect(isFootnoteTokenClass("")).toBe(false);
+    expect(isFootnoteTokenClass("em strong")).toBe(false);
   });
 });
 
