@@ -1,13 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { CslItemData } from "@zotlit/db";
+
 import type {
+  Citation,
+  CitationOccurrence,
   CitationSettleOutcome,
+  CitationSyntax,
   CitedBySnapshot,
+  ReferenceSource,
   SnapshotItem,
 } from "@/services/citation-index/service";
 
-import { CITED_BY_COMMAND, createCitationsCliHandlers } from "./commands";
-import type { ItemPresence } from "./commands";
+import {
+  CITED_BY_COMMAND,
+  createCitationsCliHandlers,
+  REFERENCES_COMMAND,
+} from "./commands";
+import type { DocumentReferences, ItemPresence } from "./commands";
 import { DIAGNOSTIC_HINTS } from "./envelope";
 
 const IDENTITY = {
@@ -40,40 +50,111 @@ const EMPTY: CitedBySnapshot = {
   resolution: "ready",
 };
 
+const DOCUMENT_PATH = "notes/review.md";
+const MISSING_ITEM_KEY = "EFGH6789";
+
+function occurrence(
+  raw: string,
+  offset: number,
+  kind: CitationSyntax = "citekey",
+): CitationOccurrence {
+  return {
+    kind,
+    raw,
+    position: {
+      start: { line: 0, col: offset, offset },
+      end: { line: 0, col: offset + raw.length, offset: offset + raw.length },
+    },
+  };
+}
+
+const FIRST_OCCURRENCE = occurrence(ITEM_CITEKEY, 10);
+const REPEAT_OCCURRENCE = occurrence(ITEM_CITEKEY, 120);
+const UNRESOLVED_OCCURRENCE = occurrence("roe2099", 30);
+const MALFORMED_OCCURRENCE = occurrence("Doe 2024|p. 3|extra", 50, "wikilink");
+const MISSING_OCCURRENCE = occurrence(MISSING_ITEM_KEY, 90, "wikilink");
+
+const SOURCE: ReferenceSource = {
+  csl: { id: "item-7" } as CslItemData,
+  summary: "Doe (2024): A study of citations",
+  itemKey: ITEM_KEY,
+  itemID: 7,
+  groupID: null,
+  citekey: ITEM_CITEKEY,
+  linkpath: "Literature/@doe2024.md",
+  attachments: [],
+};
+
+const CITATIONS: Citation[] = [
+  {
+    indexedKey: ITEM_KEY,
+    linkpath: SOURCE.linkpath,
+    refNumber: 1,
+    occurrences: [FIRST_OCCURRENCE, REPEAT_OCCURRENCE],
+  },
+  {
+    indexedKey: null,
+    linkpath: null,
+    refNumber: 2,
+    occurrences: [UNRESOLVED_OCCURRENCE],
+  },
+  {
+    indexedKey: MISSING_ITEM_KEY,
+    linkpath: null,
+    refNumber: 3,
+    occurrences: [MISSING_OCCURRENCE],
+  },
+];
+
+const DOCUMENT: DocumentReferences = {
+  citations: CITATIONS,
+  errors: [{ kind: "malformed-wikilink", occurrence: MALFORMED_OCCURRENCE }],
+  sources: new Map([[ITEM_KEY, SOURCE]]),
+};
+
 interface SetupOptions {
   settle?: CitationSettleOutcome;
   settleTimeoutMs?: number;
   snapshot?: CitedBySnapshot;
   presence?: ItemPresence;
   citekeyItem?: SnapshotItem | null;
+  document?: DocumentReferences | null;
 }
 
 function setup(options: SetupOptions = {}) {
   const settle = options.settle ?? "settled";
   const presence = options.presence ?? "present";
   const citekeyItem = options.citekeyItem ?? null;
+  const documentReferences =
+    options.document === undefined ? DOCUMENT : options.document;
   const getIdentity = vi.fn(() => IDENTITY);
   const waitUntilSettled = vi.fn(() => Promise.resolve(settle));
   const resolveCitekey = vi.fn(() => citekeyItem);
   const citekeyOf = vi.fn(() => ITEM_CITEKEY);
   const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
   const lookupItem = vi.fn(() => presence);
+  const readDocument = vi.fn(() => Promise.resolve(documentReferences));
   const handlers = createCitationsCliHandlers({
     getIdentity,
     settleTimeoutMs: options.settleTimeoutMs,
     index: { waitUntilSettled, resolveCitekey, citekeyOf, getCitedBy },
     lookupItem,
+    readDocument,
   });
   const citedBy = (params: Record<string, string>): Promise<string> =>
     Promise.resolve(handlers[CITED_BY_COMMAND](params));
+  const references = (params: Record<string, string>): Promise<string> =>
+    Promise.resolve(handlers[REFERENCES_COMMAND](params));
   return {
     citedBy,
+    references,
     getIdentity,
     waitUntilSettled,
     resolveCitekey,
     citekeyOf,
     getCitedBy,
     lookupItem,
+    readDocument,
   };
 }
 
@@ -290,10 +371,163 @@ describe("zotlit:cited-by", () => {
         order.push("lookup");
         return "present";
       },
+      readDocument: () => Promise.resolve(DOCUMENT),
     });
 
     await handlers[CITED_BY_COMMAND]({ key: ITEM_KEY });
 
     expect(order).toEqual(["identity", "settle", "lookup", "cited-by"]);
+  });
+});
+
+describe("zotlit:references", () => {
+  it("reports the document's entries in first-occurrence order, with identity and positions", async () => {
+    const { references, readDocument } = setup();
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
+    expect(JSON.parse(output)).toEqual({
+      contractVersion: 1,
+      command: REFERENCES_COMMAND,
+      ok: true,
+      request: { file: DOCUMENT_PATH },
+      identity: IDENTITY,
+      entries: [
+        {
+          refNumber: 1,
+          kind: "resolved",
+          key: ITEM_KEY,
+          citekey: ITEM_CITEKEY,
+          summary: SOURCE.summary,
+          linkpath: SOURCE.linkpath,
+          occurrences: [FIRST_OCCURRENCE, REPEAT_OCCURRENCE],
+        },
+        {
+          refNumber: 2,
+          kind: "unresolved",
+          citekey: "roe2099",
+          occurrences: [UNRESOLVED_OCCURRENCE],
+        },
+        {
+          kind: "malformed",
+          occurrences: [MALFORMED_OCCURRENCE],
+        },
+        {
+          refNumber: 3,
+          kind: "missing",
+          key: MISSING_ITEM_KEY,
+          occurrences: [MISSING_OCCURRENCE],
+        },
+      ],
+    });
+  });
+
+  it("carries no CSL detail or attachment data in a resolved entry", async () => {
+    const { references } = setup();
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(output).not.toContain("csl");
+    expect(output).not.toContain("attachments");
+  });
+
+  it("answers a document that cites nothing with no entries", async () => {
+    const { references } = setup({
+      document: { citations: [], errors: [], sources: new Map() },
+    });
+
+    expect(
+      JSON.parse(await references({ file: "notes/plain.md" })),
+    ).toMatchObject({ ok: true, entries: [] });
+  });
+
+  describe("selector", () => {
+    it.each([
+      ["no file", {}, "file"],
+      ["an empty file", { file: "" }, "file"],
+      ["a bare file", { file: "true" }, "file"],
+      [
+        "a bare expect-source",
+        { file: DOCUMENT_PATH, "expect-source": "true" },
+        "expect-source",
+      ],
+      ["an unknown parameter", { file: DOCUMENT_PATH, key: ITEM_KEY }, "key"],
+      ["a trailing vault", { file: DOCUMENT_PATH, vault: "Other" }, "vault"],
+    ])("rejects %s", async (_label, params, parameter) => {
+      const { references, getIdentity, waitUntilSettled, readDocument } =
+        setup();
+
+      const response = JSON.parse(await references(params)) as {
+        ok: boolean;
+        diagnostic: { code: string; hint: string; details: object };
+      };
+
+      expect(response.ok).toBe(false);
+      expect(response.diagnostic.code).toBe("INVALID_SELECTOR");
+      expect(response.diagnostic.hint).toBe(DIAGNOSTIC_HINTS.INVALID_SELECTOR);
+      expect(response.diagnostic.details).toEqual({ parameter });
+      expect(getIdentity).not.toHaveBeenCalled();
+      expect(waitUntilSettled).not.toHaveBeenCalled();
+      expect(readDocument).not.toHaveBeenCalled();
+    });
+  });
+
+  it("reports a path the vault holds no note at", async () => {
+    const { references } = setup({ document: null });
+
+    const output = await references({ file: "notes/gone.md" });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      request: { file: "notes/gone.md" },
+      identity: IDENTITY,
+      diagnostic: {
+        code: "FILE_NOT_FOUND",
+        message: "The vault holds no Markdown note at 'notes/gone.md'.",
+        hint: DIAGNOSTIC_HINTS.FILE_NOT_FOUND,
+        details: { file: "notes/gone.md" },
+      },
+    });
+  });
+
+  it("rejects a source mismatch before any data load", async () => {
+    const { references, waitUntilSettled, readDocument } = setup();
+
+    const output = await references({
+      file: DOCUMENT_PATH,
+      "expect-source": "other",
+    });
+
+    expect(waitUntilSettled).not.toHaveBeenCalled();
+    expect(readDocument).not.toHaveBeenCalled();
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      request: { file: DOCUMENT_PATH },
+      identity: IDENTITY,
+      diagnostic: {
+        code: "TARGET_MISMATCH",
+        details: { target: "source", expected: "other", actual: "a1b2c3d4" },
+      },
+    });
+  });
+
+  it("returns a retryable diagnostic when the index stays transitional", async () => {
+    const { references, readDocument } = setup({
+      settle: "timeout",
+      settleTimeoutMs: 25,
+    });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(readDocument).not.toHaveBeenCalled();
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INDEX_NOT_READY",
+        message: "The Citation Index did not settle within 25 ms.",
+        hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
+      },
+    });
   });
 });

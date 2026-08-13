@@ -16,13 +16,18 @@ import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { CITED_BY_COMMAND, createCitationsCliHandlers } from "./commands";
-import type { ItemPresence } from "./commands";
-import type { CITED_BY_PARAMS } from "./request";
+import {
+  CITED_BY_COMMAND,
+  createCitationsCliHandlers,
+  REFERENCES_COMMAND,
+} from "./commands";
+import type { DocumentReferences, ItemPresence } from "./commands";
+import type { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
 
 const logger = getLogger(["citation-index", "cli"]);
 
@@ -53,6 +58,20 @@ function citedByFlags(): CliFlags {
   } satisfies Record<(typeof CITED_BY_PARAMS)[number], CliFlag>;
 }
 
+function referencesFlags(): CliFlags {
+  return {
+    file: {
+      value: "<vault-path>",
+      description: m.cli_flag_references_file_desc(),
+      required: true,
+    },
+    "expect-source": {
+      value: "<source-id>",
+      description: m.cli_flag_expect_source_desc(),
+    },
+  } satisfies Record<(typeof REFERENCES_PARAMS)[number], CliFlag>;
+}
+
 export function registerCitationsCli(
   plugin: Plugin,
   deps: CitationsCliRegistrationDeps,
@@ -80,6 +99,7 @@ export function registerCitationsCli(
       getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
     },
     lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
+    readDocument: (path) => readDocument(deps, path),
   });
 
   plugin.registerCliHandler(
@@ -88,6 +108,29 @@ export function registerCitationsCli(
     citedByFlags(),
     handlers[CITED_BY_COMMAND],
   );
+  plugin.registerCliHandler(
+    REFERENCES_COMMAND,
+    m.cli_references_desc(),
+    referencesFlags(),
+    handlers[REFERENCES_COMMAND],
+  );
+}
+
+/** Any Markdown note answers: a document need not be a Literature Note to cite
+ *  works. A path the vault holds no note at names no document to read. */
+async function readDocument(
+  deps: CitationsCliRegistrationDeps,
+  path: string,
+): Promise<DocumentReferences | null> {
+  const file = deps.app.vault.getFileByPath(path);
+  if (!file || file.extension !== "md") return null;
+  const { citations, errors } =
+    await deps.citationIndex.getDocumentCitationSet(file);
+  return {
+    citations,
+    errors,
+    sources: readReferenceSources(deps.db, citations),
+  };
 }
 
 /** A well-formed Zotero key names an Item only when the connected library

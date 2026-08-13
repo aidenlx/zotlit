@@ -527,6 +527,8 @@
   "cli_cited_by_desc": "列出引用某个 Zotero 条目的笔记，并给出每处引用的位置",
   "cli_flag_cited_by_key_desc": "条目的 Zotero 标识符；与 citekey 二选一",
   "cli_flag_cited_by_citekey_desc": "条目的文献引用标识（citation key）；与 key 二选一",
+  "cli_references_desc": "列出某个笔记引用了哪些文献，并给出每处引用的位置",
+  "cli_flag_references_file_desc": "笔记在仓库中的路径，例如 notes/review.md",
   "settings_attachment_import_name": "导入附件",
   "settings_attachment_import_desc": "将标注图像和嵌入附件复制到仓库。",
   "settings_attachment_folder_name": "附件文件夹",

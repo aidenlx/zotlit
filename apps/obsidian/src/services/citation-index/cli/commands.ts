@@ -3,8 +3,11 @@
 import type { CliData, CliHandler } from "obsidian";
 
 import type {
+  Citation,
   CitationSettleOutcome,
   CitedBySnapshot,
+  DocumentCitationError,
+  ReferenceSource,
   SnapshotItem,
 } from "@/services/citation-index/service";
 
@@ -12,6 +15,7 @@ import {
   citekeyNotFoundDiagnostic,
   diagnostic,
   envelope,
+  fileNotFoundDiagnostic,
   keyNotFoundDiagnostic,
   notSettledDiagnostic,
 } from "./envelope";
@@ -20,14 +24,22 @@ import type {
   CitationsIdentity,
   CitedItem,
   Diagnostic,
+  ReferenceEntry,
 } from "./envelope";
-import { parseCitedByRequest, targetMismatch } from "./request";
-import type { CitedBySelector } from "./request";
+import {
+  parseCitedByRequest,
+  parseReferencesRequest,
+  targetMismatch,
+} from "./request";
+import type { CitedBySelector, ParsedRequest } from "./request";
 
 export type { CitationsIdentity } from "./envelope";
 
 export const CITED_BY_COMMAND =
   "zotlit:cited-by" as const satisfies CitationsCommand;
+
+export const REFERENCES_COMMAND =
+  "zotlit:references" as const satisfies CitationsCommand;
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 
@@ -35,6 +47,15 @@ const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
  *  key. `"unreadable"` is a degraded database, which the payload reports as a
  *  resolution state rather than as a missing Item. */
 export type ItemPresence = "present" | "absent" | "unreadable";
+
+/** One document's Citations joined with the cited Items the database holds. */
+export interface DocumentReferences {
+  /** The Document Citation Set, in first-occurrence order. */
+  citations: readonly Citation[];
+  errors: readonly DocumentCitationError[];
+  /** The source-join by Indexed Key; an Item the database no longer holds is absent. */
+  sources: ReadonlyMap<string, ReferenceSource>;
+}
 
 interface CitationsCliDeps {
   getIdentity: () => CitationsIdentity | Promise<CitationsIdentity>;
@@ -48,48 +69,68 @@ interface CitationsCliDeps {
     getCitedBy: (indexedKey: string) => CitedBySnapshot;
   };
   lookupItem: (indexedKey: string) => ItemPresence;
+  /**
+   * @returns the document's references, or `null` when the vault holds no
+   *   Markdown note at the path.
+   */
+  readDocument: (path: string) => Promise<DocumentReferences | null>;
 }
 
-export type CitationsCliHandlers = Record<typeof CITED_BY_COMMAND, CliHandler>;
+export type CitationsCliHandlers = Record<
+  typeof CITED_BY_COMMAND | typeof REFERENCES_COMMAND,
+  CliHandler
+>;
+
+/** The command may read data, or it has already answered why it may not. */
+type Admission =
+  | { kind: "admitted"; echoed: EchoedFacts }
+  | { kind: "rejected"; response: string };
+
+interface EchoedFacts {
+  request: object;
+  identity: CitationsIdentity;
+}
 
 export function createCitationsCliHandlers(
   deps: CitationsCliDeps,
 ): CitationsCliHandlers {
   const settleTimeoutMs = deps.settleTimeoutMs ?? DEFAULT_SETTLE_TIMEOUT_MS;
 
+  /**
+   * The gate every citation command passes before it reads anything: the
+   * asserted Zotero source, so a call aimed at another library costs no data
+   * load at all, then the bounded wait out of the transitional index states.
+   */
+  const admit = async (
+    command: CitationsCommand,
+    params: CliData,
+    request: object,
+  ): Promise<Admission> => {
+    const identity = await deps.getIdentity();
+    const echoed = { request, identity };
+    const reject = (fault: Diagnostic): Admission => ({
+      kind: "rejected",
+      response: envelope(command, { ok: false, ...echoed, diagnostic: fault }),
+    });
+
+    const mismatch = targetMismatch(params, identity);
+    if (mismatch) return reject(mismatch);
+    const outcome = await deps.index.waitUntilSettled(settleTimeoutMs);
+    if (outcome !== "settled")
+      return reject(notSettledDiagnostic(settleTimeoutMs));
+    return { kind: "admitted", echoed };
+  };
+
   return {
     [CITED_BY_COMMAND]: async (params: CliData): Promise<string> => {
       const request = parseCitedByRequest(params);
       if (request.kind === "invalid") {
-        return envelope(CITED_BY_COMMAND, {
-          ok: false,
-          diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
-            parameter: request.parameter,
-          }),
-        });
+        return invalidRequest(CITED_BY_COMMAND, request);
       }
 
-      // Asserted before the index is read, so a call aimed at another Zotero
-      // source costs no data load at all.
-      const identity = await deps.getIdentity();
-      const echoed = { request: request.value, identity };
-      const mismatch = targetMismatch(params, identity);
-      if (mismatch) {
-        return envelope(CITED_BY_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: mismatch,
-        });
-      }
-
-      const outcome = await deps.index.waitUntilSettled(settleTimeoutMs);
-      if (outcome !== "settled") {
-        return envelope(CITED_BY_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: notSettledDiagnostic(settleTimeoutMs),
-        });
-      }
+      const admission = await admit(CITED_BY_COMMAND, params, request.value);
+      if (admission.kind === "rejected") return admission.response;
+      const { echoed } = admission;
 
       const item = resolveItem(deps, request.value);
       if (item === null) {
@@ -110,7 +151,46 @@ export function createCitationsCliHandlers(
         resolution: snapshot.resolution,
       });
     },
+
+    [REFERENCES_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseReferencesRequest(params);
+      if (request.kind === "invalid") {
+        return invalidRequest(REFERENCES_COMMAND, request);
+      }
+
+      const admission = await admit(REFERENCES_COMMAND, params, request.value);
+      if (admission.kind === "rejected") return admission.response;
+      const { echoed } = admission;
+
+      const { file } = request.value;
+      const references = await deps.readDocument(file);
+      if (references === null) {
+        return envelope(REFERENCES_COMMAND, {
+          ok: false,
+          ...echoed,
+          diagnostic: fileNotFoundDiagnostic(file),
+        });
+      }
+
+      return envelope(REFERENCES_COMMAND, {
+        ok: true,
+        ...echoed,
+        entries: referenceEntries(references),
+      });
+    },
   };
+}
+
+function invalidRequest(
+  command: CitationsCommand,
+  request: Extract<ParsedRequest<never>, { kind: "invalid" }>,
+): string {
+  return envelope(command, {
+    ok: false,
+    diagnostic: diagnostic("INVALID_SELECTOR", request.message, {
+      parameter: request.parameter,
+    }),
+  });
 }
 
 /**
@@ -139,4 +219,54 @@ function selectorNotFound(selector: CitedBySelector): Diagnostic {
   return "citekey" in selector
     ? citekeyNotFoundDiagnostic(selector.citekey)
     : keyNotFoundDiagnostic(selector.key);
+}
+
+/**
+ * The document's reference list, in the four kinds a CLI answer distinguishes.
+ *
+ * A malformed entry names no work, so it sorts in by the one occurrence it
+ * carries; every other entry keeps the Reference Number the index assigned it,
+ * which leaves the whole list in first-occurrence order.
+ */
+function referenceEntries({
+  citations,
+  errors,
+  sources,
+}: DocumentReferences): ReferenceEntry[] {
+  const entries: ReferenceEntry[] = [];
+  for (const { indexedKey, refNumber, occurrences } of citations) {
+    if (indexedKey === null) {
+      // Every unresolved Citation is written as a citekey — a wikilink that
+      // resolves to no Item is no Citation at all — so its raw text names it.
+      entries.push({
+        refNumber,
+        kind: "unresolved",
+        citekey: occurrences[0]!.raw,
+        occurrences,
+      });
+      continue;
+    }
+    const source = sources.get(indexedKey);
+    entries.push(
+      source
+        ? {
+            refNumber,
+            kind: "resolved",
+            key: indexedKey,
+            citekey: source.citekey,
+            summary: source.summary,
+            linkpath: source.linkpath,
+            occurrences,
+          }
+        : { refNumber, kind: "missing", key: indexedKey, occurrences },
+    );
+  }
+  for (const { occurrence } of errors) {
+    entries.push({ kind: "malformed", occurrences: [occurrence] });
+  }
+  return entries.sort(
+    (left, right) =>
+      left.occurrences[0]!.position.start.offset -
+      right.occurrences[0]!.position.start.offset,
+  );
 }

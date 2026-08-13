@@ -19,6 +19,8 @@ export type ParsedRequest<T> =
  */
 export const CITED_BY_PARAMS = ["key", "citekey", "expect-source"] as const;
 
+export const REFERENCES_PARAMS = ["file", "expect-source"] as const;
+
 /** The one Item `cited-by` reports citers of, named either way round. */
 export type CitedBySelector = { key: string } | { citekey: string };
 
@@ -50,6 +52,36 @@ export function parseCitedByRequest(
   }
   if (citekey !== undefined) return withExpectations(params, { citekey });
   return invalid("key", `${SELECTOR_EXCLUSIVITY_MESSAGE} Neither was set.`);
+}
+
+/** The one document `references` reports the Citations of. */
+export interface ReferencesSelector {
+  /** Vault-relative path of the document. */
+  file: string;
+}
+
+/**
+ * `references` takes one vault path, and accepts any Markdown note: a document
+ * need not be a Literature Note to cite works. Whether the vault holds a note
+ * there is a handler concern (`FILE_NOT_FOUND`), read only once the index has
+ * settled.
+ */
+export function parseReferencesRequest(
+  params: CliData,
+): ParsedRequest<ReferencesSelector> {
+  const rejected = rejectAccepted(params, "references", REFERENCES_PARAMS);
+  if (rejected) return invalid(rejected.parameter, rejected.message);
+  if (bareFlag(params, "file"))
+    return invalid("file", "file requires a value.");
+
+  const { file } = params;
+  if (file === undefined) {
+    return invalid(
+      "file",
+      "references takes the vault-relative path of one Markdown note, as file=folder/note.md.",
+    );
+  }
+  return withExpectations(params, { file });
 }
 
 /**

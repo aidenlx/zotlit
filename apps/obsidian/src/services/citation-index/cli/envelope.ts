@@ -8,6 +8,7 @@
 import type {
   CitationCoverage,
   CitationKeyResolution,
+  CitationOccurrence,
   CitedByGroup,
 } from "@/services/citation-index/service";
 
@@ -41,6 +42,8 @@ export const DIAGNOSTIC_HINTS = {
     "Run the command again after a short wait; the Citation Index is still scanning the vault or resolving citation keys.",
   KEY_NOT_FOUND:
     "Select a Zotero key or a citation key that names an item in the connected Zotero source.",
+  FILE_NOT_FOUND:
+    "Pass file= the vault-relative path of a Markdown note, as file=folder/note.md.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -54,7 +57,8 @@ export interface Diagnostic {
     | { parameter: string }
     | { target: "source"; expected: string; actual: string | null }
     | { key: string }
-    | { citekey: string };
+    | { citekey: string }
+    | { file: string };
 }
 
 /**
@@ -70,7 +74,7 @@ export function diagnostic(
 }
 
 /** The commands the citations namespace answers. */
-export type CitationsCommand = "zotlit:cited-by";
+export type CitationsCommand = "zotlit:cited-by" | "zotlit:references";
 
 /** The Item a cited-by answer resolved its selector to. */
 export interface CitedItem {
@@ -89,6 +93,40 @@ interface CitedByPayload {
   resolution: CitationKeyResolution;
 }
 
+/**
+ * One entry of a document's reference list. The References Sidebar's six kinds
+ * collapse to four here, because the rendered / summary / unrendered
+ * distinction only reports Pandoc Engine state (ADR 0024):
+ *
+ * - `resolved` — a cited Item the connected Zotero source holds, with its identity.
+ * - `unresolved` — a citation key that names no live Zotero Item.
+ * - `missing` — an Item the index cites that the database no longer holds.
+ * - `malformed` — citation intent that cannot be parsed, so it names no work
+ *   and joins no Document Citation Set; it therefore carries no Reference Number.
+ */
+export type ReferenceEntry = { occurrences: readonly CitationOccurrence[] } & (
+  | {
+      refNumber: number;
+      kind: "resolved";
+      /** Zotero key: the cross-library identity ZotLit indexes by. */
+      key: string;
+      citekey: string | null;
+      /** `Creators (Year): Title` from the shared item-summary rendering. */
+      summary: string;
+      /** Linkpath of the Literature Note, or `null` when the Item has none yet. */
+      linkpath: string | null;
+    }
+  | { refNumber: number; kind: "unresolved"; citekey: string }
+  | { refNumber: number; kind: "missing"; key: string }
+  | { kind: "malformed" }
+);
+
+/** `zotlit:references`'s result: index facts, never view presentation (ADR 0024). */
+interface ReferencesPayload {
+  /** The document's entries in first-occurrence order. */
+  entries: readonly ReferenceEntry[];
+}
+
 /** The facts a command echoes back beside its result, both optional because a
  *  selector-level failure is answered before either is resolved. */
 interface EnvelopeFacts {
@@ -104,7 +142,7 @@ interface EnvelopeFacts {
  */
 export type EnvelopeTail =
   | (EnvelopeFacts & { ok: false; diagnostic: Diagnostic })
-  | (EnvelopeFacts & { ok: true } & CitedByPayload);
+  | (EnvelopeFacts & { ok: true } & (CitedByPayload | ReferencesPayload));
 
 export function envelope(
   command: CitationsCommand,
@@ -135,5 +173,13 @@ export function citekeyNotFoundDiagnostic(citekey: string): Diagnostic {
     "KEY_NOT_FOUND",
     `No Zotero item carries the citation key '${citekey}'.`,
     { citekey },
+  );
+}
+
+export function fileNotFoundDiagnostic(file: string): Diagnostic {
+  return diagnostic(
+    "FILE_NOT_FOUND",
+    `The vault holds no Markdown note at '${file}'.`,
+    { file },
   );
 }
