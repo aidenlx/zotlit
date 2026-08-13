@@ -38,7 +38,7 @@
     "fflate": "catalog:",
     "hono": "^4.13.0",
     "idb": "^8.0.3",
-    "nanoid": "^5.1.14",
+    "nanoid": "^5.1.16",
     "p-limit": "^7.3.0",
     "preact": "^10.29.7",
     "react-textarea-autosize": "^8.5.9",

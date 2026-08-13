@@ -51,6 +51,12 @@ overrides:
   "next>postcss": ">=8.5.18"
   # ajv pins fast-uri to ^3.0.1; force the patched version (GHSA-7p8r-x3mc-p8w7).
   "ajv>fast-uri": "^3.1.5"
+  # postcss (via docs' Tailwind/vite toolchain) pins nanoid to 3.3.16; force the
+  # patched version (GHSA-2v37-7h3g-55p8).
+  "postcss>nanoid": "^3.3.17"
+  # cosmiconfig (via svgr, docs' icon build) pins js-yaml to 4.3.0; force the
+  # patched version (CVE-2026-59870).
+  "cosmiconfig>js-yaml": "^4.3.1"
 
 # delay 3 day to reduce the risk of installing compromised packages
 minimumReleaseAge: 4320
