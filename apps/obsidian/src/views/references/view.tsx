@@ -17,6 +17,7 @@ import type { Item } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
@@ -33,10 +34,12 @@ import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
-import type { ReferenceActions } from "./actions";
+import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
+import type { CopiedBibliographyEntry } from "./copied-bibliography";
 import { buildReferenceEntries, toOpenableAttachments } from "./entries";
 import type {
   OpenableAttachment,
+  ReferenceEntry,
   ReferenceSource,
   RenderedReference,
 } from "./entries";
@@ -44,9 +47,15 @@ import { References } from "./References";
 import {
   createReferencesStore,
   minimalReferencesState,
+  referencesCopyState,
   ReferencesStoreProvider,
 } from "./store";
-import type { ReferencesListMode } from "./store";
+import type {
+  ReferencesCopyBlock,
+  ReferencesCopyState,
+  ReferencesFormatting,
+  ReferencesListMode,
+} from "./store";
 
 export const REFERENCES_VIEW_TYPE = "zotlit-references";
 
@@ -93,6 +102,10 @@ export class ReferencesView extends ItemView {
   #citations: readonly Citation[] = [];
   /** Explicit citation-source errors of the active document. */
   #errors: readonly DocumentCitationError[] = [];
+  /** Copy readiness as it was last published, so only a change is logged. */
+  #copyLabel: "ready" | ReferencesCopyBlock = "no-note";
+  /** The bibliography a copy would take; `null` while copy is unavailable. */
+  #copySnapshot: CopyBibliographySnapshot | null = null;
 
   constructor(leaf: WorkspaceLeaf, deps: ReferencesViewDeps) {
     super(leaf);
@@ -130,6 +143,9 @@ export class ReferencesView extends ItemView {
       onOpenEngineSettings: () => this.#deps.openSettings(),
       onChangeStyle: () => this.#deps.openStyleSettings(),
       onDismissEngineHint: () => pandocEngine.decline(),
+      getCopySnapshot: () => this.#copySnapshot,
+      writeClipboard: (text) => navigator.clipboard.writeText(text),
+      notify: (message) => void new BaseNotice(message),
     });
 
     this.#root = createRoot(this.contentEl);
@@ -232,21 +248,70 @@ export class ReferencesView extends ItemView {
     const generation = ++this.#generation;
     const citations = this.#citations;
     const sources = this.#readSources(citations);
+    const engine = this.#deps.pandocEngine.getStatus();
+    const entries = buildReferenceEntries(citations, sources, {
+      bibliography: {
+        entries: this.#rendered,
+        complete: false,
+      },
+      errors: this.#errors,
+    });
 
     this.#store.setState({
-      entries: buildReferenceEntries(citations, sources, {
-        bibliography: {
-          entries: this.#rendered,
-          complete: false,
-        },
-        errors: this.#errors,
-      }),
+      entries,
       listMode: this.#listMode,
-      engine: this.#deps.pandocEngine.getStatus(),
+      engine,
       formattingFailed: this.#formattingFailed,
       dbReady: this.#deps.db.state === "ready",
+      // Retained formatted entries answer for the render that is about to be
+      // replaced, so the reload alone puts copy out of reach.
+      copy: this.#trackCopy(
+        entries,
+        engine.kind === "installed" ? "pending" : "unavailable",
+        generation,
+      ),
     });
     void this.#render(generation, citations, sources);
+  }
+
+  /**
+   * Publish copy readiness, and hold the bibliography a ready copy takes.
+   *
+   * The snapshot names the note and the generation it answers for, so the copy
+   * action can refuse a write once either has moved on.
+   */
+  #trackCopy(
+    entries: readonly ReferenceEntry[],
+    formatting: ReferencesFormatting,
+    generation: number,
+  ): ReferencesCopyState {
+    const path = this.#activeMarkdownPath();
+    const copy = referencesCopyState({
+      hasActiveNote: path !== null,
+      entries,
+      formatting,
+    });
+    this.#copySnapshot =
+      copy.kind === "ready" && path !== null
+        ? { path, generation, entries: copiedEntries(entries) }
+        : null;
+
+    const label = copy.kind === "ready" ? "ready" : copy.reason;
+    if (label !== this.#copyLabel) {
+      this.#copyLabel = label;
+      logger.debug("References copy readiness changed", {
+        state: label,
+        path,
+        generation,
+      });
+    }
+    return copy;
+  }
+
+  /** The active file when it is a note the citation index answers for. */
+  #activeMarkdownPath(): string | null {
+    const file = this.#deps.app.workspace.getActiveFile();
+    return file?.extension === "md" ? file.path : null;
   }
 
   /**
@@ -363,16 +428,18 @@ export class ReferencesView extends ItemView {
       count: outcome.entries.length,
       hasEntryMarkers: outcome.hasEntryMarkers,
     });
+    const entries = buildReferenceEntries(citations, sources, {
+      bibliography: {
+        entries: this.#rendered,
+        complete: true,
+      },
+      errors: this.#errors,
+    });
     this.#store.setState({
-      entries: buildReferenceEntries(citations, sources, {
-        bibliography: {
-          entries: this.#rendered,
-          complete: true,
-        },
-        errors: this.#errors,
-      }),
+      entries,
       listMode: this.#listMode,
       formattingFailed: false,
+      copy: this.#trackCopy(entries, "complete", generation),
     });
   }
 
@@ -385,13 +452,28 @@ export class ReferencesView extends ItemView {
     this.#rendered.clear();
     this.#listMode = { kind: "minimal" };
     this.#formattingFailed = formattingFailed;
-    this.#store.setState(
-      minimalReferencesState({
-        citations,
-        sources,
-        errors: this.#errors,
-        formattingFailed,
-      }),
-    );
+    const minimal = minimalReferencesState({
+      citations,
+      sources,
+      errors: this.#errors,
+      formattingFailed,
+    });
+    this.#store.setState({
+      ...minimal,
+      copy: this.#trackCopy(
+        minimal.entries,
+        formattingFailed ? "failed" : "unavailable",
+        this.#generation,
+      ),
+    });
   }
+}
+
+/** The completed entries of a ready list, in the style's bibliography order. */
+function copiedEntries(
+  entries: readonly ReferenceEntry[],
+): CopiedBibliographyEntry[] {
+  return entries
+    .filter((entry) => entry.kind === "rendered")
+    .map(({ marker, content }) => ({ marker, content }));
 }

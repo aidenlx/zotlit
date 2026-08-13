@@ -15,6 +15,7 @@ import type {
 import { useReferenceActions } from "./actions";
 import type { ReferenceEntry, ReferenceSource } from "./entries";
 import { useReferencesStore } from "./store";
+import type { ReferencesCopyBlock } from "./store";
 
 /**
  * The pane: the fixed toolbar above, then one scrolling region holding the
@@ -81,15 +82,29 @@ export function References() {
 
 /**
  * The pane-wide actions, outside the scrolling region so they stay reachable in
- * a long bibliography. Every action here answers for the pane as a whole, so
- * none of them depends on what the list currently holds.
+ * a long bibliography. The style action answers for the pane as a whole and
+ * stays live in every state; copy answers for the current bibliography, so it
+ * follows the list's copy readiness and says why when it cannot.
  */
 function Toolbar() {
   const actions = useReferenceActions();
+  const copy = useReferencesStore((s) => s.copy);
+  const copyReady = copy.kind === "ready";
 
   return (
     <SidebarToolbar className="zt:shrink-0">
       <SidebarToolbar.Actions className="zt:w-full">
+        <IconButton
+          icon="clipboard-copy"
+          data-references-copy-bibliography
+          disabled={!copyReady}
+          {...tooltipAttrs(
+            copyReady
+              ? m.references_copy_bibliography()
+              : copyBlockedReason(copy.reason),
+          )}
+          onClick={() => void actions.onCopyBibliography()}
+        />
         <IconButton
           icon="book-type"
           data-references-change-style
@@ -99,6 +114,24 @@ function Toolbar() {
       </SidebarToolbar.Actions>
     </SidebarToolbar>
   );
+}
+
+/** What the disabled copy action names in its tooltip as the thing to fix. */
+function copyBlockedReason(reason: ReferencesCopyBlock): string {
+  switch (reason) {
+    case "no-note":
+      return m.references_copy_blocked_no_note();
+    case "no-references":
+      return m.references_copy_blocked_no_references();
+    case "pending":
+      return m.references_copy_blocked_pending();
+    case "unavailable":
+      return m.references_copy_blocked_unavailable();
+    case "failed":
+      return m.references_copy_blocked_failed();
+    case "errors":
+      return m.references_copy_blocked_errors();
+  }
 }
 
 /**

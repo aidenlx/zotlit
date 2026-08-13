@@ -7,13 +7,28 @@ import type { MouseEvent } from "react";
 
 import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
+import { toCopiedBibliography } from "./copied-bibliography";
+import type { CopiedBibliographyEntry } from "./copied-bibliography";
 import type {
   OpenableAttachment,
   ReferenceEntry,
   ReferenceSource,
 } from "./entries";
+
+const logger = getLogger(["views", "references"]);
+
+/** The completed bibliography one copy is taken from, and what it answers for. */
+export interface CopyBibliographySnapshot {
+  /** Path of the Markdown note whose Document Citation Set the entries cover. */
+  path: string;
+  /** The completed render generation the entries came from. */
+  generation: number;
+  entries: readonly CopiedBibliographyEntry[];
+}
 
 export interface ReferenceActions {
   /** Move the editor to the entry's next occurrence, wrapping at the end. */
@@ -31,6 +46,8 @@ export interface ReferenceActions {
   onChangeStyle: () => void;
   /** Dismiss the install hint for good. */
   onDismissEngineHint: () => void;
+  /** Put the current bibliography on the clipboard as a Copied Bibliography. */
+  onCopyBibliography: () => Promise<void>;
 }
 
 export interface ReferenceActionDeps {
@@ -42,6 +59,12 @@ export interface ReferenceActionDeps {
   onOpenEngineSettings: () => void;
   onChangeStyle: () => void;
   onDismissEngineHint: () => void;
+  /** The bibliography a copy would take, or `null` while copy is unavailable. */
+  getCopySnapshot: () => CopyBibliographySnapshot | null;
+  /** Hand the serialized snapshot to the platform clipboard. */
+  writeClipboard: (text: string) => Promise<void>;
+  /** Show one transient message; the seam that owns notices supplies it. */
+  notify: (message: string) => void;
 }
 
 export function createReferenceActions(
@@ -99,6 +122,46 @@ export function createReferenceActions(
     onOpenEngineSettings: deps.onOpenEngineSettings,
     onChangeStyle: deps.onChangeStyle,
     onDismissEngineHint: deps.onDismissEngineHint,
+    async onCopyBibliography() {
+      const snapshot = deps.getCopySnapshot();
+      if (!snapshot) return;
+      const { text } = toCopiedBibliography(snapshot.entries);
+
+      // Read the snapshot again at the commit point: preparing the payload
+      // leaves the pane free to follow another note or finish a newer render,
+      // and a write that lands after that would copy a bibliography the
+      // sidebar no longer shows.
+      const current = deps.getCopySnapshot();
+      if (
+        !current ||
+        current.path !== snapshot.path ||
+        current.generation !== snapshot.generation
+      ) {
+        logger.debug("Bibliography snapshot changed before the copy", {
+          path: snapshot.path,
+          generation: snapshot.generation,
+        });
+        deps.notify(m.references_copy_changed());
+        return;
+      }
+
+      try {
+        await deps.writeClipboard(text);
+      } catch (error) {
+        logger.error("Cannot copy the bibliography snapshot", {
+          path: snapshot.path,
+          error,
+        });
+        deps.notify(m.references_copy_failed());
+        return;
+      }
+      logger.debug("Bibliography snapshot copied", {
+        path: snapshot.path,
+        generation: snapshot.generation,
+        count: snapshot.entries.length,
+      });
+      deps.notify(m.references_copy_copied());
+    },
   };
 }
 

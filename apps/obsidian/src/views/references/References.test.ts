@@ -37,6 +37,7 @@ const actions: ReferenceActions = {
   onOpenEngineSettings: () => undefined,
   onChangeStyle: vi.fn(),
   onDismissEngineHint: () => undefined,
+  onCopyBibliography: vi.fn(() => Promise.resolve()),
 };
 
 const occurrence: CitationOccurrence = {
@@ -73,7 +74,10 @@ async function render(
   {
     formattingFailed = false,
     engine = { kind: "installed", version: "test" },
-  }: Partial<Pick<ReferencesState, "formattingFailed" | "engine">> = {},
+    copy = { kind: "blocked", reason: "pending" },
+  }: Partial<
+    Pick<ReferencesState, "formattingFailed" | "engine" | "copy">
+  > = {},
 ): Promise<HTMLElement> {
   state = {
     entries,
@@ -81,6 +85,7 @@ async function render(
     engine,
     formattingFailed,
     dbReady: true,
+    copy,
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -373,4 +378,94 @@ describe("References toolbar", () => {
 
     expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps the style action live while copying is unavailable", async () => {
+    const container = await render(
+      [summaryEntry],
+      { kind: "minimal" },
+      {
+        copy: { kind: "blocked", reason: "errors" },
+      },
+    );
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("References copy action", () => {
+  const renderedEntry: ReferenceEntry = {
+    id: "BOOK0001",
+    refNumber: 1,
+    occurrences: [occurrence],
+    kind: "rendered",
+    source,
+    linkpath: "notes/BOOK0001",
+    marker: "[1]",
+    content: document.createDocumentFragment(),
+  };
+
+  function copyAction(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>(
+      "[data-references-copy-bibliography]",
+    )!;
+  }
+
+  async function ready(): Promise<HTMLElement> {
+    return render(
+      [renderedEntry],
+      { kind: "bibliography", hasEntryMarkers: true },
+      { copy: { kind: "ready" } },
+    );
+  }
+
+  it("holds the copy action above the scrolling list region", async () => {
+    const container = await ready();
+    const scrolling = container.querySelector("[data-references-scroll]")!;
+
+    expect(copyAction(container)).not.toBeNull();
+    expect(
+      scrolling.querySelector("[data-references-copy-bibliography]"),
+    ).toBeNull();
+  });
+
+  it("names the copy action for pointer and keyboard users", async () => {
+    const container = await ready();
+    const action = copyAction(container);
+
+    expect(action.getAttribute("aria-label")).toBe("Copy bibliography");
+    expect(action.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("copies the bibliography when the action is activated", async () => {
+    const container = await ready();
+    await act(() => copyAction(container).click());
+
+    expect(actions.onCopyBibliography).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["no-note", "Open a note to copy its bibliography"],
+    ["no-references", "The active note cites nothing to copy"],
+    ["pending", "Wait for the references to finish formatting"],
+    ["unavailable", "Bibliography formatting is unavailable"],
+    ["failed", "Bibliography formatting failed"],
+    ["errors", "Fix the reference errors to copy the bibliography"],
+  ] as const)(
+    "explains why copying is unavailable: %s",
+    async (reason, tooltip) => {
+      const container = await render(
+        [renderedEntry],
+        { kind: "bibliography", hasEntryMarkers: true },
+        { copy: { kind: "blocked", reason } },
+      );
+      const action = copyAction(container);
+
+      expect(action.getAttribute("aria-label")).toBe(tooltip);
+      expect(action.hasAttribute("disabled")).toBe(true);
+
+      await act(() => action.click());
+      expect(actions.onCopyBibliography).not.toHaveBeenCalled();
+    },
+  );
 });
