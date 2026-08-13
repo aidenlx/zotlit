@@ -96,9 +96,16 @@ interface CitationsCliDeps {
     /** Which Citation Syntaxes admit occurrences into an answer now; both
      *  commands report it. */
     syntaxes: () => CitationSyntaxes;
-    /** The excluded Citation Syntaxes that held occurrences in one document,
-     *  for a references answer that reports no entries. */
-    omittedSyntaxesOf: (path: string) => Promise<readonly CitationSyntax[]>;
+    /** The excluded Citation Syntaxes that held occurrences in one document —
+     *  the fact every references answer carries. */
+    documentOmittedSyntaxes: (
+      path: string,
+    ) => Promise<readonly CitationSyntax[]>;
+    /** The excluded Citation Syntaxes that held occurrences of one Item — the
+     *  fact every cited-by answer carries. */
+    citedByOmittedSyntaxes: (
+      indexedKey: string,
+    ) => Promise<readonly CitationSyntax[]>;
   };
   lookupItem: (indexedKey: string) => ItemLookup;
   /**
@@ -182,9 +189,7 @@ export function createCitationsCliHandlers(
         ...echoed,
         item,
         groups,
-        ...(snapshot.omittedSyntaxes && {
-          omittedSyntaxes: snapshot.omittedSyntaxes,
-        }),
+        omittedSyntaxes: await deps.index.citedByOmittedSyntaxes(item.key),
         coverage: snapshot.coverage,
         resolution: snapshot.resolution,
         syntaxes: deps.index.syntaxes(),
@@ -216,9 +221,7 @@ export function createCitationsCliHandlers(
         ok: true,
         ...echoed,
         entries,
-        ...(entries.length === 0
-          ? { omittedSyntaxes: await deps.index.omittedSyntaxesOf(file) }
-          : {}),
+        omittedSyntaxes: await deps.index.documentOmittedSyntaxes(file),
         database: references.database,
         resolution: deps.index.resolution(),
         syntaxes: deps.index.syntaxes(),

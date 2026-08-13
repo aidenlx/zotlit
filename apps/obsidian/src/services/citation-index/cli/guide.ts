@@ -134,9 +134,10 @@ CITED BY PAYLOAD
   groups      One entry per citing note, in path order, as
               { path, occurrences }.
   omittedSyntaxes
-              Present only when groups is empty: the excluded Citation
-              Syntaxes that wrote occurrences of this item. An empty list
-              means no note cites the item.
+              The excluded Citation Syntaxes that wrote occurrences this
+              answer left out. An empty list means the answer withheld
+              nothing; a syntax it names means this item has citations the
+              answer does not report.
   coverage    See INDEX STATE.
   resolution  See INDEX STATE.
   syntaxes    See INDEX STATE.
@@ -146,9 +147,10 @@ REFERENCES PAYLOAD
               { refNumber, kind, occurrences } plus the fields its kind adds.
               refNumber is the reference number the document gives the work.
   omittedSyntaxes
-              Present only when entries is empty: the excluded Citation
-              Syntaxes that wrote occurrences in this document. An empty list
-              means the document cites nothing.
+              The excluded Citation Syntaxes that wrote occurrences this
+              answer left out. An empty list means the answer withheld
+              nothing; a syntax it names means this document has citations
+              the answer does not report.
   database    See INDEX STATE.
   resolution  See INDEX STATE.
   syntaxes    See INDEX STATE.
@@ -185,11 +187,10 @@ ${rows(DATABASE_STATES, 4)}
   syntaxes (both commands)
 ${rows(SYNTAX_STATES, 4)}
 
-  syntaxes reports each Citation Syntax as included or excluded. An answer
-  carries only occurrences of an included syntax, so a count over an excluded
-  syntax is not in the data. An empty answer reports which excluded syntaxes
-  wrote occurrences in it, in omittedSyntaxes, so an empty list there is the
-  one that means nothing is cited.
+  syntaxes reports each Citation Syntax as included or excluded, a vault-wide
+  rule. omittedSyntaxes reports what that rule cost one answer: the excluded
+  syntaxes that wrote occurrences it left out, so a short answer is visible
+  without reading the note.
 
   Both commands wait out the transitional states, indexing and resolving, and
   answer INDEX_NOT_READY when either persists. degraded and unreadable are

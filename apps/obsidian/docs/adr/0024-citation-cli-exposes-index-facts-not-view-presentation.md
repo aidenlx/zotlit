@@ -27,4 +27,6 @@ create a second surface for the same facts.
 - Answers follow Document Citation Set membership (ADR 0022): the Pandoc
   Citations and Wikilink Citations source choices filter both commands'
   answers, and the admitted syntaxes are declared as the `syntaxes` payload
-  state, so a filtered answer never reads as a complete one.
+  state. Declaring the vault-wide rule proved not to be enough on its own —
+  ADR 0027 adds the per-answer fact that makes a filtered answer read as
+  filtered.

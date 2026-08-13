@@ -139,6 +139,8 @@ describe("Citations CLI registration", () => {
           getDocumentCitationSet,
           resolution: "ready",
           syntaxes: () => ({ citekey: "included", wikilink: "excluded" }),
+          documentOmittedSyntaxes: () => Promise.resolve([]),
+          citedByOmittedSyntaxes: () => Promise.resolve([]),
         },
         db: { state: "loading" },
         zoteroPref: {

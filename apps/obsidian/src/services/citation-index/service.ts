@@ -77,12 +77,6 @@ export interface CitedBySnapshot {
   groups: readonly CitedByGroup[];
   coverage: CitationCoverage;
   resolution: CitationKeyResolution;
-  /**
-   * The excluded Citation Syntaxes that held an occurrence of this Item, or
-   * `null` when the snapshot did not compute the fact. `#citedBy` computes
-   * it exactly when `groups` is empty.
-   */
-  omittedSyntaxes: CitationSyntax[] | null;
 }
 
 export function citedBySnapshotsEqual(
@@ -92,8 +86,7 @@ export function citedBySnapshotsEqual(
   if (
     prev.coverage !== next.coverage ||
     prev.resolution !== next.resolution ||
-    prev.groups.length !== next.groups.length ||
-    !omittedSyntaxesEqual(prev.omittedSyntaxes, next.omittedSyntaxes)
+    prev.groups.length !== next.groups.length
   ) {
     return false;
   }
@@ -104,17 +97,6 @@ export function citedBySnapshotsEqual(
       occurrencesEqual(group.occurrences, other.occurrences)
     );
   });
-}
-
-function omittedSyntaxesEqual(
-  prev: readonly CitationSyntax[] | null,
-  next: readonly CitationSyntax[] | null,
-): boolean {
-  if (prev === null || next === null) return prev === next;
-  return (
-    prev.length === next.length &&
-    prev.every((syntax, index) => syntax === next[index])
-  );
 }
 
 /** One document's active Citation Occurrences and its distinct cited works. */
@@ -412,8 +394,8 @@ export class CitationIndex extends Service<void> {
 
   /**
    * The excluded Citation Syntaxes that hold an occurrence in `file` — the
-   * fact a `references` answer with no entries reports instead of a bare
-   * empty list, so the caller can tell "cites nothing" from "excluded".
+   * fact every `references` answer carries, so a short entry list still
+   * names what a setting left out.
    *
    * An occurrence counts only if admitting its syntax would have put it in
    * the Document Citation Set: a citekey scan need only be non-empty, since
@@ -423,7 +405,7 @@ export class CitationIndex extends Service<void> {
    *
    * @see referenceEntries in `cli/commands.ts`
    */
-  async omittedSyntaxesOf(file: TFile): Promise<CitationSyntax[]> {
+  async documentOmittedSyntaxes(file: TFile): Promise<CitationSyntax[]> {
     await this.ready;
     const omitted: CitationSyntax[] = [];
     if (!this.#includePandocCitations) {
@@ -865,27 +847,24 @@ export class CitationIndex extends Service<void> {
       groups,
       coverage: this.#coverage,
       resolution: this.#resolution,
-      omittedSyntaxes:
-        groups.length === 0
-          ? this.#omittedCitedBySyntaxes(indexedKey, files)
-          : null,
     };
   }
 
   /**
    * The excluded Citation Syntaxes that hold an occurrence of `indexedKey`,
-   * computed only when `#citedBy`'s groups are empty and the question needs
-   * an answer.
+   * for a caller that answers one question and reports the fact beside it —
+   * the agent-facing CLI. `observeCitedBy`'s snapshot carries no such field:
+   * every publish would otherwise pay this walk, for a fact only the CLI
+   * reads.
    *
-   * Wikilink occurrences count only when eligible: `#citedBy` puts only
+   * Wikilink occurrences count only when eligible: `getCitedBy` puts only
    * eligible occurrences in groups, so a malformed one — unlike
-   * {@link omittedSyntaxesOf}'s references answer — never would have joined
-   * this answer either.
+   * {@link documentOmittedSyntaxes}'s references answer — never would have
+   * joined this answer either.
    */
-  #omittedCitedBySyntaxes(
-    indexedKey: string,
-    files: readonly TFile[],
-  ): CitationSyntax[] {
+  async citedByOmittedSyntaxes(indexedKey: string): Promise<CitationSyntax[]> {
+    await this.ready;
+    const files = this.#app.vault.getMarkdownFiles();
     const omitted: CitationSyntax[] = [];
     if (!this.#includePandocCitations) {
       const held = files.some((file) =>

@@ -236,7 +236,7 @@ One of the two written forms a citation takes in a note body — a literal Pando
 _Avoid_: citation format; citation style (collides with CSL citation styles)
 
 **Omitted Occurrence**:
-A Citation Occurrence that stays outside an answer because the Pandoc Citations or Wikilink Citations choice excludes its Citation Syntax. It is what separates a document that cites nothing from one whose citations are all written in an excluded syntax.
+A Citation Occurrence that stays outside an answer because the Pandoc Citations or Wikilink Citations choice excludes its Citation Syntax. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
 _Avoid_: skipped citation, filtered occurrence (both name the mechanism, not the fact)
 
 **Document Citation Set**:

@@ -163,10 +163,9 @@ interface CitedByPayload {
   item: CitedItem;
   /** Citing notes in path order, each with its Citation Occurrences. */
   groups: readonly ReportedGroup[];
-  /** Present only when `groups` is empty: the excluded Citation Syntaxes
-   *  that held an occurrence of this item. An empty list means no note
-   *  cites the item. */
-  omittedSyntaxes?: readonly CitationSyntax[];
+  /** The excluded Citation Syntaxes that wrote occurrences of this Item this
+   *  answer left out. `[]` means the answer withheld nothing. */
+  omittedSyntaxes: readonly CitationSyntax[];
   coverage: CitationCoverage;
   resolution: CitationKeyResolution;
   /** Which Citation Syntaxes admit occurrences into `groups`: an excluded
@@ -212,10 +211,9 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
 interface ReferencesPayload {
   /** The document's entries in first-occurrence order. */
   entries: readonly ReferenceEntry[];
-  /** Present only when `entries` is empty: the excluded Citation Syntaxes
-   *  that held occurrences in this document. An empty list means the
-   *  document cites nothing. */
-  omittedSyntaxes?: readonly CitationSyntax[];
+  /** The excluded Citation Syntaxes that wrote occurrences in this document
+   *  this answer left out. `[]` means the answer withheld nothing. */
+  omittedSyntaxes: readonly CitationSyntax[];
   /** `"unreadable"` reports every cited work as `missing`, whether or not the
    *  Zotero source still holds it. */
   database: DatabaseReadability;

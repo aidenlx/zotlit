@@ -1317,11 +1317,11 @@ describe("CitationIndex resolution", () => {
   });
 });
 
-describe("CitationIndex omittedSyntaxesOf", () => {
+describe("CitationIndex documentOmittedSyntaxes", () => {
   it("reports no omitted syntax for a document with no citations at all", async () => {
     const { draft, index } = await makeHarness({ "draft.md": "Plain text." });
 
-    expect(await index.omittedSyntaxesOf(draft)).toEqual([]);
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
   });
 
   it("reports citekey when Pandoc citations is off and the document scans one", async () => {
@@ -1330,7 +1330,7 @@ describe("CitationIndex omittedSyntaxesOf", () => {
       { settings: { "citation.pandoc-citations": false } },
     );
 
-    expect(await index.omittedSyntaxesOf(draft)).toEqual(["citekey"]);
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["citekey"]);
   });
 
   it("reports wikilink when Wikilink citations is off and an eligible link resolves", async () => {
@@ -1341,7 +1341,19 @@ describe("CitationIndex omittedSyntaxesOf", () => {
       links: [link("Doe 2024", 4)],
     } as CachedMetadata);
 
-    expect(await index.omittedSyntaxesOf(draft)).toEqual(["wikilink"]);
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
+  });
+
+  it("reports wikilink when a document holds included citekey citations and an excluded wikilink that resolves", async () => {
+    const body = "As @doe2024 wrote. See [[Roe 2025]] too.";
+    const { draft, index, metadataCache } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Roe 2025", body.indexOf("[["))],
+    } as CachedMetadata);
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
   });
 
   it("reports wikilink when a malformed Citation Fragment still resolves", async () => {
@@ -1353,7 +1365,7 @@ describe("CitationIndex omittedSyntaxesOf", () => {
       links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
     } as CachedMetadata);
 
-    expect(await index.omittedSyntaxesOf(draft)).toEqual(["wikilink"]);
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
   });
 
   it("reports no omitted syntax when the only wikilink resolves to no Item", async () => {
@@ -1365,7 +1377,7 @@ describe("CitationIndex omittedSyntaxesOf", () => {
       links: [link("ordinary", 4)],
     } as CachedMetadata);
 
-    expect(await index.omittedSyntaxesOf(draft)).toEqual([]);
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
   });
 
   it("reports both syntaxes when both are excluded and both hold occurrences", async () => {
@@ -1383,15 +1395,15 @@ describe("CitationIndex omittedSyntaxesOf", () => {
       links: [link("Roe 2025", body.indexOf("[["))],
     } as CachedMetadata);
 
-    expect(await index.omittedSyntaxesOf(draft)).toEqual([
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual([
       "citekey",
       "wikilink",
     ]);
   });
 });
 
-describe("CitationIndex cited-by omittedSyntaxes", () => {
-  it("is null when groups is non-empty", async () => {
+describe("CitationIndex citedByOmittedSyntaxes", () => {
+  it("reports [] when groups is non-empty and holds no excluded occurrence", async () => {
     const { index, workspace } = await makeHarness({
       "draft.md": "@doe2024.",
     });
@@ -1400,8 +1412,28 @@ describe("CitationIndex cited-by omittedSyntaxes", () => {
 
     expect(index.getCitedBy(KEY_A)).toMatchObject({
       groups: [{ path: "draft.md" }],
-      omittedSyntaxes: null,
     });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+  });
+
+  it("reports the excluded syntax when a non-empty answer's item also has occurrences of it", async () => {
+    const body = "As @doe2024 wrote. See [[Doe 2024]] too.";
+    const { index, metadataCache, workspace } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", body.indexOf("[["))],
+    } as CachedMetadata);
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    // The citekey occurrence still joins the group; the wikilink occurrence
+    // of the same item does not, since wikilink citations are excluded by
+    // default — the case a short answer must still name.
+    expect(index.getCitedBy(KEY_A)).toMatchObject({
+      groups: [{ path: "draft.md" }],
+    });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["wikilink"]);
   });
 
   it("reports [] when nothing cites the item at all", async () => {
@@ -1411,10 +1443,8 @@ describe("CitationIndex cited-by omittedSyntaxes", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(index.getCitedBy(KEY_A)).toMatchObject({
-      groups: [],
-      omittedSyntaxes: [],
-    });
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
   });
 
   it("reports citekey when it is excluded and its occurrence resolves to the queried item", async () => {
@@ -1425,10 +1455,8 @@ describe("CitationIndex cited-by omittedSyntaxes", () => {
     workspace.layoutReady();
     await index.whenIndexed();
 
-    expect(index.getCitedBy(KEY_A)).toMatchObject({
-      groups: [],
-      omittedSyntaxes: ["citekey"],
-    });
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["citekey"]);
   });
 
   it("reports wikilink for an eligible occurrence, not for a malformed one", async () => {
@@ -1444,10 +1472,8 @@ describe("CitationIndex cited-by omittedSyntaxes", () => {
 
     // The occurrence is malformed, so it never would have joined a group:
     // unlike a references answer, cited-by counts only eligible occurrences.
-    expect(index.getCitedBy(KEY_A)).toMatchObject({
-      groups: [],
-      omittedSyntaxes: [],
-    });
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
   });
 
   it("scopes the omission to the queried item, not any item an excluded syntax cites", async () => {
@@ -1463,14 +1489,10 @@ describe("CitationIndex cited-by omittedSyntaxes", () => {
 
     // Wikilink citations is off, and an excluded wikilink cites KEY_B — but
     // the queried item is KEY_A, which nobody cites at all.
-    expect(index.getCitedBy(KEY_A)).toMatchObject({
-      groups: [],
-      omittedSyntaxes: [],
-    });
-    expect(index.getCitedBy(KEY_B)).toMatchObject({
-      groups: [],
-      omittedSyntaxes: ["wikilink"],
-    });
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+    expect(index.getCitedBy(KEY_B)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_B)).toEqual(["wikilink"]);
   });
 });
 

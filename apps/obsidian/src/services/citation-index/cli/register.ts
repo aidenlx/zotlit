@@ -105,7 +105,9 @@ export function registerCitationsCli(
       getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
       resolution: () => deps.citationIndex.resolution,
       syntaxes: () => deps.citationIndex.syntaxes(),
-      omittedSyntaxesOf: (path) => omittedSyntaxesOf(deps, path),
+      documentOmittedSyntaxes: (path) => documentOmittedSyntaxes(deps, path),
+      citedByOmittedSyntaxes: (indexedKey) =>
+        deps.citationIndex.citedByOmittedSyntaxes(indexedKey),
     },
     lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
     readDocument: (path) => readDocument(deps, path),
@@ -147,13 +149,13 @@ async function readDocument(
 
 /** Any Markdown note answers, as {@link readDocument} does; a path the vault
  *  holds no note at holds no occurrence to omit. */
-async function omittedSyntaxesOf(
+async function documentOmittedSyntaxes(
   deps: CitationsCliRegistrationDeps,
   path: string,
 ): Promise<CitationSyntax[]> {
   const file = deps.app.vault.getFileByPath(path);
   if (!file || file.extension !== "md") return [];
-  return deps.citationIndex.omittedSyntaxesOf(file);
+  return deps.citationIndex.documentOmittedSyntaxes(file);
 }
 
 /** A well-formed Zotero key names an Item only when the connected library
