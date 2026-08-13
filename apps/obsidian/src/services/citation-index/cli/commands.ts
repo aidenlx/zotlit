@@ -21,6 +21,8 @@ import {
   fileNotFoundDiagnostic,
   keyNotFoundDiagnostic,
   notSettledDiagnostic,
+  reportGroups,
+  reportOccurrences,
 } from "./envelope";
 import type {
   CitationsCommand,
@@ -174,7 +176,7 @@ export function createCitationsCliHandlers(
         ok: true,
         ...echoed,
         item,
-        groups: snapshot.groups,
+        groups: reportGroups(snapshot.groups),
         coverage: snapshot.coverage,
         resolution: snapshot.resolution,
         syntaxes: deps.index.syntaxes(),
@@ -286,6 +288,7 @@ function referenceEntries({
 }: DocumentReferences): ReferenceEntry[] {
   const entries: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, occurrences } of citations) {
+    const reported = reportOccurrences(occurrences);
     if (indexedKey === null) {
       // Every unresolved Citation is written as a citekey — a wikilink that
       // resolves to no Item is no Citation at all — so its raw text names it.
@@ -293,7 +296,7 @@ function referenceEntries({
         refNumber,
         kind: "unresolved",
         citekey: occurrences[0]!.raw,
-        occurrences,
+        occurrences: reported,
       });
       continue;
     }
@@ -307,13 +310,21 @@ function referenceEntries({
             citekey: source.citekey,
             summary: source.summary,
             linkpath: source.linkpath,
-            occurrences,
+            occurrences: reported,
           }
-        : { refNumber, kind: "missing", key: indexedKey, occurrences },
+        : {
+            refNumber,
+            kind: "missing",
+            key: indexedKey,
+            occurrences: reported,
+          },
     );
   }
   for (const { occurrence } of errors) {
-    entries.push({ kind: "malformed", occurrences: [occurrence] });
+    entries.push({
+      kind: "malformed",
+      occurrences: reportOccurrences([occurrence]),
+    });
   }
   return entries.sort(
     (left, right) =>

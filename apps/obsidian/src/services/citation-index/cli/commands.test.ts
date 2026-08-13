@@ -44,6 +44,17 @@ const OCCURRENCE = {
   },
 } as const;
 
+/** {@link OCCURRENCE} as an answer reports it: line and col count from 1,
+ *  offset stays as the index holds it. */
+const REPORTED_OCCURRENCE = {
+  kind: "citekey",
+  raw: ITEM_CITEKEY,
+  position: {
+    start: { line: 3, col: 1, offset: 40 },
+    end: { line: 3, col: 9, offset: 48 },
+  },
+} as const;
+
 const CITED: CitedBySnapshot = {
   groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
   coverage: "complete",
@@ -84,6 +95,55 @@ const REPEAT_OCCURRENCE = occurrence(ITEM_CITEKEY, 120);
 const UNRESOLVED_OCCURRENCE = occurrence("roe2099", 30);
 const MALFORMED_OCCURRENCE = occurrence("Doe 2024|p. 3|extra", 50, "wikilink");
 const MISSING_OCCURRENCE = occurrence(MISSING_ITEM_KEY, 90, "wikilink");
+
+/**
+ * Each of the fixtures above as an answer reports it, written out rather than
+ * derived, so the expectations pin the base the contract documents.
+ */
+const FIRST_REPORTED = {
+  kind: "citekey",
+  raw: ITEM_CITEKEY,
+  position: {
+    start: { line: 1, col: 11, offset: 10 },
+    end: { line: 1, col: 18, offset: 17 },
+  },
+} as const;
+
+const REPEAT_REPORTED = {
+  kind: "citekey",
+  raw: ITEM_CITEKEY,
+  position: {
+    start: { line: 1, col: 121, offset: 120 },
+    end: { line: 1, col: 128, offset: 127 },
+  },
+} as const;
+
+const UNRESOLVED_REPORTED = {
+  kind: "citekey",
+  raw: "roe2099",
+  position: {
+    start: { line: 1, col: 31, offset: 30 },
+    end: { line: 1, col: 38, offset: 37 },
+  },
+} as const;
+
+const MALFORMED_REPORTED = {
+  kind: "wikilink",
+  raw: "Doe 2024|p. 3|extra",
+  position: {
+    start: { line: 1, col: 51, offset: 50 },
+    end: { line: 1, col: 70, offset: 69 },
+  },
+} as const;
+
+const MISSING_REPORTED = {
+  kind: "wikilink",
+  raw: MISSING_ITEM_KEY,
+  position: {
+    start: { line: 1, col: 91, offset: 90 },
+    end: { line: 1, col: 99, offset: 98 },
+  },
+} as const;
 
 const SOURCE: ReferenceSource = {
   csl: { id: "item-7" } as CslItemData,
@@ -203,11 +263,37 @@ describe("zotlit:cited-by", () => {
         citekey: ITEM_CITEKEY,
         summary: ITEM_SUMMARY,
       },
-      groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
+      groups: [{ path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] }],
       coverage: "complete",
       resolution: "ready",
       syntaxes: SYNTAXES,
     });
+  });
+
+  it("counts line and col from 1, and keeps offset counting from 0", async () => {
+    const { citedBy } = setup({
+      snapshot: {
+        groups: [
+          {
+            path: "notes/review.md",
+            occurrences: [occurrence(ITEM_CITEKEY, 0)],
+          },
+        ],
+        coverage: "complete",
+        resolution: "ready",
+      },
+    });
+
+    const output = await citedBy({ key: ITEM_KEY });
+
+    const [first] = JSON.parse(output).groups[0].occurrences;
+    expect(first.position).toEqual({
+      start: { line: 1, col: 1, offset: 0 },
+      end: { line: 1, col: 8, offset: 7 },
+    });
+    expect(first.position.end.offset - first.position.start.offset).toBe(
+      ITEM_CITEKEY.length,
+    );
   });
 
   it("reports citekey as excluded when the index says so", async () => {
@@ -477,29 +563,58 @@ describe("zotlit:references", () => {
           citekey: ITEM_CITEKEY,
           summary: SOURCE.summary,
           linkpath: SOURCE.linkpath,
-          occurrences: [FIRST_OCCURRENCE, REPEAT_OCCURRENCE],
+          occurrences: [FIRST_REPORTED, REPEAT_REPORTED],
         },
         {
           refNumber: 2,
           kind: "unresolved",
           citekey: "roe2099",
-          occurrences: [UNRESOLVED_OCCURRENCE],
+          occurrences: [UNRESOLVED_REPORTED],
         },
         {
           kind: "malformed",
-          occurrences: [MALFORMED_OCCURRENCE],
+          occurrences: [MALFORMED_REPORTED],
         },
         {
           refNumber: 3,
           kind: "missing",
           key: MISSING_ITEM_KEY,
-          occurrences: [MISSING_OCCURRENCE],
+          occurrences: [MISSING_REPORTED],
         },
       ],
       database: "ready",
       resolution: "ready",
       syntaxes: SYNTAXES,
     });
+  });
+
+  it("counts line and col from 1, and keeps offset counting from 0", async () => {
+    const { references } = setup({
+      document: {
+        citations: [
+          {
+            indexedKey: null,
+            linkpath: null,
+            refNumber: 1,
+            occurrences: [occurrence("roe2099", 0)],
+          },
+        ],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
+    });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    const [first] = JSON.parse(output).entries[0].occurrences;
+    expect(first.position).toEqual({
+      start: { line: 1, col: 1, offset: 0 },
+      end: { line: 1, col: 8, offset: 7 },
+    });
+    expect(first.position.end.offset - first.position.start.offset).toBe(
+      "roe2099".length,
+    );
   });
 
   it("reports an unreadable Zotero database as payload state, not as missing items", async () => {
@@ -708,6 +823,20 @@ describe("zotlit:citations-guide", () => {
     );
     expect(page).toContain(
       "null for an item whose fields the Zotero source could not provide",
+    );
+  });
+
+  it("documents the base a position counts from, with the rg column caveat", async () => {
+    const { guide } = setup();
+
+    const page = (await guide({})).replaceAll(/\s+/gu, " ");
+
+    expect(page).toContain(
+      "line and col count from 1, matching editor and grep line numbers",
+    );
+    expect(page).toContain("offset counts UTF-16 code units from 0");
+    expect(page).toContain(
+      "col counts UTF-16 code units while rg --column counts bytes",
     );
   });
 

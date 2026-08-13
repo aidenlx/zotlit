@@ -91,6 +91,16 @@ describe("Citations CLI registration", () => {
       },
     } as const;
 
+    /** {@link OCCURRENCE} as an answer reports it: line and col count from 1. */
+    const REPORTED_OCCURRENCE = {
+      kind: "citekey",
+      raw: "roe2099",
+      position: {
+        start: { line: 1, col: 3, offset: 2 },
+        end: { line: 1, col: 11, offset: 10 },
+      },
+    } as const;
+
     const CITATION_SET: DocumentCitationSet = {
       occurrences: [OCCURRENCE],
       citations: [
@@ -162,7 +172,7 @@ describe("Citations CLI registration", () => {
             refNumber: 1,
             kind: "unresolved",
             citekey: "roe2099",
-            occurrences: [OCCURRENCE],
+            occurrences: [REPORTED_OCCURRENCE],
           },
         ],
         // The fake database never became readable, which the payload reports.

@@ -1,14 +1,18 @@
-// The JSON envelope every citation command answers with, and its diagnostics.
+// The JSON envelope every citation command answers with, its diagnostics, and
+// the position base an answer reports in.
 //
 // Diagnostic `message` and `hint` text stays literal English: `code` is the
 // stable machine surface agent scripts read, the message is context for a human
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
 
+import type { Loc } from "obsidian";
+
 import type {
   CitationCoverage,
   CitationKeyResolution,
   CitationOccurrence,
+  CitationSyntax,
   CitationSyntaxes,
   CitedByGroup,
   DatabaseReadability,
@@ -92,11 +96,73 @@ export interface CitedItem {
   summary: string | null;
 }
 
+/** One end of a reported position (ADR 0025). */
+interface ReportedLoc {
+  /** Counts from 1, as an editor and `rg --line-number` do. */
+  line: number;
+  /** Counts from 1, in UTF-16 code units. `rg --column` counts bytes, so the
+   *  two differ on a line that holds non-ASCII text. */
+  col: number;
+  /** Counts UTF-16 code units from 0, start inclusive and end exclusive. */
+  offset: number;
+}
+
+/**
+ * A Citation Occurrence as an answer reports it: `kind` and `raw` are the
+ * index's own, and only the position is re-based.
+ *
+ * @see CitationOccurrence
+ */
+export interface ReportedOccurrence {
+  kind: CitationSyntax;
+  raw: string;
+  position: { start: ReportedLoc; end: ReportedLoc };
+}
+
+/** The reported Citation Occurrences in one citing Markdown note. */
+interface ReportedGroup {
+  path: string;
+  occurrences: readonly ReportedOccurrence[];
+}
+
+/**
+ * Re-base the positions of one note's Citation Occurrences for the wire.
+ *
+ * This is the only place a position changes base (ADR 0025): the Citation
+ * Index, the occurrence scanner, and both sidebars keep the 0-based positions
+ * Obsidian itself works in.
+ */
+export function reportOccurrences(
+  occurrences: readonly CitationOccurrence[],
+): ReportedOccurrence[] {
+  return occurrences.map(({ kind, raw, position }) => ({
+    kind,
+    raw,
+    position: {
+      start: reportLoc(position.start),
+      end: reportLoc(position.end),
+    },
+  }));
+}
+
+export function reportGroups(groups: readonly CitedByGroup[]): ReportedGroup[] {
+  return groups.map(({ path, occurrences }) => ({
+    path,
+    occurrences: reportOccurrences(occurrences),
+  }));
+}
+
+/** `offset` addresses the file's text rather than a screen, so it keeps the
+ *  base that makes `end.offset - start.offset` the fragment's length. */
+function reportLoc({ line, col, offset }: Loc): ReportedLoc {
+  return { line: line + 1, col: col + 1, offset };
+}
+
 /** `zotlit:cited-by`'s result: index facts, never view presentation (ADR 0024). */
 interface CitedByPayload {
   item: CitedItem;
   /** Citing notes in path order, each with its Citation Occurrences. */
-  groups: readonly CitedByGroup[];
+  groups: readonly ReportedGroup[];
   coverage: CitationCoverage;
   resolution: CitationKeyResolution;
   /** Which Citation Syntaxes admit occurrences into `groups`: an excluded
@@ -115,7 +181,7 @@ interface CitedByPayload {
  * - `malformed` — citation intent that cannot be parsed, so it names no work
  *   and joins no Document Citation Set; it therefore carries no Reference Number.
  */
-export type ReferenceEntry = { occurrences: readonly CitationOccurrence[] } & (
+export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
   | {
       refNumber: number;
       kind: "resolved";

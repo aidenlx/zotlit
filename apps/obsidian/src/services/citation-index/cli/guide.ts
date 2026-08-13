@@ -154,9 +154,11 @@ ${rows(OCCURRENCE_KINDS)}
   raw         The literal citation key, or the wikilink's linkpath with its
               subpath removed.
   position    { start, end }, each { line, col, offset }. line and col count
-              from 0; offset counts UTF-16 code units from the start of the
-              file. start is inclusive and end is exclusive, so
-              end.offset - start.offset is the length of the fragment.
+              from 1, matching editor and grep line numbers; offset counts
+              UTF-16 code units from 0. start is inclusive and end is
+              exclusive, so end.offset - start.offset is the length of the
+              fragment. col counts UTF-16 code units while rg --column counts
+              bytes, so the two differ on a line that holds non-ASCII text.
 
   Frontmatter, code, math, and %% comments hold no citations: text there is
   excluded before the index reads a note.
