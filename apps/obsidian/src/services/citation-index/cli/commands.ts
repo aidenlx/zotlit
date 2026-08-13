@@ -6,6 +6,7 @@ import type {
   Citation,
   CitationKeyResolution,
   CitationSettleOutcome,
+  CitationSyntaxes,
   CitedBySnapshot,
   DatabaseReadability,
   DocumentCitationError,
@@ -80,6 +81,9 @@ interface CitationsCliDeps {
     /** How well citation keys resolve now; a references answer reports it, the
      *  cited-by snapshot carries its own. */
     resolution: () => CitationKeyResolution;
+    /** Which Citation Syntaxes admit occurrences into an answer now; both
+     *  commands report it. */
+    syntaxes: () => CitationSyntaxes;
   };
   lookupItem: (indexedKey: string) => ItemPresence;
   /**
@@ -164,6 +168,7 @@ export function createCitationsCliHandlers(
         groups: snapshot.groups,
         coverage: snapshot.coverage,
         resolution: snapshot.resolution,
+        syntaxes: deps.index.syntaxes(),
       });
     },
 
@@ -193,6 +198,7 @@ export function createCitationsCliHandlers(
         entries: referenceEntries(references),
         database: references.database,
         resolution: deps.index.resolution(),
+        syntaxes: deps.index.syntaxes(),
       });
     },
 

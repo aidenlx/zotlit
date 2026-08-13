@@ -8,6 +8,7 @@ import type {
   CitationOccurrence,
   CitationSettleOutcome,
   CitationSyntax,
+  CitationSyntaxes,
   CitedBySnapshot,
   ReferenceSource,
   SnapshotItem,
@@ -55,6 +56,11 @@ const EMPTY: CitedBySnapshot = {
 
 const DOCUMENT_PATH = "notes/review.md";
 const MISSING_ITEM_KEY = "EFGH6789";
+
+const SYNTAXES: CitationSyntaxes = {
+  citekey: "included",
+  wikilink: "excluded",
+};
 
 function occurrence(
   raw: string,
@@ -124,6 +130,7 @@ interface SetupOptions {
   citekeyItem?: SnapshotItem | null;
   document?: DocumentReferences | null;
   resolution?: CitationKeyResolution;
+  syntaxes?: CitationSyntaxes;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -140,6 +147,7 @@ function setup(options: SetupOptions = {}) {
   const lookupItem = vi.fn(() => presence);
   const readDocument = vi.fn(() => Promise.resolve(documentReferences));
   const resolution = vi.fn(() => options.resolution ?? "ready");
+  const syntaxes = vi.fn(() => options.syntaxes ?? SYNTAXES);
   const handlers = createCitationsCliHandlers({
     getIdentity,
     settleTimeoutMs: options.settleTimeoutMs,
@@ -149,6 +157,7 @@ function setup(options: SetupOptions = {}) {
       citekeyOf,
       getCitedBy,
       resolution,
+      syntaxes,
     },
     lookupItem,
     readDocument,
@@ -170,6 +179,7 @@ function setup(options: SetupOptions = {}) {
     getCitedBy,
     lookupItem,
     readDocument,
+    syntaxes,
   };
 }
 
@@ -190,6 +200,20 @@ describe("zotlit:cited-by", () => {
       groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
       coverage: "complete",
       resolution: "ready",
+      syntaxes: SYNTAXES,
+    });
+  });
+
+  it("reports citekey as excluded when the index says so", async () => {
+    const { citedBy } = setup({
+      syntaxes: { citekey: "excluded", wikilink: "included" },
+    });
+
+    const output = await citedBy({ key: ITEM_KEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      syntaxes: { citekey: "excluded", wikilink: "included" },
     });
   });
 
@@ -382,6 +406,7 @@ describe("zotlit:cited-by", () => {
           return CITED;
         },
         resolution: () => "ready",
+        syntaxes: () => SYNTAXES,
       },
       lookupItem: () => {
         order.push("lookup");
@@ -438,6 +463,7 @@ describe("zotlit:references", () => {
       ],
       database: "ready",
       resolution: "ready",
+      syntaxes: SYNTAXES,
     });
   });
 
@@ -458,6 +484,19 @@ describe("zotlit:references", () => {
       ok: true,
       database: "unreadable",
       resolution: "degraded",
+    });
+  });
+
+  it("reports citekey as excluded when the index says so", async () => {
+    const { references } = setup({
+      syntaxes: { citekey: "excluded", wikilink: "included" },
+    });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      syntaxes: { citekey: "excluded", wikilink: "included" },
     });
   });
 

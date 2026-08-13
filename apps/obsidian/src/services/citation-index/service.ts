@@ -23,7 +23,7 @@ import {
   occurrencesEqual,
   scanCitekeyOccurrences,
 } from "./scan";
-import type { CitationOccurrence } from "./scan";
+import type { CitationOccurrence, CitationSyntax } from "./scan";
 import { CitekeySnapshot } from "./snapshot";
 import type { ReadCitekeys, SnapshotItem } from "./snapshot";
 import { openCitekeyStore } from "./store";
@@ -60,6 +60,14 @@ export interface CitedByGroup {
 
 export type CitationCoverage = "indexing" | "complete" | "degraded";
 export type CitationKeyResolution = "resolving" | "ready" | "degraded";
+
+/** Whether a Citation Syntax's occurrences reach a citation-command answer. */
+export type CitationSyntaxAdmission = "included" | "excluded";
+
+/** The admission of each Citation Syntax, as a citation command reports it. */
+export type CitationSyntaxes = Readonly<
+  Record<CitationSyntax, CitationSyntaxAdmission>
+>;
 
 /** Outcome of {@link CitationIndex.waitUntilSettled}. */
 export type CitationSettleOutcome = "settled" | "timeout";
@@ -369,6 +377,19 @@ export class CitationIndex extends Service<void> {
    */
   get resolution(): CitationKeyResolution {
     return this.#resolution;
+  }
+
+  /**
+   * Which Citation Syntaxes admit their occurrences into an answer, for a
+   * caller that declares the constraint beside its facts — the agent-facing
+   * CLI. Follows `citation.pandoc-citations` and `citation.wikilink-citations`,
+   * the same source choices {@link #admitted} gates both membership surfaces on.
+   */
+  syntaxes(): CitationSyntaxes {
+    return {
+      citekey: this.#includePandocCitations ? "included" : "excluded",
+      wikilink: this.#includeWikilinkCitations ? "included" : "excluded",
+    };
   }
 
   /** The Zotero Item a native citation key names, read synchronously. */

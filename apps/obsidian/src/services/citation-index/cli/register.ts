@@ -99,6 +99,7 @@ export function registerCitationsCli(
       citekeyOf: (indexedKey) => deps.citationIndex.citekeyOf(indexedKey),
       getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
       resolution: () => deps.citationIndex.resolution,
+      syntaxes: () => deps.citationIndex.syntaxes(),
     },
     lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
     readDocument: (path) => readDocument(deps, path),

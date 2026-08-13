@@ -206,6 +206,25 @@ describe("CitationIndex", () => {
     });
   });
 
+  it("reports which syntaxes admit their occurrences, and follows a settings update", async () => {
+    const { index, settings } = await makeHarness({});
+
+    expect(index.syntaxes()).toEqual({
+      citekey: "included",
+      wikilink: "excluded",
+    });
+
+    settings.update({
+      "citation.pandoc-citations": false,
+      "citation.wikilink-citations": true,
+    });
+
+    expect(index.syntaxes()).toEqual({
+      citekey: "excluded",
+      wikilink: "included",
+    });
+  });
+
   it("reports malformed Citation Fragments without numbering them", async () => {
     const body = "Bad [[Doe 2024#cite:locator=]] then @roe2025.";
     const { draft, index, metadataCache } = await makeHarness(

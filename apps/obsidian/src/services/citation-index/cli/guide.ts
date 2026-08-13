@@ -58,6 +58,14 @@ const COVERAGE_STATES = {
     "At least one note could not be read, so a citer inside it is absent from the answer.",
 } as const satisfies Record<CitationCoverage, string>;
 
+/** Which setting controls a Citation Syntax's admission into an answer. */
+const SYNTAX_STATES = {
+  citekey:
+    "Included while the 'Pandoc citations' setting (citation.pandoc-citations) is on.",
+  wikilink:
+    "Included while the 'Wikilink citations' setting (citation.wikilink-citations) is on; off by default.",
+} as const satisfies Record<CitationSyntax, string>;
+
 /** How well citation keys resolve to items of the connected Zotero source. */
 const RESOLUTION_STATES = {
   resolving: "The citation-key snapshot is being rebuilt.",
@@ -122,6 +130,7 @@ CITED BY PAYLOAD
               with an empty list.
   coverage    See INDEX STATE.
   resolution  See INDEX STATE.
+  syntaxes    See INDEX STATE.
 
 REFERENCES PAYLOAD
   entries     The document's cited works in first-occurrence order, each as
@@ -129,6 +138,7 @@ REFERENCES PAYLOAD
               refNumber is the reference number the document gives the work.
   database    See INDEX STATE.
   resolution  See INDEX STATE.
+  syntaxes    See INDEX STATE.
 
 ENTRY KINDS
 ${rows(ENTRY_KINDS)}
@@ -156,6 +166,13 @@ ${rows(RESOLUTION_STATES, 4)}
 
   database (references)
 ${rows(DATABASE_STATES, 4)}
+
+  syntaxes (both commands)
+${rows(SYNTAX_STATES, 4)}
+
+  syntaxes reports each Citation Syntax as included or excluded. An answer
+  carries only occurrences of an included syntax, so a count over an excluded
+  syntax is not in the data.
 
   Both commands wait out the transitional states, indexing and resolving, and
   answer INDEX_NOT_READY when either persists. degraded and unreadable are

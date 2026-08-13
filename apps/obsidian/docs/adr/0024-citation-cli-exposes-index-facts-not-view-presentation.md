@@ -24,3 +24,7 @@ create a second surface for the same facts.
 - An agent that wants excerpt text or a formatted bibliography composes it from
   the positions and `zotlit:template-data` / the Pandoc export workflow instead
   of asking these commands for it.
+- Answers follow Document Citation Set membership (ADR 0022): the Pandoc
+  Citations and Wikilink Citations source choices filter both commands'
+  answers, and the admitted syntaxes are declared as the `syntaxes` payload
+  state, so a filtered answer never reads as a complete one.

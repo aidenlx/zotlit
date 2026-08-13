@@ -129,6 +129,7 @@ describe("Citations CLI registration", () => {
           waitUntilSettled: () => Promise.resolve("settled"),
           getDocumentCitationSet,
           resolution: "ready",
+          syntaxes: () => ({ citekey: "included", wikilink: "excluded" }),
         },
         db: { state: "loading" },
         zoteroPref: {

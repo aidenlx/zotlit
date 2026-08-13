@@ -9,6 +9,7 @@ import type {
   CitationCoverage,
   CitationKeyResolution,
   CitationOccurrence,
+  CitationSyntaxes,
   CitedByGroup,
   DatabaseReadability,
 } from "@/services/citation-index/service";
@@ -94,6 +95,9 @@ interface CitedByPayload {
   groups: readonly CitedByGroup[];
   coverage: CitationCoverage;
   resolution: CitationKeyResolution;
+  /** Which Citation Syntaxes admit occurrences into `groups`: an excluded
+   *  syntax's occurrences appear in no group. */
+  syntaxes: CitationSyntaxes;
 }
 
 /**
@@ -140,6 +144,9 @@ interface ReferencesPayload {
   /** An `unresolved` entry names a citation key no Item carries only while
    *  this is `"ready"`; a stale snapshot resolves a live key to nothing. */
   resolution: CitationKeyResolution;
+  /** Which Citation Syntaxes admit occurrences into `entries`: an excluded
+   *  syntax's occurrences appear in no entry. */
+  syntaxes: CitationSyntaxes;
 }
 
 /** The facts a command echoes back beside its result, both optional because a
