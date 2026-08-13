@@ -59,6 +59,9 @@ export interface CitedByGroup {
 export type CitationCoverage = "indexing" | "complete" | "degraded";
 export type CitationKeyResolution = "resolving" | "ready" | "degraded";
 
+/** Outcome of {@link CitationIndex.waitUntilSettled}. */
+export type CitationSettleOutcome = "settled" | "timeout";
+
 /** The reverse observation for one Literature Note's Item. */
 export interface CitedBySnapshot {
   groups: readonly CitedByGroup[];
@@ -327,6 +330,34 @@ export class CitationIndex extends Service<void> {
       disposed = true;
       ownedListeners.dispose();
     };
+  }
+
+  /**
+   * The reverse observation as one read, for a caller that answers a single
+   * question instead of following the index — the agent-facing CLI. It reports
+   * whatever the index holds now, so {@link waitUntilSettled} is what a caller
+   * that wants a complete answer runs first.
+   */
+  getCitedBy(indexedKey: string): CitedBySnapshot {
+    return this.#citedBy(indexedKey, () => true);
+  }
+
+  /**
+   * Wait until coverage and citation-key resolution both leave their
+   * transitional states. `degraded` counts as settled: it is the state a
+   * caller reports as data, not a stage that resolves on its own.
+   *
+   * @returns `"timeout"` when the bounded wait expires, `"settled"` otherwise.
+   */
+  async waitUntilSettled(timeoutMs: number): Promise<CitationSettleOutcome> {
+    if (timeoutMs <= 0) return "timeout";
+    return await new Promise<CitationSettleOutcome>((resolve) => {
+      const timer = window.setTimeout(() => resolve("timeout"), timeoutMs);
+      void Promise.all([this.whenIndexed(), this.whenResolved()]).then(() => {
+        window.clearTimeout(timer);
+        resolve("settled");
+      });
+    });
   }
 
   /** The Zotero Item a native citation key names, read synchronously. */

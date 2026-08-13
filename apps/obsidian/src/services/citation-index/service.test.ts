@@ -1298,6 +1298,48 @@ describe("CitationIndex resolution", () => {
   });
 });
 
+describe("CitationIndex one-shot reads", () => {
+  it("answers the reverse observation as a single read", async () => {
+    const { index, workspace } = await makeHarness({
+      "review.md": "@doe2024 and @roe2025.",
+    });
+
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(index.getCitedBy(KEY_A)).toMatchObject({
+      coverage: "complete",
+      resolution: "ready",
+      groups: [{ path: "review.md", occurrences: [{ raw: "doe2024" }] }],
+    });
+  });
+
+  it("times out while coverage stays transitional, then settles", async () => {
+    const { index, workspace } = await makeHarness({
+      "review.md": "@doe2024.",
+    });
+
+    await expect(index.waitUntilSettled(5)).resolves.toBe("timeout");
+
+    workspace.layoutReady();
+    await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
+    expect(index.getCitedBy(KEY_A).coverage).toBe("complete");
+  });
+
+  it("counts a degraded resolution as settled", async () => {
+    const db = new DatabaseStub();
+    db.state = "degraded";
+    const { index, workspace } = await makeHarness(
+      { "review.md": "@doe2024." },
+      { db, notes: false },
+    );
+
+    workspace.layoutReady();
+    await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
+    expect(index.getCitedBy(KEY_A).resolution).toBe("degraded");
+  });
+});
+
 /** Runs one index to completion over `documents`, leaving its scans in `store`. */
 async function warmVault(
   documents: Record<string, string>,
