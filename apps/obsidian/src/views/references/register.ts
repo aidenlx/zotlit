@@ -46,6 +46,13 @@ export function registerReferencesView(
         m.settings_citation_engine_name(),
       );
     },
+    openStyleSettings: () => {
+      revealSetting(
+        plugin.app,
+        plugin.manifest.id,
+        m.settings_citation_references_style_name(),
+      );
+    },
   };
 
   plugin.registerView(

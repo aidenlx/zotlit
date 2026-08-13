@@ -98,6 +98,34 @@ The sidebar stays available without formatted output. It shows a minimal list in
 
 A Reference Error points to its exact source occurrence so you can correct the note.
 
+### Sidebar actions
+
+The sidebar toolbar holds two actions:
+
+- **Copy bibliography** copies the complete bibliography of the active note.
+- **Change citation and references style** opens **Settings > ZotLit > Citations** and highlights the **Citation and references style** row.
+
+The style action stays available in every state.
+
+**Copy bibliography** is available only when the active note cites at least one item, its bibliography has finished formatting, and no Reference Error remains. In any other state the action is disabled and its tooltip names what to fix. A refresh disables it until the new bibliography finishes, even while the previous entries stay on screen.
+
+### What a copy contains [#copied-bibliography]
+
+A copy holds the formatted entries only, in the style's bibliography order and with its Entry Markers. It carries no heading, so you can add the heading your destination needs.
+
+One copy writes two representations:
+
+- **Rich text** for an application that keeps formatting, such as Word or Google Docs. Emphasis, superscript, subscript, and small caps survive the paste.
+- **Plain text** for an application that accepts text alone, with a blank line between entries.
+
+The destination takes the representation it supports. On a platform without rich clipboard support, ZotLit copies plain text and reports "Bibliography copied as plain text."
+
+### A copy does not update
+
+A copy is a point-in-time snapshot. Pasted entries keep the style, item data, and locale of the moment you copied them, and ZotLit never rewrites them. Copy again after any of those change.
+
+ZotLit also leaves your Markdown unchanged. Your notes store citations, and each export generates its own bibliography from them. See [Export a note with citations](/docs/how-to/export-note-with-citations).
+
 ## Citekey Navigation
 
 **Open Pandoc citations as links** is on by default. It controls navigation for literal Pandoc citations and works independently of formatted display.

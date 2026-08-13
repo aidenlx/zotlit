@@ -131,6 +131,10 @@ _Avoid_: broken reference, missing reference (names only one cause)
 The active-document view of each distinct Literature Note Citation and its occurrences, cited Item, and Openable Attachments. Its engine-rendered form follows the Citation and References Style's bibliography order and Entry Markers. Its minimal form follows first-occurrence order and Reference Numbers when the Pandoc Engine or selected style is unavailable; a rendering failure also shows its error instead of retaining stale formatted entries.
 _Avoid_: bibliography sidebar, reference list pane
 
+**Copied Bibliography** _(Obsidian)_:
+A complete, error-free point-in-time rendering of the active Markdown file's current Document Citation Set, copied as portable entry-only HTML and plain text for use outside that file. It has no ownership relationship with the Markdown source and does not update after copying; export generates its own bibliography from the Citations in the source.
+_Avoid_: inserted bibliography, managed bibliography, bibliography export
+
 **Cited By Sidebar** _(Obsidian)_:
 The active-Literature-Note view of every Citation Occurrence in the vault that resolves to the same Item, grouped by citing note. Each citing note contributes the occurrences its own Document Citation Set holds, so the Pandoc Citations and Wikilink Citations choices decide membership here as they do on every other citation-aware surface, and a source change refreshes the view immediately.
 _Avoid_: backlinks (Obsidian's view omits literal Pandoc citations), reverse references, incoming citations

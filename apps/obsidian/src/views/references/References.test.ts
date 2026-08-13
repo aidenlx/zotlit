@@ -35,7 +35,9 @@ const actions: ReferenceActions = {
   onOpenInZotero: () => undefined,
   onOpenAttachment: () => undefined,
   onOpenEngineSettings: () => undefined,
+  onChangeStyle: vi.fn(),
   onDismissEngineHint: () => undefined,
+  onCopyBibliography: vi.fn(() => Promise.resolve()),
 };
 
 const occurrence: CitationOccurrence = {
@@ -63,19 +65,27 @@ afterEach(async () => {
   await act(() => root?.unmount());
   root = undefined;
   document.body.replaceChildren();
+  vi.clearAllMocks();
 });
 
 async function render(
   entries: readonly ReferenceEntry[],
   listMode: ReferencesListMode,
-  formattingFailed = false,
+  {
+    formattingFailed = false,
+    engine = { kind: "installed", version: "test" },
+    copy = { kind: "blocked", reason: "pending" },
+  }: Partial<
+    Pick<ReferencesState, "formattingFailed" | "engine" | "copy">
+  > = {},
 ): Promise<HTMLElement> {
   state = {
     entries,
     listMode,
-    engine: { kind: "installed", version: "test" },
+    engine,
     formattingFailed,
     dbReady: true,
+    copy,
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -259,7 +269,7 @@ describe("References", () => {
         },
       ],
       { kind: "minimal" },
-      true,
+      { formattingFailed: true },
     );
 
     expect(container.textContent).toContain(
@@ -268,4 +278,249 @@ describe("References", () => {
     expect(container.textContent).toContain("Rivers (2020): Book");
     expect(container.querySelector("li")!.children[0]!.textContent).toBe("1");
   });
+});
+
+describe("References banners", () => {
+  const summaryEntry: ReferenceEntry = {
+    id: "BOOK0001",
+    refNumber: 1,
+    occurrences: [occurrence],
+    kind: "summary",
+    source,
+    linkpath: "notes/BOOK0001",
+  };
+
+  /**
+   * Inside the scrolling region, so a banner travels with the list it
+   * describes and the toolbar above keeps its own place.
+   */
+  it.each([
+    [
+      "the install hint",
+      { engine: { kind: "absent" } } satisfies Partial<ReferencesState>,
+      "Format these references",
+    ],
+    [
+      "the install progress",
+      {
+        engine: { kind: "installing", done: Promise.resolve() },
+      } satisfies Partial<ReferencesState>,
+      "Downloading the Pandoc engine…",
+    ],
+    [
+      "an engine failure",
+      {
+        engine: {
+          kind: "failed",
+          failure: { code: "hash-mismatch", expected: "a", actual: "b" },
+        },
+      } satisfies Partial<ReferencesState>,
+      "The Pandoc engine is unavailable",
+    ],
+    [
+      "a formatting failure",
+      { formattingFailed: true } satisfies Partial<ReferencesState>,
+      "ZotLit could not format these references",
+    ],
+  ])("keeps %s with the scrolling list region", async (_, state, title) => {
+    const container = await render([summaryEntry], { kind: "minimal" }, state);
+    const banner = container.querySelector("[data-references-banner]");
+
+    expect(banner?.textContent).toContain(title);
+    expect(
+      container.querySelector("[data-references-scroll]")!.contains(banner),
+    ).toBe(true);
+  });
+});
+
+describe("References toolbar", () => {
+  const summaryEntry: ReferenceEntry = {
+    id: "BOOK0001",
+    refNumber: 1,
+    occurrences: [occurrence],
+    kind: "summary",
+    source,
+    linkpath: "notes/BOOK0001",
+  };
+
+  function styleAction(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>(
+      "[data-references-change-style]",
+    )!;
+  }
+
+  /**
+   * The action counts as live when activating it still reaches the reveal:
+   * a disabled icon button swallows its own click, so the reveal stays
+   * uncalled.
+   */
+  async function activateStyleAction(container: HTMLElement): Promise<void> {
+    await act(() => styleAction(container).click());
+  }
+
+  it("holds the style action above the scrolling list region", async () => {
+    const container = await render([summaryEntry], { kind: "minimal" });
+    const scrolling = container.querySelector("[data-references-scroll]")!;
+
+    expect(styleAction(container)).not.toBeNull();
+    expect(
+      scrolling.querySelector("[data-references-change-style]"),
+    ).toBeNull();
+    expect(scrolling.querySelector("ul")).not.toBeNull();
+  });
+
+  it("names the style action for pointer and keyboard users", async () => {
+    const container = await render([summaryEntry], { kind: "minimal" });
+
+    expect(styleAction(container).getAttribute("aria-label")).toBe(
+      "Change citation and references style",
+    );
+  });
+
+  it("reveals the style setting when the action is activated", async () => {
+    const container = await render([summaryEntry], { kind: "minimal" });
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the style action live when the note cites nothing", async () => {
+    const container = await render([], { kind: "minimal" });
+
+    expect(container.querySelector("[data-references-empty]")).not.toBeNull();
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the style action live while the engine is still installing", async () => {
+    const container = await render(
+      [summaryEntry],
+      { kind: "minimal" },
+      {
+        engine: { kind: "installing", done: Promise.resolve() },
+      },
+    );
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the style action live while the engine is unavailable", async () => {
+    const container = await render(
+      [summaryEntry],
+      { kind: "minimal" },
+      {
+        engine: { kind: "absent" },
+      },
+    );
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the style action live after formatting failed", async () => {
+    const container = await render(
+      [summaryEntry],
+      {
+        kind: "minimal",
+      },
+      { formattingFailed: true },
+    );
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the style action live while copying is unavailable", async () => {
+    const container = await render(
+      [summaryEntry],
+      { kind: "minimal" },
+      {
+        copy: { kind: "blocked", reason: "errors" },
+      },
+    );
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("References copy action", () => {
+  const renderedEntry: ReferenceEntry = {
+    id: "BOOK0001",
+    refNumber: 1,
+    occurrences: [occurrence],
+    kind: "rendered",
+    source,
+    linkpath: "notes/BOOK0001",
+    marker: "[1]",
+    content: document.createDocumentFragment(),
+  };
+
+  function copyAction(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>(
+      "[data-references-copy-bibliography]",
+    )!;
+  }
+
+  const target = { path: "notes/tidal.md", generation: 7 };
+
+  async function ready(): Promise<HTMLElement> {
+    return render(
+      [renderedEntry],
+      { kind: "bibliography", hasEntryMarkers: true },
+      { copy: { kind: "ready", target } },
+    );
+  }
+
+  it("holds the copy action above the scrolling list region", async () => {
+    const container = await ready();
+    const scrolling = container.querySelector("[data-references-scroll]")!;
+
+    expect(copyAction(container)).not.toBeNull();
+    expect(
+      scrolling.querySelector("[data-references-copy-bibliography]"),
+    ).toBeNull();
+  });
+
+  it("names the copy action for pointer and keyboard users", async () => {
+    const container = await ready();
+    const action = copyAction(container);
+
+    expect(action.getAttribute("aria-label")).toBe("Copy bibliography");
+    expect(action.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("copies the bibliography the action was offered for", async () => {
+    const container = await ready();
+    await act(() => copyAction(container).click());
+
+    expect(actions.onCopyBibliography).toHaveBeenCalledExactlyOnceWith(target);
+  });
+
+  it.each([
+    ["no-note", "Open a note to copy its bibliography"],
+    ["no-references", "The active note cites nothing to copy"],
+    ["pending", "Wait for the references to finish formatting"],
+    ["unavailable", "Bibliography formatting is unavailable"],
+    ["failed", "Bibliography formatting failed"],
+    ["errors", "Fix the reference errors to copy the bibliography"],
+  ] as const)(
+    "explains why copying is unavailable: %s",
+    async (reason, tooltip) => {
+      const container = await render(
+        [renderedEntry],
+        { kind: "bibliography", hasEntryMarkers: true },
+        { copy: { kind: "blocked", reason } },
+      );
+      const action = copyAction(container);
+
+      expect(action.getAttribute("aria-label")).toBe(tooltip);
+      expect(action.hasAttribute("disabled")).toBe(true);
+
+      await act(() => action.click());
+      expect(actions.onCopyBibliography).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -6,8 +6,12 @@ import type {
   CitationOccurrence,
 } from "@/services/citation-index/service";
 
-import type { ReferenceSource } from "./entries";
-import { createReferencesStore, minimalReferencesState } from "./store";
+import type { ReferenceEntry, ReferenceSource } from "./entries";
+import {
+  createReferencesStore,
+  minimalReferencesState,
+  referencesCopyState,
+} from "./store";
 
 const occurrence: CitationOccurrence = {
   kind: "citekey",
@@ -72,5 +76,87 @@ describe("minimalReferencesState", () => {
       listMode: { kind: "minimal" },
       formattingFailed: true,
     });
+  });
+});
+
+describe("referencesCopyState", () => {
+  const rendered: ReferenceEntry = {
+    id: "BOOK0001",
+    refNumber: 1,
+    linkpath: "notes/BOOK0001",
+    occurrences: [occurrence],
+    kind: "rendered",
+    source,
+    marker: "[1]",
+    content: document.createDocumentFragment(),
+  };
+  const unrendered: ReferenceEntry = {
+    id: "BOOK0002",
+    refNumber: 2,
+    linkpath: "notes/BOOK0002",
+    occurrences: [occurrence],
+    kind: "unrendered",
+    source,
+  };
+
+  it("offers a complete, error-free bibliography of the active note", () => {
+    expect(
+      referencesCopyState({
+        path: "notes/tidal.md",
+        generation: 3,
+        entries: [rendered],
+        formatting: "complete",
+      }),
+    ).toStrictEqual({
+      kind: "ready",
+      target: { path: "notes/tidal.md", generation: 3 },
+    });
+  });
+
+  it("refuses a list no active note answers for", () => {
+    expect(
+      referencesCopyState({
+        path: null,
+        generation: 3,
+        entries: [],
+        formatting: "complete",
+      }),
+    ).toStrictEqual({ kind: "blocked", reason: "no-note" });
+  });
+
+  it("refuses a note that cites nothing", () => {
+    expect(
+      referencesCopyState({
+        path: "notes/tidal.md",
+        generation: 3,
+        entries: [],
+        formatting: "complete",
+      }),
+    ).toStrictEqual({ kind: "blocked", reason: "no-references" });
+  });
+
+  it.each(["pending", "unavailable", "failed"] as const)(
+    "refuses retained entries while formatting is %s",
+    (formatting) => {
+      expect(
+        referencesCopyState({
+          path: "notes/tidal.md",
+          generation: 3,
+          entries: [rendered],
+          formatting,
+        }),
+      ).toStrictEqual({ kind: "blocked", reason: formatting });
+    },
+  );
+
+  it("refuses a completed bibliography that left a Reference Error", () => {
+    expect(
+      referencesCopyState({
+        path: "notes/tidal.md",
+        generation: 3,
+        entries: [rendered, unrendered],
+        formatting: "complete",
+      }),
+    ).toStrictEqual({ kind: "blocked", reason: "errors" });
   });
 });

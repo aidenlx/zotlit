@@ -3,6 +3,7 @@ import type { MouseEvent, ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { useDomContent } from "@/lib/sanitize-html";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -14,11 +15,13 @@ import type {
 import { useReferenceActions } from "./actions";
 import type { ReferenceEntry, ReferenceSource } from "./entries";
 import { useReferencesStore } from "./store";
+import type { ReferencesCopyBlock } from "./store";
 
 /**
- * The pane: the engine surface above, the reference list below. The list is a
- * `ul` — a bare `ol` keeps Obsidian's own unlayered numbering, which would
- * double the numbers the entries already carry.
+ * The pane: the fixed toolbar above, then one scrolling region holding the
+ * engine surface and the reference list. The list is a `ul` — a bare `ol` keeps
+ * Obsidian's own unlayered numbering, which would double the numbers the
+ * entries already carry.
  */
 export function References() {
   const entries = useReferencesStore((s) => s.entries);
@@ -31,41 +34,107 @@ export function References() {
     numbered || (listMode.kind === "bibliography" && listMode.hasEntryMarkers);
 
   return (
-    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto">
-      <EngineSurface status={engine} />
-      {formattingFailed && engine.kind === "installed" && (
-        <Banner tone="warning" title={m.references_format_failed_title()}>
-          {m.references_format_failed_body()}
-        </Banner>
-      )}
-      {entries.length === 0 ? (
-        <div
-          className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
-          data-references-empty
-        >
-          {dbReady ? m.references_empty() : m.references_db_unavailable()}
-        </div>
-      ) : (
-        <ul
-          className={cn(
-            "zt:grid zt:gap-x-2 zt:text-sm",
-            guttered
-              ? "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]"
-              : "zt:grid-cols-[minmax(0,1fr)_max-content]",
-          )}
-        >
-          {entries.map((entry) => (
-            <Reference
-              key={entry.id}
-              entry={entry}
-              numbered={numbered}
-              guttered={guttered}
-            />
-          ))}
-        </ul>
-      )}
+    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
+      <Toolbar />
+      <div
+        className="zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-y-auto"
+        data-references-scroll
+      >
+        {/* The banners head this region rather than the pane, so they travel
+            with the list they describe and the toolbar keeps its own place. */}
+        <EngineSurface status={engine} />
+        {formattingFailed && engine.kind === "installed" && (
+          <Banner tone="warning" title={m.references_format_failed_title()}>
+            {m.references_format_failed_body()}
+          </Banner>
+        )}
+        {entries.length === 0 ? (
+          <div
+            className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
+            data-references-empty
+          >
+            {dbReady ? m.references_empty() : m.references_db_unavailable()}
+          </div>
+        ) : (
+          <ul
+            className={cn(
+              "zt:grid zt:gap-x-2 zt:text-sm",
+              guttered
+                ? "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]"
+                : "zt:grid-cols-[minmax(0,1fr)_max-content]",
+            )}
+          >
+            {entries.map((entry) => (
+              <Reference
+                key={entry.id}
+                entry={entry}
+                numbered={numbered}
+                guttered={guttered}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
+}
+
+/**
+ * The pane-wide actions, outside the scrolling region so they stay reachable in
+ * a long bibliography. The style action answers for the pane as a whole and
+ * stays live in every state; copy answers for the current bibliography, so it
+ * follows the list's copy readiness and says why when it cannot.
+ */
+function Toolbar() {
+  const actions = useReferenceActions();
+  const copy = useReferencesStore((s) => s.copy);
+  const copyReady = copy.kind === "ready";
+
+  return (
+    <SidebarToolbar className="zt:shrink-0">
+      <SidebarToolbar.Actions className="zt:w-full">
+        <IconButton
+          icon="clipboard-copy"
+          data-references-copy-bibliography
+          disabled={!copyReady}
+          {...tooltipAttrs(
+            copyReady
+              ? m.references_copy_bibliography()
+              : copyBlockedReason(copy.reason),
+          )}
+          onClick={() => {
+            if (copy.kind === "ready") {
+              void actions.onCopyBibliography(copy.target);
+            }
+          }}
+        />
+        <IconButton
+          icon="book-type"
+          data-references-change-style
+          {...tooltipAttrs(m.references_change_style())}
+          onClick={actions.onChangeStyle}
+        />
+      </SidebarToolbar.Actions>
+    </SidebarToolbar>
+  );
+}
+
+/** What the disabled copy action names in its tooltip as the thing to fix. */
+function copyBlockedReason(reason: ReferencesCopyBlock): string {
+  switch (reason) {
+    case "no-note":
+      return m.references_copy_blocked_no_note();
+    case "no-references":
+      return m.references_copy_blocked_no_references();
+    case "pending":
+      return m.references_copy_blocked_pending();
+    case "unavailable":
+      return m.references_copy_blocked_unavailable();
+    case "failed":
+      return m.references_copy_blocked_failed();
+    case "errors":
+      return m.references_copy_blocked_errors();
+  }
 }
 
 /**
@@ -410,8 +479,9 @@ function failureSentence(failure: PandocEngineFailure): string {
 /**
  * A strip across the head of the pane, in the shape of the docs site banner: a
  * flat alternate surface flush with the pane edges, the message ranged left,
- * and the action and close button on the trailing edge. Sticky, so the notice
- * stays put while the reference list scrolls under it.
+ * and the action and close button on the trailing edge. It scrolls with the
+ * list it describes, so the list travels below it rather than through its
+ * translucent tint and the toolbar above keeps its own place.
  */
 function Banner({
   tone = "normal",
@@ -431,9 +501,13 @@ function Banner({
     // `bg-muted` (`--background-modifier-hover`) rather than a control token or
     // a fixed surface: it is a translucent tint, so the strip steps away from
     // whatever it is dropped on — either colour scheme, sidebar or main pane —
-    // and separates itself from the list below with no bottom border. `z-1`
-    // only has to clear the list, which sets no z-index of its own.
-    <div className="zt:sticky zt:top-0 zt:z-1 zt:flex zt:shrink-0 zt:flex-col zt:gap-2 zt:bg-muted zt:p-3 zt:ps-6 zt:text-sm zt:leading-snug">
+    // and separates itself from the list below with no bottom border.
+    // `relative` carries the close button, which sits out of flow in the
+    // corner.
+    <div
+      className="zt:relative zt:flex zt:shrink-0 zt:flex-col zt:gap-2 zt:bg-muted zt:p-3 zt:ps-6 zt:text-sm zt:leading-snug"
+      data-references-banner
+    >
       <div>
         {/* Only the title reserves the corner, and only while something sits in
             it — the message below it and the action row both run to the full
