@@ -67,6 +67,12 @@ The Template Data Explorer's default anchor — the full note-template context f
 **Annotation Root**:
 The Template Data Explorer re-anchored at a single Annotation, exactly what the `annotation` template receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
 
+### Agent CLI
+
+**CLI Contract**:
+The wire format of one `zotlit:*` command namespace — its envelope, payload fields, and diagnostic codes. Each namespace versions its own, so a bump in one says nothing about another. Distinct from the Template Contract, which is a promise about `zt` data rather than about an answer's shape.
+_Avoid_: contract version (names the number, not the thing); protocol (that is the Zotero companion's wire format)
+
 ### Annotation view
 
 **Annotation Card** _(Obsidian)_:
@@ -228,6 +234,14 @@ _Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuil
 **Citation Occurrence**:
 One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
 _Avoid_: citation instance, match, hit
+
+**Citation Syntax**:
+One of the two written forms a citation takes in a note body — a literal Pandoc citation key, or a wikilink to a Literature Note. Every Citation Occurrence has exactly one syntax.
+_Avoid_: citation format; citation style (collides with CSL citation styles)
+
+**Omitted Occurrence**:
+A Citation Occurrence that stays outside an answer because the Pandoc Citations or Wikilink Citations choice excludes its Citation Syntax. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
+_Avoid_: skipped citation, filtered occurrence (both name the mechanism, not the fact)
 
 **Document Citation Set**:
 The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, and malformed Citation Fragments stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.

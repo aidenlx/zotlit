@@ -10,6 +10,10 @@ import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
 import type { ClipboardRepresentation } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type {
+  OpenableAttachment,
+  ReferenceSource,
+} from "@/services/citation-index/service";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 import { toCopiedBibliography } from "./copied-bibliography";
@@ -17,11 +21,7 @@ import type {
   CopiedBibliography,
   CopiedBibliographyEntry,
 } from "./copied-bibliography";
-import type {
-  OpenableAttachment,
-  ReferenceEntry,
-  ReferenceSource,
-} from "./entries";
+import type { ReferenceEntry } from "./entries";
 import type { ReferencesCopyTarget } from "./store";
 
 const logger = getLogger(["views", "references"]);

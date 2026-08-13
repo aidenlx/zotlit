@@ -91,6 +91,9 @@ RETRIEVE OR REFRESH
     updated. The Citations settings page provides the same pair through Save
     integration files.
 
+    contractVersion versions the pandoc commands alone; every other zotlit:*
+    namespace versions its own CLI Contract independently.
+
 RESOLVE
     The CLI filter calls this command during a normal Pandoc run:
 

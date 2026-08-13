@@ -15,6 +15,7 @@ import { BaseNotice } from "./lib/notice";
 import { openSettingsTab, revealSetting } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { buildServices } from "./services/build";
+import { registerCitationsCli } from "./services/citation-index/cli/register";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
@@ -283,6 +284,13 @@ export default class ZotLitPlugin extends Plugin {
     registerCitedByView(this, {
       app: this.app,
       citationIndex: services.citationIndex,
+    });
+
+    registerCitationsCli(this, {
+      app: this.app,
+      citationIndex: services.citationIndex,
+      db: services.db,
+      zoteroPref: services.zoteroPref,
     });
 
     registerTemplateWorkbench(this, {

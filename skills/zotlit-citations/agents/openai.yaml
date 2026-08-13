@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZotLit Citations"
+  short_description: "Query citation relationships in a ZotLit vault"
+  default_prompt: "Use $zotlit-citations to find which notes cite a work, what a note cites, or why a citation is broken."

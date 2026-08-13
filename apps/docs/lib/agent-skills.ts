@@ -12,7 +12,11 @@ import { baseURL } from "./shared";
 
 export const AGENT_SKILLS_SCHEMA =
   "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
-export const SKILL_NAMES = ["zotlit-template", "zotlit-pandoc"] as const;
+export const SKILL_NAMES = [
+  "zotlit-template",
+  "zotlit-pandoc",
+  "zotlit-citations",
+] as const;
 export type AgentSkillName = (typeof SKILL_NAMES)[number];
 
 const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";

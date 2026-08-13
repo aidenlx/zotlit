@@ -206,6 +206,25 @@ describe("CitationIndex", () => {
     });
   });
 
+  it("reports which syntaxes admit their occurrences, and follows a settings update", async () => {
+    const { index, settings } = await makeHarness({});
+
+    expect(index.syntaxes()).toEqual({
+      citekey: "included",
+      wikilink: "excluded",
+    });
+
+    settings.update({
+      "citation.pandoc-citations": false,
+      "citation.wikilink-citations": true,
+    });
+
+    expect(index.syntaxes()).toEqual({
+      citekey: "excluded",
+      wikilink: "included",
+    });
+  });
+
   it("reports malformed Citation Fragments without numbering them", async () => {
     const body = "Bad [[Doe 2024#cite:locator=]] then @roe2025.";
     const { draft, index, metadataCache } = await makeHarness(
@@ -1295,6 +1314,227 @@ describe("CitationIndex resolution", () => {
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A, linkpath: "Doe 2024.md" },
     ]);
+  });
+});
+
+describe("CitationIndex documentOmittedSyntaxes", () => {
+  it("reports no omitted syntax for a document with no citations at all", async () => {
+    const { draft, index } = await makeHarness({ "draft.md": "Plain text." });
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
+  });
+
+  it("reports citekey when Pandoc citations is off and the document scans one", async () => {
+    const { draft, index } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { settings: { "citation.pandoc-citations": false } },
+    );
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["citekey"]);
+  });
+
+  it("reports wikilink when Wikilink citations is off and an eligible link resolves", async () => {
+    const { draft, index, metadataCache } = await makeHarness({
+      "draft.md": "See [[Doe 2024]].",
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", 4)],
+    } as CachedMetadata);
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
+  });
+
+  it("reports wikilink when a document holds included citekey citations and an excluded wikilink that resolves", async () => {
+    const body = "As @doe2024 wrote. See [[Roe 2025]] too.";
+    const { draft, index, metadataCache } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Roe 2025", body.indexOf("[["))],
+    } as CachedMetadata);
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
+  });
+
+  it("reports wikilink when a malformed Citation Fragment still resolves", async () => {
+    const body = "Bad [[Doe 2024#cite:locator=]].";
+    const { draft, index, metadataCache } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
+    } as CachedMetadata);
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
+  });
+
+  it("reports no omitted syntax when the only wikilink resolves to no Item", async () => {
+    const { draft, index, metadataCache } = await makeHarness({
+      "draft.md": "See [[ordinary]].",
+      "ordinary.md": "",
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("ordinary", 4)],
+    } as CachedMetadata);
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
+  });
+
+  it("reports both syntaxes when both are excluded and both hold occurrences", async () => {
+    const body = "See @doe2024 and [[Roe 2025]].";
+    const { draft, index, metadataCache } = await makeHarness(
+      { "draft.md": body },
+      {
+        settings: {
+          "citation.pandoc-citations": false,
+          "citation.wikilink-citations": false,
+        },
+      },
+    );
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Roe 2025", body.indexOf("[["))],
+    } as CachedMetadata);
+
+    expect(await index.documentOmittedSyntaxes(draft)).toEqual([
+      "citekey",
+      "wikilink",
+    ]);
+  });
+});
+
+describe("CitationIndex citedByOmittedSyntaxes", () => {
+  it("reports [] when groups is non-empty and holds no excluded occurrence", async () => {
+    const { index, workspace } = await makeHarness({
+      "draft.md": "@doe2024.",
+    });
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(index.getCitedBy(KEY_A)).toMatchObject({
+      groups: [{ path: "draft.md" }],
+    });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+  });
+
+  it("reports the excluded syntax when a non-empty answer's item also has occurrences of it", async () => {
+    const body = "As @doe2024 wrote. See [[Doe 2024]] too.";
+    const { index, metadataCache, workspace } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024", body.indexOf("[["))],
+    } as CachedMetadata);
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    // The citekey occurrence still joins the group; the wikilink occurrence
+    // of the same item does not, since wikilink citations are excluded by
+    // default — the case a short answer must still name.
+    expect(index.getCitedBy(KEY_A)).toMatchObject({
+      groups: [{ path: "draft.md" }],
+    });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["wikilink"]);
+  });
+
+  it("reports [] when nothing cites the item at all", async () => {
+    const { index, workspace } = await makeHarness({
+      "draft.md": "@roe2025.",
+    });
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+  });
+
+  it("reports citekey when it is excluded and its occurrence resolves to the queried item", async () => {
+    const { index, workspace } = await makeHarness(
+      { "draft.md": "@doe2024." },
+      { settings: { "citation.pandoc-citations": false } },
+    );
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["citekey"]);
+  });
+
+  it("reports wikilink for an eligible occurrence, not for a malformed one", async () => {
+    const body = "See [[Doe 2024#cite:locator=]].";
+    const { index, metadataCache, workspace } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
+    } as CachedMetadata);
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    // The occurrence is malformed, so it never would have joined a group:
+    // unlike a references answer, cited-by counts only eligible occurrences.
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+  });
+
+  it("scopes the omission to the queried item, not any item an excluded syntax cites", async () => {
+    const body = "See [[Roe 2025]].";
+    const { index, metadataCache, workspace } = await makeHarness({
+      "draft.md": body,
+    });
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Roe 2025", body.indexOf("[["))],
+    } as CachedMetadata);
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    // Wikilink citations is off, and an excluded wikilink cites KEY_B — but
+    // the queried item is KEY_A, which nobody cites at all.
+    expect(index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+    expect(index.getCitedBy(KEY_B)).toMatchObject({ groups: [] });
+    expect(await index.citedByOmittedSyntaxes(KEY_B)).toEqual(["wikilink"]);
+  });
+});
+
+describe("CitationIndex one-shot reads", () => {
+  it("answers the reverse observation as a single read", async () => {
+    const { index, workspace } = await makeHarness({
+      "review.md": "@doe2024 and @roe2025.",
+    });
+
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    expect(index.getCitedBy(KEY_A)).toMatchObject({
+      coverage: "complete",
+      resolution: "ready",
+      groups: [{ path: "review.md", occurrences: [{ raw: "doe2024" }] }],
+    });
+  });
+
+  it("times out while coverage stays transitional, then settles", async () => {
+    const { index, workspace } = await makeHarness({
+      "review.md": "@doe2024.",
+    });
+
+    await expect(index.waitUntilSettled(5)).resolves.toBe("timeout");
+
+    workspace.layoutReady();
+    await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
+    expect(index.getCitedBy(KEY_A).coverage).toBe("complete");
+  });
+
+  it("counts a degraded resolution as settled", async () => {
+    const db = new DatabaseStub();
+    db.state = "degraded";
+    const { index, workspace } = await makeHarness(
+      { "review.md": "@doe2024." },
+      { db, notes: false },
+    );
+
+    workspace.layoutReady();
+    await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
+    expect(index.getCitedBy(KEY_A).resolution).toBe("degraded");
   });
 });
 

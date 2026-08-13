@@ -23,7 +23,7 @@ import {
   occurrencesEqual,
   scanCitekeyOccurrences,
 } from "./scan";
-import type { CitationOccurrence } from "./scan";
+import type { CitationOccurrence, CitationSyntax } from "./scan";
 import { CitekeySnapshot } from "./snapshot";
 import type { ReadCitekeys, SnapshotItem } from "./snapshot";
 import { openCitekeyStore } from "./store";
@@ -42,6 +42,14 @@ export {
   type MalformedWikilinkCitation,
 } from "./scan";
 export type { SnapshotItem } from "./snapshot";
+export {
+  readReferenceSources,
+  toOpenableAttachments,
+  type DatabaseReadability,
+  type OpenableAttachment,
+  type ReferenceSource,
+  type ReferenceSourceJoin,
+} from "./sources";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
 
 /** The Citation Occurrences in one citing Markdown note. */
@@ -52,6 +60,17 @@ export interface CitedByGroup {
 
 export type CitationCoverage = "indexing" | "complete" | "degraded";
 export type CitationKeyResolution = "resolving" | "ready" | "degraded";
+
+/** Whether a Citation Syntax's occurrences reach a citation-command answer. */
+export type CitationSyntaxAdmission = "included" | "excluded";
+
+/** The admission of each Citation Syntax, as a citation command reports it. */
+export type CitationSyntaxes = Readonly<
+  Record<CitationSyntax, CitationSyntaxAdmission>
+>;
+
+/** Outcome of {@link CitationIndex.waitUntilSettled}. */
+export type CitationSettleOutcome = "settled" | "timeout";
 
 /** The reverse observation for one Literature Note's Item. */
 export interface CitedBySnapshot {
@@ -321,6 +340,91 @@ export class CitationIndex extends Service<void> {
       disposed = true;
       ownedListeners.dispose();
     };
+  }
+
+  /**
+   * The reverse observation as one read, for a caller that answers a single
+   * question instead of following the index — the agent-facing CLI. It reports
+   * whatever the index holds now, so {@link waitUntilSettled} is what a caller
+   * that wants a complete answer runs first.
+   */
+  getCitedBy(indexedKey: string): CitedBySnapshot {
+    return this.#citedBy(indexedKey, () => true);
+  }
+
+  /**
+   * Wait until coverage and citation-key resolution both leave their
+   * transitional states. `degraded` counts as settled: it is the state a
+   * caller reports as data, not a stage that resolves on its own.
+   *
+   * @returns `"timeout"` when the bounded wait expires, `"settled"` otherwise.
+   */
+  async waitUntilSettled(timeoutMs: number): Promise<CitationSettleOutcome> {
+    if (timeoutMs <= 0) return "timeout";
+    return await new Promise<CitationSettleOutcome>((resolve) => {
+      const timer = window.setTimeout(() => resolve("timeout"), timeoutMs);
+      void Promise.all([this.whenIndexed(), this.whenResolved()]).then(() => {
+        window.clearTimeout(timer);
+        resolve("settled");
+      });
+    });
+  }
+
+  /**
+   * How well citation keys currently resolve, for a caller that answers one
+   * question and reports the state beside its facts — the agent-facing CLI. The
+   * reverse observation carries the same state inside its snapshot.
+   */
+  get resolution(): CitationKeyResolution {
+    return this.#resolution;
+  }
+
+  /**
+   * Which Citation Syntaxes admit their occurrences into an answer, for a
+   * caller that declares the constraint beside its facts — the agent-facing
+   * CLI. Follows `citation.pandoc-citations` and `citation.wikilink-citations`,
+   * the same source choices {@link #admitted} gates both membership surfaces on.
+   */
+  syntaxes(): CitationSyntaxes {
+    return {
+      citekey: this.#includePandocCitations ? "included" : "excluded",
+      wikilink: this.#includeWikilinkCitations ? "included" : "excluded",
+    };
+  }
+
+  /**
+   * The excluded Citation Syntaxes that hold an occurrence in `file` — the
+   * fact every `references` answer carries, so a short entry list still
+   * names what a setting left out.
+   *
+   * An occurrence counts only if admitting its syntax would have put it in
+   * the Document Citation Set: a citekey scan need only be non-empty, since
+   * {@link groupCitations} keeps an unresolvable citekey as an `unresolved`
+   * entry; a wikilink must resolve to an Item, and a malformed one counts
+   * too when it resolves, because it would produce a `malformed` entry.
+   *
+   * @see referenceEntries in `cli/commands.ts`
+   */
+  async documentOmittedSyntaxes(file: TFile): Promise<CitationSyntax[]> {
+    await this.ready;
+    const omitted: CitationSyntax[] = [];
+    if (!this.#includePandocCitations) {
+      const scanned = await this.#coverFile(file);
+      if (scanned.length > 0) omitted.push("citekey");
+    }
+    if (!this.#includeWikilinkCitations) {
+      const links = this.#app.metadataCache.getFileCache(file)?.links ?? [];
+      const { occurrences, malformed } = documentWikilinks(links);
+      const held =
+        occurrences.some(
+          (occurrence) => this.#resolve(occurrence, file.path) !== null,
+        ) ||
+        malformed.some(
+          ({ occurrence }) => this.#resolve(occurrence, file.path) !== null,
+        );
+      if (held) omitted.push("wikilink");
+    }
+    return omitted;
   }
 
   /** The Zotero Item a native citation key names, read synchronously. */
@@ -727,14 +831,12 @@ export class CitationIndex extends Service<void> {
         file,
         this.#covered(file) ?? [],
       );
-      const literals = citekeys.filter(
-        (occurrence) =>
-          this.#snapshot.byCitekey(occurrence.raw)?.indexedKey === indexedKey,
+      const literals = citekeys.filter((occurrence) =>
+        this.#citekeyOccurrenceCites(occurrence, indexedKey),
       );
       const wikilinks = documentWikilinks(links).occurrences.filter(
         (occurrence) =>
-          resolveIndexedKey(occurrence.raw, file.path, this.#app) ===
-          indexedKey,
+          this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
       );
       const occurrences = [...literals, ...wikilinks].sort(compareOccurrences);
       if (occurrences.length > 0) {
@@ -746,6 +848,61 @@ export class CitationIndex extends Service<void> {
       coverage: this.#coverage,
       resolution: this.#resolution,
     };
+  }
+
+  /**
+   * The excluded Citation Syntaxes that hold an occurrence of `indexedKey`,
+   * for a caller that answers one question and reports the fact beside it —
+   * the agent-facing CLI. `observeCitedBy`'s snapshot carries no such field:
+   * every publish would otherwise pay this walk, for a fact only the CLI
+   * reads.
+   *
+   * Wikilink occurrences count only when eligible: `getCitedBy` puts only
+   * eligible occurrences in groups, so a malformed one — unlike
+   * {@link documentOmittedSyntaxes}'s references answer — never would have
+   * joined this answer either.
+   */
+  async citedByOmittedSyntaxes(indexedKey: string): Promise<CitationSyntax[]> {
+    await this.ready;
+    const files = this.#app.vault.getMarkdownFiles();
+    const omitted: CitationSyntax[] = [];
+    if (!this.#includePandocCitations) {
+      const held = files.some((file) =>
+        (this.#covered(file) ?? []).some((occurrence) =>
+          this.#citekeyOccurrenceCites(occurrence, indexedKey),
+        ),
+      );
+      if (held) omitted.push("citekey");
+    }
+    if (!this.#includeWikilinkCitations) {
+      const held = files.some((file) => {
+        const links = this.#app.metadataCache.getFileCache(file)?.links ?? [];
+        return documentWikilinks(links).occurrences.some((occurrence) =>
+          this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
+        );
+      });
+      if (held) omitted.push("wikilink");
+    }
+    return omitted;
+  }
+
+  /** Whether a literal-citekey Citation Occurrence resolves to `indexedKey`. */
+  #citekeyOccurrenceCites(
+    occurrence: CitationOccurrence,
+    indexedKey: string,
+  ): boolean {
+    return this.#snapshot.byCitekey(occurrence.raw)?.indexedKey === indexedKey;
+  }
+
+  /** Whether a wikilink Citation Occurrence resolves to `indexedKey`. */
+  #wikilinkOccurrenceCites(
+    occurrence: CitationOccurrence,
+    sourcePath: string,
+    indexedKey: string,
+  ): boolean {
+    return (
+      resolveIndexedKey(occurrence.raw, sourcePath, this.#app) === indexedKey
+    );
   }
 
   #resolve(

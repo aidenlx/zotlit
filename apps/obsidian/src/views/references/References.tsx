@@ -7,13 +7,14 @@ import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { useDomContent } from "@/lib/sanitize-html";
 import { cn, tooltipAttrs } from "@/lib/utils";
+import type { ReferenceSource } from "@/services/citation-index/service";
 import type {
   PandocEngineFailure,
   PandocEngineStatus,
 } from "@/services/pandoc/service";
 
 import { useReferenceActions } from "./actions";
-import type { ReferenceEntry, ReferenceSource } from "./entries";
+import type { ReferenceEntry } from "./entries";
 import { useReferencesStore } from "./store";
 import type { ReferencesCopyBlock } from "./store";
 

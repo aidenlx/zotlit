@@ -1,8 +1,7 @@
 // Registers the Native Pandoc Workflow CLI surface.
 //
-// Flag and command help text is localized: it is UI text a user reads while
-// discovering the command. The response is the machine surface the filter
-// parses, so its error codes and messages stay literal English.
+// Command, flag, and response text is all hardcoded English: an agent-facing
+// contract surface, not localized UI. See apps/obsidian/policies/cli-text.md.
 
 import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
@@ -20,7 +19,6 @@ import {
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
@@ -48,7 +46,7 @@ function resolveFlags(): CliFlags {
   return {
     file: {
       value: "<absolute-path>",
-      description: m.cli_flag_file_desc(),
+      description: "Absolute path to the Markdown file",
       required: true,
     },
   } satisfies Record<"file", CliFlag>;
@@ -61,19 +59,19 @@ export function registerPandocResolve(
   const integration = createPandocIntegrationHandlers(plugin.manifest.version);
   plugin.registerCliHandler(
     PANDOC_FILES_COMMAND,
-    m.cli_pandoc_files_desc(),
+    "Return the version-matched ZotLit Pandoc integration pair",
     null,
     integration[PANDOC_FILES_COMMAND],
   );
   plugin.registerCliHandler(
     PANDOC_GUIDE_COMMAND,
-    m.cli_pandoc_guide_desc(),
+    "Print the ZotLit Pandoc CLI guide",
     null,
     integration[PANDOC_GUIDE_COMMAND],
   );
   plugin.registerCliHandler(
     RESOLVE_COMMAND,
-    m.cli_resolve_desc(),
+    "Resolve the literature note links of one file to citation keys, for the ZotLit Pandoc filter",
     resolveFlags(),
     async (params) => {
       await deps.zoteroPref.ready;

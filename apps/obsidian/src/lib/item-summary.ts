@@ -2,6 +2,7 @@ import { creatorTypePriority, parseItemDate } from "@zotlit/db";
 import type { Creator, Item } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { runtime } from "@/lib/i18n/generated/runtime";
 
 export type SummaryItem = Pick<Item, "key" | "creators" | "primaryCreatorType">;
 export type SummaryItemFields = {
@@ -52,7 +53,9 @@ function summarizeCreators(creators: readonly Creator[]): string {
   if (!first) return "";
 
   const second = creators[1]?.lastName ?? "";
-  const count =
-    creators.length === 1 ? 1 : creators.length === 2 && second ? 2 : 3;
-  return m.creator_summary({ count, first, second });
+  // A pair joins by the list pattern of the locale the messages render in, so
+  // it reads natively and carries no bidi isolate characters.
+  if (creators.length === 2 && second)
+    return new Intl.ListFormat(runtime.getLocale()).format([first, second]);
+  return m.creator_summary({ count: creators.length, first });
 }

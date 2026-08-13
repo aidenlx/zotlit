@@ -403,7 +403,9 @@ MANAGED FRONTMATTER
 
 OUTPUT
   JSON responses have { contractVersion, command, ok, ... }. Commands add the echoed
-  request and identity where applicable.
+  request and identity where applicable. contractVersion versions the workbench
+  commands alone; every other zotlit:* namespace versions its own CLI Contract
+  independently.
 
   ok=false    On failure, follow diagnostic.hint.
   template-data
