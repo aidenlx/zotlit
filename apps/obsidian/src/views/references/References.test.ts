@@ -5,10 +5,13 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { CitationOccurrence } from "@/services/citation-index/service";
+import type {
+  CitationOccurrence,
+  ReferenceSource,
+} from "@/services/citation-index/service";
 
 import type { ReferenceActions } from "./actions";
-import type { ReferenceEntry, ReferenceSource } from "./entries";
+import type { ReferenceEntry } from "./entries";
 import { References } from "./References";
 import type { ReferencesListMode, ReferencesState } from "./store";
 
@@ -53,6 +56,8 @@ const source: ReferenceSource = {
   itemKey: "BOOK0001",
   itemID: 1,
   groupID: null,
+  citekey: "rivers2020",
+  linkpath: "notes/BOOK0001",
   attachments: [],
 };
 

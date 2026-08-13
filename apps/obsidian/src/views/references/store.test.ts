@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import type {
   Citation,
   CitationOccurrence,
+  ReferenceSource,
 } from "@/services/citation-index/service";
 
-import type { ReferenceSource } from "./entries";
 import { createReferencesStore, minimalReferencesState } from "./store";
 
 const occurrence: CitationOccurrence = {
@@ -33,6 +33,8 @@ const source: ReferenceSource = {
   itemKey: "BOOK0001",
   itemID: 1,
   groupID: null,
+  citekey: "rivers2020",
+  linkpath: "notes/BOOK0001",
   attachments: [],
 };
 

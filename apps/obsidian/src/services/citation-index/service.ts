@@ -42,6 +42,12 @@ export {
   type MalformedWikilinkCitation,
 } from "./scan";
 export type { SnapshotItem } from "./snapshot";
+export {
+  readReferenceSources,
+  toOpenableAttachments,
+  type OpenableAttachment,
+  type ReferenceSource,
+} from "./sources";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
 
 /** The Citation Occurrences in one citing Markdown note. */

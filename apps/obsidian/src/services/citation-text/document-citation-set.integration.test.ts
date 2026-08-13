@@ -7,7 +7,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
-import type { Citation } from "@/services/citation-index/service";
+import type {
+  Citation,
+  ReferenceSource,
+} from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
   KEY_A,
@@ -20,10 +23,7 @@ import type {
   CitationEngine,
 } from "@/services/pandoc/engine";
 import { buildReferenceEntries } from "@/views/references/entries";
-import type {
-  ReferenceEntry,
-  ReferenceSource,
-} from "@/views/references/entries";
+import type { ReferenceEntry } from "@/views/references/entries";
 
 import { ALPHA } from "./__fixtures__";
 import { CitationText } from "./service";
@@ -237,6 +237,8 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
     itemKey: id,
     itemID,
     groupID: null,
+    citekey: id,
+    linkpath: `notes/${id}`,
     attachments: [],
   });
   return new Map([

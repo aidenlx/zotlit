@@ -7,11 +7,12 @@ import { createStore } from "zustand/vanilla";
 import type {
   Citation,
   DocumentCitationError,
+  ReferenceSource,
 } from "@/services/citation-index/service";
 import type { PandocEngineStatus } from "@/services/pandoc/service";
 
 import { buildReferenceEntries } from "./entries";
-import type { ReferenceEntry, ReferenceSource } from "./entries";
+import type { ReferenceEntry } from "./entries";
 
 export type ReferencesListMode =
   | { kind: "minimal" }

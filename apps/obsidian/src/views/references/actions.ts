@@ -7,13 +7,13 @@ import type { MouseEvent } from "react";
 
 import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
 
-import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
-
 import type {
   OpenableAttachment,
-  ReferenceEntry,
   ReferenceSource,
-} from "./entries";
+} from "@/services/citation-index/service";
+import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
+
+import type { ReferenceEntry } from "./entries";
 
 export interface ReferenceActions {
   /** Move the editor to the entry's next occurrence, wrapping at the end. */
