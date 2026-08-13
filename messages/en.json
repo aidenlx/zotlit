@@ -683,11 +683,10 @@
   "welcome_action_open_migration_guide": "Open migration guide",
   "creator_summary": [
     {
-      "declarations": ["input count", "input first", "input second"],
+      "declarations": ["input count", "input first"],
       "selectors": ["count"],
       "match": {
         "count=1": "{first}",
-        "count=2": "⁨{first}⁩ and ⁨{second}⁩",
         "count=*": "{first} et al."
       }
     }

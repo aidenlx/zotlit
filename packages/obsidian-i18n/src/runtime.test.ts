@@ -243,6 +243,16 @@ describe("Language Pack runtime", () => {
     expect(runtime.translate("missing_message")).toBe("missing_message");
   });
 
+  test("reports the locale it renders from, before and after an install", () => {
+    expect(runtime.getLocale()).toBe("en");
+    runtime.install(fakePack("fr", { hello: "monde" }));
+
+    expect(runtime.getLocale()).toBe("fr");
+    runtime.reset();
+
+    expect(runtime.getLocale()).toBe("en");
+  });
+
   test("keeps active locale state isolated between runtime instances", () => {
     const first = createLanguagePackRuntime(BASE_PACK);
     const second = createLanguagePackRuntime(BASE_PACK);

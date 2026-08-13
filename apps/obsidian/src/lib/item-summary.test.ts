@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { isChildItemFields } from "@zotlit/db";
 import type { Creator, ItemDisplayInfo } from "@zotlit/db";
 import { makeItem } from "@zotlit/item-lookup/fixtures";
 
+import { runtime } from "./i18n/generated/runtime";
 import { itemSummary, creatorSummary } from "./item-summary";
 
 function creator(
@@ -122,7 +123,7 @@ describe("creatorSummary", () => {
     ).toBe("Lovelace");
   });
 
-  it("joins two primary creators with isolated lastName values", () => {
+  it("joins two primary creators with the locale's list pattern", () => {
     expect(
       creatorSummary(
         makeItem({
@@ -132,7 +133,25 @@ describe("creatorSummary", () => {
           primaryCreatorType: "author",
         }),
       ),
-    ).toBe("⁨Lovelace⁩ and ⁨Hopper⁩");
+    ).toBe("Lovelace and Hopper");
+  });
+
+  it("joins two primary creators in the locale the messages render in", () => {
+    // A pack that translates nothing still names the locale every message
+    // renders in, which is the locale the pair joins by.
+    runtime.install({ schemaVersion: 1, locale: "zh-CN", messages: {} });
+    onTestFinished(() => runtime.reset());
+
+    expect(
+      creatorSummary(
+        makeItem({
+          key: "A",
+          itemType: "journalArticle",
+          creators: [creator("Ada", "Lovelace"), creator("Grace", "Hopper")],
+          primaryCreatorType: "author",
+        }),
+      ),
+    ).toBe("Lovelace和Hopper");
   });
 
   it("appends et al. for three or more primary creators", () => {

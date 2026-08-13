@@ -20,6 +20,12 @@ export type TargetLocaleMessages = Readonly<
 export type LanguagePackRuntime = {
   install(pack: LanguagePack): void;
   reset(): void;
+  /**
+   * The locale {@link LanguagePackRuntime.translate} renders from — the active
+   * pack's locale, so a caller formatting alongside a message (a list, a name
+   * order) uses the locale the text around it already reads in.
+   */
+  getLocale(): string;
   /** Routes runtime diagnostics to the consumer's logger; generated runtimes start with the no-op. */
   setLogger(logger: StructuredLogger): void;
   /** Selects the locale {@link LanguagePackRuntime.translateTarget} renders from. */
@@ -180,6 +186,9 @@ export function createLanguagePackRuntime(
           messageCount: Object.keys(pack.messages).length,
         },
       );
+    },
+    getLocale() {
+      return activePack.locale;
     },
     reset() {
       activePack = basePack;

@@ -654,11 +654,10 @@
   "welcome_action_open_migration_guide": "打开迁移指南",
   "creator_summary": [
     {
-      "declarations": ["input count", "input first", "input second"],
+      "declarations": ["input count", "input first"],
       "selectors": ["count"],
       "match": {
         "count=1": "{first}",
-        "count=2": "⁨{first}⁩和⁨{second}⁩",
         "count=*": "{first}等"
       }
     }

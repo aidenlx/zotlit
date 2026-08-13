@@ -29,13 +29,9 @@ test("the ZotLit project compiles through the reusable package contract", async 
   ).toBe("以 简体中文 显示 ZotLit 界面。安装时将下载语言包。");
   // Everything outside the configured prefixes keeps the existing ladder.
   expect(generated.messages.hello()).toBe("world");
-  expect(
-    generated.messages.creator_summary({
-      count: 2,
-      first: "Ada",
-      second: "Grace",
-    }),
-  ).toBe("⁨Ada⁩ and ⁨Grace⁩");
+  expect(generated.messages.creator_summary({ count: 3, first: "Ada" })).toBe(
+    "Ada et al.",
+  );
   expect(await readdir(generated.result.outputDirectory)).toContain(
     "catalog.ts",
   );
@@ -43,11 +39,7 @@ test("the ZotLit project compiles through the reusable package contract", async 
 
 type RealProjectMessages = {
   hello(): string;
-  creator_summary(inputs: {
-    count: number;
-    first: string;
-    second: string;
-  }): string;
+  creator_summary(inputs: { count: number; first: string }): string;
   settings_language_pack_name(): string;
   settings_language_pack_desc(inputs: { language: string }): string;
 };
