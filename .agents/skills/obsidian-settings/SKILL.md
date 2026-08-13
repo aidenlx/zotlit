@@ -373,6 +373,7 @@ app.setting.openTabById(plugin.manifest.id);
 ```
 
 `open()` is idempotent and synchronous, so this is safe whether or not the modal already shows.
+Which window it lands in depends on config — see [Verifying on screen](#verifying-on-screen).
 `openTabById` returns the `SettingTab` or `null`, and does not open the modal on its own. Built-in tab
 ids in 1.13: `about`, `appearance`, `editor`, `file`, `interface`, `hotkeys`, `keychain`, `plugins`,
 `community-plugins`. `sync` and `publish` are core-plugin tabs.
@@ -462,6 +463,46 @@ app.setting.open();
 const tab = app.setting.openTabById("hotkeys") as (SettingTab & { setQuery(q: string): void }) | null;
 tab?.setQuery(plugin.manifest.id);
 ```
+
+## Verifying on screen
+
+Since 1.13.4 `open()` renders the modal in its own Electron window whenever the
+`settingsPopoutWindow` config is on, which is the default. A harness that evaluates JS in the main
+window and captures it — `/obsidian-debug` drives one — then reports an app with no settings in
+it. Put the modal back in the main window for the duration:
+
+```ts
+app.vault.setConfig("settingsPopoutWindow", false);
+```
+
+That persists to the vault's `.obsidian/app.json`, and the next `open()` honours it with no
+reload — `close()` then `open()` re-homes a modal that is already up. The modal then answers
+`document.querySelector(".modal.mod-settings")` and lands in a plain window capture. `open()`
+stays synchronous in both modes, so the `openTabById` on the next line still finds its tab. The
+Community plugins browser reads the same key, so it follows settings into whichever window they use.
+
+To check how settings render in their own window, leave the config on and reach that window from
+the main renderer:
+
+```ts
+app.setting.isInPopoutWindow(); // false while the modal renders in the main window
+const win = app.setting.getPopoutWindow();
+win.document.querySelector(".vertical-tab-header");
+win.getComputedStyle(el);
+win.electronWindow.webContents
+  .capturePage()
+  .then((img) => require("fs").writeFileSync("<abs>.png", img.toPNG()));
+```
+
+That window is a `Modal` popout rather than a `WorkspaceWindow`, so it stays out of
+`app.workspace.floatingSplit` and fires no `window-open` event — `app.setting` is the only handle
+on it. Its body carries `is-popout-modal` on top of the `is-popout-window` every popout gets.
+
+While it is open the main renderer's `activeWindow` / `activeDocument` globals point at the
+settings window, so reach the main window as `window` / `document`.
+
+The reveal flash expires before a capture round-trip finishes, so assert `is-flashing` on the row
+in the DOM instead of looking for it in a screenshot.
 
 ### Stability
 

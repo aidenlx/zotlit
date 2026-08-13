@@ -27,19 +27,7 @@ import { CitedByActionsContext, createCitedByActions } from "./actions";
 import { CitedBy } from "./CitedBy";
 import { COMPACT_CAP, createCitedByStore, CitedByStoreProvider } from "./store";
 
-vi.mock("zustand", async () => {
-  const { useSyncExternalStore } = await import("preact/compat");
-  return {
-    useStore: <T, U>(
-      store: {
-        subscribe: (listener: () => void) => () => void;
-        getState: () => T;
-      },
-      selector: (state: T) => U,
-    ) =>
-      useSyncExternalStore(store.subscribe, () => selector(store.getState())),
-  };
-});
+vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
 const body = "A reason cites @doe2024 here.\n";
 const start = body.indexOf("@doe2024");

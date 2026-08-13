@@ -2,6 +2,7 @@ import { useContext, useMemo, useState } from "react";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
+import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 
@@ -71,8 +72,8 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
   const toggleSearchOpen = useToggleSearchOpen();
 
   return (
-    <div className="zt:flex zt:flex-col zt:gap-2 zt:p-2 zt:@sm:flex-row zt:@sm:items-center">
-      <div className="zt:flex zt:flex-wrap zt:justify-center zt:gap-0.5 zt:@sm:w-auto zt:@sm:shrink-0">
+    <SidebarToolbar className="zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
+      <SidebarToolbar.Actions className="zt:@sm:w-auto zt:@sm:shrink-0">
         <FollowControls />
         {hasItem && (
           <>
@@ -98,9 +99,9 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
             />
           </>
         )}
-      </div>
+      </SidebarToolbar.Actions>
       {hasItem && followMode !== "reader" && <AttachmentSelector />}
-    </div>
+    </SidebarToolbar>
   );
 }
 

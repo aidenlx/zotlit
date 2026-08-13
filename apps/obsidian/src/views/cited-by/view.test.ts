@@ -20,19 +20,7 @@ import type {
 import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
 
-vi.mock("zustand", async () => {
-  const { useSyncExternalStore } = await import("preact/compat");
-  return {
-    useStore: <T, U>(
-      store: {
-        subscribe: (listener: () => void) => () => void;
-        getState: () => T;
-      },
-      selector: (state: T) => U,
-    ) =>
-      useSyncExternalStore(store.subscribe, () => selector(store.getState())),
-  };
-});
+vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
 class TestCitedByView extends CitedByView {
   open(): Promise<void> {

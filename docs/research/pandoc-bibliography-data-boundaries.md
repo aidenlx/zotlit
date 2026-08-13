@@ -20,6 +20,11 @@ distinct from both consumers above; see
 [the packaging note](./pandoc-integration-packaging-and-installation.md#built-in-wasm-export)
 for its full bibliography-source chain.
 
+Spec [#724](https://github.com/aidenlx/zotlit/issues/724) adds no fourth
+data source. The **Copied Bibliography** serializes the completed rendering
+the References Sidebar already holds, so it inherits that consumer's data
+contract whole; see [Copied Bibliography](#copied-bibliography) below.
+
 This split gives the sidebar current local data without an additional plugin or export setup. It also keeps the direct Pandoc contract compatible with Pandoc's normal `--bibliography` boundary. Pandoc accepts CSL JSON, CSL YAML, BibLaTeX, BibTeX, and RIS bibliography files; it does not process citations until bibliographic data is supplied ([Pandoc User's Guide, “Citation rendering” and “Specifying bibliographic data”](https://pandoc.org/MANUAL.html#citations)).
 
 ## Identity model
@@ -59,6 +64,20 @@ Do not persist converted CSL items as a second bibliography cache. A short-lived
 - citeproc-js cannot render the item with the selected style or locale.
 
 A failed entry must not reuse an earlier formatted value as if it were current. Other valid entries can continue to render. A missing Citation Key may still allow an item-data preview, but the entry remains in an export-blocking error state.
+
+### Copied Bibliography
+
+**Membership.** The Copied Bibliography covers the active Markdown note's Document Citation Set, as the References Sidebar resolved it: live DB-to-CSL conversion, Indexed Key identity, and the selected Citation and References Style. The **Pandoc citations** and **Wikilink citations** settings therefore decide copied membership exactly as they decide sidebar membership. Built-in export and Direct Pandoc keep their own membership rules; neither reads this artifact.
+
+**Input.** Copy serializes the structured entries a completed render produced — one Entry Marker and one inline content flow per entry, in the style's bibliography order. It never reads the visible sidebar DOM, so rendering, selection, and layout changes cannot alter what is copied. Sanitization stays at the Pandoc bibliography parsing seam; the copy adds no active content.
+
+**Representations.** One copy writes `text/html` and `text/plain` in a single clipboard item, and the destination chooses between them. Both hold entries only, keep the bibliography order and the Entry Markers, and carry no heading. HTML uses one paragraph per entry and portable inline markup: the inline elements CSL semantics are written in, a link target, and the inline styling a semantic such as small caps needs. It depends on no ZotLit class or stylesheet. Plain text uses the visible text of the same entries, one entry per paragraph, separated by a blank line.
+
+**Freshness.** Copy is available only for the current render generation of the active note: a non-empty, complete rendering with no Reference Error. Every invalidation — active note, Document Citation Set, database, style, style-input preference, or Pandoc Engine — withdraws it immediately, including while retained entries stay on screen. The action rechecks the captured note and generation at the clipboard commit point and writes nothing when either moved on. Past that point the artifact is unmanaged: a pasted Copied Bibliography never updates, and ZotLit does not track where it went. See [ADR 0025](../../apps/obsidian/docs/adr/0025-exports-generate-bibliographies-markdown-stores-citations.md).
+
+**Failure behavior.** A minimal list, an unavailable engine or style, a failed formatting attempt, an empty bibliography, or any Reference Error keeps copy unavailable, each with its own disabled tooltip. A note or generation change before the write asks for a retry. A rich clipboard write the platform cannot take falls back to a plain-text write, which the success notice names. A clipboard that takes neither representation reports a failure and leaves the note unchanged.
+
+**Module shape.** One pure module owns serialization: it accepts the completed ordered entries and returns `{ html, text }`, so marker placement and representation fidelity are testable without Obsidian ([`copied-bibliography.ts`](../../apps/obsidian/src/views/references/copied-bibliography.ts)). The two-representation clipboard write and its plain-text fallback sit in the platform adapter beside it ([`clipboard.ts`](../../apps/obsidian/src/lib/clipboard.ts)). The References feature owns readiness, because it already owns the active note, the Document Citation Set, the render generation, and the completed bibliography.
 
 ### Direct Pandoc
 

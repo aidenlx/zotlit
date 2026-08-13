@@ -4,8 +4,10 @@ import type { App, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import { writeClipboardRichText } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
@@ -24,16 +26,23 @@ import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
-import type { ReferenceActions } from "./actions";
+import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
+import type { CopiedBibliographyEntry } from "./copied-bibliography";
 import { buildReferenceEntries } from "./entries";
-import type { RenderedReference } from "./entries";
+import type { ReferenceEntry, RenderedReference } from "./entries";
 import { References } from "./References";
 import {
   createReferencesStore,
   minimalReferencesState,
+  referencesCopyState,
   ReferencesStoreProvider,
 } from "./store";
-import type { ReferencesListMode } from "./store";
+import type {
+  ReferencesCopyBlock,
+  ReferencesCopyState,
+  ReferencesFormatting,
+  ReferencesListMode,
+} from "./store";
 
 export const REFERENCES_VIEW_TYPE = "zotlit-references";
 
@@ -53,6 +62,8 @@ export interface ReferencesViewDeps {
   bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
+  /** Reveals the Citation and References Style row in settings. */
+  openStyleSettings: () => void;
 }
 
 export class ReferencesView extends ItemView {
@@ -74,10 +85,18 @@ export class ReferencesView extends ItemView {
   #generation = 0;
   /** Bumped per rescan, the same way, since a query may await a file read. */
   #scan = 0;
-  /** Citations of the active document, as the current list was built from. */
+  /** Path of the Markdown note the current list was read from; `null` for none. */
+  #path: string | null = null;
+  /** Citations of that note, as the current list was built from. */
   #citations: readonly Citation[] = [];
-  /** Explicit citation-source errors of the active document. */
+  /** Explicit citation-source errors of that note. */
   #errors: readonly DocumentCitationError[] = [];
+  /** Where the current list's render stands, as copy readiness reads it. */
+  #formatting: ReferencesFormatting = "pending";
+  /** Copy readiness as it was last published, so only a change is logged. */
+  #copyLabel: "ready" | ReferencesCopyBlock = "no-note";
+  /** The bibliography a copy would take; `null` while copy is unavailable. */
+  #copySnapshot: CopyBibliographySnapshot | null = null;
 
   constructor(leaf: WorkspaceLeaf, deps: ReferencesViewDeps) {
     super(leaf);
@@ -113,7 +132,11 @@ export class ReferencesView extends ItemView {
       getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
       openCitekey: (citekey) => void citekeyEditor.openCitekey(citekey, false),
       onOpenEngineSettings: () => this.#deps.openSettings(),
+      onChangeStyle: () => this.#deps.openStyleSettings(),
       onDismissEngineHint: () => pandocEngine.decline(),
+      getCopySnapshot: () => this.#copySnapshot,
+      writeClipboard: writeClipboardRichText,
+      notify: (message) => void new BaseNotice(message),
     });
 
     this.#root = createRoot(this.contentEl);
@@ -129,7 +152,7 @@ export class ReferencesView extends ItemView {
     // whichever document that is, and every signal that can change its
     // Citations: its own citekeys through the index, its wikilinks and the
     // frontmatter that resolves either syntax through the metadata cache. A
-    // rescan that finds the same Citations rebuilds nothing.
+    // rescan that finds the same Citations of the same note rebuilds nothing.
     this.registerEvent(
       app.workspace.on("active-leaf-change", () => this.#rescan()),
     );
@@ -172,34 +195,52 @@ export class ReferencesView extends ItemView {
    * answer differs. The query is answered from the index, so a document the
    * vault-wide backfill has not reached is scanned on demand rather than waited
    * for; the read yields, so a stale answer is discarded.
+   *
+   * A rescan starts when the active note may have moved on, while the list
+   * still answers for the note its Citations were read from, so copy readiness
+   * is republished before the read rather than after it. The note is part of
+   * the answer, so a switch to a note citing the same works rebuilds the list
+   * all the same, and the copy it offers names the note now on screen.
    */
   #rescan(): void {
     const scan = ++this.#scan;
-    void this.#readCitationSet().then(({ citations, errors }) => {
+    this.#refreshCopy();
+    void this.#readCitationSet().then(({ path, citations, errors }) => {
       if (
         scan !== this.#scan ||
-        (citationsEqual(this.#citations, citations) &&
+        (path === this.#path &&
+          citationsEqual(this.#citations, citations) &&
           documentCitationErrorsEqual(this.#errors, errors))
       ) {
         return;
       }
+      this.#path = path;
       this.#citations = citations;
       this.#errors = errors;
       logger.trace("References citations changed", {
-        path: this.#deps.app.workspace.getActiveFile()?.path,
+        path,
         count: citations.length,
       });
       this.#reload();
     });
   }
 
-  /** Scope is `.md`, the only files the index covers. */
-  async #readCitationSet(): Promise<DocumentCitationSet> {
+  /**
+   * Scope is `.md`, the only files the index covers. The note travels with the
+   * answer, so the list keeps naming the note it was read from however the
+   * active note moves while the read runs.
+   */
+  async #readCitationSet(): Promise<
+    DocumentCitationSet & { path: string | null }
+  > {
     const file = this.#deps.app.workspace.getActiveFile();
     if (!file || file.extension !== "md") {
-      return { occurrences: [], citations: [], errors: [] };
+      return { path: null, occurrences: [], citations: [], errors: [] };
     }
-    return this.#deps.citationIndex.getDocumentCitationSet(file);
+    return {
+      path: file.path,
+      ...(await this.#deps.citationIndex.getDocumentCitationSet(file)),
+    };
   }
 
   /**
@@ -216,21 +257,87 @@ export class ReferencesView extends ItemView {
     const generation = ++this.#generation;
     const citations = this.#citations;
     const { sources } = readReferenceSources(this.#deps.db, citations);
+    const engine = this.#deps.pandocEngine.getStatus();
+    const entries = buildReferenceEntries(citations, sources, {
+      bibliography: {
+        entries: this.#rendered,
+        complete: false,
+      },
+      errors: this.#errors,
+    });
 
+    // Retained formatted entries answer for the render that is about to be
+    // replaced, so the reload alone puts copy out of reach.
+    this.#formatting = engine.kind === "installed" ? "pending" : "unavailable";
     this.#store.setState({
-      entries: buildReferenceEntries(citations, sources, {
-        bibliography: {
-          entries: this.#rendered,
-          complete: false,
-        },
-        errors: this.#errors,
-      }),
+      entries,
       listMode: this.#listMode,
-      engine: this.#deps.pandocEngine.getStatus(),
+      engine,
       formattingFailed: this.#formattingFailed,
       dbReady: this.#deps.db.state === "ready",
+      copy: this.#trackCopy(entries),
     });
     void this.#render(generation, citations, sources);
+  }
+
+  /**
+   * Publish copy readiness, and hold the bibliography a ready copy takes.
+   *
+   * The note travels with the Citations the list was built from, rather than
+   * being read back off the workspace here: once another note takes over, the
+   * list on screen answers for the note it was read from alone, so copy waits
+   * for the rescan that follows the switch whatever this render did.
+   *
+   * The snapshot names the note and the generation it answers for, so the copy
+   * action can refuse a write once either has moved on.
+   */
+  #trackCopy(entries: readonly ReferenceEntry[]): ReferencesCopyState {
+    const path = this.#path;
+    const generation = this.#generation;
+    const copy = referencesCopyState({
+      path,
+      generation,
+      entries,
+      // A list the active note has moved past is the previous note's until the
+      // rescan that follows the switch hands this pane the new note's own
+      // Citations, so it waits on that rescan the way it waits on a render.
+      formatting:
+        this.#activeMarkdownPath() === path ? this.#formatting : "pending",
+    });
+    this.#copySnapshot =
+      copy.kind === "ready"
+        ? { ...copy.target, entries: copiedEntries(entries) }
+        : null;
+
+    const label = copy.kind === "ready" ? "ready" : copy.reason;
+    if (label !== this.#copyLabel) {
+      this.#copyLabel = label;
+      logger.debug("References copy readiness changed", {
+        state: label,
+        path,
+        generation,
+      });
+    }
+    return copy;
+  }
+
+  /**
+   * Republish copy readiness alone, for a change that leaves the list itself
+   * standing: the active note moving away from the note the list answers for,
+   * and back to it. The readiness label carries that whole change — neither the
+   * note nor the generation of a ready copy moves without a reload — so an
+   * unchanged label publishes nothing and the pane stays put.
+   */
+  #refreshCopy(): void {
+    const label = this.#copyLabel;
+    const copy = this.#trackCopy(this.#store.getState().entries);
+    if (label !== this.#copyLabel) this.#store.setState({ copy });
+  }
+
+  /** The active file when it is a note the citation index answers for. */
+  #activeMarkdownPath(): string | null {
+    const file = this.#deps.app.workspace.getActiveFile();
+    return file?.extension === "md" ? file.path : null;
   }
 
   /**
@@ -270,20 +377,23 @@ export class ReferencesView extends ItemView {
       hasEntryMarkers: outcome.hasEntryMarkers,
     };
     this.#formattingFailed = false;
+    this.#formatting = "complete";
     logger.debug("References bibliography rendered", {
       count: outcome.entries.length,
       hasEntryMarkers: outcome.hasEntryMarkers,
     });
+    const entries = buildReferenceEntries(citations, sources, {
+      bibliography: {
+        entries: this.#rendered,
+        complete: true,
+      },
+      errors: this.#errors,
+    });
     this.#store.setState({
-      entries: buildReferenceEntries(citations, sources, {
-        bibliography: {
-          entries: this.#rendered,
-          complete: true,
-        },
-        errors: this.#errors,
-      }),
+      entries,
       listMode: this.#listMode,
       formattingFailed: false,
+      copy: this.#trackCopy(entries),
     });
   }
 
@@ -296,13 +406,25 @@ export class ReferencesView extends ItemView {
     this.#rendered.clear();
     this.#listMode = { kind: "minimal" };
     this.#formattingFailed = formattingFailed;
-    this.#store.setState(
-      minimalReferencesState({
-        citations,
-        sources,
-        errors: this.#errors,
-        formattingFailed,
-      }),
-    );
+    this.#formatting = formattingFailed ? "failed" : "unavailable";
+    const minimal = minimalReferencesState({
+      citations,
+      sources,
+      errors: this.#errors,
+      formattingFailed,
+    });
+    this.#store.setState({
+      ...minimal,
+      copy: this.#trackCopy(minimal.entries),
+    });
   }
+}
+
+/** The completed entries of a ready list, in the style's bibliography order. */
+function copiedEntries(
+  entries: readonly ReferenceEntry[],
+): CopiedBibliographyEntry[] {
+  return entries
+    .filter((entry) => entry.kind === "rendered")
+    .map(({ marker, content }) => ({ marker, content }));
 }
