@@ -247,6 +247,28 @@ describe("scanCitationClusters", () => {
     expect(scanCitationClusters("a [^@key] b")).toEqual([]);
   });
 
+  it("rejects the bracket an inline note opens", () => {
+    expect(scanCitationClusters("a ^[see @key p. 3] b")).toEqual([]);
+  });
+
+  it("reads a bracket whose caret a backslash escapes", () => {
+    const text = "a \\^[see @key] b";
+    const [cluster] = scanCitationClusters(text);
+    expect(text.slice(cluster!.start, cluster!.end)).toBe("[see @key]");
+  });
+
+  it("reads a bracket the caret does not touch", () => {
+    const text = "a ^ [see @key] b";
+    const [cluster] = scanCitationClusters(text);
+    expect(text.slice(cluster!.start, cluster!.end)).toBe("[see @key]");
+  });
+
+  it("reads a cluster an inline note holds", () => {
+    const text = "a ^[an aside with [@key] inside] b";
+    const [cluster] = scanCitationClusters(text);
+    expect(text.slice(cluster!.start, cluster!.end)).toBe("[@key]");
+  });
+
   it("reads a bracket whose caret no footnote label allows", () => {
     const text = "c [^see @key] d";
     const [cluster] = scanCitationClusters(text);
@@ -308,6 +330,12 @@ describe("scanCitations", () => {
 
   it("keeps the author-suppression dash with the key it belongs to", () => {
     expect(sources("Blah -@a.")).toEqual([{ source: "-@a", keys: ["a"] }]);
+  });
+
+  it("reads a key an inline note holds as an author-in-text citation", () => {
+    expect(sources("aside ^[see @a for background]")).toEqual([
+      { source: "@a", keys: ["a"] },
+    ]);
   });
 
   it("leaves a bracket that carries no key as text", () => {
