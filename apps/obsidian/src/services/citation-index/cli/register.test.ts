@@ -1,7 +1,6 @@
 import type { CliHandler, Plugin, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import * as m from "@/lib/i18n/generated/messages";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
 
 import {
@@ -12,7 +11,7 @@ import {
 import { registerCitationsCli } from "./register";
 
 describe("Citations CLI registration", () => {
-  it("publishes cited-by with localized command and flag help", () => {
+  it("publishes cited-by with command and flag help", () => {
     const registerCliHandler = vi.fn();
     const plugin = { registerCliHandler } as unknown as Plugin;
 
@@ -20,26 +19,26 @@ describe("Citations CLI registration", () => {
 
     expect(registerCliHandler).toHaveBeenCalledWith(
       CITED_BY_COMMAND,
-      m.cli_cited_by_desc(),
+      "List the notes that cite one Zotero item, with the position of every citation",
       {
         key: {
           value: "<zotero-key>",
-          description: m.cli_flag_cited_by_key_desc(),
+          description: "Zotero key of the item; use instead of citekey",
         },
         citekey: {
           value: "<citation-key>",
-          description: m.cli_flag_cited_by_citekey_desc(),
+          description: "Citation key of the item; use instead of key",
         },
         "expect-source": {
           value: "<source-id>",
-          description: m.cli_flag_expect_source_desc(),
+          description: "Zotero source ID the call must match",
         },
       },
       expect.any(Function),
     );
   });
 
-  it("publishes references with localized command and flag help", () => {
+  it("publishes references with command and flag help", () => {
     const registerCliHandler = vi.fn();
     const plugin = { registerCliHandler } as unknown as Plugin;
 
@@ -47,23 +46,23 @@ describe("Citations CLI registration", () => {
 
     expect(registerCliHandler).toHaveBeenCalledWith(
       REFERENCES_COMMAND,
-      m.cli_references_desc(),
+      "List what one note cites, with the position of every citation",
       {
         file: {
           value: "<vault-path>",
-          description: m.cli_flag_references_file_desc(),
+          description: "Vault path of the note, such as notes/review.md",
           required: true,
         },
         "expect-source": {
           value: "<source-id>",
-          description: m.cli_flag_expect_source_desc(),
+          description: "Zotero source ID the call must match",
         },
       },
       expect.any(Function),
     );
   });
 
-  it("publishes the guide with localized help and no flags", async () => {
+  it("publishes the guide with command help and no flags", async () => {
     const registerCliHandler = vi.fn();
     const plugin = { registerCliHandler } as unknown as Plugin;
 
@@ -71,7 +70,7 @@ describe("Citations CLI registration", () => {
 
     expect(registerCliHandler).toHaveBeenCalledWith(
       CITATIONS_GUIDE_COMMAND,
-      m.cli_citations_guide_desc(),
+      "Print the ZotLit citations CLI guide",
       null,
       expect.any(Function),
     );

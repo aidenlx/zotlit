@@ -1,8 +1,6 @@
 import type { Plugin } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import * as m from "@/lib/i18n/generated/messages";
-
 import { PANDOC_FILES_COMMAND, PANDOC_GUIDE_COMMAND } from "./integration";
 import { registerPandocResolve } from "./register";
 
@@ -18,13 +16,13 @@ describe("Pandoc CLI registration", () => {
 
     expect(registerCliHandler).toHaveBeenCalledWith(
       PANDOC_FILES_COMMAND,
-      m.cli_pandoc_files_desc(),
+      "Return the version-matched ZotLit Pandoc integration pair",
       null,
       expect.any(Function),
     );
     expect(registerCliHandler).toHaveBeenCalledWith(
       PANDOC_GUIDE_COMMAND,
-      m.cli_pandoc_guide_desc(),
+      "Print the ZotLit Pandoc CLI guide",
       null,
       expect.any(Function),
     );

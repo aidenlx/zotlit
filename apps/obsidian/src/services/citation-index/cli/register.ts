@@ -1,8 +1,8 @@
 // Registers the citation commands with Obsidian's CLI.
 //
-// Flag and command help text is localized: it is UI text a user reads while
-// discovering the commands. Diagnostic prose inside a response stays literal
-// English, since `code` is the machine surface agent scripts read.
+// Command, flag, and diagnostic text is all hardcoded English: an
+// agent-facing contract surface, not localized UI. See
+// apps/obsidian/policies/cli-text.md.
 
 import type {
   App,
@@ -18,7 +18,6 @@ import {
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { readReferenceSources } from "@/services/citation-index/service";
@@ -44,22 +43,20 @@ interface CitationsCliRegistrationDeps {
   zoteroPref: Pick<ZoteroPrefService, "ready" | "sourceId" | "databasePath">;
 }
 
-/** Flags are built per registration, so their help text resolves against the
- *  active Language Pack rather than the one loaded when this module was
- *  imported. Neither selector is `required`: the command takes exactly one. */
+/** Neither selector is `required`: the command takes exactly one. */
 function citedByFlags(): CliFlags {
   return {
     key: {
       value: "<zotero-key>",
-      description: m.cli_flag_cited_by_key_desc(),
+      description: "Zotero key of the item; use instead of citekey",
     },
     citekey: {
       value: "<citation-key>",
-      description: m.cli_flag_cited_by_citekey_desc(),
+      description: "Citation key of the item; use instead of key",
     },
     "expect-source": {
       value: "<source-id>",
-      description: m.cli_flag_expect_source_desc(),
+      description: "Zotero source ID the call must match",
     },
   } satisfies Record<(typeof CITED_BY_PARAMS)[number], CliFlag>;
 }
@@ -68,12 +65,12 @@ function referencesFlags(): CliFlags {
   return {
     file: {
       value: "<vault-path>",
-      description: m.cli_flag_references_file_desc(),
+      description: "Vault path of the note, such as notes/review.md",
       required: true,
     },
     "expect-source": {
       value: "<source-id>",
-      description: m.cli_flag_expect_source_desc(),
+      description: "Zotero source ID the call must match",
     },
   } satisfies Record<(typeof REFERENCES_PARAMS)[number], CliFlag>;
 }
@@ -112,19 +109,19 @@ export function registerCitationsCli(
 
   plugin.registerCliHandler(
     CITED_BY_COMMAND,
-    m.cli_cited_by_desc(),
+    "List the notes that cite one Zotero item, with the position of every citation",
     citedByFlags(),
     handlers[CITED_BY_COMMAND],
   );
   plugin.registerCliHandler(
     REFERENCES_COMMAND,
-    m.cli_references_desc(),
+    "List what one note cites, with the position of every citation",
     referencesFlags(),
     handlers[REFERENCES_COMMAND],
   );
   plugin.registerCliHandler(
     CITATIONS_GUIDE_COMMAND,
-    m.cli_citations_guide_desc(),
+    "Print the ZotLit citations CLI guide",
     null,
     handlers[CITATIONS_GUIDE_COMMAND],
   );
