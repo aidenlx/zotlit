@@ -100,8 +100,8 @@ DESCRIPTION
 WORKFLOW
   1. Run obsidian-cli help zotlit and use only the commands it reports.
   2. Run obsidian-cli zotlit:citations-guide.
-  3. Read identity.source.id from the first answer, then pass
-     expect-source=<source-id> to every later call.
+  3. Run obsidian-cli zotlit:template-status and record identity.source.id,
+     then pass expect-source=<source-id> to every later call.
   4. Query with cited-by or references.
   5. Open each reported path and read it at the reported position.
   6. Run zotlit:template-data key=<zotero-key> when the task needs item data.

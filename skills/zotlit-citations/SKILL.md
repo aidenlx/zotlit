@@ -11,7 +11,7 @@ Complete these steps in order before you answer a citation question.
 
 1. `obsidian-cli help zotlit` — use only the commands and parameters it reports; commands reject what they do not declare.
 2. `obsidian-cli zotlit:citations-guide` — the installed version's field semantics and workflow.
-3. Read `identity.source.id` from the first answer, then pass `expect-source=<source-id>` on every later call.
+3. `obsidian-cli zotlit:template-status` — read `identity.source.id` from its answer, then pass `expect-source=<source-id>` on every later call.
 
 Read the guide again after a ZotLit update.
 
