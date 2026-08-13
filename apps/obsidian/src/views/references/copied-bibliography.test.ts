@@ -146,6 +146,24 @@ describe("toCopiedBibliography rich HTML", () => {
     expect(rendered!.textContent).toBe("ii Field notes.");
   });
 
+  it("keeps a link's text and drops a target no destination should follow", () => {
+    const { html } = toCopiedBibliography([
+      entry(
+        '<a href="javascript:alert(1)">Field notes</a>, ' +
+          '<a href="/vault/notes/tidal.md">Tidal margins</a>, ' +
+          '<a href="mailto:rivers@example.org">Rivers, A.</a>',
+      ),
+    ]);
+    const [rendered] = paragraphs(html);
+
+    expect(
+      [...rendered!.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+    ).toEqual([null, null, "mailto:rivers@example.org"]);
+    expect(rendered!.textContent).toBe(
+      "Field notes, Tidal margins, Rivers, A.",
+    );
+  });
+
   it("keeps the punctuation and non-ASCII text of an entry", () => {
     const { html } = toCopiedBibliography([
       entry("李四. 《潮汐边缘》. 港口出版社, 2018."),

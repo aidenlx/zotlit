@@ -65,12 +65,21 @@ const PORTABLE_STYLE = [
 ];
 
 /**
+ * The schemes a bibliography link reaches another application under. A style
+ * writes a DOI, a URL, or an address; a target under any other scheme carries
+ * no CSL semantic and stays behind, so an active one — `javascript:` above all
+ * — never reaches the clipboard.
+ */
+const PORTABLE_SCHEMES = new Set(["http:", "https:", "mailto:"]);
+
+/**
  * One paragraph, holding the Entry Marker and the entry as portable markup.
  *
  * The entry is rebuilt rather than cloned: each element is remade from the
- * allowed tags and the two attributes that survive — a link's target and the
- * inline styling above — so what reaches the clipboard carries markup the
- * destination can read and nothing else, whatever a style put in the entry.
+ * allowed tags, and the only attributes that cross over are a link's target
+ * under an allowed scheme and the inline declarations above, so what reaches
+ * the clipboard carries markup the destination can read and nothing else,
+ * whatever a style put in the entry.
  */
 function richEntry({ marker, content }: CopiedBibliographyEntry): string {
   const paragraph = document.createElement("p");
@@ -94,8 +103,8 @@ function portable(source: Node): DocumentFragment {
       continue;
     }
     const element = document.createElement(tag);
-    const href = node.getAttribute("href");
-    if (tag === "a" && href) element.setAttribute("href", href);
+    const href = tag === "a" ? portableHref(node.getAttribute("href")) : null;
+    if (href) element.setAttribute("href", href);
     if (node instanceof HTMLElement) {
       for (const property of PORTABLE_STYLE) {
         const value = node.style.getPropertyValue(property);
@@ -106,6 +115,18 @@ function portable(source: Node): DocumentFragment {
     fragment.append(element);
   }
   return fragment;
+}
+
+/**
+ * A target is absolute here or nowhere: the destination is another
+ * application, which resolves a relative target against a document of its own.
+ *
+ * @returns the target when its scheme is portable, `null` otherwise.
+ */
+function portableHref(href: string | null): string | null {
+  if (!href) return null;
+  const target = URL.parse(href);
+  return target && PORTABLE_SCHEMES.has(target.protocol) ? href : null;
 }
 
 function plainEntry({ marker, content }: CopiedBibliographyEntry): string {

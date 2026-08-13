@@ -40,7 +40,7 @@ export async function writeClipboardRichText({
     ]);
     return "rich";
   } catch (error) {
-    logger.debug("The rich clipboard write did not land; writing text", {
+    logger.warn("The rich clipboard write did not land; writing text", {
       error,
     });
     await navigator.clipboard.writeText(text);
