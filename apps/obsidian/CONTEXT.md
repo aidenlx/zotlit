@@ -67,6 +67,12 @@ The Template Data Explorer's default anchor — the full note-template context f
 **Annotation Root**:
 The Template Data Explorer re-anchored at a single Annotation, exactly what the `annotation` template receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
 
+### Agent CLI
+
+**CLI Contract**:
+The wire format of one `zotlit:*` command namespace — its envelope, payload fields, and diagnostic codes. Each namespace versions its own, so a bump in one says nothing about another. Distinct from the Template Contract, which is a promise about `zt` data rather than about an answer's shape.
+_Avoid_: contract version (names the number, not the thing); protocol (that is the Zotero companion's wire format)
+
 ### Annotation view
 
 **Annotation Card** _(Obsidian)_:

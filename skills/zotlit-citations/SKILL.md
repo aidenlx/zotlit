@@ -15,6 +15,8 @@ Complete these steps in order before you answer a citation question.
 
 Read the guide again after a ZotLit update.
 
+This skill is written against citations CLI Contract version 1 — the `contractVersion` a `cited-by` or `references` answer carries. When an answer reports another number, run `zotlit:citations-guide` again and follow the live guide over this skill. Step 3 belongs to another namespace: `zotlit:template-status` reports the Template Workbench's own contract version, which moves on its own.
+
 ## Target one vault and one Zotero library
 
 Put `vault=<vault-name>` first when the working directory does not select the vault unambiguously:

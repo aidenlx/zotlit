@@ -22,7 +22,7 @@ import {
   TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
-import { DIAGNOSTIC_HINTS } from "./envelope";
+import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
 import { TEMPLATE_SLOT_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import { ContractMetadataError } from "./serialize";
@@ -165,7 +165,9 @@ describe("Template Workbench CLI", () => {
 
     expect(callOrder).toEqual(["settled", "identity", "status"]);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      // The Workbench's own CLI Contract stamps the envelope (ADR 0026); the
+      // sibling cases pin its value.
+      contractVersion: CONTRACT_VERSION,
       command: "zotlit:template-status",
       ok: true,
       pluginVersion: PLUGIN_VERSION,
