@@ -64,6 +64,7 @@ afterEach(async () => {
   await act(() => root?.unmount());
   root = undefined;
   document.body.replaceChildren();
+  vi.clearAllMocks();
 });
 
 async function render(
@@ -290,6 +291,15 @@ describe("References toolbar", () => {
     )!;
   }
 
+  /**
+   * The action counts as live when activating it still reaches the reveal:
+   * a disabled icon button swallows its own click, so the reveal stays
+   * uncalled.
+   */
+  async function activateStyleAction(container: HTMLElement): Promise<void> {
+    await act(() => styleAction(container).click());
+  }
+
   it("holds the style action above the scrolling list region", async () => {
     const container = await render([summaryEntry], { kind: "minimal" });
     const scrolling = container.querySelector("[data-references-scroll]")!;
@@ -311,7 +321,7 @@ describe("References toolbar", () => {
 
   it("reveals the style setting when the action is activated", async () => {
     const container = await render([summaryEntry], { kind: "minimal" });
-    await act(() => styleAction(container).click());
+    await activateStyleAction(container);
 
     expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
   });
@@ -320,7 +330,9 @@ describe("References toolbar", () => {
     const container = await render([], { kind: "minimal" });
 
     expect(container.querySelector("[data-references-empty]")).not.toBeNull();
-    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
+    await activateStyleAction(container);
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the style action live while the engine is still installing", async () => {
@@ -331,8 +343,9 @@ describe("References toolbar", () => {
         engine: { kind: "installing", done: Promise.resolve() },
       },
     );
+    await activateStyleAction(container);
 
-    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the style action live while the engine is unavailable", async () => {
@@ -343,8 +356,9 @@ describe("References toolbar", () => {
         engine: { kind: "absent" },
       },
     );
+    await activateStyleAction(container);
 
-    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the style action live after formatting failed", async () => {
@@ -355,7 +369,8 @@ describe("References toolbar", () => {
       },
       { formattingFailed: true },
     );
+    await activateStyleAction(container);
 
-    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
   });
 });
