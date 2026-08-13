@@ -120,7 +120,9 @@ ${rows(assignments(SELECTORS))}
 ENVELOPE
   Both data commands answer with JSON: contractVersion, command, ok, the
   echoed request, identity, and then either the payload or a diagnostic. This
-  guide is literal text and carries no envelope.
+  guide is literal text and carries no envelope. contractVersion versions the
+  citation commands alone; every other zotlit:* namespace versions its own CLI
+  Contract independently.
 
 CITED BY PAYLOAD
   item        { key, citekey, summary } of the item the selector named.
@@ -140,6 +142,7 @@ REFERENCES PAYLOAD
   entries     The document's cited works in first-occurrence order, each as
               { refNumber, kind, occurrences } plus the fields its kind adds.
               refNumber is the reference number the document gives the work.
+              A note that cites nothing answers ok with an empty list.
   database    See INDEX STATE.
   resolution  See INDEX STATE.
   syntaxes    See INDEX STATE.

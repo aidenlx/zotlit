@@ -55,8 +55,6 @@ Every such fix edits the user's writing or their Zotero library. Propose each ch
 
 ## Report what the answer is worth
 
-An empty result is an answer: say that no note cites the work, rather than implying the query failed.
-
 When the payload reports a degraded index state, give the answer and say plainly that it may be incomplete. When `syntaxes` reports a kind as `excluded`, say that too: citations written in that syntax are not counted. When a call fails, follow the recovery action in `diagnostic.hint` before you retry, and tell the user what you changed.
 
 ## Tone

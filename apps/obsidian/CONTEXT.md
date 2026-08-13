@@ -225,6 +225,10 @@ _Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuil
 One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
 _Avoid_: citation instance, match, hit
 
+**Citation Syntax**:
+One of the two written forms a citation takes in a note body — a literal Pandoc citation key, or a wikilink to a Literature Note. Every Citation Occurrence has exactly one syntax.
+_Avoid_: citation format; citation style (collides with CSL citation styles)
+
 **Document Citation Set**:
 The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, and malformed Citation Fragments stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
 _Avoid_: citation universe, rendered citations (presentation, not membership)
