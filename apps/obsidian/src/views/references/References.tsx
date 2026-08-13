@@ -18,9 +18,9 @@ import { useReferencesStore } from "./store";
 import type { ReferencesCopyBlock } from "./store";
 
 /**
- * The pane: the fixed toolbar above, then one scrolling region holding the
- * engine surface and the reference list. The list is a `ul` — a bare `ol` keeps
- * Obsidian's own unlayered numbering, which would double the numbers the
+ * The pane: the fixed toolbar above, the engine surface under it, then one
+ * scrolling region holding the reference list. The list is a `ul` — a bare `ol`
+ * keeps Obsidian's own unlayered numbering, which would double the numbers the
  * entries already carry.
  */
 export function References() {
@@ -36,19 +36,20 @@ export function References() {
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
       <Toolbar />
-      {/* The banners pin themselves to the head of this region rather than of
-          the pane, so they ride above the list they describe and the toolbar
-          keeps its own place. */}
+      {/* The banners sit between the toolbar and the scrolling region, so they
+          ride above the list they describe, the toolbar keeps its own place,
+          and the list scrolls in the space left below them rather than passing
+          under their translucent tint. */}
+      <EngineSurface status={engine} />
+      {formattingFailed && engine.kind === "installed" && (
+        <Banner tone="warning" title={m.references_format_failed_title()}>
+          {m.references_format_failed_body()}
+        </Banner>
+      )}
       <div
         className="zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-y-auto"
         data-references-scroll
       >
-        <EngineSurface status={engine} />
-        {formattingFailed && engine.kind === "installed" && (
-          <Banner tone="warning" title={m.references_format_failed_title()}>
-            {m.references_format_failed_body()}
-          </Banner>
-        )}
         {entries.length === 0 ? (
           <div
             className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
@@ -480,8 +481,9 @@ function failureSentence(failure: PandocEngineFailure): string {
 /**
  * A strip across the head of the pane, in the shape of the docs site banner: a
  * flat alternate surface flush with the pane edges, the message ranged left,
- * and the action and close button on the trailing edge. Sticky, so the notice
- * stays put while the reference list scrolls under it.
+ * and the action and close button on the trailing edge. It sits outside the
+ * scrolling region, so the notice stays put and the list it describes scrolls
+ * below it rather than through its translucent tint.
  */
 function Banner({
   tone = "normal",
@@ -501,9 +503,13 @@ function Banner({
     // `bg-muted` (`--background-modifier-hover`) rather than a control token or
     // a fixed surface: it is a translucent tint, so the strip steps away from
     // whatever it is dropped on — either colour scheme, sidebar or main pane —
-    // and separates itself from the list below with no bottom border. `z-1`
-    // only has to clear the list, which sets no z-index of its own.
-    <div className="zt:sticky zt:top-0 zt:z-1 zt:flex zt:shrink-0 zt:flex-col zt:gap-2 zt:bg-muted zt:p-3 zt:ps-6 zt:text-sm zt:leading-snug">
+    // and separates itself from the list below with no bottom border.
+    // `relative` carries the close button, which sits out of flow in the
+    // corner.
+    <div
+      className="zt:relative zt:flex zt:shrink-0 zt:flex-col zt:gap-2 zt:bg-muted zt:p-3 zt:ps-6 zt:text-sm zt:leading-snug"
+      data-references-banner
+    >
       <div>
         {/* Only the title reserves the corner, and only while something sits in
             it — the message below it and the action row both run to the full

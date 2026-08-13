@@ -280,6 +280,59 @@ describe("References", () => {
   });
 });
 
+describe("References banners", () => {
+  const summaryEntry: ReferenceEntry = {
+    id: "BOOK0001",
+    refNumber: 1,
+    occurrences: [occurrence],
+    kind: "summary",
+    source,
+    linkpath: "notes/BOOK0001",
+  };
+
+  /**
+   * Outside the scrolling region, so a banner keeps its place without the list
+   * passing through its translucent tint.
+   */
+  it.each([
+    [
+      "the install hint",
+      { engine: { kind: "absent" } } satisfies Partial<ReferencesState>,
+      "Format these references",
+    ],
+    [
+      "the install progress",
+      {
+        engine: { kind: "installing", done: Promise.resolve() },
+      } satisfies Partial<ReferencesState>,
+      "Downloading the Pandoc engine…",
+    ],
+    [
+      "an engine failure",
+      {
+        engine: {
+          kind: "failed",
+          failure: { code: "hash-mismatch", expected: "a", actual: "b" },
+        },
+      } satisfies Partial<ReferencesState>,
+      "The Pandoc engine is unavailable",
+    ],
+    [
+      "a formatting failure",
+      { formattingFailed: true } satisfies Partial<ReferencesState>,
+      "ZotLit could not format these references",
+    ],
+  ])("holds %s above the scrolling list region", async (_, state, title) => {
+    const container = await render([summaryEntry], { kind: "minimal" }, state);
+    const banner = container.querySelector("[data-references-banner]");
+
+    expect(banner?.textContent).toContain(title);
+    expect(
+      container.querySelector("[data-references-scroll]")!.contains(banner),
+    ).toBe(false);
+  });
+});
+
 describe("References toolbar", () => {
   const summaryEntry: ReferenceEntry = {
     id: "BOOK0001",
