@@ -74,6 +74,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [observability](policies/observability.md) — lean `info`; permanent `debug` / `trace` at decision points
 - [temporal-dates](policies/temporal-dates.md) — Temporal API, not Date/date-fns/dayjs
 - [vocabulary](policies/vocabulary.md) — canonical terms for Zotero keys, citation keys, and `citekey`
+- [CLI + skill pair](policies/cli-skill-pair.md) — tooling facts in the CLI; process, policy, and tone in the skill
 
 ### i18n
 
