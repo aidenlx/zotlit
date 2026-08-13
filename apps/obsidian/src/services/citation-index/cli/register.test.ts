@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
 
-import { CITED_BY_COMMAND, REFERENCES_COMMAND } from "./commands";
+import {
+  CITATIONS_GUIDE_COMMAND,
+  CITED_BY_COMMAND,
+  REFERENCES_COMMAND,
+} from "./commands";
 import { registerCitationsCli } from "./register";
 
 describe("Citations CLI registration", () => {
@@ -57,6 +61,24 @@ describe("Citations CLI registration", () => {
       },
       expect.any(Function),
     );
+  });
+
+  it("publishes the guide with localized help and no flags", async () => {
+    const registerCliHandler = vi.fn();
+    const plugin = { registerCliHandler } as unknown as Plugin;
+
+    registerCitationsCli(plugin, {} as never);
+
+    expect(registerCliHandler).toHaveBeenCalledWith(
+      CITATIONS_GUIDE_COMMAND,
+      m.cli_citations_guide_desc(),
+      null,
+      expect.any(Function),
+    );
+    const guide = registerCliHandler.mock.calls.find(
+      ([command]) => command === CITATIONS_GUIDE_COMMAND,
+    )![3] as CliHandler;
+    expect(await guide({})).toContain("ZOTLIT-CITATIONS(1)");
   });
 
   describe("references over the vault", () => {

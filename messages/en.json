@@ -558,6 +558,7 @@
   "cli_flag_cited_by_citekey_desc": "Citation key of the item; use instead of key",
   "cli_references_desc": "List what one note cites, with the position of every citation",
   "cli_flag_references_file_desc": "Vault path of the note, such as notes/review.md",
+  "cli_citations_guide_desc": "Print the ZotLit citations CLI guide",
   "settings_attachment_import_name": "Import attachments",
   "settings_attachment_import_desc": "Copy annotation images and embedded attachments into the vault.",
   "settings_attachment_folder_name": "Attachment folder",

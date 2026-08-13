@@ -26,8 +26,10 @@ import type {
   Diagnostic,
   ReferenceEntry,
 } from "./envelope";
+import { renderCitationsGuide } from "./guide";
 import {
   parseCitedByRequest,
+  parseGuideRequest,
   parseReferencesRequest,
   targetMismatch,
 } from "./request";
@@ -40,6 +42,9 @@ export const CITED_BY_COMMAND =
 
 export const REFERENCES_COMMAND =
   "zotlit:references" as const satisfies CitationsCommand;
+
+export const CITATIONS_GUIDE_COMMAND =
+  "zotlit:citations-guide" as const satisfies CitationsCommand;
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 
@@ -77,7 +82,9 @@ interface CitationsCliDeps {
 }
 
 export type CitationsCliHandlers = Record<
-  typeof CITED_BY_COMMAND | typeof REFERENCES_COMMAND,
+  | typeof CITED_BY_COMMAND
+  | typeof REFERENCES_COMMAND
+  | typeof CITATIONS_GUIDE_COMMAND,
   CliHandler
 >;
 
@@ -177,6 +184,14 @@ export function createCitationsCliHandlers(
         ...echoed,
         entries: referenceEntries(references),
       });
+    },
+
+    /** Literal prose, no envelope: the page is the whole answer. */
+    [CITATIONS_GUIDE_COMMAND]: (params: CliData): string => {
+      const request = parseGuideRequest(params);
+      return request.kind === "invalid"
+        ? invalidRequest(CITATIONS_GUIDE_COMMAND, request)
+        : renderCitationsGuide();
     },
   };
 }

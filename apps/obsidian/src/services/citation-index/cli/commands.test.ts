@@ -13,12 +13,14 @@ import type {
 } from "@/services/citation-index/service";
 
 import {
+  CITATIONS_GUIDE_COMMAND,
   CITED_BY_COMMAND,
   createCitationsCliHandlers,
   REFERENCES_COMMAND,
 } from "./commands";
 import type { DocumentReferences, ItemPresence } from "./commands";
 import { DIAGNOSTIC_HINTS } from "./envelope";
+import { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
 
 const IDENTITY = {
   vault: { name: "Test Vault", path: "/vaults/test" },
@@ -145,9 +147,12 @@ function setup(options: SetupOptions = {}) {
     Promise.resolve(handlers[CITED_BY_COMMAND](params));
   const references = (params: Record<string, string>): Promise<string> =>
     Promise.resolve(handlers[REFERENCES_COMMAND](params));
+  const guide = (params: Record<string, string>): Promise<string> =>
+    Promise.resolve(handlers[CITATIONS_GUIDE_COMMAND](params));
   return {
     citedBy,
     references,
+    guide,
     getIdentity,
     waitUntilSettled,
     resolveCitekey,
@@ -527,6 +532,82 @@ describe("zotlit:references", () => {
         code: "INDEX_NOT_READY",
         message: "The Citation Index did not settle within 25 ms.",
         hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
+      },
+    });
+  });
+});
+
+describe("zotlit:citations-guide", () => {
+  it("serves the page as literal prose, without an envelope", async () => {
+    const { guide, getIdentity, waitUntilSettled } = setup();
+
+    const output = await guide({});
+
+    expect(() => JSON.parse(output)).toThrow();
+    expect(output).toContain("ZOTLIT-CITATIONS(1)");
+    expect(output).toContain(CITED_BY_COMMAND);
+    expect(output).toContain(REFERENCES_COMMAND);
+    expect(output).toContain(CITATIONS_GUIDE_COMMAND);
+    expect(getIdentity).not.toHaveBeenCalled();
+    expect(waitUntilSettled).not.toHaveBeenCalled();
+  });
+
+  it("documents every selector both commands accept", async () => {
+    const { guide } = setup();
+
+    const output = await guide({});
+
+    for (const parameter of [...CITED_BY_PARAMS, ...REFERENCES_PARAMS]) {
+      expect(output).toContain(parameter);
+    }
+  });
+
+  it("documents every entry kind and index state a payload reports", async () => {
+    const { guide } = setup();
+
+    const output = await guide({});
+
+    for (const kind of ["resolved", "unresolved", "missing", "malformed"]) {
+      expect(output).toContain(kind);
+    }
+    for (const state of [
+      "indexing",
+      "complete",
+      "degraded",
+      "resolving",
+      "ready",
+    ]) {
+      expect(output).toContain(state);
+    }
+    for (const syntax of ["citekey", "wikilink"]) {
+      expect(output).toContain(syntax);
+    }
+  });
+
+  it("documents every diagnostic code with its own recovery hint", async () => {
+    const { guide } = setup();
+
+    const output = await guide({});
+
+    for (const [code, hint] of Object.entries(DIAGNOSTIC_HINTS)) {
+      expect(output).toContain(code);
+      expect(output.replaceAll(/\s+/gu, " ")).toContain(hint);
+    }
+  });
+
+  it("rejects a parameter, since the guide serves one page", async () => {
+    const { guide } = setup();
+
+    const output = await guide({ topic: "positions" });
+
+    expect(JSON.parse(output)).toMatchObject({
+      contractVersion: 1,
+      command: CITATIONS_GUIDE_COMMAND,
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+        details: { parameter: "topic" },
       },
     });
   });

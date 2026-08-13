@@ -74,7 +74,10 @@ export function diagnostic(
 }
 
 /** The commands the citations namespace answers. */
-export type CitationsCommand = "zotlit:cited-by" | "zotlit:references";
+export type CitationsCommand =
+  | "zotlit:cited-by"
+  | "zotlit:references"
+  | "zotlit:citations-guide";
 
 /** The Item a cited-by answer resolved its selector to. */
 export interface CitedItem {

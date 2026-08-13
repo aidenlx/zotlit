@@ -22,6 +22,7 @@ import type { DatabaseService } from "@/services/database/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
+  CITATIONS_GUIDE_COMMAND,
   CITED_BY_COMMAND,
   createCitationsCliHandlers,
   REFERENCES_COMMAND,
@@ -113,6 +114,12 @@ export function registerCitationsCli(
     m.cli_references_desc(),
     referencesFlags(),
     handlers[REFERENCES_COMMAND],
+  );
+  plugin.registerCliHandler(
+    CITATIONS_GUIDE_COMMAND,
+    m.cli_citations_guide_desc(),
+    null,
+    handlers[CITATIONS_GUIDE_COMMAND],
   );
 }
 

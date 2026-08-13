@@ -21,6 +21,9 @@ export const CITED_BY_PARAMS = ["key", "citekey", "expect-source"] as const;
 
 export const REFERENCES_PARAMS = ["file", "expect-source"] as const;
 
+/** The guide serves one page, so it takes no parameters at all. */
+export const CITATIONS_GUIDE_PARAMS = [] as const;
+
 /** The one Item `cited-by` reports citers of, named either way round. */
 export type CitedBySelector = { key: string } | { citekey: string };
 
@@ -85,6 +88,21 @@ export function parseReferencesRequest(
 }
 
 /**
+ * The guide answers the same page for every caller, so a parameter can only be
+ * a mistaken call: rejecting it keeps a wrong assumption visible.
+ */
+export function parseGuideRequest(params: CliData): ParsedRequest<null> {
+  const rejected = rejectAccepted(
+    params,
+    "citations-guide",
+    CITATIONS_GUIDE_PARAMS,
+  );
+  return rejected
+    ? invalid(rejected.parameter, rejected.message)
+    : { kind: "valid", value: null };
+}
+
+/**
  * Report the Zotero source the caller asserted when it differs from the
  * connected one, so an agent never reads citation facts from the wrong library.
  */
@@ -140,7 +158,10 @@ function rejectAccepted(
     }
     return {
       parameter: key,
-      message: `Unknown parameter '${key}' for ${command}. Accepted parameters: ${accepted.join(", ")}.`,
+      message:
+        accepted.length > 0
+          ? `Unknown parameter '${key}' for ${command}. Accepted parameters: ${accepted.join(", ")}.`
+          : `Unknown parameter '${key}': ${command} takes no parameters.`,
     };
   }
   for (const key of accepted) {
