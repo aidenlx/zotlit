@@ -29,7 +29,7 @@ Keep `expect-source=` on every call rather than trusting the library to stay con
 
 ## Choose the selector
 
-Ask the vault, never the filesystem: a text search over the vault misses the citekey resolution, the user's citation-source choices, and the wikilink rules the index applies. Match the question to one selector:
+Ask the vault, never the filesystem: a text search over the vault misses the citation-key resolution, the user's citation-source choices, and the wikilink rules the index applies. Match the question to one selector:
 
 - **A work the user names by its Zotero key** — query by key.
 - **A work the user names by a citation key they saw in text**, such as `@doe2020` — query by citation key, with no lookup step first.
