@@ -35,6 +35,7 @@ const actions: ReferenceActions = {
   onOpenInZotero: () => undefined,
   onOpenAttachment: () => undefined,
   onOpenEngineSettings: () => undefined,
+  onChangeStyle: vi.fn(),
   onDismissEngineHint: () => undefined,
 };
 
@@ -68,12 +69,15 @@ afterEach(async () => {
 async function render(
   entries: readonly ReferenceEntry[],
   listMode: ReferencesListMode,
-  formattingFailed = false,
+  {
+    formattingFailed = false,
+    engine = { kind: "installed", version: "test" },
+  }: Partial<Pick<ReferencesState, "formattingFailed" | "engine">> = {},
 ): Promise<HTMLElement> {
   state = {
     entries,
     listMode,
-    engine: { kind: "installed", version: "test" },
+    engine,
     formattingFailed,
     dbReady: true,
   };
@@ -259,7 +263,7 @@ describe("References", () => {
         },
       ],
       { kind: "minimal" },
-      true,
+      { formattingFailed: true },
     );
 
     expect(container.textContent).toContain(
@@ -267,5 +271,79 @@ describe("References", () => {
     );
     expect(container.textContent).toContain("Rivers (2020): Book");
     expect(container.querySelector("li")!.children[0]!.textContent).toBe("1");
+  });
+});
+
+describe("References toolbar", () => {
+  const summaryEntry: ReferenceEntry = {
+    id: "BOOK0001",
+    refNumber: 1,
+    occurrences: [occurrence],
+    kind: "summary",
+    source,
+    linkpath: "notes/BOOK0001",
+  };
+
+  function styleAction(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>(
+      "[data-references-change-style]",
+    )!;
+  }
+
+  it("holds the style action above the scrolling list region", async () => {
+    const container = await render([summaryEntry], { kind: "minimal" });
+    const scrolling = container.querySelector("[data-references-scroll]")!;
+
+    expect(styleAction(container)).not.toBeNull();
+    expect(
+      scrolling.querySelector("[data-references-change-style]"),
+    ).toBeNull();
+    expect(scrolling.querySelector("ul")).not.toBeNull();
+  });
+
+  it("names the style action for pointer and keyboard users", async () => {
+    const container = await render([summaryEntry], { kind: "minimal" });
+
+    expect(styleAction(container).getAttribute("aria-label")).toBe(
+      "Change citation and references style",
+    );
+  });
+
+  it("reveals the style setting when the action is activated", async () => {
+    const container = await render([summaryEntry], { kind: "minimal" });
+    await act(() => styleAction(container).click());
+
+    expect(actions.onChangeStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the style action live when the note cites nothing", async () => {
+    const container = await render([], { kind: "minimal" });
+
+    expect(container.querySelector("[data-references-empty]")).not.toBeNull();
+    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps the style action live while the engine is unavailable", async () => {
+    const container = await render(
+      [summaryEntry],
+      { kind: "minimal" },
+      {
+        engine: { kind: "absent" },
+      },
+    );
+
+    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps the style action live after formatting failed", async () => {
+    const container = await render(
+      [summaryEntry],
+      {
+        kind: "minimal",
+      },
+      { formattingFailed: true },
+    );
+
+    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
   });
 });

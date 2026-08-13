@@ -3,6 +3,7 @@ import type { MouseEvent, ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { useDomContent } from "@/lib/sanitize-html";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -16,9 +17,10 @@ import type { ReferenceEntry, ReferenceSource } from "./entries";
 import { useReferencesStore } from "./store";
 
 /**
- * The pane: the engine surface above, the reference list below. The list is a
- * `ul` — a bare `ol` keeps Obsidian's own unlayered numbering, which would
- * double the numbers the entries already carry.
+ * The pane: the fixed toolbar above, then one scrolling region holding the
+ * engine surface and the reference list. The list is a `ul` — a bare `ol` keeps
+ * Obsidian's own unlayered numbering, which would double the numbers the
+ * entries already carry.
  */
 export function References() {
   const entries = useReferencesStore((s) => s.entries);
@@ -31,40 +33,71 @@ export function References() {
     numbered || (listMode.kind === "bibliography" && listMode.hasEntryMarkers);
 
   return (
-    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-y-auto">
-      <EngineSurface status={engine} />
-      {formattingFailed && engine.kind === "installed" && (
-        <Banner tone="warning" title={m.references_format_failed_title()}>
-          {m.references_format_failed_body()}
-        </Banner>
-      )}
-      {entries.length === 0 ? (
-        <div
-          className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
-          data-references-empty
-        >
-          {dbReady ? m.references_empty() : m.references_db_unavailable()}
-        </div>
-      ) : (
-        <ul
-          className={cn(
-            "zt:grid zt:gap-x-2 zt:text-sm",
-            guttered
-              ? "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]"
-              : "zt:grid-cols-[minmax(0,1fr)_max-content]",
-          )}
-        >
-          {entries.map((entry) => (
-            <Reference
-              key={entry.id}
-              entry={entry}
-              numbered={numbered}
-              guttered={guttered}
-            />
-          ))}
-        </ul>
-      )}
+    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
+      <Toolbar />
+      {/* The banners pin themselves to the head of this region rather than of
+          the pane, so they ride above the list they describe and the toolbar
+          keeps its own place. */}
+      <div
+        className="zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-y-auto"
+        data-references-scroll
+      >
+        <EngineSurface status={engine} />
+        {formattingFailed && engine.kind === "installed" && (
+          <Banner tone="warning" title={m.references_format_failed_title()}>
+            {m.references_format_failed_body()}
+          </Banner>
+        )}
+        {entries.length === 0 ? (
+          <div
+            className="zt:mx-auto zt:my-2 zt:px-4 zt:py-6 zt:text-center zt:text-sm zt:text-faint"
+            data-references-empty
+          >
+            {dbReady ? m.references_empty() : m.references_db_unavailable()}
+          </div>
+        ) : (
+          <ul
+            className={cn(
+              "zt:grid zt:gap-x-2 zt:text-sm",
+              guttered
+                ? "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]"
+                : "zt:grid-cols-[minmax(0,1fr)_max-content]",
+            )}
+          >
+            {entries.map((entry) => (
+              <Reference
+                key={entry.id}
+                entry={entry}
+                numbered={numbered}
+                guttered={guttered}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
+  );
+}
+
+/**
+ * The pane-wide actions, outside the scrolling region so they stay reachable in
+ * a long bibliography. Every action here answers for the pane as a whole, so
+ * none of them depends on what the list currently holds.
+ */
+function Toolbar() {
+  const actions = useReferenceActions();
+
+  return (
+    <SidebarToolbar className="zt:shrink-0">
+      <SidebarToolbar.Actions className="zt:w-full">
+        <IconButton
+          icon="book-type"
+          data-references-change-style
+          {...tooltipAttrs(m.references_change_style())}
+          onClick={actions.onChangeStyle}
+        />
+      </SidebarToolbar.Actions>
+    </SidebarToolbar>
   );
 }
 

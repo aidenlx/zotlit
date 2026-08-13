@@ -27,6 +27,8 @@ export interface ReferenceActions {
   onOpenAttachment: (source: ReferenceSource, event: MouseEvent) => void;
   /** Open the settings page the engine install lives on. */
   onOpenEngineSettings: () => void;
+  /** Reveal the Citation and References Style row in settings. */
+  onChangeStyle: () => void;
   /** Dismiss the install hint for good. */
   onDismissEngineHint: () => void;
 }
@@ -38,6 +40,7 @@ export interface ReferenceActionDeps {
   /** Open the Literature Note of the Item a citekey names, creating it first when it has none. */
   openCitekey: (citekey: string) => void;
   onOpenEngineSettings: () => void;
+  onChangeStyle: () => void;
   onDismissEngineHint: () => void;
 }
 
@@ -94,6 +97,7 @@ export function createReferenceActions(
       showAttachmentMenu(source.attachments, event);
     },
     onOpenEngineSettings: deps.onOpenEngineSettings,
+    onChangeStyle: deps.onChangeStyle,
     onDismissEngineHint: deps.onDismissEngineHint,
   };
 }

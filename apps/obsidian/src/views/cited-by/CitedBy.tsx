@@ -6,6 +6,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
+import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type {
@@ -177,8 +178,8 @@ function Toolbar({
     // counts take a row of their own at the end of it, under an icon row that
     // centers itself the way the native header centers actions that stand
     // alone.
-    <div className="zt:@container zt:flex zt:flex-wrap zt:items-center zt:p-2">
-      <div className="zt:flex zt:w-full zt:flex-wrap zt:justify-center zt:gap-0.5 zt:@3xs:w-auto zt:@3xs:flex-1 zt:@3xs:justify-start">
+    <SidebarToolbar className="zt:@container zt:flex-wrap zt:items-center">
+      <SidebarToolbar.Actions className="zt:w-full zt:@3xs:w-auto zt:@3xs:flex-1 zt:@3xs:justify-start">
         <IconButton
           icon="list"
           active={allCollapsed}
@@ -208,7 +209,7 @@ function Toolbar({
           {...tooltipAttrs(m.cited_by_show_search_filter())}
           onClick={actions.toggleSearch}
         />
-      </div>
+      </SidebarToolbar.Actions>
       <span
         className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-end zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
         data-cited-by-stats
@@ -217,7 +218,7 @@ function Toolbar({
         {" · "}
         {m.cited_by_occurrence_count({ count: occurrenceCount })}
       </span>
-    </div>
+    </SidebarToolbar>
   );
 }
 

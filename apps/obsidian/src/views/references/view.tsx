@@ -66,6 +66,8 @@ export interface ReferencesViewDeps {
   bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
+  /** Reveals the Citation and References Style row in settings. */
+  openStyleSettings: () => void;
 }
 
 export class ReferencesView extends ItemView {
@@ -126,6 +128,7 @@ export class ReferencesView extends ItemView {
       getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
       openCitekey: (citekey) => void citekeyEditor.openCitekey(citekey, false),
       onOpenEngineSettings: () => this.#deps.openSettings(),
+      onChangeStyle: () => this.#deps.openStyleSettings(),
       onDismissEngineHint: () => pandocEngine.decline(),
     });
 

@@ -384,6 +384,7 @@
     }
   ],
   "references_view_name": "References",
+  "references_change_style": "Change citation and references style",
   "references_empty": "The active note cites no literature notes.",
   "references_db_unavailable": "Open the Zotero database to see references.",
   "references_item_missing": "{linkpath} points to an item that is no longer in your Zotero library.",

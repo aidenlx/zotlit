@@ -355,6 +355,7 @@
     }
   ],
   "references_view_name": "参考文献",
+  "references_change_style": "更改参考文献样式",
   "references_empty": "当前笔记没有引用任何文献笔记。",
   "references_db_unavailable": "打开 Zotero 数据库后即可查看参考文献。",
   "references_item_missing": "{linkpath} 指向的条目已不在 Zotero 文库中。",
