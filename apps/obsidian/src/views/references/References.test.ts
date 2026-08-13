@@ -411,11 +411,13 @@ describe("References copy action", () => {
     )!;
   }
 
+  const target = { path: "notes/tidal.md", generation: 7 };
+
   async function ready(): Promise<HTMLElement> {
     return render(
       [renderedEntry],
       { kind: "bibliography", hasEntryMarkers: true },
-      { copy: { kind: "ready" } },
+      { copy: { kind: "ready", target } },
     );
   }
 
@@ -437,11 +439,11 @@ describe("References copy action", () => {
     expect(action.hasAttribute("disabled")).toBe(false);
   });
 
-  it("copies the bibliography when the action is activated", async () => {
+  it("copies the bibliography the action was offered for", async () => {
     const container = await ready();
     await act(() => copyAction(container).click());
 
-    expect(actions.onCopyBibliography).toHaveBeenCalledTimes(1);
+    expect(actions.onCopyBibliography).toHaveBeenCalledExactlyOnceWith(target);
   });
 
   it.each([

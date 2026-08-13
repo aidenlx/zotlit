@@ -30,8 +30,17 @@ export type ReferencesCopyBlock =
   /** A completed bibliography left at least one Reference Error behind. */
   | "errors";
 
+/** Which note and render generation one Copied Bibliography answers for. */
+export interface ReferencesCopyTarget {
+  /** Path of the Markdown note whose Document Citation Set the entries cover. */
+  path: string;
+  /** The completed render generation the entries came from. */
+  generation: number;
+}
+
 export type ReferencesCopyState =
-  | { kind: "ready" }
+  /** `target` travels with the click, so a copy taken later can be refused. */
+  | { kind: "ready"; target: ReferencesCopyTarget }
   | { kind: "blocked"; reason: ReferencesCopyBlock };
 
 /** Where the current render stands, as copy readiness reads it. */
@@ -78,21 +87,25 @@ export function createReferencesStore() {
  * so the disabled action can say what to fix.
  */
 export function referencesCopyState({
-  hasActiveNote,
+  path,
+  generation,
   entries,
   formatting,
 }: {
-  hasActiveNote: boolean;
+  /** The active Markdown note, or `null` when none answers for the list. */
+  path: string | null;
+  /** The render generation the entries were built for. */
+  generation: number;
   entries: readonly ReferenceEntry[];
   formatting: ReferencesFormatting;
 }): ReferencesCopyState {
-  if (!hasActiveNote) return { kind: "blocked", reason: "no-note" };
+  if (path === null) return { kind: "blocked", reason: "no-note" };
   if (entries.length === 0) return { kind: "blocked", reason: "no-references" };
   if (formatting !== "complete") {
     return { kind: "blocked", reason: formatting };
   }
   return entries.every((entry) => entry.kind === "rendered")
-    ? { kind: "ready" }
+    ? { kind: "ready", target: { path, generation } }
     : { kind: "blocked", reason: "errors" };
 }
 

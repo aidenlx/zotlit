@@ -103,7 +103,11 @@ function Toolbar() {
               ? m.references_copy_bibliography()
               : copyBlockedReason(copy.reason),
           )}
-          onClick={() => void actions.onCopyBibliography()}
+          onClick={() => {
+            if (copy.kind === "ready") {
+              void actions.onCopyBibliography(copy.target);
+            }
+          }}
         />
         <IconButton
           icon="book-type"

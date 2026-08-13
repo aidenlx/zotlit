@@ -287,13 +287,14 @@ export class ReferencesView extends ItemView {
   ): ReferencesCopyState {
     const path = this.#activeMarkdownPath();
     const copy = referencesCopyState({
-      hasActiveNote: path !== null,
+      path,
+      generation,
       entries,
       formatting,
     });
     this.#copySnapshot =
-      copy.kind === "ready" && path !== null
-        ? { path, generation, entries: copiedEntries(entries) }
+      copy.kind === "ready"
+        ? { ...copy.target, entries: copiedEntries(entries) }
         : null;
 
     const label = copy.kind === "ready" ? "ready" : copy.reason;

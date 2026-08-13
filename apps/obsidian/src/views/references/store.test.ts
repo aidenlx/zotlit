@@ -102,17 +102,22 @@ describe("referencesCopyState", () => {
   it("offers a complete, error-free bibliography of the active note", () => {
     expect(
       referencesCopyState({
-        hasActiveNote: true,
+        path: "notes/tidal.md",
+        generation: 3,
         entries: [rendered],
         formatting: "complete",
       }),
-    ).toStrictEqual({ kind: "ready" });
+    ).toStrictEqual({
+      kind: "ready",
+      target: { path: "notes/tidal.md", generation: 3 },
+    });
   });
 
   it("refuses a list no active note answers for", () => {
     expect(
       referencesCopyState({
-        hasActiveNote: false,
+        path: null,
+        generation: 3,
         entries: [],
         formatting: "complete",
       }),
@@ -122,7 +127,8 @@ describe("referencesCopyState", () => {
   it("refuses a note that cites nothing", () => {
     expect(
       referencesCopyState({
-        hasActiveNote: true,
+        path: "notes/tidal.md",
+        generation: 3,
         entries: [],
         formatting: "complete",
       }),
@@ -134,7 +140,8 @@ describe("referencesCopyState", () => {
     (formatting) => {
       expect(
         referencesCopyState({
-          hasActiveNote: true,
+          path: "notes/tidal.md",
+          generation: 3,
           entries: [rendered],
           formatting,
         }),
@@ -145,7 +152,8 @@ describe("referencesCopyState", () => {
   it("refuses a completed bibliography that left a Reference Error", () => {
     expect(
       referencesCopyState({
-        hasActiveNote: true,
+        path: "notes/tidal.md",
+        generation: 3,
         entries: [rendered, unrendered],
         formatting: "complete",
       }),

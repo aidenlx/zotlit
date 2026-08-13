@@ -4,6 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createReferenceActions } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
+import type { ReferencesCopyTarget } from "./store";
+
+/** What the toolbar offered when the copy action was clicked. */
+const offered: ReferencesCopyTarget = {
+  path: "notes/tidal.md",
+  generation: 7,
+};
 
 function snapshot(
   overrides: Partial<CopyBibliographySnapshot> = {},
@@ -11,8 +18,7 @@ function snapshot(
   const content = document.createDocumentFragment();
   content.append("Rivers, A. (2020). Field notes. Harbour Press.");
   return {
-    path: "notes/tidal.md",
-    generation: 7,
+    ...offered,
     entries: [{ marker: "[1]", content }],
     ...overrides,
   };
@@ -46,7 +52,7 @@ beforeEach(() => {
 
 describe("onCopyBibliography", () => {
   it("writes the serialized snapshot and reports the copy", async () => {
-    await build().onCopyBibliography();
+    await build().onCopyBibliography(offered);
 
     expect(writeClipboard).toHaveBeenCalledExactlyOnceWith(
       "[1] Rivers, A. (2020). Field notes. Harbour Press.",
@@ -56,19 +62,9 @@ describe("onCopyBibliography", () => {
     );
   });
 
-  it("writes nothing while no bibliography is ready", async () => {
-    getCopySnapshot.mockReturnValue(null);
-    await build().onCopyBibliography();
-
-    expect(writeClipboard).not.toHaveBeenCalled();
-    expect(notify).not.toHaveBeenCalled();
-  });
-
   it("asks for a retry when the note changed before the write", async () => {
-    getCopySnapshot
-      .mockReturnValueOnce(snapshot())
-      .mockReturnValueOnce(snapshot({ path: "notes/estuary.md" }));
-    await build().onCopyBibliography();
+    getCopySnapshot.mockReturnValue(snapshot({ path: "notes/estuary.md" }));
+    await build().onCopyBibliography(offered);
 
     expect(writeClipboard).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledExactlyOnceWith(
@@ -77,10 +73,8 @@ describe("onCopyBibliography", () => {
   });
 
   it("asks for a retry when a newer render replaced the snapshot", async () => {
-    getCopySnapshot
-      .mockReturnValueOnce(snapshot())
-      .mockReturnValueOnce(snapshot({ generation: 8 }));
-    await build().onCopyBibliography();
+    getCopySnapshot.mockReturnValue(snapshot({ generation: 8 }));
+    await build().onCopyBibliography(offered);
 
     expect(writeClipboard).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledExactlyOnceWith(
@@ -88,9 +82,9 @@ describe("onCopyBibliography", () => {
     );
   });
 
-  it("asks for a retry when the bibliography went stale before the write", async () => {
-    getCopySnapshot.mockReturnValueOnce(snapshot()).mockReturnValueOnce(null);
-    await build().onCopyBibliography();
+  it("asks for a retry when readiness went away before the write", async () => {
+    getCopySnapshot.mockReturnValue(null);
+    await build().onCopyBibliography(offered);
 
     expect(writeClipboard).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledExactlyOnceWith(
@@ -100,7 +94,7 @@ describe("onCopyBibliography", () => {
 
   it("reports a clipboard the platform refused", async () => {
     writeClipboard.mockRejectedValue(new Error("clipboard unavailable"));
-    await build().onCopyBibliography();
+    await build().onCopyBibliography(offered);
 
     expect(notify).toHaveBeenCalledExactlyOnceWith(
       "Could not copy bibliography.",

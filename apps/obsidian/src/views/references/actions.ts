@@ -18,15 +18,12 @@ import type {
   ReferenceEntry,
   ReferenceSource,
 } from "./entries";
+import type { ReferencesCopyTarget } from "./store";
 
 const logger = getLogger(["views", "references"]);
 
 /** The completed bibliography one copy is taken from, and what it answers for. */
-export interface CopyBibliographySnapshot {
-  /** Path of the Markdown note whose Document Citation Set the entries cover. */
-  path: string;
-  /** The completed render generation the entries came from. */
-  generation: number;
+export interface CopyBibliographySnapshot extends ReferencesCopyTarget {
   entries: readonly CopiedBibliographyEntry[];
 }
 
@@ -46,8 +43,13 @@ export interface ReferenceActions {
   onChangeStyle: () => void;
   /** Dismiss the install hint for good. */
   onDismissEngineHint: () => void;
-  /** Put the current bibliography on the clipboard as a Copied Bibliography. */
-  onCopyBibliography: () => Promise<void>;
+  /**
+   * Put the offered bibliography on the clipboard as a Copied Bibliography.
+   *
+   * @param target the note and generation the click was taken on, so a list
+   *   that moved on between the render and the click is refused.
+   */
+  onCopyBibliography: (target: ReferencesCopyTarget) => Promise<void>;
 }
 
 export interface ReferenceActionDeps {
@@ -122,28 +124,28 @@ export function createReferenceActions(
     onOpenEngineSettings: deps.onOpenEngineSettings,
     onChangeStyle: deps.onChangeStyle,
     onDismissEngineHint: deps.onDismissEngineHint,
-    async onCopyBibliography() {
+    async onCopyBibliography(target) {
+      // The click answers for the render the toolbar painted, which the pane
+      // is free to leave behind before the handler runs: it may follow another
+      // note, finish a newer render, or lose readiness while the enabled
+      // button is still on screen. A write taken from any of those would copy
+      // a bibliography the sidebar no longer shows, so the commit point takes
+      // the snapshot the pane holds now and keeps it only when it is still the
+      // one the click was taken on.
       const snapshot = deps.getCopySnapshot();
-      if (!snapshot) return;
-      const { text } = toCopiedBibliography(snapshot.entries);
-
-      // Read the snapshot again at the commit point: preparing the payload
-      // leaves the pane free to follow another note or finish a newer render,
-      // and a write that lands after that would copy a bibliography the
-      // sidebar no longer shows.
-      const current = deps.getCopySnapshot();
       if (
-        !current ||
-        current.path !== snapshot.path ||
-        current.generation !== snapshot.generation
+        !snapshot ||
+        snapshot.path !== target.path ||
+        snapshot.generation !== target.generation
       ) {
         logger.debug("Bibliography snapshot changed before the copy", {
-          path: snapshot.path,
-          generation: snapshot.generation,
+          path: target.path,
+          generation: target.generation,
         });
         deps.notify(m.references_copy_changed());
         return;
       }
+      const { text } = toCopiedBibliography(snapshot.entries);
 
       try {
         await deps.writeClipboard(text);
