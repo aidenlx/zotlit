@@ -235,6 +235,10 @@ _Avoid_: citation instance, match, hit
 One of the two written forms a citation takes in a note body — a literal Pandoc citation key, or a wikilink to a Literature Note. Every Citation Occurrence has exactly one syntax.
 _Avoid_: citation format; citation style (collides with CSL citation styles)
 
+**Omitted Occurrence**:
+A Citation Occurrence that stays outside an answer because the Pandoc Citations or Wikilink Citations choice excludes its Citation Syntax. It is what separates a document that cites nothing from one whose citations are all written in an excluded syntax.
+_Avoid_: skipped citation, filtered occurrence (both name the mechanism, not the fact)
+
 **Document Citation Set**:
 The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, and malformed Citation Fragments stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
 _Avoid_: citation universe, rendered citations (presentation, not membership)

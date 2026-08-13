@@ -77,6 +77,12 @@ export interface CitedBySnapshot {
   groups: readonly CitedByGroup[];
   coverage: CitationCoverage;
   resolution: CitationKeyResolution;
+  /**
+   * The excluded Citation Syntaxes that held an occurrence of this Item, or
+   * `null` when the snapshot did not compute the fact. `#citedBy` computes
+   * it exactly when `groups` is empty.
+   */
+  omittedSyntaxes: CitationSyntax[] | null;
 }
 
 export function citedBySnapshotsEqual(
@@ -86,7 +92,8 @@ export function citedBySnapshotsEqual(
   if (
     prev.coverage !== next.coverage ||
     prev.resolution !== next.resolution ||
-    prev.groups.length !== next.groups.length
+    prev.groups.length !== next.groups.length ||
+    !omittedSyntaxesEqual(prev.omittedSyntaxes, next.omittedSyntaxes)
   ) {
     return false;
   }
@@ -97,6 +104,17 @@ export function citedBySnapshotsEqual(
       occurrencesEqual(group.occurrences, other.occurrences)
     );
   });
+}
+
+function omittedSyntaxesEqual(
+  prev: readonly CitationSyntax[] | null,
+  next: readonly CitationSyntax[] | null,
+): boolean {
+  if (prev === null || next === null) return prev === next;
+  return (
+    prev.length === next.length &&
+    prev.every((syntax, index) => syntax === next[index])
+  );
 }
 
 /** One document's active Citation Occurrences and its distinct cited works. */
@@ -390,6 +408,41 @@ export class CitationIndex extends Service<void> {
       citekey: this.#includePandocCitations ? "included" : "excluded",
       wikilink: this.#includeWikilinkCitations ? "included" : "excluded",
     };
+  }
+
+  /**
+   * The excluded Citation Syntaxes that hold an occurrence in `file` — the
+   * fact a `references` answer with no entries reports instead of a bare
+   * empty list, so the caller can tell "cites nothing" from "excluded".
+   *
+   * An occurrence counts only if admitting its syntax would have put it in
+   * the Document Citation Set: a citekey scan need only be non-empty, since
+   * {@link groupCitations} keeps an unresolvable citekey as an `unresolved`
+   * entry; a wikilink must resolve to an Item, and a malformed one counts
+   * too when it resolves, because it would produce a `malformed` entry.
+   *
+   * @see referenceEntries in `cli/commands.ts`
+   */
+  async omittedSyntaxesOf(file: TFile): Promise<CitationSyntax[]> {
+    await this.ready;
+    const omitted: CitationSyntax[] = [];
+    if (!this.#includePandocCitations) {
+      const scanned = await this.#coverFile(file);
+      if (scanned.length > 0) omitted.push("citekey");
+    }
+    if (!this.#includeWikilinkCitations) {
+      const links = this.#app.metadataCache.getFileCache(file)?.links ?? [];
+      const { occurrences, malformed } = documentWikilinks(links);
+      const held =
+        occurrences.some(
+          (occurrence) => this.#resolve(occurrence, file.path) !== null,
+        ) ||
+        malformed.some(
+          ({ occurrence }) => this.#resolve(occurrence, file.path) !== null,
+        );
+      if (held) omitted.push("wikilink");
+    }
+    return omitted;
   }
 
   /** The Zotero Item a native citation key names, read synchronously. */
@@ -796,14 +849,12 @@ export class CitationIndex extends Service<void> {
         file,
         this.#covered(file) ?? [],
       );
-      const literals = citekeys.filter(
-        (occurrence) =>
-          this.#snapshot.byCitekey(occurrence.raw)?.indexedKey === indexedKey,
+      const literals = citekeys.filter((occurrence) =>
+        this.#citekeyOccurrenceCites(occurrence, indexedKey),
       );
       const wikilinks = documentWikilinks(links).occurrences.filter(
         (occurrence) =>
-          resolveIndexedKey(occurrence.raw, file.path, this.#app) ===
-          indexedKey,
+          this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
       );
       const occurrences = [...literals, ...wikilinks].sort(compareOccurrences);
       if (occurrences.length > 0) {
@@ -814,7 +865,65 @@ export class CitationIndex extends Service<void> {
       groups,
       coverage: this.#coverage,
       resolution: this.#resolution,
+      omittedSyntaxes:
+        groups.length === 0
+          ? this.#omittedCitedBySyntaxes(indexedKey, files)
+          : null,
     };
+  }
+
+  /**
+   * The excluded Citation Syntaxes that hold an occurrence of `indexedKey`,
+   * computed only when `#citedBy`'s groups are empty and the question needs
+   * an answer.
+   *
+   * Wikilink occurrences count only when eligible: `#citedBy` puts only
+   * eligible occurrences in groups, so a malformed one — unlike
+   * {@link omittedSyntaxesOf}'s references answer — never would have joined
+   * this answer either.
+   */
+  #omittedCitedBySyntaxes(
+    indexedKey: string,
+    files: readonly TFile[],
+  ): CitationSyntax[] {
+    const omitted: CitationSyntax[] = [];
+    if (!this.#includePandocCitations) {
+      const held = files.some((file) =>
+        (this.#covered(file) ?? []).some((occurrence) =>
+          this.#citekeyOccurrenceCites(occurrence, indexedKey),
+        ),
+      );
+      if (held) omitted.push("citekey");
+    }
+    if (!this.#includeWikilinkCitations) {
+      const held = files.some((file) => {
+        const links = this.#app.metadataCache.getFileCache(file)?.links ?? [];
+        return documentWikilinks(links).occurrences.some((occurrence) =>
+          this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
+        );
+      });
+      if (held) omitted.push("wikilink");
+    }
+    return omitted;
+  }
+
+  /** Whether a literal-citekey Citation Occurrence resolves to `indexedKey`. */
+  #citekeyOccurrenceCites(
+    occurrence: CitationOccurrence,
+    indexedKey: string,
+  ): boolean {
+    return this.#snapshot.byCitekey(occurrence.raw)?.indexedKey === indexedKey;
+  }
+
+  /** Whether a wikilink Citation Occurrence resolves to `indexedKey`. */
+  #wikilinkOccurrenceCites(
+    occurrence: CitationOccurrence,
+    sourcePath: string,
+    indexedKey: string,
+  ): boolean {
+    return (
+      resolveIndexedKey(occurrence.raw, sourcePath, this.#app) === indexedKey
+    );
   }
 
   #resolve(

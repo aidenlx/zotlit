@@ -209,6 +209,7 @@ function snapshot(overrides: Partial<CitedBySnapshot> = {}): CitedBySnapshot {
     groups: [group],
     coverage: "complete",
     resolution: "ready",
+    omittedSyntaxes: null,
     ...overrides,
   };
 }

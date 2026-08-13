@@ -102,6 +102,7 @@ export const EMPTY_CITED_BY_SNAPSHOT: CitedBySnapshot = {
   groups: [],
   coverage: "indexing",
   resolution: "resolving",
+  omittedSyntaxes: null,
 };
 
 export type CitedByStore = ReturnType<typeof createCitedByStore>;

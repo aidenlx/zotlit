@@ -21,7 +21,10 @@ import {
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { readReferenceSources } from "@/services/citation-index/service";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type {
+  CitationIndex,
+  CitationSyntax,
+} from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -102,6 +105,7 @@ export function registerCitationsCli(
       getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
       resolution: () => deps.citationIndex.resolution,
       syntaxes: () => deps.citationIndex.syntaxes(),
+      omittedSyntaxesOf: (path) => omittedSyntaxesOf(deps, path),
     },
     lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
     readDocument: (path) => readDocument(deps, path),
@@ -139,6 +143,17 @@ async function readDocument(
     await deps.citationIndex.getDocumentCitationSet(file);
   const { sources, database } = readReferenceSources(deps.db, citations);
   return { citations, errors, sources, database };
+}
+
+/** Any Markdown note answers, as {@link readDocument} does; a path the vault
+ *  holds no note at holds no occurrence to omit. */
+async function omittedSyntaxesOf(
+  deps: CitationsCliRegistrationDeps,
+  path: string,
+): Promise<CitationSyntax[]> {
+  const file = deps.app.vault.getFileByPath(path);
+  if (!file || file.extension !== "md") return [];
+  return deps.citationIndex.omittedSyntaxesOf(file);
 }
 
 /** A well-formed Zotero key names an Item only when the connected library

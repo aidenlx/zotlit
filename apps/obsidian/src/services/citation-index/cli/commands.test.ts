@@ -59,12 +59,14 @@ const CITED: CitedBySnapshot = {
   groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
   coverage: "complete",
   resolution: "ready",
+  omittedSyntaxes: null,
 };
 
 const EMPTY: CitedBySnapshot = {
   groups: [],
   coverage: "complete",
   resolution: "ready",
+  omittedSyntaxes: [],
 };
 
 const DOCUMENT_PATH = "notes/review.md";
@@ -193,6 +195,7 @@ interface SetupOptions {
   document?: DocumentReferences | null;
   resolution?: CitationKeyResolution;
   syntaxes?: CitationSyntaxes;
+  omittedSyntaxes?: readonly CitationSyntax[];
 }
 
 function setup(options: SetupOptions = {}) {
@@ -210,6 +213,9 @@ function setup(options: SetupOptions = {}) {
   const readDocument = vi.fn(() => Promise.resolve(documentReferences));
   const resolution = vi.fn(() => options.resolution ?? "ready");
   const syntaxes = vi.fn(() => options.syntaxes ?? SYNTAXES);
+  const omittedSyntaxesOf = vi.fn(() =>
+    Promise.resolve(options.omittedSyntaxes ?? []),
+  );
   const handlers = createCitationsCliHandlers({
     getIdentity,
     settleTimeoutMs: options.settleTimeoutMs,
@@ -220,6 +226,7 @@ function setup(options: SetupOptions = {}) {
       getCitedBy,
       resolution,
       syntaxes,
+      omittedSyntaxesOf,
     },
     lookupItem,
     readDocument,
@@ -242,6 +249,7 @@ function setup(options: SetupOptions = {}) {
     lookupItem,
     readDocument,
     syntaxes,
+    omittedSyntaxesOf,
   };
 }
 
@@ -281,6 +289,7 @@ describe("zotlit:cited-by", () => {
         ],
         coverage: "complete",
         resolution: "ready",
+        omittedSyntaxes: null,
       },
     });
 
@@ -309,12 +318,43 @@ describe("zotlit:cited-by", () => {
     });
   });
 
-  it("answers an item nobody cites with empty groups", async () => {
+  it("answers an item nobody cites with empty groups and no omitted syntax", async () => {
     const { citedBy } = setup({ snapshot: EMPTY });
 
     const output = await citedBy({ key: ITEM_KEY });
 
-    expect(JSON.parse(output)).toMatchObject({ ok: true, groups: [] });
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      groups: [],
+      omittedSyntaxes: [],
+    });
+  });
+
+  it("reports the excluded syntax that held the item's occurrences", async () => {
+    const { citedBy } = setup({
+      snapshot: {
+        groups: [],
+        coverage: "complete",
+        resolution: "ready",
+        omittedSyntaxes: ["wikilink"],
+      },
+    });
+
+    const output = await citedBy({ key: ITEM_KEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      groups: [],
+      omittedSyntaxes: ["wikilink"],
+    });
+  });
+
+  it("carries no omittedSyntaxes key when groups is non-empty", async () => {
+    const { citedBy } = setup();
+
+    const output = await citedBy({ key: ITEM_KEY });
+
+    expect(Object.keys(JSON.parse(output))).not.toContain("omittedSyntaxes");
   });
 
   it("resolves a citation key through the resolution snapshot", async () => {
@@ -363,7 +403,12 @@ describe("zotlit:cited-by", () => {
 
   it("reports degraded coverage and resolution as payload data", async () => {
     const { citedBy } = setup({
-      snapshot: { groups: [], coverage: "degraded", resolution: "degraded" },
+      snapshot: {
+        groups: [],
+        coverage: "degraded",
+        resolution: "degraded",
+        omittedSyntaxes: [],
+      },
     });
 
     expect(JSON.parse(await citedBy({ key: ITEM_KEY }))).toMatchObject({
@@ -376,7 +421,12 @@ describe("zotlit:cited-by", () => {
   it("answers from the index when the Zotero database cannot be read", async () => {
     const { citedBy } = setup({
       lookup: { presence: "unreadable", summary: null },
-      snapshot: { groups: [], coverage: "complete", resolution: "degraded" },
+      snapshot: {
+        groups: [],
+        coverage: "complete",
+        resolution: "degraded",
+        omittedSyntaxes: [],
+      },
     });
 
     expect(JSON.parse(await citedBy({ key: ITEM_KEY }))).toMatchObject({
@@ -528,6 +578,7 @@ describe("zotlit:cited-by", () => {
         },
         resolution: () => "ready",
         syntaxes: () => SYNTAXES,
+        omittedSyntaxesOf: () => Promise.resolve([]),
       },
       lookupItem: () => {
         order.push("lookup");
@@ -659,7 +710,28 @@ describe("zotlit:references", () => {
     expect(output).not.toContain("attachments");
   });
 
-  it("answers a document that cites nothing with no entries", async () => {
+  it("answers a document that cites nothing with no entries and no omitted syntax", async () => {
+    const { references, omittedSyntaxesOf } = setup({
+      document: {
+        citations: [],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
+      omittedSyntaxes: [],
+    });
+
+    const output = await references({ file: "notes/plain.md" });
+
+    expect(omittedSyntaxesOf).toHaveBeenCalledWith("notes/plain.md");
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      entries: [],
+      omittedSyntaxes: [],
+    });
+  });
+
+  it("reports wikilink as the excluded syntax that held the document's occurrences", async () => {
     const { references } = setup({
       document: {
         citations: [],
@@ -667,11 +739,47 @@ describe("zotlit:references", () => {
         sources: new Map(),
         database: "ready",
       },
+      syntaxes: { citekey: "included", wikilink: "excluded" },
+      omittedSyntaxes: ["wikilink"],
     });
 
-    expect(
-      JSON.parse(await references({ file: "notes/plain.md" })),
-    ).toMatchObject({ ok: true, entries: [] });
+    const output = await references({ file: "notes/wikilinks-only.md" });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      entries: [],
+      omittedSyntaxes: ["wikilink"],
+    });
+  });
+
+  it("reports citekey as the excluded syntax that held the document's occurrences", async () => {
+    const { references } = setup({
+      document: {
+        citations: [],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
+      syntaxes: { citekey: "excluded", wikilink: "included" },
+      omittedSyntaxes: ["citekey"],
+    });
+
+    const output = await references({ file: "notes/citekeys-only.md" });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      entries: [],
+      omittedSyntaxes: ["citekey"],
+    });
+  });
+
+  it("carries no omittedSyntaxes key when entries is non-empty", async () => {
+    const { references, omittedSyntaxesOf } = setup();
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(omittedSyntaxesOf).not.toHaveBeenCalled();
+    expect(Object.keys(JSON.parse(output))).not.toContain("omittedSyntaxes");
   });
 
   describe("selector", () => {

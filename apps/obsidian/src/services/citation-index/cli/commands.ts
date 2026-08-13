@@ -6,6 +6,7 @@ import type {
   Citation,
   CitationKeyResolution,
   CitationSettleOutcome,
+  CitationSyntax,
   CitationSyntaxes,
   CitedBySnapshot,
   DatabaseReadability,
@@ -95,6 +96,9 @@ interface CitationsCliDeps {
     /** Which Citation Syntaxes admit occurrences into an answer now; both
      *  commands report it. */
     syntaxes: () => CitationSyntaxes;
+    /** The excluded Citation Syntaxes that held occurrences in one document,
+     *  for a references answer that reports no entries. */
+    omittedSyntaxesOf: (path: string) => Promise<readonly CitationSyntax[]>;
   };
   lookupItem: (indexedKey: string) => ItemLookup;
   /**
@@ -172,11 +176,15 @@ export function createCitationsCliHandlers(
       }
 
       const snapshot = deps.index.getCitedBy(item.key);
+      const groups = reportGroups(snapshot.groups);
       return envelope(CITED_BY_COMMAND, {
         ok: true,
         ...echoed,
         item,
-        groups: reportGroups(snapshot.groups),
+        groups,
+        ...(snapshot.omittedSyntaxes && {
+          omittedSyntaxes: snapshot.omittedSyntaxes,
+        }),
         coverage: snapshot.coverage,
         resolution: snapshot.resolution,
         syntaxes: deps.index.syntaxes(),
@@ -203,10 +211,14 @@ export function createCitationsCliHandlers(
         });
       }
 
+      const entries = referenceEntries(references);
       return envelope(REFERENCES_COMMAND, {
         ok: true,
         ...echoed,
-        entries: referenceEntries(references),
+        entries,
+        ...(entries.length === 0
+          ? { omittedSyntaxes: await deps.index.omittedSyntaxesOf(file) }
+          : {}),
         database: references.database,
         resolution: deps.index.resolution(),
         syntaxes: deps.index.syntaxes(),

@@ -132,8 +132,11 @@ CITED BY PAYLOAD
               Zotero source could not provide, and for a note or attachment
               key, which names no work. Either way the answer stays ok.
   groups      One entry per citing note, in path order, as
-              { path, occurrences }. An item that no note cites answers ok
-              with an empty list.
+              { path, occurrences }.
+  omittedSyntaxes
+              Present only when groups is empty: the excluded Citation
+              Syntaxes that wrote occurrences of this item. An empty list
+              means no note cites the item.
   coverage    See INDEX STATE.
   resolution  See INDEX STATE.
   syntaxes    See INDEX STATE.
@@ -142,7 +145,10 @@ REFERENCES PAYLOAD
   entries     The document's cited works in first-occurrence order, each as
               { refNumber, kind, occurrences } plus the fields its kind adds.
               refNumber is the reference number the document gives the work.
-              A note that cites nothing answers ok with an empty list.
+  omittedSyntaxes
+              Present only when entries is empty: the excluded Citation
+              Syntaxes that wrote occurrences in this document. An empty list
+              means the document cites nothing.
   database    See INDEX STATE.
   resolution  See INDEX STATE.
   syntaxes    See INDEX STATE.
@@ -181,7 +187,9 @@ ${rows(SYNTAX_STATES, 4)}
 
   syntaxes reports each Citation Syntax as included or excluded. An answer
   carries only occurrences of an included syntax, so a count over an excluded
-  syntax is not in the data.
+  syntax is not in the data. An empty answer reports which excluded syntaxes
+  wrote occurrences in it, in omittedSyntaxes, so an empty list there is the
+  one that means nothing is cited.
 
   Both commands wait out the transitional states, indexing and resolving, and
   answer INDEX_NOT_READY when either persists. degraded and unreadable are
