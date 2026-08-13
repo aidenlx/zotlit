@@ -12,9 +12,14 @@ import type {
   Plugin,
 } from "obsidian";
 
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
+import {
+  getItemsByKey,
+  isChildItemFields,
+  resolveIndexedKeyLibrary,
+} from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -27,7 +32,7 @@ import {
   createCitationsCliHandlers,
   REFERENCES_COMMAND,
 } from "./commands";
-import type { DocumentReferences, ItemPresence } from "./commands";
+import type { DocumentReferences, ItemLookup } from "./commands";
 import type { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
 
 const logger = getLogger(["citation-index", "cli"]);
@@ -141,19 +146,27 @@ async function readDocument(
 
 /** A well-formed Zotero key names an Item only when the connected library
  *  holds one; a read that fails leaves the verdict `"unreadable"` rather than
- *  reporting every Item as missing. */
+ *  reporting every Item as missing. The same read renders the Item's summary,
+ *  so one answer carries both. */
 function lookupItem(
   db: CitationsCliRegistrationDeps["db"],
   indexedKey: string,
-): ItemPresence {
-  if (db.state !== "ready") return "unreadable";
+): ItemLookup {
+  if (db.state !== "ready") return { presence: "unreadable", summary: null };
   try {
     const selector = resolveIndexedKeyLibrary(db.client, indexedKey);
-    if (!selector) return "absent";
+    if (!selector) return { presence: "absent", summary: null };
     const [item] = getItemsByKey(db.client, selector.libraryID, [selector.key]);
-    return item ? "present" : "absent";
+    if (!item) return { presence: "absent", summary: null };
+    // A note or an attachment carries no work fields, so the source holds it
+    // and renders no summary for it, as the reference list reads it too.
+    const { fields } = item;
+    const summary = isChildItemFields(fields)
+      ? null
+      : itemSummary(item, fields).formatted;
+    return { presence: "present", summary };
   } catch (error) {
     logger.warn("Cannot look up the selected item", { indexedKey, error });
-    return "unreadable";
+    return { presence: "unreadable", summary: null };
   }
 }

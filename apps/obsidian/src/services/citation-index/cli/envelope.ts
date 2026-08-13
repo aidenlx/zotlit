@@ -86,6 +86,10 @@ export interface CitedItem {
   key: string;
   /** The Item's citation key, or `null` when Zotero holds none for it. */
   citekey: string | null;
+  /** `Creators (Year): Title` from the shared item-summary rendering, or
+   *  `null` when the Zotero source renders no summary for the Item: a read it
+   *  could not answer, or an Item that names no work of its own. */
+  summary: string | null;
 }
 
 /** `zotlit:cited-by`'s result: index facts, never view presentation (ADR 0024). */

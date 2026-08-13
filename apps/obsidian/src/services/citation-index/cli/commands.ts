@@ -54,7 +54,16 @@ const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 /** Whether the connected Zotero source holds an Item for a well-formed Zotero
  *  key. `"unreadable"` is a degraded database, which the payload reports as a
  *  resolution state rather than as a missing Item. */
-export type ItemPresence = "present" | "absent" | "unreadable";
+type ItemPresence = "present" | "absent" | "unreadable";
+
+/** What one read of the connected Zotero source answers about an Item: whether
+ *  it holds one, and the summary its fields render to. */
+export interface ItemLookup {
+  presence: ItemPresence;
+  /** `Creators (Year): Title` from the shared item-summary rendering, or
+   *  `null` when the read renders no summary for the Item. */
+  summary: string | null;
+}
 
 /** One document's Citations joined with the cited Items the database holds. */
 export interface DocumentReferences {
@@ -85,7 +94,7 @@ interface CitationsCliDeps {
      *  commands report it. */
     syntaxes: () => CitationSyntaxes;
   };
-  lookupItem: (indexedKey: string) => ItemPresence;
+  lookupItem: (indexedKey: string) => ItemLookup;
   /**
    * @returns the document's references, or `null` when the vault holds no
    *   Markdown note at the path.
@@ -225,12 +234,16 @@ function invalidRequest(
 }
 
 /**
- * The Item a selector names, in the identities the payload reports.
+ * The Item a selector names, in the identities the payload reports. One source
+ * read answers both the presence a key selector is gated on and the summary
+ * every answer carries.
  *
  * @returns `null` when the connected source names no such Item. A database
  *   that cannot be read answers the Item as selected instead: the payload's
  *   `resolution` state is what reports the degradation, so an unreadable
- *   library never masquerades as a missing Item.
+ *   library never masquerades as a missing Item. A citekey selector keeps the
+ *   resolution snapshot's verdict on which Item it names, and takes the source
+ *   read for the summary alone.
  */
 function resolveItem(
   deps: CitationsCliDeps,
@@ -239,11 +252,18 @@ function resolveItem(
   if ("citekey" in selector) {
     const { citekey } = selector;
     const resolved = deps.index.resolveCitekey(citekey);
-    return resolved === null ? null : { key: resolved.indexedKey, citekey };
+    if (resolved === null) return null;
+    const { indexedKey } = resolved;
+    return {
+      key: indexedKey,
+      citekey,
+      summary: deps.lookupItem(indexedKey).summary,
+    };
   }
   const { key } = selector;
-  if (deps.lookupItem(key) === "absent") return null;
-  return { key, citekey: deps.index.citekeyOf(key) };
+  const { presence, summary } = deps.lookupItem(key);
+  if (presence === "absent") return null;
+  return { key, citekey: deps.index.citekeyOf(key), summary };
 }
 
 function selectorNotFound(selector: CitedBySelector): Diagnostic {

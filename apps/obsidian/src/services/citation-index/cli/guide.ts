@@ -123,8 +123,12 @@ ENVELOPE
   guide is literal text and carries no envelope.
 
 CITED BY PAYLOAD
-  item        { key, citekey } of the item the selector named. citekey is null
-              when the Zotero source holds none for it.
+  item        { key, citekey, summary } of the item the selector named.
+              citekey is null when the Zotero source holds none for it.
+              summary renders the item as 'Creators (Year): Title' from the
+              fields that resolve. It is null for an item whose fields the
+              Zotero source could not provide, and for a note or attachment
+              key, which names no work. Either way the answer stays ok.
   groups      One entry per citing note, in path order, as
               { path, occurrences }. An item that no note cites answers ok
               with an empty list.

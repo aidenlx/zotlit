@@ -20,7 +20,7 @@ import {
   createCitationsCliHandlers,
   REFERENCES_COMMAND,
 } from "./commands";
-import type { DocumentReferences, ItemPresence } from "./commands";
+import type { DocumentReferences, ItemLookup } from "./commands";
 import { DIAGNOSTIC_HINTS } from "./envelope";
 import { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
 
@@ -31,7 +31,9 @@ const IDENTITY = {
 
 const ITEM_KEY = "ABCD2345";
 const ITEM_CITEKEY = "doe2024";
+const ITEM_SUMMARY = "Doe (2024): A study of citations";
 const SNAPSHOT_ITEM: SnapshotItem = { itemID: 7, indexedKey: ITEM_KEY };
+const PRESENT: ItemLookup = { presence: "present", summary: ITEM_SUMMARY };
 
 const OCCURRENCE = {
   kind: "citekey",
@@ -85,7 +87,7 @@ const MISSING_OCCURRENCE = occurrence(MISSING_ITEM_KEY, 90, "wikilink");
 
 const SOURCE: ReferenceSource = {
   csl: { id: "item-7" } as CslItemData,
-  summary: "Doe (2024): A study of citations",
+  summary: ITEM_SUMMARY,
   itemKey: ITEM_KEY,
   itemID: 7,
   groupID: null,
@@ -126,7 +128,7 @@ interface SetupOptions {
   settle?: CitationSettleOutcome;
   settleTimeoutMs?: number;
   snapshot?: CitedBySnapshot;
-  presence?: ItemPresence;
+  lookup?: ItemLookup;
   citekeyItem?: SnapshotItem | null;
   document?: DocumentReferences | null;
   resolution?: CitationKeyResolution;
@@ -135,7 +137,7 @@ interface SetupOptions {
 
 function setup(options: SetupOptions = {}) {
   const settle = options.settle ?? "settled";
-  const presence = options.presence ?? "present";
+  const lookup = options.lookup ?? PRESENT;
   const citekeyItem = options.citekeyItem ?? null;
   const documentReferences =
     options.document === undefined ? DOCUMENT : options.document;
@@ -144,7 +146,7 @@ function setup(options: SetupOptions = {}) {
   const resolveCitekey = vi.fn(() => citekeyItem);
   const citekeyOf = vi.fn(() => ITEM_CITEKEY);
   const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
-  const lookupItem = vi.fn(() => presence);
+  const lookupItem = vi.fn(() => lookup);
   const readDocument = vi.fn(() => Promise.resolve(documentReferences));
   const resolution = vi.fn(() => options.resolution ?? "ready");
   const syntaxes = vi.fn(() => options.syntaxes ?? SYNTAXES);
@@ -196,7 +198,11 @@ describe("zotlit:cited-by", () => {
       ok: true,
       request: { key: ITEM_KEY },
       identity: IDENTITY,
-      item: { key: ITEM_KEY, citekey: ITEM_CITEKEY },
+      item: {
+        key: ITEM_KEY,
+        citekey: ITEM_CITEKEY,
+        summary: ITEM_SUMMARY,
+      },
       groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
       coverage: "complete",
       resolution: "ready",
@@ -233,12 +239,39 @@ describe("zotlit:cited-by", () => {
     const output = await citedBy({ citekey: ITEM_CITEKEY });
 
     expect(resolveCitekey).toHaveBeenCalledWith(ITEM_CITEKEY);
-    expect(lookupItem).not.toHaveBeenCalled();
+    expect(lookupItem).toHaveBeenCalledWith(ITEM_KEY);
     expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
       request: { citekey: ITEM_CITEKEY },
-      item: { key: ITEM_KEY, citekey: ITEM_CITEKEY },
+      item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: ITEM_SUMMARY },
+    });
+  });
+
+  it("keeps the snapshot's verdict when a citation key names an item the source read leaves out", async () => {
+    const { citedBy } = setup({
+      citekeyItem: SNAPSHOT_ITEM,
+      lookup: { presence: "absent", summary: null },
+    });
+
+    const output = await citedBy({ citekey: ITEM_CITEKEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: null },
+    });
+  });
+
+  it("answers ok with a null summary when the item fields cannot be read", async () => {
+    const { citedBy } = setup({
+      lookup: { presence: "present", summary: null },
+    });
+
+    const output = await citedBy({ key: ITEM_KEY });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      item: { key: ITEM_KEY, summary: null },
     });
   });
 
@@ -256,13 +289,13 @@ describe("zotlit:cited-by", () => {
 
   it("answers from the index when the Zotero database cannot be read", async () => {
     const { citedBy } = setup({
-      presence: "unreadable",
+      lookup: { presence: "unreadable", summary: null },
       snapshot: { groups: [], coverage: "complete", resolution: "degraded" },
     });
 
     expect(JSON.parse(await citedBy({ key: ITEM_KEY }))).toMatchObject({
       ok: true,
-      item: { key: ITEM_KEY },
+      item: { key: ITEM_KEY, summary: null },
       resolution: "degraded",
     });
   });
@@ -300,7 +333,9 @@ describe("zotlit:cited-by", () => {
   });
 
   it("reports a key the connected source does not hold", async () => {
-    const { citedBy, getCitedBy } = setup({ presence: "absent" });
+    const { citedBy, getCitedBy } = setup({
+      lookup: { presence: "absent", summary: null },
+    });
 
     const output = await citedBy({ key: ITEM_KEY });
 
@@ -410,7 +445,7 @@ describe("zotlit:cited-by", () => {
       },
       lookupItem: () => {
         order.push("lookup");
-        return "present";
+        return PRESENT;
       },
       readDocument: () => Promise.resolve(DOCUMENT),
     });
@@ -660,6 +695,20 @@ describe("zotlit:citations-guide", () => {
     for (const syntax of ["citekey", "wikilink"]) {
       expect(output).toContain(syntax);
     }
+  });
+
+  it("documents the item summary a cited-by answer carries", async () => {
+    const { guide } = setup();
+
+    const page = (await guide({})).replaceAll(/\s+/gu, " ");
+
+    expect(page).toContain("{ key, citekey, summary }");
+    expect(page).toContain(
+      "summary renders the item as 'Creators (Year): Title'",
+    );
+    expect(page).toContain(
+      "null for an item whose fields the Zotero source could not provide",
+    );
   });
 
   it("documents every diagnostic code with its own recovery hint", async () => {
