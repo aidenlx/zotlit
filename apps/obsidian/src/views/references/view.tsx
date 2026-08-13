@@ -14,6 +14,7 @@ import {
 } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import { writeClipboardRichText } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -148,7 +149,7 @@ export class ReferencesView extends ItemView {
       onChangeStyle: () => this.#deps.openStyleSettings(),
       onDismissEngineHint: () => pandocEngine.decline(),
       getCopySnapshot: () => this.#copySnapshot,
-      writeClipboard: (text) => navigator.clipboard.writeText(text),
+      writeClipboard: writeClipboardRichText,
       notify: (message) => void new BaseNotice(message),
     });
 

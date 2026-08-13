@@ -7,12 +7,16 @@ import type { MouseEvent } from "react";
 
 import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
 
+import type { ClipboardRepresentation } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 import { toCopiedBibliography } from "./copied-bibliography";
-import type { CopiedBibliographyEntry } from "./copied-bibliography";
+import type {
+  CopiedBibliography,
+  CopiedBibliographyEntry,
+} from "./copied-bibliography";
 import type {
   OpenableAttachment,
   ReferenceEntry,
@@ -63,8 +67,13 @@ export interface ReferenceActionDeps {
   onDismissEngineHint: () => void;
   /** The bibliography a copy would take, or `null` while copy is unavailable. */
   getCopySnapshot: () => CopyBibliographySnapshot | null;
-  /** Hand the serialized snapshot to the platform clipboard. */
-  writeClipboard: (text: string) => Promise<void>;
+  /**
+   * Hand the serialized snapshot to the platform clipboard, and answer with the
+   * representation it took.
+   */
+  writeClipboard: (
+    content: CopiedBibliography,
+  ) => Promise<ClipboardRepresentation>;
   /** Show one transient message; the seam that owns notices supplies it. */
   notify: (message: string) => void;
 }
@@ -145,10 +154,11 @@ export function createReferenceActions(
         deps.notify(m.references_copy_changed());
         return;
       }
-      const { text } = toCopiedBibliography(snapshot.entries);
-
+      let representation: ClipboardRepresentation;
       try {
-        await deps.writeClipboard(text);
+        representation = await deps.writeClipboard(
+          toCopiedBibliography(snapshot.entries),
+        );
       } catch (error) {
         logger.error("Cannot copy the bibliography snapshot", {
           path: snapshot.path,
@@ -161,8 +171,15 @@ export function createReferenceActions(
         path: snapshot.path,
         generation: snapshot.generation,
         count: snapshot.entries.length,
+        representation,
       });
-      deps.notify(m.references_copy_copied());
+      // Rich formatting was on offer, so a plain-text result is news: it says
+      // why the pasted entries lost their emphasis and small caps.
+      deps.notify(
+        representation === "rich"
+          ? m.references_copy_copied()
+          : m.references_copy_copied_text(),
+      );
     },
   };
 }

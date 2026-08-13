@@ -393,6 +393,7 @@
   "references_copy_blocked_failed": "Bibliography formatting failed",
   "references_copy_blocked_errors": "Fix the reference errors to copy the bibliography",
   "references_copy_copied": "Bibliography snapshot copied.",
+  "references_copy_copied_text": "Bibliography copied as plain text.",
   "references_copy_changed": "References changed. Try again.",
   "references_copy_failed": "Could not copy bibliography.",
   "references_empty": "The active note cites no literature notes.",

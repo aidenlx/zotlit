@@ -364,6 +364,7 @@
   "references_copy_blocked_failed": "参考文献排版失败",
   "references_copy_blocked_errors": "请先修复参考文献错误，然后再复制",
   "references_copy_copied": "参考文献快照已复制。",
+  "references_copy_copied_text": "参考文献已复制为纯文本。",
   "references_copy_changed": "参考文献已变化，请重试。",
   "references_copy_failed": "无法复制参考文献。",
   "references_empty": "当前笔记没有引用任何文献笔记。",

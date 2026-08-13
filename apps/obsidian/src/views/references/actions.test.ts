@@ -2,8 +2,11 @@
 import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ClipboardRepresentation } from "@/lib/clipboard";
+
 import { createReferenceActions } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
+import type { CopiedBibliography } from "./copied-bibliography";
 import type { ReferencesCopyTarget } from "./store";
 
 /** What the toolbar offered when the copy action was clicked. */
@@ -16,7 +19,9 @@ function snapshot(
   overrides: Partial<CopyBibliographySnapshot> = {},
 ): CopyBibliographySnapshot {
   const content = document.createDocumentFragment();
-  content.append("Rivers, A. (2020). Field notes. Harbour Press.");
+  const emphasis = document.createElement("i");
+  emphasis.append("Field notes");
+  content.append("Rivers, A. (2020). ", emphasis, ". Harbour Press.");
   return {
     ...offered,
     entries: [{ marker: "[1]", content }],
@@ -27,7 +32,11 @@ function snapshot(
 let getCopySnapshot: ReturnType<
   typeof vi.fn<() => CopyBibliographySnapshot | null>
 >;
-let writeClipboard: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
+let writeClipboard: ReturnType<
+  typeof vi.fn<
+    (content: CopiedBibliography) => Promise<ClipboardRepresentation>
+  >
+>;
 let notify: ReturnType<typeof vi.fn<(message: string) => void>>;
 
 function build(): ReferenceActions {
@@ -46,19 +55,31 @@ function build(): ReferenceActions {
 
 beforeEach(() => {
   getCopySnapshot = vi.fn(() => snapshot());
-  writeClipboard = vi.fn(() => Promise.resolve());
+  writeClipboard = vi.fn(() =>
+    Promise.resolve<ClipboardRepresentation>("rich"),
+  );
   notify = vi.fn();
 });
 
 describe("onCopyBibliography", () => {
-  it("writes the serialized snapshot and reports the copy", async () => {
+  it("writes both representations of the snapshot and reports the copy", async () => {
     await build().onCopyBibliography(offered);
 
-    expect(writeClipboard).toHaveBeenCalledExactlyOnceWith(
-      "[1] Rivers, A. (2020). Field notes. Harbour Press.",
-    );
+    expect(writeClipboard).toHaveBeenCalledExactlyOnceWith({
+      html: "<p>[1] Rivers, A. (2020). <i>Field notes</i>. Harbour Press.</p>",
+      text: "[1] Rivers, A. (2020). Field notes. Harbour Press.",
+    });
     expect(notify).toHaveBeenCalledExactlyOnceWith(
       "Bibliography snapshot copied.",
+    );
+  });
+
+  it("names the plain-text fallback the platform fell back to", async () => {
+    writeClipboard.mockResolvedValue("text");
+    await build().onCopyBibliography(offered);
+
+    expect(notify).toHaveBeenCalledExactlyOnceWith(
+      "Bibliography copied as plain text.",
     );
   });
 
