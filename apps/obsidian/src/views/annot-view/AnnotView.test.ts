@@ -15,19 +15,7 @@ import { AnnotView } from "./AnnotView";
 import { AnnotStoreProvider, createAnnotStore } from "./store";
 import type { AnnotState, AnnotStore } from "./store";
 
-vi.mock("zustand", async () => {
-  const { useSyncExternalStore } = await import("preact/compat");
-  return {
-    useStore: <T, U>(
-      store: {
-        subscribe: (listener: () => void) => () => void;
-        getState: () => T;
-      },
-      selector: (state: T) => U,
-    ) =>
-      useSyncExternalStore(store.subscribe, () => selector(store.getState())),
-  };
-});
+vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
 const attachments: AnnotViewAttachment[] = [
   { itemID: 1, path: "storage:first.pdf", annotCount: 2 },

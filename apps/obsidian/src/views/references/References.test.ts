@@ -323,6 +323,18 @@ describe("References toolbar", () => {
     expect(styleAction(container).hasAttribute("disabled")).toBe(false);
   });
 
+  it("keeps the style action live while the engine is still installing", async () => {
+    const container = await render(
+      [summaryEntry],
+      { kind: "minimal" },
+      {
+        engine: { kind: "installing", done: Promise.resolve() },
+      },
+    );
+
+    expect(styleAction(container).hasAttribute("disabled")).toBe(false);
+  });
+
   it("keeps the style action live while the engine is unavailable", async () => {
     const container = await render(
       [summaryEntry],
