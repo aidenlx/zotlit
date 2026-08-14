@@ -248,7 +248,10 @@ function replacement(
   decoration: WikilinkDecoration,
   citations: DocumentCitations,
 ): Decoration | null {
-  const formatted = citationContent(decoration.citation, citations);
+  const formatted = citationContent(decoration.citation, citations, {
+    kind: "offset",
+    start: decoration.start,
+  });
   if (formatted === null) return null;
   return Decoration.replace({
     widget: new CitationDisplayWidget(formatted, decoration.tokenClasses),

@@ -26,7 +26,8 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
-import { rendered } from "@/services/citation-text/__fixtures__";
+import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
+import type { FormattedOccurrence } from "@/services/citation-text/present";
 
 import {
   citekeyAtPos,
@@ -119,7 +120,7 @@ describe("citekeyEditorExtension theme hooks", () => {
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => true,
             citationText: () => ({
-              formatted: new Map([["[@doe2024]", formatted]]),
+              formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
               summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
               literalWorks: new Map([["doe2024", DOE_KEY]]),
             }),
@@ -145,11 +146,19 @@ describe("citekeyEditorExtension theme hooks", () => {
 });
 
 describe("citekeyEditorExtension citation widgets", () => {
-  /** One view over `doc`, with one citation held as the formatted text below. */
-  function viewOf(doc: string) {
+  /**
+   * One view over `doc`, with `formatted` held as its citation text — by
+   * default one occurrence of `[@doe2024]`.
+   */
+  function viewOf(
+    doc: string,
+    formatted: Map<string, FormattedOccurrence[]> = new Map([
+      ["[@doe2024]", occurrences(rendered("Doe (2024)"))],
+    ]),
+  ) {
     livePreview.mockReturnValue(true);
     const held = {
-      formatted: new Map([["[@doe2024]", rendered("Doe (2024)")]]),
+      formatted,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     };
@@ -179,6 +188,29 @@ describe("citekeyEditorExtension citation widgets", () => {
     expect(view.dom.querySelector(".zt-citation")?.textContent).toBe(
       "Doe (2024)",
     );
+  });
+
+  it("shows each occurrence the text held for its own document offset", () => {
+    // A position-dependent style renders the second occurrence of one source
+    // as the subsequent form; each widget matches its own editor offset.
+    using view = viewOf(
+      "One [@doe2024] and [@doe2024].",
+      new Map([
+        [
+          "[@doe2024]",
+          [
+            { start: 4, text: rendered("Doe (2024)") },
+            { start: 19, text: rendered("ibid") },
+          ],
+        ],
+      ]),
+    );
+
+    expect(
+      [...view.dom.querySelectorAll(".zt-citation")].map(
+        (element) => element.textContent,
+      ),
+    ).toEqual(["Doe (2024)", "ibid"]);
   });
 
   it("keeps the drawn citation while an edit lands away from it", () => {

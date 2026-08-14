@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 import { MarkdownView } from "obsidian";
-import type { MarkdownPostProcessor, TFile } from "obsidian";
+import type {
+  MarkdownPostProcessor,
+  MarkdownPostProcessorContext,
+  TFile,
+} from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
@@ -45,6 +49,15 @@ function section(html: string): HTMLElement {
 
 interface Harness extends AsyncDisposable {
   process: MarkdownPostProcessor;
+  /**
+   * The context Obsidian hands a post-processor for the body lines `lines`
+   * covers, or for a section it places nowhere — an embed, a popover.
+   */
+  sectionCtx: (
+    lines: { from: number; to: number } | null,
+  ) => MarkdownPostProcessorContext;
+  /** {@link sectionCtx} over the whole body, which is one section for most suites. */
+  ctx: MarkdownPostProcessorContext;
   citationRequests: { citations: readonly string[] }[];
 }
 
@@ -53,6 +66,7 @@ async function makeHarness({
   cited = [citation("alpha", ALPHA_KEY)],
   formats = true,
   formatCitations,
+  renderText = (source) => `«${source}»`,
   overrides = {},
 }: {
   body: string;
@@ -63,6 +77,8 @@ async function makeHarness({
   formatCitations?: (
     citations: readonly string[],
   ) => Promise<readonly RenderedCitation[] | null>;
+  /** The text the render answers for each source, by its place in the request. */
+  renderText?: (source: string, index: number) => string;
   overrides?: Partial<Settings>;
 }): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
@@ -98,7 +114,9 @@ async function makeHarness({
             ? formatCitations(citations)
             : Promise.resolve(
                 formats
-                  ? citations.map((source) => rendered(`«${source}»`))
+                  ? citations.map((source, index) =>
+                      rendered(renderText(source, index)),
+                    )
                   : null,
               );
         },
@@ -143,8 +161,19 @@ async function makeHarness({
   await service.ready;
   const resources = stack.move();
 
+  const sectionCtx = (
+    lines: { from: number; to: number } | null,
+  ): MarkdownPostProcessorContext =>
+    ({
+      sourcePath: "note.md",
+      getSectionInfo: () =>
+        lines && { text: body, lineStart: lines.from, lineEnd: lines.to },
+    }) as never;
+
   return {
     process: process!,
+    sectionCtx,
+    ctx: sectionCtx({ from: 0, to: body.split("\n").length - 1 }),
     citationRequests,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
@@ -196,13 +225,47 @@ describe("CitekeyReading", () => {
     await using harnessed = await makeHarness({
       body: "Blah [see @alpha, p. 3] blah.",
     });
-    const { process } = harnessed;
+    const { process, ctx } = harnessed;
     const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
 
-    await process(el, { sourcePath: "note.md" } as never);
+    await process(el, ctx);
 
     expect(el.textContent).toBe(`Blah «[see @${ALPHA_KEY}, p. 3]» blah.`);
     expect(el.querySelector("span.zt-citation")).not.toBeNull();
+  });
+
+  // Stands in for a position-dependent style, whose second occurrence of one
+  // source reads as the subsequent form.
+  const IBID = (source: string, index: number): string =>
+    index === 0 ? `«${source}»` : "ibid";
+
+  it("shows each occurrence the text rendered for its own place in the document", async () => {
+    await using harnessed = await makeHarness({
+      body: "One [@alpha].\n\nTwo [@alpha].",
+      renderText: IBID,
+    });
+    const { process, sectionCtx } = harnessed;
+    const first = section("<p>One [@alpha].</p>");
+    const second = section("<p>Two [@alpha].</p>");
+
+    await process(first, sectionCtx({ from: 0, to: 0 }));
+    await process(second, sectionCtx({ from: 2, to: 2 }));
+
+    expect(first.textContent).toBe(`One «[@${ALPHA_KEY}]».`);
+    expect(second.textContent).toBe("Two ibid.");
+  });
+
+  it("shows first-occurrence text in a section Obsidian places nowhere", async () => {
+    await using harnessed = await makeHarness({
+      body: "One [@alpha].\n\nTwo [@alpha].",
+      renderText: IBID,
+    });
+    const { process, sectionCtx } = harnessed;
+    const el = section("<p>Two [@alpha].</p>");
+
+    await process(el, sectionCtx(null));
+
+    expect(el.textContent).toBe(`Two «[@${ALPHA_KEY}]».`);
   });
 
   it("keeps source when no engine formats the citation", async () => {
@@ -210,10 +273,10 @@ describe("CitekeyReading", () => {
       body: "Blah [see @alpha, p. 3] blah.",
       formats: false,
     });
-    const { process } = harnessed;
+    const { process, ctx } = harnessed;
     const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
 
-    await process(el, { sourcePath: "note.md" } as never);
+    await process(el, ctx);
 
     expect(el.textContent).toBe("Blah [see @alpha, p. 3] blah.");
   });
@@ -223,10 +286,10 @@ describe("CitekeyReading", () => {
       body: "Blah [see @alpha, p. 3] blah.",
       overrides: { "citation.show-formatted": false },
     });
-    const { process } = harnessed;
+    const { process, ctx } = harnessed;
     const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
 
-    await process(el, { sourcePath: "note.md" } as never);
+    await process(el, ctx);
 
     expect(el.textContent).toBe("Blah [see @alpha, p. 3] blah.");
   });
@@ -240,12 +303,10 @@ describe("CitekeyReading", () => {
       body: "Blah [@alpha].",
       formatCitations: () => pending,
     });
-    const { process } = harnessed;
+    const { process, ctx } = harnessed;
     const el = section("<p>Blah [@alpha].</p>");
 
-    const completion = Promise.resolve(
-      process(el, { sourcePath: "note.md" } as never),
-    );
+    const completion = Promise.resolve(process(el, ctx));
     let completed = false;
     void completion.then(() => {
       completed = true;
@@ -264,10 +325,10 @@ describe("CitekeyReading", () => {
       body: "@ghost blah.",
       cited: [citation("ghost", null)],
     });
-    const { process } = harnessed;
+    const { process, ctx } = harnessed;
     const el = section("<p>@ghost blah.</p>");
 
-    await process(el, { sourcePath: "note.md" } as never);
+    await process(el, ctx);
 
     expect(el.textContent).toBe("@ghost blah.");
   });
@@ -300,10 +361,10 @@ describe("CitekeyReading", () => {
     ];
     for (const { body, cited, classes } of cases) {
       await using harnessed = await makeHarness({ body, cited });
-      const { process } = harnessed;
+      const { process, ctx } = harnessed;
       const el = section(`<p>${body}</p>`);
 
-      await process(el, { sourcePath: "note.md" } as never);
+      await process(el, ctx);
 
       const rendered = el.querySelector("span");
       for (const className of classes) {
@@ -324,10 +385,10 @@ describe("CitekeyReading", () => {
         body: "Blah [@alpha].",
         overrides,
       });
-      const { process } = harnessed;
+      const { process, ctx } = harnessed;
       const el = section("<p>Blah [@alpha].</p>");
 
-      await process(el, { sourcePath: "note.md" } as never);
+      await process(el, ctx);
 
       expect(el.textContent).toBe("Blah [@alpha].");
       expect(el.querySelector(".zt-citation-key")).toBeNull();
@@ -340,11 +401,11 @@ describe("CitekeyReading", () => {
     await using harnessed = await makeHarness({
       body: "Blah [@alpha] blah.",
     });
-    const { process } = harnessed;
+    const { process, ctx } = harnessed;
     const el = section("<p>Blah [@alpha] blah.</p>");
     const block = el.firstElementChild!;
 
-    await process(el, { sourcePath: "note.md" } as never);
+    await process(el, ctx);
 
     expect(el.children).toHaveLength(1);
     expect(el.firstElementChild).toBe(block);
@@ -355,14 +416,10 @@ describe("CitekeyReading", () => {
     await using harnessed = await makeHarness({
       body: "One [@alpha].\n\nTwo [@alpha].",
     });
-    const { process, citationRequests } = harnessed;
+    const { process, ctx, citationRequests } = harnessed;
 
-    await process(section("<p>One [@alpha].</p>"), {
-      sourcePath: "note.md",
-    } as never);
-    await process(section("<p>Two [@alpha].</p>"), {
-      sourcePath: "note.md",
-    } as never);
+    await process(section("<p>One [@alpha].</p>"), ctx);
+    await process(section("<p>Two [@alpha].</p>"), ctx);
 
     expect(citationRequests).toHaveLength(1);
   });
