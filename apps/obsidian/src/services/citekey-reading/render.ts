@@ -49,8 +49,16 @@ export function sectionCitations(root: HTMLElement): SectionCitation[] {
   return found;
 }
 
-/** The node to put in a citation's place, or `null` to leave its source alone. */
-export type FormatCitation = (citation: SectionCitation) => Node | null;
+/**
+ * The node to put in a citation's place, or `null` to leave its source alone.
+ *
+ * `index` is the citation's place in the section's own document order, which is
+ * what tells two identical sources of one section apart.
+ */
+export type FormatCitation = (
+  citation: SectionCitation,
+  index: number,
+) => Node | null;
 
 /**
  * Replaces each citation's source text with what `format` returns for it.
@@ -62,8 +70,9 @@ export function replaceCitations(
   citations: readonly SectionCitation[],
   format: FormatCitation,
 ): void {
-  for (const citation of [...citations].reverse()) {
-    const formatted = format(citation);
+  for (let index = citations.length - 1; index >= 0; index -= 1) {
+    const citation = citations[index]!;
+    const formatted = format(citation, index);
     if (!formatted) continue;
     const { node, start, end } = citation;
     node.splitText(end);

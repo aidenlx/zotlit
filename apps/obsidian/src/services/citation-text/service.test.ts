@@ -17,9 +17,10 @@ import {
   ALPHA,
   ALPHA_KEY,
   citation,
+  firstText,
   literalOccurrences,
+  occurrenceTexts,
   rendered,
-  renderedText,
 } from "./__fixtures__";
 import { citationKey, literalSummaryOf } from "./present";
 import { CitationText } from "./service";
@@ -201,7 +202,7 @@ describe("CitationText", () => {
     expect(citationRequests).toEqual([
       { citations: [`@${ALPHA_KEY}`, `[see @${ALPHA_KEY}, p. 3]`] },
     ]);
-    expect(renderedText(formatted.get("[see @alpha, p. 3]"))).toBe(
+    expect(firstText(formatted.get("[see @alpha, p. 3]"))).toBe(
       `«[see @${ALPHA_KEY}, p. 3]»`,
     );
     await dispose();
@@ -268,7 +269,34 @@ describe("CitationText", () => {
       { citations: [`[@${ALPHA_KEY}]`, `[@${ALPHA_KEY}]`] },
     ]);
     expect(formatted.has("[@alpha; @ghost]")).toBe(false);
-    expect(renderedText(formatted.get("[@alpha]"))).toBe(`«[@${ALPHA_KEY}]»`);
+    expect(firstText(formatted.get("[@alpha]"))).toBe(`«[@${ALPHA_KEY}]»`);
+    await dispose();
+  });
+
+  it("holds every occurrence of one source at the place the document writes it", async () => {
+    const body = "First [@alpha]. Then [@alpha].";
+    const { service, dispose } = await makeHarness({
+      body,
+      // Stands in for a position-dependent style, which renders the second
+      // occurrence of a source as the subsequent form.
+      formatCitations: (sources) =>
+        Promise.resolve(
+          sources.map((source, index) =>
+            rendered(index === 0 ? `«${source}»` : "ibid."),
+          ),
+        ),
+    });
+
+    const { formatted } = await service.load(NOTE);
+
+    expect(formatted.get("[@alpha]")?.map(({ start }) => start)).toEqual([
+      body.indexOf("[@alpha]"),
+      body.lastIndexOf("[@alpha]"),
+    ]);
+    expect(occurrenceTexts(formatted.get("[@alpha]"))).toEqual([
+      `«[@${ALPHA_KEY}]»`,
+      "ibid.",
+    ]);
     await dispose();
   });
 
@@ -321,7 +349,7 @@ describe("CitationText over wikilink Citations", () => {
 
     expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}, p. 4]`] }]);
     expect(
-      renderedText(
+      firstText(
         formatted.get(
           citationKey({ source: "[@alpha, p. 4]", works: [LIT_KEY] }),
         ),
@@ -501,12 +529,10 @@ describe("CitationText staleness", () => {
     await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
     finishFirst?.([rendered("stale")]);
 
-    expect(renderedText((await superseded).formatted.get("[@alpha]"))).toBe(
+    expect(firstText((await superseded).formatted.get("[@alpha]"))).toBe(
       "fresh",
     );
-    expect(renderedText((await current).formatted.get("[@alpha]"))).toBe(
-      "fresh",
-    );
+    expect(firstText((await current).formatted.get("[@alpha]"))).toBe("fresh");
     await dispose();
   });
 

@@ -43,6 +43,12 @@ export interface WikilinkDisplayContext extends WikilinkCitationContext {
 export interface WikilinkDecoration extends DocRange {
   /** The Pandoc source of the Citation and the works it names, which a formatted render is keyed by. */
   citation: RunCitationSource;
+  /**
+   * Document offset the Citation starts at — its first `[[`, the offset
+   * Obsidian's own link cache reports — which picks out its occurrence.
+   * {@link DocRange.from} is the narrower inner range the widget replaces.
+   */
+  start: number;
   /** {@link WikilinkSpan.tokenClasses} */
   tokenClasses: readonly string[];
 }
@@ -84,6 +90,7 @@ export function wikilinkDecorations(
       from: first.inner.from,
       to: last.inner.to,
       citation,
+      start: first.outer.from,
       tokenClasses: first.tokenClasses,
     });
   }

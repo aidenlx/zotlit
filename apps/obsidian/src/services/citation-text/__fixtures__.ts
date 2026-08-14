@@ -8,6 +8,8 @@ import type {
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
 
+import type { FormattedOccurrence } from "./present";
+
 /** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
 export const ALPHA_KEY = "ALPHA234";
 
@@ -76,9 +78,30 @@ export function rendered(text: string): RenderedCitation {
   return { content: [{ t: "Str", c: text }], citations: [] };
 }
 
-/** The text one held citation reads as, which is what a suite asserts on. */
-export function renderedText(
-  citation: RenderedCitation | undefined,
+/**
+ * The one occurrence a document holding a Citation once writes of it, for a
+ * suite that stands in for a whole read.
+ */
+export function occurrence(
+  text: RenderedCitation,
+  start = 0,
+): FormattedOccurrence[] {
+  return [{ start, text }];
+}
+
+/**
+ * The text every occurrence of one held Citation reads as, in document order,
+ * which is what a suite asserting on a position-dependent render asserts on.
+ */
+export function occurrenceTexts(
+  occurrences: readonly FormattedOccurrence[] | undefined,
+): string[] {
+  return (occurrences ?? []).map(({ text }) => inlineText(text.content));
+}
+
+/** The text one held Citation's first occurrence reads as. */
+export function firstText(
+  occurrences: readonly FormattedOccurrence[] | undefined,
 ): string | undefined {
-  return citation && inlineText(citation.content);
+  return occurrenceTexts(occurrences)[0];
 }

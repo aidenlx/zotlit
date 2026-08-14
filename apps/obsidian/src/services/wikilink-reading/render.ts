@@ -48,9 +48,13 @@ export type WikilinkCitationOf = (linktext: string) => WikilinkCitation | null;
 /**
  * The formatted text one Citation Run shows in place of its links, or null to
  * leave them as Obsidian rendered them.
+ *
+ * `index` is the run's place in the section's own document order, which is what
+ * tells two identical Citations of one section apart.
  */
 export type FormatWikilinkRun = (
   run: readonly RunMember<HTMLAnchorElement>[],
+  index: number,
 ) => RenderedCitation | null;
 
 /** The Citation Runs of one rendered section, as their anchors carry them. */
@@ -102,8 +106,8 @@ export function renderCitationRuns(
   format: FormatWikilinkRun,
 ): number {
   let rendered = 0;
-  for (const run of runs) {
-    const content = format(run);
+  for (const [index, run] of runs.entries()) {
+    const content = format(run, index);
     if (content === null) continue;
     const first = run[0]!.source;
     // Everything between the run's anchors is the separators that joined them,

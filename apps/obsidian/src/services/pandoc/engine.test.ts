@@ -157,6 +157,34 @@ const NOTE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   </bibliography>
 </style>`;
 
+/**
+ * A position-dependent in-text style: a work cited again reads as the
+ * subsequent form, so two occurrences of one source render differently.
+ */
+const POSITION_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info>
+    <title>Positional</title>
+    <id>http://example.com/positional</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation>
+    <layout>
+      <choose>
+        <if position="subsequent">
+          <text value="ibid."/>
+        </if>
+        <else>
+          <names variable="author"><name form="short"/></names>
+        </else>
+      </choose>
+    </layout>
+  </citation>
+  <bibliography>
+    <layout><names variable="author"><name/></names></layout>
+  </bibliography>
+</style>`;
+
 const RESOLVE_MAP = JSON.stringify({ citations: { "Zeta 2020": ZETA.id } });
 const DOCUMENT = "Cited here [[Zeta 2020]].\n\n# References\n";
 
@@ -489,6 +517,19 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
       "[1]",
       "[2]",
       "[1]",
+    ]);
+  });
+
+  it("renders each occurrence of one source by its place in the request", async () => {
+    const rendered = await engine.renderCitationsAst({
+      citations: ["[@zeta20]", "[@zeta20]"],
+      items: [{ ...ZETA, id: "zeta20" }],
+      styleXml: POSITION_STYLE,
+    });
+
+    expect(rendered.map((citation) => plainText(citation.content))).toEqual([
+      "Zeta",
+      "ibid.",
     ]);
   });
 

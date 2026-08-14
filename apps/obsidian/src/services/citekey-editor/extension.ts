@@ -452,7 +452,12 @@ function buildDecorations(
           const from = line.from + citation.start;
           const to = line.from + citation.end;
           if (overlapsSelection(selection, from, to)) continue;
-          const widget = citationWidget(citation, edited, handlers);
+          const widget = citationWidget({
+            citation,
+            start: from,
+            edited,
+            handlers,
+          });
           if (widget === null) continue;
           replaced.push(citation);
           placed.push({
@@ -493,12 +498,23 @@ function buildDecorations(
  * @returns the widget for one Citation. An unresolved Citation keeps its
  *   source text and error hook, without navigation handlers.
  */
-function citationWidget(
-  citation: CitationRange,
-  { citations, path }: EditedDocument,
-  handlers: CitekeyEditorHandlers,
-): CitationWidget | null {
-  const content = citationContent(citation, citations);
+function citationWidget(options: {
+  citation: CitationRange;
+  /** Document offset the Citation starts at, which picks out its occurrence. */
+  start: number;
+  edited: EditedDocument;
+  handlers: CitekeyEditorHandlers;
+}): CitationWidget | null {
+  const {
+    citation,
+    start,
+    edited: { citations, path },
+    handlers,
+  } = options;
+  const content = citationContent(citation, citations, {
+    kind: "offset",
+    start,
+  });
   if (content === null) return null;
   const summaryOf = literalSummaryOf(citations);
   const unresolved = unresolvedKeys(citation, summaryOf);

@@ -33,12 +33,15 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
-import type { RenderedCitation } from "@/services/pandoc/engine";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
 
 import { citationKey } from "./present";
-import type { CitationSource, DocumentCitations } from "./present";
+import type {
+  CitationSource,
+  DocumentCitations,
+  FormattedOccurrence,
+} from "./present";
 
 export { type DocumentCitations } from "./present";
 
@@ -282,15 +285,20 @@ export class CitationText extends Service<void> {
       sources,
       items,
     );
-    const formatted = new Map<string, RenderedCitation>();
-    // Citations of one identity render alike, so the first answer stands for
-    // them all.
+    // Each occurrence keeps the text rendered for its own place in the
+    // document, which is what a position-dependent style renders differently
+    // from one occurrence of a source to the next. The render answers in the
+    // document order the sources went out in, so every identity's occurrences
+    // are collected in that order too.
+    const formatted = new Map<string, FormattedOccurrence[]>();
     if (rendered?.length === citations.length) {
       rendered.forEach((text, index) => {
-        const citation = citations[index]!;
-        if (citation.complete && !formatted.has(citation.identity)) {
-          formatted.set(citation.identity, text);
-        }
+        const { identity, start, complete } = citations[index]!;
+        if (!complete) return;
+        const occurrences = formatted.get(identity);
+        if (occurrences === undefined)
+          formatted.set(identity, [{ start, text }]);
+        else occurrences.push({ start, text });
       });
     }
     logger.debug("Document citations read", {
@@ -298,7 +306,10 @@ export class CitationText extends Service<void> {
       citations: sources.length,
       wikilinks: wikilinks.citations.length,
       items: items.length,
-      formatted: formatted.size,
+      formatted: [...formatted.values()].reduce(
+        (count, occurrences) => count + occurrences.length,
+        0,
+      ),
     });
     return {
       formatted,
@@ -446,6 +457,8 @@ interface PlacedCitation extends CitationSource {
 interface RenderContextCitation {
   /** {@link PlacedCitation.identity} */
   identity: string;
+  /** {@link PlacedCitation.start} */
+  start: number;
   renderSource: string;
   complete: boolean;
 }
@@ -533,6 +546,7 @@ function renderContextCitation(
   if (ids.every((id) => id !== null)) {
     return {
       identity: citation.identity,
+      start: citation.start,
       renderSource: named.source,
       complete: true,
     };
@@ -541,6 +555,7 @@ function renderContextCitation(
   if (members === null) return null;
   return {
     identity: citation.identity,
+    start: citation.start,
     renderSource: members,
     complete: false,
   };

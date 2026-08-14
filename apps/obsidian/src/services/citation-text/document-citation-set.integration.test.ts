@@ -26,7 +26,7 @@ import { inlineText } from "@/services/pandoc/inline-content";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
-import { ALPHA, renderedText } from "./__fixtures__";
+import { ALPHA, firstText } from "./__fixtures__";
 import { citationKey } from "./present";
 import { CitationText } from "./service";
 
@@ -173,16 +173,16 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
       "citekey",
     ]);
     expect(includedSet.citations[0]?.occurrences).toHaveLength(3);
-    expect(renderedText(includedText.formatted.get("@doe2024"))).toBe("[1]");
+    expect(firstText(includedText.formatted.get("@doe2024"))).toBe("[1]");
     expect(
-      renderedText(
+      firstText(
         includedText.formatted.get(
           citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
         ),
       ),
     ).toBe("[2]");
     expect(
-      renderedText(
+      firstText(
         includedText.formatted.get(
           citationKey({ source: "[@doe2024]", works: [KEY_A] }),
         ),
@@ -200,7 +200,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
       "citekey",
     ]);
     expect(excludedSet.citations[0]?.occurrences).toHaveLength(2);
-    expect(renderedText(excludedText.formatted.get("@doe2024"))).toBe("[1]");
+    expect(firstText(excludedText.formatted.get("@doe2024"))).toBe("[1]");
     expect(
       excludedText.formatted.has(
         citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
@@ -229,7 +229,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     const entries = await sidebarEntries(engine, set.citations);
 
     expect(rendered.formatted.has("[@doe2024; @ghost]")).toBe(false);
-    expect(renderedText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
     expect(markers(entries)).toEqual(["[1]", "[2]", undefined]);
   });
 
@@ -256,12 +256,12 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     const { formatted } = await text.load(harness.draft);
 
     expect(
-      renderedText(
+      firstText(
         formatted.get(citationKey({ source: "[@Draft]", works: [KEY_C] })),
       ),
     ).toBe("Cox");
     expect(
-      renderedText(
+      firstText(
         formatted.get(citationKey({ source: "[@Draft]", works: [KEY_D] })),
       ),
     ).toBe("Dey");
@@ -290,12 +290,12 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     const { formatted } = await text.load(harness.draft);
 
     expect(
-      renderedText(
+      firstText(
         formatted.get(citationKey({ source: "[@Ess]", works: [KEY_E] })),
       ),
     ).toBe("[1]");
     expect(
-      renderedText(
+      firstText(
         formatted.get(citationKey({ source: "[@Ess2]", works: [KEY_E] })),
       ),
     ).toBe("[1]");
@@ -328,9 +328,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     await harness.index.getDocumentCitationSet(harness.draft);
     const { formatted } = await text.load(harness.draft);
 
-    expect(renderedText(formatted.get("@doe2024"))).toBe("Zeta");
+    expect(firstText(formatted.get("@doe2024"))).toBe("Zeta");
     expect(
-      renderedText(
+      firstText(
         formatted.get(citationKey({ source: "[@doe2024]", works: [KEY_B] })),
       ),
     ).toBe("Roe");

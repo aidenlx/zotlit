@@ -3,9 +3,9 @@ import { MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import { rendered } from "@/services/citation-text/__fixtures__";
+import { occurrence, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
-import type { RenderedCitation } from "@/services/pandoc/engine";
+import type { FormattedOccurrence } from "@/services/citation-text/present";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -65,6 +65,9 @@ async function harness({
   );
   let rerenders = 0;
   let process: MarkdownPostProcessor | undefined;
+  // Obsidian places a section of this stubbed document nowhere, which is the
+  // degraded tier: every Citation shows its source's first-occurrence text.
+  const ctx = { sourcePath, getSectionInfo: () => null } as never;
   const view = Object.assign(Object.create(MarkdownView.prototype) as object, {
     previewMode: { rerender: () => rerenders++ },
   });
@@ -100,24 +103,24 @@ async function harness({
     citationIndex,
     render: async (linktext) => {
       const root = section(`<p>${internalLink(linktext)}</p>`);
-      await process?.(root, { sourcePath } as never);
+      await process?.(root, ctx);
       return root.textContent ?? "";
     },
     renderSection: async (linktext, alias) => {
       const root = section(`<p>${internalLink(linktext, alias)}</p>`);
-      await process?.(root, { sourcePath } as never);
+      await process?.(root, ctx);
       return root;
     },
     renderHtml: async (html) => {
       const root = section(html);
-      await process?.(root, { sourcePath } as never);
+      await process?.(root, ctx);
       return root;
     },
     beginRender: (linktext) => {
       const root = section(`<p>${internalLink(linktext)}</p>`);
       return {
         root,
-        completion: Promise.resolve(process?.(root, { sourcePath } as never)),
+        completion: Promise.resolve(process?.(root, ctx)),
       };
     },
     rerenders: () => rerenders,
@@ -373,7 +376,7 @@ describe("WikilinkReading rerender", () => {
 
 /** What the stub holds for one document, as a surface reads it. */
 interface HeldText {
-  formatted: Map<string, RenderedCitation>;
+  formatted: Map<string, FormattedOccurrence[]>;
   summaries: Map<string, string>;
 }
 
@@ -400,9 +403,9 @@ class CitationTextStub {
   }
 
   #text(): HeldText {
-    const formatted = new Map<string, RenderedCitation>();
+    const formatted = new Map<string, FormattedOccurrence[]>();
     for (const [source, text] of Object.entries(this.#formatted)) {
-      formatted.set(source, rendered(text));
+      formatted.set(source, occurrence(rendered(text)));
     }
     return { formatted, summaries: new Map() };
   }

@@ -1,6 +1,7 @@
 // How one Citation is presented once its formatted text is known.
 
 import type { CitationSource } from "@/lib/citation-fragment";
+import type { SectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
 import type { CitedWork } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
@@ -38,10 +39,39 @@ export function citationKey({
   return works === undefined ? source : [source, ...works].join("\n");
 }
 
+/**
+ * One Citation Occurrence of a document, with the text the engine rendered for
+ * that occurrence.
+ */
+export interface FormattedOccurrence {
+  /** Offset the document writes the Citation at, which is the coordinate a surface matches. */
+  start: number;
+  text: RenderedCitation;
+}
+
+/**
+ * Which occurrence of a Citation one surface shows.
+ *
+ * An editor holds the document offset its decoration covers and matches the
+ * occurrence written there exactly. A reading view is placed by section alone,
+ * so it counts the occurrences of one identity that section shows and matches
+ * by that count.
+ */
+export type CitationCoordinate =
+  | { kind: "offset"; start: number }
+  | ({ kind: "section"; ordinal: number } & SectionRange);
+
 /** What one document's surfaces need to put text in their citations' place. */
 export interface DocumentCitations {
-  /** The formatted citation of one {@link citationKey}, for every one the engine rendered. */
-  formatted: ReadonlyMap<string, RenderedCitation>;
+  /**
+   * Every occurrence of one {@link citationKey} the engine rendered, in
+   * document order.
+   *
+   * A position-dependent style renders each Citation Occurrence by its place in
+   * the document, so two occurrences of one source can read differently and
+   * each surface shows the text of the occurrence it stands for.
+   */
+  formatted: ReadonlyMap<string, readonly FormattedOccurrence[]>;
   /**
    * `Creators (Year)` by Indexed Key, used for navigation labels. A summary
    * belongs to the work, not to the citekey a document spells it with: one
@@ -109,16 +139,60 @@ export function citedWorks(
 }
 
 /**
- * What one Citation shows: the text the engine formatted for its source.
+ * What one Citation shows: the text the engine formatted for the occurrence the
+ * surface holds.
  *
+ * @param at where the surface holds this occurrence. A surface with no
+ *   coordinate, and one whose coordinate reaches no occurrence — a section
+ *   Obsidian places nowhere, or an offset an edit has moved — shows the
+ *   source's first-occurrence text.
  * @returns `null` until a complete document render supplies this citation,
  *   which leaves its native source presentation unchanged.
  */
 export function citationContent(
   citation: HeldCitation,
   { formatted }: DocumentCitations,
+  at?: CitationCoordinate,
 ): RenderedCitation | null {
-  return formatted.get(citationKey(citation)) ?? null;
+  const occurrences = formatted.get(citationKey(citation));
+  if (occurrences === undefined) return null;
+  return (occurrenceAt(occurrences, at) ?? occurrences[0]!).text;
+}
+
+/** @returns the occurrence `at` names, or undefined when it names none of them. */
+function occurrenceAt(
+  occurrences: readonly FormattedOccurrence[],
+  at: CitationCoordinate | undefined,
+): FormattedOccurrence | undefined {
+  if (at === undefined) return undefined;
+  if (at.kind === "offset") {
+    return occurrences.find(({ start }) => start === at.start);
+  }
+  return occurrences.filter(({ start }) => start >= at.from && start < at.to)[
+    at.ordinal
+  ];
+}
+
+/**
+ * Where one rendered reading-view section holds each of its Citations, aligned
+ * with `citations` — which a post-processor reads in document order, so the
+ * occurrences of one identity are counted in the order the document writes them.
+ *
+ * @param section the offsets the section covers, or null when Obsidian places
+ *   it nowhere, which leaves every Citation there on first-occurrence text.
+ */
+export function sectionCoordinates(
+  citations: readonly HeldCitation[],
+  section: SectionRange | null,
+): (CitationCoordinate | undefined)[] {
+  if (section === null) return citations.map(() => undefined);
+  const counts = new Map<string, number>();
+  return citations.map((citation) => {
+    const identity = citationKey(citation);
+    const ordinal = counts.get(identity) ?? 0;
+    counts.set(identity, ordinal + 1);
+    return { kind: "section", ...section, ordinal };
+  });
 }
 
 /**

@@ -6,14 +6,17 @@
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import { getLogger } from "@/lib/log";
-import { rerenderReadingViews } from "@/lib/reading-view";
+import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import {
   WikilinkDisplaySettings,
   citationOfRun,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationIndex } from "@/services/citation-index/service";
-import { citationContent } from "@/services/citation-text/present";
+import {
+  citationContent,
+  sectionCoordinates,
+} from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -139,10 +142,15 @@ export class WikilinkReading extends Service<void> {
     }
     if (this.#retired) return;
 
-    const shown = renderCitationRuns(runs, (run) => {
-      const citation = citationOfRun(run);
-      return text === null ? null : citationContent(citation, text);
-    });
+    // Which occurrence each Citation of the section is, so a position-dependent
+    // style shows every one of them the text rendered for its own place.
+    const citations = runs.map((run) => citationOfRun(run));
+    const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
+    const shown = renderCitationRuns(runs, (_run, index) =>
+      text === null
+        ? null
+        : citationContent(citations[index]!, text, coordinates[index]),
+    );
     if (shown > 0) {
       logger.trace("Rendered wikilink citations", {
         path: ctx.sourcePath,
