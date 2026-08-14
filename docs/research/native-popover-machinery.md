@@ -84,7 +84,7 @@ t.push({ name: i.display, control: { type: "toggle", key: n, defaultValue: i.def
 
 They sit under the heading `"Require {{key}} to trigger page preview on hover"` (`i18n.js:1591`). The toggle **key is the source id**, and the saved value lives in the Page Preview plugin's own data, read via `t.loadData()` at enable (`179199`). So `defaultMod` is only a default — the user owns the live value, and ZotLit cannot read or write it through any public API.
 
-The four built-in sources (`148591–148605`):
+The four sources the workspace registers for itself (`148591–148605`):
 
 | Source id | Display | `defaultMod` |
 | --- | --- | --- |
@@ -92,6 +92,8 @@ The four built-in sources (`148591–148605`):
 | `preview` | Reading view | **`false`** |
 | `editor` | Editing view | `true` |
 | `tab-header` | Tab header | `true` |
+
+Six more core plugins register their own, all `defaultMod: true`: `graph` (`139212`), `bases` (`164050`), `bookmarks` (`165720`), `file-explorer` (`175389`), `outline` (`178668`), `properties` (`179459`). `preview` is the **only** source in the whole runtime that previews on bare hover.
 
 **Reading-mode internal links preview on bare hover by default.** That is the single most consequential fact for the wikilink surfaces (§4.2).
 
@@ -188,7 +190,9 @@ onShow() { var e = this.parent; (e.hoverPopover && e.hoverPopover.hide(), (e.hov
 onHide() { var e = this.parent; e.hoverPopover === this && (e.hoverPopover = null); }
 ```
 
-Assigning a new popover to a parent **hides the parent's previous one**. Sharing one parent between the concise popover and the native page preview therefore gives free mutual exclusion — pressing Mod after the concise popover is up swaps it for the page preview, with no ZotLit code involved (§5).
+Assigning a new popover to a parent **hides the parent's previous one**. A `HoverParent` holds exactly one popover at a time.
+
+That looks like free mutual exclusion between the concise popover and the native page preview, but it is not — the dedupe in §1.3 runs first and wins. See §2.7.
 
 `hide()` (`124266–124286`) detaches `hoverEl`, removes the target listeners, cascades to nested popovers, then calls `unload()`. Since `show()` calls `load()`, `Component.register` is the React teardown hook:
 
@@ -274,6 +278,25 @@ Three consequences for the concise popover:
 
 The plugin's React roots already follow `container.addClass("zt-root")` + `createRoot(container)` (e.g. `apps/obsidian/src/views/cited-by/view.tsx:46,91`), and `.zt-root` carries the scoped Tailwind preflight (`apps/obsidian/src/zt-main.css:134-138`). A `hoverEl.createDiv()` host marked `zt-root` fits that convention unchanged.
 
+### 2.7 The dedupe trap: the two popovers must not share a parent *and* a target
+
+The one genuine trap in the whole design. `onLinkHover` bails **before** constructing anything (`179286`):
+
+```js
+return (o = e.hoverPopover) && o.state !== M$.Hidden && t && o.targetEl === t ? [2] : [4, oJ.create({...})]
+```
+
+So if ZotLit's concise popover is assigned to the same `hoverParent` **and** carries the same `targetEl`, and is not `Hidden`, then a subsequent Mod press is a **silent no-op** — `oJ.create` never runs and the page preview never appears. The parent-swap in §2.2 cannot save it, because nothing gets far enough to call `onShow`.
+
+The deferred-Mod watch of §1.3 makes this the *normal* sequence, not an edge case: bare hover opens the concise popover, the user then presses Mod, and the native preview is suppressed by its own dedupe.
+
+Two ways out, both cheap:
+
+- **Distinct parent.** Trigger `hover-link` with a dedicated `HoverParent` — a plain `{ hoverPopover: null }` object is enough (`Obsidian-Bases-Canvas` ships exactly that, §3). The dedupe reads a different parent and passes. The concise popover then has to be hidden by ZotLit, since the two no longer displace each other.
+- **Hide first.** Call `concisePopover.hide()` immediately before triggering `hover-link` on the Mod branch. `hide()` sets `state = Hidden` synchronously (`124271`), so the dedupe passes on the same parent.
+
+The second is simpler and keeps one parent per surface. Either way, **this is an explicit step the spec must call out** — it does not fall out of the machinery for free.
+
 ## 3. How other plugins do it
 
 **The parity reference, Pandoc Reference List, hand-rolls everything and touches none of this.** `~/repo/zotlit-repo/obsidian-pandoc-reference-list/src/tooltip.ts` (239 lines) creates `el.doc.body.createDiv({cls: 'pwc-tooltip'})` (line 67), positions it by hand in a `setTimeout` with manual viewport flips (lines 106–118), reimplements the hover bridge with two debounce timers and an `isHoveringTooltip` flag (lines 89–94, 151–185), and closes on a capture-phase `scroll` listener (line 126). A repo-wide search finds no `hover-link`, `HoverPopover`, or `registerHoverLinkSource`. Its content is the citeproc `.csl-entry` HTML, with a `.pwc-entry-btns` row of `clickable-icon` actions injected per entry — and multi-key citations are **clipped to 100 characters** via `text-clipper` (line 58). ZotLit's map deliberately departs there by stacking full entries unclipped.
@@ -301,7 +324,7 @@ The four surfaces split cleanly in two, by who emits the hover.
 
 Live Preview citations are `Decoration.replace` widgets whose `ignoreEvent()` returns `true` and which own every gesture on their own element (`citekey-editor/extension.ts:519-522`), so the widget element is a valid `targetEl` with a stable lifetime for the hover.
 
-`hoverParent` is already resolved per surface — the `editorInfoField` value in the editor, the containing `MarkdownView` in reading mode (`citekey-reading/service.ts:192-197`, `#viewOf` at 211). Both satisfy `HoverParent`. Reusing the same parent for the concise popover is what buys the automatic swap in §5.
+`hoverParent` is already resolved per surface — the `editorInfoField` value in the editor, the containing `MarkdownView` in reading mode (`citekey-reading/service.ts:192-197`, `#viewOf` at 211). Both satisfy `HoverParent`, and both can host the concise popover — subject to the dedupe rule in §2.7.
 
 ### 4.2 The wikilink surfaces — Obsidian owns the gesture, and it must be intercepted
 
@@ -347,7 +370,7 @@ Suppressing Obsidian's emission means ZotLit must re-supply the Mod-key half its
 The recommended shape, all of it grounded above:
 
 1. **Bare hover → ZotLit's own popover.** On the surface's existing `mouseover` handler, `new HoverPopover(hoverParent, targetEl, waitTime)`, `hoverEl.createDiv()` marked `zt-root`, mount the shared React renderer into it, `popover.register(() => root.unmount())`, `popover.watchResize(host)`, and `popover.position()` once content lands. §2.1, §2.2, §2.3.
-2. **Mod hover → the native page preview, unchanged.** Keep triggering `hover-link` under `zotlit-citekey` when Mod is held. Because both popovers share the same `hoverParent`, `onShow` hides the concise one automatically when the page preview opens (`124289`) — the swap is free. §2.2.
+2. **Mod hover → the native page preview, unchanged.** Keep triggering `hover-link` under `zotlit-citekey` when Mod is held — but **hide the concise popover first**, or the native preview's own dedupe suppresses it silently. §2.7.
 3. **The wikilink surfaces additionally `stopPropagation()`** on their own `mouseover` to suppress Obsidian's delegated emission, and re-emit under `zotlit-citekey` for the Mod half. §4.2.
 4. **The button row reads placement from `hoverEl.style.bottom`** after `position()` and flips a class. §2.3.
 5. **The content container carries `overflow-y: auto`** so a clamped `maxHeight` scrolls rather than clips. §2.6.
@@ -358,9 +381,10 @@ Nothing here requires monkey-patching. The undeclared surface ZotLit relies on i
 
 ## 6. Residual risks
 
+- **The dedupe trap.** §2.7. The only finding that changes the shape of the implementation rather than just its details: the concise popover must be hidden before the Mod-key `hover-link` fires, or the native preview is silently suppressed. Cheap to handle, easy to miss.
 - **No Escape or blur dismissal.** §2.4. If the spec wants Escape to close the popover, it must push a `Scope` — Page Preview's own edit mode is the pattern (`130726–130728`).
 - **Scroll closes late, not immediately.** §2.3. The popover does not follow the target; the 500 ms poll notices the pointer is no longer over it. The parity reference closes on scroll instantly. If the difference matters, ZotLit can add its own capture-phase scroll listener, as Pandoc Reference List does.
-- **The Mod-key preference is user-owned and unreadable.** §1.2. A user who turns the `zotlit-citekey` toggle off makes the page preview fire on bare hover, alongside the concise popover — though §5's shared-parent swap means the page preview simply wins, which is a defensible outcome rather than a broken one. Worth stating explicitly in the spec.
+- **The Mod-key preference is user-owned and unreadable.** §1.2. A user who turns the `zotlit-citekey` toggle off makes the page preview race the concise popover on bare hover. The effective value lives in `.obsidian/page-preview.json` and on the plugin instance's `options` (`179226`) — both internal, neither exposed. The deterministic fix is for ZotLit to test `Keymap.isModifier(event, "Mod")` itself and only trigger `hover-link` on the Mod branch, which the surfaces already compute (`citekey-navigation/shell.ts:31`). That trades away the free hover-then-Mod window of §1.3. The spec should choose deliberately.
 - **Undeclared API drift.** §5. The augmentation pins ZotLit to internals that carry no compatibility promise. The exposure is small and widely shared, but it is real, and the minified names in §0 must be re-derived against any future runtime.
 - **The 300 px target-height cursor latch.** §2.3. Not reachable by inline citations in practice, but it silently changes the anchor if it ever is.
 - **`.popover.hover-popover > *` forces 450 px.** §2.6. The concise popover's width is Obsidian's decision unless ZotLit overrides it — a design question the prototype ticket should settle, not an obstacle.
