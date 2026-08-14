@@ -75,9 +75,24 @@ describe("citationContent", () => {
 });
 
 describe("citationElement", () => {
-  it("wraps the formatted text in the class themes reach", () => {
+  it("wraps the source text in the class themes reach", () => {
     expect(citationElement(document, "Zeta (2020)").outerHTML).toBe(
       '<span class="zt-citation">Zeta (2020)</span>',
+    );
+  });
+
+  it("shows a formatted citation through the shared renderer", () => {
+    const content = citationElement(document, {
+      content: [
+        { t: "Str", c: "Zeta" },
+        { t: "Space" },
+        { t: "Emph", c: [{ t: "Str", c: "(2020)" }] },
+      ],
+      citations: [],
+    });
+
+    expect(content.outerHTML).toBe(
+      '<span class="zt-citation">Zeta <em>(2020)</em></span>',
     );
   });
 });

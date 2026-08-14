@@ -26,6 +26,8 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
+import { rendered } from "@/services/citation-text/__fixtures__";
+
 import {
   citekeyAtPos,
   citekeyDecorationsChanged,
@@ -103,8 +105,7 @@ describe("citekeyEditorExtension theme hooks", () => {
     livePreview.mockReturnValue(true);
     let navigationEnabled = true;
     const opened: string[] = [];
-    const formatted = document.createDocumentFragment();
-    formatted.append("Doe (2024)");
+    const formatted = rendered("Doe (2024)");
     using view = editorView({
       parent: document.body,
       state: EditorState.create({
@@ -140,5 +141,57 @@ describe("citekeyEditorExtension theme hooks", () => {
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(opened).toEqual(["doe2024"]);
+  });
+});
+
+describe("citekeyEditorExtension citation widgets", () => {
+  /** One view over `doc`, with one citation held as the formatted text below. */
+  function viewOf(doc: string) {
+    livePreview.mockReturnValue(true);
+    const held = {
+      formatted: new Map([["[@doe2024]", rendered("Doe (2024)")]]),
+      summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    };
+    return editorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc,
+        extensions: [
+          editorInfoField,
+          citekeyEditorExtension({
+            open: () => undefined,
+            hoverNotePath: () => null,
+            resolves: () => true,
+            navigationEnabled: () => false,
+            showFormatted: () => true,
+            citationText: () => held,
+            requestCitationText: () => undefined,
+          }),
+        ],
+      }),
+    });
+  }
+
+  it("shows the formatted citation the shared renderer draws", () => {
+    using view = viewOf("[@doe2024]");
+
+    expect(view.dom.querySelector(".zt-citation")?.textContent).toBe(
+      "Doe (2024)",
+    );
+  });
+
+  it("keeps the drawn citation while an edit lands away from it", () => {
+    using view = viewOf("[@doe2024] tail");
+    const drawn = view.dom.querySelector(".zt-citation");
+    expect(drawn?.textContent).toBe("Doe (2024)");
+
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: " more" },
+    });
+
+    // The held text is one shared value, so the widget compares equal by
+    // reference and CodeMirror keeps the element it already drew.
+    expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
   });
 });

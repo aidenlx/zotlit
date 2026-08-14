@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { citationOfRun, wikilinkCitation } from "@/lib/wikilink-citation";
 import type { RunMember, WikilinkCitation } from "@/lib/wikilink-citation";
+import { rendered } from "@/services/citation-text/__fixtures__";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
 import { renderCitationRuns, sectionCitationRuns } from "./render";
@@ -13,7 +15,7 @@ const renderWikilinkCitations = (
   citations: (linktext: string) => WikilinkCitation | null,
   format: (
     run: readonly RunMember<HTMLAnchorElement>[],
-  ) => Node | string | null,
+  ) => RenderedCitation | null,
 ): number => renderCitationRuns(sectionCitationRuns(root, citations), format);
 
 /** Every `literatures/…` link names a Literature Note; nothing else does. */
@@ -31,16 +33,20 @@ const citationOf = (linktext: string): WikilinkCitation | null =>
   });
 
 /** Stand-in formatted text used to exercise the generic DOM swap. */
-const display = (run: readonly RunMember<HTMLAnchorElement>[]): string => {
+const display = (
+  run: readonly RunMember<HTMLAnchorElement>[],
+): RenderedCitation => {
   const only = run.length === 1 ? run[0]!.citation.item : null;
   const details = only?.details;
-  return only &&
-    details?.mode === "normal" &&
-    details.prefix === null &&
-    details.locator === null &&
-    details.suffix === null
-    ? `@${only.citekey}`
-    : citationOfRun(run).source;
+  return rendered(
+    only &&
+      details?.mode === "normal" &&
+      details.prefix === null &&
+      details.locator === null &&
+      details.suffix === null
+      ? `@${only.citekey}`
+      : citationOfRun(run).source,
+  );
 };
 
 describe("renderWikilinkCitations", () => {
@@ -62,14 +68,43 @@ describe("renderWikilinkCitations", () => {
     expect(root.textContent).toBe("[@wang2020, p. 7]");
   });
 
-  it("puts a formatted citation in the anchor", () => {
+  it("puts the formatted citation, markup and all, in the anchor", () => {
     const root = section(`<p>${internalLink("literatures/wang2020")}</p>`);
-    const formatted = document.createElement("span");
-    formatted.textContent = "(Wang et al. 2020)";
-    renderWikilinkCitations(root, citationOf, () => formatted);
+    renderWikilinkCitations(root, citationOf, () => ({
+      content: [
+        { t: "Str", c: "(Wang" },
+        { t: "Space" },
+        { t: "Emph", c: [{ t: "Str", c: "et al." }] },
+        { t: "Space" },
+        { t: "Str", c: "2020)" },
+      ],
+      citations: [],
+    }));
 
-    expect(root.querySelector("a")?.firstElementChild).toBe(formatted);
-    expect(root.textContent).toBe("(Wang et al. 2020)");
+    expect(root.querySelector("a")?.innerHTML).toBe(
+      "(Wang <em>et al.</em> 2020)",
+    );
+  });
+
+  it("shows a link the style wrote as text, since the anchor is Obsidian's", () => {
+    const root = section(`<p>${internalLink("literatures/wang2020")}</p>`);
+    renderWikilinkCitations(root, citationOf, () => ({
+      content: [
+        {
+          t: "Link",
+          c: [
+            ["", [], []],
+            [{ t: "Str", c: "doi.org/10.1/x" }],
+            ["https://doi.org/10.1/x", ""],
+          ],
+        },
+      ],
+      citations: [],
+    }));
+
+    const anchor = root.querySelector("a");
+    expect(anchor?.querySelector("a")).toBeNull();
+    expect(anchor?.textContent).toBe("doi.org/10.1/x");
   });
 
   it("keeps the target and every native attribute", () => {
@@ -136,8 +171,12 @@ describe("renderWikilinkCitations", () => {
 
 describe("renderWikilinkCitations over a Citation Run", () => {
   /** The formatted text of a run, which names the works it groups. */
-  const grouped = (run: readonly RunMember<HTMLAnchorElement>[]): string =>
-    `(${run.map(({ citation }) => citation.item.citekey).join("; ")})`;
+  const grouped = (
+    run: readonly RunMember<HTMLAnchorElement>[],
+  ): RenderedCitation =>
+    rendered(
+      `(${run.map(({ citation }) => citation.item.citekey).join("; ")})`,
+    );
 
   it("collapses a semicolon-joined run into its first anchor", () => {
     const root = section(

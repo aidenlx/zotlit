@@ -3,7 +3,9 @@ import { MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -369,6 +371,12 @@ describe("WikilinkReading rerender", () => {
   });
 });
 
+/** What the stub holds for one document, as a surface reads it. */
+interface HeldText {
+  formatted: Map<string, RenderedCitation>;
+  summaries: Map<string, string>;
+}
+
 class CitationTextStub {
   readonly #formatted: Record<string, string>;
   readonly #pending: boolean;
@@ -382,30 +390,19 @@ class CitationTextStub {
     this.#pending = pending;
   }
 
-  load(): Promise<{
-    formatted: Map<string, DocumentFragment>;
-    summaries: Map<string, string>;
-  }> {
+  load(): Promise<HeldText> {
     if (this.#pending) return new Promise(() => undefined);
     return Promise.resolve(this.#text());
   }
 
-  peek(): {
-    formatted: Map<string, DocumentFragment>;
-    summaries: Map<string, string>;
-  } | null {
+  peek(): HeldText | null {
     return this.#pending ? null : this.#text();
   }
 
-  #text(): {
-    formatted: Map<string, DocumentFragment>;
-    summaries: Map<string, string>;
-  } {
-    const formatted = new Map<string, DocumentFragment>();
+  #text(): HeldText {
+    const formatted = new Map<string, RenderedCitation>();
     for (const [source, text] of Object.entries(this.#formatted)) {
-      const content = document.createDocumentFragment();
-      content.append(text);
-      formatted.set(source, content);
+      formatted.set(source, rendered(text));
     }
     return { formatted, summaries: new Map() };
   }

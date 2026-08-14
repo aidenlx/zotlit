@@ -17,9 +17,10 @@ import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import {
   citationContent,
-  citationInsert,
+  showCitation,
 } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";
@@ -156,10 +157,7 @@ class CitationDisplayWidget extends WidgetType {
   readonly #content;
   readonly #className;
 
-  constructor(
-    content: DocumentFragment | string,
-    tokenClasses: readonly string[],
-  ) {
+  constructor(content: RenderedCitation, tokenClasses: readonly string[]) {
     super();
     this.#content = content;
     this.#className = [
@@ -171,8 +169,9 @@ class CitationDisplayWidget extends WidgetType {
   }
 
   /**
-   * Formatted content is the very object the document's held citations carry,
-   * so a fresh read of that document is a fresh object and redraws.
+   * Formatted content is the immutable value the document's held citations
+   * carry, so the comparison is a reference test and a fresh read of that
+   * document is a fresh value that redraws.
    */
   eq(other: CitationDisplayWidget): boolean {
     return (
@@ -185,7 +184,10 @@ class CitationDisplayWidget extends WidgetType {
     element.className = this.#className;
     element.tabIndex = -1;
     element.draggable = true;
-    element.append(citationInsert(this.#content));
+    // The widget stands for a link Obsidian's own handlers navigate, so a link
+    // the style wrote shows as the text it carries rather than as an anchor
+    // that would take the gesture away from them.
+    showCitation(element, this.#content, "suppress");
     return element;
   }
 }

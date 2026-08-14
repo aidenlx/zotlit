@@ -13,10 +13,7 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationIndex } from "@/services/citation-index/service";
-import {
-  citationContent,
-  citationInsert,
-} from "@/services/citation-text/present";
+import { citationContent } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -144,8 +141,7 @@ export class WikilinkReading extends Service<void> {
 
     const shown = renderCitationRuns(runs, (run) => {
       const citation = citationOfRun(run);
-      const formatted = text === null ? null : citationContent(citation, text);
-      return formatted === null ? null : citationInsert(formatted);
+      return text === null ? null : citationContent(citation, text);
     });
     if (shown > 0) {
       logger.trace("Rendered wikilink citations", {

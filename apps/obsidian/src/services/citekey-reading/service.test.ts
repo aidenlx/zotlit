@@ -10,10 +10,11 @@ import {
   ALPHA,
   ALPHA_KEY,
   citation,
-  fragment,
   literalOccurrences,
+  rendered,
 } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -61,7 +62,7 @@ async function makeHarness({
   /** Custom render answer for pending-generation tests. */
   formatCitations?: (
     citations: readonly string[],
-  ) => Promise<readonly DocumentFragment[] | null>;
+  ) => Promise<readonly RenderedCitation[] | null>;
   overrides?: Partial<Settings>;
 }): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
@@ -91,13 +92,13 @@ async function makeHarness({
         whenIndexed: () => Promise.resolve(),
       },
       bibliographyRender: {
-        renderCitations: (citations: readonly string[]) => {
+        renderCitationsAst: (citations: readonly string[]) => {
           citationRequests.push({ citations });
           return formatCitations
             ? formatCitations(citations)
             : Promise.resolve(
                 formats
-                  ? citations.map((source) => fragment(`«${source}»`))
+                  ? citations.map((source) => rendered(`«${source}»`))
                   : null,
               );
         },
@@ -231,8 +232,8 @@ describe("CitekeyReading", () => {
   });
 
   it("keeps source visible while citation text is pending", async () => {
-    let settle: ((value: readonly DocumentFragment[]) => void) | undefined;
-    const pending = new Promise<readonly DocumentFragment[]>((resolve) => {
+    let settle: ((value: readonly RenderedCitation[]) => void) | undefined;
+    const pending = new Promise<readonly RenderedCitation[]>((resolve) => {
       settle = resolve;
     });
     await using harnessed = await makeHarness({
@@ -254,7 +255,7 @@ describe("CitekeyReading", () => {
     expect(completed).toBe(true);
     expect(el.textContent).toBe("Blah [@alpha].");
 
-    settle?.([fragment("«[@alpha]»")]);
+    settle?.([rendered("«[@alpha]»")]);
     await pending;
   });
 
