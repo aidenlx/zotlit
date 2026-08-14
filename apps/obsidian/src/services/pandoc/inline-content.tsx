@@ -82,8 +82,12 @@ function contextOf({ serials, links = "render" }: InlineContentProps): Context {
   return { serials, links };
 }
 
-/** The elements pandoc's own HTML writer gives these constructors. */
-const WRAPPER_TAGS = {
+/**
+ * The elements pandoc's own HTML writer gives these constructors. Every walk of
+ * a flow wraps these six under this one table — the clipboard serializer as
+ * much as the renderer — so a formatted entry reads the same wherever it lands.
+ */
+export const WRAPPER_TAGS = {
   Emph: "em",
   Strong: "strong",
   Underline: "u",
@@ -92,7 +96,8 @@ const WRAPPER_TAGS = {
   Subscript: "sub",
 } as const;
 
-const QUOTE_MARKS = {
+/** The characters a quotation reaches the reader as, by its own quote type. */
+export const QUOTE_MARKS = {
   SingleQuote: ["‘", "’"],
   DoubleQuote: ["“", "”"],
 } as const satisfies Record<QuoteType["t"], readonly [string, string]>;
@@ -102,7 +107,7 @@ const QUOTE_MARKS = {
  * column in the style's own layout, which an inline flow has nowhere to put, so
  * each hands its content over and leaves one space where it stood.
  */
-const DISPLAY_CLASSES = new Set([
+export const DISPLAY_CLASSES = new Set([
   "csl-block",
   "csl-indent",
   "csl-left-margin",
@@ -120,34 +125,56 @@ const LINK_SCHEMES = new Set(["http:", "https:", "mailto:"]);
 const NO_ENTRY = "⚠";
 
 /**
+ * Track the separators a flow being written owes, so every walk of a flow
+ * spaces its parts the one way.
+ *
+ * A flow reads as one run of text: the separators between two parts collapse
+ * into a single space, a leading one is dropped, and a part that starts after a
+ * display span is owed a space whether or not the flow already carries one
+ * there.
+ *
+ * @param append how one written node reaches the flow being built.
+ */
+export function flowWriter<T>(append: (node: T | string) => void) {
+  /** Whether the flow already ends in a separator, so none is owed. */
+  let spaced = true;
+  /** Whether a display span just ended, so the next content starts a part. */
+  let boundary = false;
+
+  const separate = (): void => {
+    if (spaced) return;
+    append(" ");
+    spaced = true;
+  };
+
+  const add = (node: T | string): void => {
+    if (boundary) separate();
+    boundary = false;
+    append(node);
+    spaced = false;
+  };
+
+  const endPart = (): void => {
+    boundary = true;
+  };
+
+  return { separate, add, endPart };
+}
+
+/**
  * Walk one flow into the nodes that show it.
  *
  * A constructor that stands for an element renders as that element; one that
  * stands for a layout ({@link DISPLAY_CLASSES}, `Cite`, a link that stays
  * behind) hands its own content to this same flow, so what it wrapped keeps
- * reading as one run of text. A display span's boundary becomes a single space,
- * whether or not the flow already carries one there.
+ * reading as one run of text.
  */
 function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
   const flow: ReactNode[] = [];
-  /** Whether the flow already ends in a separator, so none is owed. */
-  let spaced = true;
-  /** Whether a display span just ended, so the next content starts a part. */
-  let boundary = false;
-  let key = 0;
-
-  function separate(): void {
-    if (spaced) return;
-    flow.push(" ");
-    spaced = true;
-  }
-
-  function add(node: ReactNode): void {
-    if (boundary) separate();
-    boundary = false;
+  const { separate, add, endPart } = flowWriter<ReactNode>((node) => {
     flow.push(node);
-    spaced = false;
-  }
+  });
+  let key = 0;
 
   function walk(inlines: Inlines): void {
     for (const inline of inlines) {
@@ -215,7 +242,7 @@ function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
           const display = classes.some((name) => DISPLAY_CLASSES.has(name));
           if (display) separate();
           walk(content);
-          if (display) boundary = true;
+          if (display) endPart();
           break;
         }
         case "Link": {
@@ -327,11 +354,12 @@ function textOf(node: ReactNode): string {
 
 /**
  * A target is absolute here or nowhere: a fragment or a relative path resolves
- * against a document the surface has none of.
+ * against a document the surface has none of, and a destination outside the
+ * vault has none of either.
  *
  * @returns the target when it is followable, `null` otherwise.
  */
-function linkHref(url: string): string | null {
+export function linkHref(url: string): string | null {
   const target = URL.parse(url);
   return target && LINK_SCHEMES.has(target.protocol) ? url : null;
 }
