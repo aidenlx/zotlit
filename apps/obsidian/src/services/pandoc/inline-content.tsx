@@ -266,6 +266,14 @@ function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
 }
 
 /**
+ * The text one flow reads as, for a destination that takes no elements at all —
+ * an Entry Marker written beside plain text, above all.
+ */
+export function inlineText(nodes: Inlines): string {
+  return plainText(nodes, contextOf({ nodes }));
+}
+
+/**
  * The text one flow reads as, with every element it would render left out —
  * how a link shows its content where the surface suppresses anchors, since the
  * anchor that surface inserts into carries the text as its own.

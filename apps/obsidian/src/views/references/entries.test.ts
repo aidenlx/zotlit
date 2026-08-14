@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -53,13 +52,12 @@ function occurrenceAt(
   };
 }
 
-/** A rendered entry as the engine hands it over: parsed, not markup. */
+/** A rendered entry as the engine hands it over: typed AST, not markup. */
 function rendered(text: string, marker?: string): RenderedReference {
-  const content = createFragment();
-  const span = document.createElement("span");
-  span.textContent = text;
-  content.append(span);
-  return { marker, content };
+  return {
+    marker: marker === undefined ? undefined : [{ t: "Str", c: marker }],
+    content: [{ t: "Str", c: text }],
+  };
 }
 
 function completed(
@@ -108,7 +106,7 @@ describe("buildReferenceEntries", () => {
         occurrences: [occurrenceAt(2)],
         kind: "rendered",
         source: sources.get("ALPHA002"),
-        marker: "[1]",
+        marker: [{ t: "Str", c: "[1]" }],
         content: alpha.content,
       },
       {
@@ -118,7 +116,7 @@ describe("buildReferenceEntries", () => {
         occurrences: [occurrenceAt(1)],
         kind: "rendered",
         source: sources.get("ZEBRA001"),
-        marker: "[2]",
+        marker: [{ t: "Str", c: "[2]" }],
         content: zebra.content,
       },
     ]);

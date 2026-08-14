@@ -5,9 +5,13 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentCitationSet } from "@/services/citation-index/service";
+import type { Inline, Inlines } from "@/services/pandoc/ast";
+import type { AstBibliographyEntry } from "@/services/pandoc/engine";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 
 import { ReferencesView } from "./view";
+
+type RenderedBibliography = BibliographyRenderOutcome<AstBibliographyEntry>;
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
@@ -70,18 +74,33 @@ const citationSet: DocumentCitationSet = {
   errors: [],
 };
 
-function renderedOutcome(): BibliographyRenderOutcome {
-  const content = document.createDocumentFragment();
-  content.append("Rivers, A. (2020). Field notes. Harbour Press.");
+/** One flow of plain words, the way pandoc splits text into Str and Space. */
+function words(text: string): Inlines {
+  return text
+    .split(" ")
+    .flatMap<Inline>((word, index) =>
+      index === 0
+        ? [{ t: "Str", c: word }]
+        : [{ t: "Space" }, { t: "Str", c: word }],
+    );
+}
+
+function renderedOutcome(): RenderedBibliography {
   return {
     kind: "rendered",
-    entries: [{ id: "ref-book", marker: "[1]", content }],
+    entries: [
+      {
+        id: "ref-book",
+        marker: words("[1]"),
+        content: words("Rivers, A. (2020). Field notes. Harbour Press."),
+      },
+    ],
     hasEntryMarkers: true,
   };
 }
 
 let view: TestReferencesView | undefined;
-let renders: PromiseWithResolvers<BibliographyRenderOutcome>[] = [];
+let renders: PromiseWithResolvers<RenderedBibliography>[] = [];
 let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
 let activeFile: TFile;
 let otherFile: TFile;
@@ -173,8 +192,8 @@ beforeEach(async () => {
         decline: () => undefined,
       },
       bibliographyRender: {
-        render: () => {
-          const deferred = Promise.withResolvers<BibliographyRenderOutcome>();
+        renderAst: () => {
+          const deferred = Promise.withResolvers<RenderedBibliography>();
           renders.push(deferred);
           return deferred.promise;
         },

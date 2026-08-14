@@ -146,8 +146,6 @@ describe("References", () => {
   });
 
   it("shares a numeric style's gutter with an unrendered Reference Error", async () => {
-    const content = document.createDocumentFragment();
-    content.append("Rendered book");
     const container = await render(
       [
         {
@@ -157,8 +155,12 @@ describe("References", () => {
           kind: "rendered",
           source,
           linkpath: "notes/BOOK0001",
-          marker: "[1]",
-          content,
+          marker: [{ t: "Str", c: "[1]" }],
+          content: [
+            { t: "Str", c: "Rendered" },
+            { t: "Space" },
+            { t: "Str", c: "book" },
+          ],
         },
         {
           id: "BOOK0002",
@@ -184,6 +186,50 @@ describe("References", () => {
         el.getAttribute("data-icon"),
       ),
     ).toStrictEqual(["file-text", "external-link", "chevron-right"]);
+  });
+
+  it("shows the markup and the links a formatted entry carries", async () => {
+    const container = await render(
+      [
+        {
+          id: "BOOK0001",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0001",
+          marker: undefined,
+          content: [
+            {
+              t: "Emph",
+              c: [
+                { t: "Str", c: "Field" },
+                { t: "Space" },
+                { t: "Str", c: "notes" },
+              ],
+            },
+            { t: "Str", c: "." },
+            { t: "Space" },
+            {
+              t: "Link",
+              c: [
+                ["", [], []],
+                [{ t: "Str", c: "https://doi.org/10.1000/182" }],
+                ["https://doi.org/10.1000/182", ""],
+              ],
+            },
+          ],
+        },
+      ],
+      { kind: "bibliography", hasEntryMarkers: false },
+    );
+
+    const row = container.querySelector("li")!;
+    expect(row.querySelector("em")?.textContent).toBe("Field notes");
+    // A bare anchor, which Obsidian itself opens in the system browser.
+    const link = row.querySelector("a")!;
+    expect(link.getAttribute("href")).toBe("https://doi.org/10.1000/182");
+    expect(link.getAttributeNames()).toStrictEqual(["href"]);
   });
 
   it("keeps a numeric style's gutter when every Item was omitted", async () => {
@@ -459,8 +505,8 @@ describe("References copy action", () => {
     kind: "rendered",
     source,
     linkpath: "notes/BOOK0001",
-    marker: "[1]",
-    content: document.createDocumentFragment(),
+    marker: [{ t: "Str", c: "[1]" }],
+    content: [{ t: "Str", c: "Book" }],
   };
 
   function copyAction(container: HTMLElement): HTMLElement {

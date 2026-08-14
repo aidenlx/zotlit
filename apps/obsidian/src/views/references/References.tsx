@@ -5,9 +5,9 @@ import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
-import { useDomContent } from "@/lib/sanitize-html";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { ReferenceSource } from "@/services/citation-index/service";
+import { InlineContent } from "@/services/pandoc/inline-content";
 import type {
   PandocEngineFailure,
   PandocEngineStatus,
@@ -280,7 +280,7 @@ function referencePresentation(
   entry: ReferenceEntry,
   numbered: boolean,
 ): {
-  gutter: string | number | undefined;
+  gutter: ReactNode;
   warning: boolean;
   noteLabel: string;
   noteDisabled: boolean;
@@ -289,7 +289,11 @@ function referencePresentation(
   switch (entry.kind) {
     case "rendered":
       return {
-        gutter: entry.marker,
+        // The Entry Marker is a formatted flow of the style's own, so it shows
+        // through the same renderer as the entry it belongs to.
+        gutter: entry.marker ? (
+          <InlineContent nodes={entry.marker} />
+        ) : undefined,
         warning: false,
         noteLabel: m.references_open_note(),
         noteDisabled: false,
@@ -343,10 +347,9 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
   switch (entry.kind) {
     case "rendered":
       return (
-        <RenderedEntry
-          content={entry.content}
-          className={cn(textClass, "zt:text-foreground")}
-        />
+        <span className={cn(textClass, "zt:text-foreground")}>
+          <InlineContent nodes={entry.content} />
+        </span>
       );
     case "summary":
     case "unrendered":
@@ -376,18 +379,6 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
         </span>
       );
   }
-}
-
-function RenderedEntry({
-  content,
-  className,
-}: {
-  content: DocumentFragment;
-  className?: string;
-}) {
-  return (
-    <span className={className} ref={useDomContent<HTMLSpanElement>(content)} />
-  );
 }
 
 function EntryAction({
