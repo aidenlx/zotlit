@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
+import { tooltipAttrs } from "@/lib/utils";
 
 import type { Inlines, QuoteType } from "./ast";
 
@@ -53,15 +54,21 @@ export function InlineContent({
  * the reading-view and editor surfaces that build their DOM by hand.
  *
  * The render populates `container` before this returns, so the caller hands the
- * container straight back to Obsidian. The root is then left alone: the
- * component holds no effects to clean up, and the container dies with the DOM
- * its surface inserted it into.
+ * container straight back to Obsidian. That population is asserted rather than
+ * assumed: a container still empty here means the render deferred its commit,
+ * and every surface is handing Obsidian an element it never fills. The root is
+ * then left alone: the component holds no effects to clean up, and the
+ * container dies with the DOM its surface inserted it into.
  */
 export function renderInlineContent(
   container: Element,
   props: InlineContentProps,
 ): void {
   createRoot(container).render(<InlineContent {...props} />);
+  if (container.hasChildNodes()) return;
+  logger.error("Detached render left the container empty", {
+    inlines: props.nodes.length,
+  });
 }
 
 interface Context {
@@ -213,7 +220,7 @@ function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
             break;
           }
           add(
-            <a key={key++} href={href} aria-label={title || undefined}>
+            <a key={key++} href={href} {...(title ? tooltipAttrs(title) : {})}>
               {renderFlow(children, context)}
             </a>,
           );

@@ -408,4 +408,28 @@ describe("renderInlineContent", () => {
   it("renders what the component renders inside a tree", () => {
     expect(detached({ nodes }).innerHTML).toBe(attached({ nodes }).innerHTML);
   });
+
+  it("reports a render that left the container empty", async () => {
+    vi.resetModules();
+    vi.doMock("react-dom/client", () => ({
+      createRoot: () => ({ render: () => {}, unmount: () => {} }),
+    }));
+    try {
+      const deferred = await import("./inline-content");
+      const container = document.createElement("div");
+
+      deferred.renderInlineContent(container, { nodes });
+
+      expect(logRecords).toEqual([
+        {
+          level: "error",
+          message: "Detached render left the container empty",
+          fields: { inlines: nodes.length },
+        },
+      ]);
+    } finally {
+      vi.doUnmock("react-dom/client");
+      vi.resetModules();
+    }
+  });
 });
