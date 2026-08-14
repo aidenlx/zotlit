@@ -31,6 +31,13 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
       { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
+    // The suggestion popup registers `Enter` with no modifiers and matches
+    // them exactly, so Shift+Enter reaches no handler unless the modal claims
+    // the chord itself.
+    this.scope.register(["Shift"], "Enter", (evt) => {
+      this.selectActiveSuggestion(evt);
+      return false;
+    });
   }
 
   override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {

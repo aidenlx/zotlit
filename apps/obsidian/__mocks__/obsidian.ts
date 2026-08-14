@@ -236,10 +236,33 @@ export abstract class EditorSuggest<T> {
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
 
+/**
+ * Records keymap registrations so a test can look one up by modifiers plus key
+ * and invoke its handler, standing in for a real keypress.
+ */
+export class Scope {
+  readonly handlers: {
+    modifiers: Modifier[] | null;
+    key: string | null;
+    func: (evt: KeyboardEvent) => boolean | void;
+  }[] = [];
+
+  register(
+    modifiers: Modifier[] | null,
+    key: string | null,
+    func: (evt: KeyboardEvent) => boolean | void,
+  ): unknown {
+    const handler = { modifiers, key, func };
+    this.handlers.push(handler);
+    return handler;
+  }
+}
+
 export abstract class SuggestModal<T> {
   limit = 0;
   emptyStateText = "";
   readonly app: App;
+  readonly scope = new Scope();
 
   constructor(app: App) {
     this.app = app;
@@ -247,6 +270,7 @@ export abstract class SuggestModal<T> {
 
   setPlaceholder(_placeholder: string): void {}
   setInstructions(_instructions: Instruction[]): void {}
+  selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
