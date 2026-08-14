@@ -7,12 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
-import type { AstBibliographyEntry } from "@/services/pandoc/engine";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 
 import { ReferencesView } from "./view";
 
-type RenderedBibliography = BibliographyRenderOutcome<AstBibliographyEntry>;
+type RenderedBibliography = BibliographyRenderOutcome;
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
@@ -232,7 +231,7 @@ beforeEach(async () => {
         decline: () => undefined,
       },
       bibliographyRender: {
-        renderAst: () => {
+        render: () => {
           const deferred = Promise.withResolvers<RenderedBibliography>();
           renders.push(deferred);
           return deferred.promise;

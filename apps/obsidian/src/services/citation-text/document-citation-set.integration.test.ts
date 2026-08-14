@@ -412,10 +412,10 @@ function openText(
     citationIndex: index,
     noteIndex,
     bibliographyRender: {
-      renderCitationsAst: (citations, items) =>
-        engine.renderCitationsAst({ citations, items, styleXml }),
-      renderAst: async (items) => {
-        const entries = await engine.renderBibliographyAst({ items, styleXml });
+      renderCitations: (citations, items) =>
+        engine.renderCitations({ citations, items, styleXml }),
+      render: async (items) => {
+        const entries = await engine.renderBibliography({ items, styleXml });
         return {
           kind: "rendered",
           entries,
@@ -441,7 +441,7 @@ async function sidebarEntries(
     const source = indexedKey && sources.get(indexedKey);
     return source ? [source.csl] : [];
   });
-  const bibliography = await engine.renderBibliographyAst({
+  const bibliography = await engine.renderBibliography({
     items,
     styleXml,
   });

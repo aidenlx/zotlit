@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +12,6 @@ import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
 import type { Inlines } from "./ast";
 import type {
-  AstBibliographyEntry,
   BibliographyEntry,
   BibliographyRequest,
   CitationEngine,
@@ -35,29 +33,13 @@ function item(id: string): CslItemData {
 class EngineStub implements CitationEngine {
   readonly requests: BibliographyRequest[] = [];
   readonly citationRequests: CitationRequest[] = [];
-  readonly astRequests: BibliographyRequest[] = [];
-  readonly astCitationRequests: CitationRequest[] = [];
   /** Set to make the next render fail, as an engine that refuses one does. */
   fails = false;
 
   renderBibliography(
     request: BibliographyRequest,
-  ): Promise<BibliographyEntry[]> {
+  ): Promise<readonly BibliographyEntry[]> {
     this.requests.push(request);
-    if (this.fails) return Promise.reject(new Error("no"));
-    return Promise.resolve(
-      request.items.map(({ id }, index) => ({
-        id,
-        marker: String(index + 1),
-        content: fragment(`entry for ${id}`),
-      })),
-    );
-  }
-
-  renderBibliographyAst(
-    request: BibliographyRequest,
-  ): Promise<readonly AstBibliographyEntry[]> {
-    this.astRequests.push(request);
     if (this.fails) return Promise.reject(new Error("no"));
     return Promise.resolve(
       request.items.map(({ id }, index) => ({
@@ -68,18 +50,10 @@ class EngineStub implements CitationEngine {
     );
   }
 
-  renderCitations(request: CitationRequest): Promise<DocumentFragment[]> {
-    this.citationRequests.push(request);
-    if (this.fails) return Promise.reject(new Error("no"));
-    return Promise.resolve(
-      request.citations.map((source) => fragment(`cite for ${source}`)),
-    );
-  }
-
-  renderCitationsAst(
+  renderCitations(
     request: CitationRequest,
   ): Promise<readonly RenderedCitation[]> {
-    this.astCitationRequests.push(request);
+    this.citationRequests.push(request);
     if (this.fails) return Promise.reject(new Error("no"));
     return Promise.resolve(
       request.citations.map((source) => ({
@@ -96,12 +70,6 @@ class EngineStub implements CitationEngine {
   [Symbol.asyncDispose](): Promise<void> {
     return Promise.resolve();
   }
-}
-
-function fragment(text: string): DocumentFragment {
-  const content = document.createDocumentFragment();
-  content.append(text);
-  return content;
 }
 
 function inlines(text: string): Inlines {
@@ -462,9 +430,9 @@ describe("BibliographyRenderCache citations", () => {
 
     expect(engine.citationRequests).toHaveLength(1);
     expect(first).toBe(second);
-    expect(first?.map((citation) => citation.textContent)).toEqual([
-      "cite for [@alpha]",
-      "cite for @alpha",
+    expect(first?.map((citation) => citation.content)).toEqual([
+      inlines("cite for [@alpha]"),
+      inlines("cite for @alpha"),
     ]);
   });
 
@@ -518,75 +486,5 @@ describe("BibliographyRenderCache citations", () => {
     ).resolves.not.toBeNull();
 
     expect(engine.citationRequests).toHaveLength(2);
-  });
-});
-
-describe("BibliographyRenderCache typed AST", () => {
-  const items = [item("alpha"), item("zebra")];
-
-  it("hands two consumers of the same cited set the identical value", async () => {
-    const { cache, engine } = await makeHarness();
-
-    const first = await cache.renderAst(items);
-    const second = await cache.renderAst([item("alpha"), item("zebra")]);
-
-    expect(engine.astRequests).toHaveLength(1);
-    expect(first).toMatchObject({ kind: "rendered", hasEntryMarkers: true });
-    if (first.kind !== "rendered" || second.kind !== "rendered") {
-      throw new Error("bibliography render missing");
-    }
-    expect(first.entries).toBe(second.entries);
-  });
-
-  it("hands two consumers of the same document the identical value", async () => {
-    const { cache, engine } = await makeHarness();
-
-    const first = await cache.renderCitationsAst(["[@alpha]"], items);
-    const second = await cache.renderCitationsAst(["[@alpha]"], items);
-
-    expect(engine.astCitationRequests).toHaveLength(1);
-    expect(first).toBe(second);
-  });
-
-  it("drops the typed renders with every other render", async () => {
-    const { cache, engine, db, invalidations } = await makeHarness();
-
-    await cache.renderAst(items);
-    await cache.renderCitationsAst(["[@alpha]"], items);
-    db.changed();
-    await cache.renderAst(items);
-    await cache.renderCitationsAst(["[@alpha]"], items);
-
-    expect(invalidations).toHaveLength(1);
-    expect(engine.astRequests).toHaveLength(2);
-    expect(engine.astCitationRequests).toHaveLength(2);
-  });
-
-  it("formats nothing while no engine is installed", async () => {
-    const { cache, engine, pandocEngine } = await makeHarness();
-    pandocEngine.setStatus({ kind: "absent" });
-
-    await expect(cache.renderAst(items)).resolves.toEqual({
-      kind: "unavailable",
-      reason: "engine-absent",
-    });
-    await expect(
-      cache.renderCitationsAst(["[@alpha]"], items),
-    ).resolves.toBeNull();
-    expect(engine.astRequests).toHaveLength(0);
-    expect(engine.astCitationRequests).toHaveLength(0);
-  });
-
-  it("asks again after a render the engine refused", async () => {
-    const { cache, engine } = await makeHarness();
-
-    engine.fails = true;
-    await expect(cache.renderAst(items)).resolves.toEqual({ kind: "failed" });
-    engine.fails = false;
-    await expect(cache.renderAst(items)).resolves.toMatchObject({
-      kind: "rendered",
-    });
-
-    expect(engine.astRequests).toHaveLength(2);
   });
 });
