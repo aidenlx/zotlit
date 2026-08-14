@@ -6,6 +6,13 @@ import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 
+import type {
+  Blocks,
+  CitationMode as AstCitationMode,
+  Inline,
+  Inlines,
+  Pandoc,
+} from "./ast";
 import { createPandocRuntime } from "./runtime";
 import type {
   PandocConvertResult,
@@ -46,6 +53,45 @@ export interface BibliographyEntry {
    * of re-parsing markup.
    */
   content: DocumentFragment;
+}
+
+/**
+ * One rendered bibliography entry, as typed AST.
+ *
+ * The counterpart of {@link BibliographyEntry} on the AST path, which the HTML
+ * path gives way to once every consumer reads AST.
+ */
+export interface AstBibliographyEntry {
+  /** CSL `id` of the item this entry renders. */
+  readonly id: string;
+  /**
+   * The Entry Marker the style rendered ahead of the entry, without the space
+   * that separates it from the entry text, or `undefined` for a style that
+   * renders none.
+   */
+  readonly marker: Inlines | undefined;
+  /** The formatted entry, without its wrapping element and without the marker. */
+  readonly content: Inlines;
+}
+
+/** How a citation names one of the works it cites. */
+export type CitationMode = "normal" | "author-in-text" | "suppress-author";
+
+/** One work a rendered citation names, in the order the citation names it. */
+export interface CitedWork {
+  /**
+   * The CSL id the source cites the work by. It is a citekey spelling, so it
+   * repeats across citations and never identifies a citation on its own.
+   */
+  readonly id: string;
+  readonly mode: CitationMode;
+}
+
+/** One rendered in-text citation, as typed AST. */
+export interface RenderedCitation {
+  /** The formatted citation wholesale, the style's own affixes included. */
+  readonly content: Inlines;
+  readonly citations: readonly CitedWork[];
 }
 
 export interface CitationRequest extends SupersedableRequest {
@@ -93,8 +139,23 @@ export interface CitationEngine extends AsyncDisposable {
   renderBibliography(
     request: BibliographyRequest,
   ): Promise<BibliographyEntry[]>;
+  /**
+   * The same bibliography as typed AST, which a consumer holds and shares as a
+   * value instead of cloning it into place.
+   */
+  renderBibliographyAst(
+    request: BibliographyRequest,
+  ): Promise<readonly AstBibliographyEntry[]>;
   /** @returns one formatted citation per requested source, in the same order. */
   renderCitations(request: CitationRequest): Promise<DocumentFragment[]>;
+  /**
+   * The same citations as typed AST, each paired with the works it names.
+   *
+   * @returns one rendered citation per requested source, in the same order.
+   */
+  renderCitationsAst(
+    request: CitationRequest,
+  ): Promise<readonly RenderedCitation[]>;
   renderDocument(request: DocumentRequest): Promise<Uint8Array>;
 }
 
@@ -146,16 +207,48 @@ class PandocCitationEngine implements CitationEngine {
     this.#runtime = runtime;
   }
 
-  async renderBibliography({
-    items,
-    styleXml,
-    supersedes,
-  }: BibliographyRequest): Promise<BibliographyEntry[]> {
+  async renderBibliography(
+    request: BibliographyRequest,
+  ): Promise<BibliographyEntry[]> {
+    return parseBibliography(await this.#formatBibliography(request, "html"));
+  }
+
+  async renderBibliographyAst(
+    request: BibliographyRequest,
+  ): Promise<readonly AstBibliographyEntry[]> {
+    return extractBibliography(
+      parseAst(await this.#formatBibliography(request, "json")),
+    );
+  }
+
+  async renderCitations(request: CitationRequest): Promise<DocumentFragment[]> {
+    if (request.citations.length === 0) return [];
+    return parseCitations(
+      await this.#formatCitations(request, "html"),
+      request.citations.length,
+    );
+  }
+
+  async renderCitationsAst(
+    request: CitationRequest,
+  ): Promise<readonly RenderedCitation[]> {
+    if (request.citations.length === 0) return [];
+    return extractCitations(
+      parseAst(await this.#formatCitations(request, "json")),
+      request.citations.length,
+    );
+  }
+
+  /** @returns Pandoc's `to` output for the whole bibliography of `items`. */
+  async #formatBibliography(
+    { items, styleXml, supersedes }: BibliographyRequest,
+    to: "html" | "json",
+  ): Promise<string> {
     const style = styleInput(styleXml);
     const { stdout } = await this.#convert({
       options: {
         from: "csljson",
-        to: "html",
+        to,
         standalone: false,
         filters: ["citeproc"],
         // Entry markup is stored and re-inserted as HTML, so single-line output
@@ -167,21 +260,19 @@ class PandocCitationEngine implements CitationEngine {
       files: style.files,
       supersedes,
     });
-    return parseBibliography(stdout);
+    return stdout;
   }
 
-  async renderCitations({
-    citations,
-    items,
-    styleXml,
-    supersedes,
-  }: CitationRequest): Promise<DocumentFragment[]> {
-    if (citations.length === 0) return [];
+  /** @returns Pandoc's `to` output for every citation the request names. */
+  async #formatCitations(
+    { citations, items, styleXml, supersedes }: CitationRequest,
+    to: "html" | "json",
+  ): Promise<string> {
     const style = styleInput(styleXml);
     const { stdout } = await this.#convert({
       options: {
         from: MARKDOWN_READER,
-        to: "html",
+        to,
         standalone: false,
         filters: ["citeproc"],
         bibliography: [BIBLIOGRAPHY_FILE],
@@ -198,7 +289,7 @@ class PandocCitationEngine implements CitationEngine {
       },
       supersedes,
     });
-    return parseCitations(stdout, citations.length);
+    return stdout;
   }
 
   async renderDocument({
@@ -417,4 +508,137 @@ function hasClass(node: Node, name: string): boolean {
 /** Text that carries no content of its own, so it reads as a separator. */
 function isWhitespace(node: Node): boolean {
   return node.nodeType === Node.TEXT_NODE && !node.textContent?.trim();
+}
+
+/**
+ * The document envelope stops here: the engine hands over domain shapes, so no
+ * consumer ever holds a {@link Pandoc}.
+ */
+function parseAst(stdout: string): Blocks {
+  return (JSON.parse(stdout) as Pandoc).blocks;
+}
+
+const CITATION_MODES = {
+  NormalCitation: "normal",
+  AuthorInText: "author-in-text",
+  SuppressAuthor: "suppress-author",
+} as const satisfies Record<AstCitationMode["t"], CitationMode>;
+
+/**
+ * Each requested citation is fed as a paragraph of its own, so Pandoc answers
+ * with one paragraph per citation in the order they were asked for. That
+ * position is the join: a `citationId` is a citekey spelling, which repeats
+ * across citations and names no one of them.
+ *
+ * @throws {CitationEngineError} when the output does not answer every citation,
+ *   which would silently misalign the answers with what was asked.
+ */
+function extractCitations(
+  blocks: Blocks,
+  expected: number,
+): RenderedCitation[] {
+  const paragraphs = blocks.flatMap((block) =>
+    block.t === "Para" || block.t === "Plain" ? [block.c] : [],
+  );
+  if (paragraphs.length !== expected) {
+    throw new CitationEngineError(
+      `Pandoc formatted ${paragraphs.length} of ${expected} citations`,
+    );
+  }
+  return paragraphs.map((content) => ({
+    content,
+    citations: collectCitations(content, []),
+  }));
+}
+
+/**
+ * The prefix, suffix, note number, and hash a `Citation` carries are left
+ * behind: the first two are already rendered into the citation's own content,
+ * and the other two name Pandoc's bookkeeping rather than the cited work.
+ */
+function collectCitations(inlines: Inlines, into: CitedWork[]): CitedWork[] {
+  for (const inline of inlines) {
+    if (inline.t === "Cite") {
+      for (const { citationId, citationMode } of inline.c[0]) {
+        into.push({ id: citationId, mode: CITATION_MODES[citationMode.t] });
+      }
+    }
+    collectCitations(nestedInlines(inline), into);
+  }
+  return into;
+}
+
+/** The inlines a constructor carries, so the walk reaches every citation. */
+function nestedInlines(inline: Inline): Inlines {
+  switch (inline.t) {
+    case "Emph":
+    case "Underline":
+    case "Strong":
+    case "Strikeout":
+    case "Superscript":
+    case "Subscript":
+    case "SmallCaps":
+      return inline.c;
+    case "Quoted":
+    case "Cite":
+    case "Link":
+    case "Image":
+    case "Span":
+      return inline.c[1];
+    case "Note":
+      return blockInlines(inline.c);
+    default:
+      return [];
+  }
+}
+
+/**
+ * Pandoc wraps every bibliography entry in a `Div` whose id is the CSL id of
+ * the item behind {@link ENTRY_ID_PREFIX}, inside one `refs` Div, and reports
+ * the entries in the style's own bibliography order. The outer Div's layout
+ * attributes stay behind until a caller asks for them.
+ */
+function extractBibliography(blocks: Blocks): AstBibliographyEntry[] {
+  return blocks.flatMap((block) => {
+    if (block.t !== "Div") return [];
+    const [[id], nested] = block.c;
+    if (!id.startsWith(ENTRY_ID_PREFIX)) return extractBibliography(nested);
+    return {
+      id: id.slice(ENTRY_ID_PREFIX.length),
+      ...splitAstEntry(blockInlines(nested)),
+    };
+  });
+}
+
+/**
+ * Take the Entry Marker off the front of an entry. A flush layout opens the
+ * entry with the left-margin span, which holds the marker and the space that
+ * sets the second column off from it — the space is layout, not marker. Every
+ * other `csl-*` span passes through, since how they lay an entry out is the
+ * renderer's policy.
+ */
+function splitAstEntry(
+  inlines: Inlines,
+): Pick<AstBibliographyEntry, "marker" | "content"> {
+  const [first, ...rest] = inlines;
+  if (first?.t !== "Span" || !first.c[0][1].includes(LEFT_MARGIN_CLASS)) {
+    return { marker: undefined, content: inlines };
+  }
+  const marker = dropTrailingSpace(first.c[1]);
+  return { marker: marker.length > 0 ? marker : undefined, content: rest };
+}
+
+function dropTrailingSpace(inlines: Inlines): Inlines {
+  return inlines.at(-1)?.t === "Space" ? inlines.slice(0, -1) : inlines;
+}
+
+/** Unwraps the block envelopes an entry is laid out in, so only inlines leave. */
+function blockInlines(blocks: Blocks): Inlines {
+  return blocks.flatMap((block) => {
+    if (block.t === "Para" || block.t === "Plain") return block.c;
+    logger.debug("Dropped a block the engine cannot unwrap", {
+      block: block.t,
+    });
+    return [];
+  });
 }
