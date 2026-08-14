@@ -32,6 +32,9 @@ import {
   citekeyEditorExtension,
 } from "./extension";
 
+/** The Indexed Key `@doe2024` reaches, which is what a summary is held under. */
+const DOE_KEY = "DOE22345";
+
 const stateOf = (doc: string): EditorState => EditorState.create({ doc });
 
 function editorView(options: ConstructorParameters<typeof EditorView>[0]) {
@@ -116,7 +119,8 @@ describe("citekeyEditorExtension theme hooks", () => {
             showFormatted: () => true,
             citationText: () => ({
               formatted: new Map([["[@doe2024]", formatted]]),
-              summaries: new Map([["doe2024", "Doe (2024)"]]),
+              summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+              literalWorks: new Map([["doe2024", DOE_KEY]]),
             }),
             requestCitationText: () => undefined,
           }),

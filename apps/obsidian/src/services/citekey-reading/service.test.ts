@@ -200,7 +200,7 @@ describe("CitekeyReading", () => {
 
     await process(el, { sourcePath: "note.md" } as never);
 
-    expect(el.textContent).toBe("Blah «[see @alpha, p. 3]» blah.");
+    expect(el.textContent).toBe(`Blah «[see @${ALPHA_KEY}, p. 3]» blah.`);
     expect(el.querySelector("span.zt-citation")).not.toBeNull();
   });
 

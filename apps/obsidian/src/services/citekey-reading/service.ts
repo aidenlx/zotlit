@@ -10,6 +10,8 @@ import {
   citationContent,
   citationElement,
   citedWorks,
+  literalSummaryOf,
+  unresolvedKeys,
 } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
@@ -151,16 +153,13 @@ export class CitekeyReading extends Service<void> {
       void this.#citationText.load(file);
       return;
     }
-    const summaryOf = (citekey: string): string | undefined =>
-      text.summaries.get(citekey);
+    const summaryOf = literalSummaryOf(text);
     const doc = el.ownerDocument;
     replaceCitations(citations, (citation) => {
       const content = this.#showFormatted
         ? citationContent(citation, text)
         : null;
-      const unresolved = citation.keys.filter(
-        (key) => !text.summaries.has(key.citekey),
-      ).length;
+      const unresolved = unresolvedKeys(citation, summaryOf);
       const themeClasses = [
         themeHook.citationKey,
         ...(unresolved === 0

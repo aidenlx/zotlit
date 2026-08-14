@@ -76,6 +76,8 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
+import { citationKey } from "@/services/citation-text/present";
+
 import { wikilinkEditorExtension } from "./extension";
 
 const LITERATURE_NOTE = {
@@ -106,8 +108,19 @@ function viewOf(
             const citation = document.createDocumentFragment();
             citation.append("(Example 2020, p. 7)");
             return {
-              formatted: new Map([["[@example, p. 7]", citation]]),
-              summaries: new Map([["example", "Example (2020)"]]),
+              formatted: new Map([
+                [
+                  citationKey({
+                    source: "[@example, p. 7]",
+                    works: [LITERATURE_NOTE.indexedKey],
+                  }),
+                  citation,
+                ],
+              ]),
+              summaries: new Map([
+                [LITERATURE_NOTE.indexedKey, "Example (2020)"],
+              ]),
+              literalWorks: new Map(),
             };
           },
           requestCitationText: () => undefined,

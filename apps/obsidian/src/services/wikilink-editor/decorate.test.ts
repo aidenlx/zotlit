@@ -85,6 +85,7 @@ describe("wikilinkDecorations", () => {
         citation: {
           source: "[@wang2020, p. 7]",
           keys: [{ citekey: "wang2020", start: 1, end: 10 }],
+          works: [WANG.indexedKey],
         },
         tokenClasses: ["hmd-internal-link"],
       },

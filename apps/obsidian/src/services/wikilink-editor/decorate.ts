@@ -2,7 +2,6 @@
 // scanned links form a Citation, over which range, and with which reconstructed
 // token classes.
 
-import type { CitationSource } from "@/lib/citation-fragment";
 import { overlapsSelection } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
 import {
@@ -10,7 +9,10 @@ import {
   citationRuns,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { WikilinkCitationContext } from "@/lib/wikilink-citation";
+import type {
+  RunCitationSource,
+  WikilinkCitationContext,
+} from "@/lib/wikilink-citation";
 
 import type { WikilinkSpan } from "./scan";
 
@@ -39,8 +41,8 @@ export interface WikilinkDisplayContext extends WikilinkCitationContext {
 
 /** One Citation to replace, with everything its widget needs. */
 export interface WikilinkDecoration extends DocRange {
-  /** The Pandoc source of the Citation, which a formatted render is keyed by. */
-  citation: CitationSource;
+  /** The Pandoc source of the Citation and the works it names, which a formatted render is keyed by. */
+  citation: RunCitationSource;
   /** {@link WikilinkSpan.tokenClasses} */
   tokenClasses: readonly string[];
 }

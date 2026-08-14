@@ -67,7 +67,8 @@ describe("citationContent", () => {
     expect(
       citationContent(citation("[see @a, p. 3]"), {
         formatted: new Map(),
-        summaries: new Map([["a", "Zeta (2020)"]]),
+        summaries: new Map([["ALPHA234", "Zeta (2020)"]]),
+        literalWorks: new Map([["a", "ALPHA234"]]),
       }),
     ).toBeNull();
   });

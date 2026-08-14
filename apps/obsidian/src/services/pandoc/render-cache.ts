@@ -156,8 +156,8 @@ export class BibliographyRenderCache extends Service<void> {
    * consumer of the same render, so a consumer inserts a clone of it.
    *
    * @param citations each citation as the source writes it, in document order.
-   * @param items the works those citekeys resolve to, each `id` the citekey the
-   *   source writes.
+   * @param items the works those citations name, each `id` the key the source
+   *   names that work by.
    * @returns one formatted citation per source, in the same order; `null` when
    *   the engine or selected style is unavailable, or the render failed.
    */
@@ -335,9 +335,9 @@ export class BibliographyRenderCache extends Service<void> {
 /**
  * The identity of one render: the style that formats it, the works it covers in
  * the order they are cited, and — for an in-text render — the citations it
- * formats. A CSL id is a Zotero item URI or a citation key, so neither can
- * carry the separator, and the empty line between the two lists keeps them
- * apart.
+ * formats. A CSL id names one Item — a Zotero item URI, an Indexed Key, or a
+ * citation key — and none of the three can carry the separator, so the empty
+ * line between the two lists keeps them apart.
  */
 function renderKey(
   styleId: string | null,

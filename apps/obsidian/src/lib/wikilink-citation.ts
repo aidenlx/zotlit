@@ -110,8 +110,27 @@ export interface RunMember<T> {
   citation: WikilinkCitation;
 }
 
-export function citationOfRun<T>(run: readonly RunMember<T>[]): CitationSource {
-  return citationRunSource(run.map(({ citation }) => citation.item));
+/**
+ * The Citation a whole run writes, with the work each of its keys names.
+ *
+ * A derived citekey is note text — an Item carrying no native citation key is
+ * named by its Literature Note's filename — so two Items can derive one
+ * spelling. The Indexed Keys are what identify the Citation.
+ *
+ * @see apps/obsidian/src/services/citation-text/present.ts — `HeldCitation`
+ */
+export interface RunCitationSource extends CitationSource {
+  /** {@link WikilinkCitation.indexedKey} of each of `keys`, in the same order. */
+  works: string[];
+}
+
+export function citationOfRun<T>(
+  run: readonly RunMember<T>[],
+): RunCitationSource {
+  return {
+    ...citationRunSource(run.map(({ citation }) => citation.item)),
+    works: run.map(({ citation }) => citation.indexedKey),
+  };
 }
 
 /**

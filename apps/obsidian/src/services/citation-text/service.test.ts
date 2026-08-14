@@ -19,6 +19,7 @@ import {
   fragment,
   literalOccurrences,
 } from "./__fixtures__";
+import { citationKey, literalSummaryOf } from "./present";
 import { CitationText } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -40,10 +41,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
 const NOTE = { path: "note.md" } as TFile;
 
 /**
- * The Indexed Key a Literature Note stand-in carries. Zotero's item-key charset
- * leaves out `1`, so the fixture Item's own key cannot stand in for one.
+ * The Indexed Key a Literature Note stand-in carries. It names an Item of its
+ * own, so a wikilink and a literal citekey are told apart by what they reach.
  */
-const LIT_KEY = "ALPHA234";
+const LIT_KEY = "BETA5678";
 
 interface Harness {
   service: CitationText;
@@ -196,10 +197,10 @@ describe("CitationText", () => {
     const { formatted } = await service.load(NOTE);
 
     expect(citationRequests).toEqual([
-      { citations: ["@alpha", "[see @alpha, p. 3]"] },
+      { citations: [`@${ALPHA_KEY}`, `[see @${ALPHA_KEY}, p. 3]`] },
     ]);
     expect(formatted.get("[see @alpha, p. 3]")?.textContent).toBe(
-      "«[see @alpha, p. 3]»",
+      `«[see @${ALPHA_KEY}, p. 3]»`,
     );
     await dispose();
   });
@@ -211,7 +212,7 @@ describe("CitationText", () => {
 
     await service.load(NOTE);
 
-    expect(citationRequests).toEqual([{ citations: ["[@alpha]"] }]);
+    expect(citationRequests).toEqual([{ citations: [`[@${ALPHA_KEY}]`] }]);
     await dispose();
   });
 
@@ -233,10 +234,10 @@ describe("CitationText", () => {
       formats: false,
     });
 
-    const { formatted, summaries } = await service.load(NOTE);
+    const text = await service.load(NOTE);
 
-    expect(summaries.get("alpha")).toBe("Zeta (2020)");
-    expect(formatted.size).toBe(0);
+    expect(literalSummaryOf(text)("alpha")).toBe("Zeta (2020)");
+    expect(text.formatted.size).toBe(0);
     await dispose();
   });
 
@@ -261,9 +262,11 @@ describe("CitationText", () => {
 
     const { formatted } = await service.load(NOTE);
 
-    expect(citationRequests).toEqual([{ citations: ["[@alpha]", "[@alpha]"] }]);
+    expect(citationRequests).toEqual([
+      { citations: [`[@${ALPHA_KEY}]`, `[@${ALPHA_KEY}]`] },
+    ]);
     expect(formatted.has("[@alpha; @ghost]")).toBe(false);
-    expect(formatted.get("[@alpha]")?.textContent).toBe("«[@alpha]»");
+    expect(formatted.get("[@alpha]")?.textContent).toBe(`«[@${ALPHA_KEY}]»`);
     await dispose();
   });
 
@@ -314,10 +317,11 @@ describe("CitationText over wikilink Citations", () => {
 
     const { formatted } = await service.load(NOTE);
 
-    expect(citationRequests).toEqual([{ citations: ["[@alpha, p. 4]"] }]);
-    expect(formatted.get("[@alpha, p. 4]")?.textContent).toBe(
-      "«[@alpha, p. 4]»",
-    );
+    expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}, p. 4]`] }]);
+    expect(
+      formatted.get(citationKey({ source: "[@alpha, p. 4]", works: [LIT_KEY] }))
+        ?.textContent,
+    ).toBe(`«[@${LIT_KEY}, p. 4]»`);
     await dispose();
   });
 
@@ -338,7 +342,7 @@ describe("CitationText over wikilink Citations", () => {
     await service.load(NOTE);
 
     expect(citationRequests).toEqual([
-      { citations: ["[@alpha, p. 4; @alpha]"] },
+      { citations: [`[@${LIT_KEY}, p. 4; @${LIT_KEY}]`] },
     ]);
     await dispose();
   });
@@ -374,7 +378,7 @@ describe("CitationText over wikilink Citations", () => {
 
     await service.load(NOTE);
 
-    expect(citationRequests).toEqual([{ citations: ["[@alpha]"] }]);
+    expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}]`] }]);
     await dispose();
   });
 
@@ -405,7 +409,7 @@ describe("CitationText over wikilink Citations", () => {
     await service.load(NOTE);
 
     expect(citationRequests).toEqual([
-      { citations: ["[@alpha, p. 5]", "[@alpha, p. 6]"] },
+      { citations: [`[@${LIT_KEY}, p. 5]`, `[@${ALPHA_KEY}, p. 6]`] },
     ]);
     await dispose();
   });
@@ -429,7 +433,7 @@ describe("CitationText over wikilink Citations", () => {
     await dispose();
   });
 
-  it("names a wikilink-cited work by its native Zotero citation key", async () => {
+  it("summarizes a wikilink-cited work under the Item it names", async () => {
     const body = `Claim [[${LIT}]].`;
     const { service, dispose } = await makeHarness({
       body,
@@ -442,7 +446,27 @@ describe("CitationText over wikilink Citations", () => {
 
     const { summaries } = await service.load(NOTE);
 
-    expect(summaries.get("alpha")).toBe("Zeta (2020)");
+    expect(summaries.get(LIT_KEY)).toBe("Zeta (2020)");
+    await dispose();
+  });
+
+  // A wikilink names its own works, so its citekey must not answer for a
+  // literal key of the same spelling that reaches no Item at all.
+  it("keeps a derived citekey out of the literal join", async () => {
+    const body = `Claim [[${LIT}]], and @alpha reaches nothing.`;
+    const { service, dispose } = await makeHarness({
+      body,
+      cited: [citation("alpha", null)],
+      links: [link(LIT, body.indexOf("[["))],
+      notes,
+      settings: WIKILINK_CITATIONS,
+      formats: false,
+    });
+
+    const text = await service.load(NOTE);
+
+    expect(text.summaries.get(LIT_KEY)).toBe("Zeta (2020)");
+    expect(literalSummaryOf(text)("alpha")).toBeUndefined();
     await dispose();
   });
 });

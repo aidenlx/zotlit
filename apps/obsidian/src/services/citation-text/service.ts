@@ -14,6 +14,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { BoundedCache } from "@/lib/bounded-cache";
 import { isRenderableCitation } from "@/lib/citation-fragment";
+import type { CitationKey } from "@/lib/citation-fragment";
+import type { TextSpan } from "@/lib/citation-grammar";
 import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -34,6 +36,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
 
+import { citationKey } from "./present";
 import type { CitationSource, DocumentCitations } from "./present";
 
 export { type DocumentCitations } from "./present";
@@ -51,6 +54,7 @@ const HELD_DOCUMENTS = 8;
 const NO_CITATIONS: DocumentCitations = {
   formatted: new Map(),
   summaries: new Map(),
+  literalWorks: new Map(),
 };
 
 /** One document's citations, and what the read that produced them answered. */
@@ -254,35 +258,34 @@ export class CitationText extends Service<void> {
     const body = await this.#app.vault.cachedRead(file);
     const set = await this.#citationIndex.getDocumentCitationSet(file);
     const wikilinks = this.#wikilinkCitations(file, body, set.occurrences);
-    const cited = set.citations;
-    const { items, summaries } = this.#readCited(
-      citekeysByItem(cited, wikilinks.works),
-    );
+    const literal = worksByCitekey(set.citations);
+    const works = this.#readCited([...literal.values(), ...wikilinks.cited]);
 
     // Both syntaxes go to one render in document order, so a numbering style
     // counts every citation of the document once and in the order it reads.
-    const citations = [
-      ...literalCitations(body, set.occurrences),
+    const placed = [
+      ...literalCitations(body, set.occurrences, literal),
       ...wikilinks.citations,
-    ]
-      .sort((a, b) => a.start - b.start)
-      .flatMap((citation) => {
-        const context = renderContextCitation(citation, summaries);
-        return context === null ? [] : [context];
-      });
+    ].sort((a, b) => a.start - b.start);
+    const citations = placed.flatMap((citation) => {
+      const context = renderContextCitation(citation, works);
+      return context === null ? [] : [context];
+    });
     const sources = citations.map(({ renderSource }) => renderSource);
+    const items = [...works.values()].map(({ csl }) => csl);
 
     const rendered = await this.#bibliographyRender.renderCitations(
       sources,
       items,
     );
     const formatted = new Map<string, DocumentFragment>();
-    // Identical sources render alike, so the first answer stands for them all.
+    // Citations of one identity render alike, so the first answer stands for
+    // them all.
     if (rendered?.length === citations.length) {
       rendered.forEach((fragment, index) => {
         const citation = citations[index]!;
-        if (citation.complete && !formatted.has(citation.source)) {
-          formatted.set(citation.source, fragment);
+        if (citation.complete && !formatted.has(citation.identity)) {
+          formatted.set(citation.identity, fragment);
         }
       });
     }
@@ -293,7 +296,13 @@ export class CitationText extends Service<void> {
       items: items.length,
       formatted: formatted.size,
     });
-    return { formatted, summaries };
+    return {
+      formatted,
+      summaries: new Map(
+        [...works].map(([indexedKey, { summary }]) => [indexedKey, summary]),
+      ),
+      literalWorks: literal,
+    };
   }
 
   /**
@@ -339,11 +348,11 @@ export class CitationText extends Service<void> {
         body.slice(previous.position.end.offset, next.position.start.offset),
     );
 
-    const works = new Map<string, string>();
+    const cited: string[] = [];
     const citations: PlacedCitation[] = [];
     for (const run of runs) {
       for (const { citation } of run) {
-        works.set(citation.item.citekey, citation.indexedKey);
+        cited.push(citation.indexedKey);
       }
       const citation = citationOfRun(run);
       // A derivation the engine would read back as something else stays out of
@@ -358,35 +367,38 @@ export class CitationText extends Service<void> {
       citations.push({
         start: run[0]!.source.position.start.offset,
         ...citation,
+        identity: citationKey(citation),
       });
     }
-    return { citations, works };
+    return { citations, cited };
   }
 
   /**
    * The cited works, read straight from the database so the surfaces keep
    * working while Zotero is closed.
    *
-   * Citeproc matches a citation by the CSL `id`, so each work is handed over
-   * under the citekey the document names it by — the key the author wrote, or
-   * the native Zotero citation key a wikilink resolves to.
+   * Citeproc matches a citation by the CSL `id`, and the identity a citation
+   * names is its Item, so each work is handed over under its Indexed Key and
+   * every render source names it by that key. Two Literature Notes for one
+   * keyless Item, or a literal citekey beside a wikilink reaching the same
+   * Item, therefore reach one entry — which is what lets a numbering style
+   * count one physical source once.
    *
-   * @param cited the citekeys naming each Indexed Key the document cites.
+   * @see HeldCitation — why a citekey spelling identifies no Item.
+   *
+   * @param cited the Indexed Key of each work the document cites, in the order
+   *   the document cites them; repeats are read once.
+   * @returns the readable works by Indexed Key, in first-cited order.
    */
-  #readCited(cited: ReadonlyMap<string, ReadonlySet<string>>): {
-    items: CslItemData[];
-    summaries: Map<string, string>;
-  } {
-    const items: CslItemData[] = [];
-    const summaries = new Map<string, string>();
-    if (this.#db.state !== "ready" || cited.size === 0) {
-      return { items, summaries };
-    }
+  #readCited(cited: readonly string[]): Map<string, CitedItem> {
+    const works = new Map<string, CitedItem>();
+    if (this.#db.state !== "ready" || cited.length === 0) return works;
 
     try {
       const client = this.#db.client;
       const user = getZoteroIdentity(client);
-      for (const [indexedKey, citekeys] of cited) {
+      for (const indexedKey of cited) {
+        if (works.has(indexedKey)) continue;
         const selector = resolveIndexedKeyLibrary(client, indexedKey);
         if (!selector) continue;
         const item = getItemsByKey(client, selector.libraryID, [
@@ -397,37 +409,39 @@ export class CitationText extends Service<void> {
         if (isChildItemFields(fields)) continue;
 
         const { title, subtitle } = itemSummary(item, fields);
-        const csl = itemToCsl(item, user);
-        for (const citekey of citekeys) {
-          // One citekey names one work here: a document that reaches two
-          // through it — a literal key and a wikilink whose Item carries the
-          // same native citation key — keeps the first work read.
-          if (summaries.has(citekey)) {
-            logger.debug("Citekey names two works in one document", {
-              citekey,
-              dropped: indexedKey,
-            });
-            continue;
-          }
-          summaries.set(citekey, subtitle || title);
-          items.push({ ...csl, id: citekey });
-        }
+        works.set(indexedKey, {
+          csl: { ...itemToCsl(item, user), id: indexedKey },
+          summary: subtitle || title,
+        });
       }
     } catch (error) {
       logger.warn("Cannot read the cited items", { error });
     }
-    return { items, summaries };
+    return works;
   }
+}
+
+/** One cited work, as the render and the display surfaces read it. */
+interface CitedItem {
+  /** The work as the engine reads it, its `id` the Indexed Key a source names it by. */
+  csl: CslItemData;
+  /** `Creators (Year)`, the navigation label of every citekey naming this work. */
+  summary: string;
 }
 
 /** One Citation of a document, at the offset the document writes it. */
 interface PlacedCitation extends CitationSource {
   start: number;
+  /** The Indexed Key each of `keys` names, or `null` for one naming no Item. */
+  works: (string | null)[];
+  /** {@link citationKey} of the Citation, as the surface showing it holds it. */
+  identity: string;
 }
 
 /** One engine input and whether its output may replace the native source. */
 interface RenderContextCitation {
-  source: string;
+  /** {@link PlacedCitation.identity} */
+  identity: string;
   renderSource: string;
   complete: boolean;
 }
@@ -436,14 +450,40 @@ interface RenderContextCitation {
 interface DocumentWikilinks {
   /** The Citations they write, one per Citation Run, in document order. */
   citations: PlacedCitation[];
-  /** The Indexed Key each derived citekey names. */
-  works: Map<string, string>;
+  /**
+   * The Indexed Key of every Item they cite, in document order — the two Items
+   * of a shared spelling included, and a Citation no Pandoc source can name
+   * included too, because its work still carries the summary a surface shows.
+   */
+  cited: string[];
 }
 
-/** The literal Citation Clusters of a document body, in document order. */
+/**
+ * @param cited the document's Citations, over both syntaxes.
+ * @returns the Item each literal citekey names. One spelling names one Item —
+ *   the citekey resolution snapshot decides which — so one entry answers for
+ *   every occurrence of it.
+ */
+function worksByCitekey(cited: readonly Citation[]): Map<string, string> {
+  const works = new Map<string, string>();
+  for (const { indexedKey, occurrences } of cited) {
+    if (indexedKey === null) continue;
+    for (const { kind, raw } of occurrences) {
+      if (kind === "citekey" && !works.has(raw)) works.set(raw, indexedKey);
+    }
+  }
+  return works;
+}
+
+/**
+ * The literal Citation Clusters of a document body, in document order.
+ *
+ * @param works the Item each literal citekey of the document names.
+ */
 function literalCitations(
   body: string,
   occurrences: readonly CitationOccurrence[],
+  works: ReadonlyMap<string, string>,
 ): PlacedCitation[] {
   const members = new Set(
     occurrences
@@ -452,37 +492,100 @@ function literalCitations(
   );
   return scanDocumentCitations(body)
     .filter(({ keys }) => keys.every((key) => members.has(key.start)))
-    .map(({ start, end, keys }) => ({
-      start,
-      source: body.slice(start, end),
-      keys: keys.map((key) => ({
-        citekey: key.citekey,
-        start: key.start - start,
-        end: key.end - start,
-      })),
-    }));
+    .map(({ start, end, keys }) => {
+      const source = body.slice(start, end);
+      return {
+        start,
+        source,
+        // The works below say what this citation renders from; they stay out
+        // of its identity, because one literal spelling names one Item.
+        identity: citationKey({ source }),
+        keys: keys.map((key) => ({
+          citekey: key.citekey,
+          start: key.start - start,
+          end: key.end - start,
+        })),
+        works: keys.map((key) => works.get(key.citekey) ?? null),
+      };
+    });
 }
 
 /**
- * Keeps every resolved item in CSL's document context. A partial Citation
- * Cluster enters that context with only its resolved members, while its output
- * is discarded so the author still sees the complete native source.
+ * Keeps every resolved item in CSL's document context, naming each by the Item
+ * it cites rather than by the citekey the source spells it with. A partial
+ * Citation Cluster enters that context with only its resolved members, while
+ * its output is discarded so the author still sees the complete native source.
  */
 function renderContextCitation(
-  citation: CitationSource,
-  summaries: ReadonlyMap<string, string>,
+  citation: PlacedCitation,
+  works: ReadonlyMap<string, CitedItem>,
 ): RenderContextCitation | null {
-  const resolved = citation.keys.map(({ citekey }) => summaries.has(citekey));
-  if (resolved.every(Boolean)) {
+  const ids = citation.works.map((indexedKey) =>
+    indexedKey !== null && works.has(indexedKey) ? indexedKey : null,
+  );
+  if (ids.every((id) => id === null)) return null;
+
+  const named = namedByWork(citation.source, citation.keys, ids);
+  if (ids.every((id) => id !== null)) {
     return {
-      source: citation.source,
-      renderSource: citation.source,
+      identity: citation.identity,
+      renderSource: named.source,
       complete: true,
     };
   }
-  if (!resolved.some(Boolean)) return null;
+  const members = resolvedMembers(named.source, named.keys, ids);
+  if (members === null) return null;
+  return {
+    identity: citation.identity,
+    renderSource: members,
+    complete: false,
+  };
+}
 
-  const { source, keys } = citation;
+/**
+ * `source` with every resolved key token rewritten to the Indexed Key of the
+ * work it cites, which is the CSL `id` that work is handed to the engine under.
+ *
+ * A key span covers the complete citation token, the author-suppression `-`
+ * included, so the marker is read off the source and written back. An Indexed
+ * Key is letters and digits alone, so the rewritten token is always a Pandoc
+ * key even where the spelling it replaces was not.
+ *
+ * @returns the rewritten source and the key spans relocated in it.
+ */
+function namedByWork(
+  source: string,
+  keys: readonly CitationKey[],
+  ids: readonly (string | null)[],
+): { source: string; keys: TextSpan[] } {
+  const spans: TextSpan[] = [];
+  let named = "";
+  let read = 0;
+  for (const [index, key] of keys.entries()) {
+    const id = ids[index]!;
+    named += source.slice(read, key.start);
+    const start = named.length;
+    named +=
+      id === null
+        ? source.slice(key.start, key.end)
+        : `${source[key.start] === "-" ? "-" : ""}@${id}`;
+    spans.push({ start, end: named.length });
+    read = key.end;
+  }
+  return { source: named + source.slice(read), keys: spans };
+}
+
+/**
+ * The cluster of `source` with its unresolved members cut out, so the resolved
+ * ones still enter the document's render context.
+ *
+ * @returns null when `source` is no cluster the members can be cut out of.
+ */
+function resolvedMembers(
+  source: string,
+  keys: readonly TextSpan[],
+  ids: readonly (string | null)[],
+): string | null {
   if (!source.startsWith("[") || !source.endsWith("]")) return null;
   const separators: number[] = [];
   for (let index = 0; index < keys.length - 1; index += 1) {
@@ -491,41 +594,12 @@ function renderContextCitation(
     separators.push(separator);
   }
   const members: string[] = [];
-  for (const [index, isResolved] of resolved.entries()) {
-    if (!isResolved) continue;
+  for (const [index, id] of ids.entries()) {
+    if (id === null) continue;
     const from = index === 0 ? 1 : separators[index - 1]! + 1;
     const to =
       index === keys.length - 1 ? source.length - 1 : separators[index]!;
     members.push(source.slice(from, to).trim());
   }
-  return {
-    source,
-    renderSource: `[${members.join("; ")}]`,
-    complete: false,
-  };
-}
-
-/**
- * The citekeys naming each Indexed Key the document cites, over both syntaxes —
- * one work cited as a citekey and as a wikilink reaches the database once and
- * answers under both names.
- */
-function citekeysByItem(
-  cited: readonly Citation[],
-  works: ReadonlyMap<string, string>,
-): Map<string, Set<string>> {
-  const byItem = new Map<string, Set<string>>();
-  const add = (indexedKey: string, citekey: string): void => {
-    const citekeys = byItem.get(indexedKey);
-    if (citekeys) citekeys.add(citekey);
-    else byItem.set(indexedKey, new Set([citekey]));
-  };
-  for (const { indexedKey, occurrences } of cited) {
-    if (indexedKey === null) continue;
-    for (const { kind, raw } of occurrences) {
-      if (kind === "citekey") add(indexedKey, raw);
-    }
-  }
-  for (const [citekey, indexedKey] of works) add(indexedKey, citekey);
-  return byItem;
+  return `[${members.join("; ")}]`;
 }

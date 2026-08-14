@@ -6,7 +6,8 @@ import type {
   CitationOccurrence,
 } from "@/services/citation-index/service";
 
-export const ALPHA_KEY = "1/ALPHA123";
+/** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
+export const ALPHA_KEY = "ALPHA234";
 
 /**
  * The Item the stubbed database answers with. A suite mocks `@zotlit/db` so

@@ -27,6 +27,8 @@ import {
   citationContent,
   citationElement,
   citedWorks,
+  literalSummaryOf,
+  unresolvedKeys,
 } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import {
@@ -497,9 +499,8 @@ function citationWidget(
 ): CitationWidget | null {
   const content = citationContent(citation, citations);
   if (content === null) return null;
-  const unresolved = citation.keys.filter(
-    (key) => !citations.summaries.has(key.citekey),
-  ).length;
+  const summaryOf = literalSummaryOf(citations);
+  const unresolved = unresolvedKeys(citation, summaryOf);
   const themeClasses =
     unresolved === 0
       ? []
@@ -511,7 +512,7 @@ function citationWidget(
   return new CitationWidget({
     source: citation.source,
     content,
-    works: citedWorks(citation, (citekey) => citations.summaries.get(citekey)),
+    works: citedWorks(citation, summaryOf),
     sourcePath: path,
     handlers,
     themeClasses,
