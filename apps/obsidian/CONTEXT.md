@@ -207,7 +207,7 @@ The complete formatted text the Pandoc Engine produces for the Document Citation
 _Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
 
 **Citekey Navigation** _(Obsidian)_:
-The default-off interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, hover page preview, and the open-under-cursor palette commands — all routed through one flow. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; Literature Note wikilinks keep Obsidian's native navigation.
+The default-on interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, click, and the open-under-cursor palette commands, all routed through one flow; what hovering shows belongs to the Hover Action. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; Literature Note wikilinks keep Obsidian's native navigation.
 _Avoid_: citekey click (one gesture of the surface, not the concept), citekey links
 
 **Hover Action** _(Obsidian)_:
@@ -223,11 +223,11 @@ The reading-mode surface of In-text Citation Rendering for literal Pandoc citati
 _Avoid_: reading-mode widget (a widget is the Live Preview decoration), citation preview
 
 **Wikilink Editor Treatment** _(Obsidian)_:
-The Live Preview surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink shows its Rendered Citation, while click, hover, drag, and conceal interaction stay Obsidian's. Cursor or selection contact restores the raw text; Source mode always shows raw text.
+The Live Preview surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink shows its Rendered Citation, while click, drag, and conceal interaction stay Obsidian's; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. Cursor or selection contact restores the raw text; Source mode always shows raw text.
 _Avoid_: wikilink styling (the retired marks-only scope), wikilink conceal
 
 **Wikilink Reading Rendering** _(Obsidian)_:
-The reading-mode surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink's display text becomes its Rendered Citation while the link's target, navigation, and hover stay Obsidian's. When the Pandoc Engine cannot supply formatted text, the native link stays visible.
+The reading-mode surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink's display text becomes its Rendered Citation while the link's target and navigation stay Obsidian's; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. When the Pandoc Engine cannot supply formatted text, the native link stays visible.
 _Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 
 ### Index and identity
