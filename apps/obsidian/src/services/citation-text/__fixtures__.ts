@@ -8,7 +8,7 @@ import type {
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
 
-import type { FormattedOccurrence } from "./present";
+import type { FormattedOccurrence, PresentedCitation } from "./present";
 
 /** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
 export const ALPHA_KEY = "ALPHA234";
@@ -78,6 +78,35 @@ export function rendered(text: string): RenderedCitation {
   return { content: [{ t: "Str", c: text }], citations: [] };
 }
 
+/** One formatted citation as a surface holds it, standing for no note. */
+export function presented(text: string): PresentedCitation {
+  return { text: rendered(text), serials: [] };
+}
+
+/**
+ * One formatted citation of a note-class style: the works it names read out of
+ * the source, and a note where an in-text style would have written the text.
+ *
+ * @param source the citation as the render was asked for it, whose keys are
+ *   the CSL ids the render answers with.
+ */
+export function noted(source: string): RenderedCitation {
+  return {
+    content: [
+      {
+        t: "Cite",
+        c: [
+          [],
+          [{ t: "Note", c: [{ t: "Para", c: [{ t: "Str", c: source }] }] }],
+        ],
+      },
+    ],
+    citations: scanDocumentCitations(source).flatMap(({ keys }) =>
+      keys.map(({ citekey }) => ({ id: citekey, mode: "normal" as const })),
+    ),
+  };
+}
+
 /**
  * The one occurrence a document holding a Citation once writes of it, for a
  * suite that stands in for a whole read.
@@ -86,7 +115,7 @@ export function occurrences(
   text: RenderedCitation,
   start = 0,
 ): FormattedOccurrence[] {
-  return [{ start, text }];
+  return [{ start, text, serials: [] }];
 }
 
 /**

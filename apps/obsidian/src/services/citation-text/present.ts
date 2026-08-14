@@ -40,13 +40,29 @@ export function citationKey({
 }
 
 /**
- * One Citation Occurrence of a document, with the text the engine rendered for
- * that occurrence.
+ * One Citation as a surface shows it: the text the engine rendered, and the
+ * Entry Serial standing for each work that text names.
  */
-export interface FormattedOccurrence {
+export interface PresentedCitation {
+  text: RenderedCitation;
+  /**
+   * One slot per work `text.citations` names, in the order it names them;
+   * `undefined` where the bibliography rendered no entry for that work.
+   *
+   * Empty for a document whose citations need no serial at all, which is every
+   * document an in-text style formats: with nothing for a note to stand for,
+   * the renderer drops the notes it meets rather than numbering them.
+   */
+  serials: readonly (number | undefined)[];
+}
+
+/**
+ * One Citation Occurrence of a document, as the surface showing that occurrence
+ * presents it.
+ */
+export interface FormattedOccurrence extends PresentedCitation {
   /** Offset the document writes the Citation at, which is the coordinate a surface matches. */
   start: number;
-  text: RenderedCitation;
 }
 
 /**
@@ -72,6 +88,12 @@ export interface DocumentCitations {
    * each surface shows the text of the occurrence it stands for.
    */
   formatted: ReadonlyMap<string, readonly FormattedOccurrence[]>;
+  /**
+   * Whether this document's citations stand for notes, so every surface shows
+   * Entry Serials in their place and the References Sidebar gutter shows the
+   * same digits. Read off what the engine rendered, not off the style.
+   */
+  entrySerials: boolean;
   /**
    * `Creators (Year)` by Indexed Key, used for navigation labels. A summary
    * belongs to the work, not to the citekey a document spells it with: one
@@ -153,10 +175,10 @@ export function citationContent(
   citation: HeldCitation,
   { formatted }: DocumentCitations,
   at?: CitationCoordinate,
-): RenderedCitation | null {
+): PresentedCitation | null {
   const occurrences = formatted.get(citationKey(citation));
   if (occurrences === undefined) return null;
-  return (occurrenceAt(occurrences, at) ?? occurrences[0]!).text;
+  return occurrenceAt(occurrences, at) ?? occurrences[0]!;
 }
 
 /** @returns the occurrence `at` names, or undefined when it names none of them. */
@@ -211,7 +233,7 @@ export function sectionCoordinates(
  */
 export function showCitation(
   element: Element,
-  content: RenderedCitation | string,
+  content: PresentedCitation | string,
   links: "render" | "suppress" = "render",
 ): void {
   if (typeof content === "string") {
@@ -219,13 +241,17 @@ export function showCitation(
     return;
   }
   element.replaceChildren();
-  renderInlineContent(element, { nodes: content.content, links });
+  renderInlineContent(element, {
+    nodes: content.text.content,
+    serials: content.serials,
+    links,
+  });
 }
 
 /** Wraps a citation's content in the element a surface shows. */
 export function citationElement(
   doc: Document,
-  content: RenderedCitation | string,
+  content: PresentedCitation | string,
   themeClasses: readonly string[] = [],
 ): HTMLElement {
   const element = doc.createElement("span");

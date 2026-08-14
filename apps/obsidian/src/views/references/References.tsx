@@ -31,8 +31,11 @@ export function References() {
   const formattingFailed = useReferencesStore((s) => s.formattingFailed);
   const dbReady = useReferencesStore((s) => s.dbReady);
   const numbered = listMode.kind === "minimal";
+  const serials = listMode.kind === "bibliography" && listMode.entrySerials;
   const guttered =
-    numbered || (listMode.kind === "bibliography" && listMode.hasEntryMarkers);
+    numbered ||
+    serials ||
+    (listMode.kind === "bibliography" && listMode.hasEntryMarkers);
 
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
@@ -70,6 +73,7 @@ export function References() {
                 key={entry.id}
                 entry={entry}
                 numbered={numbered}
+                serials={serials}
                 guttered={guttered}
               />
             ))}
@@ -162,19 +166,23 @@ const compactIconButton = "zt:p-1 zt:[--icon-size:var(--icon-xs)]";
  *
  * @param numbered whether the list carries Reference Numbers, which the minimal
  *   list does and an engine-rendered one leaves to the style.
+ * @param serials whether the gutter carries Entry Serials, which it does for a
+ *   document whose citations show them in place of the notes the style writes.
  * @param guttered whether the shared list grid includes its marker column.
  */
 function Reference({
   entry,
   numbered,
+  serials,
   guttered,
 }: {
   entry: ReferenceEntry;
   numbered: boolean;
+  serials: boolean;
   guttered: boolean;
 }) {
   const actions = useReferenceActions();
-  const presentation = referencePresentation(entry, numbered);
+  const presentation = referencePresentation(entry, { numbered, serials });
   const { source } = presentation;
   const occurrenceCount = entry.occurrences.length;
 
@@ -278,7 +286,7 @@ function Reference({
 
 function referencePresentation(
   entry: ReferenceEntry,
-  numbered: boolean,
+  { numbered, serials }: { numbered: boolean; serials: boolean },
 ): {
   gutter: ReactNode;
   warning: boolean;
@@ -290,9 +298,13 @@ function referencePresentation(
     case "rendered":
       return {
         // The Entry Marker is a formatted flow of the style's own, so it shows
-        // through the same renderer as the entry it belongs to.
+        // through the same renderer as the entry it belongs to, and it keeps
+        // the gutter wherever the style writes one. The Entry Serial takes the
+        // gutter only where it stands for the note a citation cannot show.
         gutter: entry.marker ? (
           <InlineContent nodes={entry.marker} />
+        ) : serials ? (
+          entry.serial
         ) : undefined,
         warning: false,
         noteLabel: m.references_open_note(),

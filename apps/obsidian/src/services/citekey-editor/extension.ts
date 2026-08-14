@@ -30,7 +30,10 @@ import {
   literalSummaryOf,
   unresolvedKeys,
 } from "@/services/citation-text/present";
-import type { DocumentCitations } from "@/services/citation-text/present";
+import type {
+  DocumentCitations,
+  PresentedCitation,
+} from "@/services/citation-text/present";
 import {
   attachCitationNavigation,
   mouseGesture,
@@ -42,7 +45,6 @@ import type {
   EditorMode,
   NavigationPane,
 } from "@/services/citekey-navigation";
-import type { RenderedCitation } from "@/services/pandoc/engine";
 
 import {
   citationRanges,
@@ -356,7 +358,7 @@ class CitationWidget extends WidgetType {
 
   constructor(options: {
     source: string;
-    content: RenderedCitation;
+    content: PresentedCitation;
     works: readonly CitedWork[];
     sourcePath: string;
     handlers: CitekeyEditorHandlers;

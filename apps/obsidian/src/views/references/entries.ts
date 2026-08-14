@@ -41,6 +41,19 @@ interface NumberedReferenceEntryBase extends ReferenceEntryBase {
   refNumber: number;
 }
 
+/** The part of a formatted entry that the bibliography itself supplies. */
+type RenderedReferenceEntryBody = {
+  kind: "rendered";
+  source: ReferenceSource;
+  linkpath: string | null;
+  /**
+   * Entry Serial: this entry's 1-based place in the bibliography-ordered list,
+   * counting the formatted entries alone. It is the digit a citation of this
+   * work shows where the style writes its citations as notes.
+   */
+  serial: number;
+} & RenderedReference;
+
 /**
  * One reference as the sidebar shows it. The engine's absence is a normal mode,
  * so a `summary` entry is ordinary content rather than a degraded one; a
@@ -56,11 +69,7 @@ interface NumberedReferenceEntryBase extends ReferenceEntryBase {
  */
 type CitationReferenceEntry = NumberedReferenceEntryBase &
   (
-    | ({
-        kind: "rendered";
-        source: ReferenceSource;
-        linkpath: string | null;
-      } & RenderedReference)
+    | RenderedReferenceEntryBody
     | { kind: "summary"; source: ReferenceSource; linkpath: string | null }
     | { kind: "unrendered"; source: ReferenceSource; linkpath: string | null }
     | { kind: "missing"; linkpath: string | null }
@@ -103,7 +112,10 @@ export function buildReferenceEntries(
   options: ReferenceBuildOptions = {},
 ): ReferenceEntry[] {
   const { bibliography, errors = [] } = options;
-  const placed = new Map<string, ReferenceEntry>();
+  const placed = new Map<
+    string,
+    NumberedReferenceEntryBase & Omit<RenderedReferenceEntryBody, "serial">
+  >();
   const trailing: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, linkpath, occurrences } of citations) {
     if (indexedKey === null) {
@@ -151,10 +163,12 @@ export function buildReferenceEntries(
       right.occurrences[0]!.position.start.offset,
   );
 
+  // The Entry Serial is the place a formatted entry takes here, so it is
+  // counted as the list itself is put in bibliography order.
   const ordered: ReferenceEntry[] = [];
   for (const id of bibliography?.entries.keys() ?? []) {
     const entry = placed.get(id);
-    if (entry) ordered.push(entry);
+    if (entry) ordered.push({ ...entry, serial: ordered.length + 1 });
   }
   return [...ordered, ...trailing];
 }

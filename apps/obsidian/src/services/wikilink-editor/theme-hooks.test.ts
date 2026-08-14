@@ -78,6 +78,7 @@ import { editorInfoField } from "obsidian";
 
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
+import type { DocumentCitations } from "@/services/citation-text/present";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 
 import { wikilinkEditorExtension } from "./extension";
@@ -101,6 +102,22 @@ function viewOf(
     content?: RenderedCitation;
   } = {},
 ) {
+  // Held once, the way the service holds one document's answer: every ask
+  // gets the same value, which is what lets a widget compare by reference.
+  const held: DocumentCitations = {
+    entrySerials: false,
+    formatted: new Map([
+      [
+        citationKey({
+          source: "[@example, p. 7]",
+          works: [LITERATURE_NOTE.indexedKey],
+        }),
+        occurrences(content),
+      ],
+    ]),
+    summaries: new Map([[LITERATURE_NOTE.indexedKey, "Example (2020)"]]),
+    literalWorks: new Map(),
+  };
   const view = new EditorView({
     parent: document.body,
     state: EditorState.create({
@@ -111,24 +128,7 @@ function viewOf(
           literatureNote: (linkpath) =>
             linkpath === "literatures/example" ? LITERATURE_NOTE : null,
           enabled: () => enabled,
-          citationText: () => {
-            if (!formatted) return null;
-            return {
-              formatted: new Map([
-                [
-                  citationKey({
-                    source: "[@example, p. 7]",
-                    works: [LITERATURE_NOTE.indexedKey],
-                  }),
-                  occurrences(content),
-                ],
-              ]),
-              summaries: new Map([
-                [LITERATURE_NOTE.indexedKey, "Example (2020)"],
-              ]),
-              literalWorks: new Map(),
-            };
-          },
+          citationText: () => (formatted ? held : null),
           requestCitationText: () => undefined,
         }),
       ],

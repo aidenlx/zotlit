@@ -106,6 +106,7 @@ describe("buildReferenceEntries", () => {
         occurrences: [occurrenceAt(2)],
         kind: "rendered",
         source: sources.get("ALPHA002"),
+        serial: 1,
         marker: [{ t: "Str", c: "[1]" }],
         content: alpha.content,
       },
@@ -116,6 +117,7 @@ describe("buildReferenceEntries", () => {
         occurrences: [occurrenceAt(1)],
         kind: "rendered",
         source: sources.get("ZEBRA001"),
+        serial: 2,
         marker: [{ t: "Str", c: "[2]" }],
         content: zebra.content,
       },
@@ -156,6 +158,36 @@ describe("buildReferenceEntries", () => {
       ["BOOK0003", "rendered"],
       ["GONE0001", "missing"],
       ["BOOK0002", "unrendered"],
+    ]);
+  });
+
+  // The Entry Serial names a place in the bibliography, so it counts the
+  // formatted entries alone: a Reference Error takes no number and shifts none.
+  it("numbers the formatted entries by their place in the bibliography", () => {
+    const citations = [
+      citation("GONE0001", 1),
+      citation("BOOK0002", 2),
+      citation("BOOK0003", 3),
+    ];
+    const sources = new Map([
+      ["BOOK0002", source("BOOK0002", "ref-two")],
+      ["BOOK0003", source("BOOK0003", "ref-three")],
+    ]);
+    const bibliography = completed(
+      new Map([
+        ["ref-three", rendered("Three")],
+        ["ref-two", rendered("Two")],
+      ]),
+    );
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (entry) => [entry.id, entry.kind === "rendered" ? entry.serial : null],
+      ),
+    ).toStrictEqual([
+      ["BOOK0003", 1],
+      ["BOOK0002", 2],
+      ["GONE0001", null],
     ]);
   });
 

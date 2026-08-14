@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { themeHook } from "@/lib/theme-hooks";
 import type {
   Citation,
   ReferenceSource,
@@ -27,7 +28,8 @@ import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
 import { ALPHA, firstText } from "./__fixtures__";
-import { citationKey } from "./present";
+import { citationElement, citationKey } from "./present";
+import type { FormattedOccurrence } from "./present";
 import { CitationText } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -76,6 +78,31 @@ const AUTHOR_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   </info>
   <citation><layout><names variable="author"><name form="short"/></names></layout></citation>
   <bibliography><layout><names variable="author"><name/></names></layout></bibliography>
+</style>`;
+
+/**
+ * A note-class style: citeproc writes every citation as a footnote, which is
+ * the whole document no inline surface can show without Entry Serials.
+ */
+const NOTE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
+  <info>
+    <title>Note integration</title>
+    <id>http://example.com/note-integration</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation>
+    <layout delimiter="; ">
+      <names variable="author"><name/></names>
+      <text variable="title" prefix=", " suffix="."/>
+    </layout>
+  </citation>
+  <bibliography>
+    <layout>
+      <names variable="author"><name/></names>
+      <text variable="title" prefix=". " suffix="."/>
+    </layout>
+  </bibliography>
 </style>`;
 
 const BODY =
@@ -212,6 +239,42 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
       ),
     ).toBe(false);
     expect(markers(excludedEntries)).toEqual(["[1]"]);
+  });
+
+  // The acceptance scenario of the whole rework: a note-class style shows its
+  // citations as Entry Serials inline and its full entries in the sidebar,
+  // with the digits inline and in the gutter reading the same.
+  it("shows a note-class style's citations as the serials its sidebar gutter repeats", async () => {
+    const body = "Both [@doe2024; @roe2025], then @roe2025 alone.";
+    await using harness = await createCitationIndexHarness({
+      "draft.md": body,
+    });
+    const { draft, index } = harness;
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, NOTE_STYLE);
+    await text.ready;
+
+    const set = await index.getDocumentCitationSet(draft);
+    const rendered = await text.load(draft);
+    const entries = await sidebarEntries(engine, set.citations, NOTE_STYLE);
+
+    expect(rendered.entrySerials).toBe(true);
+    expect(serialRuns(rendered.formatted.get("[@doe2024; @roe2025]"))).toEqual([
+      "1,2",
+    ]);
+    expect(serialRuns(rendered.formatted.get("@roe2025"))).toEqual(["2"]);
+    // The sidebar shows the same works in the same order, each entry formatted
+    // in full, and its gutter carries the very digits the citations show.
+    expect(
+      entries.map((entry) =>
+        entry.kind === "rendered" ? entry.serial : undefined,
+      ),
+    ).toEqual([1, 2]);
+    expect(
+      entries.map((entry) =>
+        entry.kind === "rendered" ? inlineText(entry.content) : undefined,
+      ),
+    ).toEqual(["Doe. Doe study.", "Roe. Roe study."]);
   });
 
   it("keeps resolved items from a partial cluster in numeric context", async () => {
@@ -351,6 +414,14 @@ function openText(
     bibliographyRender: {
       renderCitationsAst: (citations, items) =>
         engine.renderCitationsAst({ citations, items, styleXml }),
+      renderAst: async (items) => {
+        const entries = await engine.renderBibliographyAst({ items, styleXml });
+        return {
+          kind: "rendered",
+          entries,
+          hasEntryMarkers: entries.some(({ marker }) => marker !== undefined),
+        };
+      },
       on: () => () => undefined,
     },
   });
@@ -363,6 +434,7 @@ async function openEngine(): Promise<CitationEngine> {
 async function sidebarEntries(
   engine: CitationEngine,
   citations: readonly Citation[],
+  styleXml: string = NUMERIC_STYLE,
 ): Promise<ReferenceEntry[]> {
   const sources = referenceSources();
   const items = citations.flatMap(({ indexedKey }) => {
@@ -371,7 +443,7 @@ async function sidebarEntries(
   });
   const bibliography = await engine.renderBibliographyAst({
     items,
-    styleXml: NUMERIC_STYLE,
+    styleXml,
   });
   return buildReferenceEntries(citations, sources, {
     bibliography: {
@@ -411,6 +483,22 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
     [KEY_A, source("doe2024", 1, "Doe")],
     [KEY_B, source("roe2025", 2, "Roe")],
   ]);
+}
+
+/**
+ * The Entry Serial run each occurrence of one held Citation shows, read off
+ * the element a surface inserts — the digits a reader sees, not the numbers
+ * behind them.
+ */
+function serialRuns(
+  held: readonly FormattedOccurrence[] = [],
+): (string | undefined)[] {
+  return held.map(
+    (occurrence) =>
+      citationElement(document, occurrence).querySelector(
+        `.${themeHook.entrySerial}`,
+      )?.textContent ?? undefined,
+  );
 }
 
 function markers(entries: readonly ReferenceEntry[]): (string | undefined)[] {

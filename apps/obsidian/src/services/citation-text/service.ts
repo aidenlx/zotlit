@@ -33,6 +33,7 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import { holdsNote } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
 
@@ -57,9 +58,13 @@ const HELD_DOCUMENTS = 8;
 
 const NO_CITATIONS: DocumentCitations = {
   formatted: new Map(),
+  entrySerials: false,
   summaries: new Map(),
   literalWorks: new Map(),
 };
+
+/** What a citation shows in place of a note where no serial stands for one. */
+const NO_SERIALS: readonly undefined[] = [];
 
 /** One document's citations, and what the read that produced them answered. */
 interface HeldCitations {
@@ -87,7 +92,7 @@ export interface CitationTextDeps {
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
-    "renderCitationsAst" | "on"
+    "renderCitationsAst" | "renderAst" | "on"
   >;
 }
 
@@ -283,12 +288,27 @@ export class CitationText extends Service<void> {
       return context === null ? [] : [context];
     });
     const sources = citations.map(({ renderSource }) => renderSource);
-    const items = [...works.values()].map(({ csl }) => csl);
+    // A citation source names each work by its Indexed Key, which is the one
+    // CSL id a Pandoc citekey can spell; the bibliography addresses the same
+    // work by the item identity its own render carries.
+    const items = [...works].map(([indexedKey, { csl }]) => ({
+      ...csl,
+      id: indexedKey,
+    }));
 
     const rendered = await this.#bibliographyRender.renderCitationsAst(
       sources,
       items,
     );
+    // A style whose citations are footnotes leaves a note in the rendered
+    // content, which no surface can show. That output — not the style — is
+    // what puts the whole document on Entry Serials.
+    const entrySerials =
+      rendered?.some(({ content }) => holdsNote(content)) ?? false;
+    const serials = entrySerials
+      ? await this.#readSerials(set.citations, works)
+      : null;
+
     // Each occurrence keeps the text rendered for its own place in the
     // document, which is what a position-dependent style renders differently
     // from one occurrence of a source to the next. The render answers in the
@@ -299,10 +319,19 @@ export class CitationText extends Service<void> {
       rendered.forEach((text, index) => {
         const { identity, start, complete } = citations[index]!;
         if (!complete) return;
+        // One slot per work the citation names, in the order it names them,
+        // whichever mode it names each of them in.
+        const occurrence: FormattedOccurrence = {
+          start,
+          text,
+          serials:
+            serials === null
+              ? NO_SERIALS
+              : text.citations.map(({ id }) => serials.get(id)),
+        };
         const occurrences = formatted.get(identity);
-        if (occurrences === undefined)
-          formatted.set(identity, [{ start, text }]);
-        else occurrences.push({ start, text });
+        if (occurrences === undefined) formatted.set(identity, [occurrence]);
+        else occurrences.push(occurrence);
       });
     }
     logger.debug("Document citations read", () => ({
@@ -310,6 +339,7 @@ export class CitationText extends Service<void> {
       citations: sources.length,
       wikilinks: wikilinks.citations.length,
       items: items.length,
+      entrySerials,
       formatted: [...formatted.values()].reduce(
         (count, occurrences) => count + occurrences.length,
         0,
@@ -317,11 +347,46 @@ export class CitationText extends Service<void> {
     }));
     return {
       formatted,
+      entrySerials,
       summaries: new Map(
         [...works].map(([indexedKey, { summary }]) => [indexedKey, summary]),
       ),
       literalWorks: literal,
     };
+  }
+
+  /**
+   * The Entry Serial of each cited work, by the Indexed Key its citations name
+   * it under.
+   *
+   * A serial is a work's place in the References Sidebar's list, so it is read
+   * off the very bibliography that sidebar shows: the same works in the same
+   * order, which the render cache answers for both surfaces from one render.
+   *
+   * @returns the serials by Indexed Key; a work the bibliography rendered no
+   *   entry for is absent, and every work is absent when no bibliography could
+   *   be rendered at all, which shows the citation a ⚠ in each slot.
+   */
+  async #readSerials(
+    citations: readonly Citation[],
+    works: ReadonlyMap<string, CitedItem>,
+  ): Promise<ReadonlyMap<string, number>> {
+    const serials = new Map<string, number>();
+    const outcome = await this.#bibliographyRender.renderAst(
+      bibliographyItems(citations, works),
+    );
+    if (outcome.kind !== "rendered") {
+      logger.debug("Cannot number the cited entries", { kind: outcome.kind });
+      return serials;
+    }
+    const places = new Map(
+      outcome.entries.map(({ id }, index) => [id, index + 1]),
+    );
+    for (const [indexedKey, { csl }] of works) {
+      const serial = places.get(csl.id);
+      if (serial !== undefined) serials.set(indexedKey, serial);
+    }
+    return serials;
   }
 
   /**
@@ -429,7 +494,7 @@ export class CitationText extends Service<void> {
 
         const { title, subtitle } = itemSummary(item, fields);
         works.set(indexedKey, {
-          csl: { ...itemToCsl(item, user), id: indexedKey },
+          csl: itemToCsl(item, user),
           summary: subtitle || title,
         });
       }
@@ -442,10 +507,32 @@ export class CitationText extends Service<void> {
 
 /** One cited work, as the render and the display surfaces read it. */
 interface CitedItem {
-  /** The work as the engine reads it, its `id` the Indexed Key a source names it by. */
+  /** The work as the engine reads it, its `id` the item identity a bibliography entry carries. */
   csl: CslItemData;
   /** `Creators (Year)`, the navigation label of every citekey naming this work. */
   summary: string;
+}
+
+/**
+ * The cited works in the order the References Sidebar lists them, which is the
+ * order the document's Citations first name them.
+ *
+ * The sidebar reads its own bibliography from the same works in this same
+ * order, so both surfaces are answered from one render and the serials inline
+ * are the digits that sidebar's gutter shows.
+ *
+ * @param citations one entry per work the document cites, in document order.
+ */
+function bibliographyItems(
+  citations: readonly Citation[],
+  works: ReadonlyMap<string, CitedItem>,
+): CslItemData[] {
+  const items: CslItemData[] = [];
+  for (const { indexedKey } of citations) {
+    const work = indexedKey === null ? undefined : works.get(indexedKey);
+    if (work) items.push(work.csl);
+  }
+  return items;
 }
 
 /** One Citation of a document, at the offset the document writes it. */

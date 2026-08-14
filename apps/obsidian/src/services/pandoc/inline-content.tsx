@@ -266,6 +266,39 @@ function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
 }
 
 /**
+ * Whether a flow holds a note — the footnote a note-class Citation and
+ * References Style writes a citation as, which no surface of a document can
+ * show and an Entry Serial run stands in for.
+ *
+ * It is the one signal that puts a document on Entry Serials: a surface reads
+ * it off what the engine rendered, rather than off the style that rendered it.
+ */
+export function holdsNote(nodes: Inlines): boolean {
+  return nodes.some((inline) => {
+    switch (inline.t) {
+      case "Note":
+        return true;
+      case "Emph":
+      case "Strong":
+      case "Underline":
+      case "Strikeout":
+      case "Superscript":
+      case "Subscript":
+      case "SmallCaps":
+        return holdsNote(inline.c);
+      case "Quoted":
+      case "Cite":
+      case "Link":
+      case "Image":
+      case "Span":
+        return holdsNote(inline.c[1]);
+      default:
+        return false;
+    }
+  });
+}
+
+/**
  * The text one flow reads as, for a destination that takes no elements at all —
  * an Entry Marker written beside plain text, above all.
  */
