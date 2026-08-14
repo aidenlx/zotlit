@@ -18,13 +18,19 @@ const offered: ReferencesCopyTarget = {
 function snapshot(
   overrides: Partial<CopyBibliographySnapshot> = {},
 ): CopyBibliographySnapshot {
-  const content = document.createDocumentFragment();
-  const emphasis = document.createElement("i");
-  emphasis.append("Field notes");
-  content.append("Rivers, A. (2020). ", emphasis, ". Harbour Press.");
   return {
     ...offered,
-    entries: [{ marker: "[1]", content }],
+    entries: [
+      {
+        marker: [{ t: "Str", c: "[1]" }],
+        content: [
+          { t: "Str", c: "Rivers, A. (2020)." },
+          { t: "Space" },
+          { t: "Emph", c: [{ t: "Str", c: "Field notes" }] },
+          { t: "Str", c: ". Harbour Press." },
+        ],
+      },
+    ],
     ...overrides,
   };
 }
@@ -66,7 +72,7 @@ describe("onCopyBibliography", () => {
     await build().onCopyBibliography(offered);
 
     expect(writeClipboard).toHaveBeenCalledExactlyOnceWith({
-      html: "<p>[1] Rivers, A. (2020). <i>Field notes</i>. Harbour Press.</p>",
+      html: "<p>[1] Rivers, A. (2020). <em>Field notes</em>. Harbour Press.</p>",
       text: "[1] Rivers, A. (2020). Field notes. Harbour Press.",
     });
     expect(notify).toHaveBeenCalledExactlyOnceWith(

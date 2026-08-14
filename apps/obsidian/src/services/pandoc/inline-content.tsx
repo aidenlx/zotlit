@@ -82,8 +82,12 @@ function contextOf({ serials, links = "render" }: InlineContentProps): Context {
   return { serials, links };
 }
 
-/** The elements pandoc's own HTML writer gives these constructors. */
-const WRAPPER_TAGS = {
+/**
+ * The elements pandoc's own HTML writer gives these constructors. The one
+ * vocabulary of the plugin: the clipboard serializer writes the same elements
+ * this shows, so a formatted entry reads the same wherever it lands.
+ */
+export const WRAPPER_TAGS = {
   Emph: "em",
   Strong: "strong",
   Underline: "u",
@@ -92,7 +96,8 @@ const WRAPPER_TAGS = {
   Subscript: "sub",
 } as const;
 
-const QUOTE_MARKS = {
+/** The characters a quotation reaches the reader as, by its own quote type. */
+export const QUOTE_MARKS = {
   SingleQuote: ["‘", "’"],
   DoubleQuote: ["“", "”"],
 } as const satisfies Record<QuoteType["t"], readonly [string, string]>;
@@ -102,7 +107,7 @@ const QUOTE_MARKS = {
  * column in the style's own layout, which an inline flow has nowhere to put, so
  * each hands its content over and leaves one space where it stood.
  */
-const DISPLAY_CLASSES = new Set([
+export const DISPLAY_CLASSES = new Set([
   "csl-block",
   "csl-indent",
   "csl-left-margin",
@@ -327,11 +332,12 @@ function textOf(node: ReactNode): string {
 
 /**
  * A target is absolute here or nowhere: a fragment or a relative path resolves
- * against a document the surface has none of.
+ * against a document the surface has none of, and a destination outside the
+ * vault has none of either.
  *
  * @returns the target when it is followable, `null` otherwise.
  */
-function linkHref(url: string): string | null {
+export function linkHref(url: string): string | null {
   const target = URL.parse(url);
   return target && LINK_SCHEMES.has(target.protocol) ? url : null;
 }

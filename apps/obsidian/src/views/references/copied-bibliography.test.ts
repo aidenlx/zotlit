@@ -1,22 +1,56 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
+import type { Attr, Inline, Inlines } from "@/services/pandoc/ast";
+
 import { toCopiedBibliography } from "./copied-bibliography";
 import type { CopiedBibliographyEntry } from "./copied-bibliography";
 
-function entry(html: string, marker?: string): CopiedBibliographyEntry {
-  const content = document.createDocumentFragment();
-  const holder = document.createElement("div");
-  holder.innerHTML = html;
-  content.append(...holder.childNodes);
+const NO_ATTR: Attr = ["", [], []];
+
+/** One run of text as the flow a style writes it in: words, spaces apart. */
+function words(text: string): Inlines {
+  const flow: Inline[] = [];
+  for (const [index, word] of text.split(" ").entries()) {
+    if (index > 0) flow.push({ t: "Space" });
+    if (word) flow.push({ t: "Str", c: word });
+  }
+  return flow;
+}
+
+function emph(text: string): Inline {
+  return { t: "Emph", c: words(text) };
+}
+
+function link(text: string, url: string): Inline {
+  return { t: "Link", c: [NO_ATTR, words(text), [url, ""]] };
+}
+
+function span(classes: readonly string[], content: Inlines): Inline {
+  return { t: "Span", c: [["", classes, []], content] };
+}
+
+function note(text: string): Inline {
+  return { t: "Note", c: [{ t: "Para", c: words(text) }] };
+}
+
+function entry(content: Inlines, marker?: Inlines): CopiedBibliographyEntry {
   return { marker, content };
 }
 
 describe("toCopiedBibliography", () => {
   it("separates author-date entries with a blank line and adds no heading", () => {
     const { text } = toCopiedBibliography([
-      entry("Rivers, A. (2020). <i>Field notes</i>. Harbour Press."),
-      entry("Stone, B. (2018). <i>Tidal margins</i>. Harbour Press."),
+      entry([
+        ...words("Rivers, A. (2020). "),
+        emph("Field notes"),
+        ...words(". Harbour Press."),
+      ]),
+      entry([
+        ...words("Stone, B. (2018). "),
+        emph("Tidal margins"),
+        ...words(". Harbour Press."),
+      ]),
     ]);
 
     expect(text).toBe(
@@ -27,8 +61,22 @@ describe("toCopiedBibliography", () => {
 
   it("keeps the Entry Markers and the bibliography order of a numeric style", () => {
     const { text } = toCopiedBibliography([
-      entry("Stone, B. <i>Tidal margins</i>. Harbour Press, 2018.", "[1]"),
-      entry("Rivers, A. <i>Field notes</i>. Harbour Press, 2020.", "[2]"),
+      entry(
+        [
+          ...words("Stone, B. "),
+          emph("Tidal margins"),
+          ...words(". Harbour Press, 2018."),
+        ],
+        words("[1]"),
+      ),
+      entry(
+        [
+          ...words("Rivers, A. "),
+          emph("Field notes"),
+          ...words(". Harbour Press, 2020."),
+        ],
+        words("[2]"),
+      ),
     ]);
 
     expect(text).toBe(
@@ -39,18 +87,31 @@ describe("toCopiedBibliography", () => {
 
   it("reads the visible text of inline CSL semantics", () => {
     const { text } = toCopiedBibliography([
-      entry(
-        "Rivers, A. <i>H<sub>2</sub>O</i> at 10<sup>3</sup> m, " +
-          '<span style="font-variant: small-caps;">ii</span>.',
-      ),
+      entry([
+        ...words("Rivers, A. "),
+        { t: "Str", c: "H" },
+        { t: "Subscript", c: words("2") },
+        { t: "Str", c: "O" },
+        ...words(" at 10"),
+        { t: "Superscript", c: words("3") },
+        ...words(" m, "),
+        { t: "SmallCaps", c: words("ii") },
+        { t: "Str", c: "." },
+      ]),
     ]);
 
     expect(text).toBe("Rivers, A. H2O at 103 m, ii.");
   });
 
-  it("collapses the layout whitespace an entry is formatted across", () => {
+  it("collapses the layout a style lays an entry out across", () => {
     const { text } = toCopiedBibliography([
-      entry("\n  Rivers, A.\n  <i>Field\n  notes</i>.\n", "1."),
+      entry(
+        [
+          span(["csl-block"], words("Rivers, A.")),
+          span(["csl-indent"], [emph("Field notes"), { t: "Str", c: "." }]),
+        ],
+        words("1."),
+      ),
     ]);
 
     expect(text).toBe("1. Rivers, A. Field notes.");
@@ -58,13 +119,26 @@ describe("toCopiedBibliography", () => {
 
   it("keeps non-ASCII text and the spacing a style chose", () => {
     const { text } = toCopiedBibliography([
-      entry("李四. 《潮汐边缘》. 港口出版社, 2018."),
-      entry("Rivers,\u00a0A. — <i>Field notes</i>."),
+      entry(words("李四. 《潮汐边缘》. 港口出版社, 2018.")),
+      entry([
+        { t: "Str", c: "Rivers, A." },
+        ...words(" — "),
+        emph("Field notes"),
+        { t: "Str", c: "." },
+      ]),
     ]);
 
     expect(text).toBe(
-      "李四. 《潮汐边缘》. 港口出版社, 2018.\n\nRivers,\u00a0A. — Field notes.",
+      "李四. 《潮汐边缘》. 港口出版社, 2018.\n\nRivers, A. — Field notes.",
     );
+  });
+
+  it("carries no Entry Serial for a style that writes its citations as notes", () => {
+    const { text } = toCopiedBibliography([
+      entry([...words("Rivers, A. (2020). Field notes."), note("Ibid., 12.")]),
+    ]);
+
+    expect(text).toBe("Rivers, A. (2020). Field notes.");
   });
 
   it("returns nothing for an empty bibliography", () => {
@@ -85,8 +159,16 @@ function paragraphs(html: string): HTMLElement[] {
 describe("toCopiedBibliography rich HTML", () => {
   it("writes one paragraph per entry and nothing above them", () => {
     const { html } = toCopiedBibliography([
-      entry("Rivers, A. (2020). <i>Field notes</i>. Harbour Press."),
-      entry("Stone, B. (2018). <i>Tidal margins</i>. Harbour Press."),
+      entry([
+        ...words("Rivers, A. (2020). "),
+        emph("Field notes"),
+        ...words(". Harbour Press."),
+      ]),
+      entry([
+        ...words("Stone, B. (2018). "),
+        emph("Tidal margins"),
+        ...words(". Harbour Press."),
+      ]),
     ]);
     const rendered = paragraphs(html);
 
@@ -99,8 +181,14 @@ describe("toCopiedBibliography rich HTML", () => {
 
   it("keeps the Entry Markers and the bibliography order of a numeric style", () => {
     const { html } = toCopiedBibliography([
-      entry("Stone, B. <i>Tidal margins</i>. Harbour Press, 2018.", "[1]"),
-      entry("Rivers, A. <i>Field notes</i>. Harbour Press, 2020.", "[2]"),
+      entry(
+        words("Stone, B. Tidal margins. Harbour Press, 2018."),
+        words("[1]"),
+      ),
+      entry(
+        words("Rivers, A. Field notes. Harbour Press, 2020."),
+        words("[2]"),
+      ),
     ]);
 
     expect(paragraphs(html).map((p) => p.textContent)).toEqual([
@@ -111,15 +199,22 @@ describe("toCopiedBibliography rich HTML", () => {
 
   it("keeps the inline CSL semantics a style rendered", () => {
     const { html } = toCopiedBibliography([
-      entry(
-        "Rivers, A. <i>H<sub>2</sub>O</i> at 10<sup>3</sup> m, " +
-          '<span style="font-variant: small-caps;">ii</span>. ' +
-          '<a href="https://doi.org/10.1000/182">https://doi.org/10.1000/182</a>',
-      ),
+      entry([
+        ...words("Rivers, A. "),
+        emph("H"),
+        { t: "Subscript", c: words("2") },
+        { t: "Str", c: "O" },
+        ...words(" at 10"),
+        { t: "Superscript", c: words("3") },
+        ...words(" m, "),
+        { t: "SmallCaps", c: words("ii") },
+        ...words(". "),
+        link("https://doi.org/10.1000/182", "https://doi.org/10.1000/182"),
+      ]),
     ]);
     const [rendered] = paragraphs(html);
 
-    expect(rendered!.querySelector("i")?.textContent).toBe("H2O");
+    expect(rendered!.querySelector("em")?.textContent).toBe("H");
     expect(rendered!.querySelector("sub")?.textContent).toBe("2");
     expect(rendered!.querySelector("sup")?.textContent).toBe("3");
     expect(
@@ -130,35 +225,49 @@ describe("toCopiedBibliography rich HTML", () => {
     );
   });
 
+  it("writes a strikeout as the element pandoc's own writer gives it", () => {
+    const { html } = toCopiedBibliography([
+      entry([
+        { t: "Strikeout", c: words("Retracted") },
+        ...words(". Rivers, A. (2020)."),
+      ]),
+    ]);
+    const [rendered] = paragraphs(html);
+
+    expect(rendered!.querySelector("del")?.textContent).toBe("Retracted");
+    expect(rendered!.textContent).toBe("Retracted. Rivers, A. (2020).");
+  });
+
   it("carries the styling of a CSL semantic and no markup of its own", () => {
     const { html } = toCopiedBibliography([
-      entry(
-        '<span class="nocase" id="ref-tidal" style="font-variant: small-caps;">ii</span>' +
-          ' <mark class="zt-hit">Field notes</mark>.',
-      ),
+      entry([
+        span(["nocase"], [{ t: "SmallCaps", c: words("ii") }]),
+        ...words(" Field notes."),
+      ]),
     ]);
     const [rendered] = paragraphs(html);
     const semantic = rendered!.querySelector("span")!;
 
     expect(semantic.getAttributeNames()).toEqual(["style"]);
     expect(semantic.style.getPropertyValue("font-variant")).toBe("small-caps");
-    expect(rendered!.querySelector("mark")).toBeNull();
     expect(rendered!.textContent).toBe("ii Field notes.");
   });
 
   it("keeps a link's text and drops a target no destination should follow", () => {
     const { html } = toCopiedBibliography([
-      entry(
-        '<a href="javascript:alert(1)">Field notes</a>, ' +
-          '<a href="/vault/notes/tidal.md">Tidal margins</a>, ' +
-          '<a href="mailto:rivers@example.org">Rivers, A.</a>',
-      ),
+      entry([
+        link("Field notes", "javascript:alert(1)"),
+        ...words(", "),
+        link("Tidal margins", "/vault/notes/tidal.md"),
+        ...words(", "),
+        link("Rivers, A.", "mailto:rivers@example.org"),
+      ]),
     ]);
     const [rendered] = paragraphs(html);
 
     expect(
       [...rendered!.querySelectorAll("a")].map((a) => a.getAttribute("href")),
-    ).toEqual([null, null, "mailto:rivers@example.org"]);
+    ).toEqual(["mailto:rivers@example.org"]);
     expect(rendered!.textContent).toBe(
       "Field notes, Tidal margins, Rivers, A.",
     );
@@ -166,14 +275,39 @@ describe("toCopiedBibliography rich HTML", () => {
 
   it("keeps the punctuation and non-ASCII text of an entry", () => {
     const { html } = toCopiedBibliography([
-      entry("李四. 《潮汐边缘》. 港口出版社, 2018."),
-      entry("Rivers, A. — <i>Field &amp; notes</i>."),
+      entry(words("李四. 《潮汐边缘》. 港口出版社, 2018.")),
+      entry([
+        ...words("Rivers, A. — "),
+        { t: "Emph", c: words("Field & notes") },
+        { t: "Str", c: "." },
+      ]),
     ]);
 
     expect(paragraphs(html).map((p) => p.textContent)).toEqual([
       "李四. 《潮汐边缘》. 港口出版社, 2018.",
-      "Rivers, A. — Field & notes.",
+      "Rivers, A. — Field & notes.",
     ]);
+  });
+
+  it("writes an entry's text as text, whatever a style put in it", () => {
+    const { html } = toCopiedBibliography([
+      entry(words("Rivers, A. <script>alert(1)</script> & Co.")),
+    ]);
+
+    expect(html).not.toContain("<script>");
+    expect(paragraphs(html)[0]!.textContent).toBe(
+      "Rivers, A. <script>alert(1)</script> & Co.",
+    );
+  });
+
+  it("carries no Entry Serial for a style that writes its citations as notes", () => {
+    const { html } = toCopiedBibliography([
+      entry([...words("Rivers, A. (2020). Field notes."), note("Ibid., 12.")]),
+    ]);
+
+    expect(paragraphs(html)[0]!.textContent).toBe(
+      "Rivers, A. (2020). Field notes.",
+    );
   });
 
   it("returns nothing for an empty bibliography", () => {

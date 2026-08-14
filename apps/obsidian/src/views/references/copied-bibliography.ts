@@ -1,11 +1,20 @@
 // Serialization of a Copied Bibliography: a complete bibliography rendering, written for a destination outside the vault.
 
-/** One entry of a completed bibliography, as the render cache formatted it. */
+import type { Inlines } from "@/services/pandoc/ast";
+import {
+  DISPLAY_CLASSES,
+  inlineText,
+  linkHref,
+  QUOTE_MARKS,
+  WRAPPER_TAGS,
+} from "@/services/pandoc/inline-content";
+
+/** One entry of a completed bibliography, as the engine formatted it. */
 export interface CopiedBibliographyEntry {
   /** The style's Entry Marker, or `undefined` when the style renders none. */
-  marker: string | undefined;
+  readonly marker: Inlines | undefined;
   /** The entry text as one inline flow. */
-  content: DocumentFragment;
+  readonly content: Inlines;
 }
 
 /** A Copied Bibliography in the representations the clipboard offers. */
@@ -36,102 +45,147 @@ export function toCopiedBibliography(
 }
 
 /**
- * The inline elements a CSL semantic reaches the entry as: emphasis, weight,
- * underline, superscript, subscript, a link, and the span that carries small
- * caps. Anything else hands its own content over and keeps the text.
- */
-const PORTABLE_TAGS = new Set([
-  "a",
-  "b",
-  "em",
-  "i",
-  "span",
-  "strong",
-  "sub",
-  "sup",
-  "u",
-]);
-
-/**
- * The declarations that carry a CSL semantic no element stands for — small caps
- * above all. They ride as inline style because the destination is another
- * application, which has no stylesheet of ours to read a class against.
- */
-const PORTABLE_STYLE = [
-  "font-variant",
-  "font-style",
-  "font-weight",
-  "text-decoration",
-];
-
-/**
- * The schemes a bibliography link reaches another application under. A style
- * writes a DOI, a URL, or an address; a target under any other scheme carries
- * no CSL semantic and stays behind, so an active one — `javascript:` above all
- * — never reaches the clipboard.
- */
-const PORTABLE_SCHEMES = new Set(["http:", "https:", "mailto:"]);
-
-/**
  * One paragraph, holding the Entry Marker and the entry as portable markup.
  *
- * The entry is rebuilt rather than cloned: each element is remade from the
- * allowed tags, and the only attributes that cross over are a link's target
- * under an allowed scheme and the inline declarations above, so what reaches
- * the clipboard carries markup the destination can read and nothing else,
- * whatever a style put in the entry.
+ * The entry is written from the formatted flow the engine handed over, so what
+ * reaches the clipboard is the same vocabulary every surface shows: the
+ * elements pandoc's own HTML writer names, a link's target under a followable
+ * scheme, and the declarations small caps rides under. A style writes whatever
+ * it likes into an entry; nothing else of it crosses over.
  */
 function richEntry({ marker, content }: CopiedBibliographyEntry): string {
   const paragraph = document.createElement("p");
-  const label = marker === undefined ? "" : collapse(marker);
+  const label = marker === undefined ? "" : collapse(inlineText(marker));
   if (label) paragraph.append(`${label} `);
   paragraph.append(portable(content));
   return paragraph.outerHTML;
 }
 
-function portable(source: Node): DocumentFragment {
+/**
+ * Write one formatted flow as the markup a destination outside the vault reads.
+ *
+ * The walk follows the one the surfaces render under: a constructor that stands
+ * for an element becomes that element, and one that stands for a layout hands
+ * its own content over, leaving a single space where a display span stood.
+ */
+function portable(nodes: Inlines): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  for (const node of source.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      fragment.append(node.textContent ?? "");
-      continue;
-    }
-    if (!(node instanceof Element)) continue;
-    const tag = node.tagName.toLowerCase();
-    if (!PORTABLE_TAGS.has(tag)) {
-      fragment.append(portable(node));
-      continue;
-    }
+  /** Whether the flow already ends in a separator, so none is owed. */
+  let spaced = true;
+  /** Whether a display span just ended, so the next content starts a part. */
+  let boundary = false;
+
+  function separate(): void {
+    if (spaced) return;
+    fragment.append(" ");
+    spaced = true;
+  }
+
+  function add(node: Node | string): void {
+    if (boundary) separate();
+    boundary = false;
+    fragment.append(node);
+    spaced = false;
+  }
+
+  function wrap(tag: string, content: Inlines): HTMLElement {
     const element = document.createElement(tag);
-    const href = tag === "a" ? portableHref(node.getAttribute("href")) : null;
-    if (href) element.setAttribute("href", href);
-    if (node instanceof HTMLElement) {
-      for (const property of PORTABLE_STYLE) {
-        const value = node.style.getPropertyValue(property);
-        if (value) element.style.setProperty(property, value);
+    element.append(portable(content));
+    return element;
+  }
+
+  function walk(inlines: Inlines): void {
+    for (const inline of inlines) {
+      switch (inline.t) {
+        case "Str":
+          add(inline.c);
+          break;
+        case "Space":
+        case "SoftBreak":
+          separate();
+          break;
+        case "Emph":
+        case "Strong":
+        case "Underline":
+        case "Strikeout":
+        case "Superscript":
+        case "Subscript":
+          add(wrap(WRAPPER_TAGS[inline.t], inline.c));
+          break;
+        case "SmallCaps": {
+          // The one CSL semantic no element stands for. It rides as inline
+          // style because the destination is another application, which has no
+          // stylesheet of ours to read a class against.
+          const element = wrap("span", inline.c);
+          element.style.setProperty("font-variant", "small-caps");
+          add(element);
+          break;
+        }
+        case "Quoted": {
+          const [open, close] = QUOTE_MARKS[inline.c[0].t];
+          add(open);
+          walk(inline.c[1]);
+          add(close);
+          break;
+        }
+        case "Code": {
+          const [, source] = inline.c;
+          add(source);
+          break;
+        }
+        case "Math": {
+          const [, source] = inline.c;
+          add(source);
+          break;
+        }
+        case "Cite": {
+          const [, content] = inline.c;
+          walk(content);
+          break;
+        }
+        case "Image": {
+          const [, alt] = inline.c;
+          walk(alt);
+          break;
+        }
+        case "Span": {
+          const [[, classes], content] = inline.c;
+          const display = classes.some((name) => DISPLAY_CLASSES.has(name));
+          if (display) separate();
+          walk(content);
+          if (display) boundary = true;
+          break;
+        }
+        case "Link": {
+          const [, children, [url]] = inline.c;
+          const href = linkHref(url);
+          if (href === null) {
+            walk(children);
+            break;
+          }
+          const anchor = wrap("a", children);
+          anchor.setAttribute("href", href);
+          add(anchor);
+          break;
+        }
+        case "LineBreak":
+        case "Note":
+        case "RawInline":
+          // A line break is layout the paragraph has no room for, a note is a
+          // document-scoped coordinate that travels with no document, and raw
+          // markup belongs to a format the destination is not reading.
+          break;
       }
     }
-    element.append(portable(node));
-    fragment.append(element);
   }
+
+  walk(nodes);
   return fragment;
 }
 
-/**
- * A target is absolute here or nowhere: the destination is another
- * application, which resolves a relative target against a document of its own.
- *
- * @returns the target when its scheme is portable, `null` otherwise.
- */
-function portableHref(href: string | null): string | null {
-  if (!href) return null;
-  const target = URL.parse(href);
-  return target && PORTABLE_SCHEMES.has(target.protocol) ? href : null;
-}
-
 function plainEntry({ marker, content }: CopiedBibliographyEntry): string {
-  const body = collapse(content.textContent ?? "");
-  const label = marker === undefined ? "" : collapse(marker);
+  const body = collapse(inlineText(content));
+  const label = marker === undefined ? "" : collapse(inlineText(marker));
   return [label, body].filter(Boolean).join(" ");
 }
 
