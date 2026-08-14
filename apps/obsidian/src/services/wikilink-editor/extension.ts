@@ -19,8 +19,10 @@ import {
   citationContent,
   showCitation,
 } from "@/services/citation-text/present";
-import type { DocumentCitations } from "@/services/citation-text/present";
-import type { RenderedCitation } from "@/services/pandoc/engine";
+import type {
+  DocumentCitations,
+  PresentedCitation,
+} from "@/services/citation-text/present";
 
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";
@@ -157,7 +159,7 @@ class CitationDisplayWidget extends WidgetType {
   readonly #content;
   readonly #className;
 
-  constructor(content: RenderedCitation, tokenClasses: readonly string[]) {
+  constructor(content: PresentedCitation, tokenClasses: readonly string[]) {
     super();
     this.#content = content;
     this.#className = [

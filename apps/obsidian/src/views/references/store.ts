@@ -16,7 +16,16 @@ import type { ReferenceEntry } from "./entries";
 
 export type ReferencesListMode =
   | { kind: "minimal" }
-  | { kind: "bibliography"; hasEntryMarkers: boolean };
+  | {
+      kind: "bibliography";
+      hasEntryMarkers: boolean;
+      /**
+       * Whether the document's citations show Entry Serials, which puts the
+       * same digits in this list's gutter. An entry's own Entry Marker keeps
+       * the gutter where the style writes one.
+       */
+      entrySerials: boolean;
+    };
 
 /** Why the current list cannot become a Copied Bibliography. */
 export type ReferencesCopyBlock =

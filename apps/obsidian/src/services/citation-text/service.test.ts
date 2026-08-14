@@ -19,10 +19,12 @@ import {
   citation,
   firstText,
   literalOccurrences,
+  noted,
   occurrenceTexts,
   rendered,
 } from "./__fixtures__";
 import { citationKey, literalSummaryOf } from "./present";
+import type { FormattedOccurrence } from "./present";
 import { CitationText } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -52,6 +54,8 @@ const LIT_KEY = "BETA5678";
 interface Harness {
   service: CitationText;
   citationRequests: { citations: readonly string[] }[];
+  /** The CSL ids of every bibliography render the read asked for, in order. */
+  bibliographyRequests: string[][];
   /** Fires the Citation Index's own event for one document. */
   indexChanged: (path: string) => void;
   /** Fires the render cache's wholesale drop. */
@@ -70,6 +74,7 @@ async function makeHarness({
   cited = [citation("alpha", ALPHA_KEY)],
   formats = true,
   formatCitations,
+  bibliography,
   links = [],
   notes = {},
   settings = {},
@@ -83,6 +88,12 @@ async function makeHarness({
   formatCitations?: (
     citations: readonly string[],
   ) => Promise<readonly RenderedCitation[] | null>;
+  /**
+   * The works the bibliography renders an entry for, in bibliography order,
+   * out of the works it was asked for. Defaults to all of them in that same
+   * order; `null` for a render that cannot answer at all.
+   */
+  bibliography?: (ids: readonly string[]) => readonly string[] | null;
   /** The wikilinks Obsidian's metadata cache reports for the document. */
   links?: LinkCache[];
   /** The Literature Note each linkpath names, by linkpath. */
@@ -91,6 +102,7 @@ async function makeHarness({
   documentCitationSet?: DocumentCitationSet;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
+  const bibliographyRequests: string[][] = [];
   const listeners = new Map<string, (payload?: never) => void>();
   const listen =
     (event: string) =>
@@ -159,6 +171,24 @@ async function makeHarness({
           formats ? citations.map((source) => rendered(`«${source}»`)) : null,
         );
       },
+      renderAst: (items: readonly { id: string }[]) => {
+        const ids = items.map(({ id }) => id);
+        bibliographyRequests.push(ids);
+        const entries = bibliography ? bibliography(ids) : ids;
+        return Promise.resolve(
+          entries === null
+            ? { kind: "failed" }
+            : {
+                kind: "rendered",
+                entries: entries.map((id) => ({
+                  id,
+                  marker: undefined,
+                  content: [],
+                })),
+                hasEntryMarkers: false,
+              },
+        );
+      },
       on: listen("render"),
     },
     settings: {
@@ -174,6 +204,7 @@ async function makeHarness({
   return {
     service,
     citationRequests,
+    bibliographyRequests,
     indexChanged: (path) => fire("index:changed", path),
     rendersInvalidated: () => fire("render:invalidated"),
     resolutionChanged: () => fire("notes:changed"),
@@ -656,6 +687,133 @@ describe("CitationText staleness", () => {
 
     expect(citationRequests).toHaveLength(2);
     expect(service.peek(NOTE.path)).not.toBeNull();
+    await dispose();
+  });
+});
+
+/**
+ * The Entry Serial standing for each work of one held Citation's first
+ * occurrence.
+ */
+function firstSerials(
+  held: readonly FormattedOccurrence[] = [],
+): readonly (number | undefined)[] | undefined {
+  return held[0]?.serials;
+}
+
+/**
+ * Two Items, so a cluster names two works the bibliography numbers apart. Every
+ * other suite reads one Item for whatever Indexed Key it asks about.
+ */
+function readTwoItems(): void {
+  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
+    (_client, indexedKey) => ({
+      libraryID: 1,
+      key: indexedKey === LIT_KEY ? "BETA123" : "ALPHA123",
+    }),
+  );
+  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) => [
+    { ...ALPHA, key: keys[0] } as never,
+  ]);
+}
+
+describe("CitationText Entry Serials", () => {
+  /** `Both [@alpha; @beta].` under a style whose citations are footnotes. */
+  const CLUSTER = "[@alpha; @beta]";
+  const TWO_WORKS = [citation("alpha", ALPHA_KEY), citation("beta", LIT_KEY)];
+
+  beforeEach(() => {
+    readTwoItems();
+  });
+
+  it("stands one serial per cited work in for the note a style writes", async () => {
+    const { service, bibliographyRequests, dispose } = await makeHarness({
+      body: `Both ${CLUSTER}.`,
+      cited: TWO_WORKS,
+      formatCitations: (sources) => Promise.resolve(sources.map(noted)),
+    });
+
+    const { formatted, entrySerials } = await service.load(NOTE);
+
+    expect(entrySerials).toBe(true);
+    expect(firstSerials(formatted.get(CLUSTER))).toEqual([1, 2]);
+    // The bibliography is read for the works the document cites, in the order
+    // the References Sidebar lists them.
+    expect(bibliographyRequests).toHaveLength(1);
+    await dispose();
+  });
+
+  // Author-in-text and author-suppressed members are the same works in the
+  // same order, so the digits they show are the same digits.
+  it("numbers the works of a citation however it names them", async () => {
+    const { service, dispose } = await makeHarness({
+      body: `Both ${CLUSTER}.`,
+      cited: TWO_WORKS,
+      formatCitations: () =>
+        Promise.resolve([
+          {
+            ...noted(`[@${ALPHA_KEY}; @${LIT_KEY}]`),
+            citations: [
+              { id: ALPHA_KEY, mode: "author-in-text" as const },
+              { id: LIT_KEY, mode: "suppress-author" as const },
+            ],
+          },
+        ]),
+    });
+
+    const { formatted } = await service.load(NOTE);
+
+    expect(firstSerials(formatted.get(CLUSTER))).toEqual([1, 2]);
+    await dispose();
+  });
+
+  it("leaves the slot of a work the bibliography left out empty", async () => {
+    const { service, dispose } = await makeHarness({
+      body: `Both ${CLUSTER}.`,
+      cited: TWO_WORKS,
+      formatCitations: (sources) => Promise.resolve(sources.map(noted)),
+      // The render answers with the second work alone, which leaves the first
+      // one no row to point at.
+      bibliography: (ids) => ids.slice(1),
+    });
+
+    const { formatted } = await service.load(NOTE);
+
+    expect(firstSerials(formatted.get(CLUSTER))).toEqual([undefined, 1]);
+    await dispose();
+  });
+
+  it("leaves every slot empty when no bibliography can be rendered", async () => {
+    const { service, dispose } = await makeHarness({
+      body: `Both ${CLUSTER}.`,
+      cited: TWO_WORKS,
+      formatCitations: (sources) => Promise.resolve(sources.map(noted)),
+      bibliography: () => null,
+    });
+
+    const { formatted, entrySerials } = await service.load(NOTE);
+
+    expect(entrySerials).toBe(true);
+    expect(firstSerials(formatted.get(CLUSTER))).toEqual([
+      undefined,
+      undefined,
+    ]);
+    await dispose();
+  });
+
+  // An in-text style writes no note, so nothing stands in for one and the
+  // document pays for no bibliography of its own.
+  it("keeps an in-text style's document off serials", async () => {
+    const { service, bibliographyRequests, dispose } = await makeHarness({
+      body: `Both ${CLUSTER}.`,
+      cited: TWO_WORKS,
+    });
+
+    const { formatted, entrySerials } = await service.load(NOTE);
+
+    expect(entrySerials).toBe(false);
+    expect(firstSerials(formatted.get(CLUSTER))).toEqual([]);
+    expect(bibliographyRequests).toEqual([]);
     await dispose();
   });
 });

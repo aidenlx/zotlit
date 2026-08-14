@@ -78,11 +78,12 @@ describe("citationContent", () => {
       [
         "[@a]",
         [
-          { start: 6, text: rendered("(Zeta 2020)") },
-          { start: 20, text: rendered("(ibid.)") },
+          { start: 6, text: rendered("(Zeta 2020)"), serials: [] },
+          { start: 20, text: rendered("(ibid.)"), serials: [] },
         ],
       ],
     ]),
+    entrySerials: false,
     summaries: new Map([["ALPHA234", "Zeta (2020)"]]),
     literalWorks: new Map([["a", "ALPHA234"]]),
   };
@@ -92,6 +93,7 @@ describe("citationContent", () => {
     expect(
       citationContent(citation("[see @a, p. 3]"), {
         formatted: new Map(),
+        entrySerials: false,
         summaries: new Map([["ALPHA234", "Zeta (2020)"]]),
         literalWorks: new Map([["a", "ALPHA234"]]),
       }),
@@ -100,7 +102,8 @@ describe("citationContent", () => {
 
   it("shows the text of the occurrence an editor offset names", () => {
     expect(
-      citationContent(CITATION, HELD, { kind: "offset", start: 20 })?.content,
+      citationContent(CITATION, HELD, { kind: "offset", start: 20 })?.text
+        .content,
     ).toEqual(rendered("(ibid.)").content);
   });
 
@@ -111,7 +114,7 @@ describe("citationContent", () => {
         from: 14,
         to: 25,
         ordinal: 0,
-      })?.content,
+      })?.text.content,
     ).toEqual(rendered("(ibid.)").content);
   });
 
@@ -123,7 +126,7 @@ describe("citationContent", () => {
       { kind: "offset", start: 21 },
       { kind: "section", from: 14, to: 25, ordinal: 1 },
     ] as const) {
-      expect(citationContent(CITATION, HELD, at)?.content).toEqual(
+      expect(citationContent(CITATION, HELD, at)?.text.content).toEqual(
         rendered("(Zeta 2020)").content,
       );
     }
@@ -158,12 +161,15 @@ describe("citationElement", () => {
 
   it("shows a formatted citation through the shared renderer", () => {
     const content = citationElement(document, {
-      content: [
-        { t: "Str", c: "Zeta" },
-        { t: "Space" },
-        { t: "Emph", c: [{ t: "Str", c: "(2020)" }] },
-      ],
-      citations: [],
+      text: {
+        content: [
+          { t: "Str", c: "Zeta" },
+          { t: "Space" },
+          { t: "Emph", c: [{ t: "Str", c: "(2020)" }] },
+        ],
+        citations: [],
+      },
+      serials: [],
     });
 
     expect(content.outerHTML).toBe(

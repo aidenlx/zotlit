@@ -5,7 +5,7 @@ import { themeHook } from "@/lib/theme-hooks";
 import { citationRuns } from "@/lib/wikilink-citation";
 import type { RunMember, WikilinkCitation } from "@/lib/wikilink-citation";
 import { showCitation } from "@/services/citation-text/present";
-import type { RenderedCitation } from "@/services/pandoc/engine";
+import type { PresentedCitation } from "@/services/citation-text/present";
 
 /**
  * Obsidian's own anchor for an internal link, which its Markdown parser builds
@@ -55,7 +55,7 @@ export type WikilinkCitationOf = (linktext: string) => WikilinkCitation | null;
 export type FormatWikilinkRun = (
   run: readonly RunMember<HTMLAnchorElement>[],
   index: number,
-) => RenderedCitation | null;
+) => PresentedCitation | null;
 
 /** The Citation Runs of one rendered section, as their anchors carry them. */
 export type SectionRuns = RunMember<HTMLAnchorElement>[][];

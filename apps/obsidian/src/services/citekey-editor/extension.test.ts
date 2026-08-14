@@ -121,6 +121,7 @@ describe("citekeyEditorExtension theme hooks", () => {
             showFormatted: () => true,
             citationText: () => ({
               formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
+              entrySerials: false,
               summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
               literalWorks: new Map([["doe2024", DOE_KEY]]),
             }),
@@ -159,6 +160,7 @@ describe("citekeyEditorExtension citation widgets", () => {
     livePreview.mockReturnValue(true);
     const held = {
       formatted,
+      entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     };
@@ -199,8 +201,8 @@ describe("citekeyEditorExtension citation widgets", () => {
         [
           "[@doe2024]",
           [
-            { start: 4, text: rendered("Doe (2024)") },
-            { start: 19, text: rendered("ibid") },
+            { start: 4, text: rendered("Doe (2024)"), serials: [] },
+            { start: 19, text: rendered("ibid"), serials: [] },
           ],
         ],
       ]),

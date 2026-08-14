@@ -235,6 +235,7 @@ class CitationTextStub {
   load(): Promise<DocumentCitations> {
     return Promise.resolve({
       formatted: new Map(),
+      entrySerials: false,
       summaries: new Map(),
       literalWorks: new Map(),
     });

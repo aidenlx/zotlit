@@ -363,6 +363,25 @@ describe("InlineContent entry serials", () => {
 
     expect(container.textContent).not.toContain("A study of nothing");
   });
+
+  // An accepted limitation: a note a reader wrote themselves, in a citation
+  // prefix, is a note like any other here, so it shows the cluster's serials
+  // rather than its own text.
+  it("shows the cluster's serials for a note the reader wrote in a prefix", () => {
+    const container = attached({
+      nodes: [
+        { t: "Note", c: [{ t: "Para", c: [str("An aside of my own.")] }] },
+        { t: "Space" },
+        ...noted,
+      ],
+      serials: [1, 2],
+    });
+
+    expect(
+      [...container.querySelectorAll("sup")].map((run) => run.textContent),
+    ).toEqual(["1,2", "1,2"]);
+    expect(container.textContent).not.toContain("An aside of my own.");
+  });
 });
 
 // The class is a public promise to themes: an Entry Serial carries it wherever

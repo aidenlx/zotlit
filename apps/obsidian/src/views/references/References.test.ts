@@ -129,7 +129,7 @@ describe("References", () => {
           citekey: "aVeryLongCitekeyWithoutBreaks00000000000000000003",
         },
       ],
-      { kind: "bibliography", hasEntryMarkers: false },
+      { kind: "bibliography", hasEntryMarkers: false, entrySerials: false },
     );
 
     const list = container.querySelector("ul")!;
@@ -155,6 +155,7 @@ describe("References", () => {
           kind: "rendered",
           source,
           linkpath: "notes/BOOK0001",
+          serial: 1,
           marker: [{ t: "Str", c: "[1]" }],
           content: [
             { t: "Str", c: "Rendered" },
@@ -171,7 +172,7 @@ describe("References", () => {
           linkpath: "notes/BOOK0002",
         },
       ],
-      { kind: "bibliography", hasEntryMarkers: true },
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
     );
 
     const rows = container.querySelectorAll("li");
@@ -198,6 +199,7 @@ describe("References", () => {
           kind: "rendered",
           source,
           linkpath: "notes/BOOK0001",
+          serial: 1,
           marker: undefined,
           content: [
             {
@@ -221,7 +223,7 @@ describe("References", () => {
           ],
         },
       ],
-      { kind: "bibliography", hasEntryMarkers: false },
+      { kind: "bibliography", hasEntryMarkers: false, entrySerials: false },
     );
 
     const row = container.querySelector("li")!;
@@ -244,13 +246,83 @@ describe("References", () => {
           linkpath: "notes/BOOK0001",
         },
       ],
-      { kind: "bibliography", hasEntryMarkers: true },
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
     );
 
     expect(container.querySelector("ul")!.classList).toContain(
       "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]",
     );
     expect(container.querySelector("li")!.children[0]!.textContent).toBe("⚠");
+  });
+
+  // A note-class style writes no Entry Marker, so the gutter carries the Entry
+  // Serials the document's own citations show.
+  it("shows Entry Serials in the gutter of a document that shows them", async () => {
+    const container = await render(
+      [
+        {
+          id: "BOOK0001",
+          refNumber: 2,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0001",
+          serial: 1,
+          marker: undefined,
+          content: [{ t: "Str", c: "Zeta." }],
+        },
+        {
+          id: "BOOK0002",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0002",
+          serial: 2,
+          marker: undefined,
+          content: [{ t: "Str", c: "Rivers." }],
+        },
+        {
+          id: "GONE0003",
+          refNumber: 3,
+          occurrences: [occurrence],
+          kind: "missing",
+          linkpath: "notes/GONE0003",
+        },
+      ],
+      { kind: "bibliography", hasEntryMarkers: false, entrySerials: true },
+    );
+
+    const rows = container.querySelectorAll("li");
+    expect(container.querySelector("ul")!.classList).toContain(
+      "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]",
+    );
+    expect([...rows].map((row) => row.children[0]!.textContent)).toEqual([
+      "1",
+      "2",
+      "⚠",
+    ]);
+  });
+
+  it("keeps the Entry Marker in the gutter of a style that writes one", async () => {
+    const container = await render(
+      [
+        {
+          id: "BOOK0001",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0001",
+          serial: 1,
+          marker: [{ t: "Str", c: "[7]" }],
+          content: [{ t: "Str", c: "Zeta." }],
+        },
+      ],
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: true },
+    );
+
+    expect(container.querySelector("li")!.children[0]!.textContent).toBe("[7]");
   });
 
   it("uses Reference Numbers and warnings in the minimal list", async () => {
@@ -505,6 +577,7 @@ describe("References copy action", () => {
     kind: "rendered",
     source,
     linkpath: "notes/BOOK0001",
+    serial: 1,
     marker: [{ t: "Str", c: "[1]" }],
     content: [{ t: "Str", c: "Book" }],
   };
@@ -520,7 +593,7 @@ describe("References copy action", () => {
   async function ready(): Promise<HTMLElement> {
     return render(
       [renderedEntry],
-      { kind: "bibliography", hasEntryMarkers: true },
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
       { copy: { kind: "ready", target } },
     );
   }
@@ -562,7 +635,7 @@ describe("References copy action", () => {
     async (reason, tooltip) => {
       const container = await render(
         [renderedEntry],
-        { kind: "bibliography", hasEntryMarkers: true },
+        { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
         { copy: { kind: "blocked", reason } },
       );
       const action = copyAction(container);

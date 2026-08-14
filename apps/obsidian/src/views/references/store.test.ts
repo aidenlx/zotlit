@@ -62,11 +62,16 @@ describe("minimalReferencesState", () => {
           occurrences: [occurrence],
           kind: "rendered",
           source,
+          serial: 1,
           marker: undefined,
           content,
         },
       ],
-      listMode: { kind: "bibliography", hasEntryMarkers: false },
+      listMode: {
+        kind: "bibliography",
+        hasEntryMarkers: false,
+        entrySerials: false,
+      },
       formattingFailed: false,
     });
 
@@ -95,6 +100,7 @@ describe("referencesCopyState", () => {
     occurrences: [occurrence],
     kind: "rendered",
     source,
+    serial: 1,
     marker: [{ t: "Str", c: "[1]" }],
     content: [{ t: "Str", c: "Book" }],
   };

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { citationOfRun, wikilinkCitation } from "@/lib/wikilink-citation";
 import type { RunMember, WikilinkCitation } from "@/lib/wikilink-citation";
-import { rendered } from "@/services/citation-text/__fixtures__";
-import type { RenderedCitation } from "@/services/pandoc/engine";
+import { presented } from "@/services/citation-text/__fixtures__";
+import type { PresentedCitation } from "@/services/citation-text/present";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
 import { renderCitationRuns, sectionCitationRuns } from "./render";
@@ -15,7 +15,7 @@ const renderWikilinkCitations = (
   citations: (linktext: string) => WikilinkCitation | null,
   format: (
     run: readonly RunMember<HTMLAnchorElement>[],
-  ) => RenderedCitation | null,
+  ) => PresentedCitation | null,
 ): number => renderCitationRuns(sectionCitationRuns(root, citations), format);
 
 /** Every `literatures/…` link names a Literature Note; nothing else does. */
@@ -35,10 +35,10 @@ const citationOf = (linktext: string): WikilinkCitation | null =>
 /** Stand-in formatted text used to exercise the generic DOM swap. */
 const display = (
   run: readonly RunMember<HTMLAnchorElement>[],
-): RenderedCitation => {
+): PresentedCitation => {
   const only = run.length === 1 ? run[0]!.citation.item : null;
   const details = only?.details;
-  return rendered(
+  return presented(
     only &&
       details?.mode === "normal" &&
       details.prefix === null &&
@@ -71,14 +71,17 @@ describe("renderWikilinkCitations", () => {
   it("puts the formatted citation, markup and all, in the anchor", () => {
     const root = section(`<p>${internalLink("literatures/wang2020")}</p>`);
     renderWikilinkCitations(root, citationOf, () => ({
-      content: [
-        { t: "Str", c: "(Wang" },
-        { t: "Space" },
-        { t: "Emph", c: [{ t: "Str", c: "et al." }] },
-        { t: "Space" },
-        { t: "Str", c: "2020)" },
-      ],
-      citations: [],
+      text: {
+        content: [
+          { t: "Str", c: "(Wang" },
+          { t: "Space" },
+          { t: "Emph", c: [{ t: "Str", c: "et al." }] },
+          { t: "Space" },
+          { t: "Str", c: "2020)" },
+        ],
+        citations: [],
+      },
+      serials: [],
     }));
 
     expect(root.querySelector("a")?.innerHTML).toBe(
@@ -89,17 +92,20 @@ describe("renderWikilinkCitations", () => {
   it("shows a link the style wrote as text, since the anchor is Obsidian's", () => {
     const root = section(`<p>${internalLink("literatures/wang2020")}</p>`);
     renderWikilinkCitations(root, citationOf, () => ({
-      content: [
-        {
-          t: "Link",
-          c: [
-            ["", [], []],
-            [{ t: "Str", c: "doi.org/10.1/x" }],
-            ["https://doi.org/10.1/x", ""],
-          ],
-        },
-      ],
-      citations: [],
+      text: {
+        content: [
+          {
+            t: "Link",
+            c: [
+              ["", [], []],
+              [{ t: "Str", c: "doi.org/10.1/x" }],
+              ["https://doi.org/10.1/x", ""],
+            ],
+          },
+        ],
+        citations: [],
+      },
+      serials: [],
     }));
 
     const anchor = root.querySelector("a");
@@ -173,8 +179,8 @@ describe("renderWikilinkCitations over a Citation Run", () => {
   /** The formatted text of a run, which names the works it groups. */
   const grouped = (
     run: readonly RunMember<HTMLAnchorElement>[],
-  ): RenderedCitation =>
-    rendered(
+  ): PresentedCitation =>
+    presented(
       `(${run.map(({ citation }) => citation.item.citekey).join("; ")})`,
     );
 
