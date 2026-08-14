@@ -33,6 +33,7 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
 
@@ -81,7 +82,10 @@ export interface CitationTextDeps {
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
-  bibliographyRender: Pick<BibliographyRenderCache, "renderCitations" | "on">;
+  bibliographyRender: Pick<
+    BibliographyRenderCache,
+    "renderCitationsAst" | "on"
+  >;
 }
 
 /**
@@ -274,18 +278,18 @@ export class CitationText extends Service<void> {
     const sources = citations.map(({ renderSource }) => renderSource);
     const items = [...works.values()].map(({ csl }) => csl);
 
-    const rendered = await this.#bibliographyRender.renderCitations(
+    const rendered = await this.#bibliographyRender.renderCitationsAst(
       sources,
       items,
     );
-    const formatted = new Map<string, DocumentFragment>();
+    const formatted = new Map<string, RenderedCitation>();
     // Citations of one identity render alike, so the first answer stands for
     // them all.
     if (rendered?.length === citations.length) {
-      rendered.forEach((fragment, index) => {
+      rendered.forEach((text, index) => {
         const citation = citations[index]!;
         if (citation.complete && !formatted.has(citation.identity)) {
-          formatted.set(citation.identity, fragment);
+          formatted.set(citation.identity, text);
         }
       });
     }

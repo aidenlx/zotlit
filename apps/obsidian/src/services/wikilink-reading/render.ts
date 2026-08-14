@@ -4,6 +4,8 @@
 import { themeHook } from "@/lib/theme-hooks";
 import { citationRuns } from "@/lib/wikilink-citation";
 import type { RunMember, WikilinkCitation } from "@/lib/wikilink-citation";
+import { showCitation } from "@/services/citation-text/present";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 
 /**
  * Obsidian's own anchor for an internal link, which its Markdown parser builds
@@ -44,12 +46,12 @@ function breadcrumb(linktext: string): string {
 export type WikilinkCitationOf = (linktext: string) => WikilinkCitation | null;
 
 /**
- * What one Citation Run shows in place of its links, or null to leave them as
- * Obsidian rendered them.
+ * The formatted text one Citation Run shows in place of its links, or null to
+ * leave them as Obsidian rendered them.
  */
 export type FormatWikilinkRun = (
   run: readonly RunMember<HTMLAnchorElement>[],
-) => Node | string | null;
+) => RenderedCitation | null;
 
 /** The Citation Runs of one rendered section, as their anchors carry them. */
 export type SectionRuns = RunMember<HTMLAnchorElement>[][];
@@ -89,6 +91,10 @@ export function sectionCitationRuns(
  * run widget makes, and the one place a run departs from #663's per-link
  * interaction. A lone Citation keeps its anchor and every gesture on it.
  *
+ * The formatted text goes into Obsidian's own anchor, so a link the style wrote
+ * shows as the text it carries: an anchor inside an anchor is invalid, and the
+ * one this surface writes into already navigates to the Literature Note.
+ *
  * @returns how many Citations show their formatted text.
  */
 export function renderCitationRuns(
@@ -106,7 +112,7 @@ export function renderCitationRuns(
       removeBetween(first, source);
       source.remove();
     }
-    first.replaceChildren(content);
+    showCitation(first, content, "suppress");
     first.classList.add(themeHook.citation, themeHook.literatureNoteLink);
     rendered += 1;
   }

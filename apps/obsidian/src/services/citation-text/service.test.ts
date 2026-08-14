@@ -9,6 +9,7 @@ import type {
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -16,8 +17,9 @@ import {
   ALPHA,
   ALPHA_KEY,
   citation,
-  fragment,
   literalOccurrences,
+  rendered,
+  renderedText,
 } from "./__fixtures__";
 import { citationKey, literalSummaryOf } from "./present";
 import { CitationText } from "./service";
@@ -79,7 +81,7 @@ async function makeHarness({
   /** A render-cache answer used when a test needs generation control. */
   formatCitations?: (
     citations: readonly string[],
-  ) => Promise<readonly DocumentFragment[] | null>;
+  ) => Promise<readonly RenderedCitation[] | null>;
   /** The wikilinks Obsidian's metadata cache reports for the document. */
   links?: LinkCache[];
   /** The Literature Note each linkpath names, by linkpath. */
@@ -149,11 +151,11 @@ async function makeHarness({
       whenIndexed: () => Promise.resolve(),
     },
     bibliographyRender: {
-      renderCitations: (citations: readonly string[]) => {
+      renderCitationsAst: (citations: readonly string[]) => {
         citationRequests.push({ citations });
         if (formatCitations) return formatCitations(citations);
         return Promise.resolve(
-          formats ? citations.map((source) => fragment(`«${source}»`)) : null,
+          formats ? citations.map((source) => rendered(`«${source}»`)) : null,
         );
       },
       on: listen("render"),
@@ -199,7 +201,7 @@ describe("CitationText", () => {
     expect(citationRequests).toEqual([
       { citations: [`@${ALPHA_KEY}`, `[see @${ALPHA_KEY}, p. 3]`] },
     ]);
-    expect(formatted.get("[see @alpha, p. 3]")?.textContent).toBe(
+    expect(renderedText(formatted.get("[see @alpha, p. 3]"))).toBe(
       `«[see @${ALPHA_KEY}, p. 3]»`,
     );
     await dispose();
@@ -266,14 +268,14 @@ describe("CitationText", () => {
       { citations: [`[@${ALPHA_KEY}]`, `[@${ALPHA_KEY}]`] },
     ]);
     expect(formatted.has("[@alpha; @ghost]")).toBe(false);
-    expect(formatted.get("[@alpha]")?.textContent).toBe(`«[@${ALPHA_KEY}]»`);
+    expect(renderedText(formatted.get("[@alpha]"))).toBe(`«[@${ALPHA_KEY}]»`);
     await dispose();
   });
 
   it("withholds a generation whose render result is incomplete", async () => {
     const { service, dispose } = await makeHarness({
       body: "First [@alpha], then [see @alpha, p. 3].",
-      formatCitations: async ([first]) => [fragment(`«${first}»`)],
+      formatCitations: async ([first]) => [rendered(`«${first}»`)],
     });
 
     const { formatted } = await service.load(NOTE);
@@ -319,8 +321,11 @@ describe("CitationText over wikilink Citations", () => {
 
     expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}, p. 4]`] }]);
     expect(
-      formatted.get(citationKey({ source: "[@alpha, p. 4]", works: [LIT_KEY] }))
-        ?.textContent,
+      renderedText(
+        formatted.get(
+          citationKey({ source: "[@alpha, p. 4]", works: [LIT_KEY] }),
+        ),
+      ),
     ).toBe(`«[@${LIT_KEY}, p. 4]»`);
     await dispose();
   });
@@ -473,7 +478,7 @@ describe("CitationText over wikilink Citations", () => {
 
 describe("CitationText staleness", () => {
   it("does not publish a generation superseded while its render was running", async () => {
-    let finishFirst: ((value: readonly DocumentFragment[]) => void) | undefined;
+    let finishFirst: ((value: readonly RenderedCitation[]) => void) | undefined;
     let generation = 0;
     const { service, citationRequests, indexChanged, dispose } =
       await makeHarness({
@@ -485,7 +490,7 @@ describe("CitationText staleness", () => {
               finishFirst = resolve;
             });
           }
-          return [fragment("fresh")];
+          return [rendered("fresh")];
         },
       });
 
@@ -494,12 +499,12 @@ describe("CitationText staleness", () => {
     indexChanged(NOTE.path);
     const current = service.load(NOTE);
     await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
-    finishFirst?.([fragment("stale")]);
+    finishFirst?.([rendered("stale")]);
 
-    expect((await superseded).formatted.get("[@alpha]")?.textContent).toBe(
+    expect(renderedText((await superseded).formatted.get("[@alpha]"))).toBe(
       "fresh",
     );
-    expect((await current).formatted.get("[@alpha]")?.textContent).toBe(
+    expect(renderedText((await current).formatted.get("[@alpha]"))).toBe(
       "fresh",
     );
     await dispose();

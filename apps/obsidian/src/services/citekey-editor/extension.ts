@@ -42,6 +42,7 @@ import type {
   EditorMode,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 
 import {
   citationRanges,
@@ -340,9 +341,9 @@ interface EditedDocument {
  * One Citation shown as the text a style formatted.
  *
  * Two widgets are the same when they stand for the same source and show the
- * same content: formatted content is the very object the document's held
- * citations carry, so a fresh read of that document is a fresh object and
- * redraws.
+ * same content: formatted content is the immutable value the document's held
+ * citations carry, so the comparison is a reference test and a fresh read of
+ * that document is a fresh value that redraws.
  */
 class CitationWidget extends WidgetType {
   readonly #source;
@@ -355,7 +356,7 @@ class CitationWidget extends WidgetType {
 
   constructor(options: {
     source: string;
-    content: DocumentFragment | string;
+    content: RenderedCitation;
     works: readonly CitedWork[];
     sourcePath: string;
     handlers: CitekeyEditorHandlers;

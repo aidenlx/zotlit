@@ -5,6 +5,8 @@ import type {
   Citation,
   CitationOccurrence,
 } from "@/services/citation-index/service";
+import type { RenderedCitation } from "@/services/pandoc/engine";
+import { inlineText } from "@/services/pandoc/inline-content";
 
 /** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
 export const ALPHA_KEY = "ALPHA234";
@@ -70,8 +72,13 @@ export function literalOccurrences(body: string): CitationOccurrence[] {
 }
 
 /** One formatted citation, as the render cache hands it over. */
-export function fragment(text: string): DocumentFragment {
-  const content = document.createDocumentFragment();
-  content.append(text);
-  return content;
+export function rendered(text: string): RenderedCitation {
+  return { content: [{ t: "Str", c: text }], citations: [] };
+}
+
+/** The text one held citation reads as, which is what a suite asserts on. */
+export function renderedText(
+  citation: RenderedCitation | undefined,
+): string | undefined {
+  return citation && inlineText(citation.content);
 }

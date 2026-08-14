@@ -76,7 +76,9 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
+import { rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
+import type { RenderedCitation } from "@/services/pandoc/engine";
 
 import { wikilinkEditorExtension } from "./extension";
 
@@ -91,7 +93,13 @@ function viewOf(
   {
     enabled = true,
     formatted = true,
-  }: { enabled?: boolean; formatted?: boolean } = {},
+    content = rendered("(Example 2020, p. 7)"),
+  }: {
+    enabled?: boolean;
+    formatted?: boolean;
+    /** The formatted citation the shared text holds for the document. */
+    content?: RenderedCitation;
+  } = {},
 ) {
   const view = new EditorView({
     parent: document.body,
@@ -105,8 +113,6 @@ function viewOf(
           enabled: () => enabled,
           citationText: () => {
             if (!formatted) return null;
-            const citation = document.createDocumentFragment();
-            citation.append("(Example 2020, p. 7)");
             return {
               formatted: new Map([
                 [
@@ -114,7 +120,7 @@ function viewOf(
                     source: "[@example, p. 7]",
                     works: [LITERATURE_NOTE.indexedKey],
                   }),
-                  citation,
+                  content,
                 ],
               ]),
               summaries: new Map([
@@ -162,5 +168,30 @@ describe("wikilinkEditorExtension theme hooks", () => {
 
       expect(view.dom.querySelector(".zt-literature-note-link")).toBeNull();
     }
+  });
+});
+
+describe("wikilinkEditorExtension citation rendering", () => {
+  it("shows a link the style wrote as text, since the widget is the link", () => {
+    livePreview.mockReturnValue(true);
+    using view = viewOf("[[literatures/example#cite:locator=7]]", {
+      content: {
+        content: [
+          {
+            t: "Link",
+            c: [
+              ["", [], []],
+              [{ t: "Str", c: "doi.org/10.1/x" }],
+              ["https://doi.org/10.1/x", ""],
+            ],
+          },
+        ],
+        citations: [],
+      },
+    });
+
+    const citation = view.dom.querySelector(".zt-citation");
+    expect(citation?.querySelector("a")).toBeNull();
+    expect(citation?.textContent).toBe("doi.org/10.1/x");
   });
 });
