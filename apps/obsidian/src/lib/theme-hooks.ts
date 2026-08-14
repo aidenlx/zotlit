@@ -6,4 +6,5 @@ export const themeHook = {
   citationKeyUnresolved: "zt-citation-key-unresolved",
   citationKeyPartiallyUnresolved: "zt-citation-key-partially-unresolved",
   literatureNoteLink: "zt-literature-note-link",
+  entrySerial: "zt-entry-serial",
 } as const;
