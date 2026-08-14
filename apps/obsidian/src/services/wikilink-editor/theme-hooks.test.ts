@@ -194,4 +194,19 @@ describe("wikilinkEditorExtension citation rendering", () => {
     expect(citation?.querySelector("a")).toBeNull();
     expect(citation?.textContent).toBe("doi.org/10.1/x");
   });
+
+  it("keeps the drawn citation while an edit lands away from it", () => {
+    livePreview.mockReturnValue(true);
+    using view = viewOf("[[literatures/example#cite:locator=7]] tail");
+    const drawn = view.dom.querySelector(".zt-citation");
+    expect(drawn?.textContent).toBe("(Example 2020, p. 7)");
+
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: " more" },
+    });
+
+    // The held text is one shared value, so the widget compares equal by
+    // reference and CodeMirror keeps the element it already drew.
+    expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+  });
 });

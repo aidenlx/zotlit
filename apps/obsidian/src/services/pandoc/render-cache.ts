@@ -166,6 +166,11 @@ export class BibliographyRenderCache extends Service<void> {
    * writes, in document order. The formatted content is shared with every other
    * consumer of the same render, so a consumer inserts a clone of it.
    *
+   * Every in-text surface now reads {@link renderCitationsAst} instead, so this
+   * fragment path carries no consumer of its own. It stands until the HTML
+   * parse path behind it is deleted, which retires the engine's own fragment
+   * renderer and this method together.
+   *
    * @param citations each citation as the source writes it, in document order.
    * @param items the works those citations name, each `id` the key the source
    *   names that work by.

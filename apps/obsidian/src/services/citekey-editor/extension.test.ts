@@ -153,7 +153,7 @@ describe("citekeyEditorExtension citation widgets", () => {
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     };
-    const view = new EditorView({
+    return editorView({
       parent: document.body,
       state: EditorState.create({
         doc,
@@ -171,7 +171,6 @@ describe("citekeyEditorExtension citation widgets", () => {
         ],
       }),
     });
-    return Object.assign(view, { [Symbol.dispose]: () => view.destroy() });
   }
 
   it("shows the formatted citation the shared renderer draws", () => {
