@@ -22,6 +22,11 @@ import type {
 } from "@/services/citation-index/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
+import type { Inlines } from "@/services/pandoc/ast";
+import {
+  inlineText,
+  renderInlineContent,
+} from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 
@@ -40,6 +45,7 @@ import {
 import type {
   ReferencesCopyBlock,
   ReferencesCopyState,
+  ReferencesCopyTarget,
   ReferencesFormatting,
   ReferencesListMode,
 } from "./store";
@@ -59,7 +65,7 @@ export interface ReferencesViewDeps {
     "getStatus" | "subscribe" | "decline"
   >;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
-  bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
+  bibliographyRender: Pick<BibliographyRenderCache, "renderAst" | "on">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -304,9 +310,15 @@ export class ReferencesView extends ItemView {
       formatting:
         this.#activeMarkdownPath() === path ? this.#formatting : "pending",
     });
+    // The list a snapshot is taken from stands for one note and one generation,
+    // and neither moves without a reload, so a snapshot already taken for the
+    // same pair is the same snapshot and the entries are shown once for it.
     this.#copySnapshot =
       copy.kind === "ready"
-        ? { ...copy.target, entries: copiedEntries(entries) }
+        ? (this.#heldSnapshot(copy.target) ?? {
+            ...copy.target,
+            entries: copiedEntries(entries),
+          })
         : null;
 
     const label = copy.kind === "ready" ? "ready" : copy.reason;
@@ -319,6 +331,14 @@ export class ReferencesView extends ItemView {
       });
     }
     return copy;
+  }
+
+  /** The snapshot already taken for `target`, when one was. */
+  #heldSnapshot(target: ReferencesCopyTarget): CopyBibliographySnapshot | null {
+    const held = this.#copySnapshot;
+    return held?.path === target.path && held.generation === target.generation
+      ? held
+      : null;
   }
 
   /**
@@ -357,7 +377,7 @@ export class ReferencesView extends ItemView {
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
     const items = [...sources.values()].map((source) => source.csl);
-    const outcome = await this.#deps.bibliographyRender.render(items);
+    const outcome = await this.#deps.bibliographyRender.renderAst(items);
     if (generation !== this.#generation) return;
 
     if (outcome.kind !== "rendered") {
@@ -420,11 +440,28 @@ export class ReferencesView extends ItemView {
   }
 }
 
-/** The completed entries of a ready list, in the style's bibliography order. */
+/**
+ * The completed entries of a ready list, in the style's bibliography order.
+ *
+ * The clipboard serializer still reads elements, so each entry is shown through
+ * the shared renderer once here and handed over as the DOM that render made.
+ */
 function copiedEntries(
   entries: readonly ReferenceEntry[],
 ): CopiedBibliographyEntry[] {
   return entries
     .filter((entry) => entry.kind === "rendered")
-    .map(({ marker, content }) => ({ marker, content }));
+    .map(({ marker, content }) => ({
+      marker: marker === undefined ? undefined : inlineText(marker),
+      content: entryFragment(content),
+    }));
+}
+
+/** One formatted entry as the DOM the shared renderer shows it in. */
+function entryFragment(content: Inlines): DocumentFragment {
+  const container = document.createElement("span");
+  renderInlineContent(container, { nodes: content });
+  const fragment = document.createDocumentFragment();
+  fragment.append(...container.childNodes);
+  return fragment;
 }

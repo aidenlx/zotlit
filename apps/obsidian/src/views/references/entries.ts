@@ -6,16 +6,18 @@ import type {
   DocumentCitationError,
   ReferenceSource,
 } from "@/services/citation-index/service";
+import type { Inlines } from "@/services/pandoc/ast";
 
 /**
  * One bibliography entry as the engine formatted it — the shape the engine's
- * own entry contract carries, without the CSL id that addresses it.
+ * own entry contract carries, without the CSL id that addresses it. Both parts
+ * are typed AST the shared renderer shows, held as the engine handed them over.
  */
 export interface RenderedReference {
   /** The style's Entry Marker, or `undefined` when the style renders none. */
-  marker: string | undefined;
+  marker: Inlines | undefined;
   /** The entry text as one inline flow, so the occurrence counter sits after it. */
-  content: DocumentFragment;
+  content: Inlines;
 }
 
 export interface ReferenceBibliography {

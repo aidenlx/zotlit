@@ -21,10 +21,8 @@ import {
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
 import { createCitationEngine } from "@/services/pandoc/engine";
-import type {
-  BibliographyEntry,
-  CitationEngine,
-} from "@/services/pandoc/engine";
+import type { CitationEngine } from "@/services/pandoc/engine";
+import { inlineText } from "@/services/pandoc/inline-content";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
@@ -362,7 +360,7 @@ async function sidebarEntries(
     const source = indexedKey && sources.get(indexedKey);
     return source ? [source.csl] : [];
   });
-  const bibliography = await engine.renderBibliography({
+  const bibliography = await engine.renderBibliographyAst({
     items,
     styleXml: NUMERIC_STYLE,
   });
@@ -370,7 +368,7 @@ async function sidebarEntries(
     bibliography: {
       complete: true,
       entries: new Map(
-        bibliography.map(({ id, marker, content }: BibliographyEntry) => [
+        bibliography.map(({ id, marker, content }) => [
           id,
           { marker, content },
         ]),
@@ -408,6 +406,8 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
 
 function markers(entries: readonly ReferenceEntry[]): (string | undefined)[] {
   return entries.map((entry) =>
-    entry.kind === "rendered" ? entry.marker : undefined,
+    entry.kind === "rendered" && entry.marker
+      ? inlineText(entry.marker)
+      : undefined,
   );
 }

@@ -21,24 +21,3 @@ export function useSanitizedHtml<E extends HTMLElement>(html: string) {
     [html],
   );
 }
-
-/**
- * Renders an already-sanitized fragment into a DOM element React owns, for a
- * producer that parsed the markup once and kept it.
- *
- * Insertion moves nodes out of a fragment, so each write inserts a clone and
- * `content` stays reusable across re-renders.
- *
- * @param content Sanitized nodes to show.
- * @returns A ref callback to attach to the host element.
- */
-export function useDomContent<E extends HTMLElement>(
-  content: DocumentFragment,
-) {
-  return useCallback(
-    (el: E | null) => {
-      if (el) el.replaceChildren(content.cloneNode(true));
-    },
-    [content],
-  );
-}

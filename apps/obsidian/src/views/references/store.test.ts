@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -6,6 +5,7 @@ import type {
   CitationOccurrence,
   ReferenceSource,
 } from "@/services/citation-index/service";
+import type { Inlines } from "@/services/pandoc/ast";
 
 import type { ReferenceEntry } from "./entries";
 import {
@@ -45,8 +45,13 @@ const source: ReferenceSource = {
 
 describe("minimalReferencesState", () => {
   it("replaces a stale formatted list after a failed render", () => {
-    const content = document.createDocumentFragment();
-    content.append("Stale formatted book");
+    const content: Inlines = [
+      { t: "Str", c: "Stale" },
+      { t: "Space" },
+      { t: "Str", c: "formatted" },
+      { t: "Space" },
+      { t: "Str", c: "book" },
+    ];
     const store = createReferencesStore();
     store.setState({
       entries: [
@@ -90,8 +95,8 @@ describe("referencesCopyState", () => {
     occurrences: [occurrence],
     kind: "rendered",
     source,
-    marker: "[1]",
-    content: document.createDocumentFragment(),
+    marker: [{ t: "Str", c: "[1]" }],
+    content: [{ t: "Str", c: "Book" }],
   };
   const unrendered: ReferenceEntry = {
     id: "BOOK0002",
