@@ -203,12 +203,20 @@ The default-on presentation choice that shows every recognized Citation as a Ren
 _Avoid_: citation rendering (ambiguous with reference rendering), citation display (does not say formatted or native), editor rendering (also applies to reading mode)
 
 **Document Citation Text**:
-The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set, and every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
+The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set and a position-dependent style renders each Citation Occurrence by its place in the document, so two occurrences of one source can read differently and each in-text surface shows the text of its own occurrence; a surface that cannot tell which occurrence it shows falls back to the source's first-occurrence text. Every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
 _Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
 
 **Citekey Navigation** _(Obsidian)_:
 The default-off interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, hover page preview, and the open-under-cursor palette commands — all routed through one flow. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; Literature Note wikilinks keep Obsidian's native navigation.
 _Avoid_: citekey click (one gesture of the surface, not the concept), citekey links
+
+**Hover Action** _(Obsidian)_:
+The per-vault choice of what hovering a recognized citation or Literature Note wikilink shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover.
+_Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
+
+**Citation Popover** _(Obsidian)_:
+The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — with the three action buttons per entry in a cursor-proximal row. It is one Hover Action choice; the native page preview is another, and hover never shows both.
+_Avoid_: concise popover (the working name), hover tooltip, hover card
 
 **Citekey Reading Rendering** _(Obsidian)_:
 The reading-mode surface of In-text Citation Rendering for literal Pandoc citations: a Markdown post-processor replaces each complete Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text. When any item in one Citation is unresolved, or the Pandoc Engine cannot supply its formatted text, that whole Citation stays unchanged. Code, math, and links are left alone; a Literature Note wikilink is the Wikilink Reading Rendering's surface, not this one's.
