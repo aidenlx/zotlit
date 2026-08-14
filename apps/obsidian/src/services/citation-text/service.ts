@@ -92,7 +92,7 @@ export interface CitationTextDeps {
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
-    "renderCitationsAst" | "renderAst" | "on"
+    "renderCitations" | "render" | "on"
   >;
 }
 
@@ -296,7 +296,7 @@ export class CitationText extends Service<void> {
       id: indexedKey,
     }));
 
-    const rendered = await this.#bibliographyRender.renderCitationsAst(
+    const rendered = await this.#bibliographyRender.renderCitations(
       sources,
       items,
     );
@@ -372,7 +372,7 @@ export class CitationText extends Service<void> {
     works: ReadonlyMap<string, CitedItem>,
   ): Promise<ReadonlyMap<string, number>> {
     const serials = new Map<string, number>();
-    const outcome = await this.#bibliographyRender.renderAst(
+    const outcome = await this.#bibliographyRender.render(
       bibliographyItems(citations, works),
     );
     if (outcome.kind !== "rendered") {

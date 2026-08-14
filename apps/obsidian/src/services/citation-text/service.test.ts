@@ -164,14 +164,14 @@ async function makeHarness({
       whenIndexed: () => Promise.resolve(),
     },
     bibliographyRender: {
-      renderCitationsAst: (citations: readonly string[]) => {
+      renderCitations: (citations: readonly string[]) => {
         citationRequests.push({ citations });
         if (formatCitations) return formatCitations(citations);
         return Promise.resolve(
           formats ? citations.map((source) => rendered(`«${source}»`)) : null,
         );
       },
-      renderAst: (items: readonly { id: string }[]) => {
+      render: (items: readonly { id: string }[]) => {
         const ids = items.map(({ id }) => id);
         bibliographyRequests.push(ids);
         const entries = bibliography ? bibliography(ids) : ids;

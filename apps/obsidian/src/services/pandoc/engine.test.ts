@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -92,8 +91,8 @@ end
 
 /**
  * A style that lays an entry out as several blocks: `display="block"` and
- * `display="indent"` are what put a `csl-block` and a `csl-indent` around a
- * part of an entry, which the sidebar flattens back into one flow.
+ * `display="indent"` are what put a `csl-block` and a `csl-indent` span around
+ * a part of an entry, which the renderer lays out as it sees fit.
  */
 const BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
 <style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
@@ -106,27 +105,6 @@ const BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   <bibliography>
     <layout>
       <names variable="author" display="block"><name/></names>
-      <text variable="title" display="indent"/>
-    </layout>
-  </bibliography>
-</style>`;
-
-/**
- * A style that lays a block out beside a marker: a flush layout puts the rest
- * of the entry in a second column, so its blocks nest one level deeper.
- */
-const NESTED_BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
-<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
-  <info>
-    <title>Blocked and numbered</title>
-    <id>http://example.com/blocked-numbered</id>
-    <updated>2020-01-01T00:00:00+00:00</updated>
-  </info>
-  <citation><layout><text variable="citation-number" prefix="[" suffix="]"/></layout></citation>
-  <bibliography second-field-align="flush">
-    <layout>
-      <text variable="citation-number" prefix="[" suffix="]"/>
-      <names variable="author"><name/></names>
       <text variable="title" display="indent"/>
     </layout>
   </bibliography>
@@ -244,176 +222,8 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     return () => engine[Symbol.asyncDispose]();
   });
 
-  it("renders one bibliography entry per item, keyed by CSL id", async () => {
-    const entries = await engine.renderBibliography({ items: [ZETA, ADAMS] });
-
-    expect(entries.map((entry) => entry.id).toSorted()).toEqual([
-      ZETA.id,
-      ADAMS.id,
-    ]);
-    expect(
-      entries.find((entry) => entry.id === ZETA.id)?.content.textContent,
-    ).toContain("Zeta, Ann");
-  });
-
-  it("formats entries with the supplied CSL style", async () => {
-    const [first] = await engine.renderBibliography({
-      items: [ZETA],
-      styleXml: NUMERIC_STYLE,
-    });
-
-    expect(first?.id).toBe(ZETA.id);
-    expect(first?.content.textContent).toContain("A study of nothing");
-  });
-
-  it("hands the entry marker over apart from the entry text", async () => {
-    const [first] = await engine.renderBibliography({
-      items: [ZETA],
-      styleXml: NUMERIC_STYLE,
-    });
-
-    expect(first?.marker).toBe("[1]");
-    expect(first?.content.textContent).not.toContain("[1]");
-  });
-
-  it("leaves the marker unset for a style that renders none", async () => {
-    const entries = await engine.renderBibliography({ items: [ZETA] });
-
-    expect(entries[0]?.marker).toBeUndefined();
-  });
-
-  it("returns entries in the style's bibliography order", async () => {
-    const entries = await engine.renderBibliography({ items: [ZETA, ADAMS] });
-
-    // The embedded style sorts by author, so Adams leads whatever order the
-    // items arrived in.
-    expect(entries.map((entry) => entry.id)).toEqual([ADAMS.id, ZETA.id]);
-  });
-
-  it("flattens the blocks of an entry into one inline flow", async () => {
-    const [first] = await engine.renderBibliography({
-      items: [ZETA],
-      styleXml: BLOCK_STYLE,
-    });
-
-    expect(first?.content.textContent).toBe("Ann Zeta A study of nothing");
-    expect(first?.content.querySelector("div")).toBeNull();
-  });
-
-  it("flattens the blocks a flush layout nests beside the marker", async () => {
-    const [first] = await engine.renderBibliography({
-      items: [ZETA],
-      styleXml: NESTED_BLOCK_STYLE,
-    });
-
-    expect(first?.marker).toBe("[1]");
-    expect(first?.content.textContent).toBe("Ann Zeta A study of nothing");
-    expect(first?.content.querySelector("div")).toBeNull();
-  });
-
-  it("keeps the markup a style formats an entry's text with", async () => {
-    const [first] = await engine.renderBibliography({ items: [ZETA] });
-
-    // The embedded style italicizes a book title.
-    expect(first?.content.querySelector("em")?.textContent).toBe(
-      "A Study of Nothing",
-    );
-  });
-
-  it("renders no entries for an empty item set", async () => {
-    await expect(engine.renderBibliography({ items: [] })).resolves.toEqual([]);
-  });
-
-  /**
-   * `itemToCsl` addresses an item by its Zotero URI, which is long enough that
-   * Pandoc's default line wrapping would break the opening tag of the entry.
-   */
-  it("keys entries by a Zotero URI id", async () => {
-    const item: CslItemData = { ...ZETA, id: ZOTERO_URI_ID };
-    const entries = await engine.renderBibliography({ items: [item] });
-
-    expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
-    expect(entries[0]?.content.textContent).toContain("Zeta, Ann");
-  });
-
-  it("keys entries by a Zotero URI id under a numbered style", async () => {
-    const item: CslItemData = { ...ZETA, id: ZOTERO_URI_ID };
-    const entries = await engine.renderBibliography({
-      items: [item],
-      styleXml: NUMERIC_STYLE,
-    });
-
-    expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
-    expect(entries[0]?.marker).toBe("[1]");
-  });
-
-  it("reports the Pandoc failure for an unusable style", async () => {
-    await expect(
-      engine.renderBibliography({ items: [ZETA], styleXml: "<not-a-style/>" }),
-    ).rejects.toThrow(CitationEngineError);
-  });
-
-  it("formats one citation per source, in the order they were asked for", async () => {
-    const rendered = await engine.renderCitations({
-      citations: ["[@zeta20]", "@adams18"],
-      items: [
-        { ...ZETA, id: "zeta20" },
-        { ...ADAMS, id: "adams18" },
-      ],
-    });
-
-    expect(rendered).toHaveLength(2);
-    expect(rendered[0]?.textContent).toContain("Zeta");
-    expect(rendered[1]?.textContent).toContain("Adams");
-  });
-
-  it("keeps the prefix, locator, and author suppression of a cluster", async () => {
-    const [cluster] = await engine.renderCitations({
-      citations: ["[see @zeta20, p. 3; -@adams18]"],
-      items: [
-        { ...ZETA, id: "zeta20" },
-        { ...ADAMS, id: "adams18" },
-      ],
-    });
-
-    // The embedded style renders a page locator bare, so `p.` is not in it.
-    expect(cluster?.textContent).toBe("(see Zeta 2020, 3; 2018)");
-  });
-
-  it("numbers citations across the whole request under a numbered style", async () => {
-    const rendered = await engine.renderCitations({
-      citations: ["[@zeta20]", "[@adams18]", "[@zeta20]"],
-      items: [
-        { ...ZETA, id: "zeta20" },
-        { ...ADAMS, id: "adams18" },
-      ],
-      styleXml: NUMERIC_STYLE,
-    });
-
-    expect(rendered.map((citation) => citation.textContent)).toEqual([
-      "[1]",
-      "[2]",
-      "[1]",
-    ]);
-  });
-
-  it("leaves the bibliography out of a citation render", async () => {
-    const [only] = await engine.renderCitations({
-      citations: ["[@zeta20]"],
-      items: [{ ...ZETA, id: "zeta20" }],
-    });
-
-    expect(only?.textContent).not.toContain("A study of nothing");
-  });
-
-  it("renders nothing for an empty request", async () => {
-    expect(await engine.renderCitations({ citations: [], items: [] })).toEqual(
-      [],
-    );
-  });
-
   it("hands the bibliography over as typed inlines, in the style's order", async () => {
-    const entries = await engine.renderBibliographyAst({
+    const entries = await engine.renderBibliography({
       items: [ZETA, ADAMS],
     });
 
@@ -421,8 +231,8 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     expect(plainText(entries.at(1)?.content ?? [])).toContain("Zeta, Ann");
   });
 
-  it("keys typed entries by a Zotero URI id", async () => {
-    const entries = await engine.renderBibliographyAst({
+  it("keys entries by a Zotero URI id", async () => {
+    const entries = await engine.renderBibliography({
       items: [{ ...ZETA, id: ZOTERO_URI_ID }],
       styleXml: NUMERIC_STYLE,
     });
@@ -431,7 +241,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
   });
 
   it("splits the entry marker off as inlines, without the separator space", async () => {
-    const [first] = await engine.renderBibliographyAst({
+    const [first] = await engine.renderBibliography({
       items: [ZETA],
       styleXml: NUMERIC_STYLE,
     });
@@ -442,15 +252,15 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     );
   });
 
-  it("leaves the typed marker unset for a style that renders none", async () => {
-    const [first] = await engine.renderBibliographyAst({ items: [ZETA] });
+  it("leaves the marker unset for a style that renders none", async () => {
+    const [first] = await engine.renderBibliography({ items: [ZETA] });
 
     expect(first?.marker).toBeUndefined();
     expect(plainText(first?.content ?? [])).toContain("Zeta, Ann");
   });
 
   it("passes the display spans of an entry through untouched", async () => {
-    const [first] = await engine.renderBibliographyAst({
+    const [first] = await engine.renderBibliography({
       items: [ZETA],
       styleXml: BLOCK_STYLE,
     });
@@ -462,14 +272,29 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     ).toEqual([["csl-block"], ["csl-indent"]]);
   });
 
-  it("renders no typed entries for an empty item set", async () => {
-    await expect(engine.renderBibliographyAst({ items: [] })).resolves.toEqual(
-      [],
-    );
+  it("keeps the markup a style formats an entry's text with", async () => {
+    const [first] = await engine.renderBibliography({ items: [ZETA] });
+
+    // The embedded style italicizes a book title.
+    expect(
+      first?.content.flatMap((inline) =>
+        inline.t === "Emph" ? [plainText(inline.c)] : [],
+      ),
+    ).toEqual(["A Study of Nothing"]);
   });
 
-  it("formats one typed citation per source, in the order they were asked for", async () => {
-    const rendered = await engine.renderCitationsAst({
+  it("reports the Pandoc failure for an unusable style", async () => {
+    await expect(
+      engine.renderBibliography({ items: [ZETA], styleXml: "<not-a-style/>" }),
+    ).rejects.toThrow(CitationEngineError);
+  });
+
+  it("renders no entries for an empty item set", async () => {
+    await expect(engine.renderBibliography({ items: [] })).resolves.toEqual([]);
+  });
+
+  it("formats one citation per source, in the order they were asked for", async () => {
+    const rendered = await engine.renderCitations({
       citations: ["[@zeta20]", "@adams18"],
       items: [
         { ...ZETA, id: "zeta20" },
@@ -488,7 +313,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
   });
 
   it("names every work a cluster cites, in the mode it cites it", async () => {
-    const [cluster] = await engine.renderCitationsAst({
+    const [cluster] = await engine.renderCitations({
       citations: ["[see @zeta20, p. 3; -@adams18]"],
       items: [
         { ...ZETA, id: "zeta20" },
@@ -503,8 +328,8 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     expect(plainText(cluster?.content ?? [])).toBe("(see Zeta 2020, 3; 2018)");
   });
 
-  it("numbers typed citations across the whole request under a numbered style", async () => {
-    const rendered = await engine.renderCitationsAst({
+  it("numbers citations across the whole request under a numbered style", async () => {
+    const rendered = await engine.renderCitations({
       citations: ["[@zeta20]", "[@adams18]", "[@zeta20]"],
       items: [
         { ...ZETA, id: "zeta20" },
@@ -520,8 +345,17 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     ]);
   });
 
+  it("leaves the bibliography out of a citation render", async () => {
+    const [only] = await engine.renderCitations({
+      citations: ["[@zeta20]"],
+      items: [{ ...ZETA, id: "zeta20" }],
+    });
+
+    expect(plainText(only?.content ?? [])).not.toContain("A study of nothing");
+  });
+
   it("renders each occurrence of one source by its place in the request", async () => {
-    const rendered = await engine.renderCitationsAst({
+    const rendered = await engine.renderCitations({
       citations: ["[@zeta20]", "[@zeta20]"],
       items: [{ ...ZETA, id: "zeta20" }],
       styleXml: POSITION_STYLE,
@@ -534,7 +368,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
   });
 
   it("carries a note-class style's footnote in the citation content", async () => {
-    const [plain, authorInText] = await engine.renderCitationsAst({
+    const [plain, authorInText] = await engine.renderCitations({
       citations: ["[@zeta20]", "@adams18"],
       items: [
         { ...ZETA, id: "zeta20" },
@@ -556,7 +390,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
   });
 
   it("refuses an answer that does not cover every citation", async () => {
-    const rendering = engine.renderCitationsAst({
+    const rendering = engine.renderCitations({
       citations: ["[@zeta20]", ""],
       items: [{ ...ZETA, id: "zeta20" }],
     });
@@ -565,9 +399,9 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     await expect(rendering).rejects.toThrow("formatted 1 of 2 citations");
   });
 
-  it("renders nothing typed for an empty request", async () => {
+  it("renders nothing for an empty request", async () => {
     await expect(
-      engine.renderCitationsAst({ citations: [], items: [] }),
+      engine.renderCitations({ citations: [], items: [] }),
     ).resolves.toEqual([]);
   });
 

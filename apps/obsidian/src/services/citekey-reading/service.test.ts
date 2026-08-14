@@ -108,7 +108,7 @@ async function makeHarness({
         whenIndexed: () => Promise.resolve(),
       },
       bibliographyRender: {
-        renderCitationsAst: (citations: readonly string[]) => {
+        renderCitations: (citations: readonly string[]) => {
           citationRequests.push({ citations });
           return formatCitations
             ? formatCitations(citations)

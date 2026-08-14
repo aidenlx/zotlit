@@ -66,7 +66,7 @@ export interface ReferencesViewDeps {
     "getStatus" | "subscribe" | "decline"
   >;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
-  bibliographyRender: Pick<BibliographyRenderCache, "renderAst" | "on">;
+  bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -396,7 +396,7 @@ export class ReferencesView extends ItemView {
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
     const items = [...sources.values()].map((source) => source.csl);
-    const outcome = await this.#deps.bibliographyRender.renderAst(items);
+    const outcome = await this.#deps.bibliographyRender.render(items);
     if (generation !== this.#generation) return;
 
     if (outcome.kind !== "rendered") {
