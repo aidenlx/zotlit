@@ -121,7 +121,7 @@ describe("toCopiedBibliography", () => {
     const { text } = toCopiedBibliography([
       entry(words("李四. 《潮汐边缘》. 港口出版社, 2018.")),
       entry([
-        { t: "Str", c: "Rivers, A." },
+        { t: "Str", c: "Rivers,\u00a0A." },
         ...words(" — "),
         emph("Field notes"),
         { t: "Str", c: "." },
@@ -129,7 +129,7 @@ describe("toCopiedBibliography", () => {
     ]);
 
     expect(text).toBe(
-      "李四. 《潮汐边缘》. 港口出版社, 2018.\n\nRivers, A. — Field notes.",
+      "李四. 《潮汐边缘》. 港口出版社, 2018.\n\nRivers,\u00a0A. — Field notes.",
     );
   });
 

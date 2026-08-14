@@ -83,9 +83,9 @@ function contextOf({ serials, links = "render" }: InlineContentProps): Context {
 }
 
 /**
- * The elements pandoc's own HTML writer gives these constructors. The one
- * vocabulary of the plugin: the clipboard serializer writes the same elements
- * this shows, so a formatted entry reads the same wherever it lands.
+ * The elements pandoc's own HTML writer gives these constructors. Every walk of
+ * a flow wraps these six under this one table — the clipboard serializer as
+ * much as the renderer — so a formatted entry reads the same wherever it lands.
  */
 export const WRAPPER_TAGS = {
   Emph: "em",
@@ -125,34 +125,56 @@ const LINK_SCHEMES = new Set(["http:", "https:", "mailto:"]);
 const NO_ENTRY = "⚠";
 
 /**
+ * Track the separators a flow being written owes, so every walk of a flow
+ * spaces its parts the one way.
+ *
+ * A flow reads as one run of text: the separators between two parts collapse
+ * into a single space, a leading one is dropped, and a part that starts after a
+ * display span is owed a space whether or not the flow already carries one
+ * there.
+ *
+ * @param append how one written node reaches the flow being built.
+ */
+export function flowWriter<T>(append: (node: T | string) => void) {
+  /** Whether the flow already ends in a separator, so none is owed. */
+  let spaced = true;
+  /** Whether a display span just ended, so the next content starts a part. */
+  let boundary = false;
+
+  const separate = (): void => {
+    if (spaced) return;
+    append(" ");
+    spaced = true;
+  };
+
+  const add = (node: T | string): void => {
+    if (boundary) separate();
+    boundary = false;
+    append(node);
+    spaced = false;
+  };
+
+  const endPart = (): void => {
+    boundary = true;
+  };
+
+  return { separate, add, endPart };
+}
+
+/**
  * Walk one flow into the nodes that show it.
  *
  * A constructor that stands for an element renders as that element; one that
  * stands for a layout ({@link DISPLAY_CLASSES}, `Cite`, a link that stays
  * behind) hands its own content to this same flow, so what it wrapped keeps
- * reading as one run of text. A display span's boundary becomes a single space,
- * whether or not the flow already carries one there.
+ * reading as one run of text.
  */
 function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
   const flow: ReactNode[] = [];
-  /** Whether the flow already ends in a separator, so none is owed. */
-  let spaced = true;
-  /** Whether a display span just ended, so the next content starts a part. */
-  let boundary = false;
-  let key = 0;
-
-  function separate(): void {
-    if (spaced) return;
-    flow.push(" ");
-    spaced = true;
-  }
-
-  function add(node: ReactNode): void {
-    if (boundary) separate();
-    boundary = false;
+  const { separate, add, endPart } = flowWriter<ReactNode>((node) => {
     flow.push(node);
-    spaced = false;
-  }
+  });
+  let key = 0;
 
   function walk(inlines: Inlines): void {
     for (const inline of inlines) {
@@ -220,7 +242,7 @@ function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
           const display = classes.some((name) => DISPLAY_CLASSES.has(name));
           if (display) separate();
           walk(content);
-          if (display) boundary = true;
+          if (display) endPart();
           break;
         }
         case "Link": {

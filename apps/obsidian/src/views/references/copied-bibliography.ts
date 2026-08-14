@@ -3,6 +3,7 @@
 import type { Inlines } from "@/services/pandoc/ast";
 import {
   DISPLAY_CLASSES,
+  flowWriter,
   inlineText,
   linkHref,
   QUOTE_MARKS,
@@ -47,11 +48,12 @@ export function toCopiedBibliography(
 /**
  * One paragraph, holding the Entry Marker and the entry as portable markup.
  *
- * The entry is written from the formatted flow the engine handed over, so what
- * reaches the clipboard is the same vocabulary every surface shows: the
- * elements pandoc's own HTML writer names, a link's target under a followable
- * scheme, and the declarations small caps rides under. A style writes whatever
- * it likes into an entry; nothing else of it crosses over.
+ * The entry is written from the formatted flow the engine handed over, and the
+ * destination reads no stylesheet of ours, so what crosses over is what stands
+ * on its own: the elements pandoc's own HTML writer names, a link's target
+ * under a followable scheme, and the declarations small caps rides under. A
+ * style writes whatever it likes into an entry; nothing else of it crosses
+ * over.
  */
 function richEntry({ marker, content }: CopiedBibliographyEntry): string {
   const paragraph = document.createElement("p");
@@ -70,23 +72,9 @@ function richEntry({ marker, content }: CopiedBibliographyEntry): string {
  */
 function portable(nodes: Inlines): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  /** Whether the flow already ends in a separator, so none is owed. */
-  let spaced = true;
-  /** Whether a display span just ended, so the next content starts a part. */
-  let boundary = false;
-
-  function separate(): void {
-    if (spaced) return;
-    fragment.append(" ");
-    spaced = true;
-  }
-
-  function add(node: Node | string): void {
-    if (boundary) separate();
-    boundary = false;
+  const { separate, add, endPart } = flowWriter<Node>((node) => {
     fragment.append(node);
-    spaced = false;
-  }
+  });
 
   function wrap(tag: string, content: Inlines): HTMLElement {
     const element = document.createElement(tag);
@@ -153,7 +141,7 @@ function portable(nodes: Inlines): DocumentFragment {
           const display = classes.some((name) => DISPLAY_CLASSES.has(name));
           if (display) separate();
           walk(content);
-          if (display) boundary = true;
+          if (display) endPart();
           break;
         }
         case "Link": {
