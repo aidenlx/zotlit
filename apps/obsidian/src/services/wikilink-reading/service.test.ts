@@ -3,7 +3,7 @@ import { MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import { occurrence, rendered } from "@/services/citation-text/__fixtures__";
+import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
 import { defaults } from "@/services/settings/schema";
@@ -405,7 +405,7 @@ class CitationTextStub {
   #text(): HeldText {
     const formatted = new Map<string, FormattedOccurrence[]>();
     for (const [source, text] of Object.entries(this.#formatted)) {
-      formatted.set(source, occurrence(rendered(text)));
+      formatted.set(source, occurrences(rendered(text)));
     }
     return { formatted, summaries: new Map() };
   }

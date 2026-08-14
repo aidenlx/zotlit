@@ -92,14 +92,18 @@ export interface CitationTextDeps {
 }
 
 /**
- * Formats every Citation one document writes in either citing syntax, and hands
- * the same answer to every surface that shows that document — the reading
- * view's post-processors and the editor's widgets alike, so all of them read
- * the same text.
+ * Formats every Citation Occurrence one document writes in either citing
+ * syntax, and hands the same answer to every surface that shows that document —
+ * the reading view's post-processors and the editor's widgets alike.
+ *
+ * Text is keyed by occurrence: under a position-dependent Citation and
+ * References Style two occurrences of one source read differently, each showing
+ * the text the engine produced for it. A surface holding no coordinate for the
+ * occurrence it shows reads the source's first-occurrence text.
  *
  * A wikilink Citation is formatted from the Pandoc source the exporter would
  * write it as, which is the very source the equivalent Citation Cluster
- * carries; the two syntaxes therefore share one render and read alike.
+ * carries; the two syntaxes therefore share one render.
  *
  * Text comes from the plugin-wide bibliography render cache, which is also the
  * References Sidebar's source, so all three surfaces agree on the References
@@ -301,7 +305,7 @@ export class CitationText extends Service<void> {
         else occurrences.push({ start, text });
       });
     }
-    logger.debug("Document citations read", {
+    logger.debug("Document citations read", () => ({
       path: file.path,
       citations: sources.length,
       wikilinks: wikilinks.citations.length,
@@ -310,7 +314,7 @@ export class CitationText extends Service<void> {
         (count, occurrences) => count + occurrences.length,
         0,
       ),
-    });
+    }));
     return {
       formatted,
       summaries: new Map(

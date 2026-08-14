@@ -76,7 +76,7 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
-import { occurrence, rendered } from "@/services/citation-text/__fixtures__";
+import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 
@@ -120,7 +120,7 @@ function viewOf(
                     source: "[@example, p. 7]",
                     works: [LITERATURE_NOTE.indexedKey],
                   }),
-                  occurrence(content),
+                  occurrences(content),
                 ],
               ]),
               summaries: new Map([

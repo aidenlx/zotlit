@@ -82,7 +82,7 @@ export function rendered(text: string): RenderedCitation {
  * The one occurrence a document holding a Citation once writes of it, for a
  * suite that stands in for a whole read.
  */
-export function occurrence(
+export function occurrences(
   text: RenderedCitation,
   start = 0,
 ): FormattedOccurrence[] {
@@ -94,14 +94,14 @@ export function occurrence(
  * which is what a suite asserting on a position-dependent render asserts on.
  */
 export function occurrenceTexts(
-  occurrences: readonly FormattedOccurrence[] | undefined,
+  held: readonly FormattedOccurrence[] = [],
 ): string[] {
-  return (occurrences ?? []).map(({ text }) => inlineText(text.content));
+  return held.map(({ text }) => inlineText(text.content));
 }
 
 /** The text one held Citation's first occurrence reads as. */
 export function firstText(
-  occurrences: readonly FormattedOccurrence[] | undefined,
+  held: readonly FormattedOccurrence[] = [],
 ): string | undefined {
-  return occurrenceTexts(occurrences)[0];
+  return occurrenceTexts(held)[0];
 }

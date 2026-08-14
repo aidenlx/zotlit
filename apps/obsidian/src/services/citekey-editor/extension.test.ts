@@ -26,7 +26,7 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
-import { occurrence, rendered } from "@/services/citation-text/__fixtures__";
+import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
 
 import {
@@ -120,7 +120,7 @@ describe("citekeyEditorExtension theme hooks", () => {
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => true,
             citationText: () => ({
-              formatted: new Map([["[@doe2024]", occurrence(formatted)]]),
+              formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
               summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
               literalWorks: new Map([["doe2024", DOE_KEY]]),
             }),
@@ -153,7 +153,7 @@ describe("citekeyEditorExtension citation widgets", () => {
   function viewOf(
     doc: string,
     formatted: Map<string, FormattedOccurrence[]> = new Map([
-      ["[@doe2024]", occurrence(rendered("Doe (2024)"))],
+      ["[@doe2024]", occurrences(rendered("Doe (2024)"))],
     ]),
   ) {
     livePreview.mockReturnValue(true);

@@ -17,6 +17,7 @@ export interface SectionRange {
  * post-processor tell the Citation Occurrences it shows from the identical ones
  * written elsewhere in the same document.
  *
+ * @param ctx the post-processor context that section was rendered under.
  * @param el one rendered section, as a Markdown post-processor receives it.
  * @returns null when Obsidian places the section in no source range — an embed
  *   and a popover render outside one — which leaves the surface no coordinate.
