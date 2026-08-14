@@ -23,6 +23,13 @@ import type { TFile } from "obsidian";
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
+// PROTOTYPE #743 — throwaway, delete after ticket resolution.
+import {
+  fixtures,
+  renderDetached,
+  stats,
+} from "@/proto-detached-render/adapter";
+import { renderNative } from "@/proto-detached-render/native";
 import {
   citationContent,
   citationElement,
@@ -379,7 +386,19 @@ class CitationWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const element = citationElement(view.dom.ownerDocument, this.#content, [
+    const doc = view.dom.ownerDocument;
+    // PROTOTYPE #743 — throwaway, delete after ticket resolution.
+    let content: Node | string = this.#content;
+    const protoMode = window.__ztProtoMode;
+    if (protoMode) {
+      stats.toDOMCalls++;
+      const fixture = fixtures[this.#source.length % 3]!;
+      content =
+        protoMode === "preact"
+          ? renderDetached(fixture)
+          : renderNative(fixture, doc);
+    }
+    const element = citationElement(doc, content, [
       themeHook.citationKey,
       ...this.#themeClasses,
     ]);
@@ -496,7 +515,10 @@ function citationWidget(
   handlers: CitekeyEditorHandlers,
 ): CitationWidget | null {
   const content = citationContent(citation, citations);
-  if (content === null) return null;
+  // PROTOTYPE #743 — throwaway, delete after ticket resolution: in proto mode
+  // the widget shows fixture content, not the engine's lookup, so a missing
+  // lookup no longer bails.
+  if (content === null && window.__ztProtoMode === undefined) return null;
   const unresolved = citation.keys.filter(
     (key) => !citations.summaries.has(key.citekey),
   ).length;
@@ -510,7 +532,7 @@ function citationWidget(
         ];
   return new CitationWidget({
     source: citation.source,
-    content,
+    content: content ?? "",
     works: citedWorks(citation, (citekey) => citations.summaries.get(citekey)),
     sourcePath: path,
     handlers,

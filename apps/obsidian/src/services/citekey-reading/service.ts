@@ -6,6 +6,9 @@ import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 import { getLogger } from "@/lib/log";
 import { rerenderReadingViews } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+// PROTOTYPE #743 — throwaway, delete after ticket resolution.
+import { fixtures, renderDetached } from "@/proto-detached-render/adapter";
+import { renderNative } from "@/proto-detached-render/native";
 import {
   citationContent,
   citationElement,
@@ -146,21 +149,33 @@ export class CitekeyReading extends Service<void> {
     const file = this.#app.vault.getFileByPath(ctx.sourcePath);
     if (!file) return;
 
+    // PROTOTYPE #743 — throwaway, delete after ticket resolution: in proto
+    // mode the citation shows fixture content, not the engine's lookup, so a
+    // missing lookup no longer bails.
+    const protoMode = window.__ztProtoMode;
     const text = this.#citationText.peek(file.path);
-    if (text === null) {
+    if (text === null && !protoMode) {
       void this.#citationText.load(file);
       return;
     }
     const summaryOf = (citekey: string): string | undefined =>
-      text.summaries.get(citekey);
+      text?.summaries.get(citekey);
     const doc = el.ownerDocument;
     replaceCitations(citations, (citation) => {
-      const content = this.#showFormatted
-        ? citationContent(citation, text)
-        : null;
-      const unresolved = citation.keys.filter(
-        (key) => !text.summaries.has(key.citekey),
-      ).length;
+      let content: Node | string | null;
+      if (protoMode) {
+        const fixture = fixtures[citation.source.length % 3]!;
+        content =
+          protoMode === "preact"
+            ? renderDetached(fixture)
+            : renderNative(fixture, doc);
+      } else {
+        content = this.#showFormatted ? citationContent(citation, text!) : null;
+      }
+      const unresolved = protoMode
+        ? 0
+        : citation.keys.filter((key) => !text!.summaries.has(key.citekey))
+            .length;
       const themeClasses = [
         themeHook.citationKey,
         ...(unresolved === 0
@@ -178,7 +193,12 @@ export class CitekeyReading extends Service<void> {
       );
       // A citation none of whose keys reaches a Zotero Item remains wrapped so
       // themes can style its error state, but has no target to navigate to.
-      if (!this.#navigationEnabled || unresolved === citation.keys.length) {
+      // Proto mode has no engine to resolve keys against, so it stops here.
+      if (
+        !this.#navigationEnabled ||
+        unresolved === citation.keys.length ||
+        protoMode
+      ) {
         return element;
       }
       attachCitationNavigation(element, {
