@@ -1,7 +1,7 @@
 // The one rendering of a formatted inline flow, shared by every surface that shows citations.
 
 import type { ReactNode } from "react";
-import { createElement } from "react";
+import { createElement, isValidElement } from "react";
 import { createRoot } from "react-dom/client";
 
 import { getLogger } from "@/lib/log";
@@ -24,7 +24,8 @@ export interface InlineContentProps {
   /**
    * Whether a link target reaches the DOM as an anchor. A surface that inserts
    * into an anchor of its own suppresses them, since nesting one anchor in
-   * another is invalid; the link's own content still shows.
+   * another is invalid; the link's own content still shows, as plain text the
+   * surrounding anchor carries.
    * @default "render"
    */
   links?: "render" | "suppress";
@@ -41,31 +42,31 @@ export interface InlineContentProps {
  * detached and never unmount it. Text reaches the DOM as text alone: nothing a
  * style or an item field carries is ever read as markup.
  */
-export function InlineContent({
-  nodes,
-  serials,
-  links = "render",
-}: InlineContentProps) {
-  return <>{renderFlow(nodes, { serials, links })}</>;
+export function InlineContent(props: InlineContentProps) {
+  return <>{renderFlow(props.nodes, contextOf(props))}</>;
 }
 
 /**
  * Render inline content into a container that no React tree above it owns, for
  * the reading-view and editor surfaces that build their DOM by hand.
  *
- * The render populates `container` before this returns, so the caller hands the
- * container straight back to Obsidian. That population is asserted rather than
- * assumed: a container still empty here means the render deferred its commit,
- * and every surface is handing Obsidian an element it never fills. The root is
- * then left alone: the component holds no effects to clean up, and the
- * container dies with the DOM its surface inserted it into.
+ * The adapter walks the flow {@link InlineContent} renders and hands React the
+ * commit alone, which populates `container` before this returns, so the caller
+ * hands the container straight back to Obsidian. That population is asserted
+ * rather than assumed: a container left empty where the flow had something to
+ * show means the render deferred its commit, and every surface is handing
+ * Obsidian an element it never fills. A flow that shows nothing — no nodes, or
+ * none the renderer keeps — leaves the container empty on its own and passes.
+ * The root is then left alone: the component holds no effects to clean up, and
+ * the container dies with the DOM its surface inserted it into.
  */
 export function renderInlineContent(
   container: Element,
   props: InlineContentProps,
 ): void {
-  createRoot(container).render(<InlineContent {...props} />);
-  if (container.hasChildNodes()) return;
+  const flow = renderFlow(props.nodes, contextOf(props));
+  createRoot(container).render(<>{flow}</>);
+  if (flow.length === 0 || container.hasChildNodes()) return;
   logger.error("Detached render left the container empty", {
     inlines: props.nodes.length,
   });
@@ -74,6 +75,11 @@ export function renderInlineContent(
 interface Context {
   serials: readonly (number | undefined)[] | undefined;
   links: "render" | "suppress";
+}
+
+/** The one reading of the props both rendering paths walk a flow under. */
+function contextOf({ serials, links = "render" }: InlineContentProps): Context {
+  return { serials, links };
 }
 
 /** The elements pandoc's own HTML writer gives these constructors. */
@@ -214,7 +220,11 @@ function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
         }
         case "Link": {
           const [, children, [url, title]] = inline.c;
-          const href = context.links === "render" ? linkHref(url) : null;
+          if (context.links === "suppress") {
+            add(plainText(children, context));
+            break;
+          }
+          const href = linkHref(url);
           if (href === null) {
             walk(children);
             break;
@@ -253,6 +263,25 @@ function renderFlow(nodes: Inlines, context: Context): ReactNode[] {
 
   walk(nodes);
   return flow;
+}
+
+/**
+ * The text one flow reads as, with every element it would render left out —
+ * how a link shows its content where the surface suppresses anchors, since the
+ * anchor that surface inserts into carries the text as its own.
+ */
+function plainText(inlines: Inlines, context: Context): string {
+  return textOf(renderFlow(inlines, context));
+}
+
+/** The text a rendered node holds, gathered from the nodes it wraps. */
+function textOf(node: ReactNode): string {
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (isValidElement(node)) {
+    return textOf((node.props as { children?: ReactNode }).children);
+  }
+  return "";
 }
 
 /**

@@ -300,7 +300,7 @@ describe("InlineContent links", () => {
     expect(container.textContent).toBe("source");
   });
 
-  it("renders the content alone where a surface suppresses links", () => {
+  it("renders the content as plain text where a surface suppresses links", () => {
     const container = attached({
       links: "suppress",
       nodes: [
@@ -308,15 +308,14 @@ describe("InlineContent links", () => {
           t: "Link",
           c: [
             NO_ATTR,
-            [{ t: "Emph", c: [str("A study")] }],
+            [{ t: "Emph", c: [str("A study")] }, { t: "Space" }, str("(2020)")],
             ["https://example.com", "Open it"],
           ],
         },
       ],
     });
 
-    expect(container.querySelector("a")).toBeNull();
-    expect(container.innerHTML).toBe("<em>A study</em>");
+    expect(container.innerHTML).toBe("A study (2020)");
   });
 });
 
@@ -407,6 +406,15 @@ describe("renderInlineContent", () => {
 
   it("renders what the component renders inside a tree", () => {
     expect(detached({ nodes }).innerHTML).toBe(attached({ nodes }).innerHTML);
+  });
+
+  it("passes a flow that has nothing to show", () => {
+    const container = detached({
+      nodes: [{ t: "RawInline", c: ["html", "<b>"] }],
+    });
+
+    expect(container.hasChildNodes()).toBe(false);
+    expect(logRecords.map((record) => record.level)).toEqual(["debug"]);
   });
 
   it("reports a render that left the container empty", async () => {
