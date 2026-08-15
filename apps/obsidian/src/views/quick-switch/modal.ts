@@ -1,4 +1,4 @@
-import { Keymap, SuggestModal } from "obsidian";
+import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { TFile } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -11,6 +11,11 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import type { QuickSwitchDeps } from "./register";
 
+/** Glyph for the `Mod` modifier, matching how Obsidian labels its own hotkeys. */
+function modGlyph(): string {
+  return Platform.isMacOS ? "⌘" : "Ctrl";
+}
+
 export class QuickSwitchModal extends SuggestModal<SearchHit> {
   readonly #deps: QuickSwitchDeps;
 
@@ -21,9 +26,16 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_open_lit_note() },
-      { command: "⌘↵", purpose: m.instruction_new_pane() },
+      { command: `${modGlyph()}↵`, purpose: m.instruction_new_pane() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
+    // The suggestion popup registers `Enter` with no modifiers and matches
+    // them exactly, so Mod+Enter reaches no handler unless the modal claims
+    // the chord itself.
+    this.scope.register(["Mod"], "Enter", (evt) => {
+      this.selectActiveSuggestion(evt);
+      return false;
+    });
   }
 
   override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {

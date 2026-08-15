@@ -236,10 +236,33 @@ export abstract class EditorSuggest<T> {
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
 
+/**
+ * Records keymap registrations so a test can look one up by modifiers plus key
+ * and invoke its handler, standing in for a real keypress.
+ */
+export class Scope {
+  readonly handlers: {
+    modifiers: Modifier[] | null;
+    key: string | null;
+    func: (evt: KeyboardEvent) => boolean | void;
+  }[] = [];
+
+  register(
+    modifiers: Modifier[] | null,
+    key: string | null,
+    func: (evt: KeyboardEvent) => boolean | void,
+  ): unknown {
+    const handler = { modifiers, key, func };
+    this.handlers.push(handler);
+    return handler;
+  }
+}
+
 export abstract class SuggestModal<T> {
   limit = 0;
   emptyStateText = "";
   readonly app: App;
+  readonly scope = new Scope();
 
   constructor(app: App) {
     this.app = app;
@@ -247,6 +270,7 @@ export abstract class SuggestModal<T> {
 
   setPlaceholder(_placeholder: string): void {}
   setInstructions(_instructions: Instruction[]): void {}
+  selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
@@ -282,6 +306,7 @@ export function createMockPlugin(): {
 }
 
 let platformIsWin: boolean | undefined;
+let platformIsMacOS: boolean | undefined;
 
 export const Platform = {
   get isWin(): boolean {
@@ -292,6 +317,14 @@ export const Platform = {
     }
     return platformIsWin;
   },
+  get isMacOS(): boolean {
+    if (platformIsMacOS === undefined) {
+      throw new Error(
+        "Platform.isMacOS not configured — call setMockPlatform({ isMacOS }) in test setup",
+      );
+    }
+    return platformIsMacOS;
+  },
 };
 
 /**
@@ -299,12 +332,17 @@ export const Platform = {
  * `obsidian` module, where `Platform` is effectively read-only — tests must
  * never assign to `Platform.isWin` directly.
  */
-export function setMockPlatform(overrides: { isWin?: boolean }): void {
+export function setMockPlatform(overrides: {
+  isWin?: boolean;
+  isMacOS?: boolean;
+}): void {
   if (overrides.isWin !== undefined) platformIsWin = overrides.isWin;
+  if (overrides.isMacOS !== undefined) platformIsMacOS = overrides.isMacOS;
 }
 
 export function resetMockPlatform(): void {
   platformIsWin = undefined;
+  platformIsMacOS = undefined;
 }
 
 export function getLanguage(): string {

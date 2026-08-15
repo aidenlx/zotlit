@@ -191,7 +191,9 @@ export function scanCitationClusters(text: string): CitationCluster[] {
     open >= 0;
     open = text.indexOf("[", open)
   ) {
-    const cluster = readCluster(text, open, keys);
+    const cluster = opensInlineNote(text, open)
+      ? null
+      : readCluster(text, open, keys);
     if (!cluster) {
       open += 1;
       continue;
@@ -284,6 +286,19 @@ function readBalancedBraces(text: string, open: number): number | null {
     else if (char === "}" && (depth -= 1) === 0) return at + 1;
   }
   return null;
+}
+
+/**
+ * Pandoc reads a `[` that directly follows a `^` as the start of an inline
+ * note, so the bracket belongs to the note and every key inside it is a
+ * citation of its own — `^[see @a]` is a note holding the author-in-text `@a`,
+ * not the cluster `[see @a]`. A backslash-escaped caret is literal text, which
+ * leaves its bracket free to open a cluster.
+ *
+ * @see https://github.com/jgm/pandoc/blob/3.10.1/src/Text/Pandoc/Readers/Markdown.hs — `inlineNote`
+ */
+function opensInlineNote(text: string, open: number): boolean {
+  return text[open - 1] === "^" && !isBackslashEscaped(text, open - 1);
 }
 
 function readCluster(

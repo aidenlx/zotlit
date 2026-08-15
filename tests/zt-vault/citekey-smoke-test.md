@@ -92,9 +92,25 @@ Here is a claim.[^@wittNebulinRegulatesThin2006]
 
 ## Citekey inside an inline note (recognized)
 
-An inline note is not a footnote label, so a key inside it is still a citation:
+An inline note is not a footnote label, so a key inside it is still a citation. The `[` after the
+`^` opens the note, so it is the note's own bracket rather than a citation cluster: the note keeps
+both brackets and the key inside reads as author-in-text. Live Preview must render each citation
+below at the size of the note text around it — one at body size has dropped out of the footnote
+superscript, and one smaller than that text carries it twice.
 
 This is an aside ^[see @Hensher2011 for background].
+
+A key fills the whole note ^[@Hensher2011].
+
+Note text follows the key ^[@Hensher2011 p. 74].
+
+Note text precedes the key ^[see @Hensher2011].
+
+A note holds a cluster of its own ^[an aside with [@wittNebulinRegulatesThin2006] inside].
+
+An escaped caret is literal text, which leaves its bracket free to open a cluster:
+
+The escape reads as a cluster \^[see @Hensher2011].
 
 ## Mixed literal citekeys and Literature Note wikilinks
 
