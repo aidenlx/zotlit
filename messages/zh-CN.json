@@ -32,7 +32,6 @@
   "command_reimport_note_name": "更新从 Zotero 导入的笔记",
   "command_update_all_notes_name": "创建或更新所有文献笔记",
   "command_import_all_notes_name": "导入所有子笔记和独立笔记",
-  "hover_source_citekey": "ZotLit 文献引用标识（citation key）",
   "notice_no_literature_note": "@{citekey} 没有文献笔记。",
   "notice_creating_note": "创建文献笔记…",
   "notice_created_note": "文献笔记已创建。",

@@ -1,10 +1,18 @@
 export {
+  attachCitationHover,
   attachCitationNavigation,
+  type CitationHoverRequest,
   type CitationHoverTarget,
   type CitationNavigation,
 } from "./citation";
 export {
-  CITEKEY_HOVER_SOURCE,
+  citationHoverIntent,
+  hoverEditingMode,
+  type CitationHoverGesture,
+  type CitationHoverIntent,
+  type HoverEditingMode,
+} from "./hover";
+export {
   citationTarget,
   navigationIntent,
   navigationPane,
@@ -18,9 +26,4 @@ export {
   type NavigationSurface,
   type NavigationTarget,
 } from "./intent";
-export {
-  mouseGesture,
-  triggerCitekeyHover,
-  type CitekeyHoverLink,
-  type GestureSurface,
-} from "./shell";
+export { hoverGesture, mouseGesture, type GestureSurface } from "./shell";

@@ -1,10 +1,8 @@
 import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
-import type { HoverLinkSource } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import type { DocumentCitations } from "@/services/citation-text/service";
-import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -29,7 +27,6 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerEditorExtension: (extension: Extension) => {
           registered = extension as Extension[];
         },
-        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
@@ -72,7 +69,6 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerEditorExtension: (extension: Extension) => {
           registered = extension as Extension[];
         },
-        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
@@ -86,57 +82,6 @@ describe("CitekeyEditor settings lifecycle", () => {
     expect(registered).toHaveLength(1);
     settings.update({ "citation.pandoc-citations": false });
     expect(registered).toEqual([]);
-  });
-});
-
-describe("CitekeyEditor hover preview", () => {
-  it("registers one hover-link source that previews on bare hover", async () => {
-    const sources: Record<string, HoverLinkSource> = {};
-    await using service = new CitekeyEditor({
-      app: { workspace: { updateOptions: () => undefined } },
-      plugin: {
-        registerEditorExtension: () => undefined,
-        registerHoverLinkSource: (id: string, info: HoverLinkSource) => {
-          sources[id] = info;
-        },
-      },
-      noteIndex: new NoteIndexStub(),
-      citationText: new CitationTextStub(),
-      citationIndex: new CitationIndexStub(),
-      settings: new SettingsStub(),
-    } as never);
-    await service.ready;
-
-    expect(Object.keys(sources)).toEqual([CITEKEY_HOVER_SOURCE]);
-    expect(sources[CITEKEY_HOVER_SOURCE]?.defaultMod).toBe(false);
-    expect(sources[CITEKEY_HOVER_SOURCE]?.display).toBeTruthy();
-  });
-
-  it("answers with a note path only while exactly one literature note matches", async () => {
-    const citationIndex = new CitationIndexStub({
-      doe2024: { itemID: 1, indexedKey: "ABCD2024" },
-      smith2020: { itemID: 2, indexedKey: "ABCD2020" },
-    });
-    const notes: Record<string, { path: string }[]> = {
-      ABCD2024: [{ path: "lit/doe2024.md" }],
-      ABCD2020: [{ path: "lit/a.md" }, { path: "lit/b.md" }],
-    };
-    await using service = new CitekeyEditor({
-      app: { workspace: { updateOptions: () => undefined } },
-      plugin: {
-        registerEditorExtension: () => undefined,
-        registerHoverLinkSource: () => undefined,
-      },
-      noteIndex: new NoteIndexStub(notes),
-      citationText: new CitationTextStub(),
-      citationIndex,
-      settings: new SettingsStub(),
-    } as never);
-    await service.ready;
-
-    expect(service.hoverNotePath("doe2024")).toBe("lit/doe2024.md");
-    expect(service.hoverNotePath("smith2020")).toBeNull();
-    expect(service.hoverNotePath("nobody1999")).toBeNull();
   });
 });
 
@@ -156,7 +101,6 @@ describe("CitekeyEditor index-change broadcast", () => {
       },
       plugin: {
         registerEditorExtension: () => undefined,
-        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
@@ -193,7 +137,6 @@ describe("CitekeyEditor citation text broadcast", () => {
       },
       plugin: {
         registerEditorExtension: () => undefined,
-        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText,

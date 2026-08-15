@@ -32,7 +32,6 @@
   "command_reimport_note_name": "Update imported note from Zotero",
   "command_update_all_notes_name": "Create or update all literature notes",
   "command_import_all_notes_name": "Import all child and standalone notes",
-  "hover_source_citekey": "ZotLit citation key",
   "notice_no_literature_note": "No literature note for @{citekey}.",
   "notice_creating_note": "Creating literature note…",
   "notice_created_note": "Literature note created.",

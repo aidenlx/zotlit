@@ -3,6 +3,8 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
+import { createCitationPopover } from "./citation-popover/service";
+import type { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
@@ -192,12 +194,28 @@ export function buildServices(
           bibliographyRender,
         }),
     })
+    .useValue({
+      citationPopover: ({
+        db,
+        citationIndex,
+        citationText,
+        bibliographyRender,
+      }): CitationPopover =>
+        createCitationPopover({
+          app: plugin.app,
+          db,
+          citationIndex,
+          citationText,
+          bibliographyRender,
+        }),
+    })
     .use({
       citekeyEditor: ({
         noteIndex,
         noteFeature,
         db,
         citationText,
+        citationPopover,
         settings,
         citationIndex,
       }) =>
@@ -208,6 +226,7 @@ export function buildServices(
           noteFeature,
           db,
           citationText,
+          citationPopover,
           settings,
           citationIndex,
         }),
@@ -235,11 +254,17 @@ export function buildServices(
         }),
     })
     .use({
-      citekeyReading: ({ citationText, citekeyEditor, settings }) =>
+      citekeyReading: ({
+        citationText,
+        citationPopover,
+        citekeyEditor,
+        settings,
+      }) =>
         new CitekeyReading({
           app: plugin.app,
           plugin,
           citationText,
+          citationPopover,
           citekeyEditor,
           settings,
         }),

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { livePreview } = vi.hoisted(() => ({
   livePreview: vi.fn(() => false),
@@ -24,10 +24,11 @@ vi.mock("obsidian", async (importOriginal) => {
   };
 });
 
-import { editorInfoField } from "obsidian";
+import { editorInfoField, Keymap } from "obsidian";
 
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
+import type { CitationHoverRequest } from "@/services/citekey-navigation";
 
 import {
   citekeyAtPos,
@@ -83,7 +84,7 @@ describe("citekeyEditorExtension theme hooks", () => {
         doc: "@resolved and @unresolved",
         extensions: citekeyEditorExtension({
           open: () => undefined,
-          hoverNotePath: () => null,
+          showPopover: () => undefined,
           resolves: (citekey) => citekey === "resolved",
           navigationEnabled: () => true,
           showFormatted: () => true,
@@ -115,7 +116,7 @@ describe("citekeyEditorExtension theme hooks", () => {
           editorInfoField,
           citekeyEditorExtension({
             open: (citekey) => opened.push(citekey),
-            hoverNotePath: () => null,
+            showPopover: () => undefined,
             resolves: () => true,
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => true,
@@ -146,6 +147,78 @@ describe("citekeyEditorExtension theme hooks", () => {
   });
 });
 
+describe("citekeyEditorExtension delegated hover", () => {
+  /**
+   * One Source-mode editor over `See @doe2024 here.`, with the pointer answered
+   * from inside the marked key — happy-dom lays nothing out, so the coordinate
+   * lookup the delegated handler runs is the one thing stood in for.
+   */
+  function sourceView(requests: CitationHoverRequest[]) {
+    livePreview.mockReturnValue(false);
+    const view = editorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "See @doe2024 here.",
+        extensions: [
+          editorInfoField,
+          citekeyEditorExtension({
+            open: () => undefined,
+            showPopover: (request) => requests.push(request),
+            resolves: () => true,
+            navigationEnabled: () => true,
+            showFormatted: () => false,
+            citationText: () => null,
+            requestCitationText: () => undefined,
+          }),
+        ],
+      }),
+    });
+    vi.spyOn(view, "posAtCoords").mockReturnValue(8);
+    return view;
+  }
+
+  const mark = (view: EditorView): HTMLElement =>
+    view.dom.querySelector<HTMLElement>(".zt-citation-key")!;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("holds the marked key's hover back until Mod is held", () => {
+    const requests: CitationHoverRequest[] = [];
+    using view = sourceView(requests);
+
+    mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(requests).toEqual([]);
+
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      targetEl: mark(view),
+      citekeys: ["doe2024"],
+      sourcePath: "note.md",
+    });
+  });
+
+  it("hovers once while the pointer moves inside one marked key", () => {
+    const requests: CitationHoverRequest[] = [];
+    using view = sourceView(requests);
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    const targetEl = mark(view);
+
+    targetEl.dispatchEvent(
+      new MouseEvent("mouseover", {
+        bubbles: true,
+        relatedTarget: targetEl.firstChild,
+      }),
+    );
+
+    expect(requests).toEqual([]);
+  });
+});
+
 describe("citekeyEditorExtension citation widgets", () => {
   /**
    * One view over `doc`, with `formatted` held as its citation text — by
@@ -172,7 +245,7 @@ describe("citekeyEditorExtension citation widgets", () => {
           editorInfoField,
           citekeyEditorExtension({
             open: () => undefined,
-            hoverNotePath: () => null,
+            showPopover: () => undefined,
             resolves: () => true,
             navigationEnabled: () => false,
             showFormatted: () => true,

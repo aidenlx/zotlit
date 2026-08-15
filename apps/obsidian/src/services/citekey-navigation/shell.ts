@@ -1,11 +1,10 @@
 // What every citekey interaction shell shares with Obsidian: one mouse event
-// becomes one gesture, and one hovered note becomes the `hover-link` the Page
-// preview core plugin answers.
+// becomes one gesture, click and hover alike.
 
 import { Keymap } from "obsidian";
-import type { HoverParent, Workspace } from "obsidian";
 
-import { CITEKEY_HOVER_SOURCE } from "./intent";
+import { hoverEditingMode } from "./hover";
+import type { CitationHoverGesture } from "./hover";
 import type { NavigationAction, NavigationGesture } from "./intent";
 
 /** The surface a gesture happened on, and the editor's mode where it has one. */
@@ -37,26 +36,17 @@ export function mouseGesture(
   };
 }
 
-/** The note one citekey surface asks the Page preview core plugin to show. */
-export interface CitekeyHoverLink {
-  event: MouseEvent;
-  /** What Obsidian hangs the popover off, and hides it with. */
-  hoverParent: HoverParent;
-  targetEl: HTMLElement;
-  /** The vault path of the Literature Note to preview. */
-  linktext: string;
-  /** The path of the note the citekey is written in. */
-  sourcePath: string;
-}
-
 /**
- * Asks for the page preview of one Literature Note under the shared source id,
- * so every citekey surface stays one row in Obsidian's Page preview settings.
- * Obsidian owns the Ctrl-gating and the popover itself.
+ * The hover one mouse event carries. The modifier is read here and once only,
+ * so a Mod pressed after the pointer settled changes nothing.
  */
-export function triggerCitekeyHover(
-  workspace: Pick<Workspace, "trigger">,
-  link: CitekeyHoverLink,
-): void {
-  workspace.trigger("hover-link", { ...link, source: CITEKEY_HOVER_SOURCE });
+export function hoverGesture(
+  event: MouseEvent,
+  where: GestureSurface,
+): CitationHoverGesture {
+  return {
+    pointerType: (event as Partial<PointerEvent>).pointerType,
+    mod: Keymap.isModifier(event, "Mod"),
+    mode: hoverEditingMode(where),
+  };
 }

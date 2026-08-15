@@ -6,6 +6,7 @@ import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 import { getLogger } from "@/lib/log";
 import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+import type { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
   citationElement,
@@ -16,7 +17,11 @@ import {
 } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import { attachCitationNavigation } from "@/services/citekey-navigation";
+import {
+  attachCitationHover,
+  attachCitationNavigation,
+} from "@/services/citekey-navigation";
+import type { CitationNavigation } from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -31,8 +36,10 @@ export interface CitekeyReadingDeps {
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "load" | "on" | "peek">;
-  /** The open-or-create flow and the hover resolution every citekey surface shares. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
+  /** The open-or-create flow every citekey surface shares. */
+  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  /** What a hovered citation shows. */
+  citationPopover: CitationPopover;
   settings: Pick<SettingsService, "ready" | "subscribe">;
 }
 
@@ -46,9 +53,9 @@ export interface CitekeyReadingDeps {
  * citation keeps its native source text.
  *
  * Navigation is independent: when enabled, one work opens on click, several
- * works open a menu at the cursor, and hover previews the Literature Note of a
- * single resolved key. A citation none of whose keys reaches a Zotero Item
- * stays raw source text and inert.
+ * works open a menu at the cursor, and hover shows the Citation Popover of
+ * every work the citation names. A citation none of whose keys reaches a Zotero
+ * Item stays raw source text, inert but for that hover.
  *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
  * are read per render rather than by adding and removing it.
@@ -58,6 +65,7 @@ export class CitekeyReading extends Service<void> {
   readonly #plugin;
   readonly #citationText;
   readonly #citekeyEditor;
+  readonly #citationPopover;
   readonly #settings;
 
   /** `undefined` until the first settings snapshot decides the treatment. */
@@ -73,6 +81,7 @@ export class CitekeyReading extends Service<void> {
     this.#plugin = deps.plugin;
     this.#citationText = deps.citationText;
     this.#citekeyEditor = deps.citekeyEditor;
+    this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -179,29 +188,29 @@ export class CitekeyReading extends Service<void> {
         content ?? citation.source,
         themeClasses,
       );
-      // A citation none of whose keys reaches a Zotero Item remains wrapped so
-      // themes can style its error state, but has no target to navigate to.
-      if (!this.#navigationEnabled || unresolved === citation.keys.length) {
-        return element;
-      }
-      attachCitationNavigation(element, {
+      if (!this.#navigationEnabled) return element;
+      const navigation: CitationNavigation = {
         works: citedWorks(citation, summaryOf),
         where: { surface: "reading" },
         open: (citekey, pane) => {
           void this.#citekeyEditor.openCitekey(citekey, pane);
         },
-        hoverNotePath: (citekey) => this.#citekeyEditor.hoverNotePath(citekey),
+        showPopover: (request) => this.#citationPopover.show(request),
         hoverTarget: () => {
           const hoverParent = this.#viewOf(element);
           return hoverParent === null
             ? null
-            : {
-                workspace: this.#app.workspace,
-                hoverParent,
-                sourcePath: ctx.sourcePath,
-              };
+            : { hoverParent, sourcePath: ctx.sourcePath };
         },
-      });
+      };
+      // A citation none of whose keys reaches a Zotero Item remains wrapped so
+      // themes can style its error state, and has no target to navigate to —
+      // its hover still says as much, entry by entry.
+      if (unresolved === citation.keys.length) {
+        attachCitationHover(element, navigation);
+        return element;
+      }
+      attachCitationNavigation(element, navigation);
       return element;
     });
   }

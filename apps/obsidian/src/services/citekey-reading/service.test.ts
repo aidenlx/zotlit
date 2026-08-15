@@ -151,10 +151,8 @@ async function makeHarness({
         },
       },
       citationText,
-      citekeyEditor: {
-        openCitekey: () => Promise.resolve(),
-        hoverNotePath: () => null,
-      },
+      citekeyEditor: { openCitekey: () => Promise.resolve() },
+      citationPopover: { show: () => undefined },
       settings: settingsStub(overrides),
     } as never),
   );

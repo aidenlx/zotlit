@@ -8,11 +8,10 @@ import { getItemsByID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
-import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { NavigationPane } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteFeature } from "@/services/note-feature";
@@ -28,12 +27,14 @@ const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
   app: App;
-  plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
+  plugin: Pick<Plugin, "registerEditorExtension">;
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
   db: DatabaseService;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "load" | "on">;
+  /** What a hovered citation shows. */
+  citationPopover: CitationPopover;
   settings: SettingsService;
   citationIndex: Pick<CitationIndex, "resolveCitekey" | "on" | "whenResolved">;
 }
@@ -60,6 +61,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #noteFeature;
   readonly #db;
   readonly #citationText;
+  readonly #citationPopover;
   readonly #settings;
   readonly #citationIndex;
   readonly #emitter = createNanoEvents<CitekeyEditorEvents>();
@@ -82,13 +84,14 @@ export class CitekeyEditor extends Service<void> {
     this.#noteFeature = deps.noteFeature;
     this.#db = deps.db;
     this.#citationText = deps.citationText;
+    this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.#citationIndex = deps.citationIndex;
     this.#extension = citekeyEditorExtension({
       open: (citekey, pane) => {
         void this.openCitekey(citekey, pane);
       },
-      hoverNotePath: (citekey) => this.hoverNotePath(citekey),
+      showPopover: (request) => this.#citationPopover.show(request),
       resolves: (citekey) => this.#resolves(citekey),
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
@@ -113,12 +116,6 @@ export class CitekeyEditor extends Service<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
 
-    // Registered once and for the plugin's lifetime, so the row in Obsidian's
-    // Page preview settings stays put while the treatment toggles.
-    this.#plugin.registerHoverLinkSource(CITEKEY_HOVER_SOURCE, {
-      display: m.hover_source_citekey(),
-      defaultMod: false,
-    });
     this.#plugin.registerEditorExtension(this.#extensions);
     stack.defer(() => {
       this.#extensions.length = 0;
@@ -224,19 +221,6 @@ export class CitekeyEditor extends Service<void> {
   /** The palette commands gate on this independently from presentation. */
   get navigationEnabled(): boolean {
     return this.#navigationEnabled;
-  }
-
-  /**
-   * The Literature Note a hover preview may show: the one note indexed under
-   * the Indexed Key a citekey resolves to. A citekey with zero or several
-   * notes answers with nothing, which keeps every popover path clear of the
-   * create-then-open flow.
-   */
-  hoverNotePath(citekey: string): string | null {
-    const item = this.#citationIndex.resolveCitekey(citekey);
-    if (!item) return null;
-    const matches = this.#noteIndex.getNotesByItemKey(item.indexedKey);
-    return matches.length === 1 ? matches[0]!.path : null;
   }
 
   /**

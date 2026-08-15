@@ -126,4 +126,15 @@ declare module "obsidian" {
     /** Undocumented internal driving the popover's selection; invoking it from a custom keymap handler selects the highlighted suggestion as if Enter were pressed. */
     suggestions: { useSelectedItem(evt: KeyboardEvent | MouseEvent): void };
   }
+  /** Runtime members Obsidian's own popovers are driven by, verified against Obsidian 1.13.7. */
+  interface HoverPopover {
+    /**
+     * Places `hoverEl` beside the target, recording the placement it chose as
+     * an inline `top` or `bottom` style alone.
+     */
+    position(): void;
+    hide(): void;
+    /** Re-runs {@link position} as `el` resizes, which is what lets content arrive after the popover opens. */
+    watchResize(el: HTMLElement): void;
+  }
 }
