@@ -275,6 +275,7 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       citationIndex: services.citationIndex,
+      citationText: services.citationText,
       citekeyEditor: services.citekeyEditor,
       pandocEngine: services.pandocEngine,
       bibliographyRender: services.bibliographyRender,

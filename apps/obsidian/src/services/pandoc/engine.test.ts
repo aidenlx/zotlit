@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -8,6 +7,7 @@ import type { CslItemData } from "@zotlit/db";
 
 import { yieldToMain } from "@/lib/yield-to-main";
 
+import type { Inlines } from "./ast";
 import {
   CitationEngineError,
   CitationRequestSupersededError,
@@ -91,8 +91,8 @@ end
 
 /**
  * A style that lays an entry out as several blocks: `display="block"` and
- * `display="indent"` are what put a `csl-block` and a `csl-indent` around a
- * part of an entry, which the sidebar flattens back into one flow.
+ * `display="indent"` are what put a `csl-block` and a `csl-indent` span around
+ * a part of an entry, which the renderer lays out as it sees fit.
  */
 const BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
 <style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
@@ -111,23 +111,55 @@ const BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
 </style>`;
 
 /**
- * A style that lays a block out beside a marker: a flush layout puts the rest
- * of the entry in a second column, so its blocks nest one level deeper.
+ * A note-class style, whose citations citeproc renders as footnotes — the case
+ * no inline surface can show, and the reason the typed AST carries `Note`.
  */
-const NESTED_BLOCK_STYLE = `<?xml version="1.0" encoding="utf-8"?>
-<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+const NOTE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
   <info>
-    <title>Blocked and numbered</title>
-    <id>http://example.com/blocked-numbered</id>
+    <title>Noted</title>
+    <id>http://example.com/noted</id>
     <updated>2020-01-01T00:00:00+00:00</updated>
   </info>
-  <citation><layout><text variable="citation-number" prefix="[" suffix="]"/></layout></citation>
-  <bibliography second-field-align="flush">
-    <layout>
-      <text variable="citation-number" prefix="[" suffix="]"/>
+  <citation>
+    <layout delimiter="; ">
       <names variable="author"><name/></names>
-      <text variable="title" display="indent"/>
+      <text variable="title" prefix=", " suffix="."/>
     </layout>
+  </citation>
+  <bibliography>
+    <layout>
+      <names variable="author"><name/></names>
+      <text variable="title" prefix=". " suffix="."/>
+    </layout>
+  </bibliography>
+</style>`;
+
+/**
+ * A position-dependent in-text style: a work cited again reads as the
+ * subsequent form, so two occurrences of one source render differently.
+ */
+const POSITION_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info>
+    <title>Positional</title>
+    <id>http://example.com/positional</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation>
+    <layout>
+      <choose>
+        <if position="subsequent">
+          <text value="ibid."/>
+        </if>
+        <else>
+          <names variable="author"><name form="short"/></names>
+        </else>
+      </choose>
+    </layout>
+  </citation>
+  <bibliography>
+    <layout><names variable="author"><name/></names></layout>
   </bibliography>
 </style>`;
 
@@ -138,6 +170,50 @@ async function openEngine(): Promise<CitationEngine> {
   return createCitationEngine(await readFile(WASM_PATH));
 }
 
+/** What an inline flow reads as, which is the text a surface would show. */
+function plainText(inlines: Inlines): string {
+  return inlines
+    .map((inline) => {
+      switch (inline.t) {
+        case "Str":
+          return inline.c;
+        case "Space":
+        case "SoftBreak":
+        case "LineBreak":
+          return " ";
+        case "Emph":
+        case "Underline":
+        case "Strong":
+        case "Strikeout":
+        case "Superscript":
+        case "Subscript":
+        case "SmallCaps":
+          return plainText(inline.c);
+        case "Quoted":
+        case "Cite":
+        case "Link":
+        case "Image":
+        case "Span":
+          return plainText(inline.c[1]);
+        case "Note":
+          return plainText(
+            inline.c.flatMap((block) =>
+              block.t === "Para" || block.t === "Plain" ? block.c : [],
+            ),
+          );
+        default:
+          return "";
+      }
+    })
+    .join("");
+}
+
+/** What a citation renders inside the `Cite` wrapper citeproc leaves around it. */
+function citeInlines(content: Inlines): Inlines {
+  const cite = content.find((inline) => inline.t === "Cite");
+  return cite?.t === "Cite" ? cite.c[1] : [];
+}
+
 describe("createCitationEngine", { timeout: TIMEOUT }, () => {
   let engine: CitationEngine;
 
@@ -146,113 +222,75 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     return () => engine[Symbol.asyncDispose]();
   });
 
-  it("renders one bibliography entry per item, keyed by CSL id", async () => {
-    const entries = await engine.renderBibliography({ items: [ZETA, ADAMS] });
+  it("hands the bibliography over as typed inlines, in the style's order", async () => {
+    const entries = await engine.renderBibliography({
+      items: [ZETA, ADAMS],
+    });
 
-    expect(entries.map((entry) => entry.id).toSorted()).toEqual([
-      ZETA.id,
-      ADAMS.id,
-    ]);
-    expect(
-      entries.find((entry) => entry.id === ZETA.id)?.content.textContent,
-    ).toContain("Zeta, Ann");
+    expect(entries.map((entry) => entry.id)).toEqual([ADAMS.id, ZETA.id]);
+    expect(plainText(entries.at(1)?.content ?? [])).toContain("Zeta, Ann");
   });
 
-  it("formats entries with the supplied CSL style", async () => {
+  it("keys entries by a Zotero URI id", async () => {
+    const entries = await engine.renderBibliography({
+      items: [{ ...ZETA, id: ZOTERO_URI_ID }],
+      styleXml: NUMERIC_STYLE,
+    });
+
+    expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
+  });
+
+  it("splits the entry marker off as inlines, without the separator space", async () => {
     const [first] = await engine.renderBibliography({
       items: [ZETA],
       styleXml: NUMERIC_STYLE,
     });
 
-    expect(first?.id).toBe(ZETA.id);
-    expect(first?.content.textContent).toContain("A study of nothing");
-  });
-
-  it("hands the entry marker over apart from the entry text", async () => {
-    const [first] = await engine.renderBibliography({
-      items: [ZETA],
-      styleXml: NUMERIC_STYLE,
-    });
-
-    expect(first?.marker).toBe("[1]");
-    expect(first?.content.textContent).not.toContain("[1]");
+    expect(first?.marker).toEqual([{ t: "Str", c: "[1]" }]);
+    expect(plainText(first?.content ?? [])).toBe(
+      "Ann Zeta. A study of nothing.",
+    );
   });
 
   it("leaves the marker unset for a style that renders none", async () => {
-    const entries = await engine.renderBibliography({ items: [ZETA] });
+    const [first] = await engine.renderBibliography({ items: [ZETA] });
 
-    expect(entries[0]?.marker).toBeUndefined();
+    expect(first?.marker).toBeUndefined();
+    expect(plainText(first?.content ?? [])).toContain("Zeta, Ann");
   });
 
-  it("returns entries in the style's bibliography order", async () => {
-    const entries = await engine.renderBibliography({ items: [ZETA, ADAMS] });
-
-    // The embedded style sorts by author, so Adams leads whatever order the
-    // items arrived in.
-    expect(entries.map((entry) => entry.id)).toEqual([ADAMS.id, ZETA.id]);
-  });
-
-  it("flattens the blocks of an entry into one inline flow", async () => {
+  it("passes the display spans of an entry through untouched", async () => {
     const [first] = await engine.renderBibliography({
       items: [ZETA],
       styleXml: BLOCK_STYLE,
     });
 
-    expect(first?.content.textContent).toBe("Ann Zeta A study of nothing");
-    expect(first?.content.querySelector("div")).toBeNull();
-  });
-
-  it("flattens the blocks a flush layout nests beside the marker", async () => {
-    const [first] = await engine.renderBibliography({
-      items: [ZETA],
-      styleXml: NESTED_BLOCK_STYLE,
-    });
-
-    expect(first?.marker).toBe("[1]");
-    expect(first?.content.textContent).toBe("Ann Zeta A study of nothing");
-    expect(first?.content.querySelector("div")).toBeNull();
+    expect(
+      first?.content.map((inline) =>
+        inline.t === "Span" ? inline.c[0][1] : inline.t,
+      ),
+    ).toEqual([["csl-block"], ["csl-indent"]]);
   });
 
   it("keeps the markup a style formats an entry's text with", async () => {
     const [first] = await engine.renderBibliography({ items: [ZETA] });
 
     // The embedded style italicizes a book title.
-    expect(first?.content.querySelector("em")?.textContent).toBe(
-      "A Study of Nothing",
-    );
-  });
-
-  it("renders no entries for an empty item set", async () => {
-    await expect(engine.renderBibliography({ items: [] })).resolves.toEqual([]);
-  });
-
-  /**
-   * `itemToCsl` addresses an item by its Zotero URI, which is long enough that
-   * Pandoc's default line wrapping would break the opening tag of the entry.
-   */
-  it("keys entries by a Zotero URI id", async () => {
-    const item: CslItemData = { ...ZETA, id: ZOTERO_URI_ID };
-    const entries = await engine.renderBibliography({ items: [item] });
-
-    expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
-    expect(entries[0]?.content.textContent).toContain("Zeta, Ann");
-  });
-
-  it("keys entries by a Zotero URI id under a numbered style", async () => {
-    const item: CslItemData = { ...ZETA, id: ZOTERO_URI_ID };
-    const entries = await engine.renderBibliography({
-      items: [item],
-      styleXml: NUMERIC_STYLE,
-    });
-
-    expect(entries.map((entry) => entry.id)).toEqual([ZOTERO_URI_ID]);
-    expect(entries[0]?.marker).toBe("[1]");
+    expect(
+      first?.content.flatMap((inline) =>
+        inline.t === "Emph" ? [plainText(inline.c)] : [],
+      ),
+    ).toEqual(["A Study of Nothing"]);
   });
 
   it("reports the Pandoc failure for an unusable style", async () => {
     await expect(
       engine.renderBibliography({ items: [ZETA], styleXml: "<not-a-style/>" }),
     ).rejects.toThrow(CitationEngineError);
+  });
+
+  it("renders no entries for an empty item set", async () => {
+    await expect(engine.renderBibliography({ items: [] })).resolves.toEqual([]);
   });
 
   it("formats one citation per source, in the order they were asked for", async () => {
@@ -264,12 +302,17 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
       ],
     });
 
-    expect(rendered).toHaveLength(2);
-    expect(rendered[0]?.textContent).toContain("Zeta");
-    expect(rendered[1]?.textContent).toContain("Adams");
+    expect(rendered.map((citation) => plainText(citation.content))).toEqual([
+      "(Zeta 2020)",
+      "Adams (2018)",
+    ]);
+    expect(rendered.map((citation) => citation.citations)).toEqual([
+      [{ id: "zeta20", mode: "normal" }],
+      [{ id: "adams18", mode: "author-in-text" }],
+    ]);
   });
 
-  it("keeps the prefix, locator, and author suppression of a cluster", async () => {
+  it("names every work a cluster cites, in the mode it cites it", async () => {
     const [cluster] = await engine.renderCitations({
       citations: ["[see @zeta20, p. 3; -@adams18]"],
       items: [
@@ -278,8 +321,11 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
       ],
     });
 
-    // The embedded style renders a page locator bare, so `p.` is not in it.
-    expect(cluster?.textContent).toBe("(see Zeta 2020, 3; 2018)");
+    expect(cluster?.citations).toEqual([
+      { id: "zeta20", mode: "normal" },
+      { id: "adams18", mode: "suppress-author" },
+    ]);
+    expect(plainText(cluster?.content ?? [])).toBe("(see Zeta 2020, 3; 2018)");
   });
 
   it("numbers citations across the whole request under a numbered style", async () => {
@@ -292,7 +338,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
       styleXml: NUMERIC_STYLE,
     });
 
-    expect(rendered.map((citation) => citation.textContent)).toEqual([
+    expect(rendered.map((citation) => plainText(citation.content))).toEqual([
       "[1]",
       "[2]",
       "[1]",
@@ -305,13 +351,58 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
       items: [{ ...ZETA, id: "zeta20" }],
     });
 
-    expect(only?.textContent).not.toContain("A study of nothing");
+    expect(plainText(only?.content ?? [])).not.toContain("A study of nothing");
+  });
+
+  it("renders each occurrence of one source by its place in the request", async () => {
+    const rendered = await engine.renderCitations({
+      citations: ["[@zeta20]", "[@zeta20]"],
+      items: [{ ...ZETA, id: "zeta20" }],
+      styleXml: POSITION_STYLE,
+    });
+
+    expect(rendered.map((citation) => plainText(citation.content))).toEqual([
+      "Zeta",
+      "ibid.",
+    ]);
+  });
+
+  it("carries a note-class style's footnote in the citation content", async () => {
+    const [plain, authorInText] = await engine.renderCitations({
+      citations: ["[@zeta20]", "@adams18"],
+      items: [
+        { ...ZETA, id: "zeta20" },
+        { ...ADAMS, id: "adams18" },
+      ],
+      styleXml: NOTE_STYLE,
+    });
+
+    expect(citeInlines(plain?.content ?? []).map((inline) => inline.t)).toEqual(
+      ["Note"],
+    );
+    expect(plainText(plain?.content ?? [])).toBe(
+      "Ann Zeta, A study of nothing.",
+    );
+    // The author stays in the running text, with the note beside it.
+    expect(
+      citeInlines(authorInText?.content ?? []).map((inline) => inline.t),
+    ).toEqual(["Str", "Space", "Str", "Note"]);
+  });
+
+  it("refuses an answer that does not cover every citation", async () => {
+    const rendering = engine.renderCitations({
+      citations: ["[@zeta20]", ""],
+      items: [{ ...ZETA, id: "zeta20" }],
+    });
+
+    await expect(rendering).rejects.toThrow(CitationEngineError);
+    await expect(rendering).rejects.toThrow("formatted 1 of 2 citations");
   });
 
   it("renders nothing for an empty request", async () => {
-    expect(await engine.renderCitations({ citations: [], items: [] })).toEqual(
-      [],
-    );
+    await expect(
+      engine.renderCitations({ citations: [], items: [] }),
+    ).resolves.toEqual([]);
   });
 
   it("converts a document with a resolve map into docx bytes", async () => {

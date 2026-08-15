@@ -160,6 +160,7 @@ describe("citationOfRun", () => {
     expect(citationOfRun([member(WANG_LINK)])).toEqual({
       source: "[@wang2020]",
       keys: expect.anything(),
+      works: [WANG.indexedKey],
     });
   });
 

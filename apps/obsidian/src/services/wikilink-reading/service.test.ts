@@ -3,6 +3,9 @@ import { MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
+import { citationKey } from "@/services/citation-text/present";
+import type { FormattedOccurrence } from "@/services/citation-text/present";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -11,6 +14,13 @@ import { WikilinkReading } from "./service";
 
 /** The one Literature Note the metadata-cache stand-in knows. */
 const WANG = "literatures/wangMutationalClinicalSpectrum2020a";
+/** The Indexed Key that note carries, which the shared text holds its Citations under. */
+const WANG_KEY = "ABCD2345";
+
+/** One Citation as the shared text holds it: its Pandoc source, and the works it names. */
+function held(source: string, works: string[] = [WANG_KEY]): string {
+  return citationKey({ source, works });
+}
 
 interface Harness extends AsyncDisposable {
   settings: SettingsStub;
@@ -38,7 +48,7 @@ async function harness({
   pending,
   ...overrides
 }: Partial<Settings> & {
-  /** The formatted citation the shared text holds, by its Pandoc source. */
+  /** The formatted citation the shared text holds, by its {@link held} identity. */
   formatted?: Record<string, string>;
   /** Keep the citation-text read pending. */
   pending?: boolean;
@@ -51,10 +61,13 @@ async function harness({
   const noteIndex = new NoteIndexStub();
   const citationText = new CitationTextStub(formatted ?? {}, pending);
   const citationIndex = new CitationIndexStub(
-    citekeys ?? { ABCD2345: "wang2020" },
+    citekeys ?? { [WANG_KEY]: "wang2020" },
   );
   let rerenders = 0;
   let process: MarkdownPostProcessor | undefined;
+  // Obsidian places a section of this stubbed document nowhere, which is the
+  // degraded tier: every Citation shows its source's first-occurrence text.
+  const ctx = { sourcePath, getSectionInfo: () => null } as never;
   const view = Object.assign(Object.create(MarkdownView.prototype) as object, {
     previewMode: { rerender: () => rerenders++ },
   });
@@ -68,7 +81,7 @@ async function harness({
             ? { path: `${WANG}.md` }
             : null,
         getFileCache: () => ({
-          frontmatter: { "zotero-key": "ABCD2345" },
+          frontmatter: { "zotero-key": WANG_KEY },
         }),
       },
     },
@@ -90,24 +103,24 @@ async function harness({
     citationIndex,
     render: async (linktext) => {
       const root = section(`<p>${internalLink(linktext)}</p>`);
-      await process?.(root, { sourcePath } as never);
+      await process?.(root, ctx);
       return root.textContent ?? "";
     },
     renderSection: async (linktext, alias) => {
       const root = section(`<p>${internalLink(linktext, alias)}</p>`);
-      await process?.(root, { sourcePath } as never);
+      await process?.(root, ctx);
       return root;
     },
     renderHtml: async (html) => {
       const root = section(html);
-      await process?.(root, { sourcePath } as never);
+      await process?.(root, ctx);
       return root;
     },
     beginRender: (linktext) => {
       const root = section(`<p>${internalLink(linktext)}</p>`);
       return {
         root,
-        completion: Promise.resolve(process?.(root, { sourcePath } as never)),
+        completion: Promise.resolve(process?.(root, ctx)),
       };
     },
     rerenders: () => rerenders,
@@ -164,7 +177,7 @@ describe("WikilinkReading rendering", () => {
   it("exposes both literal hooks when it renders a Literature Note Citation", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
-      formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
+      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
     });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
@@ -178,7 +191,8 @@ describe("WikilinkReading rendering", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
       formatted: {
-        "[@wang2020, p. 7; @wang2020, p. 9]": "(Wang et al. 2020, pp. 7, 9)",
+        [held("[@wang2020, p. 7; @wang2020, p. 9]", [WANG_KEY, WANG_KEY])]:
+          "(Wang et al. 2020, pp. 7, 9)",
       },
     });
     const root = await harnessed.renderHtml(
@@ -241,7 +255,7 @@ describe("WikilinkReading rendering", () => {
   it("shows the citation a style formatted once the shared text holds one", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
-      formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
+      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
     });
 
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
@@ -253,7 +267,7 @@ describe("WikilinkReading rendering", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
       "citation.show-formatted": false,
-      formatted: { "[@wang2020, p. 7]": "(Wang et al. 2020, p. 7)" },
+      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
     });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
@@ -360,6 +374,12 @@ describe("WikilinkReading rerender", () => {
   });
 });
 
+/** What the stub holds for one document, as a surface reads it. */
+interface HeldText {
+  formatted: Map<string, FormattedOccurrence[]>;
+  summaries: Map<string, string>;
+}
+
 class CitationTextStub {
   readonly #formatted: Record<string, string>;
   readonly #pending: boolean;
@@ -373,30 +393,19 @@ class CitationTextStub {
     this.#pending = pending;
   }
 
-  load(): Promise<{
-    formatted: Map<string, DocumentFragment>;
-    summaries: Map<string, string>;
-  }> {
+  load(): Promise<HeldText> {
     if (this.#pending) return new Promise(() => undefined);
     return Promise.resolve(this.#text());
   }
 
-  peek(): {
-    formatted: Map<string, DocumentFragment>;
-    summaries: Map<string, string>;
-  } | null {
+  peek(): HeldText | null {
     return this.#pending ? null : this.#text();
   }
 
-  #text(): {
-    formatted: Map<string, DocumentFragment>;
-    summaries: Map<string, string>;
-  } {
-    const formatted = new Map<string, DocumentFragment>();
+  #text(): HeldText {
+    const formatted = new Map<string, FormattedOccurrence[]>();
     for (const [source, text] of Object.entries(this.#formatted)) {
-      const content = document.createDocumentFragment();
-      content.append(text);
-      formatted.set(source, content);
+      formatted.set(source, occurrences(rendered(text)));
     }
     return { formatted, summaries: new Map() };
   }

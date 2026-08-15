@@ -3,8 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import { scanCitations } from "@/lib/citation-grammar";
 
-import { citationContent, citationElement, citedWorks } from "./present";
-import type { CitationSource } from "./present";
+import { rendered } from "./__fixtures__";
+import {
+  citationContent,
+  citationElement,
+  citedWorks,
+  sectionCoordinates,
+} from "./present";
+import type { CitationSource, DocumentCitations } from "./present";
 
 /** One citation, read out of the source text that is nothing but that citation. */
 function citation(source: string): CitationSource {
@@ -63,20 +69,111 @@ describe("citedWorks", () => {
 });
 
 describe("citationContent", () => {
+  /**
+   * `First [@a]. Then [@a].` under a position-dependent style: the second
+   * occurrence of one source reads as the subsequent form citeproc gave it.
+   */
+  const HELD: DocumentCitations = {
+    formatted: new Map([
+      [
+        "[@a]",
+        [
+          { start: 6, text: rendered("(Zeta 2020)"), serials: [] },
+          { start: 20, text: rendered("(ibid.)"), serials: [] },
+        ],
+      ],
+    ]),
+    entrySerials: false,
+    summaries: new Map([["ALPHA234", "Zeta (2020)"]]),
+    literalWorks: new Map([["a", "ALPHA234"]]),
+  };
+  const CITATION = citation("[@a]");
+
   it("keeps source presentation when no complete formatted result exists", () => {
     expect(
       citationContent(citation("[see @a, p. 3]"), {
         formatted: new Map(),
-        summaries: new Map([["a", "Zeta (2020)"]]),
+        entrySerials: false,
+        summaries: new Map([["ALPHA234", "Zeta (2020)"]]),
+        literalWorks: new Map([["a", "ALPHA234"]]),
       }),
     ).toBeNull();
+  });
+
+  it("shows the text of the occurrence an editor offset names", () => {
+    expect(
+      citationContent(CITATION, HELD, { kind: "offset", start: 20 })?.text
+        .content,
+    ).toEqual(rendered("(ibid.)").content);
+  });
+
+  it("shows the text of the occurrence a section's own order names", () => {
+    expect(
+      citationContent(CITATION, HELD, {
+        kind: "section",
+        from: 14,
+        to: 25,
+        ordinal: 0,
+      })?.text.content,
+    ).toEqual(rendered("(ibid.)").content);
+  });
+
+  it("falls back to the first occurrence where a coordinate reaches none", () => {
+    // No coordinate at all, an offset an edit has moved, and a section counting
+    // one occurrence more than the document writes there.
+    for (const at of [
+      undefined,
+      { kind: "offset", start: 21 },
+      { kind: "section", from: 14, to: 25, ordinal: 1 },
+    ] as const) {
+      expect(citationContent(CITATION, HELD, at)?.text.content).toEqual(
+        rendered("(Zeta 2020)").content,
+      );
+    }
+  });
+});
+
+describe("sectionCoordinates", () => {
+  it("counts the occurrences of one identity the section shows, in its order", () => {
+    expect(
+      sectionCoordinates(
+        [citation("[@a]"), citation("[@b]"), citation("[@a]")],
+        { from: 14, to: 40 },
+      ),
+    ).toEqual([
+      { kind: "section", from: 14, to: 40, ordinal: 0 },
+      { kind: "section", from: 14, to: 40, ordinal: 0 },
+      { kind: "section", from: 14, to: 40, ordinal: 1 },
+    ]);
+  });
+
+  it("names no coordinate at all for a section Obsidian places nowhere", () => {
+    expect(sectionCoordinates([citation("[@a]")], null)).toEqual([undefined]);
   });
 });
 
 describe("citationElement", () => {
-  it("wraps the formatted text in the class themes reach", () => {
+  it("wraps the source text in the class themes reach", () => {
     expect(citationElement(document, "Zeta (2020)").outerHTML).toBe(
       '<span class="zt-citation">Zeta (2020)</span>',
+    );
+  });
+
+  it("shows a formatted citation through the shared renderer", () => {
+    const content = citationElement(document, {
+      text: {
+        content: [
+          { t: "Str", c: "Zeta" },
+          { t: "Space" },
+          { t: "Emph", c: [{ t: "Str", c: "(2020)" }] },
+        ],
+        citations: [],
+      },
+      serials: [],
+    });
+
+    expect(content.outerHTML).toBe(
+      '<span class="zt-citation">Zeta <em>(2020)</em></span>',
     );
   });
 });

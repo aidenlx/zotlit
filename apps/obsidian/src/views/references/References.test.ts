@@ -129,7 +129,7 @@ describe("References", () => {
           citekey: "aVeryLongCitekeyWithoutBreaks00000000000000000003",
         },
       ],
-      { kind: "bibliography", hasEntryMarkers: false },
+      { kind: "bibliography", hasEntryMarkers: false, entrySerials: false },
     );
 
     const list = container.querySelector("ul")!;
@@ -146,8 +146,6 @@ describe("References", () => {
   });
 
   it("shares a numeric style's gutter with an unrendered Reference Error", async () => {
-    const content = document.createDocumentFragment();
-    content.append("Rendered book");
     const container = await render(
       [
         {
@@ -157,8 +155,13 @@ describe("References", () => {
           kind: "rendered",
           source,
           linkpath: "notes/BOOK0001",
-          marker: "[1]",
-          content,
+          serial: 1,
+          marker: [{ t: "Str", c: "[1]" }],
+          content: [
+            { t: "Str", c: "Rendered" },
+            { t: "Space" },
+            { t: "Str", c: "book" },
+          ],
         },
         {
           id: "BOOK0002",
@@ -169,7 +172,7 @@ describe("References", () => {
           linkpath: "notes/BOOK0002",
         },
       ],
-      { kind: "bibliography", hasEntryMarkers: true },
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
     );
 
     const rows = container.querySelectorAll("li");
@@ -186,6 +189,51 @@ describe("References", () => {
     ).toStrictEqual(["file-text", "external-link", "chevron-right"]);
   });
 
+  it("shows the markup and the links a formatted entry carries", async () => {
+    const container = await render(
+      [
+        {
+          id: "BOOK0001",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0001",
+          serial: 1,
+          marker: undefined,
+          content: [
+            {
+              t: "Emph",
+              c: [
+                { t: "Str", c: "Field" },
+                { t: "Space" },
+                { t: "Str", c: "notes" },
+              ],
+            },
+            { t: "Str", c: "." },
+            { t: "Space" },
+            {
+              t: "Link",
+              c: [
+                ["", [], []],
+                [{ t: "Str", c: "https://doi.org/10.1000/182" }],
+                ["https://doi.org/10.1000/182", ""],
+              ],
+            },
+          ],
+        },
+      ],
+      { kind: "bibliography", hasEntryMarkers: false, entrySerials: false },
+    );
+
+    const row = container.querySelector("li")!;
+    expect(row.querySelector("em")?.textContent).toBe("Field notes");
+    // A bare anchor, which Obsidian itself opens in the system browser.
+    const link = row.querySelector("a")!;
+    expect(link.getAttribute("href")).toBe("https://doi.org/10.1000/182");
+    expect(link.getAttributeNames()).toStrictEqual(["href"]);
+  });
+
   it("keeps a numeric style's gutter when every Item was omitted", async () => {
     const container = await render(
       [
@@ -198,13 +246,83 @@ describe("References", () => {
           linkpath: "notes/BOOK0001",
         },
       ],
-      { kind: "bibliography", hasEntryMarkers: true },
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
     );
 
     expect(container.querySelector("ul")!.classList).toContain(
       "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]",
     );
     expect(container.querySelector("li")!.children[0]!.textContent).toBe("⚠");
+  });
+
+  // A note-class style writes no Entry Marker, so the gutter carries the Entry
+  // Serials the document's own citations show.
+  it("shows Entry Serials in the gutter of a document that shows them", async () => {
+    const container = await render(
+      [
+        {
+          id: "BOOK0001",
+          refNumber: 2,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0001",
+          serial: 1,
+          marker: undefined,
+          content: [{ t: "Str", c: "Zeta." }],
+        },
+        {
+          id: "BOOK0002",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0002",
+          serial: 2,
+          marker: undefined,
+          content: [{ t: "Str", c: "Rivers." }],
+        },
+        {
+          id: "GONE0003",
+          refNumber: 3,
+          occurrences: [occurrence],
+          kind: "missing",
+          linkpath: "notes/GONE0003",
+        },
+      ],
+      { kind: "bibliography", hasEntryMarkers: false, entrySerials: true },
+    );
+
+    const rows = container.querySelectorAll("li");
+    expect(container.querySelector("ul")!.classList).toContain(
+      "zt:grid-cols-[max-content_minmax(0,1fr)_max-content]",
+    );
+    expect([...rows].map((row) => row.children[0]!.textContent)).toEqual([
+      "1",
+      "2",
+      "⚠",
+    ]);
+  });
+
+  it("keeps the Entry Marker in the gutter of a style that writes one", async () => {
+    const container = await render(
+      [
+        {
+          id: "BOOK0001",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "rendered",
+          source,
+          linkpath: "notes/BOOK0001",
+          serial: 1,
+          marker: [{ t: "Str", c: "[7]" }],
+          content: [{ t: "Str", c: "Zeta." }],
+        },
+      ],
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: true },
+    );
+
+    expect(container.querySelector("li")!.children[0]!.textContent).toBe("[7]");
   });
 
   it("uses Reference Numbers and warnings in the minimal list", async () => {
@@ -459,8 +577,9 @@ describe("References copy action", () => {
     kind: "rendered",
     source,
     linkpath: "notes/BOOK0001",
-    marker: "[1]",
-    content: document.createDocumentFragment(),
+    serial: 1,
+    marker: [{ t: "Str", c: "[1]" }],
+    content: [{ t: "Str", c: "Book" }],
   };
 
   function copyAction(container: HTMLElement): HTMLElement {
@@ -474,7 +593,7 @@ describe("References copy action", () => {
   async function ready(): Promise<HTMLElement> {
     return render(
       [renderedEntry],
-      { kind: "bibliography", hasEntryMarkers: true },
+      { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
       { copy: { kind: "ready", target } },
     );
   }
@@ -516,7 +635,7 @@ describe("References copy action", () => {
     async (reason, tooltip) => {
       const container = await render(
         [renderedEntry],
-        { kind: "bibliography", hasEntryMarkers: true },
+        { kind: "bibliography", hasEntryMarkers: true, entrySerials: false },
         { copy: { kind: "blocked", reason } },
       );
       const action = copyAction(container);

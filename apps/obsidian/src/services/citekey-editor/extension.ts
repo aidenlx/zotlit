@@ -27,8 +27,13 @@ import {
   citationContent,
   citationElement,
   citedWorks,
+  literalSummaryOf,
+  unresolvedKeys,
 } from "@/services/citation-text/present";
-import type { DocumentCitations } from "@/services/citation-text/present";
+import type {
+  DocumentCitations,
+  PresentedCitation,
+} from "@/services/citation-text/present";
 import {
   attachCitationNavigation,
   mouseGesture,
@@ -340,9 +345,9 @@ interface EditedDocument {
  * One Citation shown as the text a style formatted.
  *
  * Two widgets are the same when they stand for the same source and show the
- * same content: formatted content is the very object the document's held
- * citations carry, so a fresh read of that document is a fresh object and
- * redraws.
+ * same content: formatted content is the immutable value the document's held
+ * citations carry, so the comparison is a reference test and a fresh read of
+ * that document is a fresh value that redraws.
  */
 class CitationWidget extends WidgetType {
   readonly #source;
@@ -356,7 +361,7 @@ class CitationWidget extends WidgetType {
 
   constructor(options: {
     source: string;
-    content: DocumentFragment | string;
+    content: PresentedCitation;
     works: readonly CitedWork[];
     sourcePath: string;
     handlers: CitekeyEditorHandlers;
@@ -457,7 +462,10 @@ function buildDecorations(
           const from = line.from + citation.start;
           const to = line.from + citation.end;
           if (overlapsSelection(selection, from, to)) continue;
-          const widget = citationWidget(citation, edited, {
+          const widget = citationWidget({
+            citation,
+            start: from,
+            edited,
             handlers,
             footnote: statesFootnoteTreatment(state, from, to),
           });
@@ -501,19 +509,29 @@ function buildDecorations(
  * @returns the widget for one Citation. An unresolved Citation keeps its
  *   source text and error hook, without navigation handlers.
  */
-function citationWidget(
-  citation: CitationRange,
-  { citations, path }: EditedDocument,
-  {
+function citationWidget(options: {
+  citation: CitationRange;
+  /** Document offset the Citation starts at, which picks out its occurrence. */
+  start: number;
+  edited: EditedDocument;
+  handlers: CitekeyEditorHandlers;
+  /** Whether the Citation is written inside a footnote. */
+  footnote: boolean;
+}): CitationWidget | null {
+  const {
+    citation,
+    start,
+    edited: { citations, path },
     handlers,
     footnote,
-  }: { handlers: CitekeyEditorHandlers; footnote: boolean },
-): CitationWidget | null {
-  const content = citationContent(citation, citations);
+  } = options;
+  const content = citationContent(citation, citations, {
+    kind: "offset",
+    start,
+  });
   if (content === null) return null;
-  const unresolved = citation.keys.filter(
-    (key) => !citations.summaries.has(key.citekey),
-  ).length;
+  const summaryOf = literalSummaryOf(citations);
+  const unresolved = unresolvedKeys(citation, summaryOf);
   const themeClasses =
     unresolved === 0
       ? []
@@ -525,7 +543,7 @@ function citationWidget(
   return new CitationWidget({
     source: citation.source,
     content,
-    works: citedWorks(citation, (citekey) => citations.summaries.get(citekey)),
+    works: citedWorks(citation, summaryOf),
     sourcePath: path,
     handlers,
     themeClasses,

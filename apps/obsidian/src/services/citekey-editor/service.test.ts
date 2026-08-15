@@ -233,7 +233,12 @@ class CitationTextStub {
   }
 
   load(): Promise<DocumentCitations> {
-    return Promise.resolve({ formatted: new Map(), summaries: new Map() });
+    return Promise.resolve({
+      formatted: new Map(),
+      entrySerials: false,
+      summaries: new Map(),
+      literalWorks: new Map(),
+    });
   }
 
   on(event: string, cb: (path?: string) => void): () => void {

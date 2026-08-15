@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,12 +10,14 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
+import type { Inlines } from "./ast";
 import type {
   BibliographyEntry,
   BibliographyRequest,
   CitationEngine,
   CitationRequest,
   DocumentRequest,
+  RenderedCitation,
 } from "./engine";
 import { BibliographyRenderCache } from "./render-cache";
 import type { PandocEngineStatus } from "./service";
@@ -37,23 +38,28 @@ class EngineStub implements CitationEngine {
 
   renderBibliography(
     request: BibliographyRequest,
-  ): Promise<BibliographyEntry[]> {
+  ): Promise<readonly BibliographyEntry[]> {
     this.requests.push(request);
     if (this.fails) return Promise.reject(new Error("no"));
     return Promise.resolve(
       request.items.map(({ id }, index) => ({
         id,
-        marker: String(index + 1),
-        content: fragment(`entry for ${id}`),
+        marker: inlines(String(index + 1)),
+        content: inlines(`entry for ${id}`),
       })),
     );
   }
 
-  renderCitations(request: CitationRequest): Promise<DocumentFragment[]> {
+  renderCitations(
+    request: CitationRequest,
+  ): Promise<readonly RenderedCitation[]> {
     this.citationRequests.push(request);
     if (this.fails) return Promise.reject(new Error("no"));
     return Promise.resolve(
-      request.citations.map((source) => fragment(`cite for ${source}`)),
+      request.citations.map((source) => ({
+        content: inlines(`cite for ${source}`),
+        citations: [],
+      })),
     );
   }
 
@@ -66,10 +72,8 @@ class EngineStub implements CitationEngine {
   }
 }
 
-function fragment(text: string): DocumentFragment {
-  const content = document.createDocumentFragment();
-  content.append(text);
-  return content;
+function inlines(text: string): Inlines {
+  return [{ t: "Str", c: text }];
 }
 
 class PandocEngineStub {
@@ -426,9 +430,9 @@ describe("BibliographyRenderCache citations", () => {
 
     expect(engine.citationRequests).toHaveLength(1);
     expect(first).toBe(second);
-    expect(first?.map((citation) => citation.textContent)).toEqual([
-      "cite for [@alpha]",
-      "cite for @alpha",
+    expect(first?.map((citation) => citation.content)).toEqual([
+      inlines("cite for [@alpha]"),
+      inlines("cite for @alpha"),
     ]);
   });
 

@@ -119,7 +119,11 @@ _Avoid_: citation group (the group is the resulting Citation, not the source syn
 
 **Entry Marker**:
 The marker a numeric CSL style renders ahead of each bibliography entry — the entry's citation number wrapped in the style's own affixes, such as `[1]` or `1.`. It belongs to the Citation and References Style, not to ZotLit: a sorted style can give the same Item a different Entry Marker across renders, and a non-numeric style produces none.
-_Avoid_: serial number, reference index, gutter number
+_Avoid_: serial number, reference index, gutter number, Entry Serial (ZotLit's positional number, not the style's)
+
+**Entry Serial**:
+The 1-based position of a rendered entry in the References Sidebar's bibliography-ordered list — ZotLit-assigned and occurrence-independent, unlike the style-owned Entry Marker and the first-occurrence Reference Number. When a citation's formatted text contains a footnote the inline surfaces cannot render, the Entry Serial of each cited entry appears superscript in place of that footnote and in the sidebar gutter, an entry's own Entry Marker keeping precedence in the gutter.
+_Avoid_: serial number, footnote number (the document format's counter, which never renders here), fallback marker (names the mechanism, not the number)
 
 **Openable Attachment**:
 An Attachment of a cited Item whose path names a file, so Zotero's reader can be sent to it — the stored modes and both linked-file forms. A bare web link carries no file, and neither does a row whose path does not parse, so the References Sidebar offers neither. The file's format does not decide it: a PDF, an EPUB, a web snapshot, and an office document all qualify, and Zotero owns what happens to a format its reader cannot render.
@@ -127,7 +131,7 @@ _Avoid_: PDF attachment (the format is not the rule), openable file
 
 **Reference Number**:
 An active-document identifier assigned to each distinct Literature Note Citation by first occurrence. It appears in editor widgets and in the References Sidebar's minimal reference list when no engine renders; repeated Citations share the same number, and the Markdown source stays unchanged.
-_Avoid_: citation key, reference index
+_Avoid_: citation key, reference index, Entry Serial (bibliography-ordered, not first-occurrence)
 
 **Reference Error** _(Obsidian)_:
 A References Sidebar entry for an unresolved citation key, a missing Item, a malformed Citation Fragment while Wikilink Citations is on, or a source-backed Item omitted from a completed bibliography rendering.
@@ -199,23 +203,31 @@ The default-on presentation choice that shows every recognized Citation as a Ren
 _Avoid_: citation rendering (ambiguous with reference rendering), citation display (does not say formatted or native), editor rendering (also applies to reading mode)
 
 **Document Citation Text**:
-The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set, and every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
+The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set and a position-dependent style renders each Citation Occurrence by its place in the document, so two occurrences of one source can read differently and each in-text surface shows the text of its own occurrence; a surface that cannot tell which occurrence it shows falls back to the source's first-occurrence text. Every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
 _Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
 
 **Citekey Navigation** _(Obsidian)_:
-The default-off interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, hover page preview, and the open-under-cursor palette commands — all routed through one flow. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; Literature Note wikilinks keep Obsidian's native navigation.
+The default-on interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, click, and the open-under-cursor palette commands, all routed through one flow; what hovering shows belongs to the Hover Action. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; Literature Note wikilinks keep Obsidian's native navigation.
 _Avoid_: citekey click (one gesture of the surface, not the concept), citekey links
+
+**Hover Action** _(Obsidian)_:
+The per-vault choice of what hovering a recognized citation or Literature Note wikilink shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover.
+_Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
+
+**Citation Popover** _(Obsidian)_:
+The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — with the three action buttons per entry in a cursor-proximal row. It is one Hover Action choice; the native page preview is another, and hover never shows both.
+_Avoid_: concise popover (the working name), hover tooltip, hover card
 
 **Citekey Reading Rendering** _(Obsidian)_:
 The reading-mode surface of In-text Citation Rendering for literal Pandoc citations: a Markdown post-processor replaces each complete Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text. When any item in one Citation is unresolved, or the Pandoc Engine cannot supply its formatted text, that whole Citation stays unchanged. Code, math, and links are left alone; a Literature Note wikilink is the Wikilink Reading Rendering's surface, not this one's.
 _Avoid_: reading-mode widget (a widget is the Live Preview decoration), citation preview
 
 **Wikilink Editor Treatment** _(Obsidian)_:
-The Live Preview surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink shows its Rendered Citation, while click, hover, drag, and conceal interaction stay Obsidian's. Cursor or selection contact restores the raw text; Source mode always shows raw text.
+The Live Preview surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink shows its Rendered Citation, while click, drag, and conceal interaction stay Obsidian's; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. Cursor or selection contact restores the raw text; Source mode always shows raw text.
 _Avoid_: wikilink styling (the retired marks-only scope), wikilink conceal
 
 **Wikilink Reading Rendering** _(Obsidian)_:
-The reading-mode surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink's display text becomes its Rendered Citation while the link's target, navigation, and hover stay Obsidian's. When the Pandoc Engine cannot supply formatted text, the native link stays visible.
+The reading-mode surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink's display text becomes its Rendered Citation while the link's target and navigation stay Obsidian's; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. When the Pandoc Engine cannot supply formatted text, the native link stays visible.
 _Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 
 ### Index and identity

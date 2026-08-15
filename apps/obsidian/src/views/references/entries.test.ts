@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -53,13 +52,12 @@ function occurrenceAt(
   };
 }
 
-/** A rendered entry as the engine hands it over: parsed, not markup. */
+/** A rendered entry as the engine hands it over: typed AST, not markup. */
 function rendered(text: string, marker?: string): RenderedReference {
-  const content = createFragment();
-  const span = document.createElement("span");
-  span.textContent = text;
-  content.append(span);
-  return { marker, content };
+  return {
+    marker: marker === undefined ? undefined : [{ t: "Str", c: marker }],
+    content: [{ t: "Str", c: text }],
+  };
 }
 
 function completed(
@@ -108,7 +106,8 @@ describe("buildReferenceEntries", () => {
         occurrences: [occurrenceAt(2)],
         kind: "rendered",
         source: sources.get("ALPHA002"),
-        marker: "[1]",
+        serial: 1,
+        marker: [{ t: "Str", c: "[1]" }],
         content: alpha.content,
       },
       {
@@ -118,7 +117,8 @@ describe("buildReferenceEntries", () => {
         occurrences: [occurrenceAt(1)],
         kind: "rendered",
         source: sources.get("ZEBRA001"),
-        marker: "[2]",
+        serial: 2,
+        marker: [{ t: "Str", c: "[2]" }],
         content: zebra.content,
       },
     ]);
@@ -158,6 +158,36 @@ describe("buildReferenceEntries", () => {
       ["BOOK0003", "rendered"],
       ["GONE0001", "missing"],
       ["BOOK0002", "unrendered"],
+    ]);
+  });
+
+  // The Entry Serial names a place in the bibliography, so it counts the
+  // formatted entries alone: a Reference Error takes no number and shifts none.
+  it("numbers the formatted entries by their place in the bibliography", () => {
+    const citations = [
+      citation("GONE0001", 1),
+      citation("BOOK0002", 2),
+      citation("BOOK0003", 3),
+    ];
+    const sources = new Map([
+      ["BOOK0002", source("BOOK0002", "ref-two")],
+      ["BOOK0003", source("BOOK0003", "ref-three")],
+    ]);
+    const bibliography = completed(
+      new Map([
+        ["ref-three", rendered("Three")],
+        ["ref-two", rendered("Two")],
+      ]),
+    );
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (entry) => [entry.id, entry.kind === "rendered" ? entry.serial : null],
+      ),
+    ).toStrictEqual([
+      ["BOOK0003", 1],
+      ["BOOK0002", 2],
+      ["GONE0001", null],
     ]);
   });
 

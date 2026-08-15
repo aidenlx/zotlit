@@ -76,6 +76,11 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
+import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
+import { citationKey } from "@/services/citation-text/present";
+import type { DocumentCitations } from "@/services/citation-text/present";
+import type { RenderedCitation } from "@/services/pandoc/engine";
+
 import { wikilinkEditorExtension } from "./extension";
 
 const LITERATURE_NOTE = {
@@ -89,8 +94,30 @@ function viewOf(
   {
     enabled = true,
     formatted = true,
-  }: { enabled?: boolean; formatted?: boolean } = {},
+    content = rendered("(Example 2020, p. 7)"),
+  }: {
+    enabled?: boolean;
+    formatted?: boolean;
+    /** The formatted citation the shared text holds for the document. */
+    content?: RenderedCitation;
+  } = {},
 ) {
+  // Held once, the way the service holds one document's answer: every ask
+  // gets the same value, which is what lets a widget compare by reference.
+  const held: DocumentCitations = {
+    entrySerials: false,
+    formatted: new Map([
+      [
+        citationKey({
+          source: "[@example, p. 7]",
+          works: [LITERATURE_NOTE.indexedKey],
+        }),
+        occurrences(content),
+      ],
+    ]),
+    summaries: new Map([[LITERATURE_NOTE.indexedKey, "Example (2020)"]]),
+    literalWorks: new Map(),
+  };
   const view = new EditorView({
     parent: document.body,
     state: EditorState.create({
@@ -101,15 +128,7 @@ function viewOf(
           literatureNote: (linkpath) =>
             linkpath === "literatures/example" ? LITERATURE_NOTE : null,
           enabled: () => enabled,
-          citationText: () => {
-            if (!formatted) return null;
-            const citation = document.createDocumentFragment();
-            citation.append("(Example 2020, p. 7)");
-            return {
-              formatted: new Map([["[@example, p. 7]", citation]]),
-              summaries: new Map([["example", "Example (2020)"]]),
-            };
-          },
+          citationText: () => (formatted ? held : null),
           requestCitationText: () => undefined,
         }),
       ],
@@ -149,5 +168,45 @@ describe("wikilinkEditorExtension theme hooks", () => {
 
       expect(view.dom.querySelector(".zt-literature-note-link")).toBeNull();
     }
+  });
+});
+
+describe("wikilinkEditorExtension citation rendering", () => {
+  it("shows a link the style wrote as text, since the widget is the link", () => {
+    livePreview.mockReturnValue(true);
+    using view = viewOf("[[literatures/example#cite:locator=7]]", {
+      content: {
+        content: [
+          {
+            t: "Link",
+            c: [
+              ["", [], []],
+              [{ t: "Str", c: "doi.org/10.1/x" }],
+              ["https://doi.org/10.1/x", ""],
+            ],
+          },
+        ],
+        citations: [],
+      },
+    });
+
+    const citation = view.dom.querySelector(".zt-citation");
+    expect(citation?.querySelector("a")).toBeNull();
+    expect(citation?.textContent).toBe("doi.org/10.1/x");
+  });
+
+  it("keeps the drawn citation while an edit lands away from it", () => {
+    livePreview.mockReturnValue(true);
+    using view = viewOf("[[literatures/example#cite:locator=7]] tail");
+    const drawn = view.dom.querySelector(".zt-citation");
+    expect(drawn?.textContent).toBe("(Example 2020, p. 7)");
+
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: " more" },
+    });
+
+    // The held text is one shared value, so the widget compares equal by
+    // reference and CodeMirror keeps the element it already drew.
+    expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
   });
 });

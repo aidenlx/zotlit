@@ -1,11 +1,16 @@
 // Bibliography and cited-document rendering, behind an interface that hides Pandoc.
 
-import { sanitizeHTMLToDom } from "obsidian";
-
 import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 
+import type {
+  Blocks,
+  CitationMode as AstCitationMode,
+  Inline,
+  Inlines,
+  Pandoc,
+} from "./ast";
 import { createPandocRuntime } from "./runtime";
 import type {
   PandocConvertResult,
@@ -32,20 +37,38 @@ export interface BibliographyRequest extends SupersedableRequest {
   styleXml?: string;
 }
 
+/** One rendered bibliography entry, as typed AST. */
 export interface BibliographyEntry {
   /** CSL `id` of the item this entry renders. */
-  id: string;
+  readonly id: string;
   /**
-   * The Entry Marker the style rendered ahead of the entry — a citation number
-   * in the style's own affixes — or `undefined` for a style that renders none.
+   * The Entry Marker the style rendered ahead of the entry, without the space
+   * that separates it from the entry text, or `undefined` for a style that
+   * renders none.
    */
-  marker: string | undefined;
+  readonly marker: Inlines | undefined;
+  /** The formatted entry, without its wrapping element and without the marker. */
+  readonly content: Inlines;
+}
+
+/** How a citation names one of the works it cites. */
+export type CitationMode = "normal" | "author-in-text" | "suppress-author";
+
+/** One work a rendered citation names, in the order the citation names it. */
+export interface CitedWork {
   /**
-   * The formatted entry text, without its wrapping element and without the
-   * marker. Already sanitized and parsed, so a consumer inserts a clone instead
-   * of re-parsing markup.
+   * The CSL id the source cites the work by. It is a citekey spelling, so it
+   * repeats across citations and never identifies a citation on its own.
    */
-  content: DocumentFragment;
+  readonly id: string;
+  readonly mode: CitationMode;
+}
+
+/** One rendered in-text citation, as typed AST. */
+export interface RenderedCitation {
+  /** The formatted citation wholesale, the style's own affixes included. */
+  readonly content: Inlines;
+  readonly citations: readonly CitedWork[];
 }
 
 export interface CitationRequest extends SupersedableRequest {
@@ -90,11 +113,21 @@ export interface DocumentRequest extends SupersedableRequest {
  * ones.
  */
 export interface CitationEngine extends AsyncDisposable {
+  /**
+   * The whole bibliography as typed AST, which a consumer holds and shares as a
+   * value instead of copying it into place.
+   */
   renderBibliography(
     request: BibliographyRequest,
-  ): Promise<BibliographyEntry[]>;
-  /** @returns one formatted citation per requested source, in the same order. */
-  renderCitations(request: CitationRequest): Promise<DocumentFragment[]>;
+  ): Promise<readonly BibliographyEntry[]>;
+  /**
+   * The citations as typed AST, each paired with the works it names.
+   *
+   * @returns one rendered citation per requested source, in the same order.
+   */
+  renderCitations(
+    request: CitationRequest,
+  ): Promise<readonly RenderedCitation[]>;
   renderDocument(request: DocumentRequest): Promise<Uint8Array>;
 }
 
@@ -146,49 +179,64 @@ class PandocCitationEngine implements CitationEngine {
     this.#runtime = runtime;
   }
 
-  async renderBibliography({
+  async renderBibliography(
+    request: BibliographyRequest,
+  ): Promise<readonly BibliographyEntry[]> {
+    return extractBibliography(
+      parseAst(await this.#formatBibliography(request)),
+    );
+  }
+
+  async renderCitations(
+    request: CitationRequest,
+  ): Promise<readonly RenderedCitation[]> {
+    if (request.citations.length === 0) return [];
+    return extractCitations(
+      parseAst(await this.#formatCitations(request)),
+      request.citations.length,
+    );
+  }
+
+  /** @returns Pandoc's JSON output for the whole bibliography of `items`. */
+  async #formatBibliography({
     items,
     styleXml,
     supersedes,
-  }: BibliographyRequest): Promise<BibliographyEntry[]> {
+  }: BibliographyRequest): Promise<string> {
     const style = styleInput(styleXml);
     const { stdout } = await this.#convert({
       options: {
         from: "csljson",
-        to: "html",
+        to: "json",
         standalone: false,
         filters: ["citeproc"],
-        // Entry markup is stored and re-inserted as HTML, so single-line output
-        // keeps it free of the line breaks Pandoc's wrapping would introduce.
-        wrap: "none",
         ...style.options,
       },
       stdin: JSON.stringify(items),
       files: style.files,
       supersedes,
     });
-    return parseBibliography(stdout);
+    return stdout;
   }
 
-  async renderCitations({
+  /** @returns Pandoc's JSON output for every citation the request names. */
+  async #formatCitations({
     citations,
     items,
     styleXml,
     supersedes,
-  }: CitationRequest): Promise<DocumentFragment[]> {
-    if (citations.length === 0) return [];
+  }: CitationRequest): Promise<string> {
     const style = styleInput(styleXml);
     const { stdout } = await this.#convert({
       options: {
         from: MARKDOWN_READER,
-        to: "html",
+        to: "json",
         standalone: false,
         filters: ["citeproc"],
         bibliography: [BIBLIOGRAPHY_FILE],
         // The bibliography is the sidebar's job; this render wants the in-text
         // citations alone.
         metadata: { "suppress-bibliography": true },
-        wrap: "none",
         ...style.options,
       },
       stdin: citations.join("\n\n"),
@@ -198,7 +246,7 @@ class PandocCitationEngine implements CitationEngine {
       },
       supersedes,
     });
-    return parseCitations(stdout, citations.length);
+    return stdout;
   }
 
   async renderDocument({
@@ -304,117 +352,141 @@ function styleInput(styleXml: string | undefined): {
     : { options: { csl: STYLE_FILE }, files: { [STYLE_FILE]: styleXml } };
 }
 
+/** Pandoc prefixes every entry's `id` with this, over the CSL id of the item. */
+const ENTRY_ID_PREFIX = "ref-";
+
+/** The span a style's Entry Marker sits in, when the style renders one. */
+const LEFT_MARGIN_CLASS = "csl-left-margin";
+
 /**
- * Each requested citation is fed as a paragraph of its own, so Pandoc writes
- * one `<p>` per citation in the order they were asked for. The paragraph's own
- * children are the formatted citation — the style's affixes included — and they
- * are sanitized once here, so neither the style nor an item field can carry
- * active markup into the reading view.
+ * The document envelope stops here: the engine hands over domain shapes, so no
+ * consumer ever holds a {@link Pandoc}.
+ */
+function parseAst(stdout: string): Blocks {
+  return (JSON.parse(stdout) as Pandoc).blocks;
+}
+
+const CITATION_MODES = {
+  NormalCitation: "normal",
+  AuthorInText: "author-in-text",
+  SuppressAuthor: "suppress-author",
+} as const satisfies Record<AstCitationMode["t"], CitationMode>;
+
+/**
+ * Each requested citation is fed as a paragraph of its own, so Pandoc answers
+ * with one paragraph per citation in the order they were asked for. That
+ * position is the join: a `citationId` is a citekey spelling, which repeats
+ * across citations and names no one of them.
  *
  * @throws {CitationEngineError} when the output does not answer every citation,
  *   which would silently misalign the answers with what was asked.
  */
-function parseCitations(html: string, expected: number): DocumentFragment[] {
-  const paragraphs = sanitizeHTMLToDom(html).querySelectorAll("p");
+function extractCitations(
+  blocks: Blocks,
+  expected: number,
+): RenderedCitation[] {
+  const paragraphs = blocks.flatMap((block) =>
+    block.t === "Para" || block.t === "Plain" ? [block.c] : [],
+  );
   if (paragraphs.length !== expected) {
     throw new CitationEngineError(
       `Pandoc formatted ${paragraphs.length} of ${expected} citations`,
     );
   }
-  return [...paragraphs].map((paragraph) => {
-    const content = createFragment();
-    content.append(...paragraph.childNodes);
-    return content;
+  return paragraphs.map((content) => ({
+    content,
+    citations: collectCitations(content, []),
+  }));
+}
+
+/**
+ * The prefix, suffix, note number, and hash a `Citation` carries are left
+ * behind: the first two are already rendered into the citation's own content,
+ * and the other two name Pandoc's bookkeeping rather than the cited work.
+ */
+function collectCitations(inlines: Inlines, into: CitedWork[]): CitedWork[] {
+  for (const inline of inlines) {
+    if (inline.t === "Cite") {
+      for (const { citationId, citationMode } of inline.c[0]) {
+        into.push({ id: citationId, mode: CITATION_MODES[citationMode.t] });
+      }
+    }
+    collectCitations(nestedInlines(inline), into);
+  }
+  return into;
+}
+
+/** The inlines a constructor carries, so the walk reaches every citation. */
+function nestedInlines(inline: Inline): Inlines {
+  switch (inline.t) {
+    case "Emph":
+    case "Underline":
+    case "Strong":
+    case "Strikeout":
+    case "Superscript":
+    case "Subscript":
+    case "SmallCaps":
+      return inline.c;
+    case "Quoted":
+    case "Cite":
+    case "Link":
+    case "Image":
+    case "Span":
+      return inline.c[1];
+    case "Note":
+      return blockInlines(inline.c);
+    default:
+      return [];
+  }
+}
+
+/**
+ * Pandoc wraps every bibliography entry in a `Div` whose id is the CSL id of
+ * the item behind {@link ENTRY_ID_PREFIX}, inside one `refs` Div, and reports
+ * the entries in the style's own bibliography order. The outer Div's layout
+ * attributes stay behind until a caller asks for them.
+ */
+function extractBibliography(blocks: Blocks): BibliographyEntry[] {
+  return blocks.flatMap((block) => {
+    if (block.t !== "Div") return [];
+    const [[id], nested] = block.c;
+    if (!id.startsWith(ENTRY_ID_PREFIX)) return extractBibliography(nested);
+    return {
+      id: id.slice(ENTRY_ID_PREFIX.length),
+      ...splitEntry(blockInlines(nested)),
+    };
   });
 }
 
-/** Pandoc prefixes every entry's `id` with this, over the CSL id of the item. */
-const ENTRY_ID_PREFIX = "ref-";
-
-/** The block a style's Entry Marker sits in, when the style renders one. */
-const LEFT_MARGIN_CLASS = "csl-left-margin";
-
 /**
- * The blocks a style lays the rest of an entry out in: the second column of a
- * flush layout, and the two `display` blocks a layout can wrap a part in.
- */
-const ENTRY_BLOCK_CLASSES = ["csl-right-inline", "csl-block", "csl-indent"];
-
-/**
- * Pandoc wraps every bibliography entry in `<div id="ref-ID" class="csl-entry">`
- * inside one `<div id="refs">`, and reports the entries in the style's own
- * bibliography order. Entry markup nests further elements, and a CSL id is a
- * Zotero URI long enough for Pandoc to wrap the opening tag, so the markup is
- * read as a DOM rather than matched as text.
- *
- * The entry keeps that parsed form: it is sanitized once here, so a style or an
- * item field cannot carry active markup into the sidebar, and the view inserts
- * it without a serialize-and-re-parse round trip.
- */
-function parseBibliography(html: string): BibliographyEntry[] {
-  const entries: BibliographyEntry[] = [];
-  for (const entry of sanitizeHTMLToDom(html).querySelectorAll(".csl-entry")) {
-    if (!entry.id.startsWith(ENTRY_ID_PREFIX)) continue;
-    entries.push({
-      id: entry.id.slice(ENTRY_ID_PREFIX.length),
-      ...splitEntry(entry),
-    });
-  }
-  return entries;
-}
-
-/**
- * Take the Entry Marker out of an entry and flatten what is left into one
- * inline flow.
- *
- * A style lays an entry out in blocks, and a block break would push whatever
- * the sidebar puts after the entry — its occurrence counter — onto its own
- * line. Each block hands its own children over instead, separated by one space
- * where the break used to be. A flush layout nests its blocks inside the column
- * beside the marker, so a block hands over what its own blocks hold. Line
- * breaks the markup itself carries between blocks are layout rather than text,
- * so they make that same single space.
+ * Take the Entry Marker off the front of an entry. A flush layout opens the
+ * entry with the left-margin span, which holds the marker and the space that
+ * sets the second column off from it — the space is layout, not marker. Every
+ * other `csl-*` span passes through, since how they lay an entry out is the
+ * renderer's policy.
  */
 function splitEntry(
-  entry: Element,
+  inlines: Inlines,
 ): Pick<BibliographyEntry, "marker" | "content"> {
-  const content = createFragment();
-  let marker: string | undefined;
-
-  /** Moves one level of children over, and recurses through the blocks. */
-  function flatten(parent: Node): void {
-    /** A separator stands between what was emitted and whatever comes next. */
-    let gap = false;
-    // A copy, since appending a node to the flow takes it out of `parent` and
-    // the live child list would shift the ones still to be read.
-    const children = [...parent.childNodes];
-    for (const node of children) {
-      if (isWhitespace(node)) {
-        gap = true;
-        continue;
-      }
-      if (hasClass(node, LEFT_MARGIN_CLASS)) {
-        marker ??= node.textContent?.trim() || undefined;
-        gap = false;
-        continue;
-      }
-      const block = ENTRY_BLOCK_CLASSES.some((name) => hasClass(node, name));
-      if (content.hasChildNodes() && (gap || block)) content.append(" ");
-      if (block) flatten(node);
-      else content.append(node);
-      gap = block;
-    }
+  const [first, ...rest] = inlines;
+  if (first?.t !== "Span" || !first.c[0][1].includes(LEFT_MARGIN_CLASS)) {
+    return { marker: undefined, content: inlines };
   }
-
-  flatten(entry);
-  return { marker, content };
+  const marker = dropTrailingSpace(first.c[1]);
+  return { marker: marker.length > 0 ? marker : undefined, content: rest };
 }
 
-function hasClass(node: Node, name: string): boolean {
-  return node instanceof Element && node.classList.contains(name);
+function dropTrailingSpace(inlines: Inlines): Inlines {
+  return inlines.at(-1)?.t === "Space" ? inlines.slice(0, -1) : inlines;
 }
 
-/** Text that carries no content of its own, so it reads as a separator. */
-function isWhitespace(node: Node): boolean {
-  return node.nodeType === Node.TEXT_NODE && !node.textContent?.trim();
+/** Unwraps the block envelopes an entry is laid out in, so only inlines leave. */
+function blockInlines(blocks: Blocks): Inlines {
+  return blocks.flatMap((block) => {
+    if (block.t === "Para" || block.t === "Plain") return block.c;
+    logger.debug("Dropped a block the engine cannot unwrap", {
+      block: block.t,
+    });
+    return [];
+  });
 }

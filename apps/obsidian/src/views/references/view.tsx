@@ -1,6 +1,6 @@
 // ItemView orchestrator for the References Sidebar: reads the active document's Citations from the index and renders them through the Pandoc engine.
 import { ItemView } from "obsidian";
-import type { App, WorkspaceLeaf } from "obsidian";
+import type { App, TFile, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
@@ -20,6 +20,7 @@ import type {
   DocumentCitationSet,
   ReferenceSource,
 } from "@/services/citation-index/service";
+import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
@@ -40,6 +41,7 @@ import {
 import type {
   ReferencesCopyBlock,
   ReferencesCopyState,
+  ReferencesCopyTarget,
   ReferencesFormatting,
   ReferencesListMode,
 } from "./store";
@@ -54,6 +56,11 @@ export interface ReferencesViewDeps {
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Opens the Literature Note a citekey names, creating it first when it has none. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  /**
+   * The active document's formatted citations, which say whether that document
+   * shows Entry Serials — the gutter follows what the citations show.
+   */
+  citationText: Pick<CitationText, "peek" | "load" | "on">;
   pandocEngine: Pick<
     PandocEngineService,
     "getStatus" | "subscribe" | "decline"
@@ -75,8 +82,13 @@ export class ReferencesView extends ItemView {
    * falls back to its summary mid-edit.
    */
   readonly #rendered = new Map<string, RenderedReference>();
-  /** Marker ownership of the last completed render for the current style. */
-  #listMode: ReferencesListMode = { kind: "minimal" };
+  /**
+   * Entry Marker ownership of the last completed render for the current style,
+   * or `null` while the list on screen is the minimal one.
+   */
+  #entryMarkers: boolean | null = null;
+  /** Whether the document's citations put this list's gutter on Entry Serials. */
+  #entrySerials = false;
   /** The current list is minimal because a completed formatting attempt failed. */
   #formattingFailed = false;
   #root: Root | null = null;
@@ -85,7 +97,9 @@ export class ReferencesView extends ItemView {
   #generation = 0;
   /** Bumped per rescan, the same way, since a query may await a file read. */
   #scan = 0;
-  /** Path of the Markdown note the current list was read from; `null` for none. */
+  /** The Markdown note the current list was read from; `null` for none. */
+  #file: TFile | null = null;
+  /** Path of that note, which is what a document-scoped event names. */
   #path: string | null = null;
   /** Citations of that note, as the current list was built from. */
   #citations: readonly Citation[] = [];
@@ -122,6 +136,7 @@ export class ReferencesView extends ItemView {
       app,
       db,
       citationIndex,
+      citationText,
       citekeyEditor,
       pandocEngine,
       bibliographyRender,
@@ -168,6 +183,13 @@ export class ReferencesView extends ItemView {
     this.register(citationIndex.on("resolution-changed", () => this.#rescan()));
     this.register(citationIndex.on("membership-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
+    // What the document's own citations show decides what this gutter shows,
+    // so a fresh read of the note on screen republishes the list.
+    this.register(
+      citationText.on("changed", (path) => {
+        if (path === this.#path) this.#reload();
+      }),
+    );
     this.register(db.on("changed", () => this.#reload()));
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
@@ -205,7 +227,8 @@ export class ReferencesView extends ItemView {
   #rescan(): void {
     const scan = ++this.#scan;
     this.#refreshCopy();
-    void this.#readCitationSet().then(({ path, citations, errors }) => {
+    void this.#readCitationSet().then(({ file, citations, errors }) => {
+      const path = file?.path ?? null;
       if (
         scan !== this.#scan ||
         (path === this.#path &&
@@ -214,6 +237,7 @@ export class ReferencesView extends ItemView {
       ) {
         return;
       }
+      this.#file = file;
       this.#path = path;
       this.#citations = citations;
       this.#errors = errors;
@@ -231,14 +255,14 @@ export class ReferencesView extends ItemView {
    * active note moves while the read runs.
    */
   async #readCitationSet(): Promise<
-    DocumentCitationSet & { path: string | null }
+    DocumentCitationSet & { file: TFile | null }
   > {
     const file = this.#deps.app.workspace.getActiveFile();
     if (!file || file.extension !== "md") {
-      return { path: null, occurrences: [], citations: [], errors: [] };
+      return { file: null, occurrences: [], citations: [], errors: [] };
     }
     return {
-      path: file.path,
+      file,
       ...(await this.#deps.citationIndex.getDocumentCitationSet(file)),
     };
   }
@@ -251,9 +275,10 @@ export class ReferencesView extends ItemView {
   #reload({ invalidate = false } = {}): void {
     if (invalidate) {
       this.#rendered.clear();
-      this.#listMode = { kind: "minimal" };
+      this.#entryMarkers = null;
       this.#formattingFailed = false;
     }
+    this.#entrySerials = this.#readEntrySerials();
     const generation = ++this.#generation;
     const citations = this.#citations;
     const { sources } = readReferenceSources(this.#deps.db, citations);
@@ -271,7 +296,7 @@ export class ReferencesView extends ItemView {
     this.#formatting = engine.kind === "installed" ? "pending" : "unavailable";
     this.#store.setState({
       entries,
-      listMode: this.#listMode,
+      listMode: this.#listMode(),
       engine,
       formattingFailed: this.#formattingFailed,
       dbReady: this.#deps.db.state === "ready",
@@ -304,9 +329,15 @@ export class ReferencesView extends ItemView {
       formatting:
         this.#activeMarkdownPath() === path ? this.#formatting : "pending",
     });
+    // The list a snapshot is taken from stands for one note and one generation,
+    // and neither moves without a reload, so a snapshot already taken for the
+    // same pair is the same snapshot and the entries are shown once for it.
     this.#copySnapshot =
       copy.kind === "ready"
-        ? { ...copy.target, entries: copiedEntries(entries) }
+        ? (this.#heldSnapshot(copy.target) ?? {
+            ...copy.target,
+            entries: copiedEntries(entries),
+          })
         : null;
 
     const label = copy.kind === "ready" ? "ready" : copy.reason;
@@ -319,6 +350,14 @@ export class ReferencesView extends ItemView {
       });
     }
     return copy;
+  }
+
+  /** The snapshot already taken for `target`, when one was. */
+  #heldSnapshot(target: ReferencesCopyTarget): CopyBibliographySnapshot | null {
+    const held = this.#copySnapshot;
+    return held?.path === target.path && held.generation === target.generation
+      ? held
+      : null;
   }
 
   /**
@@ -372,10 +411,7 @@ export class ReferencesView extends ItemView {
     for (const { id, marker, content } of outcome.entries) {
       this.#rendered.set(id, { marker, content });
     }
-    this.#listMode = {
-      kind: "bibliography",
-      hasEntryMarkers: outcome.hasEntryMarkers,
-    };
+    this.#entryMarkers = outcome.hasEntryMarkers;
     this.#formattingFailed = false;
     this.#formatting = "complete";
     logger.debug("References bibliography rendered", {
@@ -391,10 +427,45 @@ export class ReferencesView extends ItemView {
     });
     this.#store.setState({
       entries,
-      listMode: this.#listMode,
+      listMode: this.#listMode(),
       formattingFailed: false,
       copy: this.#trackCopy(entries),
     });
+  }
+
+  /**
+   * Which list is on screen, and what its gutter carries.
+   *
+   * The two answers are read apart — a completed render says whether the style
+   * writes Entry Markers, the document's own citations say whether they show
+   * Entry Serials — and either can settle first, so the mode is composed as it
+   * is published rather than held.
+   */
+  #listMode(): ReferencesListMode {
+    return this.#entryMarkers === null
+      ? { kind: "minimal" }
+      : {
+          kind: "bibliography",
+          hasEntryMarkers: this.#entryMarkers,
+          entrySerials: this.#entrySerials,
+        };
+  }
+
+  /**
+   * Whether the note this list answers for shows Entry Serials.
+   *
+   * The answer is the held citation text of that note — the very text its own
+   * surfaces show — so the digits in this gutter are the digits those surfaces
+   * print. A note nothing has read yet is read now, and that read announces
+   * itself when it settles.
+   */
+  #readEntrySerials(): boolean {
+    const file = this.#file;
+    if (file === null) return false;
+    const held = this.#deps.citationText.peek(file.path);
+    if (held !== null) return held.entrySerials;
+    void this.#deps.citationText.load(file);
+    return false;
   }
 
   /** Replace stale formatted entries with the current minimal reference list. */
@@ -404,7 +475,7 @@ export class ReferencesView extends ItemView {
     formattingFailed: boolean,
   ): void {
     this.#rendered.clear();
-    this.#listMode = { kind: "minimal" };
+    this.#entryMarkers = null;
     this.#formattingFailed = formattingFailed;
     this.#formatting = formattingFailed ? "failed" : "unavailable";
     const minimal = minimalReferencesState({
@@ -420,7 +491,13 @@ export class ReferencesView extends ItemView {
   }
 }
 
-/** The completed entries of a ready list, in the style's bibliography order. */
+/**
+ * The completed entries of a ready list, in the style's bibliography order.
+ *
+ * The clipboard serializer reads the formatted flows themselves, so an entry
+ * travels as the engine handed it over and is written for the destination once,
+ * at the copy.
+ */
 function copiedEntries(
   entries: readonly ReferenceEntry[],
 ): CopiedBibliographyEntry[] {

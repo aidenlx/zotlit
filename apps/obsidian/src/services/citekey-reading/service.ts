@@ -4,12 +4,15 @@ import { MarkdownView } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import { getLogger } from "@/lib/log";
-import { rerenderReadingViews } from "@/lib/reading-view";
+import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
 import {
   citationContent,
   citationElement,
   citedWorks,
+  literalSummaryOf,
+  sectionCoordinates,
+  unresolvedKeys,
 } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
@@ -151,16 +154,16 @@ export class CitekeyReading extends Service<void> {
       void this.#citationText.load(file);
       return;
     }
-    const summaryOf = (citekey: string): string | undefined =>
-      text.summaries.get(citekey);
+    const summaryOf = literalSummaryOf(text);
     const doc = el.ownerDocument;
-    replaceCitations(citations, (citation) => {
+    // Which occurrence each citation of the section is, so a position-dependent
+    // style shows every one of them the text rendered for its own place.
+    const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
+    replaceCitations(citations, (citation, index) => {
       const content = this.#showFormatted
-        ? citationContent(citation, text)
+        ? citationContent(citation, text, coordinates[index])
         : null;
-      const unresolved = citation.keys.filter(
-        (key) => !text.summaries.has(key.citekey),
-      ).length;
+      const unresolved = unresolvedKeys(citation, summaryOf);
       const themeClasses = [
         themeHook.citationKey,
         ...(unresolved === 0

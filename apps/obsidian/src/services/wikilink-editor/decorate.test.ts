@@ -85,7 +85,11 @@ describe("wikilinkDecorations", () => {
         citation: {
           source: "[@wang2020, p. 7]",
           keys: [{ citekey: "wang2020", start: 1, end: 10 }],
+          works: [WANG.indexedKey],
         },
+        // The `[[` the document writes the Citation at, which the shared text
+        // keys its occurrence by.
+        start: 0,
         tokenClasses: ["hmd-internal-link"],
       },
     ]);

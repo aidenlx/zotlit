@@ -11,7 +11,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import type { BibliographyEntry } from "./engine";
+import type { BibliographyEntry, RenderedCitation } from "./engine";
 import type { PandocEngineService } from "./service";
 import { StyleXmlCache, styleHasEntryMarkers } from "./styles";
 
@@ -89,7 +89,7 @@ export class BibliographyRenderCache extends Service<void> {
   >(HELD_RENDERS);
   /** In-text citation renders, held the same way and dropped by the same signals. */
   readonly #citations = new BoundedCache<
-    Promise<RenderAttempt<readonly DocumentFragment[]>>
+    Promise<RenderAttempt<readonly RenderedCitation[]>>
   >(HELD_RENDERS);
   /** `undefined` until the first settings snapshot names the selected style. */
   #styleId: string | null | undefined;
@@ -110,10 +110,10 @@ export class BibliographyRenderCache extends Service<void> {
   /**
    * The whole bibliography of `items`, formatted in the Citation and References Style.
    *
-   * Entries come back in the style's own bibliography order, and the entry
-   * content is shared with every other consumer of the same render — a consumer
-   * clones it rather than inserting it, which is what the DOM-content helper
-   * already does.
+   * Entries come back in the style's own bibliography order, as typed AST. The
+   * rendered value is deeply immutable and shared: every consumer of one render
+   * gets the identical value, so a consumer holds it as long as it likes and
+   * compares renders by reference.
    *
    * @param items the cited works as CSL-JSON, in the order they are cited.
    * @returns the formatted bibliography, or the unavailable or failed state
@@ -148,32 +148,32 @@ export class BibliographyRenderCache extends Service<void> {
   }
 
   /**
-   * One document's in-text citations, formatted in the Citation and References Style.
+   * One document's in-text citations, formatted in the Citation and References Style,
+   * each paired with the works it names.
    *
    * A style that numbers counts citations across the whole document, so the
    * unit rendered — and the unit cached — is every citation the document
-   * writes, in document order. The formatted content is shared with every other
-   * consumer of the same render, so a consumer inserts a clone of it.
+   * writes, in document order. The rendered value is shared under the same
+   * contract as {@link render}.
    *
    * @param citations each citation as the source writes it, in document order.
-   * @param items the works those citekeys resolve to, each `id` the citekey the
-   *   source writes.
+   * @param items the works those citations name, each `id` the key the source
+   *   names that work by.
    * @returns one formatted citation per source, in the same order; `null` when
    *   the engine or selected style is unavailable, or the render failed.
    */
   async renderCitations(
     citations: readonly string[],
     items: readonly CslItemData[],
-  ): Promise<readonly DocumentFragment[] | null> {
+  ): Promise<readonly RenderedCitation[] | null> {
     await this.ready.catch(() => undefined);
     if (this.#engine.getStatus().kind !== "installed") return null;
     if (citations.length === 0) return [];
 
     const styleId = this.#styleId ?? null;
-    const key = renderKey(styleId, items, citations);
     const attempt = await this.#hold({
       held: this.#citations,
-      key,
+      key: renderKey(styleId, items, citations),
       format: () => this.#runCitations(citations, items, styleId),
       kind: "citations",
     });
@@ -211,8 +211,7 @@ export class BibliographyRenderCache extends Service<void> {
       }),
     );
     stack.defer(() => {
-      this.#renders.clear();
-      this.#citations.clear();
+      this.#clearHeld();
     });
 
     this.commit(stack.move());
@@ -238,11 +237,17 @@ export class BibliographyRenderCache extends Service<void> {
    */
   #invalidate(): void {
     logger.debug("Dropped the bibliography renders", {
-      count: this.#renders.size + this.#citations.size,
+      count: this.#clearHeld(),
     });
-    this.#renders.clear();
-    this.#citations.clear();
     this.#emitter.emit("invalidated");
+  }
+
+  /** @returns how many renders were held before they were dropped. */
+  #clearHeld(): number {
+    const held = [this.#renders, this.#citations];
+    const count = held.reduce((total, cache) => total + cache.size, 0);
+    for (const cache of held) cache.clear();
+    return count;
   }
 
   /** Answer `key` from `held`, running `format` when nothing holds it yet. */
@@ -287,10 +292,7 @@ export class BibliographyRenderCache extends Service<void> {
         count: entries.length,
         hasEntryMarkers,
       });
-      return {
-        kind: "rendered",
-        value: { entries, hasEntryMarkers },
-      };
+      return { kind: "rendered", value: { entries, hasEntryMarkers } };
     } catch (error) {
       logger.warn("Cannot format the bibliography", { error });
       return { kind: "failed" };
@@ -301,7 +303,7 @@ export class BibliographyRenderCache extends Service<void> {
     citations: readonly string[],
     items: readonly CslItemData[],
     styleId: string | null,
-  ): Promise<RenderAttempt<readonly DocumentFragment[]>> {
+  ): Promise<RenderAttempt<readonly RenderedCitation[]>> {
     try {
       const styleXml = await this.#resolveStyle(styleId);
       if (styleXml.kind === "missing") return { kind: "style-missing" };
@@ -335,9 +337,9 @@ export class BibliographyRenderCache extends Service<void> {
 /**
  * The identity of one render: the style that formats it, the works it covers in
  * the order they are cited, and — for an in-text render — the citations it
- * formats. A CSL id is a Zotero item URI or a citation key, so neither can
- * carry the separator, and the empty line between the two lists keeps them
- * apart.
+ * formats. A CSL id names one Item — a Zotero item URI, an Indexed Key, or a
+ * citation key — and none of the three can carry the separator, so the empty
+ * line between the two lists keeps them apart.
  */
 function renderKey(
   styleId: string | null,

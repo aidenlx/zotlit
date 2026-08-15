@@ -5,8 +5,13 @@ import type {
   Citation,
   CitationOccurrence,
 } from "@/services/citation-index/service";
+import type { RenderedCitation } from "@/services/pandoc/engine";
+import { inlineText } from "@/services/pandoc/inline-content";
 
-export const ALPHA_KEY = "1/ALPHA123";
+import type { FormattedOccurrence, PresentedCitation } from "./present";
+
+/** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
+export const ALPHA_KEY = "ALPHA234";
 
 /**
  * The Item the stubbed database answers with. A suite mocks `@zotlit/db` so
@@ -69,8 +74,63 @@ export function literalOccurrences(body: string): CitationOccurrence[] {
 }
 
 /** One formatted citation, as the render cache hands it over. */
-export function fragment(text: string): DocumentFragment {
-  const content = document.createDocumentFragment();
-  content.append(text);
-  return content;
+export function rendered(text: string): RenderedCitation {
+  return { content: [{ t: "Str", c: text }], citations: [] };
+}
+
+/** One formatted citation as a surface holds it, standing for no note. */
+export function presented(text: string): PresentedCitation {
+  return { text: rendered(text), serials: [] };
+}
+
+/**
+ * One formatted citation of a note-class style: the works it names read out of
+ * the source, and a note where an in-text style would have written the text.
+ *
+ * @param source the citation as the render was asked for it, whose keys are
+ *   the CSL ids the render answers with.
+ */
+export function noted(source: string): RenderedCitation {
+  return {
+    content: [
+      {
+        t: "Cite",
+        c: [
+          [],
+          [{ t: "Note", c: [{ t: "Para", c: [{ t: "Str", c: source }] }] }],
+        ],
+      },
+    ],
+    citations: scanDocumentCitations(source).flatMap(({ keys }) =>
+      keys.map(({ citekey }) => ({ id: citekey, mode: "normal" as const })),
+    ),
+  };
+}
+
+/**
+ * The one occurrence a document holding a Citation once writes of it, for a
+ * suite that stands in for a whole read.
+ */
+export function occurrences(
+  text: RenderedCitation,
+  start = 0,
+): FormattedOccurrence[] {
+  return [{ start, text, serials: [] }];
+}
+
+/**
+ * The text every occurrence of one held Citation reads as, in document order,
+ * which is what a suite asserting on a position-dependent render asserts on.
+ */
+export function occurrenceTexts(
+  held: readonly FormattedOccurrence[] = [],
+): string[] {
+  return held.map(({ text }) => inlineText(text.content));
+}
+
+/** The text one held Citation's first occurrence reads as. */
+export function firstText(
+  held: readonly FormattedOccurrence[] = [],
+): string | undefined {
+  return occurrenceTexts(held)[0];
 }

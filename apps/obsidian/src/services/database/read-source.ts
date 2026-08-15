@@ -62,6 +62,13 @@ type FileFingerprint =
       ctimeNs: bigint;
     };
 
+/** Identity of the live source pair at one instant. See {@link snapshotSource}. */
+export interface SourceFingerprint {
+  path: string;
+  main: FileFingerprint;
+  wal: FileFingerprint;
+}
+
 type TempReadMode = "reflink" | "copy";
 
 export function buildSqliteUri(
@@ -188,6 +195,31 @@ async function copySource(
     return;
   }
   await reflink(sourcePath, targetPath);
+}
+
+/**
+ * Fingerprint the live source pair. A clone read leaves every field untouched,
+ * so two equal fingerprints mean the database we would read is byte-identical to
+ * the one we already hold.
+ *
+ * @see DatabaseService's `#sourceMoved` for the gate this feeds.
+ */
+export async function snapshotSource(
+  sourcePath: string,
+): Promise<SourceFingerprint> {
+  const pair = await snapshotPair(sourcePath, `${sourcePath}-wal`);
+  return { path: sourcePath, ...pair };
+}
+
+export function sourceFingerprintsEqual(
+  a: SourceFingerprint,
+  b: SourceFingerprint,
+): boolean {
+  return (
+    a.path === b.path &&
+    fingerprintsEqual(a.main, b.main) &&
+    fingerprintsEqual(a.wal, b.wal)
+  );
 }
 
 async function snapshotPair(

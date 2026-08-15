@@ -306,7 +306,7 @@ export interface CitationSource {
 /**
  * The Pandoc source text a standalone Citation or a whole Citation Run is
  * written as — the very text the equivalent Citation Cluster carries, so both
- * citing syntaxes reach one render and read alike.
+ * citing syntaxes reach one render.
  *
  * A run of several works is one bracketed cluster, which is also the only form
  * the citekey syntax can write a group in: an author-in-text item keeps its

@@ -5,9 +5,13 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentCitationSet } from "@/services/citation-index/service";
+import type { DocumentCitations } from "@/services/citation-text/present";
+import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 
 import { ReferencesView } from "./view";
+
+type RenderedBibliography = BibliographyRenderOutcome;
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
@@ -70,22 +74,65 @@ const citationSet: DocumentCitationSet = {
   errors: [],
 };
 
-function renderedOutcome(): BibliographyRenderOutcome {
-  const content = document.createDocumentFragment();
-  content.append("Rivers, A. (2020). Field notes. Harbour Press.");
+/** One flow of plain words, the way pandoc splits text into Str and Space. */
+function words(text: string): Inlines {
+  return text
+    .split(" ")
+    .flatMap<Inline>((word, index) =>
+      index === 0
+        ? [{ t: "Str", c: word }]
+        : [{ t: "Space" }, { t: "Str", c: word }],
+    );
+}
+
+function renderedOutcome(): RenderedBibliography {
   return {
     kind: "rendered",
-    entries: [{ id: "ref-book", marker: "[1]", content }],
+    entries: [
+      {
+        id: "ref-book",
+        marker: words("[1]"),
+        content: words("Rivers, A. (2020). Field notes. Harbour Press."),
+      },
+    ],
     hasEntryMarkers: true,
   };
 }
 
+/** What a style that writes no Entry Marker renders, which leaves the gutter free. */
+function unmarkedOutcome(): RenderedBibliography {
+  return {
+    kind: "rendered",
+    entries: [
+      {
+        id: "ref-book",
+        marker: undefined,
+        content: words("Rivers, A. (2020). Field notes. Harbour Press."),
+      },
+    ],
+    hasEntryMarkers: false,
+  };
+}
+
+/** What the citation text service holds for one note. */
+function heldText(entrySerials: boolean): DocumentCitations {
+  return {
+    formatted: new Map(),
+    entrySerials,
+    summaries: new Map(),
+    literalWorks: new Map(),
+  };
+}
+
 let view: TestReferencesView | undefined;
-let renders: PromiseWithResolvers<BibliographyRenderOutcome>[] = [];
+let renders: PromiseWithResolvers<RenderedBibliography>[] = [];
 let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
 let activeFile: TFile;
 let otherFile: TFile;
 let onDbChanged: (() => void) | undefined;
+let onCitationsChanged: ((path: string) => void) | undefined;
+/** What the citation text service holds for the note on screen. */
+let heldCitations: DocumentCitations | null;
 let onInvalidated: (() => void) | undefined;
 let onActiveLeafChange: (() => void) | undefined;
 
@@ -112,8 +159,10 @@ async function settle(): Promise<void> {
   });
 }
 
-async function finishRender(): Promise<void> {
-  renders.at(-1)!.resolve(renderedOutcome());
+async function finishRender(
+  outcome: RenderedBibliography = renderedOutcome(),
+): Promise<void> {
+  renders.at(-1)!.resolve(outcome);
   await settle();
 }
 
@@ -132,6 +181,7 @@ async function followOtherNote(): Promise<void> {
 beforeEach(async () => {
   renders = [];
   scans = [];
+  heldCitations = null;
   activeFile = markdownFile("tidal");
   otherFile = markdownFile("estuary");
   const app = {
@@ -166,6 +216,14 @@ beforeEach(async () => {
         },
         on: () => () => undefined,
       },
+      citationText: {
+        peek: () => heldCitations,
+        load: () => Promise.resolve(heldCitations),
+        on: (event: string, callback: (path: string) => void) => {
+          if (event === "changed") onCitationsChanged = callback;
+          return () => undefined;
+        },
+      },
       citekeyEditor: { openCitekey: () => Promise.resolve() },
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
@@ -174,7 +232,7 @@ beforeEach(async () => {
       },
       bibliographyRender: {
         render: () => {
-          const deferred = Promise.withResolvers<BibliographyRenderOutcome>();
+          const deferred = Promise.withResolvers<RenderedBibliography>();
           renders.push(deferred);
           return deferred.promise;
         },
@@ -197,6 +255,7 @@ afterEach(async () => {
   await act(() => view?.close());
   view = undefined;
   onDbChanged = undefined;
+  onCitationsChanged = undefined;
   onInvalidated = undefined;
   onActiveLeafChange = undefined;
   document.body.replaceChildren();
@@ -269,5 +328,32 @@ describe("ReferencesView copy readiness", () => {
     await finishRender();
 
     expect(copyAction().hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("ReferencesView Entry Serials", () => {
+  /** The gutter of the one entry the list shows. */
+  function gutter(): string | null {
+    return view!.contentEl.querySelector("li")!.children[0]!.textContent;
+  }
+
+  it("puts the gutter on Entry Serials once the note's citations show them", async () => {
+    heldCitations = heldText(true);
+    await act(() => onCitationsChanged!(activeFile.path));
+
+    await finishRender(unmarkedOutcome());
+
+    expect(gutter()).toBe("1");
+  });
+
+  it("leaves the gutter out where the note's citations show none", async () => {
+    heldCitations = heldText(false);
+    await act(() => onCitationsChanged!(activeFile.path));
+
+    await finishRender(unmarkedOutcome());
+
+    expect(view!.contentEl.querySelector("ul")!.classList).toContain(
+      "zt:grid-cols-[minmax(0,1fr)_max-content]",
+    );
   });
 });
