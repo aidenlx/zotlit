@@ -295,7 +295,7 @@
   "settings_citation_show_formatted_name": "Show formatted citations",
   "settings_citation_show_formatted_desc": "Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.",
   "settings_citation_open_pandoc_links_name": "Open Pandoc citations as links",
-  "settings_citation_open_pandoc_links_desc": "Open and preview literature notes from Pandoc citations. This setting does not change how citations are shown.",
+  "settings_citation_open_pandoc_links_desc": "Open literature notes from Pandoc citations. This setting does not change how citations are shown or what hovering them shows.",
   "settings_citation_hover_heading": "Hover",
   "settings_citation_hover_action_name": "Hover action",
   "settings_citation_hover_action_desc": "What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.",

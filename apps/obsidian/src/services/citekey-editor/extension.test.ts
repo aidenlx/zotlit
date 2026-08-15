@@ -112,7 +112,8 @@ describe("citekeyEditorExtension theme hooks", () => {
           showPopover: () => undefined,
           hoverPreferences: () => hover(),
           hoverNotePath: () => NOTE_PATH,
-          resolves: (citekey) => citekey === "resolved",
+          resolveCitekey: (citekey) =>
+            citekey === "resolved" ? DOE_KEY : null,
           navigationEnabled: () => true,
           showFormatted: () => true,
           citationText: () => null,
@@ -146,7 +147,7 @@ describe("citekeyEditorExtension theme hooks", () => {
             showPopover: () => undefined,
             hoverPreferences: () => hover(),
             hoverNotePath: () => NOTE_PATH,
-            resolves: () => true,
+            resolveCitekey: () => DOE_KEY,
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => true,
             citationText: () => ({
@@ -184,8 +185,16 @@ describe("citekeyEditorExtension delegated hover", () => {
    */
   function sourceView(
     requests: CitationHoverRequest[],
-    preferences: HoverPreferences = hover(),
-    notePath: string | null = NOTE_PATH,
+    {
+      preferences = hover(),
+      notePath = NOTE_PATH,
+      navigationEnabled = true,
+    }: {
+      preferences?: HoverPreferences;
+      notePath?: string | null;
+      /** Citekey Navigation, which the hover result is independent of. */
+      navigationEnabled?: boolean;
+    } = {},
   ) {
     livePreview.mockReturnValue(false);
     const view = editorView({
@@ -199,8 +208,8 @@ describe("citekeyEditorExtension delegated hover", () => {
             showPopover: (request) => requests.push(request),
             hoverPreferences: () => preferences,
             hoverNotePath: () => notePath,
-            resolves: () => true,
-            navigationEnabled: () => true,
+            resolveCitekey: () => DOE_KEY,
+            navigationEnabled: () => navigationEnabled,
             showFormatted: () => false,
             citationText: () => null,
             requestCitationText: () => undefined,
@@ -236,7 +245,7 @@ describe("citekeyEditorExtension delegated hover", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       targetEl: mark(view),
-      works: [{ citekey: "doe2024" }],
+      works: [{ citekey: "doe2024", indexedKey: DOE_KEY }],
       sourcePath: "note.md",
     });
   });
@@ -259,7 +268,9 @@ describe("citekeyEditorExtension delegated hover", () => {
 
   it("asks for the page preview under the shared source id", () => {
     const requests: CitationHoverRequest[] = [];
-    using view = sourceView(requests, hover({ action: "page-preview" }));
+    using view = sourceView(requests, {
+      preferences: hover({ action: "page-preview" }),
+    });
 
     mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
 
@@ -276,7 +287,10 @@ describe("citekeyEditorExtension delegated hover", () => {
 
   it("previews nothing for a key naming zero or several notes", () => {
     const requests: CitationHoverRequest[] = [];
-    using view = sourceView(requests, hover({ action: "page-preview" }), null);
+    using view = sourceView(requests, {
+      preferences: hover({ action: "page-preview" }),
+      notePath: null,
+    });
 
     mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
 
@@ -286,7 +300,9 @@ describe("citekeyEditorExtension delegated hover", () => {
 
   it("adds no hover result at all while the Hover action is off", () => {
     const requests: CitationHoverRequest[] = [];
-    using view = sourceView(requests, hover({ action: "off" }));
+    using view = sourceView(requests, {
+      preferences: hover({ action: "off" }),
+    });
     vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
 
     mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
@@ -294,12 +310,38 @@ describe("citekeyEditorExtension delegated hover", () => {
     expect(requests).toEqual([]);
     expect(hoverLinks).toEqual([]);
   });
+
+  it("shows the marked key's popover while Citekey Navigation is off", () => {
+    const requests: CitationHoverRequest[] = [];
+    using view = sourceView(requests, { navigationEnabled: false });
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+
+    mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      targetEl: mark(view),
+      works: [{ citekey: "doe2024", indexedKey: DOE_KEY }],
+    });
+  });
 });
 
 describe("citekeyEditorExtension citation widgets", () => {
+  /** Every popover the drawn citations of these views asked for. */
+  const requests: CitationHoverRequest[] = [];
+
+  beforeEach(() => {
+    requests.length = 0;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   /**
    * One view over `doc`, with `formatted` held as its citation text — by
-   * default one occurrence of `[@doe2024]`.
+   * default one occurrence of `[@doe2024]`. Citekey Navigation is off, so what
+   * these views draw carries the Hover Action's result alone.
    */
   function viewOf(
     doc: string,
@@ -322,10 +364,10 @@ describe("citekeyEditorExtension citation widgets", () => {
           editorInfoField,
           citekeyEditorExtension({
             open: () => undefined,
-            showPopover: () => undefined,
+            showPopover: (request) => requests.push(request),
             hoverPreferences: () => hover(),
             hoverNotePath: () => NOTE_PATH,
-            resolves: () => true,
+            resolveCitekey: () => DOE_KEY,
             navigationEnabled: () => false,
             showFormatted: () => true,
             citationText: () => held,
@@ -379,5 +421,18 @@ describe("citekeyEditorExtension citation widgets", () => {
     // The held text is one shared value, so the widget compares equal by
     // reference and CodeMirror keeps the element it already drew.
     expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+  });
+
+  it("shows the drawn citation's popover while Citekey Navigation is off", () => {
+    using view = viewOf("[@doe2024]");
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+
+    drawn.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      targetEl: drawn,
+      works: [{ citekey: "doe2024", indexedKey: DOE_KEY }],
+    });
   });
 });

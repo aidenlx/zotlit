@@ -237,6 +237,21 @@ describe("wikilinkEditorExtension hover under the Citation Popover", () => {
     vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
     editor.hover();
     expect(editor.requests).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+
+  it("keeps Obsidian's own hover out while Require Mod holds the popover back", () => {
+    // Popover mode owns the gesture whole, so a bare hover it answers with
+    // nothing shows nothing — never the page preview instead.
+    using editor = harness("[[literatures/example#cite:locator=7]]", {
+      "citation.hover-require-mod-live-preview": true,
+    });
+    expect(editor.citation()).not.toBeNull();
+
+    editor.hover();
+
+    expect(editor.requests).toEqual([]);
+    expect(editor.native).toEqual([]);
   });
 });
 

@@ -33,10 +33,9 @@ export interface HoveredWork {
   /** The citekey the citation writes the work as, which the open action names. */
   citekey: string;
   /**
-   * The work's Indexed Key, where the citation itself names the Item — a
-   * wikilink names a Literature Note, and the note names the Item. A citation
-   * naming its works by citekey spelling alone leaves it out, and the document
-   * its keys are written in answers for them.
+   * The work's Indexed Key: the Item identity every consumer joins the work to
+   * a document's entries by. A citekey reaching no Zotero Item names no Item to
+   * carry, and leaves it out.
    */
   indexedKey?: string;
 }

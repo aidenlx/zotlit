@@ -37,10 +37,10 @@ export type CitationPopoverBlock = CitationEntryBlock | UnresolvedCitationBlock;
 /**
  * The blocks one hovered citation stacks, in citation order.
  *
- * A work naming its Item reaches that Item's entry by identity, the identity
- * the entry list is built under. A work named by citekey spelling alone reaches
- * it through the document instead: the spelling addresses the entry of the
- * citation the document wrote it in.
+ * Each work reaches its entry by the Item it names — the identity the entry
+ * list is built under, never the citekey spelling a document writes that Item
+ * with. A work naming no Item names no entry either, which is the unresolved
+ * block.
  *
  * @param works the works the hovered citation names, in the order it names
  *   them; each gets one block, so a citation none of whose works reaches an
@@ -55,11 +55,9 @@ export function citationPopoverBlocks(
   entries: readonly ReferenceEntry[],
   { serials }: { serials: boolean },
 ): CitationPopoverBlock[] {
-  const cited = entriesByCitekey(entries);
   const byItem = new Map(entries.map((entry) => [entry.id, entry]));
   return works.map(({ citekey, indexedKey }) => {
-    const entry =
-      indexedKey === undefined ? cited.get(citekey) : byItem.get(indexedKey);
+    const entry = indexedKey === undefined ? undefined : byItem.get(indexedKey);
     switch (entry?.kind) {
       case "rendered":
         return {
@@ -94,20 +92,4 @@ export function citationPopoverBlocks(
         return { kind: "unresolved", citekey };
     }
   });
-}
-
-/**
- * @returns the entry each literal citekey of the document writes. One spelling
- *   names one Item, so the first entry claiming it answers for it.
- */
-function entriesByCitekey(
-  entries: readonly ReferenceEntry[],
-): Map<string, ReferenceEntry> {
-  const cited = new Map<string, ReferenceEntry>();
-  for (const entry of entries) {
-    for (const { kind, raw } of entry.occurrences) {
-      if (kind === "citekey" && !cited.has(raw)) cited.set(raw, entry);
-    }
-  }
-  return cited;
 }

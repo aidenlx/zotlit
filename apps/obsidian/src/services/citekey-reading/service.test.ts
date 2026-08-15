@@ -18,6 +18,7 @@ import {
   rendered,
 } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
+import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -59,6 +60,10 @@ interface Harness extends AsyncDisposable {
   /** {@link sectionCtx} over the whole body, which is one section for most suites. */
   ctx: MarkdownPostProcessorContext;
   citationRequests: { citations: readonly string[] }[];
+  /** The Markdown views the workspace holds, which a hover result hangs in. */
+  views: MarkdownView[];
+  /** Every popover the rendered citations of this harness asked for. */
+  popoverRequests: CitationHoverRequest[];
 }
 
 async function makeHarness({
@@ -83,6 +88,8 @@ async function makeHarness({
 }): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
   const citationRequests: { citations: readonly string[] }[] = [];
+  const views: MarkdownView[] = [];
+  const popoverRequests: CitationHoverRequest[] = [];
   const occurrences = literalOccurrences(body);
   let process: MarkdownPostProcessor | undefined;
 
@@ -140,7 +147,9 @@ async function makeHarness({
     new CitekeyReading({
       app: {
         vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-        workspace: { getLeavesOfType: () => [] },
+        workspace: {
+          getLeavesOfType: () => views.map((view) => ({ view })),
+        },
       },
       plugin: {
         registerMarkdownPostProcessor: (
@@ -152,7 +161,9 @@ async function makeHarness({
       },
       citationText,
       citekeyEditor: { openCitekey: () => Promise.resolve() },
-      citationPopover: { show: () => undefined },
+      citationPopover: {
+        show: (request: CitationHoverRequest) => popoverRequests.push(request),
+      },
       settings: settingsStub(overrides),
     } as never),
   );
@@ -173,6 +184,8 @@ async function makeHarness({
     sectionCtx,
     ctx: sectionCtx({ from: 0, to: body.split("\n").length - 1 }),
     citationRequests,
+    views,
+    popoverRequests,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }
@@ -369,6 +382,34 @@ describe("CitekeyReading", () => {
         expect(rendered?.classList.contains(className)).toBe(true);
       }
     }
+  });
+
+  it("shows the rendered citation's popover while navigation is off", async () => {
+    // The Hover Action owns hover on its own, so a rendered citation answers
+    // with the popover while Citekey Navigation is off.
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      overrides: { "citation.open-pandoc-links": false },
+    });
+    const { process, ctx, views, popoverRequests } = harnessed;
+    const el = section("<p>Blah [@alpha].</p>");
+    views.push(
+      Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
+        containerEl: el,
+        previewMode: { rerender: () => undefined },
+      }),
+    );
+
+    await process(el, ctx);
+    const citationEl = el.querySelector<HTMLElement>(".zt-citation")!;
+    citationEl.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(popoverRequests).toHaveLength(1);
+    expect(popoverRequests[0]).toMatchObject({
+      targetEl: citationEl,
+      works: [{ citekey: "alpha" }],
+      sourcePath: "note.md",
+    });
   });
 
   it("leaves the reading view alone while the treatment is off", async () => {

@@ -35,6 +35,7 @@ import type {
   PresentedCitation,
 } from "@/services/citation-text/present";
 import {
+  attachCitationHover,
   attachCitationNavigation,
   citationHoverIntent,
   hoverGesture,
@@ -44,6 +45,7 @@ import {
 } from "@/services/citekey-navigation";
 import type {
   CitationHoverRequest,
+  CitationNavigation,
   CitedWork,
   EditorMode,
   HoverPreferences,
@@ -68,10 +70,13 @@ const logger = getLogger("citekey-editor");
 export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
 
 /**
- * Whether a citekey names a live Zotero Item — read synchronously from the
- * Citation Index's resolution snapshot.
+ * The Item a citekey names — read synchronously from the Citation Index's
+ * resolution snapshot.
+ *
+ * @returns the Item's Indexed Key, which is the identity a work is joined to
+ *   its entry by, or null for a key naming no live Zotero Item.
  */
-export type ResolveCitekey = (citekey: string) => boolean;
+export type ResolveCitekey = (citekey: string) => string | null;
 
 /**
  * The resolution state the page preview branch reads.
@@ -88,7 +93,7 @@ export interface CitekeyEditorHandlers {
   /** What hover answers with, read once per hover. */
   hoverPreferences: () => HoverPreferences;
   hoverNotePath: ResolveHoverNote;
-  resolves: ResolveCitekey;
+  resolveCitekey: ResolveCitekey;
   /** Whether literal Citations expose ZotLit navigation. */
   navigationEnabled: () => boolean;
   /** Whether Live Preview replaces complete Citations with formatted text. */
@@ -242,10 +247,10 @@ export function citekeyEditorExtension(
       /**
        * Shows what the Hover Action asks of the marked citekey under the
        * pointer — the surface a Citation keeps wherever its source text stays
-       * visible.
+       * visible. The Hover Action alone owns this result, so it answers
+       * wherever the treatment marks a citekey.
        */
       hoverAt(event: MouseEvent, view: EditorView): void {
-        if (!handlers.navigationEnabled()) return;
         // A widget hovers on its own element, and its formatted text carries
         // the citekey hook too, so this delegated handler leaves it alone.
         if (citationElementAt(event) !== null) return;
@@ -306,7 +311,10 @@ export function citekeyEditorExtension(
           hoverParent: info,
           targetEl,
           sourcePath: info.file?.path ?? "",
-          works: intent.citekeys.map((key) => ({ citekey: key })),
+          works: intent.citekeys.map((key) => ({
+            citekey: key,
+            indexedKey: handlers.resolveCitekey(key) ?? undefined,
+          })),
           open: handlers.open,
         });
       }
@@ -400,6 +408,7 @@ class CitationWidget extends WidgetType {
     themeClasses: readonly string[];
     /** Whether the Citation is written inside a footnote. */
     footnote: boolean;
+    /** Whether the Citation opens on click, which Citekey Navigation owns. */
     navigable: boolean;
   }) {
     super();
@@ -428,29 +437,31 @@ class CitationWidget extends WidgetType {
       ...this.#themeClasses,
       ...(this.#footnote ? [FOOTNOTE_WIDGET_CLASS] : []),
     ]);
-    if (this.#navigable) {
-      attachCitationNavigation(element, {
-        works: this.#works,
-        // What this widget shows in the citation's place, which is where a
-        // note-class style's own note text is read from.
-        formatted: this.#content.text.content,
-        where: { surface: "editor", editorMode: "live-preview" },
-        open: this.#handlers.open,
-        showPopover: this.#handlers.showPopover,
-        hoverPreferences: this.#handlers.hoverPreferences,
-        hoverNotePath: this.#handlers.hoverNotePath,
-        hoverTarget: () => {
-          const info = view.state.field(editorInfoField, false);
-          return info
-            ? {
-                workspace: info.app.workspace,
-                hoverParent: info,
-                sourcePath: this.#sourcePath,
-              }
-            : null;
-        },
-      });
-    }
+    const navigation: CitationNavigation = {
+      works: this.#works,
+      // What this widget shows in the citation's place, which is where a
+      // note-class style's own note text is read from.
+      formatted: this.#content.text.content,
+      where: { surface: "editor", editorMode: "live-preview" },
+      open: this.#handlers.open,
+      showPopover: this.#handlers.showPopover,
+      hoverPreferences: this.#handlers.hoverPreferences,
+      hoverNotePath: this.#handlers.hoverNotePath,
+      hoverTarget: () => {
+        const info = view.state.field(editorInfoField, false);
+        return info
+          ? {
+              workspace: info.app.workspace,
+              hoverParent: info,
+              sourcePath: this.#sourcePath,
+            }
+          : null;
+      },
+    };
+    // The Hover Action owns hover on every rendered citation; click and the
+    // item menu are what Citekey Navigation adds on top of it.
+    if (this.#navigable) attachCitationNavigation(element, navigation);
+    else attachCitationHover(element, navigation);
     return element;
   }
 
@@ -519,7 +530,7 @@ function buildDecorations(
 
       const marks = resolveCitekeyMarks(
         marksOutside(citekeyMarks(line.text, isRuledOut), replaced),
-        handlers.resolves,
+        (citekey) => handlers.resolveCitekey(citekey) !== null,
       );
       for (const mark of marks) {
         placed.push({
@@ -580,7 +591,7 @@ function citationWidget(options: {
   return new CitationWidget({
     source: citation.source,
     content,
-    works: citedWorks(citation, summaryOf),
+    works: citedWorks(citation, citations),
     sourcePath: path,
     handlers,
     themeClasses,

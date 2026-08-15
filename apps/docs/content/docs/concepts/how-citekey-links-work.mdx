@@ -135,7 +135,6 @@ ZotLit also leaves your Markdown unchanged. Your notes store citations, and each
 With **Pandoc citations** and **Open Pandoc citations as links** on, ZotLit supports:
 
 - Click and selection behavior in the editor and reading view.
-- The hover result **Hover action** names.
 - A selection menu for citations with multiple items.
 - Four open-under-cursor commands.
 
@@ -143,7 +142,7 @@ A single-item citation opens its Literature Note. ZotLit creates the note first 
 
 Source mode keeps the text editable. Ctrl-click opens a citation on Windows and Linux. Cmd-click opens it on macOS. Modifier clicks follow Obsidian's pane behavior.
 
-**Hover action** decides what hover shows, and one hover shows one result. It ships as **Citation popover**.
+**Hover action** decides what hover shows, and one hover shows one result. It ships as **Citation popover**. It owns hover on its own: **Open Pandoc citations as links** never gates it, so a citation ZotLit shows still answers hover with the popover while that setting is off.
 
 The citation popover shows the full bibliography entry of every cited item, in citation order, each with buttons to open its Literature Note, select it in Zotero, and open its attachment. An unresolved citation key says so in place of an entry.
 

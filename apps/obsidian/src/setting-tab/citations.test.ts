@@ -82,7 +82,7 @@ describe("in-text citation settings", () => {
     });
     expect(group.items[1]).toMatchObject({
       name: "Open Pandoc citations as links",
-      desc: "Open and preview literature notes from Pandoc citations. This setting does not change how citations are shown.",
+      desc: "Open literature notes from Pandoc citations. This setting does not change how citations are shown or what hovering them shows.",
       control: { type: "toggle", key: "citation.open-pandoc-links" },
     });
     expect(group.items).not.toContainEqual(

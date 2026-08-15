@@ -412,6 +412,20 @@ describe("WikilinkReading hover", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps Obsidian's own hover out while Require Mod holds the popover back", async () => {
+    // Popover mode owns the gesture whole, so a bare hover it answers with
+    // nothing shows nothing — never the page preview instead.
+    await using harnessed = await rendering({
+      "citation.hover-require-mod-reading": true,
+    });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    hover(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.native).toEqual([]);
+  });
+
   it("leaves a link it rendered no Citation for hovering as Obsidian's own", async () => {
     await using harnessed = await rendering({ formatted: {} });
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);

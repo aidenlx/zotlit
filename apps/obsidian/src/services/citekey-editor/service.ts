@@ -104,7 +104,7 @@ export class CitekeyEditor extends Service<void> {
       showPopover: (request) => this.#citationPopover.show(request),
       hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey) => this.hoverNotePath(citekey),
-      resolves: (citekey) => this.#resolves(citekey),
+      resolveCitekey: (citekey) => this.#resolveCitekey(citekey),
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
@@ -166,8 +166,9 @@ export class CitekeyEditor extends Service<void> {
     this.commit(stack.move());
   }
 
-  #resolves(citekey: string): boolean {
-    return this.#citationIndex.resolveCitekey(citekey) !== null;
+  /** @see ResolveCitekey */
+  #resolveCitekey(citekey: string): string | null {
+    return this.#citationIndex.resolveCitekey(citekey)?.indexedKey ?? null;
   }
 
   #restyleEditors(): void {

@@ -57,10 +57,10 @@ export interface CitekeyReadingDeps {
  * on the References Style and go stale together. With no engine installed the
  * citation keeps its native source text.
  *
- * Navigation is independent: when enabled, one work opens on click, several
- * works open a menu at the cursor, and hover shows what the Hover Action names.
- * A citation none of whose keys reaches a Zotero Item stays raw source text,
- * inert but for that hover.
+ * Navigation is independent: when enabled, one work opens on click and several
+ * works open a menu at the cursor. Hover belongs to the Hover Action alone, so
+ * every citation this surface renders carries it. A citation none of whose keys
+ * reaches a Zotero Item stays raw source text, inert but for that hover.
  *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
  * are read per render rather than by adding and removing it.
@@ -197,9 +197,8 @@ export class CitekeyReading extends Service<void> {
         content ?? citation.source,
         themeClasses,
       );
-      if (!this.#navigationEnabled) return element;
       const navigation: CitationNavigation = {
-        works: citedWorks(citation, summaryOf),
+        works: citedWorks(citation, text),
         // What this section shows in the citation's place, which is where a
         // note-class style's own note text is read from. A citation left as
         // source text shows none.
@@ -222,10 +221,12 @@ export class CitekeyReading extends Service<void> {
               };
         },
       };
-      // A citation none of whose keys reaches a Zotero Item remains wrapped so
-      // themes can style its error state, and has no target to navigate to —
-      // its hover still says as much, entry by entry.
-      if (unresolved === citation.keys.length) {
+      // Hover belongs to the Hover Action, so every rendered citation carries
+      // it. Click and the item menu are Citekey Navigation's, and a citation
+      // none of whose keys reaches a Zotero Item has nothing to open anyway —
+      // it stays wrapped so themes can style its error state, and its hover
+      // says as much, entry by entry.
+      if (!this.#navigationEnabled || unresolved === citation.keys.length) {
         attachCitationHover(element, navigation);
         return element;
       }

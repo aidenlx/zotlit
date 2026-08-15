@@ -164,8 +164,11 @@ function navigate(event: MouseEvent, navigation: CitationNavigation): void {
  *
  * The popover is the only hover this pipeline answers: a link Obsidian previews
  * itself needs nothing added under Page preview, and Off adds nothing anywhere.
- * Where the popover does answer, the hover stops here, so the delegated handler
- * Obsidian hangs above the link never sees it and the two results never stack.
+ * Popover mode owns the gesture whole — the hover stops here for every Citation
+ * the mode covers, so the delegated handler Obsidian hangs above the link sees
+ * none of them and the two results never stack. A Require Mod gate the popover
+ * is still waiting on is a hover that shows nothing, never a way back to the
+ * page preview.
  *
  * @param element the citation as this surface renders it, which the popover
  *   hangs off and the re-entry guard is read against.
@@ -175,9 +178,10 @@ export function hoverWikilinkCitation(
   element: HTMLElement,
   hover: CitationHover,
 ): void {
-  const answer = hoverResult(event, element, hover);
+  const preferences = hover.hoverPreferences();
+  if (preferences.action === "popover") event.stopPropagation();
+  const answer = hoverResult(event, element, { hover, preferences });
   if (answer === null || answer.intent.kind !== "popover") return;
-  event.stopPropagation();
   logger.trace("Wikilink citation shows its entries", {
     surface: hover.where.surface,
     works: hover.works.length,
@@ -210,7 +214,10 @@ function hover(
 ): void {
   const { works, where } = navigation;
   const surface = where.surface;
-  const answer = hoverResult(event, element, navigation);
+  const answer = hoverResult(event, element, {
+    hover: navigation,
+    preferences: navigation.hoverPreferences(),
+  });
   if (answer === null) return;
   const { intent, target } = answer;
 
@@ -262,6 +269,7 @@ type ShownHoverIntent = Exclude<CitationHoverIntent, { kind: "nothing" }>;
  * What one hover over a rendered citation is due, with the view the result
  * hangs in.
  *
+ * @param preferences the Hover Action settings, read once for this hover.
  * @returns null when the gesture re-enters the citation the pointer is already
  *   inside, when the Hover Action answers it with nothing, or when the citation
  *   sits in no view at all.
@@ -269,7 +277,10 @@ type ShownHoverIntent = Exclude<CitationHoverIntent, { kind: "nothing" }>;
 function hoverResult(
   event: MouseEvent,
   element: HTMLElement,
-  hover: CitationHover,
+  {
+    hover,
+    preferences,
+  }: { hover: CitationHover; preferences: HoverPreferences },
 ): { intent: ShownHoverIntent; target: CitationHoverTarget } | null {
   const { works, where } = hover;
   const surface = where.surface;
@@ -282,7 +293,7 @@ function hoverResult(
 
   const intent = citationHoverIntent(
     hoverGesture(event, where),
-    hover.hoverPreferences(),
+    preferences,
     works.map((work) => work.citekey),
   );
   if (intent.kind === "nothing") {

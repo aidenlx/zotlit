@@ -9,8 +9,14 @@ import type { ReferenceEntry } from "@/views/references/entries";
 
 import { citationPopoverBlocks } from "./blocks";
 
-/** One work a citekey citation names, which the document answers for. */
-const key = (citekey: string): HoveredWork => ({ citekey });
+/** One work a citation names, with the Item its entry is built under. */
+const work = (citekey: string): HoveredWork => ({
+  citekey,
+  indexedKey: `KEY${citekey}`,
+});
+
+/** One work whose citekey reaches no Zotero Item at all. */
+const unknown = (citekey: string): HoveredWork => ({ citekey });
 
 const occurrence = (raw: string): CitationOccurrence => ({
   kind: "citekey",
@@ -52,8 +58,8 @@ const renderedEntry = (
 describe("citationPopoverBlocks", () => {
   it("stacks one block per work, in the order the citation names them", () => {
     const blocks = citationPopoverBlocks(
-      [key("smith2025"), key("doe2024")],
-      [renderedEntry("doe2024"), renderedEntry("smith2025", { id: "KEY2" })],
+      [work("smith2025"), work("doe2024")],
+      [renderedEntry("doe2024"), renderedEntry("smith2025")],
       { serials: false },
     );
 
@@ -71,7 +77,7 @@ describe("citationPopoverBlocks", () => {
 
   it("carries what the entry's actions reach", () => {
     const [block] = citationPopoverBlocks(
-      [key("doe2024")],
+      [work("doe2024")],
       [
         renderedEntry("doe2024", {
           source: source({
@@ -96,7 +102,7 @@ describe("citationPopoverBlocks", () => {
   it("puts the style's Entry Marker in the gutter, whatever the serials say", () => {
     const marker = [{ t: "Str" as const, c: "[1]" }];
     const [block] = citationPopoverBlocks(
-      [key("doe2024")],
+      [work("doe2024")],
       [renderedEntry("doe2024", { marker })],
       { serials: false },
     );
@@ -108,19 +114,19 @@ describe("citationPopoverBlocks", () => {
     const entries = [renderedEntry("doe2024", { serial: 3 })];
 
     expect(
-      citationPopoverBlocks([key("doe2024")], entries, { serials: true })[0],
+      citationPopoverBlocks([work("doe2024")], entries, { serials: true })[0],
     ).toMatchObject({ serial: 3 });
     expect(
-      citationPopoverBlocks([key("doe2024")], entries, { serials: false })[0],
+      citationPopoverBlocks([work("doe2024")], entries, { serials: false })[0],
     ).toMatchObject({ serial: undefined });
   });
 
   it("falls back to the work's summary where no bibliography formatted it", () => {
     const [block] = citationPopoverBlocks(
-      [key("doe2024")],
+      [work("doe2024")],
       [
         {
-          id: "KEY1",
+          id: "KEYdoe2024",
           refNumber: 1,
           occurrences: [occurrence("doe2024")],
           kind: "summary",
@@ -140,7 +146,7 @@ describe("citationPopoverBlocks", () => {
 
   it("keeps a citekey reaching no Item as an unresolved block of its own", () => {
     const blocks = citationPopoverBlocks(
-      [key("typo2024"), key("gone2020")],
+      [unknown("typo2024"), work("gone2020")],
       [
         {
           id: "@typo2024",
@@ -150,7 +156,7 @@ describe("citationPopoverBlocks", () => {
           citekey: "typo2024",
         },
         {
-          id: "GONE0002",
+          id: "KEYgone2020",
           refNumber: 2,
           occurrences: [occurrence("gone2020")],
           kind: "missing",
@@ -166,7 +172,7 @@ describe("citationPopoverBlocks", () => {
     ]);
   });
 
-  it("reaches the entry of a work naming its own Item", () => {
+  it("reaches an entry the work's own citekey spelling never names", () => {
     const blocks = citationPopoverBlocks(
       // What a wikilink Citation names: the Item its Literature Note carries,
       // under a citekey the document never writes as text.
@@ -196,9 +202,13 @@ describe("citationPopoverBlocks", () => {
 
   it("keeps a citation none of whose keys is known stacking a block apiece", () => {
     expect(
-      citationPopoverBlocks([key("nobody1999"), key("nothing2000")], [], {
-        serials: false,
-      }),
+      citationPopoverBlocks(
+        [unknown("nobody1999"), unknown("nothing2000")],
+        [],
+        {
+          serials: false,
+        },
+      ),
     ).toEqual([
       { kind: "unresolved", citekey: "nobody1999" },
       { kind: "unresolved", citekey: "nothing2000" },
