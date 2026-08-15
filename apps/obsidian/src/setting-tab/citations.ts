@@ -2,7 +2,7 @@ import type {
   DropdownComponent,
   Setting,
   SettingDefinitionItem,
-  SettingGroupItem,
+  SettingDefinitionPage,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -91,7 +91,7 @@ export function citationsPageItems(
             options: hoverActionOptions(),
           },
         },
-        ...requireModItems(ctx),
+        requireModPage(ctx),
       ],
     },
     {
@@ -136,22 +136,30 @@ const REQUIRE_MOD_KEYS = [
 ] as const satisfies readonly (readonly [SettingsKey, () => string])[];
 
 /**
- * The Require Mod toggles, which gate the Citation Popover alone — under Page
- * preview the Page preview plugin's own settings own that gate, and under Off
- * there is nothing to gate.
+ * The Require Mod toggles, on a sub-page of their own that lists one editing
+ * mode per row, like the Page preview plugin lists one hover source per row.
+ * The page's own title names the list, so the rows carry the requirement in the
+ * page description instead of repeating it three times.
+ *
+ * The toggles gate the Citation Popover alone — under Page preview the Page
+ * preview plugin's own settings own that gate, and under Off there is nothing
+ * to gate — so the entry appears under the Citation Popover alone.
  */
-function requireModItems(
+function requireModPage(
   ctx: SettingTabContext,
-): SettingGroupItem<SettingsKey>[] {
-  const visible = (): boolean =>
-    (ctx.settings.current?.["citation.hover-action"] ?? "popover") ===
-    "popover";
-  return REQUIRE_MOD_KEYS.map(([key, name]) => ({
-    name: name(),
+): SettingDefinitionPage<SettingsKey> {
+  return {
+    type: "page",
+    name: m.settings_citation_hover_mod_page_name(),
     desc: m.settings_citation_hover_mod_desc(),
-    visible,
-    control: { type: "toggle", key },
-  }));
+    visible: () =>
+      (ctx.settings.current?.["citation.hover-action"] ?? "popover") ===
+      "popover",
+    items: REQUIRE_MOD_KEYS.map(([key, name]) => ({
+      name: name(),
+      control: { type: "toggle", key },
+    })),
+  };
 }
 
 /** Dropdown sentinel for the embedded default style; a style ID is never empty. */

@@ -275,6 +275,7 @@
   "settings_citation_hover_action_off": "关闭",
   "settings_citation_hover_action_popover": "引用弹出框",
   "settings_citation_hover_action_page_preview": "页面预览",
+  "settings_citation_hover_mod_page_name": "需要按住修饰键",
   "settings_citation_hover_mod_desc": "仅在按住 Ctrl（Windows）或 Command（macOS）时显示弹出框。",
   "settings_citation_hover_mod_source_name": "源码模式",
   "settings_citation_hover_mod_live_preview_name": "实时预览",

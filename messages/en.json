@@ -302,6 +302,7 @@
   "settings_citation_hover_action_off": "Off",
   "settings_citation_hover_action_popover": "Citation popover",
   "settings_citation_hover_action_page_preview": "Page preview",
+  "settings_citation_hover_mod_page_name": "Require modifier key",
   "settings_citation_hover_mod_desc": "Show the popover only while holding Ctrl (Windows) or Command (macOS).",
   "settings_citation_hover_mod_source_name": "Source mode",
   "settings_citation_hover_mod_live_preview_name": "Live Preview",

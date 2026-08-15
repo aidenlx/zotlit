@@ -118,7 +118,7 @@ describe("hover settings", () => {
     return { items, rows: group.items };
   };
 
-  it("follows In-text citations with the approved action and Require Mod rows", () => {
+  it("follows In-text citations with the approved action and Require Mod page", () => {
     const { items, rows } = hoverGroup(defaults);
 
     expect(
@@ -143,20 +143,32 @@ describe("hover settings", () => {
     });
     expect(rows.slice(1)).toMatchObject([
       {
-        name: "Source mode",
+        type: "page",
+        name: "Require modifier key",
         desc: "Show the popover only while holding Ctrl (Windows) or Command (macOS).",
-        control: { type: "toggle", key: "citation.hover-require-mod-source" },
-      },
-      {
-        name: "Live Preview",
-        control: {
-          type: "toggle",
-          key: "citation.hover-require-mod-live-preview",
-        },
-      },
-      {
-        name: "Reading view",
-        control: { type: "toggle", key: "citation.hover-require-mod-reading" },
+        items: [
+          {
+            name: "Source mode",
+            control: {
+              type: "toggle",
+              key: "citation.hover-require-mod-source",
+            },
+          },
+          {
+            name: "Live Preview",
+            control: {
+              type: "toggle",
+              key: "citation.hover-require-mod-live-preview",
+            },
+          },
+          {
+            name: "Reading view",
+            control: {
+              type: "toggle",
+              key: "citation.hover-require-mod-reading",
+            },
+          },
+        ],
       },
     ]);
   });
@@ -168,23 +180,16 @@ describe("hover settings", () => {
     expect(defaults["citation.hover-require-mod-reading"]).toBe(false);
   });
 
-  it("shows the Require Mod toggles under the Citation popover alone", () => {
+  it("shows the Require Mod page under the Citation popover alone", () => {
     for (const action of ["popover", "off", "page-preview"] as const) {
       const { rows } = hoverGroup({
         ...defaults,
         "citation.hover-action": action,
       });
-      const visible = rows
-        .slice(1)
-        .map((item) => ("visible" in item ? item.visible : undefined))
-        .map((predicate) =>
-          typeof predicate === "function" ? predicate() : predicate,
-        );
-      expect(visible).toEqual([
-        action === "popover",
-        action === "popover",
-        action === "popover",
-      ]);
+      const page = rows[1];
+      const predicate = page && "visible" in page ? page.visible : undefined;
+      const visible = typeof predicate === "function" ? predicate() : predicate;
+      expect(visible).toBe(action === "popover");
     }
   });
 });
