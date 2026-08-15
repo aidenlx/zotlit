@@ -87,8 +87,8 @@ export function sectionCitationRuns(
 /**
  * Shows each Citation Run as what `format` returns for it. It keeps Obsidian's
  * native link classes, `href`, and `data-href`, then appends the public
- * Citation and Literature Note link hooks, so the target, navigation, and
- * hover stay Obsidian's.
+ * Citation and Literature Note link hooks, so the target and navigation stay
+ * Obsidian's.
  *
  * A run of several works collapses into its first anchor, so the whole run
  * navigates to the first work it names — the same narrowing the Live Preview

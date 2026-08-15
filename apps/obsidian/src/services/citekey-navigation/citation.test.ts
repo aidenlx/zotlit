@@ -111,7 +111,7 @@ describe("attachCitationNavigation", () => {
       targetEl: element,
       hoverParent: { hoverPopover: null },
       sourcePath: "draft.md",
-      citekeys: ["doe2024", "smith2025"],
+      works: [work("doe2024", "Doe (2024)"), work("smith2025", "Smith (2025)")],
       open: navigation.open,
     });
   });
@@ -240,7 +240,9 @@ describe("attachCitationHover", () => {
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
 
-    expect(requests.map(({ citekeys }) => citekeys)).toEqual([["typo2024"]]);
+    expect(requests.map(({ works }) => works)).toEqual([
+      [work("typo2024", "@typo2024")],
+    ]);
     expect(opened).toEqual([]);
   });
 });

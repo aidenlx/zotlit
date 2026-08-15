@@ -76,7 +76,7 @@ async function fill(
     popover.hide();
     return;
   }
-  // Every citekey the hover carries becomes a block, so an empty stack means
+  // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
   if (blocks.length === 0) {
     popover.hide();
@@ -123,7 +123,7 @@ async function readBlocks(
         ? { entries: renderedEntries(outcome.entries), complete: true }
         : undefined,
   });
-  return citationPopoverBlocks(request.citekeys, entries, {
+  return citationPopoverBlocks(request.works, entries, {
     serials: deps.citationText.peek(file.path)?.entrySerials ?? false,
   });
 }

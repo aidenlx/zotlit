@@ -28,9 +28,21 @@ export type NavigationTarget =
   | { resolution: "citation-menu"; citekeys: readonly string[] }
   | { resolution: "unavailable" };
 
-/** One work a rendered citation names, as its click target. */
-export interface CitedWork {
+/** One work a hovered citation names, as the Citation Popover addresses it. */
+export interface HoveredWork {
+  /** The citekey the citation writes the work as, which the open action names. */
   citekey: string;
+  /**
+   * The work's Indexed Key, where the citation itself names the Item — a
+   * wikilink names a Literature Note, and the note names the Item. A citation
+   * naming its works by citekey spelling alone leaves it out, and the document
+   * its keys are written in answers for them.
+   */
+  indexedKey?: string;
+}
+
+/** One work a rendered citation names, as its click target. */
+export interface CitedWork extends HoveredWork {
   /**
    * The work's summary, or — for a key that reaches no Zotero Item — the key as
    * the citation writes it, braces and all, which is the raw text the

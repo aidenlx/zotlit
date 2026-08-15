@@ -4,9 +4,13 @@ import type {
   CitationOccurrence,
   ReferenceSource,
 } from "@/services/citation-index/service";
+import type { HoveredWork } from "@/services/citekey-navigation";
 import type { ReferenceEntry } from "@/views/references/entries";
 
 import { citationPopoverBlocks } from "./blocks";
+
+/** One work a citekey citation names, which the document answers for. */
+const key = (citekey: string): HoveredWork => ({ citekey });
 
 const occurrence = (raw: string): CitationOccurrence => ({
   kind: "citekey",
@@ -48,7 +52,7 @@ const renderedEntry = (
 describe("citationPopoverBlocks", () => {
   it("stacks one block per work, in the order the citation names them", () => {
     const blocks = citationPopoverBlocks(
-      ["smith2025", "doe2024"],
+      [key("smith2025"), key("doe2024")],
       [renderedEntry("doe2024"), renderedEntry("smith2025", { id: "KEY2" })],
       { serials: false },
     );
@@ -67,7 +71,7 @@ describe("citationPopoverBlocks", () => {
 
   it("carries what the entry's actions reach", () => {
     const [block] = citationPopoverBlocks(
-      ["doe2024"],
+      [key("doe2024")],
       [
         renderedEntry("doe2024", {
           source: source({
@@ -92,7 +96,7 @@ describe("citationPopoverBlocks", () => {
   it("puts the style's Entry Marker in the gutter, whatever the serials say", () => {
     const marker = [{ t: "Str" as const, c: "[1]" }];
     const [block] = citationPopoverBlocks(
-      ["doe2024"],
+      [key("doe2024")],
       [renderedEntry("doe2024", { marker })],
       { serials: false },
     );
@@ -104,16 +108,16 @@ describe("citationPopoverBlocks", () => {
     const entries = [renderedEntry("doe2024", { serial: 3 })];
 
     expect(
-      citationPopoverBlocks(["doe2024"], entries, { serials: true })[0],
+      citationPopoverBlocks([key("doe2024")], entries, { serials: true })[0],
     ).toMatchObject({ serial: 3 });
     expect(
-      citationPopoverBlocks(["doe2024"], entries, { serials: false })[0],
+      citationPopoverBlocks([key("doe2024")], entries, { serials: false })[0],
     ).toMatchObject({ serial: undefined });
   });
 
   it("falls back to the work's summary where no bibliography formatted it", () => {
     const [block] = citationPopoverBlocks(
-      ["doe2024"],
+      [key("doe2024")],
       [
         {
           id: "KEY1",
@@ -136,7 +140,7 @@ describe("citationPopoverBlocks", () => {
 
   it("keeps a citekey reaching no Item as an unresolved block of its own", () => {
     const blocks = citationPopoverBlocks(
-      ["typo2024", "gone2020"],
+      [key("typo2024"), key("gone2020")],
       [
         {
           id: "@typo2024",
@@ -162,9 +166,37 @@ describe("citationPopoverBlocks", () => {
     ]);
   });
 
+  it("reaches the entry of a work naming its own Item", () => {
+    const blocks = citationPopoverBlocks(
+      // What a wikilink Citation names: the Item its Literature Note carries,
+      // under a citekey the document never writes as text.
+      [{ citekey: "Wang 2020", indexedKey: "KEYdoe2024" }],
+      [renderedEntry("doe2024")],
+      { serials: false },
+    );
+
+    expect(blocks).toMatchObject([
+      {
+        kind: "entry",
+        citekey: "Wang 2020",
+        content: [{ t: "Str", c: "Entry of doe2024" }],
+      },
+    ]);
+  });
+
+  it("keeps a work whose Item the document does not cite unresolved", () => {
+    expect(
+      citationPopoverBlocks(
+        [{ citekey: "doe2024", indexedKey: "GONE0002" }],
+        [renderedEntry("doe2024")],
+        { serials: false },
+      ),
+    ).toEqual([{ kind: "unresolved", citekey: "doe2024" }]);
+  });
+
   it("keeps a citation none of whose keys is known stacking a block apiece", () => {
     expect(
-      citationPopoverBlocks(["nobody1999", "nothing2000"], [], {
+      citationPopoverBlocks([key("nobody1999"), key("nothing2000")], [], {
         serials: false,
       }),
     ).toEqual([

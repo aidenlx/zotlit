@@ -7,9 +7,9 @@ import { getLogger } from "@/lib/log";
 import type { Inlines } from "@/services/pandoc/ast";
 
 import { citationHoverIntent } from "./hover";
-import type { HoverPreferences } from "./hover";
+import type { CitationHoverIntent, HoverPreferences } from "./hover";
 import { citationTarget, navigationIntent } from "./intent";
-import type { CitedWork, NavigationPane } from "./intent";
+import type { CitedWork, HoveredWork, NavigationPane } from "./intent";
 import { hoverGesture, mouseGesture, triggerCitekeyHover } from "./shell";
 import type { GestureSurface } from "./shell";
 
@@ -34,8 +34,8 @@ export interface CitationHoverRequest {
   sourcePath: string;
   /** The element the popover hangs off: the citation as this surface renders it. */
   targetEl: HTMLElement;
-  /** The citekeys the citation names, in the order it names them. */
-  citekeys: readonly string[];
+  /** The works the citation names, in the order it names them. */
+  works: readonly HoveredWork[];
   /**
    * The text the style formatted for the hovered occurrence, where the surface
    * shows it in the citation's place. A surface showing the citation's own
@@ -46,9 +46,10 @@ export interface CitationHoverRequest {
   open: (citekey: string, pane: NavigationPane) => void;
 }
 
-export interface CitationNavigation {
+/** What one hovered citation answers with, whichever syntax wrote it. */
+export interface CitationHover {
   /** The works the citation names, in the order it names them. */
-  works: readonly CitedWork[];
+  works: readonly HoveredWork[];
   /**
    * The formatted text this citation is rendered as, where the surface renders
    * one — what a note-class style's own note text reaches the popover through.
@@ -61,13 +62,18 @@ export interface CitationNavigation {
   showPopover: (request: CitationHoverRequest) => void;
   /** What hover answers with, read once per hover. */
   hoverPreferences: () => HoverPreferences;
+  /** Read when a hover result is due; null when the citation sits in no view. */
+  hoverTarget: () => CitationHoverTarget | null;
+}
+
+export interface CitationNavigation extends CitationHover {
+  /** The works the citation names, in the order it names them. */
+  works: readonly CitedWork[];
   /**
    * The vault path of the one Literature Note `citekey` names, or null when
    * zero or several name it — read only by the page preview branch.
    */
   hoverNotePath: (citekey: string) => string | null;
-  /** Read when a hover result is due; null when the citation sits in no view. */
-  hoverTarget: () => CitationHoverTarget | null;
 }
 
 /**
@@ -153,6 +159,42 @@ function navigate(event: MouseEvent, navigation: CitationNavigation): void {
 }
 
 /**
+ * Shows the Citation Popover of one hovered wikilink Citation, in place of the
+ * hover Obsidian answers a Literature Note link with.
+ *
+ * The popover is the only hover this pipeline answers: a link Obsidian previews
+ * itself needs nothing added under Page preview, and Off adds nothing anywhere.
+ * Where the popover does answer, the hover stops here, so the delegated handler
+ * Obsidian hangs above the link never sees it and the two results never stack.
+ *
+ * @param element the citation as this surface renders it, which the popover
+ *   hangs off and the re-entry guard is read against.
+ */
+export function hoverWikilinkCitation(
+  event: MouseEvent,
+  element: HTMLElement,
+  hover: CitationHover,
+): void {
+  const answer = hoverResult(event, element, hover);
+  if (answer === null || answer.intent.kind !== "popover") return;
+  event.stopPropagation();
+  logger.trace("Wikilink citation shows its entries", {
+    surface: hover.where.surface,
+    works: hover.works.length,
+    path: answer.target.sourcePath,
+  });
+  hover.showPopover({
+    hoverParent: answer.target.hoverParent,
+    sourcePath: answer.target.sourcePath,
+    event,
+    targetEl: element,
+    works: hover.works,
+    formatted: hover.formatted,
+    open: hover.open,
+  });
+}
+
+/**
  * Shows what the Hover Action asks a rendered citation for: the entries of
  * every work it names, or the page preview of the one Literature Note it names.
  *
@@ -168,30 +210,9 @@ function hover(
 ): void {
   const { works, where } = navigation;
   const surface = where.surface;
-  // The same re-entry guard Obsidian runs before its own hover, so moving
-  // within one citation hovers once.
-  const { relatedTarget } = event;
-  if (relatedTarget instanceof Node && element.contains(relatedTarget)) return;
-
-  const intent = citationHoverIntent(
-    hoverGesture(event, where),
-    navigation.hoverPreferences(),
-    works.map((work) => work.citekey),
-  );
-  if (intent.kind === "nothing") {
-    logger.trace("Rendered citation hover suppressed", {
-      surface,
-      works: works.length,
-      reason: intent.reason,
-    });
-    return;
-  }
-
-  const target = navigation.hoverTarget();
-  if (!target) {
-    logger.trace("Rendered citation sits in no view", { surface });
-    return;
-  }
+  const answer = hoverResult(event, element, navigation);
+  if (answer === null) return;
+  const { intent, target } = answer;
 
   if (intent.kind === "page-preview") {
     const notePath = navigation.hoverNotePath(intent.citekey);
@@ -228,8 +249,55 @@ function hover(
     sourcePath: target.sourcePath,
     event,
     targetEl: element,
-    citekeys: intent.citekeys,
+    works,
     formatted: navigation.formatted,
     open: navigation.open,
   });
+}
+
+/** The hover results a surface has something to show for. */
+type ShownHoverIntent = Exclude<CitationHoverIntent, { kind: "nothing" }>;
+
+/**
+ * What one hover over a rendered citation is due, with the view the result
+ * hangs in.
+ *
+ * @returns null when the gesture re-enters the citation the pointer is already
+ *   inside, when the Hover Action answers it with nothing, or when the citation
+ *   sits in no view at all.
+ */
+function hoverResult(
+  event: MouseEvent,
+  element: HTMLElement,
+  hover: CitationHover,
+): { intent: ShownHoverIntent; target: CitationHoverTarget } | null {
+  const { works, where } = hover;
+  const surface = where.surface;
+  // The same re-entry guard Obsidian runs before its own hover, so moving
+  // within one citation hovers once.
+  const { relatedTarget } = event;
+  if (relatedTarget instanceof Node && element.contains(relatedTarget)) {
+    return null;
+  }
+
+  const intent = citationHoverIntent(
+    hoverGesture(event, where),
+    hover.hoverPreferences(),
+    works.map((work) => work.citekey),
+  );
+  if (intent.kind === "nothing") {
+    logger.trace("Rendered citation hover suppressed", {
+      surface,
+      works: works.length,
+      reason: intent.reason,
+    });
+    return null;
+  }
+
+  const target = hover.hoverTarget();
+  if (!target) {
+    logger.trace("Rendered citation sits in no view", { surface });
+    return null;
+  }
+  return { intent, target };
 }

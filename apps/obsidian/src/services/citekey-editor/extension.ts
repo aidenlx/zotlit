@@ -306,7 +306,7 @@ export function citekeyEditorExtension(
           hoverParent: info,
           targetEl,
           sourcePath: info.file?.path ?? "",
-          citekeys: intent.citekeys,
+          works: intent.citekeys.map((key) => ({ citekey: key })),
           open: handlers.open,
         });
       }

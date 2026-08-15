@@ -1,6 +1,8 @@
 export {
   attachCitationHover,
   attachCitationNavigation,
+  hoverWikilinkCitation,
+  type CitationHover,
   type CitationHoverRequest,
   type CitationHoverTarget,
   type CitationNavigation,
@@ -21,6 +23,7 @@ export {
   navigationPane,
   type CitedWork,
   type EditorMode,
+  type HoveredWork,
   type NavigationAction,
   type NavigationButton,
   type NavigationGesture,

@@ -236,7 +236,7 @@ describe("citekeyEditorExtension delegated hover", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       targetEl: mark(view),
-      citekeys: ["doe2024"],
+      works: [{ citekey: "doe2024" }],
       sourcePath: "note.md",
     });
   });

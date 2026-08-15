@@ -232,23 +232,41 @@ export function buildServices(
         }),
     })
     .use({
-      wikilinkEditor: ({ noteIndex, citationText, settings, citationIndex }) =>
+      wikilinkEditor: ({
+        noteIndex,
+        citationText,
+        citekeyEditor,
+        citationPopover,
+        settings,
+        citationIndex,
+      }) =>
         new WikilinkEditor({
           app: plugin.app,
           plugin,
           noteIndex,
           citationText,
+          citekeyEditor,
+          citationPopover,
           settings,
           citationIndex,
         }),
     })
     .use({
-      wikilinkReading: ({ noteIndex, citationText, settings, citationIndex }) =>
+      wikilinkReading: ({
+        noteIndex,
+        citationText,
+        citekeyEditor,
+        citationPopover,
+        settings,
+        citationIndex,
+      }) =>
         new WikilinkReading({
           app: plugin.app,
           plugin,
           noteIndex,
           citationText,
+          citekeyEditor,
+          citationPopover,
           settings,
           citationIndex,
         }),

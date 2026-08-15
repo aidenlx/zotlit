@@ -1,6 +1,7 @@
 // The blocks one hovered citation shows: its works' bibliography entries, in the order the citation names them.
 
 import type { OpenableAttachment } from "@/services/citation-index/service";
+import type { HoveredWork } from "@/services/citekey-navigation";
 import type { Inlines } from "@/services/pandoc/ast";
 import type { ReferenceEntry } from "@/views/references/entries";
 
@@ -36,26 +37,29 @@ export type CitationPopoverBlock = CitationEntryBlock | UnresolvedCitationBlock;
 /**
  * The blocks one hovered citation stacks, in citation order.
  *
- * Works are joined to their entries by item identity — the join the entry list
- * was already built under — rather than by citekey spelling: the citekey only
- * addresses the entry a document wrote it in.
+ * A work naming its Item reaches that Item's entry by identity, the identity
+ * the entry list is built under. A work named by citekey spelling alone reaches
+ * it through the document instead: the spelling addresses the entry of the
+ * citation the document wrote it in.
  *
- * @param citekeys the citekeys the hovered citation names, in the order it
- *   names them; each gets one block, so a citation none of whose keys reaches
- *   an Item still stacks a block apiece.
+ * @param works the works the hovered citation names, in the order it names
+ *   them; each gets one block, so a citation none of whose works reaches an
+ *   Item still stacks a block apiece.
  * @param entries the reference entries of the document the citation is written
  *   in, as the References Sidebar builds them.
  * @param serials whether that document's citations show Entry Serials, which is
  *   what puts a serial in the gutter of an entry the style wrote no marker for.
  */
 export function citationPopoverBlocks(
-  citekeys: readonly string[],
+  works: readonly HoveredWork[],
   entries: readonly ReferenceEntry[],
   { serials }: { serials: boolean },
 ): CitationPopoverBlock[] {
   const cited = entriesByCitekey(entries);
-  return citekeys.map((citekey) => {
-    const entry = cited.get(citekey);
+  const byItem = new Map(entries.map((entry) => [entry.id, entry]));
+  return works.map(({ citekey, indexedKey }) => {
+    const entry =
+      indexedKey === undefined ? cited.get(citekey) : byItem.get(indexedKey);
     switch (entry?.kind) {
       case "rendered":
         return {

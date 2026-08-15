@@ -3,6 +3,7 @@
 // open reading views to render again when something outside their documents
 // changed the answer.
 
+import { MarkdownView } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import { getLogger } from "@/lib/log";
@@ -12,12 +13,17 @@ import {
   citationOfRun,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
+import type { RunMember } from "@/lib/wikilink-citation";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
   sectionCoordinates,
 } from "@/services/citation-text/present";
+import type { PresentedCitation } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import { hoverWikilinkCitation } from "@/services/citekey-navigation";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -33,6 +39,10 @@ export interface WikilinkReadingDeps {
   noteIndex: Pick<NoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "load" | "on" | "peek">;
+  /** The open-or-create flow every citation surface shares. */
+  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  /** What a hovered citation shows. */
+  citationPopover: CitationPopover;
   settings: SettingsService;
   citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
 }
@@ -41,7 +51,9 @@ export interface WikilinkReadingDeps {
  * The Wikilink Reading Rendering: in reading mode a Literature Note wikilink —
  * and a whole Citation Run of them — shows the citation a style formatted.
  * Native link presentation stays in place until that render lands, while the
- * target, navigation, and hover stay Obsidian's.
+ * target and navigation stay Obsidian's. Hover follows the Hover Action: the
+ * Citation Popover replaces Obsidian's own hover under the popover, and every
+ * other action leaves the link hovering as the link it is.
  *
  * A post-processor stays registered for the plugin's lifetime, so source and
  * display choices are read per render rather than by adding and removing it.
@@ -57,6 +69,8 @@ export class WikilinkReading extends Service<void> {
   readonly #plugin;
   readonly #noteIndex;
   readonly #citationText;
+  readonly #citekeyEditor;
+  readonly #citationPopover;
   readonly #settings;
   readonly #citationIndex;
 
@@ -73,6 +87,8 @@ export class WikilinkReading extends Service<void> {
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#citationText = deps.citationText;
+    this.#citekeyEditor = deps.citekeyEditor;
+    this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.#citationIndex = deps.citationIndex;
     this.ready = this.#load();
@@ -146,10 +162,14 @@ export class WikilinkReading extends Service<void> {
     // style shows every one of them the text rendered for its own place.
     const citations = runs.map((run) => citationOfRun(run));
     const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
-    const shown = renderCitationRuns(runs, (_run, index) =>
+    const contents = citations.map((citation, index) =>
       text === null
         ? null
-        : citationContent(citations[index]!, text, coordinates[index]),
+        : citationContent(citation, text, coordinates[index]),
+    );
+    const shown = renderCitationRuns(
+      runs,
+      (_run, index) => contents[index] ?? null,
     );
     if (shown > 0) {
       logger.trace("Rendered wikilink citations", {
@@ -157,6 +177,72 @@ export class WikilinkReading extends Service<void> {
         count: shown,
       });
     }
+    if (!this.#display.popoverHover) return;
+    for (const [index, run] of runs.entries()) {
+      const content = contents[index];
+      // A run the style formatted no text for keeps Obsidian's own link, hover
+      // and all; only the Citation this surface rendered carries the popover.
+      if (!content) continue;
+      this.#attachHover(run, content, ctx.sourcePath);
+    }
+  }
+
+  /**
+   * Gives one rendered Citation the Citation Popover, in place of the page
+   * preview Obsidian answers a Literature Note link with.
+   *
+   * The listener sits on the anchor the run rendered into, which is where the
+   * post-processor left the Citation and where Obsidian's own delegated handler
+   * would have read the link from.
+   */
+  #attachHover(
+    run: readonly RunMember<HTMLAnchorElement>[],
+    content: PresentedCitation,
+    sourcePath: string,
+  ): void {
+    const element = run[0]!.source;
+    element.addEventListener("mouseover", (event) => {
+      hoverWikilinkCitation(event, element, {
+        works: run.map(({ citation }) => ({
+          citekey: citation.item.citekey,
+          indexedKey: citation.indexedKey,
+        })),
+        // What this section shows in the Citation's place, which is where a
+        // note-class style's own note text is read from.
+        formatted: content.text.content,
+        where: { surface: "reading" },
+        open: (citekey, pane) => {
+          void this.#citekeyEditor.openCitekey(citekey, pane);
+        },
+        showPopover: (request) => this.#citationPopover.show(request),
+        hoverPreferences: () => this.#display.hover,
+        hoverTarget: () => {
+          const hoverParent = this.#viewOf(element);
+          return hoverParent === null
+            ? null
+            : {
+                workspace: this.#app.workspace,
+                hoverParent,
+                sourcePath,
+              };
+        },
+      });
+    });
+  }
+
+  /**
+   * The Markdown view a rendered Citation sits in, which Obsidian hangs the
+   * popover off. Markdown rendered outside such a view — an export, a popover
+   * of its own — belongs to none, and hover stays silent there.
+   */
+  #viewOf(element: HTMLElement): MarkdownView | null {
+    for (const leaf of this.#app.workspace.getLeavesOfType("markdown")) {
+      const { view } = leaf;
+      if (view instanceof MarkdownView && view.containerEl.contains(element)) {
+        return view;
+      }
+    }
+    return null;
   }
 
   /** A reading view holds what a post-processor produced until it renders again. */

@@ -1,7 +1,8 @@
 // The CodeMirror side of the Wikilink Editor Treatment: one replace decoration
 // per Literature Note wikilink in the visible ranges, carrying the Citation
 // Display Text and everything Obsidian's own rendering would have supplied, so
-// click, hover, drag, and the context menu keep running Obsidian's handlers.
+// click, drag, and the context menu keep running Obsidian's handlers — plus the
+// one delegated listener that hands hover to the Citation Popover.
 
 import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
@@ -23,6 +24,14 @@ import type {
   DocumentCitations,
   PresentedCitation,
 } from "@/services/citation-text/present";
+import { hoverWikilinkCitation } from "@/services/citekey-navigation";
+import type {
+  CitationHoverRequest,
+  HoveredWork,
+  HoverPreferences,
+  NavigationPane,
+} from "@/services/citekey-navigation";
+import type { Inlines } from "@/services/pandoc/ast";
 
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";
@@ -58,6 +67,33 @@ export interface WikilinkEditorHandlers {
   citationText: (path: string) => DocumentCitations | null;
   /** Asks for a document's citations, so a later rebuild finds them held. */
   requestCitationText: (file: TFile) => void;
+  /** The open-or-create flow every citation surface shares. */
+  open: (citekey: string, pane: NavigationPane) => void;
+  /** Show the Citation Popover of one hovered Citation. */
+  showPopover: (request: CitationHoverRequest) => void;
+  /** What hover answers with, read once per hover. */
+  hoverPreferences: () => HoverPreferences;
+  /**
+   * Whether a rendered Citation carries the Citation Popover's own hover, which
+   * is the one Hover Action this surface listens for a hover under at all.
+   */
+  popoverHover: () => boolean;
+}
+
+/**
+ * The Citation each rendered wikilink stands for, which the delegated hover
+ * reads the hovered element back to.
+ *
+ * CodeMirror builds a widget's DOM again whenever the decoration is rebuilt, so
+ * the element is the key and a dropped one is collected with its entry.
+ */
+const renderedCitations = new WeakMap<HTMLElement, RenderedWikilinkCitation>();
+
+/** What one rendered wikilink Citation shows, and the works it names. */
+interface RenderedWikilinkCitation {
+  works: readonly HoveredWork[];
+  /** The text the style formatted, which carries a note-class style's note. */
+  formatted: Inlines;
 }
 
 /**
@@ -72,7 +108,8 @@ export const wikilinkDecorationsChanged = StateEffect.define<void>();
 
 /**
  * Replaces the inner text of each Literature Note wikilink with its Citation
- * Display Text in Live Preview.
+ * Display Text in Live Preview, and — under the Citation Popover alone — hands
+ * the hover of such a Citation to that popover.
  *
  * The decorations come from a view plugin, which the CodeMirror provisioning
  * rule allows because a wikilink never crosses a line and so no replacement
@@ -91,13 +128,55 @@ export function wikilinkEditorExtension(
       decorations: DecorationSet = Decoration.none;
       /** The tree the current set was built from, which gates the rebuild. */
       #tree;
+      readonly #view;
+      /**
+       * The capture-phase listener that answers a Citation's hover, installed
+       * for as long as the Citation Popover is the Hover Action.
+       *
+       * It sits on the editor's own element rather than on each widget, because
+       * CodeMirror builds widget DOM again on every rebuild. Capture is what
+       * puts it ahead of the delegated `mouseover` Obsidian hangs on that same
+       * element, so a hover the popover answers reaches nothing else.
+       *
+       * @see docs/research/wikilink-display-decoration-interaction.md — section 2.1
+       */
+      #hoverListener: ((event: MouseEvent) => void) | null = null;
 
       constructor(view: EditorView) {
+        this.#view = view;
         this.#tree = syntaxTree(view.state);
         this.decorations = buildDecorations(view, handlers);
+        this.#watchHover();
+      }
+
+      destroy(): void {
+        this.#watchHover(false);
+      }
+
+      /**
+       * Installs the hover listener while the popover owns hover, and takes it
+       * off wherever it does not — under Off and Page preview a Literature Note
+       * wikilink hovers as the link it is, with no code of the plugin's on it.
+       */
+      #watchHover(wanted = handlers.popoverHover()): void {
+        if (wanted === (this.#hoverListener !== null)) return;
+        if (this.#hoverListener !== null) {
+          this.#view.dom.removeEventListener(
+            "mouseover",
+            this.#hoverListener,
+            true,
+          );
+          this.#hoverListener = null;
+          return;
+        }
+        this.#hoverListener = (event) => {
+          hoverRenderedCitation(event, this.#view, handlers);
+        };
+        this.#view.dom.addEventListener("mouseover", this.#hoverListener, true);
       }
 
       update(update: ViewUpdate): void {
+        this.#watchHover();
         const tree = syntaxTree(update.state);
         // The stream parse stops just past the viewport, so a tree shorter than
         // the viewport has no nodes over part of it — rebuilding from it would
@@ -138,30 +217,78 @@ export function wikilinkEditorExtension(
 }
 
 /**
+ * Answers the hover of the rendered Citation under the pointer, and leaves
+ * every other hover in the editor to Obsidian.
+ */
+function hoverRenderedCitation(
+  event: MouseEvent,
+  view: EditorView,
+  handlers: WikilinkEditorHandlers,
+): void {
+  const { target } = event;
+  if (!(target instanceof HTMLElement)) return;
+  const element = target.closest<HTMLElement>(
+    `.${themeHook.literatureNoteLink}`,
+  );
+  const citation =
+    element === null ? undefined : renderedCitations.get(element);
+  if (element === null || citation === undefined) return;
+
+  hoverWikilinkCitation(event, element, {
+    works: citation.works,
+    formatted: citation.formatted,
+    // A widget is drawn in Live Preview alone, so that is the mode the Require
+    // Mod gate of every hover on one is read for.
+    where: { surface: "editor", editorMode: "live-preview" },
+    open: handlers.open,
+    showPopover: handlers.showPopover,
+    hoverPreferences: handlers.hoverPreferences,
+    hoverTarget: () => {
+      const info = view.state.field(editorInfoField, false);
+      return info
+        ? {
+            workspace: info.app.workspace,
+            hoverParent: info,
+            sourcePath: info.file?.path ?? "",
+          }
+        : null;
+    },
+  });
+}
+
+/**
  * One decorated wikilink Citation, shown as the text a style formatted.
  *
  * The element carries exactly what Obsidian's own rendering would have put on
  * the replaced text: the `cm-*` classes of the token it stands for, the class
  * the click gate reads, and the `draggable` attribute that both clears the
  * structural gate around replaced widgets and gives drag something to latch
- * onto. No event handler of the plugin's runs — every gesture reaches
+ * onto. No event handler of the plugin's sits on it — click and drag reach
  * Obsidian's own handlers, which resolve the link from the document position
- * rather than from the DOM.
+ * rather than from the DOM, and the one delegated hover listener reads the
+ * element back to the Citation it stands for.
  *
- * A lone Citation therefore behaves exactly as it did before it was rendered. A
- * Citation Run is the one narrowing: its widget covers several links, and those
- * handlers read the position its start maps to, so the whole run clicks, hovers,
- * and drags as the first work it names.
+ * A lone Citation therefore behaves exactly as it did before it was rendered,
+ * bar the hover the Hover Action names. A Citation Run is the one narrowing:
+ * its widget covers several links, and Obsidian's handlers read the position
+ * its start maps to, so the whole run clicks and drags as the first work it
+ * names. Its hover is the run's own: the popover stacks every work it names.
  *
  * @see docs/research/wikilink-display-decoration-interaction.md — sections 2, 2.5
  */
 class CitationDisplayWidget extends WidgetType {
   readonly #content;
   readonly #className;
+  readonly #works;
 
-  constructor(content: PresentedCitation, tokenClasses: readonly string[]) {
+  constructor(
+    content: PresentedCitation,
+    tokenClasses: readonly string[],
+    works: readonly HoveredWork[],
+  ) {
     super();
     this.#content = content;
+    this.#works = works;
     this.#className = [
       ...tokenClasses.map((name) => `cm-${name}`),
       UNDERLINE_CLASS,
@@ -190,6 +317,10 @@ class CitationDisplayWidget extends WidgetType {
     // the style wrote shows as the text it carries rather than as an anchor
     // that would take the gesture away from them.
     showCitation(element, this.#content, "suppress");
+    renderedCitations.set(element, {
+      works: this.#works,
+      formatted: this.#content.text.content,
+    });
     return element;
   }
 }
@@ -256,8 +387,24 @@ function replacement(
   });
   if (formatted === null) return null;
   return Decoration.replace({
-    widget: new CitationDisplayWidget(formatted, decoration.tokenClasses),
+    widget: new CitationDisplayWidget(
+      formatted,
+      decoration.tokenClasses,
+      citedWorks(decoration),
+    ),
   });
+}
+
+/**
+ * The works one decorated Citation names, in the order it names them. The
+ * derivation writes a key and an Indexed Key per work in that same order, so a
+ * work reaches its entry by the Item it names rather than by its spelling.
+ */
+function citedWorks({ citation }: WikilinkDecoration): HoveredWork[] {
+  return citation.keys.map(({ citekey }, at) => ({
+    citekey,
+    indexedKey: citation.works[at],
+  }));
 }
 
 /**
