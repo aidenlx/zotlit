@@ -16,12 +16,19 @@ import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { buildSqliteUri, prepareRead, reapStaleReadTemps } from "./read-source";
+import {
+  buildSqliteUri,
+  prepareRead,
+  reapStaleReadTemps,
+  snapshotSource,
+  sourceFingerprintsEqual,
+} from "./read-source";
 import type {
   ConfiguredReadMode,
   EffectiveReadMode,
   PreparedRead,
   ReadFallbackNotice,
+  SourceFingerprint,
 } from "./read-source";
 
 const logger = getLogger("database");
@@ -83,6 +90,15 @@ interface DatabaseReadLease extends Disposable {
   readonly client: NodeDatabaseClient;
 }
 
+/** A change signal travelling from a watcher or a push to the refresh gate. */
+interface WatchSignal {
+  /**
+   * Skip the fingerprint gate; the signal carries its own authority (a Zotero
+   * push). Filesystem ticks are never trusted.
+   */
+  trusted: boolean;
+}
+
 export class DatabaseService extends Service<void> {
   readonly #settings;
   readonly #zoteroPref;
@@ -97,6 +113,8 @@ export class DatabaseService extends Service<void> {
   #watchers: FSWatcher[] = [];
   #walWatcher: FSWatcher | null = null;
   #watchTimer: number | null = null;
+  #watchTrusted = false;
+  #sourceFingerprint: SourceFingerprint | null = null;
   #refreshInFlight: Promise<void> | null = null;
   #refreshAgain = false;
   #leaseCount = 0;
@@ -218,10 +236,13 @@ export class DatabaseService extends Service<void> {
    * watchers, so a push and an fs.watch tick for the same write coalesce into
    * one refresh. Independent of `zotero.auto-refresh` — that flag only governs
    * fs.watch binding; a push is its own change source and always refreshes.
+   *
+   * Trusted: a push reports what Zotero did, so it bypasses the fingerprint gate
+   * that filters the watchers' self-echo.
    */
   notifyExternalChange(): void {
     logger.debug("External change signalled, scheduling watched refresh");
-    this.#scheduleWatchedRefresh();
+    this.#scheduleWatchedRefresh({ trusted: true });
   }
 
   async #load(): Promise<void> {
@@ -293,7 +314,7 @@ export class DatabaseService extends Service<void> {
         next: autoRefresh,
       });
       this.#lastAutoRefresh = autoRefresh;
-      void this.#rebindWatchers();
+      this.#rebindWatchers();
     }
     if (readMode === this.#lastConfiguredMode) return;
     logger.debug("Read mode setting changed", {
@@ -361,9 +382,22 @@ export class DatabaseService extends Service<void> {
       const settings = this.#settings.current ?? (await this.#settings.loaded);
       const sourcePath = this.#zoteroPref.databasePath;
       const configuredMode = settings["zotero.read-mode"];
+      // Fingerprinted before the read, never after: a Zotero write that lands
+      // while we clone then still differs from what we record, so the next
+      // watcher tick refreshes instead of being gated away as our own echo.
+      const fingerprint = await this.#trySnapshotSource(sourcePath);
       const prepared = refreshStack.use(
         await prepareRead(configuredMode, sourcePath),
       );
+      // Teardown runs to completion while the read above is still preparing, and
+      // it takes with it every handle the service knew about at that moment.
+      // `refreshStack` still owns the clone, so leaving now releases the temp
+      // dir and opens no client; committing past here would hand a live client
+      // and watchers to a service whose disposal has already gone by.
+      if (this.#torndown) {
+        logger.debug("Refresh abandoned, service torn down while reading");
+        return;
+      }
       const uri = buildSqliteUri(prepared.path, prepared.uriOptions);
       const client = createClient(uri, DB_OPTIONS);
       refreshStack.use(client.$client);
@@ -375,17 +409,34 @@ export class DatabaseService extends Service<void> {
       this.#activeReadStack = refreshStack.move();
       this.#sourcePath = sourcePath;
       this.#readMode = prepared.effectiveMode;
+      this.#sourceFingerprint = fingerprint;
       this.#state = "ready";
       this.#error = null;
 
       await previousReadStack?.disposeAsync();
-      await this.#rebindWatchers();
+      // Teardown reaches into that disposal too — it closes a client and removes
+      // the old clone. Whatever it took, it has already taken the stack committed
+      // above, so stop rather than bind watchers nothing will ever close and wake
+      // subscribers that have gone with the service.
+      if (this.#torndown) {
+        logger.debug("Refresh abandoned, service torn down while swapping");
+        return;
+      }
+      // Synchronous through to the emit, so the check above still holds for both.
+      this.#rebindWatchers();
       this.#emitter.emit("changed");
       logger.info("Opened Zotero database", {
         sourcePath,
         readMode: this.#readMode,
       });
     } catch (cause) {
+      // A read that fails after teardown has no subscriber left to tell.
+      // Reporting it would degrade a service that is already disposed and hand
+      // `refresh()` a misleading throw.
+      if (this.#torndown) {
+        logger.debug("Refresh failed after teardown, staying quiet", { cause });
+        return;
+      }
       const error = new DatabaseError("refresh-failed", cause);
       this.#emitter.emit("refresh-failed", error);
       logger.warn("Failed to refresh Zotero database", { error });
@@ -442,11 +493,14 @@ export class DatabaseService extends Service<void> {
    * different watch targets, so the parent directory, DB file, and live WAL file
    * each cover blind spots in the others.
    */
-  async #rebindWatchers(): Promise<void> {
-    this.#disposeWatchers();
+  #rebindWatchers(): void {
+    this.#closeWatchers();
     const settings = this.#settings.current;
     if (!settings?.["zotero.auto-refresh"]) {
       logger.debug("Auto-refresh disabled, skipping watcher bind");
+      // A tick the just-closed watchers armed has no standing once auto-refresh
+      // is off. A pending push keeps its own, being independent of the flag.
+      if (!this.#watchTrusted) this.#cancelWatchTimer();
       return;
     }
     if (!this.#sourcePath || !this.#readMode) return;
@@ -468,13 +522,13 @@ export class DatabaseService extends Service<void> {
         });
         if (!relevant) return;
         if (name === ZOTERO_WAL_FILENAME) this.#syncWalWatcher();
-        this.#scheduleWatchedRefresh();
+        this.#scheduleWatchedRefresh({ trusted: false });
       }),
     );
     this.#watchers.push(
       watch(this.#sourcePath, WATCH_OPTIONS, (event) => {
         logger.trace("Database file watcher event", { event });
-        this.#scheduleWatchedRefresh();
+        this.#scheduleWatchedRefresh({ trusted: false });
       }),
     );
     this.#syncWalWatcher();
@@ -502,7 +556,7 @@ export class DatabaseService extends Service<void> {
     try {
       this.#walWatcher = watch(walPath, WATCH_OPTIONS, (event) => {
         logger.trace("WAL watcher event", { event });
-        this.#scheduleWatchedRefresh();
+        this.#scheduleWatchedRefresh({ trusted: false });
       });
       logger.debug("WAL watcher opened", { walPath });
     } catch (error) {
@@ -510,13 +564,26 @@ export class DatabaseService extends Service<void> {
     }
   }
 
-  #scheduleWatchedRefresh(): void {
+  /**
+   * Debounce a change signal, then refresh only if the source really moved.
+   *
+   * Reading the database clones it, and on APFS a clone raises a `change` event
+   * against the *source*, so every refresh manufactures the very event the
+   * watchers listen for. A tick therefore proves nothing on its own, and the
+   * gate holds it against the last read. Keep the gate: ungated, the echo drove
+   * a refresh roughly every five seconds on an untouched database.
+   *
+   * One trusted signal in a burst carries the whole burst past the gate.
+   */
+  #scheduleWatchedRefresh({ trusted }: WatchSignal): void {
     const rescheduled = !!this.#watchTimer;
     if (this.#watchTimer) window.clearTimeout(this.#watchTimer);
+    this.#watchTrusted ||= trusted;
     this.#watchTimer = window.setTimeout(() => {
       this.#watchTimer = null;
-      logger.debug("Watcher debounce elapsed, scheduling refresh");
-      this.#scheduleRefresh();
+      const wasTrusted = this.#watchTrusted;
+      this.#watchTrusted = false;
+      void this.#refreshIfSourceMoved({ trusted: wasTrusted });
     }, WATCH_DEBOUNCE_MS);
     logger.trace("Watch debounce timer {action}", {
       action: rescheduled ? "reset" : "started",
@@ -524,24 +591,87 @@ export class DatabaseService extends Service<void> {
     });
   }
 
-  #disposeWatchers(): void {
-    const watcherCount = this.#watchers.length;
-    const hadPendingTimer = !!this.#watchTimer;
-    const hadWalWatcher = !!this.#walWatcher;
-    if (this.#watchTimer) {
-      window.clearTimeout(this.#watchTimer);
-      this.#watchTimer = null;
+  async #refreshIfSourceMoved({ trusted }: WatchSignal): Promise<void> {
+    if (!trusted && !(await this.#sourceMoved())) {
+      logger.debug("Watcher tick ignored, database unchanged since last read");
+      return;
     }
+    // Both rechecked after the gate's await. The timer clears itself before that
+    // await, so `#cancelWatchTimer` can no longer stop a tick inside it, and the
+    // tick must check for itself: a refresh started now would build a client no
+    // disposal stack still owns, or resume watching a source the user just
+    // stopped watching. A trusted push skips the auto-refresh check.
+    if (this.#torndown) {
+      logger.debug("Watcher tick ignored, service torn down");
+      return;
+    }
+    if (!trusted && !this.#settings.current?.["zotero.auto-refresh"]) {
+      logger.debug("Watcher tick ignored, auto-refresh switched off");
+      return;
+    }
+    logger.debug("Watcher debounce elapsed, scheduling refresh");
+    this.#scheduleRefresh();
+  }
+
+  /**
+   * Fails open: with no fingerprint to compare against, or when the source
+   * cannot be read, refresh anyway. A spare refresh costs work; a missed one
+   * serves stale data until something else happens to wake the watchers.
+   */
+  async #sourceMoved(): Promise<boolean> {
+    const previous = this.#sourceFingerprint;
+    if (!previous) return true;
+    const current = await this.#trySnapshotSource(
+      this.#zoteroPref.databasePath,
+    );
+    return !current || !sourceFingerprintsEqual(previous, current);
+  }
+
+  /** Fail-soft {@link snapshotSource}: `null` where that function would throw. */
+  async #trySnapshotSource(
+    sourcePath: string,
+  ): Promise<SourceFingerprint | null> {
+    try {
+      return await snapshotSource(sourcePath);
+    } catch (error) {
+      logger.debug("Failed to fingerprint the Zotero database", { error });
+      return null;
+    }
+  }
+
+  #disposeWatchers(): void {
+    this.#closeWatchers();
+    this.#cancelWatchTimer();
+  }
+
+  /**
+   * Closes the watchers and leaves any armed debounce running: a rebind follows
+   * every successful refresh, and a tick armed mid-refresh must survive it —
+   * the fresh watchers never saw the write that armed it, so cancelling here
+   * loses that write. The fingerprint gate makes the surviving tick cheap; one
+   * that finds an unchanged source refreshes nothing. Use {@link #disposeWatchers}
+   * where the tick should die with the watchers.
+   */
+  #closeWatchers(): void {
+    const watcherCount = this.#watchers.length;
+    const hadWalWatcher = !!this.#walWatcher;
     for (const watcher of this.#watchers) watcher.close();
     this.#watchers = [];
     this.#closeWalWatcher();
-    if (watcherCount > 0 || hadPendingTimer || hadWalWatcher) {
-      logger.debug("Database watchers disposed", {
-        watcherCount,
-        hadPendingTimer,
-        hadWalWatcher,
+    if (watcherCount > 0 || hadWalWatcher) {
+      logger.debug("Database watchers closed", { watcherCount, hadWalWatcher });
+    }
+  }
+
+  #cancelWatchTimer(): void {
+    if (this.#watchTimer) {
+      window.clearTimeout(this.#watchTimer);
+      logger.debug("Pending watcher tick cancelled", {
+        trusted: this.#watchTrusted,
       });
     }
+    this.#watchTimer = null;
+    this.#watchTrusted = false;
   }
 
   #closeWalWatcher(): void {
