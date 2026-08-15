@@ -90,7 +90,7 @@ async function fill(
   // in place of, so the popover is where that text is read — taken from the
   // formatted text of the very occurrence the pointer is on.
   const note = request.formatted ? noteContent(request.formatted) : undefined;
-  const shown = popover.show(
+  const shown = popover.render(
     <CitationPopoverContent blocks={blocks} note={note} actions={actions} />,
   );
   logger.debug("Citation popover entries read", {

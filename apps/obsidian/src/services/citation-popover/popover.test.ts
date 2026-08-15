@@ -2,24 +2,45 @@
 import type { HoverParent } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CitationHoverPopover, PLACEMENT_CLASS } from "./popover";
+
+const opened: CitationHoverPopover[] = [];
 
 function popover() {
   const parent: HoverParent = { hoverPopover: null };
   const targetEl = document.body.appendChild(document.createElement("span"));
-  return new CitationHoverPopover(parent, targetEl);
+  const shown = new CitationHoverPopover(parent, targetEl);
+  opened.push(shown);
+  return shown;
 }
 
 const entry = () => createElement("p", null, "Doe (2024)");
 
+afterEach(() => {
+  // Every popover arms a wait timer that puts it in the document, and the
+  // document is shared with the test after it, so the suite hides what it
+  // opened. `hide()` is idempotent, so a test that hides its own popover may.
+  for (const shown of opened.splice(0)) shown.hide();
+  vi.useRealTimers();
+});
+
 describe("CitationHoverPopover", () => {
+  it("takes its place in the document once Obsidian's wait time is up", () => {
+    vi.useFakeTimers();
+    const shown = popover();
+
+    vi.runAllTimers();
+
+    expect(shown.hoverEl.isConnected).toBe(true);
+  });
+
   it("holds its content in one direct child of Obsidian's own popover", async () => {
     const shown = popover();
 
     await act(() => {
-      shown.show(entry());
+      shown.render(entry());
     });
 
     const mount = shown.hoverEl.children;
@@ -50,7 +71,7 @@ describe("CitationHoverPopover", () => {
   it("tears its content down with the popover", async () => {
     const shown = popover();
     await act(() => {
-      shown.show(entry());
+      shown.render(entry());
     });
 
     await act(() => {
@@ -58,6 +79,6 @@ describe("CitationHoverPopover", () => {
     });
 
     expect(shown.hoverEl.textContent).toBe("");
-    expect(shown.show(entry())).toBe(false);
+    expect(shown.render(entry())).toBe(false);
   });
 });

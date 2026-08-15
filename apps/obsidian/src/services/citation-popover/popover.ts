@@ -47,12 +47,15 @@ export class CitationHoverPopover extends HoverPopover {
   }
 
   /**
-   * Show `content` in the popover.
+   * Draw `content` in the popover.
    *
-   * @returns whether the popover was still live to show it — a hover the
+   * Named apart from {@link HoverPopover.show}, which stays Obsidian's to open
+   * the popover with.
+   *
+   * @returns whether the popover was still live to draw it — a hover the
    *   pointer left before the entries were read is already torn down.
    */
-  show(content: ReactNode): boolean {
+  render(content: ReactNode): boolean {
     if (!this.#root) return false;
     this.#root.render(content);
     return true;
