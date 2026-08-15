@@ -8,16 +8,25 @@ import { getItemsByID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
-import type { NavigationPane } from "@/services/citekey-navigation";
+import {
+  CITEKEY_HOVER_SOURCE,
+  hoverPreferences,
+} from "@/services/citekey-navigation";
+import type {
+  HoverPreferences,
+  NavigationPane,
+} from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -27,7 +36,7 @@ const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
   app: App;
-  plugin: Pick<Plugin, "registerEditorExtension">;
+  plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
   db: DatabaseService;
@@ -73,6 +82,7 @@ export class CitekeyEditor extends Service<void> {
   #active = false;
   #navigationEnabled = false;
   #showFormatted = false;
+  #hover: HoverPreferences = hoverPreferences(defaults);
 
   ready: Promise<void>;
 
@@ -92,6 +102,8 @@ export class CitekeyEditor extends Service<void> {
         void this.openCitekey(citekey, pane);
       },
       showPopover: (request) => this.#citationPopover.show(request),
+      hoverPreferences: () => this.#hover,
+      hoverNotePath: (citekey) => this.hoverNotePath(citekey),
       resolves: (citekey) => this.#resolves(citekey),
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
@@ -116,6 +128,14 @@ export class CitekeyEditor extends Service<void> {
     await using stack = new AsyncDisposableStack();
     await this.#settings.ready;
 
+    // Registered once and for the plugin's lifetime, so the row in Obsidian's
+    // Page preview settings stays put while the Hover Action changes. Mod is
+    // the platform convention for a citation, and Obsidian's own row owns that
+    // gate wherever ZotLit hands hover to the page preview.
+    this.#plugin.registerHoverLinkSource(CITEKEY_HOVER_SOURCE, {
+      display: m.hover_source_citekey(),
+      defaultMod: true,
+    });
     this.#plugin.registerEditorExtension(this.#extensions);
     stack.defer(() => {
       this.#extensions.length = 0;
@@ -179,6 +199,9 @@ export class CitekeyEditor extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
+    // Read straight through: hover answers from the newest snapshot, and
+    // nothing drawn depends on it.
+    this.#hover = hoverPreferences(settings);
     const pandocCitations = settings["citation.pandoc-citations"];
     const navigationEnabled =
       pandocCitations && settings["citation.open-pandoc-links"];
@@ -221,6 +244,19 @@ export class CitekeyEditor extends Service<void> {
   /** The palette commands gate on this independently from presentation. */
   get navigationEnabled(): boolean {
     return this.#navigationEnabled;
+  }
+
+  /**
+   * The Literature Note a page preview may show: the one note indexed under
+   * the Indexed Key a citekey resolves to. A citekey with zero or several
+   * notes answers with nothing, which keeps every preview path clear of the
+   * create-then-open flow.
+   */
+  hoverNotePath(citekey: string): string | null {
+    const item = this.#citationIndex.resolveCitekey(citekey);
+    if (!item) return null;
+    const matches = this.#noteIndex.getNotesByItemKey(item.indexedKey);
+    return matches.length === 1 ? matches[0]!.path : null;
   }
 
   /**

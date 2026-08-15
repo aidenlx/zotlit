@@ -1,20 +1,23 @@
 // The interaction one rendered citation carries, wherever it is rendered.
 
 import { Menu } from "obsidian";
-import type { HoverParent } from "obsidian";
+import type { HoverParent, Workspace } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
 import { citationHoverIntent } from "./hover";
+import type { HoverPreferences } from "./hover";
 import { citationTarget, navigationIntent } from "./intent";
 import type { CitedWork, NavigationPane } from "./intent";
-import { hoverGesture, mouseGesture } from "./shell";
+import { hoverGesture, mouseGesture, triggerCitekeyHover } from "./shell";
 import type { GestureSurface } from "./shell";
 
 const logger = getLogger("citekey-navigation");
 
-/** Where the popover of a rendered citation hangs, and what it is written in. */
+/** Where the hover of a rendered citation hangs, and what it is written in. */
 export interface CitationHoverTarget {
+  /** Carries the `hover-link` the Page preview core plugin answers. */
+  workspace: Pick<Workspace, "trigger">;
   /** What Obsidian hangs the popover off, and hides it with. */
   hoverParent: HoverParent;
   /** The path of the note the citation is written in. */
@@ -22,8 +25,12 @@ export interface CitationHoverTarget {
 }
 
 /** One hovered citation, as the Citation Popover is asked to show it. */
-export interface CitationHoverRequest extends CitationHoverTarget {
+export interface CitationHoverRequest {
   event: MouseEvent;
+  /** What Obsidian hangs the popover off, and hides it with. */
+  hoverParent: HoverParent;
+  /** The path of the note the citation is written in. */
+  sourcePath: string;
   /** The element the popover hangs off: the citation as this surface renders it. */
   targetEl: HTMLElement;
   /** The citekeys the citation names, in the order it names them. */
@@ -40,13 +47,20 @@ export interface CitationNavigation {
   open: (citekey: string, pane: NavigationPane) => void;
   /** Show the Citation Popover of one hovered citation. */
   showPopover: (request: CitationHoverRequest) => void;
-  /** Read when a popover is due; null when the citation sits in no view. */
+  /** What hover answers with, read once per hover. */
+  hoverPreferences: () => HoverPreferences;
+  /**
+   * The vault path of the one Literature Note `citekey` names, or null when
+   * zero or several name it — read only by the page preview branch.
+   */
+  hoverNotePath: (citekey: string) => string | null;
+  /** Read when a hover result is due; null when the citation sits in no view. */
   hoverTarget: () => CitationHoverTarget | null;
 }
 
 /**
- * Gives one rendered citation the hover of the Citation Popover — the entries
- * of every work it names, wherever the citation itself has nothing to open.
+ * Gives one rendered citation the hover the Hover Action names, wherever the
+ * citation itself has nothing to open.
  *
  * The listener sits on the citation's own element, so it goes with it when the
  * surface renders that citation again.
@@ -127,10 +141,13 @@ function navigate(event: MouseEvent, navigation: CitationNavigation): void {
 }
 
 /**
- * Shows the entries of every work a rendered citation names.
+ * Shows what the Hover Action asks a rendered citation for: the entries of
+ * every work it names, or the page preview of the one Literature Note it names.
  *
  * A citation whose keys reach no Zotero Item still opens the popover: the
- * entries say so themselves, where showing nothing would read as breakage.
+ * entries say so themselves, where showing nothing would read as breakage. The
+ * page preview branch instead stays clear of every key naming zero or several
+ * notes, so no preview path can reach the create-then-open flow.
  */
 function hover(
   event: MouseEvent,
@@ -146,9 +163,10 @@ function hover(
 
   const intent = citationHoverIntent(
     hoverGesture(event, where),
+    navigation.hoverPreferences(),
     works.map((work) => work.citekey),
   );
-  if (intent.kind !== "popover") {
+  if (intent.kind === "nothing") {
     logger.trace("Rendered citation hover suppressed", {
       surface,
       works: works.length,
@@ -162,13 +180,40 @@ function hover(
     logger.trace("Rendered citation sits in no view", { surface });
     return;
   }
+
+  if (intent.kind === "page-preview") {
+    const notePath = navigation.hoverNotePath(intent.citekey);
+    if (notePath === null) {
+      logger.trace("Rendered citation hover suppressed", {
+        surface,
+        works: works.length,
+        reason: "no-note",
+      });
+      return;
+    }
+    logger.trace("Rendered citation previews note", {
+      surface,
+      citekey: intent.citekey,
+      path: notePath,
+    });
+    triggerCitekeyHover(target.workspace, {
+      event,
+      hoverParent: target.hoverParent,
+      targetEl: element,
+      linktext: notePath,
+      sourcePath: target.sourcePath,
+    });
+    return;
+  }
+
   logger.trace("Rendered citation shows its entries", {
     surface,
     works: intent.citekeys.length,
     path: target.sourcePath,
   });
   navigation.showPopover({
-    ...target,
+    hoverParent: target.hoverParent,
+    sourcePath: target.sourcePath,
     event,
     targetEl: element,
     citekeys: intent.citekeys,

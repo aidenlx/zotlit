@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { livePreview } = vi.hoisted(() => ({
+const { livePreview, hoverLinks } = vi.hoisted(() => ({
   livePreview: vi.fn(() => false),
+  /** Every `hover-link` the editor's own workspace was asked to answer. */
+  hoverLinks: [] as [event: string, link: Record<string, unknown>][],
 }));
 
 vi.mock("@/lib/editor-decoration", async (importOriginal) => ({
@@ -18,7 +20,15 @@ vi.mock("obsidian", async (importOriginal) => {
   return {
     ...actual,
     editorInfoField: StateField.define({
-      create: () => ({ file: { path: "note.md" } }),
+      create: () => ({
+        file: { path: "note.md" },
+        app: {
+          workspace: {
+            trigger: (event: string, link: Record<string, unknown>) =>
+              hoverLinks.push([event, link]),
+          },
+        },
+      }),
       update: (value) => value,
     }),
   };
@@ -28,7 +38,15 @@ import { editorInfoField, Keymap } from "obsidian";
 
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
-import type { CitationHoverRequest } from "@/services/citekey-navigation";
+import {
+  CITEKEY_HOVER_SOURCE,
+  hoverPreferences,
+} from "@/services/citekey-navigation";
+import type {
+  CitationHoverRequest,
+  HoverPreferences,
+} from "@/services/citekey-navigation";
+import { defaults } from "@/services/settings/schema";
 
 import {
   citekeyAtPos,
@@ -38,6 +56,13 @@ import {
 
 /** The Indexed Key `@doe2024` reaches, which is what a summary is held under. */
 const DOE_KEY = "DOE22345";
+
+/** The one Literature Note the page preview branch reads for `@doe2024`. */
+const NOTE_PATH = "lit/doe2024.md";
+
+const hover = (
+  overrides: Partial<HoverPreferences> = {},
+): HoverPreferences => ({ ...hoverPreferences(defaults), ...overrides });
 
 const stateOf = (doc: string): EditorState => EditorState.create({ doc });
 
@@ -85,6 +110,8 @@ describe("citekeyEditorExtension theme hooks", () => {
         extensions: citekeyEditorExtension({
           open: () => undefined,
           showPopover: () => undefined,
+          hoverPreferences: () => hover(),
+          hoverNotePath: () => NOTE_PATH,
           resolves: (citekey) => citekey === "resolved",
           navigationEnabled: () => true,
           showFormatted: () => true,
@@ -117,6 +144,8 @@ describe("citekeyEditorExtension theme hooks", () => {
           citekeyEditorExtension({
             open: (citekey) => opened.push(citekey),
             showPopover: () => undefined,
+            hoverPreferences: () => hover(),
+            hoverNotePath: () => NOTE_PATH,
             resolves: () => true,
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => true,
@@ -153,7 +182,11 @@ describe("citekeyEditorExtension delegated hover", () => {
    * from inside the marked key — happy-dom lays nothing out, so the coordinate
    * lookup the delegated handler runs is the one thing stood in for.
    */
-  function sourceView(requests: CitationHoverRequest[]) {
+  function sourceView(
+    requests: CitationHoverRequest[],
+    preferences: HoverPreferences = hover(),
+    notePath: string | null = NOTE_PATH,
+  ) {
     livePreview.mockReturnValue(false);
     const view = editorView({
       parent: document.body,
@@ -164,6 +197,8 @@ describe("citekeyEditorExtension delegated hover", () => {
           citekeyEditorExtension({
             open: () => undefined,
             showPopover: (request) => requests.push(request),
+            hoverPreferences: () => preferences,
+            hoverNotePath: () => notePath,
             resolves: () => true,
             navigationEnabled: () => true,
             showFormatted: () => false,
@@ -179,6 +214,10 @@ describe("citekeyEditorExtension delegated hover", () => {
 
   const mark = (view: EditorView): HTMLElement =>
     view.dom.querySelector<HTMLElement>(".zt-citation-key")!;
+
+  beforeEach(() => {
+    hoverLinks.length = 0;
+  });
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -217,6 +256,44 @@ describe("citekeyEditorExtension delegated hover", () => {
 
     expect(requests).toEqual([]);
   });
+
+  it("asks for the page preview under the shared source id", () => {
+    const requests: CitationHoverRequest[] = [];
+    using view = sourceView(requests, hover({ action: "page-preview" }));
+
+    mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(requests).toEqual([]);
+    expect(hoverLinks).toHaveLength(1);
+    expect(hoverLinks[0]?.[0]).toBe("hover-link");
+    expect(hoverLinks[0]?.[1]).toMatchObject({
+      targetEl: mark(view),
+      linktext: NOTE_PATH,
+      sourcePath: "note.md",
+      source: CITEKEY_HOVER_SOURCE,
+    });
+  });
+
+  it("previews nothing for a key naming zero or several notes", () => {
+    const requests: CitationHoverRequest[] = [];
+    using view = sourceView(requests, hover({ action: "page-preview" }), null);
+
+    mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(hoverLinks).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  it("adds no hover result at all while the Hover action is off", () => {
+    const requests: CitationHoverRequest[] = [];
+    using view = sourceView(requests, hover({ action: "off" }));
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+
+    mark(view).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(requests).toEqual([]);
+    expect(hoverLinks).toEqual([]);
+  });
 });
 
 describe("citekeyEditorExtension citation widgets", () => {
@@ -246,6 +323,8 @@ describe("citekeyEditorExtension citation widgets", () => {
           citekeyEditorExtension({
             open: () => undefined,
             showPopover: () => undefined,
+            hoverPreferences: () => hover(),
+            hoverNotePath: () => NOTE_PATH,
             resolves: () => true,
             navigationEnabled: () => false,
             showFormatted: () => true,

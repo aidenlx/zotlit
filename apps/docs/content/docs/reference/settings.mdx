@@ -63,6 +63,23 @@ Both settings can be off. ZotLit's internal Citation Index remains active, and *
 
 The navigation setting also controls the four open-under-cursor commands. Literature Note wikilinks retain Obsidian's navigation.
 
+### Hover
+
+| Label            | Key                                       | Control                                        | Default          | Dependency                          | Storage |
+| ---------------- | ----------------------------------------- | ---------------------------------------------- | ---------------- | ----------------------------------- | ------- |
+| **Hover action** | `citation.hover-action`                   | Dropdown (Off, Citation popover, Page preview) | Citation popover | Active citation source              | Synced  |
+| **Source mode**  | `citation.hover-require-mod-source`       | Toggle                                         | On               | **Hover action** = Citation popover | Synced  |
+| **Live Preview** | `citation.hover-require-mod-live-preview` | Toggle                                         | Off              | **Hover action** = Citation popover | Synced  |
+| **Reading view** | `citation.hover-require-mod-reading`      | Toggle                                         | Off              | **Hover action** = Citation popover | Synced  |
+
+**Hover action:** What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.
+
+One hover shows one result. **Citation popover** shows the bibliography entry of every cited item. **Page preview** shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. **Off** adds no ZotLit hover result.
+
+**Source mode**, **Live Preview**, and **Reading view**: Show the popover only while holding Ctrl (Windows) or Command (macOS).
+
+The three toggles appear only while **Hover action** is Citation popover. Each one gates the popover in its own editing mode, and the modifier is read when the pointer arrives.
+
 ### Formatting
 
 | Label                             | Key                         | Control                           | Default                       | Dependency             | Storage    |

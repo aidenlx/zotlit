@@ -7,10 +7,13 @@ export {
 } from "./citation";
 export {
   citationHoverIntent,
+  CITEKEY_HOVER_SOURCE,
   hoverEditingMode,
+  hoverPreferences,
   type CitationHoverGesture,
   type CitationHoverIntent,
   type HoverEditingMode,
+  type HoverPreferences,
 } from "./hover";
 export {
   citationTarget,
@@ -26,4 +29,10 @@ export {
   type NavigationSurface,
   type NavigationTarget,
 } from "./intent";
-export { hoverGesture, mouseGesture, type GestureSurface } from "./shell";
+export {
+  hoverGesture,
+  mouseGesture,
+  triggerCitekeyHover,
+  type CitekeyHoverLink,
+  type GestureSurface,
+} from "./shell";

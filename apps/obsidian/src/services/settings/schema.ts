@@ -51,6 +51,14 @@ export type { AutoTrim };
 const zoteroReadMode = v.picklist(["auto", "reflink", "copy", "immutable"]);
 export type ZoteroReadMode = v.InferOutput<typeof zoteroReadMode>;
 
+/**
+ * What hovering a recognized citation or Literature Note link shows. One hover
+ * result at a time: the Citation Popover and the page preview are never both
+ * reachable, and `off` leaves hover entirely to Obsidian.
+ */
+const hoverAction = v.picklist(["off", "popover", "page-preview"]);
+export type HoverAction = v.InferOutput<typeof hoverAction>;
+
 const serverPort = v.pipe(
   settingsNumber,
   v.integer(),
@@ -75,6 +83,12 @@ export const schema = v.object({
   "citation.open-pandoc-links": v.boolean(),
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
   "citation.references-style": v.nullable(v.string()),
+  /** What hovering a Citation shows, on every surface that carries one. */
+  "citation.hover-action": hoverAction,
+  /** Whether the Citation Popover needs a held Mod, per editing mode. */
+  "citation.hover-require-mod-source": v.boolean(),
+  "citation.hover-require-mod-live-preview": v.boolean(),
+  "citation.hover-require-mod-reading": v.boolean(),
 
   "note.literature-folder": v.string(),
   "note.frontmatter-fields": frontmatterFieldsSchema,
@@ -120,6 +134,12 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.show-formatted": true,
   "citation.open-pandoc-links": true,
   "citation.references-style": null,
+  "citation.hover-action": "popover",
+  // Source mode keeps the modifier so plain-text editing is never interrupted,
+  // while the two rendered modes answer to bare hover.
+  "citation.hover-require-mod-source": true,
+  "citation.hover-require-mod-live-preview": false,
+  "citation.hover-require-mod-reading": false,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",

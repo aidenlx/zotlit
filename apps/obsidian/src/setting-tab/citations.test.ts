@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import {
   citationsPageItems,
@@ -96,6 +97,95 @@ describe("in-text citation settings", () => {
       "citation.open-pandoc-links",
       true,
     ]);
+  });
+});
+
+describe("hover settings", () => {
+  const hoverGroup = (settings: Settings) => {
+    const ctx = {
+      settings: { current: settings },
+      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      plugin: { manifest: { version: "test" } },
+    } as unknown as SettingTabContext;
+    const items = citationsPageItems(ctx);
+    const group = items.find(
+      (item) =>
+        "type" in item && item.type === "group" && item.heading === "Hover",
+    );
+    if (!group || !("items" in group) || !group.items) {
+      throw new Error("hover group missing");
+    }
+    return { items, rows: group.items };
+  };
+
+  it("follows In-text citations with the approved action and Require Mod rows", () => {
+    const { items, rows } = hoverGroup(defaults);
+
+    expect(
+      items.findIndex((item) => "heading" in item && item.heading === "Hover"),
+    ).toBe(
+      items.findIndex(
+        (item) => "heading" in item && item.heading === "In-text citations",
+      ) + 1,
+    );
+    expect(rows[0]).toMatchObject({
+      name: "Hover action",
+      desc: "What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.",
+      control: {
+        type: "dropdown",
+        key: "citation.hover-action",
+        options: {
+          off: "Off",
+          popover: "Citation popover",
+          "page-preview": "Page preview",
+        },
+      },
+    });
+    expect(rows.slice(1)).toMatchObject([
+      {
+        name: "Source mode",
+        desc: "Show the popover only while holding Ctrl (Windows) or Command (macOS).",
+        control: { type: "toggle", key: "citation.hover-require-mod-source" },
+      },
+      {
+        name: "Live Preview",
+        control: {
+          type: "toggle",
+          key: "citation.hover-require-mod-live-preview",
+        },
+      },
+      {
+        name: "Reading view",
+        control: { type: "toggle", key: "citation.hover-require-mod-reading" },
+      },
+    ]);
+  });
+
+  it("ships the locked defaults", () => {
+    expect(defaults["citation.hover-action"]).toBe("popover");
+    expect(defaults["citation.hover-require-mod-source"]).toBe(true);
+    expect(defaults["citation.hover-require-mod-live-preview"]).toBe(false);
+    expect(defaults["citation.hover-require-mod-reading"]).toBe(false);
+  });
+
+  it("shows the Require Mod toggles under the Citation popover alone", () => {
+    for (const action of ["popover", "off", "page-preview"] as const) {
+      const { rows } = hoverGroup({
+        ...defaults,
+        "citation.hover-action": action,
+      });
+      const visible = rows
+        .slice(1)
+        .map((item) => ("visible" in item ? item.visible : undefined))
+        .map((predicate) =>
+          typeof predicate === "function" ? predicate() : predicate,
+        );
+      expect(visible).toEqual([
+        action === "popover",
+        action === "popover",
+        action === "popover",
+      ]);
+    }
   });
 });
 

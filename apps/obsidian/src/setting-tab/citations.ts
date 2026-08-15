@@ -2,11 +2,13 @@ import type {
   DropdownComponent,
   Setting,
   SettingDefinitionItem,
+  SettingGroupItem,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import type { HoverAction } from "@/services/settings/schema";
 import { RESET_SETTING } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -78,6 +80,22 @@ export function citationsPageItems(
     },
     {
       type: "group",
+      heading: m.settings_citation_hover_heading(),
+      items: [
+        {
+          name: m.settings_citation_hover_action_name(),
+          desc: m.settings_citation_hover_action_desc(),
+          control: {
+            type: "dropdown",
+            key: "citation.hover-action",
+            options: hoverActionOptions(),
+          },
+        },
+        ...requireModItems(ctx),
+      ],
+    },
+    {
+      type: "group",
       heading: m.settings_citation_references_heading(),
       items: [
         {
@@ -90,6 +108,50 @@ export function citationsPageItems(
     },
     pandocIntegrationDefinition(ctx),
   ];
+}
+
+/** The Hover Action choices, in the order the select offers them. */
+function hoverActionOptions(): Record<HoverAction, string> {
+  return {
+    off: m.settings_citation_hover_action_off(),
+    popover: m.settings_citation_hover_action_popover(),
+    "page-preview": m.settings_citation_hover_action_page_preview(),
+  };
+}
+
+/** The Require Mod toggle of each editing mode, in editing-mode order. */
+const REQUIRE_MOD_KEYS = [
+  [
+    "citation.hover-require-mod-source",
+    m.settings_citation_hover_mod_source_name,
+  ],
+  [
+    "citation.hover-require-mod-live-preview",
+    m.settings_citation_hover_mod_live_preview_name,
+  ],
+  [
+    "citation.hover-require-mod-reading",
+    m.settings_citation_hover_mod_reading_name,
+  ],
+] as const satisfies readonly (readonly [SettingsKey, () => string])[];
+
+/**
+ * The Require Mod toggles, which gate the Citation Popover alone — under Page
+ * preview the Page preview plugin's own settings own that gate, and under Off
+ * there is nothing to gate.
+ */
+function requireModItems(
+  ctx: SettingTabContext,
+): SettingGroupItem<SettingsKey>[] {
+  const visible = (): boolean =>
+    (ctx.settings.current?.["citation.hover-action"] ?? "popover") ===
+    "popover";
+  return REQUIRE_MOD_KEYS.map(([key, name]) => ({
+    name: name(),
+    desc: m.settings_citation_hover_mod_desc(),
+    visible,
+    control: { type: "toggle", key },
+  }));
 }
 
 /** Dropdown sentinel for the embedded default style; a style ID is never empty. */

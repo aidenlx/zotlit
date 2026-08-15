@@ -40,11 +40,13 @@ import {
   hoverGesture,
   mouseGesture,
   navigationIntent,
+  triggerCitekeyHover,
 } from "@/services/citekey-navigation";
 import type {
   CitationHoverRequest,
   CitedWork,
   EditorMode,
+  HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
 
@@ -71,10 +73,21 @@ export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
  */
 export type ResolveCitekey = (citekey: string) => boolean;
 
+/**
+ * The resolution state the page preview branch reads.
+ *
+ * @returns the vault path of the one Literature Note `citekey` names, or null
+ *   when zero or several name it.
+ */
+export type ResolveHoverNote = (citekey: string) => string | null;
+
 export interface CitekeyEditorHandlers {
   open: OpenCitekey;
   /** Show the Citation Popover of one hovered citation. */
   showPopover: (request: CitationHoverRequest) => void;
+  /** What hover answers with, read once per hover. */
+  hoverPreferences: () => HoverPreferences;
+  hoverNotePath: ResolveHoverNote;
   resolves: ResolveCitekey;
   /** Whether literal Citations expose ZotLit navigation. */
   navigationEnabled: () => boolean;
@@ -227,8 +240,9 @@ export function citekeyEditorExtension(
       }
 
       /**
-       * Shows the Citation Popover of the marked citekey under the pointer —
-       * the surface a Citation keeps wherever its source text stays visible.
+       * Shows what the Hover Action asks of the marked citekey under the
+       * pointer — the surface a Citation keeps wherever its source text stays
+       * visible.
        */
       hoverAt(event: MouseEvent, view: EditorView): void {
         if (!handlers.navigationEnabled()) return;
@@ -244,9 +258,10 @@ export function citekeyEditorExtension(
         const editorMode = editorModeOf(view);
         const intent = citationHoverIntent(
           hoverGesture(event, { surface: "editor", editorMode }),
+          handlers.hoverPreferences(),
           [citekey],
         );
-        if (intent.kind !== "popover") {
+        if (intent.kind === "nothing") {
           logger.trace("Citekey hover suppressed", {
             citekey,
             editorMode,
@@ -257,6 +272,34 @@ export function citekeyEditorExtension(
 
         const info = view.state.field(editorInfoField, false);
         if (!info) return;
+
+        if (intent.kind === "page-preview") {
+          // A key naming zero or several notes previews nothing, so no popover
+          // path can reach the create-then-open flow.
+          const notePath = handlers.hoverNotePath(intent.citekey);
+          if (notePath === null) {
+            logger.trace("Citekey hover suppressed", {
+              citekey,
+              editorMode,
+              reason: "no-note",
+            });
+            return;
+          }
+          logger.trace("Citekey hover previews note", {
+            citekey,
+            editorMode,
+            path: notePath,
+          });
+          triggerCitekeyHover(info.app.workspace, {
+            event,
+            hoverParent: info,
+            targetEl,
+            linktext: notePath,
+            sourcePath: info.file?.path ?? "",
+          });
+          return;
+        }
+
         logger.trace("Citekey shows its entry", { citekey, editorMode });
         handlers.showPopover({
           event,
@@ -391,10 +434,16 @@ class CitationWidget extends WidgetType {
         where: { surface: "editor", editorMode: "live-preview" },
         open: this.#handlers.open,
         showPopover: this.#handlers.showPopover,
+        hoverPreferences: this.#handlers.hoverPreferences,
+        hoverNotePath: this.#handlers.hoverNotePath,
         hoverTarget: () => {
           const info = view.state.field(editorInfoField, false);
           return info
-            ? { hoverParent: info, sourcePath: this.#sourcePath }
+            ? {
+                workspace: info.app.workspace,
+                hoverParent: info,
+                sourcePath: this.#sourcePath,
+              }
             : null;
         },
       });

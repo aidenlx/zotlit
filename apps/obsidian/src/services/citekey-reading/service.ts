@@ -20,9 +20,14 @@ import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   attachCitationHover,
   attachCitationNavigation,
+  hoverPreferences,
 } from "@/services/citekey-navigation";
-import type { CitationNavigation } from "@/services/citekey-navigation";
+import type {
+  CitationNavigation,
+  HoverPreferences,
+} from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
+import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -36,8 +41,8 @@ export interface CitekeyReadingDeps {
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "load" | "on" | "peek">;
-  /** The open-or-create flow every citekey surface shares. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  /** The open-or-create flow every citekey surface shares, and what hover previews. */
+  citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: Pick<SettingsService, "ready" | "subscribe">;
@@ -53,9 +58,9 @@ export interface CitekeyReadingDeps {
  * citation keeps its native source text.
  *
  * Navigation is independent: when enabled, one work opens on click, several
- * works open a menu at the cursor, and hover shows the Citation Popover of
- * every work the citation names. A citation none of whose keys reaches a Zotero
- * Item stays raw source text, inert but for that hover.
+ * works open a menu at the cursor, and hover shows what the Hover Action names.
+ * A citation none of whose keys reaches a Zotero Item stays raw source text,
+ * inert but for that hover.
  *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
  * are read per render rather than by adding and removing it.
@@ -72,6 +77,7 @@ export class CitekeyReading extends Service<void> {
   #active: boolean | undefined;
   #showFormatted = false;
   #navigationEnabled = false;
+  #hover: HoverPreferences = hoverPreferences(defaults);
 
   ready: Promise<void>;
 
@@ -118,6 +124,9 @@ export class CitekeyReading extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
+    // Read straight through: hover answers from the newest snapshot, and
+    // nothing rendered depends on it.
+    this.#hover = hoverPreferences(settings);
     const pandocCitations = settings["citation.pandoc-citations"];
     const showFormatted =
       pandocCitations && settings["citation.show-formatted"];
@@ -196,11 +205,17 @@ export class CitekeyReading extends Service<void> {
           void this.#citekeyEditor.openCitekey(citekey, pane);
         },
         showPopover: (request) => this.#citationPopover.show(request),
+        hoverPreferences: () => this.#hover,
+        hoverNotePath: (citekey) => this.#citekeyEditor.hoverNotePath(citekey),
         hoverTarget: () => {
           const hoverParent = this.#viewOf(element);
           return hoverParent === null
             ? null
-            : { hoverParent, sourcePath: ctx.sourcePath };
+            : {
+                workspace: this.#app.workspace,
+                hoverParent,
+                sourcePath: ctx.sourcePath,
+              };
         },
       };
       // A citation none of whose keys reaches a Zotero Item remains wrapped so

@@ -1,8 +1,10 @@
 import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
+import type { HoverLinkSource } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import type { DocumentCitations } from "@/services/citation-text/service";
+import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -27,6 +29,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerEditorExtension: (extension: Extension) => {
           registered = extension as Extension[];
         },
+        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
@@ -69,6 +72,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         registerEditorExtension: (extension: Extension) => {
           registered = extension as Extension[];
         },
+        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
@@ -82,6 +86,32 @@ describe("CitekeyEditor settings lifecycle", () => {
     expect(registered).toHaveLength(1);
     settings.update({ "citation.pandoc-citations": false });
     expect(registered).toEqual([]);
+  });
+});
+
+describe("CitekeyEditor hover source", () => {
+  it("registers one Mod-gated hover-link source for every citekey surface", async () => {
+    const sources: Record<string, HoverLinkSource> = {};
+    await using service = new CitekeyEditor({
+      app: { workspace: { updateOptions: () => undefined } },
+      plugin: {
+        registerEditorExtension: () => undefined,
+        registerHoverLinkSource: (id: string, info: HoverLinkSource) => {
+          sources[id] = info;
+        },
+      },
+      noteIndex: new NoteIndexStub(),
+      citationText: new CitationTextStub(),
+      citationIndex: new CitationIndexStub(),
+      settings: new SettingsStub(),
+    } as never);
+    await service.ready;
+
+    expect(Object.keys(sources)).toEqual([CITEKEY_HOVER_SOURCE]);
+    // Mod is the platform convention, and this row is the Page preview
+    // plugin's own gate on the Page preview Hover action.
+    expect(sources[CITEKEY_HOVER_SOURCE]?.defaultMod).toBe(true);
+    expect(sources[CITEKEY_HOVER_SOURCE]?.display).toBeTruthy();
   });
 });
 
@@ -101,6 +131,7 @@ describe("CitekeyEditor index-change broadcast", () => {
       },
       plugin: {
         registerEditorExtension: () => undefined,
+        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText: new CitationTextStub(),
@@ -137,6 +168,7 @@ describe("CitekeyEditor citation text broadcast", () => {
       },
       plugin: {
         registerEditorExtension: () => undefined,
+        registerHoverLinkSource: () => undefined,
       },
       noteIndex: new NoteIndexStub(),
       citationText,
