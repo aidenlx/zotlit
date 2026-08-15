@@ -8,7 +8,7 @@ import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
 import { tooltipAttrs } from "@/lib/utils";
 
-import type { Inlines, QuoteType } from "./ast";
+import type { Blocks, Inline, Inlines, QuoteType } from "./ast";
 
 const logger = getLogger(["pandoc", "renderer"]);
 
@@ -323,6 +323,73 @@ export function holdsNote(nodes: Inlines): boolean {
         return false;
     }
   });
+}
+
+/**
+ * The text of the notes one flow holds, as one inline flow — what a note-class
+ * style wrote a citation as, subsequent forms and locators included, which the
+ * Citation Popover shows whole where the surfaces show serials in its place.
+ *
+ * A note holds blocks, which an inline flow has nowhere to put: each paragraph
+ * hands its own inlines over and the next one starts after a space, so the note
+ * reads as the one run of text the shared renderer takes.
+ *
+ * A note a reader wrote themselves, in a citation prefix, reads as part of that
+ * text — the accepted limitation the Entry Serial run carries too, since a flow
+ * says nothing about who wrote the note it holds.
+ *
+ * @returns the note text, empty for a flow holding no note — which is every
+ *   citation a style writes inline.
+ */
+export function noteContent(nodes: Inlines): Inlines {
+  const flow: Inline[] = [];
+
+  function addBlocks(blocks: Blocks): void {
+    for (const block of blocks) {
+      switch (block.t) {
+        case "Plain":
+        case "Para":
+          if (flow.length > 0) flow.push({ t: "Space" });
+          flow.push(...block.c);
+          break;
+        default:
+          logger.debug("Dropped a note block that reads as no inline flow", {
+            block: block.t,
+          });
+      }
+    }
+  }
+
+  function walk(inlines: Inlines): void {
+    for (const inline of inlines) {
+      switch (inline.t) {
+        case "Note":
+          addBlocks(inline.c);
+          break;
+        case "Emph":
+        case "Strong":
+        case "Underline":
+        case "Strikeout":
+        case "Superscript":
+        case "Subscript":
+        case "SmallCaps":
+          walk(inline.c);
+          break;
+        case "Quoted":
+        case "Cite":
+        case "Link":
+        case "Image":
+        case "Span":
+          walk(inline.c[1]);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  walk(nodes);
+  return flow;
 }
 
 /**

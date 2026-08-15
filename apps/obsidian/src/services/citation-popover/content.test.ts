@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { Inlines } from "@/services/pandoc/ast";
 
 import type { CitationPopoverActions } from "./actions";
 import type { CitationEntryBlock, CitationPopoverBlock } from "./blocks";
@@ -52,12 +53,15 @@ afterEach(async () => {
 
 async function render(
   blocks: readonly CitationPopoverBlock[],
+  note?: Inlines,
 ): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(() => {
-    root!.render(createElement(CitationPopoverContent, { blocks, actions }));
+    root!.render(
+      createElement(CitationPopoverContent, { blocks, note, actions }),
+    );
   });
   return container;
 }
@@ -191,5 +195,120 @@ describe("CitationPopoverContent", () => {
 
     expect(blocksOf(container)).toHaveLength(2);
     expect(container.querySelectorAll("button")).toHaveLength(0);
+  });
+});
+
+describe("CitationPopoverContent under a note-class style", () => {
+  const note: Inlines = [
+    { t: "Str", c: "Ann" },
+    { t: "Space" },
+    { t: "Str", c: "Zeta," },
+    { t: "Space" },
+    { t: "Emph", c: [{ t: "Str", c: "A study" }] },
+    { t: "Str", c: ", 12." },
+  ];
+
+  const noteBlockOf = (container: HTMLElement): HTMLElement =>
+    container.querySelector<HTMLElement>("[data-citation-popover-note]")!;
+
+  const serialsOf = (container: HTMLElement): (string | null)[] =>
+    blocksOf(container).map(
+      (block) => block.querySelector(".zt-entry-serial")!.textContent,
+    );
+
+  it("shows the note text the style wrote for the hovered citation", async () => {
+    const container = await render([entry("doe2024", { serial: 1 })], note);
+
+    expect(noteBlockOf(container).textContent).toContain(
+      "Ann Zeta, A study, 12.",
+    );
+    expect(container.querySelector("em")!.textContent).toBe("A study");
+  });
+
+  it("leaves the works' entries out from under the note text", async () => {
+    const container = await render(
+      [entry("doe2024", { serial: 1 }), entry("smith2025", { serial: 2 })],
+      note,
+    );
+
+    expect(container.textContent).not.toContain("Entry of doe2024");
+    expect(container.textContent).not.toContain("Entry of smith2025");
+  });
+
+  it("rows one work per action row, in the order the citation names them", async () => {
+    const container = await render(
+      [entry("smith2025", { serial: 2 }), entry("doe2024", { serial: 1 })],
+      note,
+    );
+
+    const rows = blocksOf(container);
+    expect(
+      rows.map((row) => row.getAttribute("data-citation-popover-block")),
+    ).toEqual(["smith2025", "doe2024"]);
+    expect(rows.map(iconsOf)).toEqual([
+      ["file-text", "external-link"],
+      ["file-text", "external-link"],
+    ]);
+  });
+
+  it("labels each row with the Entry Serial its inline run showed", async () => {
+    const container = await render(
+      [entry("smith2025", { serial: 2 }), entry("doe2024", { serial: 1 })],
+      note,
+    );
+
+    expect(serialsOf(container)).toEqual(["2", "1"]);
+  });
+
+  it("marks the row of a work the bibliography rendered no entry for", async () => {
+    const container = await render(
+      [entry("doe2024", { serial: undefined })],
+      note,
+    );
+
+    expect(serialsOf(container)).toEqual(["⚠"]);
+  });
+
+  it("explains an unresolved key and keeps its resolved siblings' rows", async () => {
+    const container = await render(
+      [
+        entry("doe2024", { serial: 1 }),
+        { kind: "unresolved", citekey: "typo2024" },
+      ],
+      note,
+    );
+
+    const [resolved, unresolved] = blocksOf(container);
+    expect(iconsOf(resolved!)).toEqual(["file-text", "external-link"]);
+    expect(unresolved!.textContent).toContain(
+      m.references_citekey_unresolved({ citekey: "typo2024" }),
+    );
+    expect(iconsOf(unresolved!)).toEqual([]);
+    expect(serialsOf(container)).toEqual(["1", "⚠"]);
+  });
+
+  // The class is a public promise to themes: a serial standing for a note
+  // carries it here as it does in the run this popover mirrors.
+  it("marks every serial label with the zt-entry-serial theme hook", async () => {
+    const container = await render(
+      [entry("doe2024", { serial: 1 }), entry("smith2025", { serial: 2 })],
+      note,
+    );
+
+    expect(
+      [...container.querySelectorAll(".zt-entry-serial")].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(["1", "2"]);
+  });
+
+  it("puts the rows after the note text, for the placement to flip", async () => {
+    const container = await render([entry("doe2024", { serial: 1 })], note);
+
+    const block = noteBlockOf(container);
+    expect(block.firstElementChild!.textContent).toContain("Ann Zeta");
+    expect(block.lastElementChild!.contains(blocksOf(container)[0]!)).toBe(
+      true,
+    );
   });
 });

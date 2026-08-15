@@ -431,6 +431,9 @@ class CitationWidget extends WidgetType {
     if (this.#navigable) {
       attachCitationNavigation(element, {
         works: this.#works,
+        // What this widget shows in the citation's place, which is where a
+        // note-class style's own note text is read from.
+        formatted: this.#content.text.content,
         where: { surface: "editor", editorMode: "live-preview" },
         open: this.#handlers.open,
         showPopover: this.#handlers.showPopover,

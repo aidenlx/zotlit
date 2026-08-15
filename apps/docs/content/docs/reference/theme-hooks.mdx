@@ -16,7 +16,7 @@ This reference lists ZotLit's public citation CSS classes and their activation r
 | `zt-citation-key-unresolved`           | A citation key that does not resolve, or a rendered Citation in which no citation key resolves. The element also has `zt-citation-key`. |
 | `zt-citation-key-partially-unresolved` | A rendered Citation containing both resolved and unresolved citation keys. The element also has `zt-citation-key`.                      |
 | `zt-literature-note-link`              | A rendered Citation produced from a Literature Note link or Citation Run.                                                               |
-| `zt-entry-serial`                      | The Entry Serials of a rendered Citation, shown superscript in place of the footnote a note-class style writes.                         |
+| `zt-entry-serial`                      | The Entry Serials of a rendered Citation, and the serial labeling each cited item's row in the citation popover.                        |
 
 A rendered Citation also has the class for its source. A literal Citation Cluster has `zt-citation` and `zt-citation-key`. A Citation Run made from Literature Note links has `zt-citation` and `zt-literature-note-link`.
 
@@ -51,13 +51,15 @@ A source also receives no public ZotLit class when both applicable features are 
 
 `zt-entry-serial` appears inside a rendered Citation, on the element that holds its Entry Serials. ZotLit adds it only when the selected Citation and References Style writes the Citation as a footnote, which no Obsidian view can show. ZotLit then shows the position of each cited entry in the References Sidebar instead: one number per cited work, separated by commas, and `⚠` for a work the bibliography rendered no entry for. A style that writes its Citations inline — an author-date or a numeric style — activates this class nowhere.
 
+The class appears once more in the citation popover of such a Citation, on the element that labels each cited item's button row with that item's serial. The same `⚠` stands there for a work the bibliography rendered no entry for.
+
 ## Default appearance [#defaults]
 
 Resolved citation keys use Obsidian's `--link-*` variables. Fully unresolved citation keys use the corresponding `--link-unresolved-*` variables.
 
 ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A partial result therefore keeps the appearance of its resolved works. ZotLit adds no style to a native Literature Note wikilink.
 
-ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text and take their appearance from the theme.
+ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text in a Citation, as a plain label in the citation popover, and take their appearance from the theme.
 
 ## CSS examples [#examples]
 

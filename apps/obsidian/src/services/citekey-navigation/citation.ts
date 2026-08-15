@@ -4,6 +4,7 @@ import { Menu } from "obsidian";
 import type { HoverParent, Workspace } from "obsidian";
 
 import { getLogger } from "@/lib/log";
+import type { Inlines } from "@/services/pandoc/ast";
 
 import { citationHoverIntent } from "./hover";
 import type { HoverPreferences } from "./hover";
@@ -35,6 +36,12 @@ export interface CitationHoverRequest {
   targetEl: HTMLElement;
   /** The citekeys the citation names, in the order it names them. */
   citekeys: readonly string[];
+  /**
+   * The text the style formatted for the hovered occurrence, where the surface
+   * shows it in the citation's place. A surface showing the citation's own
+   * source text carries none, and its popover stands on the entries alone.
+   */
+  formatted?: Inlines;
   /** The open-or-create flow every citekey surface shares. */
   open: (citekey: string, pane: NavigationPane) => void;
 }
@@ -42,6 +49,11 @@ export interface CitationHoverRequest {
 export interface CitationNavigation {
   /** The works the citation names, in the order it names them. */
   works: readonly CitedWork[];
+  /**
+   * The formatted text this citation is rendered as, where the surface renders
+   * one — what a note-class style's own note text reaches the popover through.
+   */
+  formatted?: Inlines;
   where: GestureSurface;
   /** The open-or-create flow every citekey surface shares. */
   open: (citekey: string, pane: NavigationPane) => void;
@@ -217,6 +229,7 @@ function hover(
     event,
     targetEl: element,
     citekeys: intent.citekeys,
+    formatted: navigation.formatted,
     open: navigation.open,
   });
 }

@@ -9,6 +9,7 @@ import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
+import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
@@ -85,12 +86,17 @@ async function fill(
     open: request.open,
     hide: () => popover.hide(),
   });
+  // A note-class style writes its citation as a note the surfaces stand serials
+  // in place of, so the popover is where that text is read — taken from the
+  // formatted text of the very occurrence the pointer is on.
+  const note = request.formatted ? noteContent(request.formatted) : undefined;
   const shown = popover.show(
-    <CitationPopoverContent blocks={blocks} actions={actions} />,
+    <CitationPopoverContent blocks={blocks} note={note} actions={actions} />,
   );
   logger.debug("Citation popover entries read", {
     path: request.sourcePath,
     blocks: blocks.length,
+    note: note !== undefined && note.length > 0,
     shown,
   });
 }

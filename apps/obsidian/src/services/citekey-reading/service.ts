@@ -200,6 +200,10 @@ export class CitekeyReading extends Service<void> {
       if (!this.#navigationEnabled) return element;
       const navigation: CitationNavigation = {
         works: citedWorks(citation, summaryOf),
+        // What this section shows in the citation's place, which is where a
+        // note-class style's own note text is read from. A citation left as
+        // source text shows none.
+        formatted: content?.text.content,
         where: { surface: "reading" },
         open: (citekey, pane) => {
           void this.#citekeyEditor.openCitekey(citekey, pane);

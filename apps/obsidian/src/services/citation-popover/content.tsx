@@ -1,11 +1,13 @@
-// The Citation Popover's body: one block per cited work, each with its own action row.
+// The Citation Popover's body: the note text a note-class style wrote the hovered citation as, or one block per cited work with its own action row.
 
 import type { IconName } from "obsidian";
 import type { MouseEvent, ReactNode } from "react";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
+import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
+import type { Inlines } from "@/services/pandoc/ast";
 import { InlineContent } from "@/services/pandoc/inline-content";
 
 import type { CitationPopoverActions } from "./actions";
@@ -14,21 +16,46 @@ import type { CitationEntryBlock, CitationPopoverBlock } from "./blocks";
 export interface CitationPopoverContentProps {
   /** One block per work the hovered citation names, in the order it names them. */
   blocks: readonly CitationPopoverBlock[];
+  /**
+   * The note text a note-class style wrote the hovered citation as, which the
+   * popover shows in place of the entries; empty for a citation the style wrote
+   * inline, which shows its entries instead.
+   */
+  note?: Inlines;
   actions: CitationPopoverActions;
 }
 
 /**
- * The stack one hovered citation shows: every work's entry in full, in citation
+ * What one hovered citation shows: the note text the style wrote it as, or —
+ * where the style wrote it inline — every work's entry in full, in citation
  * order, each with the actions that reach that work.
+ */
+export function CitationPopoverContent({
+  blocks,
+  note,
+  actions,
+}: CitationPopoverContentProps) {
+  if (note?.length) {
+    return <NoteCitation note={note} blocks={blocks} actions={actions} />;
+  }
+  return <EntryStack blocks={blocks} actions={actions} />;
+}
+
+/**
+ * The stack of the works a citation names: every work's entry in full, in
+ * citation order.
  *
  * A block puts its action row after its entry, and the placement class the
  * popover stamps turns that around, so the row always sits on the side of its
  * own entry the pointer came from.
  */
-export function CitationPopoverContent({
+function EntryStack({
   blocks,
   actions,
-}: CitationPopoverContentProps) {
+}: {
+  blocks: readonly CitationPopoverBlock[];
+  actions: CitationPopoverActions;
+}) {
   return (
     <>
       {blocks.map((block, index) => (
@@ -37,7 +64,7 @@ export function CitationPopoverContent({
           // two blocks of the same key; the index keeps a fallback identity for
           // a citation that writes one twice all the same.
           key={`${block.citekey}-${index}`}
-          className="zt-citation-popover-block zt:flex zt:flex-col zt:gap-1 zt:border-t zt:border-border zt:px-3 zt:py-2 zt:first:border-t-0"
+          className={blockClass}
           data-citation-popover-block={block.citekey}
         >
           {block.kind === "entry" ? (
@@ -46,9 +73,7 @@ export function CitationPopoverContent({
               <EntryActions block={block} actions={actions} />
             </>
           ) : (
-            <div className={cn(entryTextClass, "zt:text-destructive")}>
-              {m.references_citekey_unresolved({ citekey: block.citekey })}
-            </div>
+            <Unresolved citekey={block.citekey} />
           )}
         </div>
       ))}
@@ -56,8 +81,83 @@ export function CitationPopoverContent({
   );
 }
 
+/**
+ * What a note-class style wrote the hovered citation as: the note text itself —
+ * subsequent forms and note-level locators included — and one action row per
+ * work the citation names, labeled with the Entry Serial that work's slot of the
+ * hovered inline run showed.
+ *
+ * The entries stay out: the note text is what the style has to say about these
+ * works here, and the References Sidebar holds their entries in full. The rows
+ * follow the note text as one block, so the placement flip puts them on the side
+ * the pointer came from, and they keep citation order whichever side that is.
+ */
+function NoteCitation({
+  note,
+  blocks,
+  actions,
+}: {
+  note: Inlines;
+  blocks: readonly CitationPopoverBlock[];
+  actions: CitationPopoverActions;
+}) {
+  return (
+    <div className={blockClass} data-citation-popover-note>
+      <div className={cn(entryTextClass, "zt:text-foreground zt:select-text")}>
+        <InlineContent nodes={note} />
+      </div>
+      <div className="zt:flex zt:flex-col zt:gap-1">
+        {blocks.map((block, index) => (
+          <div
+            key={`${block.citekey}-${index}`}
+            className="zt:grid zt:grid-cols-[max-content_minmax(0,1fr)] zt:items-center zt:gap-x-2"
+            data-citation-popover-block={block.citekey}
+          >
+            {/* The serial this work's slot of the inline run showed, carrying
+                the same public class, so a theme styles the label and the run
+                it mirrors as one. A work the bibliography rendered no entry
+                for reads ⚠ in both places. */}
+            <span className={cn(gutterClass, themeHook.entrySerial)}>
+              {serialLabel(block)}
+            </span>
+            {block.kind === "entry" ? (
+              <EntryActions block={block} actions={actions} />
+            ) : (
+              <Unresolved citekey={block.citekey} />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A citekey reaching no Zotero Item, which the popover explains in that work's place. */
+function Unresolved({ citekey }: { citekey: string }) {
+  return (
+    <div className={cn(entryTextClass, "zt:text-destructive")}>
+      {m.references_citekey_unresolved({ citekey })}
+    </div>
+  );
+}
+
+/** The digit standing for this work in the run the hovered citation shows. */
+function serialLabel(block: CitationPopoverBlock): ReactNode {
+  return (block.kind === "entry" ? block.serial : undefined) ?? NO_ENTRY;
+}
+
+const blockClass =
+  "zt-citation-popover-block zt:flex zt:flex-col zt:gap-1 zt:border-t zt:border-border zt:px-3 zt:py-2 zt:first:border-t-0";
+
 const entryTextClass =
   "zt:font-content zt:text-sm zt:leading-snug zt:break-words";
+
+/** The References Sidebar's own gutter column, which every marker stands in. */
+const gutterClass =
+  "zt:min-w-5 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums";
+
+/** The slot of a cited work the bibliography rendered no entry for. */
+const NO_ENTRY = "⚠";
 
 /**
  * The References Sidebar's entry presentation: the gutter beside the entry
@@ -75,11 +175,7 @@ function Entry({ block }: { block: CitationEntryBlock }) {
           : "zt:grid-cols-[max-content_minmax(0,1fr)]",
       )}
     >
-      {gutter !== null && (
-        <span className="zt:min-w-5 zt:text-right zt:text-xs zt:text-muted-foreground zt:tabular-nums">
-          {gutter}
-        </span>
-      )}
+      {gutter !== null && <span className={gutterClass}>{gutter}</span>}
       <div className={cn(entryTextClass, "zt:text-foreground zt:select-text")}>
         {block.content === null ? (
           block.summary
