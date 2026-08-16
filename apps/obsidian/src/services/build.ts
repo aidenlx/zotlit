@@ -3,6 +3,8 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
+import { createCitationPopover } from "./citation-popover/service";
+import type { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
@@ -31,6 +33,7 @@ import {
   migrateV4ToV5,
   migrateV5ToV6,
   migrateV6ToV7,
+  migrateV7ToV8,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
@@ -68,6 +71,7 @@ export function buildServices(
           migrateV4: migrateV4ToV5,
           migrateV5: migrateV5ToV6,
           migrateV6: migrateV6ToV7,
+          migrateV7: migrateV7ToV8,
         }),
     })
     .use({
@@ -192,12 +196,28 @@ export function buildServices(
           bibliographyRender,
         }),
     })
+    .useValue({
+      citationPopover: ({
+        db,
+        citationIndex,
+        citationText,
+        bibliographyRender,
+      }): CitationPopover =>
+        createCitationPopover({
+          app: plugin.app,
+          db,
+          citationIndex,
+          citationText,
+          bibliographyRender,
+        }),
+    })
     .use({
       citekeyEditor: ({
         noteIndex,
         noteFeature,
         db,
         citationText,
+        citationPopover,
         settings,
         citationIndex,
       }) =>
@@ -208,38 +228,63 @@ export function buildServices(
           noteFeature,
           db,
           citationText,
+          citationPopover,
           settings,
           citationIndex,
         }),
     })
     .use({
-      wikilinkEditor: ({ noteIndex, citationText, settings, citationIndex }) =>
+      wikilinkEditor: ({
+        noteIndex,
+        citationText,
+        citekeyEditor,
+        citationPopover,
+        settings,
+        citationIndex,
+      }) =>
         new WikilinkEditor({
           app: plugin.app,
           plugin,
           noteIndex,
           citationText,
+          citekeyEditor,
+          citationPopover,
           settings,
           citationIndex,
         }),
     })
     .use({
-      wikilinkReading: ({ noteIndex, citationText, settings, citationIndex }) =>
+      wikilinkReading: ({
+        noteIndex,
+        citationText,
+        citekeyEditor,
+        citationPopover,
+        settings,
+        citationIndex,
+      }) =>
         new WikilinkReading({
           app: plugin.app,
           plugin,
           noteIndex,
           citationText,
+          citekeyEditor,
+          citationPopover,
           settings,
           citationIndex,
         }),
     })
     .use({
-      citekeyReading: ({ citationText, citekeyEditor, settings }) =>
+      citekeyReading: ({
+        citationText,
+        citationPopover,
+        citekeyEditor,
+        settings,
+      }) =>
         new CitekeyReading({
           app: plugin.app,
           plugin,
           citationText,
+          citationPopover,
           citekeyEditor,
           settings,
         }),

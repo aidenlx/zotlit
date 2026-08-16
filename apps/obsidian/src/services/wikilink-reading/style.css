@@ -1,0 +1,18 @@
+/* Wikilink Reading Rendering. A rendered Citation states in `data-zt-click`
+   what a plain click on it does, and an anchor whose click opens nothing reads
+   as the static text it behaves like: Obsidian's own link cursor and hover
+   colour would promise an open that never comes.
+
+   Written as plain rules rather than as utilities: the anchor is Obsidian's own
+   DOM and its link styling is unlayered, which outranks every layer the
+   plugin's utilities live in. */
+.markdown-rendered a.internal-link[data-zt-click="none"] {
+  cursor: text;
+}
+
+@media (hover: hover) {
+  .markdown-rendered a.internal-link[data-zt-click="none"]:hover {
+    color: var(--link-color);
+    text-decoration-line: var(--link-decoration);
+  }
+}

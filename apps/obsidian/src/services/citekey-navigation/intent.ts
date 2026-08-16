@@ -2,13 +2,6 @@
 
 import type { PaneType } from "obsidian";
 
-/**
- * The `hover-link` source id every citekey surface emits under. One id keeps
- * Obsidian's Page preview settings to a single row whose Ctrl-gating governs
- * them all.
- */
-export const CITEKEY_HOVER_SOURCE = "zotlit-citekey";
-
 export type NavigationPane = boolean | PaneType;
 export type NavigationAction = "click" | "hover";
 export type NavigationButton = "left" | "middle" | "none";
@@ -35,9 +28,20 @@ export type NavigationTarget =
   | { resolution: "citation-menu"; citekeys: readonly string[] }
   | { resolution: "unavailable" };
 
-/** One work a rendered citation names, as its click target. */
-export interface CitedWork {
+/** One work a hovered citation names, as the Citation Popover addresses it. */
+export interface HoveredWork {
+  /** The citekey the citation writes the work as, which the open action names. */
   citekey: string;
+  /**
+   * The work's Indexed Key: the Item identity every consumer joins the work to
+   * a document's entries by. A citekey reaching no Zotero Item names no Item to
+   * carry, and leaves it out.
+   */
+  indexedKey?: string;
+}
+
+/** One work a rendered citation names, as its click target. */
+export interface CitedWork extends HoveredWork {
   /**
    * The work's summary, or — for a key that reaches no Zotero Item — the key as
    * the citation writes it, braces and all, which is the raw text the
@@ -59,6 +63,41 @@ export function citationTarget(works: readonly CitedWork[]): NavigationTarget {
     resolution: "citation-menu",
     citekeys: works.map((work) => work.citekey),
   };
+}
+
+/**
+ * What one click on a Rendered Citation reaches while Citations stay closed as
+ * links: the open flow a Mod names, the source text a Live Preview citation
+ * hides, or nothing at all.
+ */
+export type CitationClickIntent = "navigate" | "edit" | "nothing";
+
+/**
+ * Decides what a mouse gesture on a Rendered Citation means while Citations do
+ * not open as links — the surface picks this decision by the setting, and the
+ * gesture alone decides the rest.
+ *
+ * Mod stays the platform convention for opening a citation, so a Mod-click
+ * navigates wherever a plain one edits. A plain click in Live Preview reaches
+ * the source the rendered citation stands in place of, which is what a click on
+ * any other rendered Markdown reaches there. Every other plain click means
+ * nothing: reading mode renders static text, and Source mode already shows the
+ * source a caret would reveal. Middle-click is left whole to whoever owns the
+ * surface underneath: a Pandoc citation has nothing to open with it, and a
+ * wikilink opens as the link Obsidian sees.
+ */
+export function citationClickIntent(
+  gesture: Pick<
+    NavigationGesture,
+    "action" | "button" | "mod" | "editorMode" | "surface"
+  >,
+): CitationClickIntent {
+  if (gesture.action !== "click") return "nothing";
+  if (gesture.button !== "left") return "nothing";
+  if (gesture.mod) return "navigate";
+  return gesture.surface === "editor" && gesture.editorMode === "live-preview"
+    ? "edit"
+    : "nothing";
 }
 
 export type NavigationIntent =

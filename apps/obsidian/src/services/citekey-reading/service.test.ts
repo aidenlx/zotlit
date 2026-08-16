@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { MarkdownView } from "obsidian";
+import { Keymap, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
@@ -18,6 +18,7 @@ import {
   rendered,
 } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
+import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -47,6 +48,23 @@ function section(html: string): HTMLElement {
   return root;
 }
 
+/**
+ * Places one rendered section in a Markdown view, which is what a popover hangs
+ * in, and answers with the context that section is processed under.
+ */
+function viewedCtx(
+  harness: Harness,
+  el: HTMLElement,
+): MarkdownPostProcessorContext {
+  harness.views.push(
+    Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
+      containerEl: el,
+      previewMode: { rerender: () => undefined },
+    }),
+  );
+  return harness.ctx;
+}
+
 interface Harness extends AsyncDisposable {
   process: MarkdownPostProcessor;
   /**
@@ -59,6 +77,12 @@ interface Harness extends AsyncDisposable {
   /** {@link sectionCtx} over the whole body, which is one section for most suites. */
   ctx: MarkdownPostProcessorContext;
   citationRequests: { citations: readonly string[] }[];
+  /** The Markdown views the workspace holds, which a hover result hangs in. */
+  views: MarkdownView[];
+  /** Every popover the rendered citations of this harness asked for. */
+  popoverRequests: CitationHoverRequest[];
+  /** Every note the rendered citations of this harness asked to open. */
+  opened: [citekey: string, pane: unknown][];
 }
 
 async function makeHarness({
@@ -83,6 +107,9 @@ async function makeHarness({
 }): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
   const citationRequests: { citations: readonly string[] }[] = [];
+  const views: MarkdownView[] = [];
+  const popoverRequests: CitationHoverRequest[] = [];
+  const opened: [citekey: string, pane: unknown][] = [];
   const occurrences = literalOccurrences(body);
   let process: MarkdownPostProcessor | undefined;
 
@@ -140,7 +167,9 @@ async function makeHarness({
     new CitekeyReading({
       app: {
         vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-        workspace: { getLeavesOfType: () => [] },
+        workspace: {
+          getLeavesOfType: () => views.map((view) => ({ view })),
+        },
       },
       plugin: {
         registerMarkdownPostProcessor: (
@@ -152,8 +181,13 @@ async function makeHarness({
       },
       citationText,
       citekeyEditor: {
-        openCitekey: () => Promise.resolve(),
-        hoverNotePath: () => null,
+        openCitekey: (citekey: string, pane: unknown) => {
+          opened.push([citekey, pane]);
+          return Promise.resolve();
+        },
+      },
+      citationPopover: {
+        show: (request: CitationHoverRequest) => popoverRequests.push(request),
       },
       settings: settingsStub(overrides),
     } as never),
@@ -175,6 +209,9 @@ async function makeHarness({
     sectionCtx,
     ctx: sectionCtx({ from: 0, to: body.split("\n").length - 1 }),
     citationRequests,
+    views,
+    popoverRequests,
+    opened,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }
@@ -216,7 +253,7 @@ describe("CitekeyReading", () => {
     await service.ready;
     expect(rerender).not.toHaveBeenCalled();
 
-    notify?.({ ...defaults, "citation.open-pandoc-links": false });
+    notify?.({ ...defaults, "citation.open-as-links": true });
 
     expect(rerender).toHaveBeenCalledExactlyOnceWith(true);
   });
@@ -373,11 +410,136 @@ describe("CitekeyReading", () => {
     }
   });
 
+  it("shows the rendered citation's popover while navigation is off", async () => {
+    // The Hover Action owns hover on its own, so a rendered citation answers
+    // with the popover while Citekey Navigation is off.
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      overrides: { "citation.open-as-links": false },
+    });
+    const { process, ctx, views, popoverRequests } = harnessed;
+    const el = section("<p>Blah [@alpha].</p>");
+    views.push(
+      Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
+        containerEl: el,
+        previewMode: { rerender: () => undefined },
+      }),
+    );
+
+    await process(el, ctx);
+    const citationEl = el.querySelector<HTMLElement>(".zt-citation")!;
+    citationEl.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(popoverRequests).toHaveLength(1);
+    expect(popoverRequests[0]).toMatchObject({
+      targetEl: citationEl,
+      works: [{ citekey: "alpha" }],
+      sourcePath: "note.md",
+    });
+  });
+
+  it("leaves the rendered citation's plain click inert while navigation is off", async () => {
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      overrides: {
+        "citation.open-as-links": false,
+        "citation.hover-action": "off",
+      },
+    });
+    const { process, popoverRequests, opened } = harnessed;
+    const el = section("<p>Blah [@alpha].</p>");
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+
+    await process(el, viewedCtx(harnessed, el));
+    const citationEl = el.querySelector<HTMLElement>(".zt-citation")!;
+    citationEl.dispatchEvent(event);
+
+    expect(opened).toEqual([]);
+    expect(popoverRequests).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    // The citation says as much: nothing to click, so it reads as static text.
+    expect(citationEl.dataset.ztClick).toBe("none");
+  });
+
+  it("states that a rendered citation opens while navigation is on", async () => {
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      overrides: { "citation.open-as-links": true },
+    });
+    const { process } = harnessed;
+    const el = section("<p>Blah [@alpha].</p>");
+
+    await process(el, viewedCtx(harnessed, el));
+
+    expect(el.querySelector<HTMLElement>(".zt-citation")!.dataset.ztClick).toBe(
+      "open",
+    );
+  });
+
+  it("opens the work a Mod-click names while navigation is off", async () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      overrides: { "citation.open-as-links": false },
+    });
+    const { process, popoverRequests, opened } = harnessed;
+    const el = section("<p>Blah [@alpha].</p>");
+
+    await process(el, viewedCtx(harnessed, el));
+    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    expect(popoverRequests).toEqual([]);
+    expect(opened).toEqual([["alpha", "tab"]]);
+    vi.restoreAllMocks();
+  });
+
+  it("opens the work a plain click names while Citations open as links", async () => {
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      overrides: { "citation.open-as-links": true },
+    });
+    const { process, popoverRequests, opened } = harnessed;
+    const el = section("<p>Blah [@alpha].</p>");
+
+    await process(el, viewedCtx(harnessed, el));
+    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    expect(popoverRequests).toEqual([]);
+    expect(opened).toEqual([["alpha", false]]);
+  });
+
+  it("keeps an unrendered citation opening as a link", async () => {
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      overrides: {
+        "citation.show-formatted": false,
+        "citation.open-as-links": true,
+      },
+    });
+    const { process, popoverRequests, opened } = harnessed;
+    const el = section("<p>Blah [@alpha].</p>");
+
+    // Citations open as links here, so the rendering is off but the citation
+    // is still wrapped; turning navigation off as well retires the treatment.
+    await process(el, viewedCtx(harnessed, el));
+    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    expect(popoverRequests).toEqual([]);
+    expect(opened).toEqual([["alpha", false]]);
+  });
+
   it("leaves the reading view alone while the treatment is off", async () => {
     for (const overrides of [
       {
         "citation.show-formatted": false,
-        "citation.open-pandoc-links": false,
+        "citation.open-as-links": false,
       },
       { "citation.pandoc-citations": false },
     ]) {

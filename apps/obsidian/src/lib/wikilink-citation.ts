@@ -1,5 +1,8 @@
 // The shared core that derives Citations from Literature Note wikilinks.
 
+import { hoverPreferences } from "@/services/citekey-navigation";
+import type { HoverPreferences } from "@/services/citekey-navigation";
+import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
 import { citationRunItem, citationRunSource } from "./citation-fragment";
@@ -184,19 +187,49 @@ const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
  * the surface watches them.
  *
  * One tracker per surface, so Live Preview and reading mode answer to the same
- * two settings without either restating which ones they are.
+ * settings without either restating which ones they are.
  */
 export class WikilinkDisplaySettings {
   #enabled = false;
+  #openAsLinks = defaults["citation.open-as-links"];
+  #hover: HoverPreferences = hoverPreferences(defaults);
 
   /** {@link WikilinkCitationContext.enabled} */
   get enabled(): boolean {
     return this.#enabled;
   }
 
+  /** What hover answers with, read once per hover. */
+  get hover(): HoverPreferences {
+    return this.#hover;
+  }
+
+  /**
+   * Whether a rendered Citation carries the Citation Popover's own hover. Under
+   * every other Hover Action a Literature Note wikilink hovers as Obsidian's
+   * own link, which is what it is, so no listener of the plugin's goes near it.
+   */
+  get popoverHover(): boolean {
+    return this.#hover.action === "popover";
+  }
+
+  /**
+   * Whether a plain click on a rendered Citation is the plugin's to answer:
+   * Live Preview places the caret in the wikilink's source, and reading mode
+   * lets the click land on static text. Wherever Citations open as links a
+   * Literature Note wikilink clicks as Obsidian's own link, which is what it
+   * is, so no listener of the plugin's goes near it.
+   *
+   * The click is read apart from the Hover Action, so it is answered even where
+   * no hover would be.
+   */
+  get clickIntercepted(): boolean {
+    return !this.#openAsLinks;
+  }
+
   /**
    * Follows the settings, and asks for a redraw whenever they change what a
-   * link displays.
+   * link displays or who answers its hover.
    *
    * `SettingsService.subscribe` invokes its listener immediately, so the first
    * snapshot only seeds the values: everything drawn so far already read them,
@@ -216,10 +249,23 @@ export class WikilinkDisplaySettings {
       if (!next) return;
       const enabled =
         next["citation.wikilink-citations"] && next["citation.show-formatted"];
-      const changed = enabled !== this.#enabled;
+      // Read straight through: a hover answers from the newest snapshot, and
+      // only the listener the popover needs is drawn from it.
+      const popoverHover = this.popoverHover;
+      const clickIntercepted = this.clickIntercepted;
+      this.#hover = hoverPreferences(next);
+      this.#openAsLinks = next["citation.open-as-links"];
+      const changed =
+        enabled !== this.#enabled ||
+        popoverHover !== this.popoverHover ||
+        clickIntercepted !== this.clickIntercepted;
       this.#enabled = enabled;
       if (seeding || !changed) return;
-      logger.debug("Wikilink display settings changed", { enabled });
+      logger.debug("Wikilink display settings changed", {
+        enabled,
+        popoverHover: this.popoverHover,
+        clickIntercepted: this.clickIntercepted,
+      });
       redraw();
     });
   }

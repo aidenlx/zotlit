@@ -25,35 +25,63 @@ function citation(source: string): CitationSource {
   };
 }
 
+/**
+ * The citations of a document whose literal keys name the given Items.
+ *
+ * @param works the Indexed Key and summary each literal citekey names; a key
+ *   left out of it is one that reaches no Zotero Item.
+ */
+function citedDocument(
+  works: Record<string, { indexedKey: string; summary: string }> = {},
+): DocumentCitations {
+  const entries = Object.entries(works);
+  return {
+    formatted: new Map(),
+    entrySerials: false,
+    summaries: new Map(
+      entries.map(([, { indexedKey, summary }]) => [indexedKey, summary]),
+    ),
+    literalWorks: new Map(
+      entries.map(([citekey, { indexedKey }]) => [citekey, indexedKey]),
+    ),
+  };
+}
+
 describe("citedWorks", () => {
-  it("names each work by its summary, in the order the citation writes it", () => {
+  it("names each work by its Item and summary, in citation order", () => {
     expect(
-      citedWorks(citation("[see @a, p. 3; -@b]"), (key) =>
-        key === "a" ? "Zeta (2020)" : "Adams (2018)",
+      citedWorks(
+        citation("[see @a, p. 3; -@b]"),
+        citedDocument({
+          a: { indexedKey: "1/ZETA", summary: "Zeta (2020)" },
+          b: { indexedKey: "1/ADAMS", summary: "Adams (2018)" },
+        }),
       ),
     ).toEqual([
-      { citekey: "a", label: "Zeta (2020)" },
-      { citekey: "b", label: "Adams (2018)" },
+      { citekey: "a", indexedKey: "1/ZETA", label: "Zeta (2020)" },
+      { citekey: "b", indexedKey: "1/ADAMS", label: "Adams (2018)" },
     ]);
   });
 
   it("shows a key that reaches no item by its raw citekey", () => {
     expect(
-      citedWorks(citation("[@a; @ghost]"), (key) =>
-        key === "a" ? "Zeta (2020)" : undefined,
+      citedWorks(
+        citation("[@a; @ghost]"),
+        citedDocument({ a: { indexedKey: "1/ZETA", summary: "Zeta (2020)" } }),
       ),
     ).toEqual([
-      { citekey: "a", label: "Zeta (2020)" },
-      { citekey: "ghost", label: "@ghost" },
+      { citekey: "a", indexedKey: "1/ZETA", label: "Zeta (2020)" },
+      { citekey: "ghost", indexedKey: undefined, label: "@ghost" },
     ]);
   });
 
   it("keeps the braces an unresolved braced key is written with", () => {
     expect(
-      citedWorks(citation("[@{https://example.com/paper}]"), () => undefined),
+      citedWorks(citation("[@{https://example.com/paper}]"), citedDocument()),
     ).toEqual([
       {
         citekey: "https://example.com/paper",
+        indexedKey: undefined,
         label: "@{https://example.com/paper}",
       },
     ]);
@@ -61,7 +89,7 @@ describe("citedWorks", () => {
 
   it("names a repeated key once", () => {
     expect(
-      citedWorks(citation("[@a; @b; @a]"), () => undefined).map(
+      citedWorks(citation("[@a; @b; @a]"), citedDocument()).map(
         (work) => work.citekey,
       ),
     ).toEqual(["a", "b"]);

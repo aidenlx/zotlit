@@ -1,19 +1,16 @@
 // What a References Sidebar entry can do: navigate the document, and reach the Item in Zotero.
 
-import { Menu } from "obsidian";
 import type { App } from "obsidian";
 import { createContext, useContext } from "react";
 import type { MouseEvent } from "react";
 
-import { attachmentOpenUri, itemSelectUri } from "@zotlit/db";
+import { itemSelectUri } from "@zotlit/db";
 
+import { openAttachments } from "@/lib/attachment-open";
 import type { ClipboardRepresentation } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type {
-  OpenableAttachment,
-  ReferenceSource,
-} from "@/services/citation-index/service";
+import type { ReferenceSource } from "@/services/citation-index/service";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 import { toCopiedBibliography } from "./copied-bibliography";
@@ -122,13 +119,7 @@ export function createReferenceActions(
       window.open(itemSelectUri(source.itemKey, source.groupID));
     },
     onOpenAttachment(source, event) {
-      const [first, ...rest] = source.attachments;
-      if (!first) return;
-      if (rest.length === 0) {
-        openAttachment(first);
-        return;
-      }
-      showAttachmentMenu(source.attachments, event);
+      openAttachments(source.attachments, event);
     },
     onOpenEngineSettings: deps.onOpenEngineSettings,
     onChangeStyle: deps.onChangeStyle,
@@ -182,37 +173,6 @@ export function createReferenceActions(
       );
     },
   };
-}
-
-function openAttachment({ key, groupID }: OpenableAttachment): void {
-  window.open(attachmentOpenUri(key, groupID));
-}
-
-/**
- * Offer one row per Attachment. A keyboard click carries no pointer position
- * (`detail` of `0`), so the menu takes the button's own corner instead of the
- * window's.
- */
-function showAttachmentMenu(
-  attachments: readonly OpenableAttachment[],
-  event: MouseEvent,
-): void {
-  const menu = new Menu();
-  for (const attachment of attachments) {
-    menu.addItem((item) =>
-      item
-        .setTitle(attachment.label)
-        .setIcon("paperclip")
-        .onClick(() => openAttachment(attachment)),
-    );
-  }
-
-  if (event.detail === 0) {
-    const { left, bottom } = event.currentTarget.getBoundingClientRect();
-    menu.showAtPosition({ x: left, y: bottom });
-    return;
-  }
-  menu.showAtMouseEvent(event.nativeEvent);
 }
 
 export const ReferenceActionsContext = createContext<ReferenceActions | null>(

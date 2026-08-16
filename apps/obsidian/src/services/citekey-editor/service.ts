@@ -11,14 +11,22 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
-import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
-import type { NavigationPane } from "@/services/citekey-navigation";
+import {
+  CITEKEY_HOVER_SOURCE,
+  hoverPreferences,
+} from "@/services/citekey-navigation";
+import type {
+  HoverPreferences,
+  NavigationPane,
+} from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -34,6 +42,8 @@ export interface CitekeyEditorDeps {
   db: DatabaseService;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "load" | "on">;
+  /** What a hovered citation shows. */
+  citationPopover: CitationPopover;
   settings: SettingsService;
   citationIndex: Pick<CitationIndex, "resolveCitekey" | "on" | "whenResolved">;
 }
@@ -60,6 +70,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #noteFeature;
   readonly #db;
   readonly #citationText;
+  readonly #citationPopover;
   readonly #settings;
   readonly #citationIndex;
   readonly #emitter = createNanoEvents<CitekeyEditorEvents>();
@@ -71,6 +82,7 @@ export class CitekeyEditor extends Service<void> {
   #active = false;
   #navigationEnabled = false;
   #showFormatted = false;
+  #hover: HoverPreferences = hoverPreferences(defaults);
 
   ready: Promise<void>;
 
@@ -82,14 +94,17 @@ export class CitekeyEditor extends Service<void> {
     this.#noteFeature = deps.noteFeature;
     this.#db = deps.db;
     this.#citationText = deps.citationText;
+    this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.#citationIndex = deps.citationIndex;
     this.#extension = citekeyEditorExtension({
       open: (citekey, pane) => {
         void this.openCitekey(citekey, pane);
       },
+      showPopover: (request) => this.#citationPopover.show(request),
+      hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey) => this.hoverNotePath(citekey),
-      resolves: (citekey) => this.#resolves(citekey),
+      resolveCitekey: (citekey) => this.#resolveCitekey(citekey),
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
@@ -114,10 +129,12 @@ export class CitekeyEditor extends Service<void> {
     await this.#settings.ready;
 
     // Registered once and for the plugin's lifetime, so the row in Obsidian's
-    // Page preview settings stays put while the treatment toggles.
+    // Page preview settings stays put while the Hover Action changes. Mod is
+    // the platform convention for a citation, and Obsidian's own row owns that
+    // gate wherever ZotLit hands hover to the page preview.
     this.#plugin.registerHoverLinkSource(CITEKEY_HOVER_SOURCE, {
       display: m.hover_source_citekey(),
-      defaultMod: false,
+      defaultMod: true,
     });
     this.#plugin.registerEditorExtension(this.#extensions);
     stack.defer(() => {
@@ -149,8 +166,9 @@ export class CitekeyEditor extends Service<void> {
     this.commit(stack.move());
   }
 
-  #resolves(citekey: string): boolean {
-    return this.#citationIndex.resolveCitekey(citekey) !== null;
+  /** @see ResolveCitekey */
+  #resolveCitekey(citekey: string): string | null {
+    return this.#citationIndex.resolveCitekey(citekey)?.indexedKey ?? null;
   }
 
   #restyleEditors(): void {
@@ -182,9 +200,12 @@ export class CitekeyEditor extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
+    // Read straight through: hover answers from the newest snapshot, and
+    // nothing drawn depends on it.
+    this.#hover = hoverPreferences(settings);
     const pandocCitations = settings["citation.pandoc-citations"];
     const navigationEnabled =
-      pandocCitations && settings["citation.open-pandoc-links"];
+      pandocCitations && settings["citation.open-as-links"];
     const showFormatted =
       pandocCitations && settings["citation.show-formatted"];
     const active = navigationEnabled || showFormatted;
@@ -227,9 +248,9 @@ export class CitekeyEditor extends Service<void> {
   }
 
   /**
-   * The Literature Note a hover preview may show: the one note indexed under
+   * The Literature Note a page preview may show: the one note indexed under
    * the Indexed Key a citekey resolves to. A citekey with zero or several
-   * notes answers with nothing, which keeps every popover path clear of the
+   * notes answers with nothing, which keeps every preview path clear of the
    * create-then-open flow.
    */
   hoverNotePath(citekey: string): string | null {

@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import {
   citationsPageItems,
@@ -80,9 +81,9 @@ describe("in-text citation settings", () => {
       control: { type: "toggle", key: "citation.show-formatted" },
     });
     expect(group.items[1]).toMatchObject({
-      name: "Open Pandoc citations as links",
-      desc: "Open and preview literature notes from Pandoc citations. This setting does not change how citations are shown.",
-      control: { type: "toggle", key: "citation.open-pandoc-links" },
+      name: "Open citations as links",
+      desc: "Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.",
+      control: { type: "toggle", key: "citation.open-as-links" },
     });
     expect(group.items).not.toContainEqual(
       expect.objectContaining({
@@ -93,9 +94,103 @@ describe("in-text citation settings", () => {
     );
     expect(defaults["citation.show-formatted"]).toBe(true);
     expect(Object.entries(defaults)).toContainEqual([
-      "citation.open-pandoc-links",
-      true,
+      "citation.open-as-links",
+      false,
     ]);
+  });
+});
+
+describe("hover settings", () => {
+  const hoverGroup = (settings: Settings) => {
+    const ctx = {
+      settings: { current: settings },
+      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      plugin: { manifest: { version: "test" } },
+    } as unknown as SettingTabContext;
+    const items = citationsPageItems(ctx);
+    const group = items.find(
+      (item) =>
+        "type" in item && item.type === "group" && item.heading === "Hover",
+    );
+    if (!group || !("items" in group) || !group.items) {
+      throw new Error("hover group missing");
+    }
+    return { items, rows: group.items };
+  };
+
+  it("follows In-text citations with the approved action and Require Mod page", () => {
+    const { items, rows } = hoverGroup(defaults);
+
+    expect(
+      items.findIndex((item) => "heading" in item && item.heading === "Hover"),
+    ).toBe(
+      items.findIndex(
+        (item) => "heading" in item && item.heading === "In-text citations",
+      ) + 1,
+    );
+    expect(rows[0]).toMatchObject({
+      name: "Hover action",
+      desc: "What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.",
+      control: {
+        type: "dropdown",
+        key: "citation.hover-action",
+        options: {
+          off: "Off",
+          popover: "Citation popover",
+          "page-preview": "Page preview",
+        },
+      },
+    });
+    expect(rows.slice(1)).toMatchObject([
+      {
+        type: "page",
+        name: "Require modifier key",
+        desc: "Show the popover only while holding Ctrl (Windows) or Command (macOS).",
+        items: [
+          {
+            name: "Source mode",
+            control: {
+              type: "toggle",
+              key: "citation.hover-require-mod-source",
+            },
+          },
+          {
+            name: "Live Preview",
+            control: {
+              type: "toggle",
+              key: "citation.hover-require-mod-live-preview",
+            },
+          },
+          {
+            name: "Reading view",
+            control: {
+              type: "toggle",
+              key: "citation.hover-require-mod-reading",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("ships the locked defaults", () => {
+    expect(defaults["citation.hover-action"]).toBe("popover");
+    expect(defaults["citation.hover-require-mod-source"]).toBe(true);
+    expect(defaults["citation.hover-require-mod-live-preview"]).toBe(false);
+    expect(defaults["citation.hover-require-mod-reading"]).toBe(false);
+  });
+
+  it("shows the Require Mod page under the Citation popover alone", () => {
+    for (const action of ["popover", "off", "page-preview"] as const) {
+      const { rows } = hoverGroup({
+        ...defaults,
+        "citation.hover-action": action,
+      });
+      const page = rows[1];
+      const predicate = page && "visible" in page ? page.visible : undefined;
+      const visible = typeof predicate === "function" ? predicate() : predicate;
+      expect(visible).toBe(action === "popover");
+    }
   });
 });
 

@@ -111,6 +111,20 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
+  it("redraws when the Hover Action changes who answers a hover", async () => {
+    await using harnessed = await harness();
+    const { settings, dispatched } = harnessed;
+
+    settings.update({ "citation.hover-action": "off" });
+    expect(dispatched).toEqual(["note.md", "other.md"]);
+
+    // Which mode holds a hover back for a modifier is read at hover time, so
+    // nothing drawn depends on it.
+    dispatched.length = 0;
+    settings.update({ "citation.hover-require-mod-live-preview": true });
+    expect(dispatched).toEqual([]);
+  });
+
   it("redraws every open editor when the citekey resolution snapshot rebuilds", async () => {
     await using harnessed = await harness();
     const { citationIndex, dispatched } = harnessed;
@@ -123,7 +137,7 @@ describe("WikilinkEditor redraw", () => {
     await using harnessed = await harness();
     const { settings, dispatched } = harnessed;
 
-    settings.update({ "citation.open-pandoc-links": false });
+    settings.update({ "citation.open-as-links": false });
     expect(dispatched).toEqual([]);
   });
 

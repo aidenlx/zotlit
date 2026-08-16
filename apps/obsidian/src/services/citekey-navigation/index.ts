@@ -1,15 +1,35 @@
 export {
+  attachCitationHover,
   attachCitationNavigation,
+  attachClosedCitationGestures,
+  clickWikilinkCitation,
+  hoverWikilinkCitation,
+  markCitationClick,
+  type CitationClickAffordance,
+  type CitationHover,
+  type CitationHoverRequest,
   type CitationHoverTarget,
   type CitationNavigation,
 } from "./citation";
 export {
+  citationHoverIntent,
   CITEKEY_HOVER_SOURCE,
+  hoverEditingMode,
+  hoverPreferences,
+  type CitationHoverGesture,
+  type CitationHoverIntent,
+  type HoverEditingMode,
+  type HoverPreferences,
+} from "./hover";
+export {
+  citationClickIntent,
   citationTarget,
   navigationIntent,
   navigationPane,
+  type CitationClickIntent,
   type CitedWork,
   type EditorMode,
+  type HoveredWork,
   type NavigationAction,
   type NavigationButton,
   type NavigationGesture,
@@ -19,6 +39,7 @@ export {
   type NavigationTarget,
 } from "./intent";
 export {
+  hoverGesture,
   mouseGesture,
   triggerCitekeyHover,
   type CitekeyHoverLink,

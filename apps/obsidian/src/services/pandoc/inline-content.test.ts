@@ -21,12 +21,20 @@ vi.mock("@/lib/log", () => ({
 }));
 
 import type { InlineContentProps } from "./inline-content";
-import { InlineContent, renderInlineContent } from "./inline-content";
+import {
+  InlineContent,
+  noteContent,
+  renderInlineContent,
+} from "./inline-content";
 
 const NO_ATTR: Attr = ["", [], []];
 
 function str(text: string): Inline {
   return { t: "Str", c: text };
+}
+
+function emph(text: string): Inline {
+  return { t: "Emph", c: [str(text)] };
 }
 
 function span(classes: readonly string[], content: Inlines): Inline {
@@ -381,6 +389,74 @@ describe("InlineContent entry serials", () => {
       [...container.querySelectorAll("sup")].map((run) => run.textContent),
     ).toEqual(["1,2", "1,2"]);
     expect(container.textContent).not.toContain("An aside of my own.");
+  });
+});
+
+// The text of a note the surfaces stand a serial in place of, which the
+// Citation Popover shows whole.
+describe("noteContent", () => {
+  it("reads a note's paragraph as the flow it holds", () => {
+    expect(
+      noteContent([
+        str("Zeta (2020)"),
+        {
+          t: "Note",
+          c: [
+            {
+              t: "Para",
+              c: [str("Ann Zeta,"), { t: "Space" }, emph("A study")],
+            },
+          ],
+        },
+      ]),
+    ).toEqual([str("Ann Zeta,"), { t: "Space" }, emph("A study")]);
+  });
+
+  it("starts each further paragraph after a space", () => {
+    expect(
+      noteContent([
+        {
+          t: "Note",
+          c: [
+            { t: "Para", c: [str("Ann Zeta.")] },
+            { t: "Plain", c: [str("Ibid.")] },
+          ],
+        },
+      ]),
+    ).toEqual([str("Ann Zeta."), { t: "Space" }, str("Ibid.")]);
+  });
+
+  it("reaches a note the style wrapped in an element of its own", () => {
+    expect(
+      noteContent([
+        {
+          t: "Superscript",
+          c: [{ t: "Note", c: [{ t: "Para", c: [str("Ann Zeta.")] }] }],
+        },
+      ]),
+    ).toEqual([str("Ann Zeta.")]);
+  });
+
+  it("reads nothing off a citation the style wrote inline", () => {
+    expect(noteContent([str("(Zeta 2020)")])).toEqual([]);
+  });
+
+  it("drops a note block that reads as no inline flow, and records it", () => {
+    expect(
+      noteContent([
+        {
+          t: "Note",
+          c: [{ t: "CodeBlock", c: [NO_ATTR, "cite"] }],
+        },
+      ]),
+    ).toEqual([]);
+    expect(logRecords).toEqual([
+      {
+        level: "debug",
+        message: "Dropped a note block that reads as no inline flow",
+        fields: { block: "CodeBlock" },
+      },
+    ]);
   });
 });
 

@@ -1,11 +1,15 @@
 // @vitest-environment happy-dom
-import { MarkdownView } from "obsidian";
+import { Keymap, MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
+import type {
+  CitationHoverRequest,
+  NavigationPane,
+} from "@/services/citekey-navigation";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -33,6 +37,12 @@ interface Harness extends AsyncDisposable {
   renderSection: (linktext: string, alias?: string) => Promise<HTMLElement>;
   /** Runs the registered post-processor over an arbitrary rendered section. */
   renderHtml: (html: string) => Promise<HTMLElement>;
+  /** Every Citation Popover the surface asked for. */
+  requests: CitationHoverRequest[];
+  /** Every Literature Note the popover's own open action reached for. */
+  opened: [citekey: string, pane: NavigationPane][];
+  /** Every gesture Obsidian's own delegated listeners would have answered. */
+  native: MouseEvent[];
   /** Starts a post-processor pass without waiting for citation text. */
   beginRender: (linktext: string) => {
     root: HTMLElement;
@@ -63,13 +73,22 @@ async function harness({
   const citationIndex = new CitationIndexStub(
     citekeys ?? { [WANG_KEY]: "wang2020" },
   );
+  const requests: CitationHoverRequest[] = [];
+  const opened: [citekey: string, pane: NavigationPane][] = [];
+  const native: MouseEvent[] = [];
   let rerenders = 0;
   let process: MarkdownPostProcessor | undefined;
+  // The reading view a rendered section sits in, which Obsidian hangs both the
+  // popover and its own delegated hover and click off.
+  const containerEl = document.createElement("div");
+  containerEl.addEventListener("mouseover", (event) => native.push(event));
+  containerEl.addEventListener("click", (event) => native.push(event));
   // Obsidian places a section of this stubbed document nowhere, which is the
   // degraded tier: every Citation shows its source's first-occurrence text.
   const ctx = { sourcePath, getSectionInfo: () => null } as never;
   const view = Object.assign(Object.create(MarkdownView.prototype) as object, {
     previewMode: { rerender: () => rerenders++ },
+    containerEl,
   });
   const service = new WikilinkReading({
     app: {
@@ -92,6 +111,13 @@ async function harness({
     },
     noteIndex,
     citationText,
+    citekeyEditor: {
+      openCitekey: (citekey: string, pane: NavigationPane) =>
+        opened.push([citekey, pane]),
+    },
+    citationPopover: {
+      show: (request: CitationHoverRequest) => requests.push(request),
+    },
     citationIndex,
     settings,
   } as never);
@@ -101,18 +127,25 @@ async function harness({
     noteIndex,
     citationText,
     citationIndex,
+    requests,
+    opened,
+    native,
     render: async (linktext) => {
-      const root = section(`<p>${internalLink(linktext)}</p>`);
+      const root = containerEl.appendChild(
+        section(`<p>${internalLink(linktext)}</p>`),
+      );
       await process?.(root, ctx);
       return root.textContent ?? "";
     },
     renderSection: async (linktext, alias) => {
-      const root = section(`<p>${internalLink(linktext, alias)}</p>`);
+      const root = containerEl.appendChild(
+        section(`<p>${internalLink(linktext, alias)}</p>`),
+      );
       await process?.(root, ctx);
       return root;
     },
     renderHtml: async (html) => {
-      const root = section(html);
+      const root = containerEl.appendChild(section(html));
       await process?.(root, ctx);
       return root;
     },
@@ -312,6 +345,189 @@ describe("WikilinkReading rendering", () => {
   });
 });
 
+describe("WikilinkReading hover", () => {
+  /** One rendered Citation of a document whose text the style formatted. */
+  const rendering = (overrides: Parameters<typeof harness>[0] = {}) =>
+    harness({
+      "citation.wikilink-citations": true,
+      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      ...overrides,
+    });
+
+  /** Hovers the rendered Citation, as the pointer entering it does. */
+  const hover = (root: HTMLElement) => {
+    root
+      .querySelector("a")
+      ?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  };
+
+  it("shows the Citation Popover of the work a rendered Citation names", async () => {
+    await using harnessed = await rendering();
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    hover(root);
+
+    expect(harnessed.requests).toHaveLength(1);
+    expect(harnessed.requests[0]).toMatchObject({
+      targetEl: root.querySelector("a"),
+      sourcePath: "note.md",
+      works: [{ citekey: "wang2020", indexedKey: WANG_KEY }],
+    });
+  });
+
+  it("keeps Obsidian's own hover out of a Citation the popover answers", async () => {
+    await using harnessed = await rendering();
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    hover(root);
+
+    expect(harnessed.native).toEqual([]);
+  });
+
+  it("leaves the hover to Obsidian under Page preview and Off", async () => {
+    for (const action of ["page-preview", "off"] as const) {
+      await using harnessed = await rendering({
+        "citation.hover-action": action,
+      });
+      const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+      hover(root);
+
+      expect(harnessed.requests).toEqual([]);
+      expect(harnessed.native).toHaveLength(1);
+    }
+  });
+
+  it("holds the hover back until Mod is held where Reading view asks for it", async () => {
+    await using harnessed = await rendering({
+      "citation.hover-require-mod-reading": true,
+    });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    hover(root);
+    expect(harnessed.requests).toEqual([]);
+
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    hover(root);
+    expect(harnessed.requests).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+
+  it("keeps Obsidian's own hover out while Require Mod holds the popover back", async () => {
+    // Popover mode owns the gesture whole, so a bare hover it answers with
+    // nothing shows nothing — never the page preview instead.
+    await using harnessed = await rendering({
+      "citation.hover-require-mod-reading": true,
+    });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    hover(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.native).toEqual([]);
+  });
+
+  it("leaves a link it rendered no Citation for hovering as Obsidian's own", async () => {
+    await using harnessed = await rendering({ formatted: {} });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    hover(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.native).toHaveLength(1);
+  });
+});
+
+describe("WikilinkReading click", () => {
+  /** One rendered Citation of a document whose text the style formatted. */
+  const rendering = (overrides: Parameters<typeof harness>[0] = {}) =>
+    harness({
+      "citation.wikilink-citations": true,
+      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      ...overrides,
+    });
+
+  /** Clicks the rendered Citation, and answers with the event it sent. */
+  const click = (root: HTMLElement, init: MouseEventInit = {}) => {
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    root.querySelector("a")?.dispatchEvent(event);
+    return event;
+  };
+
+  it("swallows a plain click, and stops there", async () => {
+    await using harnessed = await rendering();
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    const event = click(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.opened).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(harnessed.native).toEqual([]);
+    // The anchor says as much, which is what neutralizes Obsidian's own link
+    // cursor and hover colour on it.
+    expect(root.querySelector("a")?.dataset.ztClick).toBe("none");
+  });
+
+  it("swallows a plain click under Page preview and Off", async () => {
+    for (const action of ["page-preview", "off"] as const) {
+      await using harnessed = await rendering({
+        "citation.hover-action": action,
+      });
+      const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+      const event = click(root);
+
+      expect(harnessed.requests).toEqual([]);
+      expect(event.defaultPrevented).toBe(true);
+      expect(harnessed.native).toEqual([]);
+    }
+  });
+
+  it("leaves a Mod-click to Obsidian, which opens the note the link names", async () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    await using harnessed = await rendering();
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    const event = click(root, { ctrlKey: true });
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.opened).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(harnessed.native).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+
+  it("leaves every click to Obsidian while Citations open as links", async () => {
+    await using harnessed = await rendering({
+      "citation.open-as-links": true,
+    });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    const event = click(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(harnessed.native).toHaveLength(1);
+    // Obsidian's own link styling stands untouched.
+    expect(root.querySelector("a")?.dataset.ztClick).toBeUndefined();
+  });
+
+  it("leaves a link it rendered no Citation for clicking as Obsidian's own", async () => {
+    await using harnessed = await rendering({ formatted: {} });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    click(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.native).toHaveLength(1);
+  });
+});
+
 describe("WikilinkReading rerender", () => {
   it("renders every reading view again when a Literature Note changes", async () => {
     await using harnessed = await harness();
@@ -335,6 +551,24 @@ describe("WikilinkReading rerender", () => {
 
     settings.update({ "citation.show-formatted": false });
     expect(rerenders()).toBe(2);
+  });
+
+  it("renders again when a setting changes who answers a gesture", async () => {
+    await using harnessed = await harness();
+    const { settings, rerenders } = harnessed;
+
+    settings.update({ "citation.hover-action": "off" });
+    expect(rerenders()).toBe(1);
+
+    settings.update({ "citation.open-as-links": true });
+    expect(rerenders()).toBe(2);
+    settings.update({ "citation.open-as-links": false });
+    expect(rerenders()).toBe(3);
+
+    // Which mode holds a hover back for a modifier is read at hover time, so
+    // nothing rendered depends on it.
+    settings.update({ "citation.hover-require-mod-reading": true });
+    expect(rerenders()).toBe(3);
   });
 
   it("renders every reading view again when the citekey resolution snapshot rebuilds", async () => {
@@ -362,7 +596,7 @@ describe("WikilinkReading rerender", () => {
   it("leaves the reading views alone when an unrelated setting changes", async () => {
     await using harnessed = await harness();
 
-    harnessed.settings.update({ "citation.open-pandoc-links": false });
+    harnessed.settings.update({ "citation.open-as-links": false });
     expect(harnessed.rerenders()).toBe(0);
   });
 

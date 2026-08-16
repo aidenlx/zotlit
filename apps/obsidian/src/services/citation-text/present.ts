@@ -141,19 +141,26 @@ export function unresolvedKeys(
 /**
  * The works one rendered citation names, in the order it names them.
  *
- * A citation that writes the same key twice names one work, so a menu built
- * from these lists each work once.
+ * Each work carries the Item its key names, which is the identity every
+ * consumer joins it to the document's entries by. A citation that writes the
+ * same key twice names one work, so a menu built from these lists each work
+ * once.
+ *
+ * @param citations the citations of the document this one is written in, which
+ *   is what each literal key is read against.
  */
 export function citedWorks(
   { source, keys }: CitationSource,
-  summaryOf: SummaryOf,
+  citations: DocumentCitations,
 ): CitedWork[] {
+  const summaryOf = literalSummaryOf(citations);
   const works = new Map<string, CitedWork>();
   for (const key of keys) {
     const { citekey } = key;
     if (works.has(citekey)) continue;
     works.set(citekey, {
       citekey,
+      indexedKey: citations.literalWorks.get(citekey),
       label: summaryOf(citekey) ?? source.slice(key.start, key.end),
     });
   }

@@ -14,7 +14,7 @@ describe("CitekeyEditor settings lifecycle", () => {
   it("registers the extension while formatting or navigation is enabled", async () => {
     const settings = new SettingsStub({
       "citation.show-formatted": false,
-      "citation.open-pandoc-links": false,
+      "citation.open-as-links": false,
     });
     let registered: Extension[] = [];
     let reconfigures = 0;
@@ -44,7 +44,7 @@ describe("CitekeyEditor settings lifecycle", () => {
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(false);
 
-    settings.update({ "citation.open-pandoc-links": true });
+    settings.update({ "citation.open-as-links": true });
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(true);
     expect(reconfigures).toBe(1);
@@ -52,7 +52,7 @@ describe("CitekeyEditor settings lifecycle", () => {
     settings.update({ "citation.show-formatted": false });
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(true);
-    settings.update({ "citation.open-pandoc-links": false });
+    settings.update({ "citation.open-as-links": false });
     expect(registered).toEqual([]);
     expect(service.navigationEnabled).toBe(false);
 
@@ -63,7 +63,7 @@ describe("CitekeyEditor settings lifecycle", () => {
   it("stays off while Pandoc citations are off, whatever the editor toggle says", async () => {
     const settings = new SettingsStub({
       "citation.pandoc-citations": false,
-      "citation.open-pandoc-links": true,
+      "citation.open-as-links": true,
     });
     let registered: Extension[] = [];
     await using service = new CitekeyEditor({
@@ -89,8 +89,8 @@ describe("CitekeyEditor settings lifecycle", () => {
   });
 });
 
-describe("CitekeyEditor hover preview", () => {
-  it("registers one hover-link source that previews on bare hover", async () => {
+describe("CitekeyEditor hover source", () => {
+  it("registers one Mod-gated hover-link source for every citekey surface", async () => {
     const sources: Record<string, HoverLinkSource> = {};
     await using service = new CitekeyEditor({
       app: { workspace: { updateOptions: () => undefined } },
@@ -108,35 +108,10 @@ describe("CitekeyEditor hover preview", () => {
     await service.ready;
 
     expect(Object.keys(sources)).toEqual([CITEKEY_HOVER_SOURCE]);
-    expect(sources[CITEKEY_HOVER_SOURCE]?.defaultMod).toBe(false);
+    // Mod is the platform convention, and this row is the Page preview
+    // plugin's own gate on the Page preview Hover action.
+    expect(sources[CITEKEY_HOVER_SOURCE]?.defaultMod).toBe(true);
     expect(sources[CITEKEY_HOVER_SOURCE]?.display).toBeTruthy();
-  });
-
-  it("answers with a note path only while exactly one literature note matches", async () => {
-    const citationIndex = new CitationIndexStub({
-      doe2024: { itemID: 1, indexedKey: "ABCD2024" },
-      smith2020: { itemID: 2, indexedKey: "ABCD2020" },
-    });
-    const notes: Record<string, { path: string }[]> = {
-      ABCD2024: [{ path: "lit/doe2024.md" }],
-      ABCD2020: [{ path: "lit/a.md" }, { path: "lit/b.md" }],
-    };
-    await using service = new CitekeyEditor({
-      app: { workspace: { updateOptions: () => undefined } },
-      plugin: {
-        registerEditorExtension: () => undefined,
-        registerHoverLinkSource: () => undefined,
-      },
-      noteIndex: new NoteIndexStub(notes),
-      citationText: new CitationTextStub(),
-      citationIndex,
-      settings: new SettingsStub(),
-    } as never);
-    await service.ready;
-
-    expect(service.hoverNotePath("doe2024")).toBe("lit/doe2024.md");
-    expect(service.hoverNotePath("smith2020")).toBeNull();
-    expect(service.hoverNotePath("nobody1999")).toBeNull();
   });
 });
 

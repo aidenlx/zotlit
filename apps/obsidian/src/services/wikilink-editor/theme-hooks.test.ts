@@ -79,7 +79,9 @@ import { editorInfoField } from "obsidian";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
+import { hoverPreferences } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import { defaults } from "@/services/settings/schema";
 
 import { wikilinkEditorExtension } from "./extension";
 
@@ -130,6 +132,13 @@ function viewOf(
           enabled: () => enabled,
           citationText: () => (formatted ? held : null),
           requestCitationText: () => undefined,
+          open: () => undefined,
+          showPopover: () => undefined,
+          hoverPreferences: () => hoverPreferences(defaults),
+          // Hover and click are this surface's own suite; here the Citation is
+          // only drawn.
+          popoverHover: () => false,
+          clickIntercepted: () => false,
         }),
       ],
     }),

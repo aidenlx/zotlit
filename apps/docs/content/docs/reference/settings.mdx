@@ -52,16 +52,39 @@ Both settings can be off. ZotLit's internal Citation Index remains active, and *
 
 ### In-text citations
 
-| Label                              | Key                          | Control | Default | Dependency                                                                              | Storage |
-| ---------------------------------- | ---------------------------- | ------- | ------- | --------------------------------------------------------------------------------------- | ------- |
-| **Show formatted citations**       | `citation.show-formatted`    | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text             | Synced  |
-| **Open Pandoc citations as links** | `citation.open-pandoc-links` | Toggle  | On      | **Pandoc citations** is on and the cursor or pointer is on a recognized Pandoc citation | Synced  |
+| Label                        | Key                       | Control | Default | Dependency                                                                  | Storage |
+| ---------------------------- | ------------------------- | ------- | ------- | --------------------------------------------------------------------------- | ------- |
+| **Show formatted citations** | `citation.show-formatted` | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text | Synced  |
+| **Open citations as links**  | `citation.open-as-links`  | Toggle  | Off     | Active citation source                                                      | Synced  |
 
 **Show formatted citations:** Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.
 
-**Open Pandoc citations as links:** Open and preview literature notes from Pandoc citations. This setting does not change how citations are shown.
+**Open citations as links:** Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.
 
-The navigation setting also controls the four open-under-cursor commands. Literature Note wikilinks retain Obsidian's navigation.
+The navigation setting also controls the four open-under-cursor commands. **Hover action** owns hover on its own. While this setting is off, Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
+
+### Hover
+
+| Label                    | Key                     | Control                                        | Default          | Dependency                          | Storage |
+| ------------------------ | ----------------------- | ---------------------------------------------- | ---------------- | ----------------------------------- | ------- |
+| **Hover action**         | `citation.hover-action` | Dropdown (Off, Citation popover, Page preview) | Citation popover | Active citation source              | Synced  |
+| **Require modifier key** | (sub-page)              | Sub-page listing one toggle per editing mode   | —                | **Hover action** = Citation popover | Synced  |
+
+**Hover action:** What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.
+
+One hover shows one result. **Citation popover** shows the bibliography entry of every cited item. **Page preview** shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. **Off** adds no ZotLit hover result.
+
+#### Require modifier key
+
+Show the popover only while holding Ctrl (Windows) or Command (macOS). The sub-page appears only while **Hover action** is Citation popover, and lists one toggle per editing mode, like the built-in Page preview plugin lists one toggle per hover source.
+
+| Label            | Key                                       | Control | Default |
+| ---------------- | ----------------------------------------- | ------- | ------- |
+| **Source mode**  | `citation.hover-require-mod-source`       | Toggle  | On      |
+| **Live Preview** | `citation.hover-require-mod-live-preview` | Toggle  | Off     |
+| **Reading view** | `citation.hover-require-mod-reading`      | Toggle  | Off     |
+
+Each toggle gates the popover in its own editing mode, and the modifier is read when the pointer arrives.
 
 ### Formatting
 

@@ -14,6 +14,8 @@ import type {
   Debouncer,
   EditorSuggestContext,
   EventRef,
+  HoverParent,
+  HoverPopover as ObsidianHoverPopover,
   IconName,
   WorkspaceLeaf,
   Instruction,
@@ -92,6 +94,81 @@ export class MarkdownView {
   previewMode = {
     rerender(_full?: boolean): void {},
   };
+}
+
+/**
+ * Stand-in for Obsidian's own hover popover: the element a plugin fills, the
+ * unload hook its content is torn down through, and the placement `position()`
+ * records as an inline style. Placement is inert here — a test that asserts a
+ * placement writes the style itself, the way Obsidian's positioning engine does.
+ *
+ * The opening sequence follows the runtime one — the constructor arms the wait
+ * timer, and the timer opens the popover — so a subclass meets the lifecycle it
+ * inherits rather than a stub of it.
+ */
+export class HoverPopover {
+  readonly hoverEl: HTMLElement;
+  readonly targetEl: HTMLElement | null;
+  readonly waitTime: number;
+  hidden = false;
+  readonly #parent: HoverParent;
+  readonly #unload: (() => void)[] = [];
+  readonly #timer: ReturnType<typeof setTimeout>;
+
+  constructor(
+    parent: HoverParent,
+    targetEl: HTMLElement | null,
+    waitTime = 300,
+  ) {
+    this.hoverEl = document.createElement("div");
+    this.hoverEl.className = "popover hover-popover";
+    this.targetEl = targetEl;
+    this.waitTime = waitTime;
+    this.#parent = parent;
+    this.#timer = setTimeout(() => {
+      this.show();
+    }, waitTime);
+  }
+
+  register(cb: () => void): void {
+    this.#unload.push(cb);
+  }
+
+  show(): void {
+    this.position();
+    this.onShow();
+  }
+
+  /** This popover as the parent holds it, which the vendored type names. */
+  get #self(): ObsidianHoverPopover {
+    return this as unknown as ObsidianHoverPopover;
+  }
+
+  onShow(): void {
+    this.#parent.hoverPopover = this.#self;
+  }
+
+  position(): void {
+    if (this.hoverEl.parentElement !== document.body) {
+      document.body.appendChild(this.hoverEl);
+    }
+  }
+
+  watchResize(_el: HTMLElement): void {}
+
+  hide(): void {
+    clearTimeout(this.#timer);
+    this.hidden = true;
+    this.hoverEl.remove();
+    this.onHide();
+    for (const cb of this.#unload.splice(0)) cb();
+  }
+
+  onHide(): void {
+    if (this.#parent.hoverPopover === this.#self) {
+      this.#parent.hoverPopover = null;
+    }
+  }
 }
 
 export class TAbstractFile {
@@ -435,6 +512,9 @@ export class Menu {
 
   readonly items: MenuItem[] = [];
 
+  /** Where `showAtPosition` was asked to open, or `null` while it was not. */
+  position: { x: number; y: number } | null = null;
+
   constructor() {
     Menu.instances.push(this);
   }
@@ -459,7 +539,8 @@ export class Menu {
     return this;
   }
 
-  showAtPosition(_position: { x: number; y: number }): this {
+  showAtPosition(position: { x: number; y: number }): this {
+    this.position = position;
     return this;
   }
 }

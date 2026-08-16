@@ -1,7 +1,9 @@
 // The CodeMirror side of the citekey editor treatment: citekey marks and
 // citation widgets over the visible ranges, the lookup that answers which
 // citekey covers a document position, the click that opens the marked key's
-// Literature Note, and the hover that previews it.
+// Literature Note, and the hover that shows its entry. Wherever a Citation does
+// not open as a link, a plain click on its widget stays the editor's own and
+// places the caret in the source the widget hides.
 
 import {
   lineClassNodeProp,
@@ -36,13 +38,20 @@ import type {
 } from "@/services/citation-text/present";
 import {
   attachCitationNavigation,
+  attachClosedCitationGestures,
+  citationHoverIntent,
+  hoverGesture,
+  markCitationClick,
   mouseGesture,
   navigationIntent,
   triggerCitekeyHover,
 } from "@/services/citekey-navigation";
 import type {
+  CitationHoverRequest,
+  CitationNavigation,
   CitedWork,
   EditorMode,
+  HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
 
@@ -64,23 +73,30 @@ const logger = getLogger("citekey-editor");
 export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
 
 /**
- * The resolution state hover reads.
+ * The Item a citekey names — read synchronously from the Citation Index's
+ * resolution snapshot.
+ *
+ * @returns the Item's Indexed Key, which is the identity a work is joined to
+ *   its entry by, or null for a key naming no live Zotero Item.
+ */
+export type ResolveCitekey = (citekey: string) => string | null;
+
+/**
+ * The resolution state the page preview branch reads.
  *
  * @returns the vault path of the one Literature Note `citekey` names, or null
  *   when zero or several name it.
  */
 export type ResolveHoverNote = (citekey: string) => string | null;
 
-/**
- * Whether a citekey names a live Zotero Item — read synchronously from the
- * Citation Index's resolution snapshot.
- */
-export type ResolveCitekey = (citekey: string) => boolean;
-
 export interface CitekeyEditorHandlers {
   open: OpenCitekey;
+  /** Show the Citation Popover of one hovered citation. */
+  showPopover: (request: CitationHoverRequest) => void;
+  /** What hover answers with, read once per hover. */
+  hoverPreferences: () => HoverPreferences;
   hoverNotePath: ResolveHoverNote;
-  resolves: ResolveCitekey;
+  resolveCitekey: ResolveCitekey;
   /** Whether literal Citations expose ZotLit navigation. */
   navigationEnabled: () => boolean;
   /** Whether Live Preview replaces complete Citations with formatted text. */
@@ -110,12 +126,40 @@ export const citekeyDecorationsChanged = StateEffect.define<void>();
  */
 const MARK_CLASS = `cm-underline ${themeHook.citationKey}`;
 
-const CITEKEY_MARK = Decoration.mark({ class: MARK_CLASS });
-
 /** A citekey with no indexed Literature Note: a broken reference. */
-const CITEKEY_MARK_UNRESOLVED = Decoration.mark({
-  class: `${MARK_CLASS} ${themeHook.citationKeyUnresolved}`,
-});
+const UNRESOLVED_MARK_CLASS = `${MARK_CLASS} ${themeHook.citationKeyUnresolved}`;
+
+/**
+ * What a plain click on a marked citekey reaches wherever Citations stay closed
+ * as links: the caret, in both editor modes. The mark says so the same way a
+ * rendered Citation does, which is what its cursor and its hover colour are
+ * drawn from.
+ *
+ * @see markCitationClick
+ */
+const EDIT_ATTRIBUTES = { "data-zt-click": "edit" };
+
+/**
+ * The marks of one resolution state, in the two states Citekey Navigation
+ * leaves a citekey in. A citekey that opens on click carries the link
+ * affordance whole and states nothing further.
+ */
+const CITEKEY_MARKS = {
+  open: {
+    resolved: Decoration.mark({ class: MARK_CLASS }),
+    unresolved: Decoration.mark({ class: UNRESOLVED_MARK_CLASS }),
+  },
+  edit: {
+    resolved: Decoration.mark({
+      class: MARK_CLASS,
+      attributes: EDIT_ATTRIBUTES,
+    }),
+    unresolved: Decoration.mark({
+      class: UNRESOLVED_MARK_CLASS,
+      attributes: EDIT_ATTRIBUTES,
+    }),
+  },
+} as const;
 
 /** What the decoration pass produced, kept apart so the widgets can be atomic. */
 interface CitekeyDecorations {
@@ -232,50 +276,77 @@ export function citekeyEditorExtension(
       }
 
       /**
-       * Asks the Page preview core plugin for the Literature Note of the
-       * citekey under the pointer. Obsidian owns the Ctrl-gating and the
-       * popover itself; this shell only names the source and the target.
+       * Shows what the Hover Action asks of the marked citekey under the
+       * pointer — the surface a Citation keeps wherever its source text stays
+       * visible. The Hover Action alone owns this result, so it answers
+       * wherever the treatment marks a citekey.
        */
       hoverAt(event: MouseEvent, view: EditorView): void {
-        if (!handlers.navigationEnabled()) return;
+        // A widget hovers on its own element, and its formatted text carries
+        // the citekey hook too, so this delegated handler leaves it alone.
+        if (citationElementAt(event) !== null) return;
         const targetEl = citekeyElementAt(event);
         if (targetEl === null) return;
 
         const citekey = citekeyAtEvent(view, event);
         if (citekey === null) return;
 
-        // A key naming zero or several notes reaches the intent module as an
-        // unavailable target, which answers with no hover — so no popover can
-        // reach the create-then-open flow.
-        const notePath = handlers.hoverNotePath(citekey);
-        const intent = navigationIntent(
-          mouseGesture(event, "hover", {
-            surface: "editor",
-            editorMode: editorModeOf(view),
-          }),
-          notePath === null
-            ? { resolution: "unavailable" }
-            : { resolution: "direct", citekey },
+        const editorMode = editorModeOf(view);
+        const intent = citationHoverIntent(
+          hoverGesture(event, { surface: "editor", editorMode }),
+          handlers.hoverPreferences(),
+          [citekey],
         );
-        // The second test repeats the target's own input so TypeScript sees
-        // the path a `direct` resolution always carries.
-        if (intent.kind !== "hover" || notePath === null) {
-          logger.trace("Citekey hover suppressed", { citekey });
+        if (intent.kind === "nothing") {
+          logger.trace("Citekey hover suppressed", {
+            citekey,
+            editorMode,
+            reason: intent.reason,
+          });
           return;
         }
 
         const info = view.state.field(editorInfoField, false);
         if (!info) return;
-        logger.trace("Citekey hover previews note", {
-          citekey,
-          path: notePath,
-        });
-        triggerCitekeyHover(info.app.workspace, {
+
+        if (intent.kind === "page-preview") {
+          // A key naming zero or several notes previews nothing, so no popover
+          // path can reach the create-then-open flow.
+          const notePath = handlers.hoverNotePath(intent.citekey);
+          if (notePath === null) {
+            logger.trace("Citekey hover suppressed", {
+              citekey,
+              editorMode,
+              reason: "no-note",
+            });
+            return;
+          }
+          logger.trace("Citekey hover previews note", {
+            citekey,
+            editorMode,
+            path: notePath,
+          });
+          triggerCitekeyHover(info.app.workspace, {
+            event,
+            hoverParent: info,
+            targetEl,
+            linktext: notePath,
+            sourcePath: info.file?.path ?? "",
+          });
+          return;
+        }
+
+        logger.trace("Citekey shows its entry", { citekey, editorMode });
+        handlers.showPopover({
           event,
           hoverParent: info,
           targetEl,
-          linktext: notePath,
           sourcePath: info.file?.path ?? "",
+          works: intent.citekeys.map((key) => ({
+            citekey: key,
+            indexedKey: handlers.resolveCitekey(key) ?? undefined,
+          })),
+          open: handlers.open,
         });
       }
 
@@ -368,6 +439,7 @@ class CitationWidget extends WidgetType {
     themeClasses: readonly string[];
     /** Whether the Citation is written inside a footnote. */
     footnote: boolean;
+    /** Whether the Citation opens on click, which Citekey Navigation owns. */
     navigable: boolean;
   }) {
     super();
@@ -396,24 +468,34 @@ class CitationWidget extends WidgetType {
       ...this.#themeClasses,
       ...(this.#footnote ? [FOOTNOTE_WIDGET_CLASS] : []),
     ]);
-    if (this.#navigable) {
-      attachCitationNavigation(element, {
-        works: this.#works,
-        where: { surface: "editor", editorMode: "live-preview" },
-        open: this.#handlers.open,
-        hoverNotePath: this.#handlers.hoverNotePath,
-        hoverTarget: () => {
-          const info = view.state.field(editorInfoField, false);
-          return info
-            ? {
-                workspace: info.app.workspace,
-                hoverParent: info,
-                sourcePath: this.#sourcePath,
-              }
-            : null;
-        },
-      });
-    }
+    const navigation: CitationNavigation = {
+      works: this.#works,
+      // What this widget shows in the citation's place, which is where a
+      // note-class style's own note text is read from.
+      formatted: this.#content.text.content,
+      where: { surface: "editor", editorMode: "live-preview" },
+      open: this.#handlers.open,
+      showPopover: this.#handlers.showPopover,
+      hoverPreferences: this.#handlers.hoverPreferences,
+      hoverNotePath: this.#handlers.hoverNotePath,
+      hoverTarget: () => {
+        const info = view.state.field(editorInfoField, false);
+        return info
+          ? {
+              workspace: info.app.workspace,
+              hoverParent: info,
+              sourcePath: this.#sourcePath,
+            }
+          : null;
+      },
+    };
+    // The Hover Action owns hover on every rendered citation. A plain click is
+    // Citekey Navigation's where it opens the work the citation names, and the
+    // editor's own where it does not: the caret lands in the source this widget
+    // stands in place of, and the Citation is written again as raw text.
+    markCitationClick(element, this.#navigable ? "open" : "edit");
+    if (this.#navigable) attachCitationNavigation(element, navigation);
+    else attachClosedCitationGestures(element, navigation);
     return element;
   }
 
@@ -440,6 +522,7 @@ function buildDecorations(
   const all = new RangeSetBuilder<Decoration>();
   const widgets = new RangeSetBuilder<Decoration>();
   const { state } = view;
+  const marksOf = CITEKEY_MARKS[handlers.navigationEnabled() ? "open" : "edit"];
   // A blurred editor conceals everything, the way Obsidian's own live preview
   // reads its selection.
   const selection = view.hasFocus ? state.selection.ranges : [];
@@ -482,13 +565,13 @@ function buildDecorations(
 
       const marks = resolveCitekeyMarks(
         marksOutside(citekeyMarks(line.text, isRuledOut), replaced),
-        handlers.resolves,
+        (citekey) => handlers.resolveCitekey(citekey) !== null,
       );
       for (const mark of marks) {
         placed.push({
           from: line.from + mark.start,
           to: line.from + mark.end,
-          decoration: mark.resolved ? CITEKEY_MARK : CITEKEY_MARK_UNRESOLVED,
+          decoration: mark.resolved ? marksOf.resolved : marksOf.unresolved,
           replaces: false,
         });
       }
@@ -543,7 +626,7 @@ function citationWidget(options: {
   return new CitationWidget({
     source: citation.source,
     content,
-    works: citedWorks(citation, summaryOf),
+    works: citedWorks(citation, citations),
     sourcePath: path,
     handlers,
     themeClasses,

@@ -10,7 +10,9 @@ import { getLogger } from "@/lib/log";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -29,6 +31,10 @@ export interface WikilinkEditorDeps {
   noteIndex: Pick<NoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "load" | "on">;
+  /** The open-or-create flow every citation surface shares. */
+  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  /** What a hovered citation shows. */
+  citationPopover: CitationPopover;
   settings: SettingsService;
   citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
 }
@@ -37,7 +43,12 @@ export interface WikilinkEditorDeps {
  * The Wikilink Editor Treatment: in Live Preview a Literature Note wikilink —
  * and a whole Citation Run of them — shows the citation a style formatted.
  * Native wikilink presentation stays in place until that render lands, while
- * click, hover, drag, and conceal interaction stay Obsidian's.
+ * drag and conceal interaction stay Obsidian's. Hover follows the Hover Action:
+ * the Citation Popover replaces Obsidian's own hover under the popover, and
+ * every other action leaves the link hovering as the link it is. The click
+ * follows the open-as-links choice: wherever Citations stay closed as links a
+ * plain click is taken from Obsidian and places the caret in the link's own
+ * source text, and every other click stays Obsidian's.
  *
  * The extension is registered as a mutable array, the mechanism
  * `registerEditorExtension` documents, and stays installed for the plugin's
@@ -49,6 +60,8 @@ export class WikilinkEditor extends Service<void> {
   readonly #plugin;
   readonly #noteIndex;
   readonly #citationText;
+  readonly #citekeyEditor;
+  readonly #citationPopover;
   readonly #settings;
   readonly #citationIndex;
   readonly #extension: Extension;
@@ -67,6 +80,8 @@ export class WikilinkEditor extends Service<void> {
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#citationText = deps.citationText;
+    this.#citekeyEditor = deps.citekeyEditor;
+    this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.#citationIndex = deps.citationIndex;
     this.#extension = wikilinkEditorExtension({
@@ -79,6 +94,13 @@ export class WikilinkEditor extends Service<void> {
         // formatted citations in.
         void this.#citationText.load(file);
       },
+      open: (citekey, pane) => {
+        void this.#citekeyEditor.openCitekey(citekey, pane);
+      },
+      showPopover: (request) => this.#citationPopover.show(request),
+      hoverPreferences: () => this.#display.hover,
+      popoverHover: () => this.#display.popoverHover,
+      clickIntercepted: () => this.#display.clickIntercepted,
     });
     this.ready = this.#load();
   }

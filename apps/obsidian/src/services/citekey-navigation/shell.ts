@@ -1,11 +1,12 @@
 // What every citekey interaction shell shares with Obsidian: one mouse event
-// becomes one gesture, and one hovered note becomes the `hover-link` the Page
-// preview core plugin answers.
+// becomes one gesture, click and hover alike, and one hovered note becomes the
+// `hover-link` the Page preview core plugin answers.
 
 import { Keymap } from "obsidian";
 import type { HoverParent, Workspace } from "obsidian";
 
-import { CITEKEY_HOVER_SOURCE } from "./intent";
+import { CITEKEY_HOVER_SOURCE, hoverEditingMode } from "./hover";
+import type { CitationHoverGesture } from "./hover";
 import type { NavigationAction, NavigationGesture } from "./intent";
 
 /** The surface a gesture happened on, and the editor's mode where it has one. */
@@ -34,6 +35,21 @@ export function mouseGesture(
     surface: where.surface,
     editorMode: where.editorMode,
     pane: button === "middle" ? "tab" : Keymap.isModEvent(event),
+  };
+}
+
+/**
+ * The hover one mouse event carries. The modifier is read here and once only,
+ * so a Mod pressed after the pointer settled changes nothing.
+ */
+export function hoverGesture(
+  event: MouseEvent,
+  where: GestureSurface,
+): CitationHoverGesture {
+  return {
+    pointerType: (event as Partial<PointerEvent>).pointerType,
+    mod: Keymap.isModifier(event, "Mod"),
+    mode: hoverEditingMode(where),
   };
 }
 

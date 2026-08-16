@@ -6,6 +6,7 @@ import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 import { getLogger } from "@/lib/log";
 import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+import type { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
   citationElement,
@@ -16,8 +17,19 @@ import {
 } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import { attachCitationNavigation } from "@/services/citekey-navigation";
+import {
+  attachCitationHover,
+  attachCitationNavigation,
+  attachClosedCitationGestures,
+  hoverPreferences,
+  markCitationClick,
+} from "@/services/citekey-navigation";
+import type {
+  CitationNavigation,
+  HoverPreferences,
+} from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
+import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -31,8 +43,10 @@ export interface CitekeyReadingDeps {
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "load" | "on" | "peek">;
-  /** The open-or-create flow and the hover resolution every citekey surface shares. */
+  /** The open-or-create flow every citekey surface shares, and what hover previews. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
+  /** What a hovered citation shows. */
+  citationPopover: CitationPopover;
   settings: Pick<SettingsService, "ready" | "subscribe">;
 }
 
@@ -45,10 +59,13 @@ export interface CitekeyReadingDeps {
  * on the References Style and go stale together. With no engine installed the
  * citation keeps its native source text.
  *
- * Navigation is independent: when enabled, one work opens on click, several
- * works open a menu at the cursor, and hover previews the Literature Note of a
- * single resolved key. A citation none of whose keys reaches a Zotero Item
- * stays raw source text and inert.
+ * Navigation is independent: when enabled, one work opens on click and several
+ * works open a menu at the cursor. Wherever Citations stay closed as links, a
+ * plain click on a rendered citation does nothing — it reads as the static text
+ * it is — and Mod-click keeps opening the work. Hover belongs to the Hover
+ * Action alone, so every citation this surface renders carries it. A citation
+ * none of whose keys reaches a Zotero Item stays raw source text, inert but for
+ * that hover.
  *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
  * are read per render rather than by adding and removing it.
@@ -58,12 +75,14 @@ export class CitekeyReading extends Service<void> {
   readonly #plugin;
   readonly #citationText;
   readonly #citekeyEditor;
+  readonly #citationPopover;
   readonly #settings;
 
   /** `undefined` until the first settings snapshot decides the treatment. */
   #active: boolean | undefined;
   #showFormatted = false;
   #navigationEnabled = false;
+  #hover: HoverPreferences = hoverPreferences(defaults);
 
   ready: Promise<void>;
 
@@ -73,6 +92,7 @@ export class CitekeyReading extends Service<void> {
     this.#plugin = deps.plugin;
     this.#citationText = deps.citationText;
     this.#citekeyEditor = deps.citekeyEditor;
+    this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -109,11 +129,14 @@ export class CitekeyReading extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
+    // Read straight through: hover answers from the newest snapshot, and
+    // nothing rendered depends on it.
+    this.#hover = hoverPreferences(settings);
     const pandocCitations = settings["citation.pandoc-citations"];
     const showFormatted =
       pandocCitations && settings["citation.show-formatted"];
     const navigationEnabled =
-      pandocCitations && settings["citation.open-pandoc-links"];
+      pandocCitations && settings["citation.open-as-links"];
     const active = showFormatted || navigationEnabled;
     if (
       active === this.#active &&
@@ -179,17 +202,18 @@ export class CitekeyReading extends Service<void> {
         content ?? citation.source,
         themeClasses,
       );
-      // A citation none of whose keys reaches a Zotero Item remains wrapped so
-      // themes can style its error state, but has no target to navigate to.
-      if (!this.#navigationEnabled || unresolved === citation.keys.length) {
-        return element;
-      }
-      attachCitationNavigation(element, {
-        works: citedWorks(citation, summaryOf),
+      const navigation: CitationNavigation = {
+        works: citedWorks(citation, text),
+        // What this section shows in the citation's place, which is where a
+        // note-class style's own note text is read from. A citation left as
+        // source text shows none.
+        formatted: content?.text.content,
         where: { surface: "reading" },
         open: (citekey, pane) => {
           void this.#citekeyEditor.openCitekey(citekey, pane);
         },
+        showPopover: (request) => this.#citationPopover.show(request),
+        hoverPreferences: () => this.#hover,
         hoverNotePath: (citekey) => this.#citekeyEditor.hoverNotePath(citekey),
         hoverTarget: () => {
           const hoverParent = this.#viewOf(element);
@@ -201,7 +225,25 @@ export class CitekeyReading extends Service<void> {
                 sourcePath: ctx.sourcePath,
               };
         },
-      });
+      };
+      // Hover belongs to the Hover Action, so every rendered citation carries
+      // it. Click is Citekey Navigation's alone: it opens the work the citation
+      // names, and wherever Citations stay closed as links a plain click does
+      // nothing, the way it does on any other rendered text. A citation none of
+      // whose keys reaches a Zotero Item has nothing to open anyway; it stays
+      // wrapped so themes can style its error state, and its entries say as
+      // much.
+      if (this.#navigationEnabled && unresolved < citation.keys.length) {
+        markCitationClick(element, "open");
+        attachCitationNavigation(element, navigation);
+        return element;
+      }
+      markCitationClick(element, "none");
+      if (!this.#navigationEnabled && this.#showFormatted) {
+        attachClosedCitationGestures(element, navigation);
+        return element;
+      }
+      attachCitationHover(element, navigation);
       return element;
     });
   }
