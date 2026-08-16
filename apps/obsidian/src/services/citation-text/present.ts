@@ -261,7 +261,7 @@ export function citationElement(
   content: PresentedCitation | string,
   themeClasses: readonly string[] = [],
 ): HTMLElement {
-  const element = doc.createElement("span");
+  const element = doc.win.createSpan();
   element.classList.add(themeHook.citation, ...themeClasses);
   showCitation(element, content);
   return element;

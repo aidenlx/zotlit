@@ -3,6 +3,30 @@ import "obsidian";
 declare global {
   /** Obsidian bundles turndown and exposes its constructor as a runtime global. */
   const TurndownService: typeof import("turndown").default;
+
+  /**
+   * The same detached-element factories the bare globals expose
+   * (`createDiv()` etc., see `interface Node` in `obsidian.d.ts`), patched
+   * onto every window — main and popout alike — so a detached element built
+   * from a specific `doc.win` lands in that window's own document instead of
+   * always the main one. Missing from the vendored `obsidian-api` typings.
+   */
+  interface Window {
+    createEl<K extends keyof HTMLElementTagNameMap>(
+      tag: K,
+      o?: DomElementInfo | string,
+      callback?: (el: HTMLElementTagNameMap[K]) => void,
+    ): HTMLElementTagNameMap[K];
+    createDiv(
+      o?: DomElementInfo | string,
+      callback?: (el: HTMLDivElement) => void,
+    ): HTMLDivElement;
+    createSpan(
+      o?: DomElementInfo | string,
+      callback?: (el: HTMLSpanElement) => void,
+    ): HTMLSpanElement;
+    createFragment(callback?: (el: DocumentFragment) => void): DocumentFragment;
+  }
 }
 
 declare module "obsidian" {

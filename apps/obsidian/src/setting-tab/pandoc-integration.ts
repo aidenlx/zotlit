@@ -40,9 +40,8 @@ export function pandocIntegrationDefinition(
 function guideDescription(pluginVersion: string): DocumentFragment {
   return createFragment((fragment) => {
     fragment.append(m.settings_citation_pandoc_guide_desc());
-    const guide = fragment.ownerDocument.createElement("pre");
+    const guide = fragment.createEl("pre");
     guide.textContent = renderPandocGuide(pluginVersion);
-    fragment.append(guide);
   });
 }
 

@@ -54,6 +54,10 @@ export default [
       "apps/obsidian/src/lib/i18n/generated/**",
       // tsconfig.app.json excludes these, so type-aware parsing cannot see them.
       "**/*.test.{ts,tsx}",
+      // Test fixtures build DOM under Vitest alone, never inside a running
+      // Obsidian window, so the guideline checks that assume Obsidian's
+      // globals (createDiv(), .win, …) don't apply to them.
+      "**/__fixtures__/**",
     ],
   },
 

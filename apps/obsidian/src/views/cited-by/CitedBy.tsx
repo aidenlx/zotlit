@@ -234,8 +234,11 @@ function SearchFilter() {
   }, []);
   useEffect(() => {
     if (text === search) return;
-    const timer = setTimeout(() => actions.setSearch(text), SEARCH_DEBOUNCE);
-    return () => clearTimeout(timer);
+    const timer = window.setTimeout(
+      () => actions.setSearch(text),
+      SEARCH_DEBOUNCE,
+    );
+    return () => window.clearTimeout(timer);
   }, [actions, search, text]);
 
   return (

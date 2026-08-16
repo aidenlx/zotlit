@@ -56,7 +56,7 @@ export function toCopiedBibliography(
  * over.
  */
 function richEntry({ marker, content }: CopiedBibliographyEntry): string {
-  const paragraph = document.createElement("p");
+  const paragraph = createEl("p");
   const label = marker === undefined ? "" : collapse(inlineText(marker));
   if (label) paragraph.append(`${label} `);
   paragraph.append(portable(content));
@@ -71,13 +71,16 @@ function richEntry({ marker, content }: CopiedBibliographyEntry): string {
  * its own content over, leaving a single space where a display span stood.
  */
 function portable(nodes: Inlines): DocumentFragment {
-  const fragment = document.createDocumentFragment();
+  const fragment = createFragment();
   const { separate, add, endPart } = flowWriter<Node>((node) => {
     fragment.append(node);
   });
 
-  function wrap(tag: string, content: Inlines): HTMLElement {
-    const element = document.createElement(tag);
+  function wrap(
+    tag: keyof HTMLElementTagNameMap,
+    content: Inlines,
+  ): HTMLElement {
+    const element = createEl(tag);
     element.append(portable(content));
     return element;
   }
@@ -105,6 +108,10 @@ function portable(nodes: Inlines): DocumentFragment {
           // style because the destination is another application, which has no
           // stylesheet of ours to read a class against.
           const element = wrap("span", inline.c);
+          // The destination is another application, so a plugin CSS class
+          // carries no styling there; the inline declaration is the only one
+          // that survives the paste.
+          // eslint-disable-next-line obsidianmd/no-static-styles-assignment
           element.style.setProperty("font-variant", "small-caps");
           add(element);
           break;

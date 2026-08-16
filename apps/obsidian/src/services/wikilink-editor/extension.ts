@@ -410,7 +410,7 @@ class CitationDisplayWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const element = view.dom.ownerDocument.createElement("span");
+    const element = view.dom.win.createSpan();
     element.className = this.#className;
     element.tabIndex = -1;
     element.draggable = true;

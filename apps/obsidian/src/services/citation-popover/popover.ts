@@ -33,9 +33,8 @@ export class CitationHoverPopover extends HoverPopover {
   constructor(parent: HoverParent, targetEl: HTMLElement) {
     super(parent, targetEl, WAIT_TIME);
     this.hoverEl.classList.add("zt-citation-popover");
-    const mount = this.hoverEl.ownerDocument.createElement("div");
+    const mount = this.hoverEl.createDiv();
     mount.classList.add("zt-root", "zt-citation-popover-content");
-    this.hoverEl.append(mount);
     this.#root = createRoot(mount);
     // The entries are read after the popover opens, so it takes its place
     // again as they land.
