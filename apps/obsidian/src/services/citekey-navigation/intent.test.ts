@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { citationTarget, navigationIntent } from "./intent";
+import {
+  citationClickIntent,
+  citationTarget,
+  navigationIntent,
+} from "./intent";
 import type { CitedWork, NavigationGesture, NavigationTarget } from "./intent";
 
 const editorGesture = (
@@ -162,6 +166,62 @@ describe("navigationIntent", () => {
         resolution: "unavailable",
       }),
     ).toEqual({ kind: "nothing" });
+  });
+});
+
+describe("citationClickIntent", () => {
+  it("edits the source a Live Preview citation hides on a plain left click", () => {
+    expect(citationClickIntent(editorGesture())).toBe("edit");
+  });
+
+  it("leaves a plain left click alone wherever no widget hides source", () => {
+    expect(citationClickIntent(editorGesture({ editorMode: "source" }))).toBe(
+      "nothing",
+    );
+    expect(
+      citationClickIntent(
+        editorGesture({ surface: "reading", editorMode: undefined }),
+      ),
+    ).toBe("nothing");
+  });
+
+  it("navigates a Mod-click, whichever other modifier is held with it", () => {
+    expect(citationClickIntent(editorGesture({ mod: true }))).toBe("navigate");
+    expect(citationClickIntent(editorGesture({ mod: true, alt: true }))).toBe(
+      "navigate",
+    );
+    expect(citationClickIntent(editorGesture({ mod: true, shift: true }))).toBe(
+      "navigate",
+    );
+  });
+
+  it("navigates a Mod-click on every surface", () => {
+    expect(
+      citationClickIntent(
+        editorGesture({ mod: true, surface: "reading", editorMode: undefined }),
+      ),
+    ).toBe("navigate");
+    expect(
+      citationClickIntent(editorGesture({ mod: true, editorMode: "source" })),
+    ).toBe("navigate");
+  });
+
+  it("leaves a middle click alone", () => {
+    expect(citationClickIntent(editorGesture({ button: "middle" }))).toBe(
+      "nothing",
+    );
+    expect(
+      citationClickIntent(editorGesture({ button: "middle", mod: true })),
+    ).toBe("nothing");
+  });
+
+  it("leaves a gesture that is no click at all alone", () => {
+    expect(
+      citationClickIntent(editorGesture({ action: "hover", button: "none" })),
+    ).toBe("nothing");
+    expect(citationClickIntent(editorGesture({ button: "none" }))).toBe(
+      "nothing",
+    );
   });
 });
 

@@ -9,6 +9,7 @@ import {
   migrateV4ToV5,
   migrateV5ToV6,
   migrateV6ToV7,
+  migrateV7ToV8,
 } from "./migrate";
 import { defaults } from "./schema";
 import { RESET_SETTING, SettingsService } from "./service";
@@ -39,6 +40,7 @@ const noopMigrateV3 = (raw: unknown): unknown => raw;
 const noopMigrateV4 = (raw: unknown): unknown => raw;
 const noopMigrateV5 = (raw: unknown): unknown => raw;
 const noopMigrateV6 = (raw: unknown): unknown => raw;
+const noopMigrateV7 = (raw: unknown): unknown => raw;
 
 type MakeServiceOptions = Omit<Partial<SettingsServiceOptions>, "plugin"> & {
   plugin?: PluginStub;
@@ -58,6 +60,7 @@ function makeService(overrides: MakeServiceOptions = {}): {
     migrateV4: noopMigrateV4,
     migrateV5: noopMigrateV5,
     migrateV6: noopMigrateV6,
+    migrateV7: noopMigrateV7,
     ...overrides,
   });
   return { plugin, service };
@@ -172,7 +175,7 @@ describe("SettingsService loading", () => {
     ).not.toThrow();
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/x",
     });
   });
@@ -185,9 +188,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("valid v7 sparse object loads schema-known overrides and does not save", async () => {
+  it("valid v8 sparse object loads schema-known overrides and does not save", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/from-disk",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
@@ -200,9 +203,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v7 non-schema keys are ignored and the file is not rewritten", async () => {
+  it("v8 non-schema keys are ignored and the file is not rewritten", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/ok",
       unknownKey: "noise",
     });
@@ -216,9 +219,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v7 invalid per-key values are dropped and the file is not rewritten", async () => {
+  it("v8 invalid per-key values are dropped and the file is not rewritten", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/kept",
       "server.enabled": "not-a-boolean",
     });
@@ -232,9 +235,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v7 frontmatter field missing language is dropped and other keys survive", async () => {
+  it("v8 frontmatter field missing language is dropped and other keys survive", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.frontmatter-fields": [
         { key: "title", expr: "zt.title", merge: "replace" },
       ],
@@ -287,6 +290,7 @@ describe("SettingsService loading", () => {
           migrateV4: noopMigrateV4,
           migrateV5: noopMigrateV5,
           migrateV6: noopMigrateV6,
+          migrateV7: noopMigrateV7,
         }),
     });
     await expect(registered.services.settings.ready).rejects.toBeInstanceOf(
@@ -324,9 +328,9 @@ describe("SettingsService hydrationOrigin", () => {
     expect(service.hydrationOrigin).toBe("legacy");
   });
 
-  it("reports 'current' for v7 data", async () => {
+  it("reports 'current' for v8 data", async () => {
     const { service } = makeService({
-      plugin: new PluginStub({ __VERSION__: 7, "note.literature-folder": "R" }),
+      plugin: new PluginStub({ __VERSION__: 8, "note.literature-folder": "R" }),
     });
     await service.ready;
     expect(service.hydrationOrigin).toBe("current");
@@ -334,7 +338,7 @@ describe("SettingsService hydrationOrigin", () => {
 });
 
 describe("SettingsService legacy migration", () => {
-  it("migrates schema-known keys, drops non-schema keys, writes v7 best-effort", async () => {
+  it("migrates schema-known keys, drops non-schema keys, writes v8 best-effort", async () => {
     const plugin = new PluginStub({
       "note.literature-folder": "/from-legacy",
       junk: 1,
@@ -350,7 +354,7 @@ describe("SettingsService legacy migration", () => {
       "note.literature-folder": "/from-legacy",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/from-legacy",
     });
   });
@@ -371,12 +375,12 @@ describe("SettingsService legacy migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("falls back to defaults on migration throw and writes empty v7", async () => {
+  it("falls back to defaults on migration throw and writes empty v8", async () => {
     const plugin = new PluginStub({ legacy: "stuff" });
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({
@@ -387,7 +391,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 7 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 8 });
     expect(warnSpy).toHaveBeenCalled();
   });
 
@@ -400,7 +404,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 7 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 8 });
   });
 
   it("treats a Promise return from migrateLegacy as non-plain (no async hooks)", async () => {
@@ -415,7 +419,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 7 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 8 });
   });
 
   it("logs but stays loaded when legacy migration write fails", async () => {
@@ -437,8 +441,8 @@ describe("SettingsService legacy migration", () => {
   });
 });
 
-describe("SettingsService v1→v7 migration", () => {
-  it("migrates schema-known keys, drops non-schema keys, writes v7 best-effort", async () => {
+describe("SettingsService v1→v8 migration", () => {
+  it("migrates schema-known keys, drops non-schema keys, writes v8 best-effort", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.literature-folder": "/from-v1",
@@ -452,12 +456,12 @@ describe("SettingsService v1→v7 migration", () => {
       "note.literature-folder": "/from-v1",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/from-v1",
     });
   });
 
-  it("drops invalid schema-known values and writes v7 without them", async () => {
+  it("drops invalid schema-known values and writes v8 without them", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.literature-folder": "/kept",
@@ -471,12 +475,12 @@ describe("SettingsService v1→v7 migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("drops frontmatter fields still missing merge after migration and writes v7 without them", async () => {
+  it("drops frontmatter fields still missing merge after migration and writes v8 without them", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.frontmatter-fields": [{ key: "title", expr: "zt.title" }],
@@ -490,12 +494,12 @@ describe("SettingsService v1→v7 migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("happy path: stamps/rewrites frontmatter field language and writes v7 exactly once", async () => {
+  it("happy path: stamps/rewrites frontmatter field language and writes v8 exactly once", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.frontmatter-fields": [
@@ -513,6 +517,7 @@ describe("SettingsService v1→v7 migration", () => {
       migrateV4: migrateV4ToV5,
       migrateV5: migrateV5ToV6,
       migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
     });
     await service.ready;
 
@@ -535,13 +540,13 @@ describe("SettingsService v1→v7 migration", () => {
       ...defaults,
       "note.frontmatter-fields": migratedFields,
       "note.literature-folder": "/from-v1",
-      "citation.open-pandoc-links": true,
+      "citation.open-as-links": true,
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.frontmatter-fields": migratedFields,
       "note.literature-folder": "/from-v1",
-      "citation.open-pandoc-links": true,
+      "citation.open-as-links": true,
     });
   });
 
@@ -562,12 +567,12 @@ describe("SettingsService v1→v7 migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("falls back to defaults on migrateV1 throw and writes empty v7", async () => {
+  it("falls back to defaults on migrateV1 throw and writes empty v8", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.literature-folder": "/x",
@@ -581,7 +586,7 @@ describe("SettingsService v1→v7 migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 7 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 8 });
     expect(warnSpy).toHaveBeenCalled();
   });
 
@@ -597,10 +602,10 @@ describe("SettingsService v1→v7 migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 7 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 8 });
   });
 
-  it("v2 data runs all compatibility migrations and writes v7", async () => {
+  it("v2 data runs all compatibility migrations and writes v8", async () => {
     const plugin = new PluginStub({
       __VERSION__: 2,
       "note.literature-folder": "/from-v2",
@@ -613,21 +618,22 @@ describe("SettingsService v1→v7 migration", () => {
       migrateV4: migrateV4ToV5,
       migrateV5: migrateV5ToV6,
       migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
     });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
       "note.literature-folder": "/from-v2",
-      "citation.open-pandoc-links": true,
+      "citation.open-as-links": true,
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
-      "citation.open-pandoc-links": true,
+      __VERSION__: 8,
+      "citation.open-as-links": true,
       "note.literature-folder": "/from-v2",
     });
   });
 
-  it("v3 data carries Citation Key Links into Pandoc navigation and writes v7", async () => {
+  it("v3 data carries Citation Key Links into Pandoc navigation and writes v8", async () => {
     const plugin = new PluginStub({
       __VERSION__: 3,
       "citation.key-links": true,
@@ -638,16 +644,17 @@ describe("SettingsService v1→v7 migration", () => {
       plugin,
       migrateV3: migrateV3ToV4,
       migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
     });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "citation.open-pandoc-links": true,
+      "citation.open-as-links": true,
       "note.literature-folder": "/from-v3",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
-      "citation.open-pandoc-links": true,
+      __VERSION__: 8,
+      "citation.open-as-links": true,
       "note.literature-folder": "/from-v3",
     });
   });
@@ -661,16 +668,17 @@ describe("SettingsService v1→v7 migration", () => {
       plugin,
       migrateV3: migrateV3ToV4,
       migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
     });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "citation.open-pandoc-links": false,
+      "citation.open-as-links": false,
       "note.literature-folder": "/from-v3",
     });
   });
 
-  it("v4 data drops the retired Citation Key Property and writes v7", async () => {
+  it("v4 data drops the retired Citation Key Property and writes v8", async () => {
     const plugin = new PluginStub({
       __VERSION__: 4,
       "citation.key-links-frontmatter-key": "bibkey",
@@ -688,7 +696,7 @@ describe("SettingsService v1→v7 migration", () => {
       "note.literature-folder": "/from-v4",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/from-v4",
     });
   });
@@ -709,7 +717,7 @@ describe("SettingsService v1→v7 migration", () => {
       "citation.wikilink-citations": true,
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "citation.pandoc-citations": false,
       "citation.wikilink-citations": true,
     });
@@ -722,22 +730,64 @@ describe("SettingsService v1→v7 migration", () => {
       "note.literature-folder": "/from-v6",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
-    const { service } = makeService({ plugin, migrateV6: migrateV6ToV7 });
+    const { service } = makeService({
+      plugin,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
+    });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "citation.open-pandoc-links": true,
+      "citation.open-as-links": true,
       "note.literature-folder": "/from-v6",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
-      "citation.open-pandoc-links": true,
+      __VERSION__: 8,
+      "citation.open-as-links": true,
       "note.literature-folder": "/from-v6",
     });
   });
 
-  it("version 8 is future and falls back to defaults with a warning", async () => {
-    const plugin = new PluginStub({ __VERSION__: 8 });
+  it("v7 data materializes the Pandoc navigation default and writes v8", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 7,
+      "note.literature-folder": "/from-v7",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin, migrateV7: migrateV7ToV8 });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v7",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 8,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v7",
+    });
+  });
+
+  it("v7 data keeps an explicit navigation opt-out and writes v8", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 7,
+      "citation.open-pandoc-links": false,
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin, migrateV7: migrateV7ToV8 });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": false,
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 8,
+      "citation.open-as-links": false,
+    });
+  });
+
+  it("version 9 is future and falls back to defaults with a warning", async () => {
+    const plugin = new PluginStub({ __VERSION__: 9 });
     const { service } = makeService({ plugin });
     await service.ready;
     expect(service.current).toEqual(defaults);
@@ -810,14 +860,14 @@ describe("SettingsService mutations", () => {
     service.update({ "note.literature-folder": "/x", "server.enabled": true });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/x",
       "server.enabled": true,
     });
     service.update({ "note.literature-folder": RESET_SETTING });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "server.enabled": true,
     });
   });
@@ -830,7 +880,7 @@ describe("SettingsService mutations", () => {
     });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": defaults["note.literature-folder"],
     });
   });
@@ -866,7 +916,7 @@ describe("SettingsService mutations", () => {
     service.update({});
     expect(seen).toHaveLength(2);
     await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 7 });
+    expect(plugin.__data).toEqual({ __VERSION__: 8 });
   });
 
   it("reset() of un-overridden keys still notifies and schedules a save", async () => {
@@ -877,7 +927,7 @@ describe("SettingsService mutations", () => {
     service.reset(["note.literature-folder"]);
     expect(seen).toHaveLength(2);
     await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 7 });
+    expect(plugin.__data).toEqual({ __VERSION__: 8 });
   });
 });
 
@@ -888,7 +938,7 @@ describe("SettingsService persistence", () => {
     service.update({ "server.enabled": true });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "server.enabled": true,
     });
   });
@@ -903,7 +953,7 @@ describe("SettingsService persistence", () => {
     expect(saveSpy).not.toHaveBeenCalled();
     await service.flush();
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/c",
     });
   });
@@ -976,6 +1026,7 @@ describe("SettingsService persistence", () => {
         migrateV4: noopMigrateV4,
         migrateV5: noopMigrateV5,
         migrateV6: noopMigrateV6,
+        migrateV7: noopMigrateV7,
       }),
     );
     await service.ready;
@@ -983,7 +1034,7 @@ describe("SettingsService persistence", () => {
     expect(plugin.__data).toBeNull();
     await stack.disposeAsync();
     expect(plugin.__data).toEqual({
-      __VERSION__: 7,
+      __VERSION__: 8,
       "note.literature-folder": "/on-dispose",
     });
   });

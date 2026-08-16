@@ -43,9 +43,12 @@ export interface WikilinkEditorDeps {
  * The Wikilink Editor Treatment: in Live Preview a Literature Note wikilink —
  * and a whole Citation Run of them — shows the citation a style formatted.
  * Native wikilink presentation stays in place until that render lands, while
- * click, drag, and conceal interaction stay Obsidian's. Hover follows the Hover
- * Action: the Citation Popover replaces Obsidian's own hover under the popover,
- * and every other action leaves the link hovering as the link it is.
+ * drag and conceal interaction stay Obsidian's. Hover follows the Hover Action:
+ * the Citation Popover replaces Obsidian's own hover under the popover, and
+ * every other action leaves the link hovering as the link it is. The click
+ * follows the open-as-links choice: wherever Citations stay closed as links a
+ * plain click is taken from Obsidian and places the caret in the link's own
+ * source text, and every other click stays Obsidian's.
  *
  * The extension is registered as a mutable array, the mechanism
  * `registerEditorExtension` documents, and stays installed for the plugin's
@@ -97,6 +100,7 @@ export class WikilinkEditor extends Service<void> {
       showPopover: (request) => this.#citationPopover.show(request),
       hoverPreferences: () => this.#display.hover,
       popoverHover: () => this.#display.popoverHover,
+      clickIntercepted: () => this.#display.clickIntercepted,
     });
     this.ready = this.#load();
   }

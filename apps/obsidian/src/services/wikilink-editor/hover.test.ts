@@ -100,9 +100,12 @@ function heldText(source: string, works: string[], text: string) {
 
 function harness(doc: string, overrides: Partial<Settings> = {}) {
   const requests: CitationHoverRequest[] = [];
-  /** Every hover Obsidian's own delegated listener would have answered. */
+  /** Every gesture Obsidian's own delegated listeners would have answered. */
   const native: MouseEvent[] = [];
-  let hover: HoverPreferences = hoverPreferences({ ...defaults, ...overrides });
+  /** Every note a gesture on the rendered Citation asked to open. */
+  const opened: [citekey: string, pane: unknown][] = [];
+  let settings: Readonly<Settings> = { ...defaults, ...overrides };
+  let hover: HoverPreferences = hoverPreferences(settings);
   // Rebuilt on demand, so a fresh value redraws the widget the way a fresh
   // read of the document does.
   let held = citations();
@@ -143,21 +146,29 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
           enabled: () => true,
           citationText: () => held,
           requestCitationText: () => undefined,
-          open: () => undefined,
+          open: (citekey, pane) => opened.push([citekey, pane]),
           showPopover: (request) => requests.push(request),
           hoverPreferences: () => hover,
           popoverHover: () => hover.action === "popover",
+          clickIntercepted: () => !settings["citation.open-as-links"],
         }),
       ],
     }),
   });
-  // The delegated `mouseover` Obsidian hangs on the editor element, which a
-  // hover the popover answers never reaches.
+  // The delegated `mouseover` and `click` Obsidian hangs above the editor
+  // element, which a gesture the popover answers never reaches.
   view.dom.addEventListener("mouseover", (event) => native.push(event));
+  view.dom.addEventListener("click", (event) => native.push(event));
+
+  // happy-dom lays nothing out, so the coordinate lookup the caret is placed
+  // from is the one thing stood in for.
+  vi.spyOn(view, "posAtCoords").mockReturnValue(2);
 
   return {
     requests,
     native,
+    opened,
+    selection: () => view.state.selection.main,
     citation: () => view.dom.querySelector<HTMLElement>(".zt-citation"),
     /** Hovers the rendered Citation, as the pointer entering it does. */
     hover: () => {
@@ -165,9 +176,20 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
         .querySelector(".zt-citation")
         ?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     },
-    /** Answers hover the way the named Hover Action does, from now on. */
-    setHover: (next: Partial<Settings>) => {
-      hover = hoverPreferences({ ...defaults, ...next });
+    /** Clicks the rendered Citation, and answers with the event it sent. */
+    click: (init: MouseEventInit = {}) => {
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      view.dom.querySelector(".zt-citation")?.dispatchEvent(event);
+      return event;
+    },
+    /** Answers the way the named settings do, from now on. */
+    setSettings: (next: Partial<Settings>) => {
+      settings = { ...defaults, ...next };
+      hover = hoverPreferences(settings);
       view.dispatch({});
     },
     /** Draws the Citation again from a fresh read, as CodeMirror does. */
@@ -272,7 +294,7 @@ describe("wikilinkEditorExtension hover under the other Hover Actions", () => {
   it("takes its listener off as soon as hover stops being the popover's", () => {
     using editor = harness("[[literatures/example#cite:locator=7]]");
 
-    editor.setHover({ "citation.hover-action": "off" });
+    editor.setSettings({ "citation.hover-action": "off" });
     editor.hover();
 
     expect(editor.requests).toEqual([]);
@@ -284,10 +306,114 @@ describe("wikilinkEditorExtension hover under the other Hover Actions", () => {
       "citation.hover-action": "off",
     });
 
-    editor.setHover({ "citation.hover-action": "popover" });
+    editor.setSettings({ "citation.hover-action": "popover" });
     editor.hover();
 
     expect(editor.requests).toHaveLength(1);
+    expect(editor.native).toEqual([]);
+  });
+});
+
+describe("wikilinkEditorExtension click while Citations stay closed as links", () => {
+  it("places the caret where a plain click landed, and stops there", () => {
+    using editor = harness("[[literatures/example#cite:locator=7]]");
+    expect(editor.citation()?.dataset.ztClick).toBe("edit");
+
+    const event = editor.click();
+
+    // The selection overlapping the link is what writes its source back, once
+    // the view has the focus this environment cannot give it.
+    expect(editor.selection()).toMatchObject({ anchor: 2, head: 2 });
+    expect(editor.requests).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(editor.native).toEqual([]);
+  });
+
+  it("answers the click while the Hover Action is off", () => {
+    using editor = harness("[[literatures/example#cite:locator=7]]", {
+      "citation.hover-action": "off",
+    });
+
+    editor.hover();
+    expect(editor.requests).toEqual([]);
+
+    const event = editor.click();
+    expect(event.defaultPrevented).toBe(true);
+    expect(editor.selection()).toMatchObject({ anchor: 2 });
+  });
+
+  it("answers the click while Require Mod holds the hover back", () => {
+    using editor = harness("[[literatures/example#cite:locator=7]]", {
+      "citation.hover-require-mod-live-preview": true,
+    });
+
+    const event = editor.click();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(editor.selection()).toMatchObject({ anchor: 2 });
+  });
+
+  it("leaves a Mod-click to Obsidian, which opens the note the link names", () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    using editor = harness("[[literatures/example#cite:locator=7]]");
+
+    const event = editor.click({ ctrlKey: true });
+
+    expect(editor.requests).toEqual([]);
+    expect(editor.opened).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(editor.selection()).toMatchObject({ anchor: 0 });
+    expect(editor.native).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+
+  it("leaves a click of another button to Obsidian", () => {
+    using editor = harness("[[literatures/example#cite:locator=7]]");
+
+    editor.click({ button: 1 });
+
+    expect(editor.requests).toEqual([]);
+    expect(editor.selection()).toMatchObject({ anchor: 0 });
+    expect(editor.native).toHaveLength(1);
+  });
+});
+
+describe("wikilinkEditorExtension click while Citations open as links", () => {
+  it("leaves every click to Obsidian", () => {
+    using editor = harness("[[literatures/example#cite:locator=7]]", {
+      "citation.open-as-links": true,
+    });
+    expect(editor.citation()?.dataset.ztClick).toBe("open");
+
+    const event = editor.click();
+
+    expect(editor.requests).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(editor.selection()).toMatchObject({ anchor: 0 });
+    expect(editor.native).toHaveLength(1);
+  });
+
+  it("takes its listener off as soon as Citations open as links", () => {
+    using editor = harness("[[literatures/example#cite:locator=7]]");
+
+    editor.setSettings({ "citation.open-as-links": true });
+    editor.click();
+
+    expect(editor.citation()?.dataset.ztClick).toBe("open");
+    expect(editor.selection()).toMatchObject({ anchor: 0 });
+    expect(editor.native).toHaveLength(1);
+  });
+
+  it("answers a Citation's click again once they stay closed as links", () => {
+    using editor = harness("[[literatures/example#cite:locator=7]]", {
+      "citation.open-as-links": true,
+    });
+
+    editor.setSettings({ "citation.open-as-links": false });
+    expect(editor.citation()?.dataset.ztClick).toBe("edit");
+    editor.click();
+
+    expect(editor.selection()).toMatchObject({ anchor: 2 });
     expect(editor.native).toEqual([]);
   });
 });

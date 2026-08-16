@@ -1,7 +1,11 @@
 export {
   attachCitationHover,
   attachCitationNavigation,
+  attachClosedCitationGestures,
+  clickWikilinkCitation,
   hoverWikilinkCitation,
+  markCitationClick,
+  type CitationClickAffordance,
   type CitationHover,
   type CitationHoverRequest,
   type CitationHoverTarget,
@@ -18,9 +22,11 @@ export {
   type HoverPreferences,
 } from "./hover";
 export {
+  citationClickIntent,
   citationTarget,
   navigationIntent,
   navigationPane,
+  type CitationClickIntent,
   type CitedWork,
   type EditorMode,
   type HoveredWork,

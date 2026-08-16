@@ -130,9 +130,9 @@ ZotLit also leaves your Markdown unchanged. Your notes store citations, and each
 
 ## Citekey Navigation
 
-**Open Pandoc citations as links** is on by default. It controls navigation for literal Pandoc citations and works independently of formatted display.
+**Open citations as links** is off by default. It controls navigation for citations ZotLit shows, both literal Pandoc citations and Literature Note wikilinks shown as citations, and works independently of formatted display.
 
-With **Pandoc citations** and **Open Pandoc citations as links** on, ZotLit supports:
+With **Pandoc citations** and **Open citations as links** on, ZotLit supports:
 
 - Click and selection behavior in the editor and reading view.
 - A selection menu for citations with multiple items.
@@ -142,7 +142,9 @@ A single-item citation opens its Literature Note. ZotLit creates the note first 
 
 Source mode keeps the text editable. Ctrl-click opens a citation on Windows and Linux. Cmd-click opens it on macOS. Modifier clicks follow Obsidian's pane behavior.
 
-**Hover action** decides what hover shows, and one hover shows one result. It ships as **Citation popover**. It owns hover on its own: **Open Pandoc citations as links** never gates it, so a citation ZotLit shows still answers hover with the popover while that setting is off.
+While **Open citations as links** is off, a plain click on a citation ZotLit shows puts the cursor in its Markdown source in Live Preview, so the text expands for editing, the same as a click on bold text. A plain click in reading view does nothing. Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
+
+**Hover action** decides what hover shows, and one hover shows one result. It ships as **Citation popover**. It owns hover on its own: **Open citations as links** never gates it, so a citation ZotLit shows still answers hover with the popover while that setting is off.
 
 The citation popover shows the full bibliography entry of every cited item, in citation order, each with buttons to open its Literature Note, select it in Zotero, and open its attachment. An unresolved citation key says so in place of an entry.
 
@@ -159,9 +161,9 @@ The four commands have no default hotkeys:
 - <Command inline>ZotLit: Open citation key under cursor to the right</Command>
 - <Command inline>ZotLit: Open citation key under cursor in new window</Command>
 
-The cursor must be on a recognized Pandoc citation. The commands require **Pandoc citations** and **Open Pandoc citations as links**.
+The cursor must be on a recognized Pandoc citation. The commands require **Pandoc citations** and **Open citations as links**.
 
-Literature Note wikilinks keep Obsidian's native navigation. **Open Pandoc citations as links** does not affect them.
+**Open citations as links** covers Literature Note wikilinks shown as citations as well. While it is off, a plain click on such a citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Ctrl-click (Windows and Linux) or Cmd-click (macOS) opens the Literature Note.
 
 ## Theme hooks [#theme-hooks]
 

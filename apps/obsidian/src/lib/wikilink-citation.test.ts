@@ -227,8 +227,30 @@ describe("WikilinkDisplaySettings", () => {
     let redraws = 0;
     display.watch(settings, () => redraws++);
 
-    settings.update({ "citation.open-pandoc-links": false });
+    settings.update({ "citation.pandoc-citations": false });
     expect(redraws).toBe(0);
+  });
+
+  it("takes the click while Citations stay closed as links", () => {
+    const settings = new SettingsStub({ "citation.open-as-links": true });
+    const display = new WikilinkDisplaySettings();
+    let redraws = 0;
+    display.watch(settings, () => redraws++);
+    expect(display.clickIntercepted).toBe(false);
+
+    settings.update({ "citation.open-as-links": false });
+
+    expect(display.clickIntercepted).toBe(true);
+    expect(redraws).toBe(1);
+  });
+
+  it("reads the click apart from the Hover Action", () => {
+    const settings = new SettingsStub({ "citation.hover-action": "off" });
+    const display = new WikilinkDisplaySettings();
+    display.watch(settings, () => undefined);
+
+    expect(display.popoverHover).toBe(false);
+    expect(display.clickIntercepted).toBe(true);
   });
 
   it("stops following once unsubscribed", () => {

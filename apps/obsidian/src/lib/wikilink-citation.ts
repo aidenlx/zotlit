@@ -191,6 +191,7 @@ const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
  */
 export class WikilinkDisplaySettings {
   #enabled = false;
+  #openAsLinks = defaults["citation.open-as-links"];
   #hover: HoverPreferences = hoverPreferences(defaults);
 
   /** {@link WikilinkCitationContext.enabled} */
@@ -210,6 +211,20 @@ export class WikilinkDisplaySettings {
    */
   get popoverHover(): boolean {
     return this.#hover.action === "popover";
+  }
+
+  /**
+   * Whether a plain click on a rendered Citation is the plugin's to answer:
+   * Live Preview places the caret in the wikilink's source, and reading mode
+   * lets the click land on static text. Wherever Citations open as links a
+   * Literature Note wikilink clicks as Obsidian's own link, which is what it
+   * is, so no listener of the plugin's goes near it.
+   *
+   * The click is read apart from the Hover Action, so it is answered even where
+   * no hover would be.
+   */
+  get clickIntercepted(): boolean {
+    return !this.#openAsLinks;
   }
 
   /**
@@ -237,14 +252,19 @@ export class WikilinkDisplaySettings {
       // Read straight through: a hover answers from the newest snapshot, and
       // only the listener the popover needs is drawn from it.
       const popoverHover = this.popoverHover;
+      const clickIntercepted = this.clickIntercepted;
       this.#hover = hoverPreferences(next);
+      this.#openAsLinks = next["citation.open-as-links"];
       const changed =
-        enabled !== this.#enabled || popoverHover !== this.popoverHover;
+        enabled !== this.#enabled ||
+        popoverHover !== this.popoverHover ||
+        clickIntercepted !== this.clickIntercepted;
       this.#enabled = enabled;
       if (seeding || !changed) return;
       logger.debug("Wikilink display settings changed", {
         enabled,
         popoverHover: this.popoverHover,
+        clickIntercepted: this.clickIntercepted,
       });
       redraw();
     });

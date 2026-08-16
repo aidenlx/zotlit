@@ -65,6 +65,41 @@ export function citationTarget(works: readonly CitedWork[]): NavigationTarget {
   };
 }
 
+/**
+ * What one click on a Rendered Citation reaches while Citations stay closed as
+ * links: the open flow a Mod names, the source text a Live Preview citation
+ * hides, or nothing at all.
+ */
+export type CitationClickIntent = "navigate" | "edit" | "nothing";
+
+/**
+ * Decides what a mouse gesture on a Rendered Citation means while Citations do
+ * not open as links — the surface picks this decision by the setting, and the
+ * gesture alone decides the rest.
+ *
+ * Mod stays the platform convention for opening a citation, so a Mod-click
+ * navigates wherever a plain one edits. A plain click in Live Preview reaches
+ * the source the rendered citation stands in place of, which is what a click on
+ * any other rendered Markdown reaches there. Every other plain click means
+ * nothing: reading mode renders static text, and Source mode already shows the
+ * source a caret would reveal. Middle-click is left whole to whoever owns the
+ * surface underneath: a Pandoc citation has nothing to open with it, and a
+ * wikilink opens as the link Obsidian sees.
+ */
+export function citationClickIntent(
+  gesture: Pick<
+    NavigationGesture,
+    "action" | "button" | "mod" | "editorMode" | "surface"
+  >,
+): CitationClickIntent {
+  if (gesture.action !== "click") return "nothing";
+  if (gesture.button !== "left") return "nothing";
+  if (gesture.mod) return "navigate";
+  return gesture.surface === "editor" && gesture.editorMode === "live-preview"
+    ? "edit"
+    : "nothing";
+}
+
 export type NavigationIntent =
   | { kind: "open"; citekey: string; pane: NavigationPane }
   | {

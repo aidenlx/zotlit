@@ -326,3 +326,19 @@ export function migrateV6ToV7(raw: unknown): Record<string, unknown> {
     ? { ...rest, "citation.open-pandoc-links": citekeyEditor }
     : rest;
 }
+
+/**
+ * Widen the Pandoc navigation control to every citation surface. Storage is
+ * sparse, so an absent key means the v7 default, on — the value is materialized
+ * to keep navigation for existing users, while the new default, off, governs
+ * fresh installs only.
+ */
+export function migrateV7ToV8(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.open-pandoc-links": openPandocLinks, ...rest } = raw;
+  return {
+    ...rest,
+    "citation.open-as-links":
+      typeof openPandocLinks === "boolean" ? openPandocLinks : true,
+  };
+}

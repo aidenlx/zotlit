@@ -16,13 +16,26 @@
     span.zt-citation.zt-literature-note-link.cm-underline
 ) {
   color: var(--link-color);
+}
+
+/* The widget states in `data-zt-click` what a plain click on it does and takes
+   its cursor from that; a widget carrying no such state opens on click. */
+:where(
+  .markdown-source-view.mod-cm6
+    span.zt-citation.zt-literature-note-link.cm-underline:not([data-zt-click])
+) {
   cursor: var(--cursor-link);
 }
 
+/* The link hover colour says the click opens the note, so it is drawn only
+   where it does. */
 @media (hover: hover) {
   :where(
     .markdown-source-view.mod-cm6
-      span.zt-citation.zt-literature-note-link.cm-underline:hover
+      span.zt-citation.zt-literature-note-link.cm-underline:is(
+        :not([data-zt-click]),
+        [data-zt-click="open"]
+      ):hover
   ) {
     color: var(--link-color-hover);
     text-decoration-line: var(--link-decoration-hover);

@@ -72,9 +72,9 @@ export function citationsPageItems(
           control: { type: "toggle", key: "citation.show-formatted" },
         },
         {
-          name: m.settings_citation_open_pandoc_links_name(),
-          desc: m.settings_citation_open_pandoc_links_desc(),
-          control: { type: "toggle", key: "citation.open-pandoc-links" },
+          name: m.settings_citation_open_as_links_name(),
+          desc: m.settings_citation_open_as_links_desc(),
+          control: { type: "toggle", key: "citation.open-as-links" },
         },
       ],
     },

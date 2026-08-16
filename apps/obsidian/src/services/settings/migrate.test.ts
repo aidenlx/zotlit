@@ -8,6 +8,7 @@ import {
   migrateV4ToV5,
   migrateV5ToV6,
   migrateV6ToV7,
+  migrateV7ToV8,
 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
@@ -541,5 +542,53 @@ describe("migrateV6ToV7", () => {
 
   it("keeps the new navigation setting absent when the old value is absent", () => {
     expect(migrateV6ToV7({ __VERSION__: 6 })).toEqual({ __VERSION__: 6 });
+  });
+});
+
+describe("migrateV7ToV8", () => {
+  it.each([
+    [true, true],
+    [false, false],
+  ] as const)(
+    "carries the stored Pandoc navigation value %s to the citation link control",
+    (input, expected) => {
+      expect(
+        migrateV7ToV8({
+          __VERSION__: 7,
+          "citation.open-pandoc-links": input,
+          "citation.show-formatted": false,
+        }),
+      ).toEqual({
+        __VERSION__: 7,
+        "citation.open-as-links": expected,
+        "citation.show-formatted": false,
+      });
+    },
+  );
+
+  it("materializes the old default when the old value is absent", () => {
+    expect(migrateV7ToV8({ __VERSION__: 7 })).toEqual({
+      __VERSION__: 7,
+      "citation.open-as-links": true,
+    });
+  });
+
+  it("materializes the old default when the old value is not a boolean", () => {
+    expect(
+      migrateV7ToV8({
+        __VERSION__: 7,
+        "citation.open-pandoc-links": "yes",
+        "note.literature-folder": "Refs",
+      }),
+    ).toEqual({
+      __VERSION__: 7,
+      "citation.open-as-links": true,
+      "note.literature-folder": "Refs",
+    });
+  });
+
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV7ToV8(null)).toEqual({});
+    expect(migrateV7ToV8(42)).toEqual({});
   });
 });

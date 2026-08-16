@@ -131,10 +131,47 @@ describe("citekeyEditorExtension theme hooks", () => {
     ).toBe("@unresolved");
   });
 
-  it("removes formatted-citation navigation when the setting turns off", () => {
+  it("states the marked key's click when the setting turns off", () => {
+    livePreview.mockReturnValue(true);
+    let navigationEnabled = true;
+    using view = editorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "@resolved and @unresolved",
+        extensions: citekeyEditorExtension({
+          open: () => undefined,
+          showPopover: () => undefined,
+          hoverPreferences: () => hover(),
+          hoverNotePath: () => NOTE_PATH,
+          resolveCitekey: (citekey) =>
+            citekey === "resolved" ? DOE_KEY : null,
+          navigationEnabled: () => navigationEnabled,
+          showFormatted: () => false,
+          citationText: () => null,
+          requestCitationText: () => undefined,
+        }),
+      }),
+    });
+    const marks = (): (string | undefined)[] =>
+      [...view.dom.querySelectorAll<HTMLElement>(".zt-citation-key")].map(
+        (element) => element.dataset.ztClick,
+      );
+
+    // A key that opens on click reads as the link it is, stating nothing.
+    expect(marks()).toEqual([undefined, undefined]);
+
+    navigationEnabled = false;
+    view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+
+    // The caret the editor places is what the mark's own source is edited by.
+    expect(marks()).toEqual(["edit", "edit"]);
+  });
+
+  it("leaves a formatted citation's click alone when the setting turns off", () => {
     livePreview.mockReturnValue(true);
     let navigationEnabled = true;
     const opened: string[] = [];
+    const requests: CitationHoverRequest[] = [];
     const formatted = rendered("Doe (2024)");
     using view = editorView({
       parent: document.body,
@@ -144,7 +181,7 @@ describe("citekeyEditorExtension theme hooks", () => {
           editorInfoField,
           citekeyEditorExtension({
             open: (citekey) => opened.push(citekey),
-            showPopover: () => undefined,
+            showPopover: (request) => requests.push(request),
             hoverPreferences: () => hover(),
             hoverNotePath: () => NOTE_PATH,
             resolveCitekey: () => DOE_KEY,
@@ -162,18 +199,20 @@ describe("citekeyEditorExtension theme hooks", () => {
       }),
     });
 
-    view.dom
-      .querySelector(".zt-citation")
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+    drawn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(opened).toEqual(["doe2024"]);
+    expect(drawn.dataset.ztClick).toBe("open");
 
     navigationEnabled = false;
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
-    view.dom
-      .querySelector(".zt-citation")
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const closed = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+    closed.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(opened).toEqual(["doe2024"]);
+    expect(requests).toEqual([]);
+    // The caret the browser places is what reveals the Citation's source.
+    expect(closed.dataset.ztClick).toBe("edit");
   });
 });
 
@@ -329,9 +368,13 @@ describe("citekeyEditorExtension delegated hover", () => {
 describe("citekeyEditorExtension citation widgets", () => {
   /** Every popover the drawn citations of these views asked for. */
   const requests: CitationHoverRequest[] = [];
+  /** Every note the drawn citations of these views asked to open. */
+  const opened: [citekey: string, pane: unknown][] = [];
 
   beforeEach(() => {
     requests.length = 0;
+    opened.length = 0;
+    vi.restoreAllMocks();
   });
 
   afterEach(() => {
@@ -363,7 +406,7 @@ describe("citekeyEditorExtension citation widgets", () => {
         extensions: [
           editorInfoField,
           citekeyEditorExtension({
-            open: () => undefined,
+            open: (citekey, pane) => opened.push([citekey, pane]),
             showPopover: (request) => requests.push(request),
             hoverPreferences: () => hover(),
             hoverNotePath: () => NOTE_PATH,
@@ -434,5 +477,56 @@ describe("citekeyEditorExtension citation widgets", () => {
       targetEl: drawn,
       works: [{ citekey: "doe2024", indexedKey: DOE_KEY }],
     });
+  });
+
+  it("leaves the drawn citation's plain click to the caret while Citekey Navigation is off", () => {
+    using view = viewOf("[@doe2024]");
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+    const down = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+    });
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    drawn.dispatchEvent(down);
+    drawn.dispatchEvent(event);
+
+    // Nothing of the plugin's stands between the click and the caret the
+    // browser places, which is what brings the Citation's source back.
+    expect(opened).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(down.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+    expect(drawn.dataset.ztClick).toBe("edit");
+  });
+
+  it("opens the work a Mod-click names while Citekey Navigation is off", () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
+    using view = viewOf("[@doe2024]");
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+
+    drawn.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    expect(requests).toEqual([]);
+    expect(opened).toEqual([["doe2024", "tab"]]);
+  });
+
+  it("leaves a middle click on the drawn citation inert", () => {
+    using view = viewOf("[@doe2024]");
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+
+    drawn.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 1 }),
+    );
+    drawn.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 1 }));
+
+    expect(requests).toEqual([]);
+    expect(opened).toEqual([]);
   });
 });

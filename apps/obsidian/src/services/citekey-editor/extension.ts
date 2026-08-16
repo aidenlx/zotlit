@@ -1,7 +1,9 @@
 // The CodeMirror side of the citekey editor treatment: citekey marks and
 // citation widgets over the visible ranges, the lookup that answers which
 // citekey covers a document position, the click that opens the marked key's
-// Literature Note, and the hover that shows its entry.
+// Literature Note, and the hover that shows its entry. Wherever a Citation does
+// not open as a link, a plain click on its widget stays the editor's own and
+// places the caret in the source the widget hides.
 
 import {
   lineClassNodeProp,
@@ -35,10 +37,11 @@ import type {
   PresentedCitation,
 } from "@/services/citation-text/present";
 import {
-  attachCitationHover,
   attachCitationNavigation,
+  attachClosedCitationGestures,
   citationHoverIntent,
   hoverGesture,
+  markCitationClick,
   mouseGesture,
   navigationIntent,
   triggerCitekeyHover,
@@ -123,12 +126,40 @@ export const citekeyDecorationsChanged = StateEffect.define<void>();
  */
 const MARK_CLASS = `cm-underline ${themeHook.citationKey}`;
 
-const CITEKEY_MARK = Decoration.mark({ class: MARK_CLASS });
-
 /** A citekey with no indexed Literature Note: a broken reference. */
-const CITEKEY_MARK_UNRESOLVED = Decoration.mark({
-  class: `${MARK_CLASS} ${themeHook.citationKeyUnresolved}`,
-});
+const UNRESOLVED_MARK_CLASS = `${MARK_CLASS} ${themeHook.citationKeyUnresolved}`;
+
+/**
+ * What a plain click on a marked citekey reaches wherever Citations stay closed
+ * as links: the caret, in both editor modes. The mark says so the same way a
+ * rendered Citation does, which is what its cursor and its hover colour are
+ * drawn from.
+ *
+ * @see markCitationClick
+ */
+const EDIT_ATTRIBUTES = { "data-zt-click": "edit" };
+
+/**
+ * The marks of one resolution state, in the two states Citekey Navigation
+ * leaves a citekey in. A citekey that opens on click carries the link
+ * affordance whole and states nothing further.
+ */
+const CITEKEY_MARKS = {
+  open: {
+    resolved: Decoration.mark({ class: MARK_CLASS }),
+    unresolved: Decoration.mark({ class: UNRESOLVED_MARK_CLASS }),
+  },
+  edit: {
+    resolved: Decoration.mark({
+      class: MARK_CLASS,
+      attributes: EDIT_ATTRIBUTES,
+    }),
+    unresolved: Decoration.mark({
+      class: UNRESOLVED_MARK_CLASS,
+      attributes: EDIT_ATTRIBUTES,
+    }),
+  },
+} as const;
 
 /** What the decoration pass produced, kept apart so the widgets can be atomic. */
 interface CitekeyDecorations {
@@ -458,10 +489,13 @@ class CitationWidget extends WidgetType {
           : null;
       },
     };
-    // The Hover Action owns hover on every rendered citation; click and the
-    // item menu are what Citekey Navigation adds on top of it.
+    // The Hover Action owns hover on every rendered citation. A plain click is
+    // Citekey Navigation's where it opens the work the citation names, and the
+    // editor's own where it does not: the caret lands in the source this widget
+    // stands in place of, and the Citation is written again as raw text.
+    markCitationClick(element, this.#navigable ? "open" : "edit");
     if (this.#navigable) attachCitationNavigation(element, navigation);
-    else attachCitationHover(element, navigation);
+    else attachClosedCitationGestures(element, navigation);
     return element;
   }
 
@@ -488,6 +522,7 @@ function buildDecorations(
   const all = new RangeSetBuilder<Decoration>();
   const widgets = new RangeSetBuilder<Decoration>();
   const { state } = view;
+  const marksOf = CITEKEY_MARKS[handlers.navigationEnabled() ? "open" : "edit"];
   // A blurred editor conceals everything, the way Obsidian's own live preview
   // reads its selection.
   const selection = view.hasFocus ? state.selection.ranges : [];
@@ -536,7 +571,7 @@ function buildDecorations(
         placed.push({
           from: line.from + mark.start,
           to: line.from + mark.end,
-          decoration: mark.resolved ? CITEKEY_MARK : CITEKEY_MARK_UNRESOLVED,
+          decoration: mark.resolved ? marksOf.resolved : marksOf.unresolved,
           replaces: false,
         });
       }

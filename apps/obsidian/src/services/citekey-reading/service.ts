@@ -20,7 +20,9 @@ import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   attachCitationHover,
   attachCitationNavigation,
+  attachClosedCitationGestures,
   hoverPreferences,
+  markCitationClick,
 } from "@/services/citekey-navigation";
 import type {
   CitationNavigation,
@@ -58,9 +60,12 @@ export interface CitekeyReadingDeps {
  * citation keeps its native source text.
  *
  * Navigation is independent: when enabled, one work opens on click and several
- * works open a menu at the cursor. Hover belongs to the Hover Action alone, so
- * every citation this surface renders carries it. A citation none of whose keys
- * reaches a Zotero Item stays raw source text, inert but for that hover.
+ * works open a menu at the cursor. Wherever Citations stay closed as links, a
+ * plain click on a rendered citation does nothing — it reads as the static text
+ * it is — and Mod-click keeps opening the work. Hover belongs to the Hover
+ * Action alone, so every citation this surface renders carries it. A citation
+ * none of whose keys reaches a Zotero Item stays raw source text, inert but for
+ * that hover.
  *
  * A post-processor stays registered for the plugin's lifetime, so the toggles
  * are read per render rather than by adding and removing it.
@@ -131,7 +136,7 @@ export class CitekeyReading extends Service<void> {
     const showFormatted =
       pandocCitations && settings["citation.show-formatted"];
     const navigationEnabled =
-      pandocCitations && settings["citation.open-pandoc-links"];
+      pandocCitations && settings["citation.open-as-links"];
     const active = showFormatted || navigationEnabled;
     if (
       active === this.#active &&
@@ -222,15 +227,23 @@ export class CitekeyReading extends Service<void> {
         },
       };
       // Hover belongs to the Hover Action, so every rendered citation carries
-      // it. Click and the item menu are Citekey Navigation's, and a citation
-      // none of whose keys reaches a Zotero Item has nothing to open anyway —
-      // it stays wrapped so themes can style its error state, and its hover
-      // says as much, entry by entry.
-      if (!this.#navigationEnabled || unresolved === citation.keys.length) {
-        attachCitationHover(element, navigation);
+      // it. Click is Citekey Navigation's alone: it opens the work the citation
+      // names, and wherever Citations stay closed as links a plain click does
+      // nothing, the way it does on any other rendered text. A citation none of
+      // whose keys reaches a Zotero Item has nothing to open anyway; it stays
+      // wrapped so themes can style its error state, and its entries say as
+      // much.
+      if (this.#navigationEnabled && unresolved < citation.keys.length) {
+        markCitationClick(element, "open");
+        attachCitationNavigation(element, navigation);
         return element;
       }
-      attachCitationNavigation(element, navigation);
+      markCitationClick(element, "none");
+      if (!this.#navigationEnabled && this.#showFormatted) {
+        attachClosedCitationGestures(element, navigation);
+        return element;
+      }
+      attachCitationHover(element, navigation);
       return element;
     });
   }

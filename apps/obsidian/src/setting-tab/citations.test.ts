@@ -81,9 +81,9 @@ describe("in-text citation settings", () => {
       control: { type: "toggle", key: "citation.show-formatted" },
     });
     expect(group.items[1]).toMatchObject({
-      name: "Open Pandoc citations as links",
-      desc: "Open literature notes from Pandoc citations. This setting does not change how citations are shown or what hovering them shows.",
-      control: { type: "toggle", key: "citation.open-pandoc-links" },
+      name: "Open citations as links",
+      desc: "Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.",
+      control: { type: "toggle", key: "citation.open-as-links" },
     });
     expect(group.items).not.toContainEqual(
       expect.objectContaining({
@@ -94,8 +94,8 @@ describe("in-text citation settings", () => {
     );
     expect(defaults["citation.show-formatted"]).toBe(true);
     expect(Object.entries(defaults)).toContainEqual([
-      "citation.open-pandoc-links",
-      true,
+      "citation.open-as-links",
+      false,
     ]);
   });
 });

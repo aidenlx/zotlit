@@ -21,12 +21,26 @@
   cursor: text;
 }
 
-:where(.markdown-source-view.mod-cm6.is-live-preview span.zt-citation-key) {
+/* A rendered Citation states in `data-zt-click` what a plain click on it does
+   and takes its cursor from that; a marked key opens on click and reads as the
+   link it is. */
+:where(
+  .markdown-source-view.mod-cm6.is-live-preview
+    span.zt-citation-key:not([data-zt-click])
+) {
   cursor: var(--cursor-link);
 }
 
+/* The link hover colour says the click opens something, so it is drawn only
+   where it does. */
 @media (hover: hover) {
-  :where(.markdown-source-view.mod-cm6 span.zt-citation-key:hover) {
+  :where(
+    .markdown-source-view.mod-cm6
+      span.zt-citation-key:is(
+        :not([data-zt-click]),
+        [data-zt-click="open"]
+      ):hover
+  ) {
     color: var(--link-color-hover);
     text-decoration-line: var(--link-decoration-hover);
   }
@@ -44,7 +58,13 @@
 }
 
 @media (hover: hover) {
-  :where(.markdown-source-view.mod-cm6 span.zt-citation-key-unresolved:hover) {
+  :where(
+    .markdown-source-view.mod-cm6
+      span.zt-citation-key-unresolved:is(
+        :not([data-zt-click]),
+        [data-zt-click="open"]
+      ):hover
+  ) {
     color: var(--link-unresolved-color);
     text-decoration-line: var(--link-decoration-hover);
   }

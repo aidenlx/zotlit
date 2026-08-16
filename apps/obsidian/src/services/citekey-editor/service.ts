@@ -205,7 +205,7 @@ export class CitekeyEditor extends Service<void> {
     this.#hover = hoverPreferences(settings);
     const pandocCitations = settings["citation.pandoc-citations"];
     const navigationEnabled =
-      pandocCitations && settings["citation.open-pandoc-links"];
+      pandocCitations && settings["citation.open-as-links"];
     const showFormatted =
       pandocCitations && settings["citation.show-formatted"];
     const active = navigationEnabled || showFormatted;

@@ -14,7 +14,7 @@ describe("CitekeyEditor settings lifecycle", () => {
   it("registers the extension while formatting or navigation is enabled", async () => {
     const settings = new SettingsStub({
       "citation.show-formatted": false,
-      "citation.open-pandoc-links": false,
+      "citation.open-as-links": false,
     });
     let registered: Extension[] = [];
     let reconfigures = 0;
@@ -44,7 +44,7 @@ describe("CitekeyEditor settings lifecycle", () => {
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(false);
 
-    settings.update({ "citation.open-pandoc-links": true });
+    settings.update({ "citation.open-as-links": true });
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(true);
     expect(reconfigures).toBe(1);
@@ -52,7 +52,7 @@ describe("CitekeyEditor settings lifecycle", () => {
     settings.update({ "citation.show-formatted": false });
     expect(registered).toHaveLength(1);
     expect(service.navigationEnabled).toBe(true);
-    settings.update({ "citation.open-pandoc-links": false });
+    settings.update({ "citation.open-as-links": false });
     expect(registered).toEqual([]);
     expect(service.navigationEnabled).toBe(false);
 
@@ -63,7 +63,7 @@ describe("CitekeyEditor settings lifecycle", () => {
   it("stays off while Pandoc citations are off, whatever the editor toggle says", async () => {
     const settings = new SettingsStub({
       "citation.pandoc-citations": false,
-      "citation.open-pandoc-links": true,
+      "citation.open-as-links": true,
     });
     let registered: Extension[] = [];
     await using service = new CitekeyEditor({

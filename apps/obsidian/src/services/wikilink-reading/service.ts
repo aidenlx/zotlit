@@ -23,13 +23,19 @@ import {
 import type { PresentedCitation } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import { hoverWikilinkCitation } from "@/services/citekey-navigation";
+import {
+  clickWikilinkCitation,
+  hoverWikilinkCitation,
+  markCitationClick,
+} from "@/services/citekey-navigation";
+import type { CitationHover } from "@/services/citekey-navigation";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
 import { renderCitationRuns, sectionCitationRuns } from "./render";
+import "./style.css";
 
 const logger = getLogger("wikilink-reading");
 
@@ -51,9 +57,12 @@ export interface WikilinkReadingDeps {
  * The Wikilink Reading Rendering: in reading mode a Literature Note wikilink —
  * and a whole Citation Run of them — shows the citation a style formatted.
  * Native link presentation stays in place until that render lands, while the
- * target and navigation stay Obsidian's. Hover follows the Hover Action: the
- * Citation Popover replaces Obsidian's own hover under the popover, and every
- * other action leaves the link hovering as the link it is.
+ * target stays Obsidian's. Hover follows the Hover Action: the Citation Popover
+ * replaces Obsidian's own hover under the popover, and every other action
+ * leaves the link hovering as the link it is. The click follows the
+ * open-as-links choice: a plain click does nothing wherever Citations stay
+ * closed as links — the Citation reads as the static text it is — and every
+ * other click stays Obsidian's.
  *
  * A post-processor stays registered for the plugin's lifetime, so source and
  * display choices are read per render rather than by adding and removing it.
@@ -177,57 +186,71 @@ export class WikilinkReading extends Service<void> {
         count: shown,
       });
     }
-    if (!this.#display.popoverHover) return;
+    if (!this.#display.popoverHover && !this.#display.clickIntercepted) return;
     for (const [index, run] of runs.entries()) {
       const content = contents[index];
       // A run the style formatted no text for keeps Obsidian's own link, hover
-      // and all; only the Citation this surface rendered carries the popover.
+      // and click and all; only the Citation this surface rendered carries the
+      // popover.
       if (!content) continue;
-      this.#attachHover(run, content, ctx.sourcePath);
+      this.#attachPopover(run, content, ctx.sourcePath);
     }
   }
 
   /**
-   * Gives one rendered Citation the Citation Popover, in place of the page
-   * preview Obsidian answers a Literature Note link with.
+   * Gives one rendered Citation what this surface answers for it: the Citation
+   * Popover on hover, in place of the page preview Obsidian answers a
+   * Literature Note link with, and nothing at all on a plain click, in place of
+   * opening that note.
    *
-   * The listener sits on the anchor the run rendered into, which is where the
-   * post-processor left the Citation and where Obsidian's own delegated handler
-   * would have read the link from.
+   * The listeners sit on the anchor the run rendered into, which is where the
+   * post-processor left the Citation and where Obsidian's own delegated
+   * handlers would have read the link from.
    */
-  #attachHover(
+  #attachPopover(
     run: readonly RunMember<HTMLAnchorElement>[],
     content: PresentedCitation,
     sourcePath: string,
   ): void {
     const element = run[0]!.source;
-    element.addEventListener("mouseover", (event) => {
-      hoverWikilinkCitation(event, element, {
-        works: run.map(({ citation }) => ({
-          citekey: citation.item.citekey,
-          indexedKey: citation.indexedKey,
-        })),
-        // What this section shows in the Citation's place, which is where a
-        // note-class style's own note text is read from.
-        formatted: content.text.content,
-        where: { surface: "reading" },
-        open: (citekey, pane) => {
-          void this.#citekeyEditor.openCitekey(citekey, pane);
-        },
-        showPopover: (request) => this.#citationPopover.show(request),
-        hoverPreferences: () => this.#display.hover,
-        hoverTarget: () => {
-          const hoverParent = this.#viewOf(element);
-          return hoverParent === null
-            ? null
-            : {
-                workspace: this.#app.workspace,
-                hoverParent,
-                sourcePath,
-              };
-        },
+    const hover: CitationHover = {
+      works: run.map(({ citation }) => ({
+        citekey: citation.item.citekey,
+        indexedKey: citation.indexedKey,
+      })),
+      // What this section shows in the Citation's place, which is where a
+      // note-class style's own note text is read from.
+      formatted: content.text.content,
+      where: { surface: "reading" },
+      open: (citekey, pane) => {
+        void this.#citekeyEditor.openCitekey(citekey, pane);
+      },
+      showPopover: (request) => this.#citationPopover.show(request),
+      hoverPreferences: () => this.#display.hover,
+      hoverTarget: () => {
+        const hoverParent = this.#viewOf(element);
+        return hoverParent === null
+          ? null
+          : {
+              workspace: this.#app.workspace,
+              hoverParent,
+              sourcePath,
+            };
+      },
+    };
+    if (this.#display.popoverHover) {
+      element.addEventListener("mouseover", (event) => {
+        hoverWikilinkCitation(event, element, hover);
       });
-    });
+    }
+    if (this.#display.clickIntercepted) {
+      // The anchor states what its plain click does, which is what neutralizes
+      // Obsidian's own link cursor and hover colour on it.
+      markCitationClick(element, "none", { cursor: false });
+      element.addEventListener("click", (event) => {
+        clickWikilinkCitation(event, { where: hover.where });
+      });
+    }
   }
 
   /**

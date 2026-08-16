@@ -56,10 +56,15 @@ describe("classifyDiskData", () => {
     expect(classifyDiskData(raw)).toEqual({ kind: "v7", raw });
   });
 
-  it("classifies integer __VERSION__ > 7 as future", () => {
-    expect(classifyDiskData({ __VERSION__: 8 })).toEqual({
+  it("classifies __VERSION__ === 8 as v8", () => {
+    const raw = { __VERSION__: 8, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v8", raw });
+  });
+
+  it("classifies integer __VERSION__ > 8 as future", () => {
+    expect(classifyDiskData({ __VERSION__: 9 })).toEqual({
       kind: "future",
-      version: 8,
+      version: 9,
     });
     expect(classifyDiskData({ __VERSION__: 99 })).toEqual({
       kind: "future",

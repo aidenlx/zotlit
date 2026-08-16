@@ -10,6 +10,7 @@ import {
   migrateV4ToV5,
   migrateV5ToV6,
   migrateV6ToV7,
+  migrateV7ToV8,
 } from "@/services/settings/migrate";
 import { SettingsService } from "@/services/settings/service";
 
@@ -65,6 +66,7 @@ async function makeLogging(initial: Record<string, unknown> | null = null) {
     migrateV4: migrateV4ToV5,
     migrateV5: migrateV5ToV6,
     migrateV6: migrateV6ToV7,
+    migrateV7: migrateV7ToV8,
   });
   const logging = new LoggingService({ plugin: stub.plugin, settings });
   await logging.ready;

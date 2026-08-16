@@ -39,9 +39,9 @@ ZotLit adds a public class only when both conditions apply:
 1. The source belongs to the active note's Document Citation Set.
 2. ZotLit supplies formatted rendering or navigation for that source.
 
-`zt-citation-key` and its state classes identify active literal Pandoc sources. **Pandoc citations** controls their membership. **Show formatted citations** and **Open Pandoc citations as links** control the two features that can activate their hooks.
+`zt-citation-key` and its state classes identify active literal Pandoc sources. **Pandoc citations** controls their membership. **Show formatted citations** and **Open citations as links** control the two features that can activate their hooks.
 
-`zt-literature-note-link` identifies active Wikilink Citation sources. **Wikilink citations** controls their membership. ZotLit applies the hook when **Show formatted citations** supplies their rendering. Obsidian continues to supply wikilink navigation.
+`zt-literature-note-link` identifies active Wikilink Citation sources. **Wikilink citations** controls their membership. ZotLit applies the hook when **Show formatted citations** supplies their rendering. Obsidian supplies wikilink navigation while **Open citations as links** is on; when it is off, a plain click on a rendered wikilink citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Mod+click still opens the note.
 
 Aliases, heading links, block links, embeds, unresolved targets, and malformed Citation Fragments stay outside renderable membership. ZotLit gives them no public citation class.
 

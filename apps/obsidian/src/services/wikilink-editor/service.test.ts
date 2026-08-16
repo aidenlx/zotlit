@@ -137,7 +137,7 @@ describe("WikilinkEditor redraw", () => {
     await using harnessed = await harness();
     const { settings, dispatched } = harnessed;
 
-    settings.update({ "citation.open-pandoc-links": false });
+    settings.update({ "citation.open-as-links": false });
     expect(dispatched).toEqual([]);
   });
 

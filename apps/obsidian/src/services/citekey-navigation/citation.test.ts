@@ -1,10 +1,16 @@
 // @vitest-environment happy-dom
 import { Keymap, Menu } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaults } from "@/services/settings/schema";
 
-import { attachCitationHover, attachCitationNavigation } from "./citation";
+import {
+  attachCitationHover,
+  attachCitationNavigation,
+  attachClosedCitationGestures,
+  clickWikilinkCitation,
+  markCitationClick,
+} from "./citation";
 import type { CitationHoverRequest } from "./citation";
 import { CITEKEY_HOVER_SOURCE, hoverPreferences } from "./hover";
 import type { HoverPreferences } from "./hover";
@@ -225,6 +231,211 @@ describe("attachCitationNavigation under Off", () => {
     expect(parts.requests).toEqual([]);
     expect(parts.links).toEqual([]);
     expect(parts.opened).toEqual([["doe2024", false]]);
+  });
+});
+
+describe("attachClosedCitationGestures", () => {
+  function attachClosed(
+    works: readonly CitedWork[],
+    where: GestureSurface = { surface: "reading" },
+    hover: HoverPreferences = hoverPreferences(defaults),
+  ) {
+    const parts = citation(works, where, hover);
+    attachClosedCitationGestures(parts.element, parts.navigation);
+    return parts;
+  }
+
+  const click = (overrides: MouseEventInit = {}): MouseEvent =>
+    new MouseEvent("click", { bubbles: true, cancelable: true, ...overrides });
+
+  // An earlier suite may have left a modifier held; every click here names its
+  // own modifiers.
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("leaves a plain reading-mode click to the platform", () => {
+    const { element, requests, opened } = attachClosed([
+      work("doe2024", "Doe (2024)"),
+      work("smith2025", "Smith (2025)"),
+    ]);
+    const event = click();
+
+    element.dispatchEvent(event);
+
+    expect(opened).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("leaves a plain Live Preview click to the caret the browser places", () => {
+    const { element, requests, opened } = attachClosed(
+      [work("doe2024", "Doe (2024)")],
+      { surface: "editor", editorMode: "live-preview" },
+    );
+    const down = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+    });
+    const event = click();
+
+    element.dispatchEvent(down);
+    element.dispatchEvent(event);
+
+    // The selection the caret places reveals the Citation's source text.
+    expect(down.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+    expect(opened).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  it("keeps the hover the Hover Action names", () => {
+    const { element, requests } = attachClosed([work("doe2024", "Doe (2024)")]);
+
+    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(requests).toHaveLength(1);
+  });
+
+  it("opens the work a Mod-click names, through the shared navigation flow", () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
+    const { element, requests, opened } = attachClosed([
+      work("doe2024", "Doe (2024)"),
+    ]);
+
+    element.dispatchEvent(click({ ctrlKey: true }));
+
+    expect(opened).toEqual([["doe2024", "tab"]]);
+    expect(requests).toEqual([]);
+  });
+
+  it("leaves a middle click inert", () => {
+    const { element, requests, opened } = attachClosed([
+      work("doe2024", "Doe (2024)"),
+    ]);
+
+    element.dispatchEvent(new MouseEvent("mousedown", { button: 1 }));
+    element.dispatchEvent(click({ button: 1 }));
+
+    expect(opened).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+});
+
+describe("markCitationClick", () => {
+  it("states what a plain click does, and takes the cursor from it", () => {
+    const element = document.createElement("span");
+
+    markCitationClick(element, "edit");
+
+    expect(element.dataset.ztClick).toBe("edit");
+    expect(
+      element.classList.contains("zt:data-[zt-click=edit]:cursor-text"),
+    ).toBe(true);
+  });
+
+  it("leaves the cursor to a stylesheet where the caller asks", () => {
+    const element = document.createElement("a");
+
+    markCitationClick(element, "none", { cursor: false });
+
+    expect(element.dataset.ztClick).toBe("none");
+    expect(element.classList).toHaveLength(0);
+  });
+});
+
+describe("clickWikilinkCitation", () => {
+  // An earlier suite may have left a modifier held; every click here names its
+  // own modifiers.
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function clicked(
+    event: MouseEvent,
+    where: GestureSurface = { surface: "reading" },
+  ) {
+    const parts = citation([work("doe2024", "Doe (2024)")], where);
+    /** Every click Obsidian's own delegated handler would have answered. */
+    const native: MouseEvent[] = [];
+    /** Every click the surface answered with the caret. */
+    const edited: MouseEvent[] = [];
+    // The container the delegated handler sits on, as Obsidian hangs it above
+    // the link rather than on it.
+    const container = document.createElement("div");
+    container.append(parts.element);
+    container.addEventListener("click", (reached) =>
+      native.push(reached as MouseEvent),
+    );
+    parts.element.addEventListener("click", (own) => {
+      clickWikilinkCitation(own, {
+        where,
+        edit: (reached) => edited.push(reached),
+      });
+    });
+    parts.element.dispatchEvent(event);
+    return { ...parts, native, edited };
+  }
+
+  const click = (overrides: MouseEventInit = {}): MouseEvent =>
+    new MouseEvent("click", { bubbles: true, cancelable: true, ...overrides });
+
+  it("swallows a plain reading-mode click, and edits nothing", () => {
+    const event = click();
+
+    const { requests, native, edited } = clicked(event);
+
+    expect(requests).toEqual([]);
+    expect(edited).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(native).toEqual([]);
+  });
+
+  it("answers a plain Live Preview click with the caret, and stops there", () => {
+    const event = click();
+
+    const { native, edited } = clicked(event, {
+      surface: "editor",
+      editorMode: "live-preview",
+    });
+
+    expect(edited).toEqual([event]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(native).toEqual([]);
+  });
+
+  it("leaves a Mod-click to Obsidian", () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    const event = click({ ctrlKey: true });
+
+    const { opened, native, edited } = clicked(event, {
+      surface: "editor",
+      editorMode: "live-preview",
+    });
+
+    expect(opened).toEqual([]);
+    expect(edited).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(native).toHaveLength(1);
+  });
+
+  it("leaves a click of another button to Obsidian", () => {
+    const event = click({ button: 1 });
+
+    const { native, edited } = clicked(event);
+
+    expect(edited).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(native).toHaveLength(1);
   });
 });
 

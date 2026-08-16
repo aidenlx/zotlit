@@ -52,16 +52,16 @@ Both settings can be off. ZotLit's internal Citation Index remains active, and *
 
 ### In-text citations
 
-| Label                              | Key                          | Control | Default | Dependency                                                                   | Storage |
-| ---------------------------------- | ---------------------------- | ------- | ------- | ---------------------------------------------------------------------------- | ------- |
-| **Show formatted citations**       | `citation.show-formatted`    | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text  | Synced  |
-| **Open Pandoc citations as links** | `citation.open-pandoc-links` | Toggle  | On      | **Pandoc citations** is on and the cursor is on a recognized Pandoc citation | Synced  |
+| Label                        | Key                       | Control | Default | Dependency                                                                  | Storage |
+| ---------------------------- | ------------------------- | ------- | ------- | --------------------------------------------------------------------------- | ------- |
+| **Show formatted citations** | `citation.show-formatted` | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text | Synced  |
+| **Open citations as links**  | `citation.open-as-links`  | Toggle  | Off     | Active citation source                                                      | Synced  |
 
 **Show formatted citations:** Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.
 
-**Open Pandoc citations as links:** Open literature notes from Pandoc citations. This setting does not change how citations are shown or what hovering them shows.
+**Open citations as links:** Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.
 
-The navigation setting also controls the four open-under-cursor commands. **Hover action** owns hover on its own. Literature Note wikilinks retain Obsidian's navigation.
+The navigation setting also controls the four open-under-cursor commands. **Hover action** owns hover on its own. While this setting is off, Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
 
 ### Hover
 

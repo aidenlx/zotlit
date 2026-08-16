@@ -79,8 +79,11 @@ export const schema = v.object({
   "citation.wikilink-citations": v.boolean(),
   /** Show recognized Citations with the selected CSL style. */
   "citation.show-formatted": v.boolean(),
-  /** Open and preview Literature Notes from Pandoc Citations. */
-  "citation.open-pandoc-links": v.boolean(),
+  /**
+   * Navigate to the Literature Note when a Citation is clicked, on both Pandoc
+   * Citations and Literature Note wikilinks rendered as Citations.
+   */
+  "citation.open-as-links": v.boolean(),
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
   "citation.references-style": v.nullable(v.string()),
   /** What hovering a Citation shows, on every surface that carries one. */
@@ -132,7 +135,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
   "citation.show-formatted": true,
-  "citation.open-pandoc-links": true,
+  "citation.open-as-links": false,
   "citation.references-style": null,
   "citation.hover-action": "popover",
   // Source mode keeps the modifier so plain-text editing is never interrupted,

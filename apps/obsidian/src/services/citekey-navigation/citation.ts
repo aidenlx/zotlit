@@ -8,8 +8,17 @@ import type { Inlines } from "@/services/pandoc/ast";
 
 import { citationHoverIntent } from "./hover";
 import type { CitationHoverIntent, HoverPreferences } from "./hover";
-import { citationTarget, navigationIntent } from "./intent";
-import type { CitedWork, HoveredWork, NavigationPane } from "./intent";
+import {
+  citationClickIntent,
+  citationTarget,
+  navigationIntent,
+} from "./intent";
+import type {
+  CitationClickIntent,
+  CitedWork,
+  HoveredWork,
+  NavigationPane,
+} from "./intent";
 import { hoverGesture, mouseGesture, triggerCitekeyHover } from "./shell";
 import type { GestureSurface } from "./shell";
 
@@ -46,7 +55,10 @@ export interface CitationHoverRequest {
   open: (citekey: string, pane: NavigationPane) => void;
 }
 
-/** What one hovered citation answers with, whichever syntax wrote it. */
+/**
+ * What one rendered citation answers a hover with, whichever syntax wrote it —
+ * the Citation Popover the Hover Action names.
+ */
 export interface CitationHover {
   /** The works the citation names, in the order it names them. */
   works: readonly HoveredWork[];
@@ -62,7 +74,7 @@ export interface CitationHover {
   showPopover: (request: CitationHoverRequest) => void;
   /** What hover answers with, read once per hover. */
   hoverPreferences: () => HoverPreferences;
-  /** Read when a hover result is due; null when the citation sits in no view. */
+  /** Read when a popover is due; null when the citation sits in no view. */
   hoverTarget: () => CitationHoverTarget | null;
 }
 
@@ -74,6 +86,49 @@ export interface CitationNavigation extends CitationHover {
    * zero or several name it — read only by the page preview branch.
    */
   hoverNotePath: (citekey: string) => string | null;
+}
+
+/** What a plain left-click on one rendered citation does. */
+export type CitationClickAffordance =
+  /** Opens the work it names. */
+  | "open"
+  /** Places the caret in the source it stands in place of. */
+  | "edit"
+  /** Nothing at all: the citation is static text. */
+  | "none";
+
+/**
+ * The cursor a rendered citation takes from {@link markCitationClick}'s
+ * attribute, as the utilities that read it.
+ */
+const CLICK_CURSOR_CLASSES = [
+  "zt:data-[zt-click=open]:cursor-link",
+  "zt:data-[zt-click=edit]:cursor-text",
+  "zt:data-[zt-click=none]:cursor-text",
+];
+
+/**
+ * States on one rendered citation what a plain left-click on it does, which is
+ * what its cursor and its hover colour are drawn from — so the citation says
+ * what the gesture reaches before it is made.
+ *
+ * `data-zt-click` is the plugin's own affordance plumbing, free to change with
+ * the DOM structure the theme contract keeps private: it is registered in no
+ * theme hook and documented in no theme reference. A theme keys on the public
+ * `zt-` classes instead.
+ *
+ * @param cursor whether the element takes that cursor from the plugin's own
+ *   utilities. An anchor Obsidian styles itself takes it from a stylesheet rule
+ *   instead, which is what reaches past Obsidian's own unlayered rules.
+ *   @default true
+ */
+export function markCitationClick(
+  element: HTMLElement,
+  click: CitationClickAffordance,
+  { cursor = true }: { cursor?: boolean } = {},
+): void {
+  element.dataset.ztClick = click;
+  if (cursor) element.classList.add(...CLICK_CURSOR_CLASSES);
 }
 
 /**
@@ -108,6 +163,77 @@ export function attachCitationNavigation(
   element.addEventListener("mousedown", (event) => {
     if (event.button === 1) navigate(event, navigation);
   });
+}
+
+/**
+ * Gives one Rendered Citation what it answers wherever Citations stay closed as
+ * links: the hover the Hover Action names, and the Mod-click that opens the
+ * work anyway, through the same flow every other citekey surface opens it by.
+ *
+ * A plain click is the platform's own — Live Preview places the caret in the
+ * source the citation stands in place of, and reading mode selects the text it
+ * landed on — so nothing here touches it.
+ *
+ * The listeners sit on the citation's own element, so they go with it when the
+ * surface renders that citation again.
+ */
+export function attachClosedCitationGestures(
+  element: HTMLElement,
+  navigation: CitationNavigation,
+): void {
+  attachCitationHover(element, navigation);
+  element.addEventListener("click", (event) => {
+    if (clickIntentOf(event, navigation.where) === "navigate") {
+      navigate(event, navigation);
+    }
+  });
+}
+
+/**
+ * Takes the plain left-click of one rendered wikilink Citation away from
+ * Obsidian, wherever Citations stay closed as links: the gesture stops on the
+ * Citation, so the delegated handler Obsidian hangs above the link never opens
+ * the note with it.
+ *
+ * Mod-click and middle-click reach that handler untouched, which is what opens
+ * the Literature Note the link names.
+ *
+ * @param where the surface the Citation is rendered on, which decides what the
+ *   swallowed click leaves in its place.
+ * @param edit what Live Preview does with the click instead: place the caret,
+ *   which reveals the wikilink's own source text. Reading mode renders static
+ *   text and supplies none.
+ */
+export function clickWikilinkCitation(
+  event: MouseEvent,
+  {
+    where,
+    edit,
+  }: { where: GestureSurface; edit?: (event: MouseEvent) => void },
+): void {
+  if (event.button !== 0) return;
+  const intent = clickIntentOf(event, where);
+  if (intent === "navigate") return;
+  event.preventDefault();
+  event.stopPropagation();
+  logger.debug("Wikilink citation keeps its note closed", {
+    surface: where.surface,
+    intent,
+  });
+  if (intent === "edit") edit?.(event);
+}
+
+/**
+ * What one mouse event on a Rendered Citation means while Citations stay closed
+ * as links. Obsidian reads middle-click off `mousedown`, so a button this shell
+ * leaves alone is named here rather than inferred from the event type.
+ */
+function clickIntentOf(
+  event: MouseEvent,
+  where: GestureSurface,
+): CitationClickIntent {
+  if (event.button !== 0) return "nothing";
+  return citationClickIntent(mouseGesture(event, "click", where));
 }
 
 /**

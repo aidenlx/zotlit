@@ -41,7 +41,7 @@ interface Harness extends AsyncDisposable {
   requests: CitationHoverRequest[];
   /** Every Literature Note the popover's own open action reached for. */
   opened: [citekey: string, pane: NavigationPane][];
-  /** Every hover Obsidian's own delegated listener would have answered. */
+  /** Every gesture Obsidian's own delegated listeners would have answered. */
   native: MouseEvent[];
   /** Starts a post-processor pass without waiting for citation text. */
   beginRender: (linktext: string) => {
@@ -79,9 +79,10 @@ async function harness({
   let rerenders = 0;
   let process: MarkdownPostProcessor | undefined;
   // The reading view a rendered section sits in, which Obsidian hangs both the
-  // popover and its own delegated hover off.
+  // popover and its own delegated hover and click off.
   const containerEl = document.createElement("div");
   containerEl.addEventListener("mouseover", (event) => native.push(event));
+  containerEl.addEventListener("click", (event) => native.push(event));
   // Obsidian places a section of this stubbed document nowhere, which is the
   // degraded tier: every Citation shows its source's first-occurrence text.
   const ctx = { sourcePath, getSectionInfo: () => null } as never;
@@ -437,6 +438,96 @@ describe("WikilinkReading hover", () => {
   });
 });
 
+describe("WikilinkReading click", () => {
+  /** One rendered Citation of a document whose text the style formatted. */
+  const rendering = (overrides: Parameters<typeof harness>[0] = {}) =>
+    harness({
+      "citation.wikilink-citations": true,
+      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      ...overrides,
+    });
+
+  /** Clicks the rendered Citation, and answers with the event it sent. */
+  const click = (root: HTMLElement, init: MouseEventInit = {}) => {
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    root.querySelector("a")?.dispatchEvent(event);
+    return event;
+  };
+
+  it("swallows a plain click, and stops there", async () => {
+    await using harnessed = await rendering();
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    const event = click(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.opened).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(harnessed.native).toEqual([]);
+    // The anchor says as much, which is what neutralizes Obsidian's own link
+    // cursor and hover colour on it.
+    expect(root.querySelector("a")?.dataset.ztClick).toBe("none");
+  });
+
+  it("swallows a plain click under Page preview and Off", async () => {
+    for (const action of ["page-preview", "off"] as const) {
+      await using harnessed = await rendering({
+        "citation.hover-action": action,
+      });
+      const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+      const event = click(root);
+
+      expect(harnessed.requests).toEqual([]);
+      expect(event.defaultPrevented).toBe(true);
+      expect(harnessed.native).toEqual([]);
+    }
+  });
+
+  it("leaves a Mod-click to Obsidian, which opens the note the link names", async () => {
+    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+    await using harnessed = await rendering();
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    const event = click(root, { ctrlKey: true });
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.opened).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(harnessed.native).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+
+  it("leaves every click to Obsidian while Citations open as links", async () => {
+    await using harnessed = await rendering({
+      "citation.open-as-links": true,
+    });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    const event = click(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(harnessed.native).toHaveLength(1);
+    // Obsidian's own link styling stands untouched.
+    expect(root.querySelector("a")?.dataset.ztClick).toBeUndefined();
+  });
+
+  it("leaves a link it rendered no Citation for clicking as Obsidian's own", async () => {
+    await using harnessed = await rendering({ formatted: {} });
+    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
+
+    click(root);
+
+    expect(harnessed.requests).toEqual([]);
+    expect(harnessed.native).toHaveLength(1);
+  });
+});
+
 describe("WikilinkReading rerender", () => {
   it("renders every reading view again when a Literature Note changes", async () => {
     await using harnessed = await harness();
@@ -462,17 +553,22 @@ describe("WikilinkReading rerender", () => {
     expect(rerenders()).toBe(2);
   });
 
-  it("renders again when the Hover Action changes who answers a hover", async () => {
+  it("renders again when a setting changes who answers a gesture", async () => {
     await using harnessed = await harness();
     const { settings, rerenders } = harnessed;
 
     settings.update({ "citation.hover-action": "off" });
     expect(rerenders()).toBe(1);
 
+    settings.update({ "citation.open-as-links": true });
+    expect(rerenders()).toBe(2);
+    settings.update({ "citation.open-as-links": false });
+    expect(rerenders()).toBe(3);
+
     // Which mode holds a hover back for a modifier is read at hover time, so
     // nothing rendered depends on it.
     settings.update({ "citation.hover-require-mod-reading": true });
-    expect(rerenders()).toBe(1);
+    expect(rerenders()).toBe(3);
   });
 
   it("renders every reading view again when the citekey resolution snapshot rebuilds", async () => {
@@ -500,7 +596,7 @@ describe("WikilinkReading rerender", () => {
   it("leaves the reading views alone when an unrelated setting changes", async () => {
     await using harnessed = await harness();
 
-    harnessed.settings.update({ "citation.open-pandoc-links": false });
+    harnessed.settings.update({ "citation.open-as-links": false });
     expect(harnessed.rerenders()).toBe(0);
   });
 

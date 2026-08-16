@@ -33,6 +33,7 @@ import {
   migrateV4ToV5,
   migrateV5ToV6,
   migrateV6ToV7,
+  migrateV7ToV8,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
@@ -70,6 +71,7 @@ export function buildServices(
           migrateV4: migrateV4ToV5,
           migrateV5: migrateV5ToV6,
           migrateV6: migrateV6ToV7,
+          migrateV7: migrateV7ToV8,
         }),
     })
     .use({

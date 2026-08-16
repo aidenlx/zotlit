@@ -135,8 +135,10 @@ function viewOf(
           open: () => undefined,
           showPopover: () => undefined,
           hoverPreferences: () => hoverPreferences(defaults),
-          // Hover is this surface's own suite; here the Citation is only drawn.
+          // Hover and click are this surface's own suite; here the Citation is
+          // only drawn.
           popoverHover: () => false,
+          clickIntercepted: () => false,
         }),
       ],
     }),
