@@ -5,13 +5,13 @@ import type { App } from "obsidian";
 import { getLogger } from "@/lib/log";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
-import { citationContent } from "@/services/citation-text/present";
+import { shownCitationContent } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
 import type { Inlines } from "@/services/pandoc/ast";
 import {
-  citedItems,
+  documentCitationPresentation,
   documentPresentation,
 } from "@/services/pandoc/document-presentation";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
@@ -35,7 +35,10 @@ export interface CitationPopoverDeps {
   /** The formatted citations of the hovered document, read for this popover. */
   citationText: Pick<CitationText, "load">;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
-  bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
+  bibliographyRender: Pick<
+    BibliographyRenderCache,
+    "render" | "on" | "vaultPresentation"
+  >;
 }
 
 export interface CitationPopover {
@@ -156,13 +159,17 @@ async function readBlocks(
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
-  const declared = documentPresentation(deps.app.metadataCache, file);
+  const presented = documentCitationPresentation(
+    documentPresentation(deps.app.metadataCache, file),
+    deps.bibliographyRender.vaultPresentation,
+    { citations, works: sources },
+  );
   const outcome =
-    declared.kind === "unusable"
+    presented.kind === "unusable"
       ? null
       : await deps.bibliographyRender.render(
-          citedItems(sources),
-          declared.presentation,
+          presented.items,
+          presented.presentation,
         );
   const entries = buildReferenceEntries(citations, sources, {
     bibliography:
@@ -176,10 +183,9 @@ async function readBlocks(
   const text = await deps.citationText.load(file);
   // A note-class style writes its citation as a note the surfaces stand serials
   // in place of, so the popover is where that text is read — taken from the
-  // formatted text of the very occurrence the pointer is on.
-  const formatted =
-    request.shown &&
-    citationContent(request.shown.citation, text, request.shown.at);
+  // formatted text of the very occurrence the pointer is on, and from no other
+  // occurrence once an edit has moved the one the hover stands on.
+  const formatted = request.shown && shownCitationContent(request.shown, text);
   return {
     blocks: citationPopoverBlocks(request.works, entries, {
       serials: text.entrySerials,

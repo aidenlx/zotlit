@@ -25,5 +25,42 @@ const LANGUAGE_TAG =
  * @see https://docs.citationstyles.org/en/v1.0.2/specification.html#locale-fallback
  */
 export function isLanguageTag(tag: string): boolean {
-  return LANGUAGE_TAG.test(tag);
+  return LANGUAGE_TAG.test(tag) && writtenOnce(tag);
+}
+
+/** The shape a variant subtag is written in, which is what tells one apart. */
+const VARIANT = /^(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3})$/;
+
+/**
+ * Whether the tag names each variant and each extension once, which the grammar
+ * alone does not say: `de-1901-1901` and `en-u-ca-gregory-u-nu-latn` are shaped
+ * like tags and are none.
+ *
+ * The subtags a private-use sequence carries mean whatever their writer says, so
+ * a repeat among them is a repeat of nothing and the sequence ends the reading.
+ * Everything after the first single-character subtag belongs to an extension,
+ * whose own subtags are two characters or longer, so a single character there
+ * opens one; a variant is what the run before it is written in the shape of.
+ *
+ * @param tag one tag the grammar already took.
+ * @see https://www.rfc-editor.org/rfc/rfc5646#section-2.2.9 — what a tag may write twice
+ */
+function writtenOnce(tag: string): boolean {
+  const subtags = tag.toLowerCase().split("-");
+  if (subtags[0] === "x") return true;
+  const privateUse = subtags.indexOf("x", 1);
+  const named = privateUse === -1 ? subtags : subtags.slice(0, privateUse);
+  // The language subtag opens the tag, and can be as long as a variant is.
+  const extensions = named.findIndex(
+    (subtag, index) => index > 0 && subtag.length === 1,
+  );
+  const end = extensions === -1 ? named.length : extensions;
+  return (
+    saidOnce(named.slice(1, end).filter((subtag) => VARIANT.test(subtag))) &&
+    saidOnce(named.slice(end).filter((subtag) => subtag.length === 1))
+  );
+}
+
+function saidOnce(subtags: readonly string[]): boolean {
+  return new Set(subtags).size === subtags.length;
 }

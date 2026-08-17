@@ -326,6 +326,9 @@ describe("citationLocaleError", () => {
       "de-",
       "de--DE",
       "abcdefghi",
+      // A tag writes each variant and each extension once.
+      "de-1901-1901",
+      "en-u-ca-gregory-u-nu-latn",
     ]) {
       expect(citationLocaleError(locale)).toBe(
         "Enter a language code such as en-US, de, or zh-CN.",

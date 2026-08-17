@@ -236,6 +236,7 @@ beforeEach(async () => {
         decline: () => undefined,
       },
       bibliographyRender: {
+        vaultPresentation: { styleId: null, locale: null },
         render: () => {
           const deferred = Promise.withResolvers<RenderedBibliography>();
           renders.push(deferred);

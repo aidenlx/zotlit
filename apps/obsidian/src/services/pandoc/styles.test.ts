@@ -331,6 +331,94 @@ describe("resolveInstalledStyle", () => {
     expect(installedXml(style)).toContain('default-locale="de-DE"');
   });
 
+  it("reads a dependent style written under a namespace prefix", async () => {
+    await using library = await installStyles();
+    // The CSL namespace bound to a prefix, which says what the unprefixed
+    // spelling says — a parser reads the two documents alike.
+    await library.writeCsl(
+      "nature-neuroscience.csl",
+      [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<cs:style xmlns:cs="http://purl.org/net/xbiblio/csl" version="1.0" default-locale="de-DE">',
+        "  <cs:info>",
+        "    <cs:title>Nature Neuroscience</cs:title>",
+        `    <cs:id>${NATURE_NEUROSCIENCE}</cs:id>`,
+        `    <cs:link href="${NATURE_NEUROSCIENCE}" rel="self"/>`,
+        `    <cs:link href="${NATURE}" rel="independent-parent"/>`,
+        "  </cs:info>",
+        "</cs:style>",
+      ].join("\n"),
+    );
+    await library.writeStyle("nature.csl", {
+      id: NATURE,
+      title: "Nature",
+      hidden: true,
+    });
+
+    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+      { id: NATURE_NEUROSCIENCE, title: "Nature Neuroscience" },
+    ]);
+    const style = await resolveInstalledStyle(library.dataDir, {
+      styleId: NATURE_NEUROSCIENCE,
+    });
+
+    expect(style).toMatchObject({
+      kind: "installed",
+      styleId: NATURE_NEUROSCIENCE,
+      parentId: NATURE,
+    });
+    expect(installedXml(style)).toContain(`<id>${NATURE}</id>`);
+    expect(installedXml(style)).toContain('default-locale="de-DE"');
+  });
+
+  it("renders a Citation Locale into a style written under a namespace prefix", async () => {
+    await using library = await installStyles();
+    await library.writeCsl(
+      "apa.csl",
+      [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<cs:style xmlns:cs="http://purl.org/net/xbiblio/csl" version="1.0" default-locale="en-US">',
+        `  <cs:info><cs:title>APA</cs:title><cs:id>${APA}</cs:id></cs:info>`,
+        '  <cs:bibliography><cs:layout><cs:text value="apa"/></cs:layout></cs:bibliography>',
+        "</cs:style>",
+      ].join("\n"),
+    );
+
+    const style = await resolveInstalledStyle(library.dataDir, {
+      styleId: APA,
+      locale: "zh-CN",
+    });
+
+    expect(installedXml(style)).toContain("<cs:style xmlns:cs=");
+    expect(installedXml(style)).toContain('default-locale="zh-CN"');
+    expect(installedXml(style)).not.toContain('default-locale="en-US"');
+  });
+
+  it("names a style by the identity its encoded ID stands for", async () => {
+    await using library = await installStyles();
+    const ID = "http://example.com/styles?a=1&b=2";
+    await library.writeCsl(
+      "encoded.csl",
+      [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">',
+        "  <info>",
+        "    <title>Encoded</title>",
+        "    <id>http://example.com/styles?a=1&amp;b=2</id>",
+        "  </info>",
+        '  <bibliography><layout><text value="encoded"/></layout></bibliography>',
+        "</style>",
+      ].join("\n"),
+    );
+
+    await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([
+      { id: ID, title: "Encoded" },
+    ]);
+    await expect(
+      resolveInstalledStyle(library.dataDir, { styleId: ID }),
+    ).resolves.toMatchObject({ kind: "installed", styleId: ID });
+  });
+
   it("renders an explicit Citation Locale over every style's own", async () => {
     await using library = await installStyles();
     await library.writeStyle("nature-neuroscience.csl", {
@@ -622,7 +710,7 @@ describe("InstalledStyleCache", () => {
   /** A whole-second timestamp, which every filesystem stores exactly. */
   const PINNED = 1_700_000_000;
 
-  it("re-reads a style file only when its timestamp moves", async () => {
+  it("answers for changed content whatever timestamp the edit left", async () => {
     await using library = await installStyles();
     const path = library.pathOf("apa.csl");
     await library.writeStyle("apa.csl", { id: APA, title: "APA" });
@@ -636,18 +724,10 @@ describe("InstalledStyleCache", () => {
       xml: expect.stringContaining("<title>APA</title>"),
     });
 
-    // A body written under the timestamp the read already ran against is a
-    // body no read looks at.
+    // A style edited in place under the timestamp the read already ran
+    // against is still the style the next resolution answers with.
     await library.writeStyle("apa.csl", { id: APA, title: "APA Revised" });
     await utimes(path, PINNED, PINNED);
-    await expect(
-      styles.resolve(library.dataDir, { styleId: APA }),
-    ).resolves.toMatchObject({
-      kind: "installed",
-      xml: expect.stringContaining("<title>APA</title>"),
-    });
-
-    await utimes(path, PINNED + 1, PINNED + 1);
     await expect(
       styles.resolve(library.dataDir, { styleId: APA }),
     ).resolves.toMatchObject({

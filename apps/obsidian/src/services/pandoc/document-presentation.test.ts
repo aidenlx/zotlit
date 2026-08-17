@@ -2,6 +2,7 @@ import type { CachedMetadata, MetadataCache, TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import {
+  documentCitationPresentation,
   documentPresentation,
   samePresentation,
 } from "./document-presentation";
@@ -96,6 +97,50 @@ describe("documentPresentation", () => {
       kind: "unusable",
       property: "style",
     });
+  });
+});
+
+describe("documentCitationPresentation", () => {
+  const VAULT = {
+    styleId: "http://www.zotero.org/styles/apa",
+    locale: "en-US",
+  };
+  const ALPHA = { id: "zotero://alpha", type: "book" };
+  const BETA = { id: "zotero://beta", type: "book" };
+  const cited = {
+    citations: [
+      { indexedKey: "1/ALPHA" },
+      { indexedKey: null },
+      { indexedKey: "1/BETA" },
+      { indexedKey: "1/GONE" },
+    ],
+    works: new Map([
+      ["1/BETA", { csl: BETA }],
+      ["1/ALPHA", { csl: ALPHA }],
+    ]),
+  };
+
+  it("names the style, the locale, and the cited works as one value", () => {
+    expect(
+      documentCitationPresentation(read({ lang: "de-DE" }), VAULT, cited),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: VAULT.styleId, locale: "de-DE" },
+      // Document order, and no slot for a Citation naming no readable work.
+      items: [ALPHA, BETA],
+    });
+  });
+
+  it("inherits both vault selections where the note names neither", () => {
+    expect(
+      documentCitationPresentation(read(null), VAULT, cited),
+    ).toMatchObject({ presentation: VAULT });
+  });
+
+  it("leaves the vault selections out of a note that renders none", () => {
+    expect(
+      documentCitationPresentation(read({ "zotlit-csl": "" }), VAULT, cited),
+    ).toEqual({ kind: "unusable", property: "style" });
   });
 });
 

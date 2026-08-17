@@ -33,7 +33,10 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
-import { documentPresentation } from "@/services/pandoc/document-presentation";
+import {
+  documentCitationPresentation,
+  documentPresentation,
+} from "@/services/pandoc/document-presentation";
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type {
   BibliographyRenderCache,
@@ -96,7 +99,7 @@ export interface CitationTextDeps {
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
-    "renderCitations" | "render" | "on"
+    "renderCitations" | "render" | "on" | "vaultPresentation"
   >;
 }
 
@@ -300,12 +303,21 @@ export class CitationText extends Service<void> {
       id: indexedKey,
     }));
 
+    // What this document renders under, whole — the style, the Citation
+    // Locale, and the works it cites in the order it cites them — read through
+    // the one boundary the References Sidebar and the Citation Popover read it
+    // through, so the digits inline are the digits their lists show.
+    //
     // A document whose own presentation property names nothing at all renders
     // nothing: its citations keep the source the author wrote, rather than
     // reading as though a vault selection were what the note declared.
-    const declared = documentPresentation(this.#app.metadataCache, file);
+    const presented = documentCitationPresentation(
+      documentPresentation(this.#app.metadataCache, file),
+      this.#bibliographyRender.vaultPresentation,
+      { citations: set.citations, works },
+    );
     const presentation =
-      declared.kind === "read" ? declared.presentation : null;
+      presented.kind === "read" ? presented.presentation : null;
     const rendered =
       presentation === null
         ? null
@@ -320,8 +332,12 @@ export class CitationText extends Service<void> {
     const entrySerials =
       rendered?.some(({ content }) => holdsNote(content)) ?? false;
     const serials =
-      presentation !== null && entrySerials
-        ? await this.#readSerials(set.citations, works, presentation)
+      presented.kind === "read" && entrySerials
+        ? await this.#readSerials(
+            presented.items,
+            works,
+            presented.presentation,
+          )
         : null;
 
     // Each occurrence keeps the text rendered for its own place in the
@@ -378,20 +394,21 @@ export class CitationText extends Service<void> {
    * off the very bibliography that sidebar shows: the same works in the same
    * order, which the render cache answers for both surfaces from one render.
    *
+   * @param items the document's ordered citation set, as the Citation
+   *   Presentation boundary computed it.
+   * @param works the cited works by Indexed Key, which is what each rendered
+   *   entry's own item identity is read back as.
    * @returns the serials by Indexed Key; a work the bibliography rendered no
    *   entry for is absent, and every work is absent when no bibliography could
    *   be rendered at all, which shows the citation a ⚠ in each slot.
    */
   async #readSerials(
-    citations: readonly Citation[],
+    items: readonly CslItemData[],
     works: ReadonlyMap<string, CitedItem>,
     presentation: RenderPresentation,
   ): Promise<ReadonlyMap<string, number>> {
     const serials = new Map<string, number>();
-    const outcome = await this.#bibliographyRender.render(
-      bibliographyItems(citations, works),
-      presentation,
-    );
+    const outcome = await this.#bibliographyRender.render(items, presentation);
     if (outcome.kind !== "rendered") {
       logger.debug("Cannot number the cited entries", { kind: outcome.kind });
       return serials;
@@ -528,28 +545,6 @@ interface CitedItem {
   csl: CslItemData;
   /** `Creators (Year)`, the navigation label of every citekey naming this work. */
   summary: string;
-}
-
-/**
- * The cited works in the order the References Sidebar lists them, which is the
- * order the document's Citations first name them.
- *
- * The sidebar reads its own bibliography from the same works in this same
- * order, so both surfaces are answered from one render and the serials inline
- * are the digits that sidebar's gutter shows.
- *
- * @param citations one entry per work the document cites, in document order.
- */
-function bibliographyItems(
-  citations: readonly Citation[],
-  works: ReadonlyMap<string, CitedItem>,
-): CslItemData[] {
-  const items: CslItemData[] = [];
-  for (const { indexedKey } of citations) {
-    const work = indexedKey === null ? undefined : works.get(indexedKey);
-    if (work) items.push(work.csl);
-  }
-  return items;
 }
 
 /** One Citation of a document, at the offset the document writes it. */

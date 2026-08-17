@@ -7,7 +7,7 @@ import type { CslItemData } from "@zotlit/db";
 import { FIELD_CITATION_STYLE, FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
-import type { ReferenceSource } from "@/services/citation-index/sources";
+import type { Citation } from "@/services/citation-index/query";
 import type { Settings } from "@/services/settings/schema";
 
 import type { RenderPresentation } from "./render-cache";
@@ -122,17 +122,61 @@ export function effectivePresentation(
   };
 }
 
+/** One cited work as a render reads it, whichever join the surface read it through. */
+interface CitedWork {
+  /** The work as the engine reads it; its `id` addresses the rendered entry. */
+  readonly csl: CslItemData;
+}
+
 /**
- * The works one document cites, in the order it cites them — the one ordered
- * citation set every Citation Presentation surface renders from, so a numbering
- * style counts the same works in the same order wherever they are shown.
- *
- * @param sources the cited Items by Indexed Key, in document order.
+ * What one document formats its Citations and its references from, whole: the
+ * style and the Citation Locale it renders under, and the works it cites in the
+ * order it cites them.
  */
-export function citedItems(
-  sources: ReadonlyMap<string, ReferenceSource>,
-): CslItemData[] {
-  return [...sources.values()].map((source) => source.csl);
+export type DocumentCitationPresentation =
+  | { kind: "unusable"; property: UnusableProperty }
+  | {
+      kind: "read";
+      /** The style and Citation Locale, with nothing left for a reader to fill in. */
+      presentation: EffectivePresentation;
+      /** The cited works, in the order the document cites them. */
+      items: readonly CslItemData[];
+    };
+
+/**
+ * The one value every Citation Presentation surface renders from: Document
+ * Citation Text, the References Sidebar, and the Citation Popover each read the
+ * same style, the same Citation Locale, and the same ordered citation set, so a
+ * numbering style counts the same works in the same order wherever they are
+ * shown and no surface composes that precedence for itself.
+ *
+ * A document whose own property names nothing renders nothing at all, so the
+ * vault selections stay out of that answer.
+ *
+ * @param declared what the document itself says, as {@link documentPresentation} read it.
+ * @param vault the selections each half the document leaves unsaid inherits.
+ * @param cited the document's Citations in document order, and the cited works
+ *   by Indexed Key; a Citation naming no readable work is cited by no render.
+ */
+export function documentCitationPresentation(
+  declared: DocumentPresentation,
+  vault: EffectivePresentation,
+  cited: {
+    citations: readonly Pick<Citation, "indexedKey">[];
+    works: ReadonlyMap<string, CitedWork>;
+  },
+): DocumentCitationPresentation {
+  if (declared.kind === "unusable") return declared;
+  const items: CslItemData[] = [];
+  for (const { indexedKey } of cited.citations) {
+    const work = indexedKey === null ? undefined : cited.works.get(indexedKey);
+    if (work) items.push(work.csl);
+  }
+  return {
+    kind: "read",
+    presentation: effectivePresentation(declared.presentation, vault),
+    items,
+  };
 }
 
 /** Whether two documents — or one document across a change — render alike. */

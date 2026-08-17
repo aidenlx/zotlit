@@ -215,6 +215,16 @@ export class BibliographyRenderCache extends Service<void> {
     return attempt.kind === "rendered" ? attempt.value : null;
   }
 
+  /**
+   * The vault Citation Presentation each document inherits the halves it leaves
+   * unsaid from — Style default for both until the first settings snapshot
+   * names the selections. A surface composing one document's whole presentation
+   * reads it from here, so it renders under what this cache renders under.
+   */
+  get vaultPresentation(): EffectivePresentation {
+    return this.#vault ?? { styleId: null, locale: null };
+  }
+
   on<K extends keyof BibliographyRenderEvents>(
     event: K,
     cb: BibliographyRenderEvents[K],
@@ -359,10 +369,7 @@ export class BibliographyRenderCache extends Service<void> {
 
   /** The vault selections where `presentation` names none of its own. */
   #styleRequest(presentation: RenderPresentation | undefined): CslStyleRequest {
-    return effectivePresentation(
-      presentation ?? {},
-      this.#vault ?? { styleId: null, locale: null },
-    );
+    return effectivePresentation(presentation ?? {}, this.vaultPresentation);
   }
 
   /**

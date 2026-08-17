@@ -1,7 +1,7 @@
 // Discovery of the CSL styles Zotero installed, and the Resolved CSL Style each selection renders with.
 
 import { regex } from "arkregex";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import { isErrno } from "@/lib/errno";
@@ -161,14 +161,14 @@ interface StyleContent {
 /** A resolved style held in memory, and what a later resolution checks it against. */
 interface HeldStyle extends StyleContent {
   dataDir: string;
-  /** Files the content was read from, and the mtimes it was read at. */
-  stamps: readonly FileStamp[];
+  /** Files the content was read from, and the content each held. */
+  reads: readonly FileRead[];
 }
 
-interface FileStamp {
+interface FileRead {
   path: string;
-  /** mtime the read ran against, in epoch milliseconds. */
-  mtime: number;
+  /** The whole file, as the read that produced the held style saw it. */
+  xml: string;
 }
 
 /**
@@ -178,9 +178,10 @@ interface FileStamp {
  *
  * Resolving a style ID reads every installed `.csl` file, which is far more
  * than a render that only needs the content should pay for. The held copy
- * stands for as long as its files carry the mtimes they were read at, so a
- * repeat resolution costs one `stat` per file and a style edited in place is
- * still picked up.
+ * stands for as long as its own files still hold the content it was read from,
+ * so a repeat resolution costs a read of those one or two files. Content is
+ * what a resolution answers for, so a style edited in place is picked up
+ * whatever timestamp the edit left behind.
  */
 export class InstalledStyleCache {
   #held: HeldStyle | undefined;
@@ -194,7 +195,7 @@ export class InstalledStyleCache {
 
     const held = this.#held;
     if (held && held.dataDir === dataDir && held.styleId === styleId) {
-      if (await stampsStand(held.stamps)) {
+      if (await contentStands(held.reads)) {
         logger.trace("CSL style cache hit", { styleId });
         return resolved(held, locale);
       }
@@ -217,10 +218,6 @@ export class InstalledStyleCache {
       parentId: requested.parentId,
       reason,
     });
-
-    // Read the mtimes first: a file written between the read and its stat would
-    // otherwise be held under an mtime it no longer has, and never re-read.
-    const stamps = await stampFiles([requested.path, independent.path]);
 
     // Every CSL file is one `cs:style` document, a dependent style as much as
     // the independent style it points at, so the requested file answers for its
@@ -256,7 +253,19 @@ export class InstalledStyleCache {
       defaultLocale: requested.defaultLocale,
       xml,
     };
-    if (stamps) this.#held = { ...content, dataDir, stamps };
+    // The content this resolution stands on, which the next one is checked
+    // against: the requested file alone where it is the independent style too.
+    this.#held = {
+      ...content,
+      dataDir,
+      reads:
+        requested.path === independent.path
+          ? [{ path: requested.path, xml: requestedXml }]
+          : [
+              { path: requested.path, xml: requestedXml },
+              { path: independent.path, xml },
+            ],
+    };
     logger.debug("CSL style resolved", {
       styleId,
       parentId: requested.parentId,
@@ -357,34 +366,16 @@ async function locateStyle(
   return { requested, independent };
 }
 
-/** `undefined` when any file cannot be stat'd, which holds nothing. */
-async function stampFiles(
-  paths: readonly string[],
-): Promise<FileStamp[] | undefined> {
-  const stamps = await Promise.all(
-    [...new Set(paths)].map(async (path) => {
-      const mtime = await mtimeOf(path);
-      return mtime === undefined ? undefined : { path, mtime };
-    }),
+/**
+ * Whether the files a held style was read from still hold that very content.
+ * A file that changed — or one no longer readable at all — leaves the held
+ * style standing for content Zotero no longer installs.
+ */
+async function contentStands(reads: readonly FileRead[]): Promise<boolean> {
+  const current = await Promise.all(
+    reads.map(({ path }) => readStyleXml(path)),
   );
-  return stamps.every((stamp) => stamp !== undefined) ? stamps : undefined;
-}
-
-async function stampsStand(stamps: readonly FileStamp[]): Promise<boolean> {
-  const current = await Promise.all(stamps.map(({ path }) => mtimeOf(path)));
-  return stamps.every((stamp, index) => stamp.mtime === current[index]);
-}
-
-async function mtimeOf(path: string): Promise<number | undefined> {
-  try {
-    return (await stat(path)).mtimeMs;
-  } catch (error) {
-    logger.warn("Cannot read the timestamp of a CSL style file", {
-      path,
-      error,
-    });
-    return undefined;
-  }
+  return reads.every((read, index) => read.xml === current[index]);
 }
 
 /** First file wins, so a visible style shadows a hidden one with the same ID. */
@@ -449,7 +440,7 @@ function styleFileOf(path: string, xml: string): StyleFile | undefined {
   }
   const title = TITLE.exec(info)?.groups.title.trim();
   return {
-    id,
+    id: decodeXmlText(id),
     title: title ? decodeXmlText(title) : basename(path, CSL_EXT),
     path,
     parentId: parentIdOf(info),
@@ -466,12 +457,25 @@ async function readStyleXml(path: string): Promise<string | undefined> {
   }
 }
 
-const INFO_BLOCK = regex("<info>(?<info>[\\s\\S]*?)</info>");
-const ID = regex("<id>(?<id>[^<]*)</id>");
-const TITLE = regex("<title>(?<title>[^<]*)</title>");
-const BIBLIOGRAPHY_WITH_ENTRY_MARKERS =
-  /<bibliography\b[^>]*\bsecond-field-align\s*=/;
-const LINK_TAG = /<link\b[^>]*>/g;
+/**
+ * The namespace prefix an element may be written under. CSL declares one
+ * namespace, and a document is free to bind it to a prefix — `<cs:style>` says
+ * what `<style>` says — so every element is read whichever way it is spelled.
+ *
+ * @see https://www.w3.org/TR/xml-names/#ns-qualnames — the `QName` production
+ */
+const PREFIX = "(?:[^\\s/<>=:]+:)?";
+const INFO_BLOCK = regex(
+  `<${PREFIX}info(?=[\\s>])[^>]*>(?<info>[\\s\\S]*?)</${PREFIX}info\\s*>`,
+);
+const ID = regex(`<${PREFIX}id(?=[\\s>])[^>]*>(?<id>[^<]*)</${PREFIX}id\\s*>`);
+const TITLE = regex(
+  `<${PREFIX}title(?=[\\s>])[^>]*>(?<title>[^<]*)</${PREFIX}title\\s*>`,
+);
+const BIBLIOGRAPHY_WITH_ENTRY_MARKERS = regex(
+  `<${PREFIX}bibliography(?=[\\s/>])[^>]*\\bsecond-field-align\\s*=`,
+);
+const LINK_TAG = regex(`<${PREFIX}link(?=[\\s/>])[^>]*>`, "g");
 /**
  * XML writes an attribute value in either quote, and spaces around the `=` as
  * it likes, so a style Zotero installed is read the way a parser reads it. A
@@ -481,10 +485,12 @@ const LINK_TAG = /<link\b[^>]*>/g;
 const HREF = regex("href\\s*=\\s*[\"'](?<href>[^\"']*)[\"']");
 const REL = regex("rel\\s*=\\s*[\"'](?<rel>[^\"']*)[\"']");
 /**
- * The root element every standalone CSL style opens with. The lookahead keeps
- * `<style-options>`, which a locale block carries, out of the match.
+ * The root element every standalone CSL style opens with, under the prefix it
+ * is written with. The lookahead keeps `<style-options>`, which a locale block
+ * carries, out of the match; the element name travels with the match, so the
+ * tag can be written back as the document spells it.
  */
-const STYLE_ROOT = /<style(?=[\s/>])[^>]*>/;
+const STYLE_ROOT = regex(`<(?<name>${PREFIX}style)(?=[\\s/>])[^>]*>`);
 /** The root element name of every CSL style, whichever prefix it carries. */
 const STYLE_ELEMENT = "style";
 /** The elements a processor formats with; a standalone style declares one. */
@@ -531,7 +537,10 @@ function isStandaloneCslStyle(xml: string): boolean {
 function parentIdOf(info: string): string | undefined {
   for (const tag of info.match(LINK_TAG) ?? []) {
     if (REL.exec(tag)?.groups.rel === "independent-parent") {
-      return HREF.exec(tag)?.groups.href;
+      // The href is one style ID, which a parser hands over decoded; the
+      // lookup that follows it names the parent by that very identity.
+      const href = HREF.exec(tag)?.groups.href;
+      return href === undefined ? undefined : decodeXmlText(href);
     }
   }
   return undefined;
@@ -555,12 +564,13 @@ function withDefaultLocale(xml: string, locale: string | undefined): string {
   if (!root) return xml;
 
   const tag = root[0];
+  const { name } = root.groups;
   const selfClosing = tag.endsWith("/>");
   const attributes = tag
-    .slice("<style".length, selfClosing ? -2 : -1)
+    .slice(`<${name}`.length, selfClosing ? -2 : -1)
     .replace(DEFAULT_LOCALE_ATTR, "")
     .trimEnd();
-  const replacement = `<style${attributes} default-locale="${encodeXmlText(locale)}"${
+  const replacement = `<${name}${attributes} default-locale="${encodeXmlText(locale)}"${
     selfClosing ? "/>" : ">"
   }`;
   return (
@@ -576,7 +586,11 @@ const XML_ENTITIES: Record<string, string> = {
   "&apos;": "'",
 };
 
-/** Titles reach the picker as text, so the predefined XML entities decode. */
+/**
+ * A title, a style ID, and the href naming an independent parent are all text a
+ * parser hands over decoded, so the predefined XML entities decode here too —
+ * an ID is compared against the one a document names, and a title is read.
+ */
 function decodeXmlText(text: string): string {
   return text.replaceAll(
     /&(?:amp|lt|gt|quot|apos);/g,

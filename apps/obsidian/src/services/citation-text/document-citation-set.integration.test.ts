@@ -412,6 +412,7 @@ function openText(
     citationIndex: index,
     noteIndex,
     bibliographyRender: {
+      vaultPresentation: { styleId: null, locale: null },
       renderCitations: (citations, items) =>
         engine.renderCitations({ citations, items, styleXml }),
       render: async (items) => {

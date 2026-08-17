@@ -24,7 +24,7 @@ import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
 import {
-  citedItems,
+  documentCitationPresentation,
   documentPresentation,
   samePresentation,
 } from "@/services/pandoc/document-presentation";
@@ -75,7 +75,10 @@ export interface ReferencesViewDeps {
     "getStatus" | "subscribe" | "decline"
   >;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
-  bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
+  bibliographyRender: Pick<
+    BibliographyRenderCache,
+    "render" | "on" | "vaultPresentation"
+  >;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -433,24 +436,33 @@ export class ReferencesView extends ItemView {
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
     const declared = this.#presentation;
-    if (declared.kind === "unusable") {
-      this.#documentPresentationError = declared.property;
+    // One value for this render: the style and Citation Locale the note is
+    // shown under, and the works it cites in the order it cites them.
+    const presented = documentCitationPresentation(
+      declared,
+      this.#deps.bibliographyRender.vaultPresentation,
+      { citations, works: sources },
+    );
+    if (presented.kind === "unusable") {
+      this.#documentPresentationError = presented.property;
       this.#showMinimal(citations, sources, false);
       return;
     }
 
-    const { presentation } = declared;
     const outcome = await this.#deps.bibliographyRender.render(
-      citedItems(sources),
-      presentation,
+      presented.items,
+      presented.presentation,
     );
     if (generation !== this.#generation) return;
 
     if (outcome.kind !== "rendered") {
+      // A style the note itself named is the note's to repair; one it inherited
+      // from the vault is the vault selection's, which its own warning names.
       this.#documentPresentationError =
         outcome.kind === "unavailable" &&
         outcome.reason === "style-missing" &&
-        presentation.styleId !== undefined
+        declared.kind === "read" &&
+        declared.presentation.styleId !== undefined
           ? "style"
           : null;
       this.#showMinimal(citations, sources, outcome.kind === "failed");
