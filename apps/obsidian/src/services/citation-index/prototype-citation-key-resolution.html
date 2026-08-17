@@ -1,0 +1,1857 @@
+<!--
+PROTOTYPE — throwaway demo for ZotLit issue #704. Not shipped code; not tested by CI.
+
+Design question: does the missing / unique / ambiguous Citation Key resolution model —
+which replaces today's silent first-row-wins pick whenever more than one Item answers a
+Citation Key — feel right across every surface (editor marks, click/open, hover preview,
+popover, Citation Suggester, References Sidebar, cited-by), while exact Indexed Key
+resolution (wikilink citations, Literature Note links) stays exact and untouched?
+
+See docs/research/... design note "one-to-many Citation Key resolution (ticket #704)".
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Citation Key resolution — prototype</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-warn: var(--warn);
+        --color-ok: var(--ok);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f4f5f1;
+        --panel: #ffffff;
+        --ink: #1e2a28;
+        --muted: #5f6f6a;
+        --line: #dde1da;
+        --accent: #2c6e63;
+        --warn: #b1502e;
+        --ok: #5c7a29;
+        --font-display: "Fraunces", ui-serif, serif;
+        --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #121615;
+          --panel: #1a201e;
+          --ink: #e6ece9;
+          --muted: #93a29c;
+          --line: #2c3532;
+          --accent: #5fb3a3;
+          --warn: #e08a5c;
+          --ok: #8fbb52;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/jsx" id="app">
+      import React, { useState, useReducer } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Library,
+        BookOpen,
+        MousePointerClick,
+        Eye,
+        Layers,
+        ListTree,
+        Wand2,
+        Link2,
+        FileOutput,
+        RefreshCw,
+        AlertTriangle,
+        CheckCircle2,
+        HelpCircle,
+        Info,
+        Zap,
+      } from "lucide-react";
+
+      // --- App ---
+
+      // ================================================================
+      // PURE MODULE — liftable into apps/obsidian/src/services/citation-index/
+      // No DOM references. Everything below this line, down to "PURE MODULE END",
+      // operates on plain data only.
+      // ================================================================
+
+      // Candidate: { itemID, indexedKey, libraryID }
+      // Resolution: { kind: "missing" }
+      //           | { kind: "unique", candidate }
+      //           | { kind: "ambiguous", candidates }  (candidates.length >= 2)
+
+      /** Indexed Key: the exact, cross-library identity of one Item. */
+      function formatIndexedKey(key, groupID) {
+        return groupID == null ? key : `${key}g${groupID}`;
+      }
+
+      /**
+       * Reads every local Library. The forward map keeps only candidates from
+       * in-scope Libraries, in canonical order: My Library first, then groups in
+       * the given order, itemID ascending within a Library. The reverse map
+       * indexes every row regardless of scope — exact Indexed Key work bypasses
+       * Library Scope.
+       *
+       * libraries: [{ libraryID, groupID, name }]  — groupID null for My Library
+       * items:     [{ itemID, key, citekey, libraryID }]
+       * scope:     { mode: "all" } | { mode: "selected", libraryIDs: number[] }
+       */
+      function buildSnapshot(libraries, items, scope) {
+        const inScope = (libraryID) =>
+          scope.mode === "all" || scope.libraryIDs.includes(libraryID);
+
+        const orderedLibraryIDs = [
+          ...libraries.filter((l) => l.groupID == null).map((l) => l.libraryID),
+          ...libraries.filter((l) => l.groupID != null).map((l) => l.libraryID),
+        ];
+        const libraryRank = new Map(orderedLibraryIDs.map((id, i) => [id, i]));
+        const libraryByID = new Map(libraries.map((l) => [l.libraryID, l]));
+
+        const forward = new Map();
+        const reverse = new Map();
+
+        const rows = items.slice().sort((a, b) => {
+          const rankDiff =
+            (libraryRank.get(a.libraryID) ?? 0) -
+            (libraryRank.get(b.libraryID) ?? 0);
+          return rankDiff !== 0 ? rankDiff : a.itemID - b.itemID;
+        });
+
+        for (const item of rows) {
+          const library = libraryByID.get(item.libraryID);
+          const indexedKey = formatIndexedKey(
+            item.key,
+            library ? library.groupID : null,
+          );
+          const candidate = {
+            itemID: item.itemID,
+            indexedKey,
+            libraryID: item.libraryID,
+          };
+
+          // Reverse map: every row, scope-independent, exact.
+          reverse.set(indexedKey, item.citekey);
+
+          if (!inScope(item.libraryID)) continue;
+          const list = forward.get(item.citekey);
+          if (list) list.push(candidate);
+          else forward.set(item.citekey, [candidate]);
+        }
+
+        return { forward, reverse };
+      }
+
+      function candidateListsEqual(a, b) {
+        if (a.length !== b.length) return false;
+        return a.every((c, i) => {
+          const d = b[i];
+          return (
+            c.itemID === d.itemID &&
+            c.indexedKey === d.indexedKey &&
+            c.libraryID === d.libraryID
+          );
+        });
+      }
+
+      /** Order-sensitive compare, used to decide whether a resolution-changed event fires. */
+      function snapshotsEqual(a, b) {
+        if (a.forward.size !== b.forward.size) return false;
+        for (const [citekey, candidates] of a.forward) {
+          const other = b.forward.get(citekey);
+          if (!other || !candidateListsEqual(candidates, other)) return false;
+        }
+        if (a.reverse.size !== b.reverse.size) return false;
+        for (const [indexedKey, citekey] of a.reverse) {
+          if (b.reverse.get(indexedKey) !== citekey) return false;
+        }
+        return true;
+      }
+
+      /** Classifier invariant: an ambiguous resolution always carries >= 2 candidates. */
+      function makeAmbiguous(candidates) {
+        if (candidates.length < 2) {
+          throw new Error("makeAmbiguous requires at least 2 candidates");
+        }
+        return { kind: "ambiguous", candidates };
+      }
+
+      function classifyCandidates(candidates) {
+        if (candidates.length === 0) return { kind: "missing" };
+        if (candidates.length === 1)
+          return { kind: "unique", candidate: candidates[0] };
+        return makeAmbiguous(candidates);
+      }
+
+      function resolveCitekey(snapshot, citekey) {
+        return classifyCandidates(snapshot.forward.get(citekey) ?? []);
+      }
+
+      /** Exact, scope-independent — wikilinks and `cited-by key=` keep using this. */
+      function citekeyOf(snapshot, indexedKey) {
+        return snapshot.reverse.get(indexedKey) ?? null;
+      }
+
+      function candidatesOf(resolution) {
+        if (resolution.kind === "missing") return [];
+        if (resolution.kind === "unique") return [resolution.candidate];
+        return resolution.candidates;
+      }
+
+      /**
+       * Missing dominates: any missing key makes the cluster (partially) unresolved,
+       * even if the rest are ambiguous — as today. Ambiguous treatment applies only
+       * when every key resolves to something and at least one of them is ambiguous.
+       */
+      function clusterTreatment(keys, resolveFn) {
+        const resolutions = keys.map(resolveFn);
+        const missingCount = resolutions.filter(
+          (r) => r.kind === "missing",
+        ).length;
+        if (missingCount === resolutions.length) return "unresolved";
+        if (missingCount > 0) return "partially-unresolved";
+        if (resolutions.some((r) => r.kind === "ambiguous")) return "ambiguous";
+        return "resolved";
+      }
+
+      function navigationTarget(resolution) {
+        if (resolution.kind === "missing") return { kind: "not-found" };
+        if (resolution.kind === "unique")
+          return { kind: "open", indexedKey: resolution.candidate.indexedKey };
+        return { kind: "menu", candidates: resolution.candidates };
+      }
+
+      function hoverNotePreview(resolution) {
+        return resolution.kind === "unique"
+          ? resolution.candidate.indexedKey
+          : null;
+      }
+
+      /** item: { itemID, key, citekey, libraryID } — a concrete Item the user picked. */
+      function citationInsertOutcome(item, snapshot) {
+        const resolution = resolveCitekey(snapshot, item.citekey);
+        if (resolution.kind === "ambiguous") {
+          return {
+            kind: "refuse",
+            citekey: item.citekey,
+            candidates: resolution.candidates,
+          };
+        }
+        return { kind: "insert", text: `@${item.citekey}` };
+      }
+
+      function occurrenceCites(resolution, indexedKey) {
+        return candidatesOf(resolution).some(
+          (c) => c.indexedKey === indexedKey,
+        );
+      }
+
+      function referenceEntry(citekey, resolution) {
+        if (resolution.kind === "missing")
+          return { kind: "unresolved", citekey };
+        if (resolution.kind === "unique")
+          return { kind: "resolved", citekey, candidate: resolution.candidate };
+        return {
+          kind: "ambiguous",
+          citekey,
+          candidates: resolution.candidates,
+        };
+      }
+
+      function libraryLabel(libraries, libraryID) {
+        const library = libraries.find((l) => l.libraryID === libraryID);
+        if (!library) return `Library ${libraryID}`;
+        return library.groupID == null ? "My Library" : library.name;
+      }
+
+      // ================================================================
+      // PURE MODULE END
+      // ================================================================
+
+      // ---- SIMULATED SHELL (throwaway) ----
+
+      const KEY_POOL = [
+        "AAAAA",
+        "BBBBB",
+        "CCCCC",
+        "DDDDD",
+        "EEEEE",
+        "FFFFF",
+        "GGGGG",
+        "HHHHH",
+        "IIIII",
+        "JJJJJ",
+      ];
+
+      const SEED_LIBRARIES = [
+        { libraryID: 1, groupID: null, name: "My Library" },
+        { libraryID: 2, groupID: 101, name: "Lab Group" },
+      ];
+      const SEED_ITEMS = [
+        {
+          itemID: 1,
+          key: "AAAAA",
+          citekey: "doe2020",
+          libraryID: 1,
+          title: "Climate signals in tree rings",
+        },
+        {
+          itemID: 2,
+          key: "BBBBB",
+          citekey: "smith2019",
+          libraryID: 1,
+          title: "Soil microbiomes under prolonged drought",
+        },
+      ];
+      const SEED_PRESET = {
+        libraries: SEED_LIBRARIES,
+        items: SEED_ITEMS,
+        scope: { mode: "all" },
+        nextItemID: 3,
+        keyIndex: 2,
+      };
+
+      function withLabTwin(preset) {
+        const item = {
+          itemID: preset.nextItemID,
+          key: KEY_POOL[preset.keyIndex],
+          citekey: "doe2020",
+          libraryID: 2,
+          title: "Lab Group's copy of the same source",
+        };
+        return {
+          libraries: preset.libraries,
+          items: [...preset.items, item],
+          scope: preset.scope,
+          nextItemID: preset.nextItemID + 1,
+          keyIndex: preset.keyIndex + 1,
+        };
+      }
+
+      // The sample document's citations are fixed — free-play never edits them.
+      // The cluster and single occurrences read a Citation Key by spelling; the
+      // wikilink names My Library's doe2020 Item by its exact Indexed Key.
+      const DOC_WIKILINK_INDEXED_KEY = "AAAAA";
+      const DOC_OCCURRENCES = [
+        {
+          id: "cluster-doe2020",
+          label: "Cluster [@doe2020; @smith2019] — doe2020",
+          citekey: "doe2020",
+        },
+        {
+          id: "cluster-smith2019",
+          label: "Cluster [@doe2020; @smith2019] — smith2019",
+          citekey: "smith2019",
+        },
+        {
+          id: "single-doe2020",
+          label: "Single citation @doe2020",
+          citekey: "doe2020",
+        },
+        {
+          id: "missing-unknown2021",
+          label: "Single citation @unknown2021",
+          citekey: "unknown2021",
+        },
+      ];
+      const DOC_CLUSTER_KEYS = ["doe2020", "smith2019"];
+      const DOC_SIDEBAR_CITEKEYS = ["doe2020", "smith2019", "unknown2021"];
+
+      let logIdSeq = 1;
+      function pushLog(log, kind, text) {
+        log.unshift({ id: logIdSeq++, kind, text });
+        return log;
+      }
+
+      function recompute(st, cause) {
+        const snap = buildSnapshot(st.libraries, st.items, st.scope);
+        const changed =
+          st.lastSnapshot === null || !snapshotsEqual(st.lastSnapshot, snap);
+        st.lastSnapshot = snap;
+        st.lastEventFired = changed;
+        if (changed)
+          pushLog(
+            st.log,
+            "emit",
+            `Resolution changed — ${cause}. A resolution-changed event fired.`,
+          );
+        else
+          pushLog(
+            st.log,
+            "muted",
+            `No effective change — ${cause}. No event fires.`,
+          );
+      }
+
+      function makeInitial(preset, scenarioId) {
+        const log = [];
+        pushLog(log, "info", "Plugin loaded — Citation Index built.");
+        const st = {
+          libraries: preset.libraries,
+          items: preset.items,
+          scope: preset.scope,
+          nextItemID: preset.nextItemID,
+          keyIndex: preset.keyIndex,
+          lastSnapshot: null,
+          lastEventFired: false,
+          log,
+          probeKey: "doe2020",
+          indexedKeyProbe: "AAAAA",
+          opened: {},
+          insertOutcome: {},
+          citedByItemID: preset.items[0] ? preset.items[0].itemID : null,
+          walkthrough: scenarioId ? { id: scenarioId, step: 0 } : null,
+        };
+        const snap = buildSnapshot(st.libraries, st.items, st.scope);
+        st.lastSnapshot = snap;
+        return st;
+      }
+
+      function applyAction(st, action) {
+        switch (action.type) {
+          case "add-lab-twin": {
+            const item = {
+              itemID: st.nextItemID,
+              key: KEY_POOL[st.keyIndex],
+              citekey: "doe2020",
+              libraryID: 2,
+              title: "Lab Group's copy of the same source",
+            };
+            st.items = [...st.items, item];
+            st.nextItemID++;
+            st.keyIndex++;
+            pushLog(
+              st.log,
+              "info",
+              'Added an Item with citekey "doe2020" to Lab Group.',
+            );
+            recompute(st, "a twin Item joined Lab Group");
+            return st;
+          }
+          case "add-reading-club": {
+            let libraries = st.libraries;
+            if (!libraries.some((l) => l.libraryID === 3)) {
+              libraries = [
+                ...libraries,
+                { libraryID: 3, groupID: 102, name: "Reading Club" },
+              ];
+              pushLog(
+                st.log,
+                "info",
+                'The group "Reading Club" joined your Zotero libraries.',
+              );
+            }
+            const item = {
+              itemID: st.nextItemID,
+              key: KEY_POOL[st.keyIndex],
+              citekey: "doe2020",
+              libraryID: 3,
+              title: "Reading Club's copy of the same source",
+            };
+            st.libraries = libraries;
+            st.items = [...st.items, item];
+            st.nextItemID++;
+            st.keyIndex++;
+            pushLog(
+              st.log,
+              "info",
+              'Added an Item with citekey "doe2020" to Reading Club.',
+            );
+            recompute(st, "a twin Item joined Reading Club");
+            return st;
+          }
+          case "add-my-library-twin": {
+            const item = {
+              itemID: st.nextItemID,
+              key: KEY_POOL[st.keyIndex],
+              citekey: "doe2020",
+              libraryID: 1,
+              title: "My Library's second copy of the same source",
+            };
+            st.items = [...st.items, item];
+            st.nextItemID++;
+            st.keyIndex++;
+            pushLog(
+              st.log,
+              "info",
+              'Added a second Item with citekey "doe2020" to My Library.',
+            );
+            recompute(st, "a within-Library duplicate joined My Library");
+            return st;
+          }
+          case "add-unknown-item": {
+            const item = {
+              itemID: st.nextItemID,
+              key: KEY_POOL[st.keyIndex],
+              citekey: "unknown2021",
+              libraryID: 1,
+              title: "A newly catalogued source",
+            };
+            st.items = [...st.items, item];
+            st.nextItemID++;
+            st.keyIndex++;
+            pushLog(
+              st.log,
+              "info",
+              'Added an Item with citekey "unknown2021" to My Library.',
+            );
+            recompute(st, "unknown2021 was catalogued");
+            return st;
+          }
+          case "remove-item": {
+            const item = st.items.find((i) => i.itemID === action.itemID);
+            st.items = st.items.filter((i) => i.itemID !== action.itemID);
+            if (item)
+              pushLog(
+                st.log,
+                "info",
+                `Removed "${item.title}" (citekey "${item.citekey}").`,
+              );
+            recompute(st, "an Item was removed");
+            return st;
+          }
+          case "rename-citekey": {
+            const item = st.items.find((i) => i.itemID === action.itemID);
+            if (!item) return st;
+            const from = item.citekey;
+            st.items = st.items.map((i) =>
+              i.itemID === action.itemID
+                ? { ...i, citekey: action.citekey }
+                : i,
+            );
+            pushLog(
+              st.log,
+              "info",
+              `Renamed citekey "${from}" -> "${action.citekey}".`,
+            );
+            recompute(st, "a citekey was renamed");
+            return st;
+          }
+          case "toggle-library": {
+            if (st.scope.mode !== "selected") return st;
+            const has = st.scope.libraryIDs.includes(action.libraryID);
+            if (has && st.scope.libraryIDs.length <= 1) {
+              pushLog(
+                st.log,
+                "muted",
+                "Library Scope cannot be empty — ignored.",
+              );
+              return st;
+            }
+            const libraryIDs = has
+              ? st.scope.libraryIDs.filter((id) => id !== action.libraryID)
+              : [...st.scope.libraryIDs, action.libraryID].sort(
+                  (a, b) => a - b,
+                );
+            st.scope = { mode: "selected", libraryIDs };
+            pushLog(st.log, "info", "Library Scope changed.");
+            recompute(st, "Library Scope changed");
+            return st;
+          }
+          case "set-scope-mode": {
+            st.scope =
+              action.mode === "all"
+                ? { mode: "all" }
+                : {
+                    mode: "selected",
+                    libraryIDs: st.libraries.map((l) => l.libraryID),
+                  };
+            pushLog(
+              st.log,
+              "info",
+              `Library Scope switched to ${action.mode === "all" ? "All Libraries" : "Selected Libraries"}.`,
+            );
+            recompute(st, "Library Scope mode changed");
+            return st;
+          }
+          case "refresh-no-change": {
+            recompute(st, "database refresh arrived");
+            return st;
+          }
+          case "set-probe-key": {
+            st.probeKey = action.key;
+            return st;
+          }
+          case "set-indexed-key-probe": {
+            st.indexedKeyProbe = action.value;
+            return st;
+          }
+          case "click-key": {
+            const resolution = resolveCitekey(st.lastSnapshot, action.citekey);
+            const target = navigationTarget(resolution);
+            st.opened = { ...st.opened, [action.source]: target };
+            if (target.kind === "not-found")
+              pushLog(
+                st.log,
+                "muted",
+                `"${action.citekey}" — not-found notice shown.`,
+              );
+            else if (target.kind === "open")
+              pushLog(st.log, "ok", `Opened ${target.indexedKey} directly.`);
+            else
+              pushLog(
+                st.log,
+                "warn",
+                `"${action.citekey}" — candidate menu shown (${target.candidates.length} candidates).`,
+              );
+            return st;
+          }
+          case "pick-candidate": {
+            st.opened = {
+              ...st.opened,
+              [action.source]: {
+                kind: "opened-exact",
+                indexedKey: action.indexedKey,
+              },
+            };
+            pushLog(
+              st.log,
+              "ok",
+              `Opened ${action.indexedKey} (exact) from the candidate menu.`,
+            );
+            return st;
+          }
+          case "insert-for-item": {
+            const item = st.items.find((i) => i.itemID === action.itemID);
+            if (!item) return st;
+            const outcome = citationInsertOutcome(item, st.lastSnapshot);
+            st.insertOutcome = {
+              ...st.insertOutcome,
+              [action.itemID]: outcome,
+            };
+            if (outcome.kind === "insert")
+              pushLog(
+                st.log,
+                "ok",
+                `Inserted "${outcome.text}" into the note.`,
+              );
+            else
+              pushLog(
+                st.log,
+                "warn",
+                `Refused to insert "@${item.citekey}" — ambiguous, would lose which Item you meant.`,
+              );
+            return st;
+          }
+          case "set-cited-by-item": {
+            st.citedByItemID = action.itemID;
+            return st;
+          }
+          default:
+            return st;
+        }
+      }
+
+      const SCENARIOS = {
+        w1: {
+          id: "w1",
+          title: "A group library brings a twin key",
+          blurb:
+            "Scope is All Libraries. A group you belong to turns out to hold an Item with the same Citation Key as one already in My Library.",
+          preset: SEED_PRESET,
+          steps: [
+            {
+              label: 'Add "doe2020" to Lab Group',
+              note: "unique flips to ambiguous everywhere; the wikilink citation stays exact",
+              actions: [{ type: "add-lab-twin" }],
+            },
+            {
+              label: "Click the @doe2020 citation",
+              note: "a candidate menu appears instead of opening the note directly",
+              actions: [
+                { type: "set-probe-key", key: "doe2020" },
+                { type: "click-key", source: "probe", citekey: "doe2020" },
+              ],
+            },
+            {
+              label: "Try to insert a citation for My Library's doe2020 Item",
+              note: "the Suggester refuses — inserting @doe2020 now would lose which Item you meant",
+              actions: [{ type: "insert-for-item", itemID: 1 }],
+            },
+            {
+              label: "Check cited-by for My Library's doe2020 Item",
+              note: "the ambiguous occurrence still lists it, alongside the Lab Group copy",
+              actions: [{ type: "set-cited-by-item", itemID: 1 }],
+            },
+          ],
+        },
+        w2: {
+          id: "w2",
+          title: "Scope change resolves it",
+          blurb:
+            "Starting from Lab Group's twin already in place, narrowing Library Scope back to My Library alone should resolve the ambiguity.",
+          preset: withLabTwin(SEED_PRESET),
+          steps: [
+            {
+              label: "Select only My Library",
+              note: "unique again — exactly one resolution-changed event fires",
+              actions: [
+                { type: "set-scope-mode", mode: "selected" },
+                { type: "toggle-library", libraryID: 2 },
+              ],
+            },
+            {
+              label: "Look up Lab Group's doe2020 by its Indexed Key",
+              note: "the reverse map still answers for it, even though Lab Group is out of scope",
+              actions: [{ type: "set-indexed-key-probe", value: "CCCCCg101" }],
+            },
+          ],
+        },
+        w3: {
+          id: "w3",
+          title: "Twins inside one library",
+          blurb:
+            "Two Items in the same Library can carry the same Citation Key too (legal per #698). Today that silently picks the first row; here it becomes visible.",
+          preset: SEED_PRESET,
+          steps: [
+            {
+              label: 'Add a second "doe2020" inside My Library',
+              note: "ambiguous even though every candidate lives in one Library",
+              actions: [{ type: "add-my-library-twin" }],
+            },
+            {
+              label: "Click the @doe2020 citation",
+              note: "a candidate menu appears, listing both My Library copies",
+              actions: [
+                { type: "set-probe-key", key: "doe2020" },
+                { type: "click-key", source: "probe", citekey: "doe2020" },
+              ],
+            },
+          ],
+        },
+        w4: {
+          id: "w4",
+          title: "A key that matches nothing",
+          blurb:
+            "@unknown2021 appears in the sample document but nothing in the Library answers it — yet.",
+          preset: SEED_PRESET,
+          steps: [
+            {
+              label: "Look up @unknown2021",
+              note: "missing everywhere — no candidates yet",
+              actions: [
+                { type: "set-probe-key", key: "unknown2021" },
+                { type: "click-key", source: "probe", citekey: "unknown2021" },
+              ],
+            },
+            {
+              label: 'Add an Item with citekey "unknown2021" to My Library',
+              note: "unknown2021 now resolves as unique",
+              actions: [{ type: "add-unknown-item" }],
+            },
+          ],
+        },
+        w5: {
+          id: "w5",
+          title: "The pick keeps identity",
+          blurb:
+            "From an ambiguous doe2020, picking a candidate from the menu should open exactly that Item — never a guess.",
+          preset: withLabTwin(SEED_PRESET),
+          steps: [
+            {
+              label: "Click the @doe2020 citation",
+              note: "a candidate menu appears — My Library and Lab Group both answer",
+              actions: [
+                { type: "set-probe-key", key: "doe2020" },
+                { type: "click-key", source: "probe", citekey: "doe2020" },
+              ],
+            },
+            {
+              label: "Pick the Lab Group candidate",
+              note: "opens by its exact Indexed Key — what opened names exactly one Item, never a candidate set",
+              actions: [
+                {
+                  type: "pick-candidate",
+                  source: "probe",
+                  indexedKey: "CCCCCg101",
+                },
+              ],
+            },
+          ],
+        },
+        w6: {
+          id: "w6",
+          title: "Refresh without change",
+          blurb:
+            "The database ticks but nothing about Items, Libraries, or scope actually changed.",
+          preset: SEED_PRESET,
+          steps: [
+            {
+              label: "Database refresh arrives — nothing changed",
+              note: "snapshotsEqual is true: no event fires, nothing restyles",
+              actions: [{ type: "refresh-no-change" }],
+            },
+          ],
+        },
+      };
+      const SCENARIO_ORDER = ["w1", "w2", "w3", "w4", "w5", "w6"];
+
+      function reducer(state, action) {
+        if (action.type === "reset")
+          return makeInitial(action.preset, action.scenarioId ?? null);
+        if (action.type === "run-step") {
+          const scenario = SCENARIOS[state.walkthrough.id];
+          const step = scenario.steps[state.walkthrough.step];
+          if (!step) return state;
+          let st = {
+            ...state,
+            log: [...state.log],
+            opened: { ...state.opened },
+            insertOutcome: { ...state.insertOutcome },
+          };
+          for (const a of step.actions) st = { ...applyAction(st, a) };
+          st.walkthrough = {
+            ...state.walkthrough,
+            step: state.walkthrough.step + 1,
+          };
+          return st;
+        }
+        return {
+          ...applyAction(
+            {
+              ...state,
+              log: [...state.log],
+              opened: { ...state.opened },
+              insertOutcome: { ...state.insertOutcome },
+            },
+            action,
+          ),
+        };
+      }
+
+      // ---- presentation helpers (throwaway) ----
+
+      const LOG_ICONS = {
+        emit: Zap,
+        warn: AlertTriangle,
+        ok: CheckCircle2,
+        muted: Info,
+        info: Info,
+      };
+      const LOG_COLOR = {
+        emit: "text-accent",
+        warn: "text-warn",
+        ok: "text-ok",
+        muted: "text-muted",
+        info: "text-ink",
+      };
+
+      function Chip({ children, tone = "line", className = "" }) {
+        const toneClass =
+          tone === "ok"
+            ? "border-ok text-ok"
+            : tone === "warn"
+              ? "border-warn text-warn"
+              : tone === "accent"
+                ? "border-accent text-accent"
+                : "border-line text-muted";
+        return (
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${toneClass} ${className}`}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      function ResolutionBadge({ resolution }) {
+        if (resolution.kind === "missing")
+          return <Chip tone="line">Missing</Chip>;
+        if (resolution.kind === "unique")
+          return <Chip tone="accent">Unique</Chip>;
+        return (
+          <Chip tone="warn">Ambiguous · {resolution.candidates.length}</Chip>
+        );
+      }
+
+      function CandidateRows({ candidates, libraries }) {
+        return (
+          <ul className="space-y-1 mt-1">
+            {candidates.map((c) => (
+              <li
+                key={c.indexedKey}
+                className="flex items-center gap-2 text-xs"
+              >
+                <span className="text-muted">
+                  {libraryLabel(libraries, c.libraryID)}
+                </span>
+                <span className="font-mono text-[11px] text-ink border border-line rounded px-1 py-0.5">
+                  {c.indexedKey}
+                </span>
+              </li>
+            ))}
+          </ul>
+        );
+      }
+
+      function Mark({ resolution }) {
+        if (resolution.kind === "missing")
+          return (
+            <span className="underline decoration-dotted decoration-muted text-muted">
+              unresolved mark
+            </span>
+          );
+        if (resolution.kind === "unique")
+          return (
+            <span className="underline decoration-accent text-accent">
+              resolved mark
+            </span>
+          );
+        return (
+          <span className="underline decoration-warn decoration-wavy text-warn">
+            zt-citation-key-ambiguous
+          </span>
+        );
+      }
+
+      function ClickResult({ result, libraries, onPick }) {
+        if (!result)
+          return <p className="text-xs text-muted italic">Not clicked yet.</p>;
+        if (result.kind === "not-found")
+          return (
+            <p className="text-xs text-muted flex items-center gap-1.5">
+              <HelpCircle size={13} /> Not-found notice shown.
+            </p>
+          );
+        if (result.kind === "open")
+          return (
+            <p className="text-xs text-ok flex items-center gap-1.5">
+              <CheckCircle2 size={13} /> Opened{" "}
+              <span className="font-mono">{result.indexedKey}</span> directly.
+            </p>
+          );
+        if (result.kind === "opened-exact")
+          return (
+            <p className="text-xs text-ok flex items-center gap-1.5">
+              <CheckCircle2 size={13} /> Opened{" "}
+              <span className="font-mono">{result.indexedKey}</span> (exact).
+            </p>
+          );
+        return (
+          <div className="space-y-1.5">
+            <p className="text-xs text-warn flex items-center gap-1.5">
+              <AlertTriangle size={13} /> Candidate menu:
+            </p>
+            <ul className="space-y-1">
+              {result.candidates.map((c) => (
+                <li key={c.indexedKey}>
+                  <button
+                    onClick={() => onPick(c.indexedKey)}
+                    className="w-full text-left rounded border border-line px-2 py-1 text-xs hover:border-accent flex items-center justify-between gap-2"
+                  >
+                    <span>{libraryLabel(libraries, c.libraryID)}</span>
+                    <span className="font-mono text-[11px] text-muted">
+                      {c.indexedKey}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      }
+
+      function Popover({ resolution, libraries }) {
+        if (resolution.kind === "missing")
+          return (
+            <p className="text-xs text-muted border border-line rounded p-2 bg-ground">
+              Unresolved block: this Citation Key matches no Item.
+            </p>
+          );
+        if (resolution.kind === "unique")
+          return (
+            <p className="text-xs border border-line rounded p-2 bg-ground">
+              Entry block for{" "}
+              <span className="font-mono">
+                {resolution.candidate.indexedKey}
+              </span>
+              .
+            </p>
+          );
+        return (
+          <div className="text-xs border border-warn rounded p-2 bg-ground space-y-1">
+            <p className="text-warn">Ambiguous block — candidates:</p>
+            <CandidateRows
+              candidates={resolution.candidates}
+              libraries={libraries}
+            />
+          </div>
+        );
+      }
+
+      function SurfaceRow({ icon: Icon, label, children }) {
+        return (
+          <div className="grid grid-cols-[7rem_1fr] gap-3 items-start py-2 border-b border-line last:border-b-0">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted pt-0.5">
+              <Icon size={13} /> {label}
+            </div>
+            <div>{children}</div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [state, dispatch] = useReducer(reducer, SEED_PRESET, (p) =>
+          makeInitial(p, null),
+        );
+        const {
+          libraries,
+          items,
+          scope,
+          lastSnapshot,
+          log,
+          probeKey,
+          indexedKeyProbe,
+          opened,
+          insertOutcome,
+          citedByItemID,
+          walkthrough,
+        } = state;
+
+        const isAllMode = scope.mode === "all";
+        const inScope = (libraryID) =>
+          isAllMode || scope.libraryIDs.includes(libraryID);
+
+        const probeResolution = resolveCitekey(lastSnapshot, probeKey);
+        const itemsForProbeKey = items.filter((i) => i.citekey === probeKey);
+
+        const allCitekeys = Array.from(
+          new Set([
+            ...lastSnapshot.forward.keys(),
+            ...lastSnapshot.reverse.values(),
+          ]),
+        ).sort();
+
+        const docResolutions = Object.fromEntries(
+          DOC_OCCURRENCES.map((o) => [
+            o.id,
+            resolveCitekey(lastSnapshot, o.citekey),
+          ]),
+        );
+        const docClusterTreatment = clusterTreatment(DOC_CLUSTER_KEYS, (k) =>
+          resolveCitekey(lastSnapshot, k),
+        );
+        const wikilinkCitekey = citekeyOf(
+          lastSnapshot,
+          DOC_WIKILINK_INDEXED_KEY,
+        );
+
+        const citedByItem =
+          items.find((i) => i.itemID === citedByItemID) ?? null;
+        const citedByIndexedKey = citedByItem
+          ? formatIndexedKey(
+              citedByItem.key,
+              libraries.find((l) => l.libraryID === citedByItem.libraryID)
+                ?.groupID ?? null,
+            )
+          : null;
+
+        const activeScenario = walkthrough ? SCENARIOS[walkthrough.id] : null;
+
+        return (
+          <main className="bg-ground text-ink font-body min-h-full px-6 py-10 lg:px-10">
+            <header className="max-w-[70ch] mb-8 space-y-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-warn text-warn uppercase text-xs tracking-wide px-2.5 py-1">
+                Prototype — throwaway — ZotLit #704
+              </span>
+              <h1 className="font-display text-4xl font-bold text-balance">
+                Citation Key resolution
+              </h1>
+              <p className="text-muted leading-relaxed">
+                Does the missing / unique / ambiguous Citation Key model feel
+                right across every surface — replacing today's silent
+                first-row-wins pick — while exact Indexed Key resolution
+                (wikilink citations, Literature Note links) stays exact? Click
+                through the state below, or run a guided walkthrough at the
+                bottom.
+              </p>
+              <button
+                onClick={() => dispatch({ type: "reset", preset: SEED_PRESET })}
+                className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium hover:border-accent"
+              >
+                Reset demo
+              </button>
+              <details className="pt-2">
+                <summary className="cursor-pointer text-sm font-medium text-ink">
+                  The model under test
+                </summary>
+                <pre className="mt-2 overflow-x-auto font-mono text-xs bg-panel border border-line rounded-md p-3 leading-relaxed">
+                  {`Candidate    = { itemID, indexedKey, libraryID }
+Resolution   = { kind: "missing" }
+             | { kind: "unique", candidate }
+             | { kind: "ambiguous", candidates }   // length >= 2, enforced
+
+resolveCitekey(snapshot, citekey)  -> Resolution     // classifier
+citekeyOf(snapshot, indexedKey)    -> citekey | null // exact, scope-independent
+
+Forward map:  in-scope candidates only, canonical order
+Reverse map:  every Library, every row, always exact`}
+                </pre>
+              </details>
+            </header>
+
+            {/* ---------- 2. Current state ---------- */}
+            <section className="space-y-5">
+              <h2 className="font-display text-xl font-bold">Current state</h2>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+                {/* Libraries & scope */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3">
+                  <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                    <Library size={15} className="text-muted" /> Libraries &amp;
+                    Library Scope
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() =>
+                        dispatch({ type: "set-scope-mode", mode: "all" })
+                      }
+                      className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${isAllMode ? "border-accent text-accent" : "border-line hover:border-accent"}`}
+                    >
+                      All Libraries
+                    </button>
+                    <button
+                      onClick={() =>
+                        dispatch({ type: "set-scope-mode", mode: "selected" })
+                      }
+                      className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${!isAllMode ? "border-accent text-accent" : "border-line hover:border-accent"}`}
+                    >
+                      Selected Libraries
+                    </button>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {libraries.map((lib) => {
+                      const label =
+                        lib.groupID == null ? "My Library" : lib.name;
+                      const scoped = inScope(lib.libraryID);
+                      return (
+                        <li
+                          key={lib.libraryID}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <span className="flex items-center gap-2">
+                            {scoped ? (
+                              <CheckCircle2 size={14} className="text-ok" />
+                            ) : (
+                              <span className="w-3.5" />
+                            )}
+                            {label}
+                          </span>
+                          <button
+                            disabled={isAllMode}
+                            onClick={() =>
+                              dispatch({
+                                type: "toggle-library",
+                                libraryID: lib.libraryID,
+                              })
+                            }
+                            className={`rounded-full border px-2 py-0.5 text-xs disabled:opacity-40 ${scoped ? "border-accent text-accent" : "border-line text-muted"}`}
+                          >
+                            {scoped ? "in scope" : "out of scope"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="text-xs text-muted">
+                    {isAllMode
+                      ? "Every Library you belong to is in scope."
+                      : "Toggle a Library in or out. At least one must stay in scope."}
+                  </p>
+                </div>
+
+                {/* Items per library */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3">
+                  <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                    <BookOpen size={15} className="text-muted" /> Items
+                  </h3>
+                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                    {libraries.map((lib) => {
+                      const label =
+                        lib.groupID == null ? "My Library" : lib.name;
+                      const libItems = items.filter(
+                        (i) => i.libraryID === lib.libraryID,
+                      );
+                      return (
+                        <div key={lib.libraryID}>
+                          <p className="text-xs font-medium text-muted mb-1">
+                            {label}
+                          </p>
+                          {libItems.length === 0 && (
+                            <p className="text-xs text-muted italic">
+                              No Items.
+                            </p>
+                          )}
+                          <ul className="space-y-1.5">
+                            {libItems.map((item) => {
+                              const indexedKey = formatIndexedKey(
+                                item.key,
+                                lib.groupID,
+                              );
+                              return (
+                                <li
+                                  key={item.itemID}
+                                  className="text-xs space-y-0.5 border border-line rounded px-2 py-1.5"
+                                >
+                                  <p className="text-ink leading-snug">
+                                    {item.title}
+                                  </p>
+                                  <div className="flex items-center flex-wrap gap-1.5">
+                                    <span className="font-mono text-[11px] border border-accent/50 text-accent rounded px-1 py-0.5">
+                                      @{item.citekey}
+                                    </span>
+                                    <span className="font-mono text-[11px] text-muted border border-line rounded px-1 py-0.5">
+                                      {indexedKey}
+                                    </span>
+                                    <button
+                                      onClick={() =>
+                                        dispatch({
+                                          type: "rename-citekey",
+                                          itemID: item.itemID,
+                                          citekey: `${item.citekey}a`,
+                                        })
+                                      }
+                                      className="text-[11px] text-muted hover:text-accent underline decoration-dotted"
+                                    >
+                                      Rename → {item.citekey}a
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        dispatch({
+                                          type: "remove-item",
+                                          itemID: item.itemID,
+                                        })
+                                      }
+                                      className="text-[11px] text-muted hover:text-warn underline decoration-dotted"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Resolution table */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3 lg:sticky lg:top-4">
+                  <h3 className="font-display font-bold text-sm">
+                    Resolution of every Citation Key
+                  </h3>
+                  <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {allCitekeys.map((citekey) => {
+                      const resolution = resolveCitekey(lastSnapshot, citekey);
+                      return (
+                        <li key={citekey} className="text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs">
+                              @{citekey}
+                            </span>
+                            <ResolutionBadge resolution={resolution} />
+                          </div>
+                          {resolution.kind !== "missing" && (
+                            <CandidateRows
+                              candidates={candidatesOf(resolution)}
+                              libraries={libraries}
+                            />
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="pt-2 border-t border-line text-xs flex items-center gap-1.5">
+                    {state.lastEventFired ? (
+                      <>
+                        <Zap size={13} className="text-accent" />{" "}
+                        <span className="text-accent">
+                          Last change fired a resolution-changed event.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Info size={13} className="text-muted" />{" "}
+                        <span className="text-muted">
+                          Last change fired no event.
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* ---------- 3. Surfaces ---------- */}
+            <section className="mt-10 space-y-5">
+              <h2 className="font-display text-xl font-bold">Surfaces</h2>
+              <p className="text-sm text-muted max-w-[70ch]">
+                How each surface treats the same Citation Key resolution — first
+                for a probe key you choose, then for a sample Literature Note
+                whose citations are fixed.
+              </p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+                {/* Probe key */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-1">
+                  <div className="flex items-center justify-between gap-2 pb-2">
+                    <h3 className="font-display font-bold text-sm">
+                      Probe key
+                    </h3>
+                    <ResolutionBadge resolution={probeResolution} />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pb-2">
+                    {["doe2020", "smith2019", "unknown2021"].map((k) => (
+                      <button
+                        key={k}
+                        onClick={() =>
+                          dispatch({ type: "set-probe-key", key: k })
+                        }
+                        className={`rounded-full border px-2.5 py-1 text-xs ${probeKey === k ? "border-accent text-accent" : "border-line text-muted"}`}
+                      >
+                        @{k}
+                      </button>
+                    ))}
+                    <input
+                      value={probeKey}
+                      onChange={(e) =>
+                        dispatch({ type: "set-probe-key", key: e.target.value })
+                      }
+                      className="rounded-full border border-line bg-ground px-2.5 py-1 text-xs font-mono w-32"
+                      placeholder="citekey"
+                    />
+                  </div>
+
+                  <SurfaceRow icon={Layers} label="Editor mark">
+                    <Mark resolution={probeResolution} />
+                  </SurfaceRow>
+                  <SurfaceRow icon={MousePointerClick} label="Click / open">
+                    <div className="space-y-1.5">
+                      <button
+                        onClick={() =>
+                          dispatch({
+                            type: "click-key",
+                            source: "probe",
+                            citekey: probeKey,
+                          })
+                        }
+                        className="rounded-md border border-line bg-ground px-2.5 py-1 text-xs hover:border-accent"
+                      >
+                        Click @{probeKey}
+                      </button>
+                      <ClickResult
+                        result={opened.probe}
+                        libraries={libraries}
+                        onPick={(indexedKey) =>
+                          dispatch({
+                            type: "pick-candidate",
+                            source: "probe",
+                            indexedKey,
+                          })
+                        }
+                      />
+                    </div>
+                  </SurfaceRow>
+                  <SurfaceRow icon={Eye} label="Hover preview">
+                    <p className="text-xs">
+                      {hoverNotePreview(probeResolution) ? (
+                        <span className="font-mono text-ok">
+                          {hoverNotePreview(probeResolution)}
+                        </span>
+                      ) : (
+                        <span className="text-muted italic">No preview.</span>
+                      )}
+                    </p>
+                  </SurfaceRow>
+                  <SurfaceRow icon={ListTree} label="Popover">
+                    <Popover
+                      resolution={probeResolution}
+                      libraries={libraries}
+                    />
+                  </SurfaceRow>
+                  <SurfaceRow icon={Wand2} label="Suggester insert">
+                    <div className="space-y-1.5">
+                      {itemsForProbeKey.length === 0 && (
+                        <p className="text-xs text-muted italic">
+                          No Item carries this citekey.
+                        </p>
+                      )}
+                      {itemsForProbeKey.map((item) => {
+                        const outcome = insertOutcome[item.itemID];
+                        return (
+                          <div key={item.itemID} className="space-y-0.5">
+                            <button
+                              onClick={() =>
+                                dispatch({
+                                  type: "insert-for-item",
+                                  itemID: item.itemID,
+                                })
+                              }
+                              className="rounded-md border border-line bg-ground px-2.5 py-1 text-xs hover:border-accent"
+                            >
+                              Insert citation for {item.title} (
+                              {libraryLabel(libraries, item.libraryID)})
+                            </button>
+                            {outcome && (
+                              <p
+                                className={`text-xs ${outcome.kind === "insert" ? "text-ok" : "text-warn"}`}
+                              >
+                                {outcome.kind === "insert"
+                                  ? `Inserted "${outcome.text}".`
+                                  : "Refused — ambiguous."}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </SurfaceRow>
+                </div>
+
+                {/* Sample document */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-1">
+                  <div className="flex items-center justify-between gap-2 pb-2">
+                    <h3 className="font-display font-bold text-sm">
+                      My literature note
+                    </h3>
+                    <Chip
+                      tone={
+                        docClusterTreatment === "resolved"
+                          ? "accent"
+                          : docClusterTreatment === "ambiguous"
+                            ? "warn"
+                            : "line"
+                      }
+                    >
+                      cluster: {docClusterTreatment}
+                    </Chip>
+                  </div>
+
+                  <div className="space-y-2 pb-2">
+                    {DOC_OCCURRENCES.map((occ) => {
+                      const resolution = docResolutions[occ.id];
+                      return (
+                        <div
+                          key={occ.id}
+                          className="border border-line rounded p-2 space-y-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-muted">
+                              {occ.label}
+                            </span>
+                            <ResolutionBadge resolution={resolution} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Mark resolution={resolution} />
+                            <button
+                              onClick={() =>
+                                dispatch({
+                                  type: "click-key",
+                                  source: occ.id,
+                                  citekey: occ.citekey,
+                                })
+                              }
+                              className="rounded border border-line bg-ground px-2 py-0.5 text-xs hover:border-accent"
+                            >
+                              Click
+                            </button>
+                            <span className="text-xs text-muted">
+                              hover:{" "}
+                              {hoverNotePreview(resolution) ? (
+                                <span className="font-mono text-ok">
+                                  {hoverNotePreview(resolution)}
+                                </span>
+                              ) : (
+                                "none"
+                              )}
+                            </span>
+                          </div>
+                          <ClickResult
+                            result={opened[occ.id]}
+                            libraries={libraries}
+                            onPick={(indexedKey) =>
+                              dispatch({
+                                type: "pick-candidate",
+                                source: occ.id,
+                                indexedKey,
+                              })
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+
+                    <div className="border border-accent/50 rounded p-2 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted flex items-center gap-1">
+                          <Link2 size={12} /> Wikilink to My Library's doe2020
+                          (indexedKey {DOC_WIKILINK_INDEXED_KEY})
+                        </span>
+                        <Chip tone="accent">exact</Chip>
+                      </div>
+                      <p className="text-xs">
+                        Resolves via{" "}
+                        <span className="font-mono">citekeyOf</span> to{" "}
+                        <span className="font-mono text-ok">
+                          {wikilinkCitekey ?? "—"}
+                        </span>{" "}
+                        — bypasses Library Scope, unaffected by any ambiguity
+                        above.
+                      </p>
+                    </div>
+                  </div>
+
+                  <SurfaceRow icon={ListTree} label="References sidebar">
+                    <ul className="space-y-1">
+                      {DOC_SIDEBAR_CITEKEYS.map((citekey) => {
+                        const entry = referenceEntry(
+                          citekey,
+                          resolveCitekey(lastSnapshot, citekey),
+                        );
+                        return (
+                          <li
+                            key={citekey}
+                            className="flex items-center justify-between gap-2 text-xs border border-line rounded px-2 py-1"
+                          >
+                            <span className="font-mono">@{citekey}</span>
+                            <Chip
+                              tone={
+                                entry.kind === "resolved"
+                                  ? "accent"
+                                  : entry.kind === "ambiguous"
+                                    ? "warn"
+                                    : "line"
+                              }
+                            >
+                              {entry.kind}
+                            </Chip>
+                            <span className="text-muted">
+                              {entry.kind === "ambiguous"
+                                ? "note action disabled"
+                                : ""}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </SurfaceRow>
+                  <SurfaceRow icon={FileOutput} label="Pandoc export">
+                    <p className="text-xs text-muted">
+                      Unchanged: export resolves the wikilink's exact Indexed
+                      Key only. Scope-level ambiguity above cannot reach it.
+                    </p>
+                  </SurfaceRow>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-2">
+                  <h3 className="font-display font-bold text-sm">Cited-by</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {items.map((item) => (
+                      <button
+                        key={item.itemID}
+                        onClick={() =>
+                          dispatch({
+                            type: "set-cited-by-item",
+                            itemID: item.itemID,
+                          })
+                        }
+                        className={`rounded-full border px-2.5 py-1 text-xs ${citedByItemID === item.itemID ? "border-accent text-accent" : "border-line text-muted"}`}
+                      >
+                        {item.title} ({libraryLabel(libraries, item.libraryID)})
+                      </button>
+                    ))}
+                  </div>
+                  {citedByItem && (
+                    <ul className="space-y-1 text-xs">
+                      {DOC_OCCURRENCES.map((occ) => {
+                        const cites = occurrenceCites(
+                          docResolutions[occ.id],
+                          citedByIndexedKey,
+                        );
+                        return (
+                          <li
+                            key={occ.id}
+                            className="flex items-center gap-1.5"
+                          >
+                            {cites ? (
+                              <CheckCircle2 size={12} className="text-ok" />
+                            ) : (
+                              <span className="w-3" />
+                            )}
+                            <span className={cites ? "" : "text-muted"}>
+                              {occ.label}
+                            </span>
+                          </li>
+                        );
+                      })}
+                      <li className="flex items-center gap-1.5">
+                        {citedByIndexedKey === DOC_WIKILINK_INDEXED_KEY ? (
+                          <CheckCircle2 size={12} className="text-ok" />
+                        ) : (
+                          <span className="w-3" />
+                        )}
+                        <span
+                          className={
+                            citedByIndexedKey === DOC_WIKILINK_INDEXED_KEY
+                              ? ""
+                              : "text-muted"
+                          }
+                        >
+                          Wikilink to doe2020 (exact)
+                        </span>
+                      </li>
+                    </ul>
+                  )}
+                  <p className="text-xs text-muted">
+                    An ambiguous occurrence attributes to every candidate —
+                    including this one, unflagged.
+                  </p>
+                </div>
+
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-2">
+                  <h3 className="font-display font-bold text-sm">
+                    Indexed Key lookup (exact, scope-independent)
+                  </h3>
+                  <input
+                    value={indexedKeyProbe}
+                    onChange={(e) =>
+                      dispatch({
+                        type: "set-indexed-key-probe",
+                        value: e.target.value,
+                      })
+                    }
+                    className="rounded-md border border-line bg-ground px-2.5 py-1 text-xs font-mono w-full"
+                    placeholder="indexedKey"
+                  />
+                  <p className="text-xs">
+                    <span className="font-mono">
+                      citekeyOf(indexedKeyProbe)
+                    </span>{" "}
+                    ={" "}
+                    <span className="font-mono text-ok">
+                      {citekeyOf(lastSnapshot, indexedKeyProbe) ?? "null"}
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted">
+                    Answers for every local Item, in or out of Library Scope —
+                    the reverse map indexes every row.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* ---------- 4. Free-play ---------- */}
+            <section className="mt-10 space-y-3">
+              <h2 className="font-display text-xl font-bold">Free-play</h2>
+              <p className="text-sm text-muted max-w-[70ch]">
+                These act on the whole Library. Item-level actions (rename,
+                remove) and Library Scope toggles sit next to the rows they
+                affect, above.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => dispatch({ type: "add-lab-twin" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent"
+                >
+                  Add "doe2020" duplicate to Lab Group
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "add-reading-club" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent"
+                >
+                  Add Reading Club with another "doe2020"
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "add-my-library-twin" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent"
+                >
+                  Add a second "doe2020" inside My Library
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "add-unknown-item" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent"
+                >
+                  Catalogue "unknown2021"
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "refresh-no-change" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent flex items-center gap-1.5"
+                >
+                  <RefreshCw size={13} /> Database refresh with no change
+                </button>
+              </div>
+            </section>
+
+            {/* ---------- 5. Guided walkthroughs ---------- */}
+            <section className="mt-10 space-y-4">
+              <h2 className="font-display text-xl font-bold">
+                Guided walkthroughs
+              </h2>
+              <p className="text-xs text-muted">
+                Starting a walkthrough resets the demo to that scenario's known
+                state.
+              </p>
+              <div className="flex flex-wrap gap-2 border-b border-line pb-3">
+                {SCENARIO_ORDER.map((id) => {
+                  const sc = SCENARIOS[id];
+                  const active = walkthrough && walkthrough.id === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() =>
+                        dispatch({
+                          type: "reset",
+                          preset: sc.preset,
+                          scenarioId: id,
+                        })
+                      }
+                      className={`rounded-md border px-3 py-1.5 text-sm font-medium ${active ? "border-accent text-accent" : "border-line hover:border-accent"}`}
+                    >
+                      {sc.title}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeScenario && (
+                <div className="space-y-3 max-w-[70ch]">
+                  <p className="text-sm text-muted">{activeScenario.blurb}</p>
+                  <ol className="space-y-2">
+                    {activeScenario.steps.map((step, i) => {
+                      const done = i < walkthrough.step;
+                      const current = i === walkthrough.step;
+                      return (
+                        <li
+                          key={i}
+                          className={`flex items-start gap-3 ${done ? "opacity-50" : ""}`}
+                        >
+                          <button
+                            disabled={!current}
+                            onClick={() => dispatch({ type: "run-step" })}
+                            className={`shrink-0 rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-40 ${current ? "border-accent text-accent" : "border-line"}`}
+                          >
+                            {done ? (
+                              <CheckCircle2
+                                size={14}
+                                className="inline mr-1 text-ok"
+                              />
+                            ) : null}
+                            {step.label}
+                          </button>
+                          <span className="text-xs text-muted pt-1.5">
+                            watch: {step.note}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {walkthrough.step >= activeScenario.steps.length && (
+                    <p className="text-sm text-ok">
+                      Walkthrough complete — keep free-playing above.
+                    </p>
+                  )}
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: "reset",
+                        preset: activeScenario.preset,
+                        scenarioId: activeScenario.id,
+                      })
+                    }
+                    className="text-xs text-muted hover:text-ink underline decoration-dotted"
+                  >
+                    Restart
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* ---------- Event log ---------- */}
+            <section className="mt-10">
+              <div className="bg-panel border border-line rounded-lg p-4 space-y-2 max-w-[70ch]">
+                <h3 className="font-display font-bold text-sm">Event log</h3>
+                <ul className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {log.map((entry) => {
+                    const Icon = LOG_ICONS[entry.kind] ?? Info;
+                    return (
+                      <li
+                        key={entry.id}
+                        className={`flex items-start gap-2 text-sm ${LOG_COLOR[entry.kind]}`}
+                      >
+                        <Icon size={14} className="shrink-0 mt-0.5" />
+                        <span className="leading-snug">{entry.text}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </section>
+          </main>
+        );
+      }
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
