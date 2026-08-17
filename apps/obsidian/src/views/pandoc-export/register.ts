@@ -100,6 +100,7 @@ export async function runPandocExport(
         format: choices.format,
         ...(await exportPresentation(zoteroPref.dataDir, {
           styleId: choices.styleId,
+          locale: settings.current?.["citation.locale"] || null,
         })),
       },
       exportPorts(deps, await pandocEngine.getEngine()),
@@ -137,8 +138,9 @@ export async function runPandocExport(
 /**
  * What the engine formats the exported run with, read through the resolver the
  * app renders with, so an export formats a dependent style exactly as Obsidian
- * does. An installed style hands over its content with the Citation Locale
- * already applied; the embedded default style takes that locale beside it.
+ * does, in the same vault Citation Locale. An installed style hands over its
+ * content with that locale already applied; the embedded default style takes
+ * the locale beside it.
  *
  * A selection Zotero cannot supply falls back to the embedded default style,
  * still in the Citation Locale the request named.

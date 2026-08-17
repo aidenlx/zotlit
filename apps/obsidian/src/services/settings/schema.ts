@@ -86,6 +86,11 @@ export const schema = v.object({
   "citation.open-as-links": v.boolean(),
   /** CSL style ID; `null` renders with the citation engine's embedded style. */
   "citation.references-style": v.nullable(v.string()),
+  /**
+   * Citation Locale as a BCP 47 tag; `null` or empty leaves the selected CSL
+   * style's own default locale in charge.
+   */
+  "citation.locale": v.nullable(v.string()),
   /** What hovering a Citation shows, on every surface that carries one. */
   "citation.hover-action": hoverAction,
   /** Whether the Citation Popover needs a held Mod, per editing mode. */
@@ -137,6 +142,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.show-formatted": true,
   "citation.open-as-links": false,
   "citation.references-style": null,
+  "citation.locale": null,
   "citation.hover-action": "popover",
   // Source mode keeps the modifier so plain-text editing is never interrupted,
   // while the two rendered modes answer to bare hover.

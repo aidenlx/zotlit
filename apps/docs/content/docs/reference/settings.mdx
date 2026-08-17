@@ -91,6 +91,7 @@ Each toggle gates the popover in its own editing mode, and the modifier is read 
 | Label                             | Key                         | Control                           | Default                       | Dependency             | Storage    |
 | --------------------------------- | --------------------------- | --------------------------------- | ----------------------------- | ---------------------- | ---------- |
 | **Citation and references style** | `citation.references-style` | Dropdown (lists installed styles) | Default (Chicago author-date) | Zotero style directory | Synced     |
+| **Citation locale**               | `citation.locale`           | Text                              | Style default                 | None                   | Synced     |
 | **Pandoc engine**                 | None                        | Install or uninstall action       | Not installed                 | Network for install    | Per device |
 
 **Citation and references style:** CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.
@@ -102,6 +103,12 @@ An unavailable style remains selected. In-text citations stay native, and the Re
 > This style isn’t installed in Zotero. Install it in Zotero or select another style.
 
 The first formatting attempt shows this notice once per plugin lifecycle: "The selected citation and references style isn’t installed in Zotero." Its **Open settings** action opens the Citations page.
+
+**Citation locale:** Sets the language for citation terms, dates, names, and sorting. Leave empty to use the language the selected style declares.
+
+The field takes a language tag such as `en-US`, `de`, or `zh-CN`. ZotLit rejects any other form and shows this message: "Enter a language code such as en-US, de, or zh-CN."
+
+The locale applies to in-text citations, the References Sidebar, the Citation Popover, the copied bibliography, and built-in export. Built-in export applies it to citation processing only: a note that declares Pandoc `lang` keeps that language, and a note that declares none stays without one.
 
 **Pandoc engine:** Formats in-text citations, references, and exports. Installation applies to every vault on this device.
 

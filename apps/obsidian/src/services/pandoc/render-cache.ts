@@ -61,6 +61,13 @@ export interface RenderPresentation {
   locale?: string | null;
 }
 
+/** What the vault settings name, which every render inherits what it omits. */
+type VaultPresentation = {
+  styleId: string | null;
+  /** `null` is Style default: the selected style's own locale stays in charge. */
+  locale: string | null;
+};
+
 /** A completed bibliography and whether its style supplies Entry Markers. */
 export interface BibliographyRenderResult {
   entries: readonly BibliographyEntry[];
@@ -86,7 +93,7 @@ type RenderStyle = Exclude<ResolvedCslStyle, { kind: "failed" }>;
  * disambiguation depend on the whole cited set — so the whole list is the unit
  * that is cached, keyed by the Citation Presentation it was rendered under and
  * the ordered cited set. What makes a render stale makes every render stale: a
- * Zotero database change, a Citation and References Style change, and an engine
+ * Zotero database change, a vault Citation Presentation change, and an engine
  * that came or went each drop the cache whole and announce it through
  * {@link BibliographyRenderEvents.invalidated}.
  *
@@ -108,8 +115,8 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #citations = new BoundedCache<
     Promise<RenderAttempt<readonly RenderedCitation[]>>
   >(HELD_RENDERS);
-  /** `undefined` until the first settings snapshot names the selected style. */
-  #styleId: string | null | undefined;
+  /** `undefined` until the first settings snapshot names the vault selections. */
+  #vault: VaultPresentation | undefined;
   /** The first unavailable selected style found in this plugin lifecycle. */
   #missingStyle: string | null = null;
 
@@ -229,8 +236,8 @@ export class BibliographyRenderCache extends Service<void> {
     stack.defer(
       this.#zoteroPref.on("resolved-changed", () => this.#invalidate()),
     );
-    // Fires synchronously with the loaded settings, which is where the selected
-    // style is first read; only a later one is a change.
+    // Fires synchronously with the loaded settings, which is where the vault
+    // selections are first read; only a later one is a change.
     stack.defer(
       this.#settings.subscribe((settings) => {
         if (settings) this.#applySettings(settings);
@@ -244,17 +251,23 @@ export class BibliographyRenderCache extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    const next = settings["citation.references-style"];
-    if (next === this.#styleId) return;
-    const initial = this.#styleId === undefined;
-    this.#styleId = next;
+    const next: VaultPresentation = {
+      styleId: settings["citation.references-style"],
+      // An empty Citation Locale asks for Style default, as an unset one does.
+      locale: settings["citation.locale"] || null,
+    };
+    const held = this.#vault;
+    if (held && held.styleId === next.styleId && held.locale === next.locale) {
+      return;
+    }
+    this.#vault = next;
     logger.info(
-      initial
-        ? "Citation and references style selected"
-        : "Citation and references style changed",
-      { styleId: next },
+      held
+        ? "Vault citation presentation changed"
+        : "Vault citation presentation selected",
+      next,
     );
-    if (!initial) this.#invalidate();
+    if (held) this.#invalidate();
   }
 
   /**
@@ -346,14 +359,12 @@ export class BibliographyRenderCache extends Service<void> {
     }
   }
 
-  /** The vault selection where `presentation` names no style of its own. */
+  /** The vault selections where `presentation` names none of its own. */
   #styleRequest(presentation: RenderPresentation | undefined): CslStyleRequest {
+    const { styleId, locale } = presentation ?? {};
     return {
-      styleId:
-        presentation?.styleId === undefined
-          ? (this.#styleId ?? null)
-          : presentation.styleId,
-      locale: presentation?.locale ?? null,
+      styleId: styleId === undefined ? (this.#vault?.styleId ?? null) : styleId,
+      locale: locale === undefined ? (this.#vault?.locale ?? null) : locale,
     };
   }
 
@@ -372,7 +383,7 @@ export class BibliographyRenderCache extends Service<void> {
       parentId: style.parentId,
       reason: style.reason,
     });
-    const selected = this.#styleId ?? null;
+    const selected = this.#vault?.styleId ?? null;
     if (style.styleId === selected && this.#missingStyle === null) {
       this.#missingStyle = style.styleId;
       this.#emitter.emit("style-missing", style.styleId);

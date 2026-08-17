@@ -506,6 +506,62 @@ describe("BibliographyRenderCache", () => {
     );
   });
 
+  it("renders every surface in the vault Citation Locale", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA, "citation.locale": "de-DE" },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")]);
+    await cache.renderCitations(["[@alpha]"], [item("alpha")]);
+
+    expect(engine.requests[0]?.styleXml).toContain('default-locale="de-DE"');
+    expect(engine.citationRequests[0]?.styleXml).toContain(
+      'default-locale="de-DE"',
+    );
+  });
+
+  it("renders the embedded default style in the vault Citation Locale", async () => {
+    await using harness = await makeHarness({ "citation.locale": "de-DE" });
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")]);
+
+    expect(engine.requests[0]?.styleXml).toBeUndefined();
+    expect(engine.requests[0]?.locale).toBe("de-DE");
+  });
+
+  it("leaves an empty vault Citation Locale to the style", async () => {
+    await using harness = await makeHarness({ "citation.locale": "" });
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")]);
+
+    expect(engine.requests[0]?.locale).toBeUndefined();
+  });
+
+  it("drops every render when the vault Citation Locale changes", async () => {
+    await using harness = await makeHarness();
+    const { cache, engine, settings, invalidations } = harness;
+    const items = [item("alpha")];
+
+    await cache.render(items);
+    await cache.renderCitations(["[@alpha]"], items);
+    settings.update({ "citation.locale": "de-DE" });
+    await cache.render(items);
+    await cache.renderCitations(["[@alpha]"], items);
+    // The same locale again is no change at all.
+    settings.update({ "citation.locale": "de-DE" });
+
+    expect(invalidations).toHaveLength(1);
+    expect(engine.requests).toHaveLength(2);
+    expect(engine.citationRequests).toHaveLength(2);
+    expect(engine.requests[1]?.locale).toBe("de-DE");
+    expect(engine.citationRequests[1]?.locale).toBe("de-DE");
+  });
+
   it("renders the embedded default style for a request that names Default", async () => {
     await using installed = await installStyle(APA);
     await using harness = await makeHarness(

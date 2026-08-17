@@ -103,6 +103,18 @@ export function citationsPageItems(
           desc: referencesStyleDescription(false),
           render: (setting) => renderReferencesStyleRow(setting, ctx),
         },
+        {
+          name: m.settings_citation_locale_name(),
+          desc: m.settings_citation_locale_desc(),
+          control: {
+            type: "text",
+            key: "citation.locale",
+            // Empty leaves the selected style's own default locale in charge.
+            defaultValue: "",
+            placeholder: m.settings_citation_locale_default(),
+            validate: citationLocaleError,
+          },
+        },
         pandocEngineDefinition(ctx),
       ],
     },
@@ -160,6 +172,31 @@ function requireModPage(
       control: { type: "toggle", key },
     })),
   };
+}
+
+/**
+ * A language tag as BCP 47 writes one, which is the whole locale form Pandoc
+ * and CSL read: the everyday `de`, `pt-BR`, `zh-Hans-CN`; the Unicode extension
+ * Pandoc sorts a bibliography by, such as `de-u-co-phonebk`; the extended
+ * language and private-use forms, such as `zh-cmn-Hans-CN` and `x-pmr`; and the
+ * irregular tags the registry grandfathered in, such as `i-klingon`. The regular
+ * grandfathered tags — `art-lojban`, `zh-min-nan` — are ordinary language tags
+ * in shape, so the grammar takes them without being told.
+ *
+ * @see https://www.rfc-editor.org/rfc/rfc5646#section-2.1 — the `Language-Tag` ABNF
+ */
+const LANGUAGE_TAG =
+  /^(?:(?:en-GB-oed|i-ami|i-bnn|i-default|i-enochian|i-hak|i-klingon|i-lux|i-mingo|i-navajo|i-pwn|i-tao|i-tay|i-tsu|sgn-BE-FR|sgn-BE-NL|sgn-CH-DE)|x(?:-[A-Za-z0-9]{1,8})+|(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*(?:-x(?:-[A-Za-z0-9]{1,8})+)?)$/;
+
+/**
+ * @returns why the Citation Locale was refused, or nothing for one the CSL
+ *   processor reads — an empty value included, which is Style default.
+ * @see https://github.com/jgm/pandoc/blob/3.10/MANUAL.txt — "Language variables"
+ * @see https://docs.citationstyles.org/en/v1.0.2/specification.html#locale-fallback
+ */
+export function citationLocaleError(locale: string): string | undefined {
+  if (locale === "" || LANGUAGE_TAG.test(locale)) return undefined;
+  return m.settings_citation_locale_invalid();
 }
 
 /** Dropdown sentinel for the embedded default style; a style ID is never empty. */

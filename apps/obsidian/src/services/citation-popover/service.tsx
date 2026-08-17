@@ -29,7 +29,7 @@ export interface CitationPopoverDeps {
   /** Says whether the hovered document's citations show Entry Serials. */
   citationText: Pick<CitationText, "peek">;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
-  bibliographyRender: Pick<BibliographyRenderCache, "render">;
+  bibliographyRender: Pick<BibliographyRenderCache, "render" | "on">;
 }
 
 export interface CitationPopover {
@@ -44,7 +44,9 @@ export interface CitationPopover {
  * The popover opens on the hover itself and fills once the entries are read, so
  * Obsidian's own timing decides when it appears rather than the read does. The
  * entries come from the same bibliography render the References Sidebar shows,
- * so both surfaces agree on the References Style and go stale together.
+ * so both surfaces agree on the References Style and go stale together — an
+ * open popover reads its own entries again on the drop, and the read it was
+ * already waiting on is left where it lands.
  */
 export function createCitationPopover(
   deps: CitationPopoverDeps,
@@ -55,20 +57,35 @@ export function createCitationPopover(
         request.hoverParent,
         request.targetEl,
       );
-      void fill(deps, popover, request);
+      let reading = 0;
+      const draw = (): void => {
+        const own = ++reading;
+        void fill(deps, popover, { request, current: () => own === reading });
+      };
+      // The listener lives exactly as long as this popover does.
+      popover.register(deps.bibliographyRender.on("invalidated", draw));
+      draw();
     },
   };
 }
 
+/**
+ * @param current whether this read is still the popover's own; a read the
+ *   render cache outlived draws nothing and hides nothing.
+ */
 async function fill(
   deps: CitationPopoverDeps,
   popover: CitationHoverPopover,
-  request: CitationHoverRequest,
+  {
+    request,
+    current,
+  }: { request: CitationHoverRequest; current: () => boolean },
 ): Promise<void> {
   let blocks: CitationPopoverBlock[];
   try {
     blocks = await readBlocks(deps, request);
   } catch (error) {
+    if (!current()) return;
     logger.warn("Cannot read the entries of a hovered citation", {
       path: request.sourcePath,
       error,
@@ -76,6 +93,7 @@ async function fill(
     popover.hide();
     return;
   }
+  if (!current()) return;
   // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
   if (blocks.length === 0) {
