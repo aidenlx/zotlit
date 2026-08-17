@@ -1,0 +1,1041 @@
+<!--
+Design question: Which module seam should own Library Scope for the ZotLit Obsidian
+plugin — resolving saved library selectors against the current Zotero database,
+tracking unavailable members, invalidating on database refresh, and notifying
+consumers — and does that seam stay correct when a caller holds a pinned database
+read lease (a batch run)?
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Library Scope seam — prototype</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      /* The design plan's tokens, exposed to Tailwind as utilities: bg-ground, text-ink,
+       text-accent, font-display, ... `inline` keeps the var() reference at the use site,
+       so the media-query override below still reaches every utility. */
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-warn: var(--warn);
+        --color-ok: var(--ok);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #fbfaf8;
+        --panel: #ffffff;
+        --ink: #1e3a5f;
+        --muted: #66788f;
+        --line: #e3e0d8;
+        --accent: #e8622c;
+        --warn: #b45309;
+        --ok: #2f7d5a;
+        --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
+        --font-body: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #10161f;
+          --panel: #182130;
+          --ink: #d8e2f0;
+          --muted: #8c9bb0;
+          --line: #2a3648;
+          --accent: #f0793f;
+          --warn: #e0a458;
+          --ok: #5cbf94;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Diagram sources go here: one <script type="text/mermaid" id="..."> per diagram. -->
+
+    <script type="text/jsx" id="app">
+      import React, { useState, useEffect, useMemo, useReducer } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Database,
+        Settings2,
+        PlayCircle,
+        RefreshCw,
+        AlertTriangle,
+        CheckCircle2,
+        Zap,
+        Info,
+      } from "lucide-react";
+
+      // --- Diagram ---
+      // Diagrams are authored as <script type="text/mermaid" id="..."> blocks in the body —
+      // plain text, no escaping — and rendered with <Diagram src="thatId" />. Indentation is
+      // stripped, so the block can sit at whatever depth reads well. beautiful-mermaid loads
+      // on first mount, so a page with no diagram never fetches it; bg/fg are var() so
+      // diagrams follow the theme instead of re-rendering.
+      function decodeEntities(s) {
+        const el = document.createElement("textarea");
+        el.innerHTML = s;
+        return el.value;
+      }
+
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+
+      let mermaidMod = null;
+      export function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el)
+            return { svg: null, error: `no <script type="text/mermaid" id="${src}"> in this page` };
+          if (!mod) return { svg: null, error: null };
+          try {
+            const opts = { bg: "var(--ground)", fg: "var(--ink)", transparent: true };
+            return {
+              svg: mod.renderMermaidSVG(decodeEntities(dedent(el.textContent)), opts),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error) return <pre className="text-accent text-sm whitespace-pre-wrap">{error}</pre>;
+        return <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg ?? "" }} />;
+      }
+      // --- Diagram END ---
+
+      // --- App ---
+
+      // ---- PURE CORE (liftable into apps/obsidian/src/services/library-scope/) ----
+
+      // Selector: {type:"personal"} | {type:"group", groupID: positive safe integer}
+      // Scope:    {mode:"all"} | {mode:"selected", libraries: Selector[]}
+      const FALLBACK_SCOPE = Object.freeze({
+        mode: "selected",
+        libraries: [{ type: "personal" }],
+      });
+
+      function selectorKey(s) {
+        return s.type === "personal" ? "personal" : `group:${s.groupID}`;
+      }
+
+      function isValidSelector(s) {
+        if (!s || typeof s !== "object") return false;
+        if (s.type === "personal") return true;
+        if (s.type === "group") return Number.isSafeInteger(s.groupID) && s.groupID > 0;
+        return false;
+      }
+
+      function selectorSortKey(s) {
+        return s.type === "personal" ? [0, 0] : [1, s.groupID];
+      }
+
+      function compareSelectors(a, b) {
+        const [ta, ga] = selectorSortKey(a);
+        const [tb, gb] = selectorSortKey(b);
+        if (ta !== tb) return ta - tb;
+        return ga - gb;
+      }
+
+      function isCanonicalOrder(list) {
+        for (let i = 1; i < list.length; i++) {
+          if (compareSelectors(list[i - 1], list[i]) >= 0) return false;
+        }
+        return true;
+      }
+
+      // Validation invariants (from the spec): mode "all" is valid as-is. Mode "selected"
+      // needs a non-empty array of valid selectors, no duplicates, and canonical order
+      // (personal first, then groups by ascending groupID). Any violation => invalid,
+      // with a human-readable reason ("empty selection", "duplicate selector",
+      // "invalid selector", "order is not canonical", "unknown shape"). Never normalize.
+      function validateSavedScope(saved) {
+        if (!saved || typeof saved !== "object") return { ok: false, reason: "unknown shape" };
+        if (saved.mode === "all") return { ok: true, scope: saved };
+        if (saved.mode !== "selected") return { ok: false, reason: "unknown shape" };
+        const libraries = saved.libraries;
+        if (!Array.isArray(libraries) || libraries.length === 0)
+          return { ok: false, reason: "empty selection" };
+        for (const s of libraries) {
+          if (!isValidSelector(s)) return { ok: false, reason: "invalid selector" };
+        }
+        const keys = libraries.map(selectorKey);
+        if (new Set(keys).size !== keys.length) return { ok: false, reason: "duplicate selector" };
+        if (!isCanonicalOrder(libraries)) return { ok: false, reason: "order is not canonical" };
+        return { ok: true, scope: saved };
+      }
+
+      // libraries: rows of the currently opened database snapshot:
+      //   [{ libraryID, type: "user"|"group", groupID: number|null, name: string|null }]
+      // Returns { mode, invalidSaved: boolean, invalidReason: string|null,
+      //           available: [{ selector, libraryID, name }], unavailable: [selector] }
+      function resolveLibraryScope(libraries, saved) {
+        const validated = validateSavedScope(saved);
+        const invalidSaved = !validated.ok;
+        const invalidReason = validated.ok ? null : validated.reason;
+        const scope = validated.ok ? validated.scope : FALLBACK_SCOPE;
+
+        if (scope.mode === "all") {
+          const available = libraries
+            .map((lib) => ({
+              selector: lib.type === "user" ? { type: "personal" } : { type: "group", groupID: lib.groupID },
+              libraryID: lib.libraryID,
+              name: lib.type === "user" ? "My Library" : (lib.name ?? `Group ${lib.groupID}`),
+            }))
+            .sort((a, b) => compareSelectors(a.selector, b.selector));
+          return { mode: "all", invalidSaved, invalidReason, available, unavailable: [] };
+        }
+
+        const userLib = libraries.find((l) => l.type === "user");
+        const available = [];
+        const unavailable = [];
+        for (const selector of scope.libraries) {
+          if (selector.type === "personal") {
+            if (userLib) {
+              available.push({ selector, libraryID: userLib.libraryID, name: "My Library" });
+            } else {
+              unavailable.push(selector);
+            }
+            continue;
+          }
+          const match = libraries.find((l) => l.type === "group" && l.groupID === selector.groupID);
+          if (match) {
+            available.push({ selector, libraryID: match.libraryID, name: match.name ?? `Group ${match.groupID}` });
+          } else {
+            unavailable.push(selector);
+          }
+        }
+        available.sort((a, b) => compareSelectors(a.selector, b.selector));
+        unavailable.sort(compareSelectors);
+        return { mode: "selected", invalidSaved, invalidReason, available, unavailable };
+      }
+
+      // Equality used to suppress redundant change events: same mode, same invalidSaved,
+      // same available libraryID sequence, same unavailable selectorKey sequence.
+      function sameResolution(a, b) {
+        if (!a || !b) return a === b;
+        if (a.mode !== b.mode || a.invalidSaved !== b.invalidSaved) return false;
+        const av = a.available.map((r) => r.libraryID);
+        const bv = b.available.map((r) => r.libraryID);
+        if (av.length !== bv.length || av.some((v, i) => v !== bv[i])) return false;
+        const au = a.unavailable.map(selectorKey);
+        const bu = b.unavailable.map(selectorKey);
+        if (au.length !== bu.length || au.some((v, i) => v !== bu[i])) return false;
+        return true;
+      }
+
+      // ---- SIMULATED SHELL (throwaway) ----
+
+      const ROSTER = [
+        { groupID: 100, libraryID: 4, name: "Shared A" },
+        { groupID: 200, libraryID: 5, name: "Shared B" },
+        { groupID: 300, libraryID: 6, name: "Shared C" },
+      ];
+
+      function rosterName(groupID) {
+        return ROSTER.find((g) => g.groupID === groupID)?.name ?? `Group ${groupID}`;
+      }
+
+      function librariesOf(groups) {
+        return [
+          { libraryID: 1, type: "user", groupID: null, name: null },
+          ...groups.map((g) => ({ libraryID: g.libraryID, type: "group", groupID: g.groupID, name: g.name })),
+        ];
+      }
+
+      let logIdSeq = 1;
+      function pushLog(log, kind, text) {
+        log.unshift({ id: logIdSeq++, kind, text });
+        return log;
+      }
+
+      function recompute(st, cause) {
+        const res = resolveLibraryScope(librariesOf(st.snapshot), st.saved);
+        if (res.invalidSaved && !(st.lastEmitted && st.lastEmitted.invalidSaved)) {
+          pushLog(
+            st.log,
+            "warn",
+            `Saved Library Scope is invalid (${res.invalidReason}). The plugin warns and uses My Library only. The saved value stays until you choose a valid scope.`,
+          );
+        } else if (!res.invalidSaved && st.lastEmitted && st.lastEmitted.invalidSaved) {
+          pushLog(st.log, "ok", "Valid Library Scope saved. The warning cleared.");
+        }
+        if (!sameResolution(st.lastEmitted, res)) {
+          st.lastEmitted = res;
+          pushLog(
+            st.log,
+            "emit",
+            "Scope change event — item search and the Citation Index drop caches and re-query.",
+          );
+          if (st.lease) {
+            pushLog(st.log, "info", "The running batch keeps the scope it captured at start.");
+          }
+        } else {
+          pushLog(st.log, "muted", "No effective scope change. No event.");
+        }
+      }
+
+      function makeInitial(preset, scenarioId) {
+        const groups = preset.groups;
+        const saved = preset.saved;
+        const log = [];
+        pushLog(log, "info", "Plugin loaded — Library Scope resolved.");
+        const lastEmitted = resolveLibraryScope(librariesOf(groups), saved);
+        return {
+          zotero: groups,
+          snapshot: groups,
+          saved,
+          lease: null,
+          refreshPending: false,
+          lastEmitted,
+          log,
+          walkthrough: scenarioId ? { id: scenarioId, step: 0 } : null,
+        };
+      }
+
+      const DEFAULT_PRESET = { groups: [ROSTER[0], ROSTER[1]], saved: { mode: "all" } };
+
+      function applyAction(st, action) {
+        switch (action.type) {
+          case "zotero-group-joins": {
+            const next = ROSTER.find((g) => !st.zotero.some((z) => z.groupID === g.groupID));
+            if (!next) {
+              pushLog(st.log, "info", "No more groups in the demo roster.");
+              return st;
+            }
+            st.zotero = [...st.zotero, next];
+            pushLog(st.log, "info", `The group "${next.name}" joined in Zotero.`);
+            return st;
+          }
+          case "zotero-group-leaves": {
+            const g = st.zotero.find((z) => z.groupID === action.groupID);
+            st.zotero = st.zotero.filter((z) => z.groupID !== action.groupID);
+            if (g) pushLog(st.log, "info", `The group "${g.name}" left in Zotero.`);
+            return st;
+          }
+          case "refresh": {
+            if (st.lease) {
+              st.refreshPending = true;
+              pushLog(st.log, "muted", "Refresh deferred — a batch run holds the database.");
+              return st;
+            }
+            st.snapshot = st.zotero;
+            pushLog(st.log, "info", "The plugin reopened the database.");
+            recompute(st, "refresh");
+            return st;
+          }
+          case "save-scope": {
+            st.saved = action.scope;
+            pushLog(st.log, "info", "Setting saved.");
+            recompute(st, "settings");
+            return st;
+          }
+          case "corrupt": {
+            st.saved = { mode: "selected", libraries: [] };
+            pushLog(st.log, "info", "The saved value got corrupted.");
+            recompute(st, "settings");
+            return st;
+          }
+          case "batch-start": {
+            if (st.lease) return st;
+            const resolution = resolveLibraryScope(librariesOf(st.snapshot), st.saved);
+            st.lease = { resolution };
+            pushLog(st.log, "info", "Batch run started. The database is pinned; the run captured its scope.");
+            return st;
+          }
+          case "batch-finish": {
+            st.lease = null;
+            pushLog(st.log, "info", "Batch run finished.");
+            if (st.refreshPending) {
+              st.refreshPending = false;
+              st.snapshot = st.zotero;
+              pushLog(st.log, "info", "The deferred refresh ran.");
+              recompute(st, "refresh");
+            }
+            return st;
+          }
+          default:
+            return st;
+        }
+      }
+
+      const SCENARIOS = {
+        s1: {
+          id: "s1",
+          title: "A selected group leaves",
+          blurb: "A group you picked in settings disappears from Zotero — the plugin only notices at refresh.",
+          preset: { groups: [ROSTER[0], ROSTER[1]], saved: { mode: "all" } },
+          steps: [
+            {
+              label: "Select My Library, Shared A, and Shared B",
+              note: "the scope switches to Selected Libraries with three members",
+              actions: [
+                {
+                  type: "save-scope",
+                  scope: { mode: "selected", libraries: [{ type: "personal" }, { type: "group", groupID: 100 }, { type: "group", groupID: 200 }] },
+                },
+              ],
+            },
+            {
+              label: "The group Shared A leaves in Zotero",
+              note: "the plugin has not refreshed yet — Shared A still shows as available",
+              actions: [{ type: "zotero-group-leaves", groupID: 100 }],
+            },
+            {
+              label: "Database refresh arrives",
+              note: "Shared A becomes an unavailable row, a scope change event fires, discovery reads My Library + Shared B",
+              actions: [{ type: "refresh" }],
+            },
+          ],
+        },
+        s2: {
+          id: "s2",
+          title: "Every selected Library is unavailable",
+          blurb: "The only group you selected leaves — discovery ends up with nothing to read.",
+          preset: { groups: [ROSTER[0], ROSTER[1]], saved: { mode: "selected", libraries: [{ type: "group", groupID: 200 }] } },
+          steps: [
+            {
+              label: "The group Shared B leaves in Zotero",
+              note: "nothing changes yet",
+              actions: [{ type: "zotero-group-leaves", groupID: 200 }],
+            },
+            {
+              label: "Database refresh arrives",
+              note: "no available Libraries — discovery returns no Items; the saved setting is untouched",
+              actions: [{ type: "refresh" }],
+            },
+          ],
+        },
+        s3: {
+          id: "s3",
+          title: "Broken saved setting",
+          blurb: "The persisted Library Scope value gets corrupted on disk — the plugin has to fall back safely.",
+          preset: DEFAULT_PRESET,
+          steps: [
+            {
+              label: "The saved value gets corrupted",
+              note: "a warning appears and the runtime scope falls back to My Library only; the invalid value stays on disk",
+              actions: [{ type: "corrupt" }],
+            },
+            {
+              label: "Database refresh arrives",
+              note: "the fallback is stable — no flapping, and no event because nothing effectively changed",
+              actions: [{ type: "refresh" }],
+            },
+            {
+              label: "Choose Selected: My Library + Shared A in settings",
+              note: "the warning clears and the saved value is replaced",
+              actions: [
+                {
+                  type: "save-scope",
+                  scope: { mode: "selected", libraries: [{ type: "personal" }, { type: "group", groupID: 100 }] },
+                },
+              ],
+            },
+          ],
+        },
+        s4: {
+          id: "s4",
+          title: "A batch run pins the database",
+          blurb: "A long-running batch job holds a read lease on the database while the world keeps changing around it.",
+          preset: { groups: [ROSTER[0], ROSTER[1]], saved: { mode: "selected", libraries: [{ type: "personal" }, { type: "group", groupID: 100 }] } },
+          steps: [
+            {
+              label: "Start batch run",
+              note: "the run captures My Library + Shared A",
+              actions: [{ type: "batch-start" }],
+            },
+            {
+              label: "The group Shared A leaves in Zotero",
+              note: "the database file changed, the plugin has not",
+              actions: [{ type: "zotero-group-leaves", groupID: 100 }],
+            },
+            {
+              label: "Database refresh arrives",
+              note: "the refresh is deferred — the batch still reads its pinned snapshot",
+              actions: [{ type: "refresh" }],
+            },
+            {
+              label: "Mid-run settings change: All Libraries",
+              note: "the live scope recomputes against the pinned snapshot — Shared A is still in it; the batch keeps its captured scope",
+              actions: [{ type: "save-scope", scope: { mode: "all" } }],
+            },
+            {
+              label: "Finish batch run",
+              note: "the deferred refresh runs and one scope change event fires — Shared A is gone",
+              actions: [{ type: "batch-finish" }],
+            },
+          ],
+        },
+        s5: {
+          id: "s5",
+          title: "A new group joins",
+          blurb: "A group is created in Zotero — see when All Libraries and Selected Libraries each pick it up.",
+          preset: { groups: [ROSTER[0]], saved: { mode: "all" } },
+          steps: [
+            {
+              label: "The group Shared B joins in Zotero",
+              note: "nothing until refresh",
+              actions: [{ type: "zotero-group-joins" }],
+            },
+            {
+              label: "Database refresh arrives",
+              note: "All Libraries picks Shared B up automatically",
+              actions: [{ type: "refresh" }],
+            },
+            {
+              label: "Switch to Selected: My Library + Shared A + Shared B",
+              note: "the same set, now pinned by selection",
+              actions: [
+                {
+                  type: "save-scope",
+                  scope: {
+                    mode: "selected",
+                    libraries: [{ type: "personal" }, { type: "group", groupID: 100 }, { type: "group", groupID: 200 }],
+                  },
+                },
+              ],
+            },
+            {
+              label: "The group Shared C joins in Zotero",
+              note: "nothing yet",
+              actions: [{ type: "zotero-group-joins" }],
+            },
+            {
+              label: "Database refresh arrives",
+              note: "Shared C stays out of the Selected scope, and the event is suppressed — nothing effectively changed",
+              actions: [{ type: "refresh" }],
+            },
+          ],
+        },
+      };
+      const SCENARIO_ORDER = ["s1", "s2", "s3", "s4", "s5"];
+
+      function reducer(state, action) {
+        if (action.type === "reset") {
+          return makeInitial(action.preset, action.scenarioId ?? null);
+        }
+        if (action.type === "run-step") {
+          const scenario = SCENARIOS[state.walkthrough.id];
+          const step = scenario.steps[state.walkthrough.step];
+          if (!step) return state;
+          let st = { ...state, log: [...state.log] };
+          for (const a of step.actions) {
+            st = { ...applyAction(st, a) };
+          }
+          st.walkthrough = { ...state.walkthrough, step: state.walkthrough.step + 1 };
+          return st;
+        }
+        return { ...applyAction({ ...state, log: [...state.log] }, action) };
+      }
+
+      const LOG_ICONS = {
+        emit: Zap,
+        warn: AlertTriangle,
+        ok: CheckCircle2,
+        muted: Info,
+        info: Info,
+      };
+      const LOG_COLOR = {
+        emit: "text-accent",
+        warn: "text-warn",
+        ok: "text-ok",
+        muted: "text-muted",
+        info: "text-ink",
+      };
+
+      function Chip({ children, tone = "line", className = "" }) {
+        const toneClass =
+          tone === "ok"
+            ? "border-ok text-ok"
+            : tone === "warn"
+              ? "border-warn text-warn"
+              : tone === "accent"
+                ? "border-accent text-accent"
+                : "border-line text-muted";
+        return (
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${toneClass} ${className}`}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      function ScopeCard({ resolution, title, accent, footnote }) {
+        return (
+          <div
+            className={`bg-panel border rounded-lg p-4 space-y-3 ${accent ? "border-accent border-t-4" : "border-line"}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-display font-bold text-sm">{title}</h3>
+              <Chip tone={resolution.mode === "all" ? "accent" : "line"}>
+                {resolution.mode === "all" ? "All Libraries" : "Selected Libraries"}
+              </Chip>
+            </div>
+            {resolution.invalidSaved && (
+              <div className="border border-warn text-warn rounded-md px-3 py-2 text-sm flex gap-2 items-start">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <span>
+                  Saved Library Scope is invalid — using My Library until you choose a valid scope in settings.
+                </span>
+              </div>
+            )}
+            <ul className="space-y-1.5">
+              {resolution.available.map((row) => (
+                <li key={`a-${row.libraryID}`} className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 size={14} className="text-ok shrink-0" />
+                  <span className="flex-1">{row.name}</span>
+                  <span className="font-mono tabular-nums text-xs text-muted border border-line rounded px-1.5 py-0.5">
+                    libraryID {row.libraryID}
+                  </span>
+                </li>
+              ))}
+              {resolution.unavailable.map((sel) => (
+                <li key={`u-${selectorKey(sel)}`} className="flex items-center gap-2 text-sm">
+                  <AlertTriangle size={14} className="text-warn shrink-0" />
+                  <span className="flex-1">
+                    {sel.type === "personal" ? "My Library" : rosterName(sel.groupID)}
+                    <span className="text-muted text-xs ml-1.5">Unavailable — kept in your selection</span>
+                  </span>
+                  <span className="font-mono tabular-nums text-xs text-warn border border-warn rounded px-1.5 py-0.5">
+                    {sel.type === "personal" ? "personal" : `groupID ${sel.groupID}`}
+                  </span>
+                </li>
+              ))}
+              {resolution.available.length === 0 && (
+                <li className="text-sm text-muted italic">No available Libraries — discovery returns no Items.</li>
+              )}
+            </ul>
+            {footnote}
+          </div>
+        );
+      }
+
+      function App() {
+        const [state, dispatch] = useReducer(reducer, DEFAULT_PRESET, (p) => makeInitial(p, null));
+        const { zotero, snapshot, saved, lease, refreshPending, lastEmitted, log, walkthrough } = state;
+
+        const zoteroKeys = new Set(zotero.map((g) => g.groupID));
+        const snapshotKeys = new Set(snapshot.map((g) => g.groupID));
+        const staleWorld =
+          refreshPending ||
+          zoteroKeys.size !== snapshotKeys.size ||
+          [...zoteroKeys].some((k) => !snapshotKeys.has(k));
+
+        const savedValidation = validateSavedScope(saved);
+        const isAllMode = savedValidation.ok && savedValidation.scope.mode === "all";
+        const isSelectedMode = savedValidation.ok && savedValidation.scope.mode === "selected";
+        const currentSelectors = isSelectedMode ? savedValidation.scope.libraries : [];
+
+        const unionGroupIDs = Array.from(
+          new Set([
+            ...snapshot.map((g) => g.groupID),
+            ...currentSelectors.filter((s) => s.type === "group").map((s) => s.groupID),
+          ]),
+        ).sort((a, b) => a - b);
+
+        function toggleSelector(sel) {
+          const key = selectorKey(sel);
+          const has = currentSelectors.some((s) => selectorKey(s) === key);
+          let next;
+          if (has) {
+            if (currentSelectors.length <= 1) return; // refuse to empty the selection
+            next = currentSelectors.filter((s) => selectorKey(s) !== key);
+          } else {
+            next = [...currentSelectors, sel];
+          }
+          next = [...next].sort(compareSelectors);
+          dispatch({ type: "save-scope", scope: { mode: "selected", libraries: next } });
+        }
+
+        const activeScenario = walkthrough ? SCENARIOS[walkthrough.id] : null;
+
+        return (
+          <main className="bg-ground text-ink font-body min-h-full px-6 py-10 lg:px-10">
+            <header className="max-w-[65ch] mb-8 space-y-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-warn text-warn uppercase text-xs tracking-wide px-2.5 py-1">
+                Prototype — throwaway
+              </span>
+              <h1 className="font-display text-4xl font-bold text-balance">Library Scope seam</h1>
+              <p className="text-muted leading-relaxed">
+                Which module seam should own Library Scope — resolving saved library selectors
+                against the current Zotero database, tracking unavailable members, invalidating
+                on database refresh, and notifying consumers — and does that seam stay correct
+                when a caller holds a pinned database read lease (a batch run)?
+              </p>
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={() => dispatch({ type: "reset", preset: DEFAULT_PRESET })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium hover:border-accent"
+                >
+                  Reset demo
+                </button>
+              </div>
+              <details className="pt-2">
+                <summary className="cursor-pointer text-sm font-medium text-ink">The seam under test</summary>
+                <pre className="mt-2 overflow-x-auto font-mono text-xs bg-panel border border-line rounded-md p-3 leading-relaxed">
+{`Chosen seam (C) — pure core + thin notifier:
+
+  // pure core (the whole policy; testable over plain arrays)
+  resolveLibraryScope(libraries: LibraryInfo[], saved: unknown): ScopeResolution
+  // ScopeResolution = { mode, invalidSaved, available, unavailable }
+
+  // thin service shell
+  LibraryScopeService
+    .current: ScopeResolution            // against the live client
+    .resolveWith(client): ScopeResolution // lease case: same core, pinned snapshot
+    .on("changed", cb): () => void       // emitted only when the resolution differs
+
+Rejected A — pure function only, no service: every consumer re-wires
+settings + refresh subscriptions and re-implements the invalid-value
+warning; the policy has no single owner.
+
+Rejected B — full stateful service with cached resolution, diff payloads,
+and its own write API: caching a one-query resolution invites staleness
+against leases; diffs and a second write path have no consumer (YAGNI).`}
+                </pre>
+              </details>
+            </header>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+              {/* Column 1: controls */}
+              <div className="space-y-5">
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                      <Database size={15} className="text-muted" /> Zotero database
+                    </h3>
+                    {staleWorld && <Chip tone="warn">Plugin has not read this change yet</Chip>}
+                  </div>
+                  <ul className="space-y-1.5">
+                    <li className="flex items-center justify-between text-sm">
+                      <span>My Library</span>
+                      <span className="text-muted text-xs">fixed</span>
+                    </li>
+                    {zotero.map((g) => (
+                      <li key={g.groupID} className="flex items-center justify-between text-sm">
+                        <span>{g.name}</span>
+                        <button
+                          onClick={() => dispatch({ type: "zotero-group-leaves", groupID: g.groupID })}
+                          className="rounded border border-line px-2 py-0.5 text-xs hover:border-warn hover:text-warn"
+                        >
+                          Leave
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={() => dispatch({ type: "zotero-group-joins" })}
+                      className="rounded-md border border-line bg-ground px-3 py-1.5 text-sm hover:border-accent"
+                    >
+                      A group joins
+                    </button>
+                    <button
+                      onClick={() => dispatch({ type: "refresh" })}
+                      className="rounded-md border border-line bg-ground px-3 py-1.5 text-sm hover:border-accent flex items-center gap-1.5"
+                    >
+                      <RefreshCw size={13} /> Database refresh arrives
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3">
+                  <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                    <Settings2 size={15} className="text-muted" /> Plugin settings
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => dispatch({ type: "save-scope", scope: { mode: "all" } })}
+                      className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${
+                        isAllMode ? "border-accent text-accent" : "border-line hover:border-accent"
+                      }`}
+                    >
+                      All Libraries
+                    </button>
+                    <button
+                      onClick={() =>
+                        dispatch({
+                          type: "save-scope",
+                          scope: { mode: "selected", libraries: [{ type: "personal" }] },
+                        })
+                      }
+                      className={`flex-1 rounded-md border px-3 py-1.5 text-sm font-medium ${
+                        isSelectedMode ? "border-accent text-accent" : "border-line hover:border-accent"
+                      }`}
+                    >
+                      Selected Libraries
+                    </button>
+                  </div>
+                  <div className={`space-y-1.5 ${isAllMode ? "opacity-40" : ""}`}>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(() => {
+                        const sel = { type: "personal" };
+                        const active = currentSelectors.some((s) => selectorKey(s) === "personal");
+                        const isLast = active && currentSelectors.length <= 1;
+                        return (
+                          <button
+                            disabled={isAllMode || isLast}
+                            onClick={() => toggleSelector(sel)}
+                            className={`rounded-full border px-2.5 py-1 text-xs disabled:opacity-50 ${
+                              active ? "border-accent text-accent" : "border-line text-muted"
+                            }`}
+                          >
+                            My Library
+                          </button>
+                        );
+                      })()}
+                      {unionGroupIDs.map((gid) => {
+                        const sel = { type: "group", groupID: gid };
+                        const active = currentSelectors.some((s) => selectorKey(s) === selectorKey(sel));
+                        const isLast = active && currentSelectors.length <= 1;
+                        const isAvailable = snapshotKeys.has(gid);
+                        return (
+                          <button
+                            key={gid}
+                            disabled={isAllMode || isLast}
+                            onClick={() => toggleSelector(sel)}
+                            className={`rounded-full border px-2.5 py-1 text-xs disabled:opacity-50 ${
+                              active && !isAvailable
+                                ? "border-warn text-warn"
+                                : active
+                                  ? "border-accent text-accent"
+                                  : "border-line text-muted"
+                            }`}
+                          >
+                            {rosterName(gid)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted">
+                      {isAllMode
+                        ? "Switch to Selected Libraries to pick."
+                        : "Selected Libraries cannot be empty."}
+                    </p>
+                  </div>
+                  <div className="pt-1 border-t border-line">
+                    <button
+                      onClick={() => dispatch({ type: "corrupt" })}
+                      className="text-xs text-warn/80 hover:text-warn underline decoration-dotted"
+                    >
+                      Corrupt the saved value
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-2">
+                  <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                    <PlayCircle size={15} className="text-muted" /> Batch run
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={!!lease}
+                      onClick={() => dispatch({ type: "batch-start" })}
+                      className="flex-1 rounded-md border border-line bg-ground px-3 py-1.5 text-sm hover:border-accent disabled:opacity-40"
+                    >
+                      Start batch run
+                    </button>
+                    <button
+                      disabled={!lease}
+                      onClick={() => dispatch({ type: "batch-finish" })}
+                      className="flex-1 rounded-md border border-line bg-ground px-3 py-1.5 text-sm hover:border-accent disabled:opacity-40"
+                    >
+                      Finish batch run
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted">A batch run pins the opened database for its whole life.</p>
+                </div>
+              </div>
+
+              {/* Column 2: seam output */}
+              <div className="space-y-5">
+                <ScopeCard resolution={lastEmitted} title="Effective Library Scope" accent />
+
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-1.5">
+                  <h3 className="font-display font-bold text-sm">What discovery reads</h3>
+                  <p className="text-sm">
+                    {lastEmitted.available.length > 0
+                      ? lastEmitted.available.map((r) => r.name).join(", ")
+                      : "No available Libraries — discovery returns no Items."}
+                  </p>
+                  <p className="text-xs text-muted">
+                    Item search and the Citation Index query exactly these Libraries.
+                  </p>
+                </div>
+
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-display font-bold text-sm">Saved setting (on disk)</h3>
+                    <Chip tone={savedValidation.ok ? "ok" : "warn"}>{savedValidation.ok ? "valid" : "invalid"}</Chip>
+                  </div>
+                  <pre className="font-mono text-xs overflow-x-auto bg-ground border border-line rounded p-2">
+                    {JSON.stringify(saved, null, 2)}
+                  </pre>
+                </div>
+
+                {lease && (
+                  <div className="bg-panel border border-warn rounded-lg p-4 space-y-2">
+                    <h3 className="font-display font-bold text-sm text-warn">Batch run (pinned)</h3>
+                    <p className="text-sm">
+                      {lease.resolution.available.length > 0
+                        ? lease.resolution.available
+                            .map((r) => `${r.name} (libraryID ${r.libraryID})`)
+                            .join(", ")
+                        : "No available Libraries in the pinned snapshot."}
+                    </p>
+                    <p className="text-xs text-muted">
+                      This run keeps reading its pinned snapshot and captured scope until it finishes.
+                    </p>
+                    {refreshPending && <Chip tone="warn">1 refresh deferred</Chip>}
+                  </div>
+                )}
+              </div>
+
+              {/* Column 3: log */}
+              <div className="bg-panel border border-line rounded-lg p-4 space-y-2 lg:sticky lg:top-4">
+                <h3 className="font-display font-bold text-sm">Event log</h3>
+                <ul className="space-y-2 max-h-[32rem] overflow-y-auto pr-1">
+                  {log.map((entry) => {
+                    const Icon = LOG_ICONS[entry.kind] ?? Info;
+                    return (
+                      <li key={entry.id} className={`flex items-start gap-2 text-sm ${LOG_COLOR[entry.kind]}`}>
+                        <Icon size={14} className="shrink-0 mt-0.5" />
+                        <span className="leading-snug">{entry.text}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+
+            {/* Guided walkthroughs */}
+            <section className="mt-10 space-y-4">
+              <h2 className="font-display text-xl font-bold">Guided walkthroughs</h2>
+              <p className="text-xs text-muted">Starting a walkthrough resets the demo.</p>
+              <div className="flex flex-wrap gap-2 border-b border-line pb-3">
+                {SCENARIO_ORDER.map((id) => {
+                  const sc = SCENARIOS[id];
+                  const active = walkthrough && walkthrough.id === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => dispatch({ type: "reset", preset: sc.preset, scenarioId: id })}
+                      className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+                        active ? "border-accent text-accent" : "border-line hover:border-accent"
+                      }`}
+                    >
+                      {sc.title}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeScenario && (
+                <div className="space-y-3 max-w-[65ch]">
+                  <p className="text-sm text-muted">{activeScenario.blurb}</p>
+                  <ol className="space-y-2">
+                    {activeScenario.steps.map((step, i) => {
+                      const done = i < walkthrough.step;
+                      const current = i === walkthrough.step;
+                      return (
+                        <li key={i} className={`flex items-start gap-3 ${done ? "opacity-50" : ""}`}>
+                          <button
+                            disabled={!current}
+                            onClick={() => dispatch({ type: "run-step" })}
+                            className={`shrink-0 rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-40 ${
+                              current ? "border-accent text-accent" : "border-line"
+                            }`}
+                          >
+                            {done ? <CheckCircle2 size={14} className="inline mr-1 text-ok" /> : null}
+                            {step.label}
+                          </button>
+                          <span className="text-xs text-muted pt-1.5">watch: {step.note}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {walkthrough.step >= activeScenario.steps.length && (
+                    <p className="text-sm text-ok">Walkthrough complete — keep free-playing above.</p>
+                  )}
+                  <button
+                    onClick={() => dispatch({ type: "reset", preset: activeScenario.preset, scenarioId: activeScenario.id })}
+                    className="text-xs text-muted hover:text-ink underline decoration-dotted"
+                  >
+                    Restart
+                  </button>
+                </div>
+              )}
+            </section>
+          </main>
+        );
+      }
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, { transforms: ["jsx"], production: true });
+      const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+      await import(url);
+    </script>
+  </body>
+</html>
