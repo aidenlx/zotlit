@@ -9,6 +9,7 @@ import {
   EXPORT_BODY,
   EXPORT_NOTE,
   openCitationVault,
+  SECOND_CITATION_KEY,
   TIMEOUT,
 } from "./__fixtures__/citation-surfaces";
 
@@ -21,8 +22,9 @@ const UNINSTALLED_STYLE_ID = "http://www.zotero.org/styles/uninstalled";
 const VAULT_WORD = "prose";
 const NOTE_WORD = "numbered";
 
-/** The Entry Marker the numbering style stands for the one cited work. */
+/** The Entry Markers the numbering style stands for the two cited works. */
 const MARKER = "[1]";
+const SECOND_MARKER = "[2]";
 
 /** Neither citation nor entry carries a number, so no gutter belongs to it. */
 const VAULT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
@@ -56,9 +58,37 @@ const NOTE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   </bibliography>
 </style>`;
 
+/** What each note-class style writes as its note, and as its entry. */
+const ALPHA_NOTE = "alphanote";
+const BETA_NOTE = "betanote";
+
+/**
+ * A note-class style: citeproc writes every citation as a note, which is the
+ * text the Citation Popover shows in place of the Entry Serial the inline
+ * surfaces stand there. Each of the two writes its own note and its own entry,
+ * so a rendered word says which style — and which read — produced it.
+ */
+function noteClassStyle(id: string, note: string): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
+  <info>
+    <title>Note class ${note}</title>
+    <id>${id}</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><text value="${note}"/></layout></citation>
+  <bibliography><layout><text value="${note}entry"/></layout></bibliography>
+</style>`;
+}
+
+const ALPHA_STYLE_ID = "http://www.zotero.org/styles/note-alpha";
+const BETA_STYLE_ID = "http://www.zotero.org/styles/note-beta";
+
 const STYLES = {
   "vault-prose.csl": VAULT_STYLE,
   "note-numbered.csl": NOTE_STYLE,
+  "note-alpha.csl": noteClassStyle(ALPHA_STYLE_ID, ALPHA_NOTE),
+  "note-beta.csl": noteClassStyle(BETA_STYLE_ID, BETA_NOTE),
 };
 
 /** @param documentStyle the `zotlit-csl` both notes carry; `undefined` writes none. */
@@ -88,8 +118,8 @@ describe("document Citation Presentation", { timeout: TIMEOUT }, () => {
     await using vault = await openVault(NOTE_STYLE_ID);
 
     // The citation is the style's own Entry Marker, and every surface that
-    // stands a gutter beside an entry stands the same number in it, so the one
-    // cited work reads as 1 wherever it is shown.
+    // stands a gutter beside an entry stands the same number in it, so the
+    // first cited work reads as 1 wherever it is shown.
     await expect(vault.citationText()).resolves.toBe(MARKER);
     const sidebar = await vault.sidebarText();
     expect(sidebar).toContain(MARKER);
@@ -107,6 +137,28 @@ describe("document Citation Presentation", { timeout: TIMEOUT }, () => {
     expect(exported.html).toContain(MARKER);
     expect(exported.html).toContain(NOTE_WORD);
     expect(vault.vaultStyleMissing()).toBe(null);
+  });
+
+  it("numbers one ordered citation set alike on every surface", async () => {
+    await using vault = await openVault(NOTE_STYLE_ID);
+
+    // The draft cites the two works in this order, so the numbering style
+    // counts them 1 and 2 — and each surface stands that same number beside
+    // the same work, because all four read one ordered citation set.
+    await expect(vault.citationText()).resolves.toBe(MARKER);
+    await expect(vault.citationText(SECOND_CITATION_KEY)).resolves.toBe(
+      SECOND_MARKER,
+    );
+    const sidebar = await vault.sidebarText();
+    expect(sidebar).toContain(MARKER);
+    expect(sidebar).toContain(SECOND_MARKER);
+    await expect(vault.popoverText()).resolves.toContain(MARKER);
+    await expect(vault.popoverText(SECOND_CITATION_KEY)).resolves.toContain(
+      SECOND_MARKER,
+    );
+    const copied = await vault.copiedBibliography();
+    expect(copied).toContain(MARKER);
+    expect(copied).toContain(SECOND_MARKER);
   });
 
   it("keeps a per-run export style off the note", async () => {
@@ -174,5 +226,22 @@ describe("document Citation Presentation", { timeout: TIMEOUT }, () => {
     await expect(vault.sidebarText()).resolves.toContain(NOTE_WORD);
     await expect(popover.text(shown)).resolves.toContain(NOTE_WORD);
     await expect(vault.copiedBibliography()).resolves.toContain(NOTE_WORD);
+  });
+
+  it("re-reads the hovered citation's own note when the style changes", async () => {
+    await using vault = await openVault(ALPHA_STYLE_ID);
+    using popover = vault.showPopover();
+    // A note begins its own sentence, so citeproc capitalizes the word the
+    // style wrote; the whole note is read in one case here.
+    const shown = await popover.text();
+    expect(shown.toLowerCase()).toContain(ALPHA_NOTE);
+
+    await vault.setNoteStyle(BETA_STYLE_ID);
+
+    // The note the popover shows is the new style's, not the one the hover
+    // itself was given: nothing of the previous style stays on screen.
+    const restyled = (await popover.text(shown)).toLowerCase();
+    expect(restyled).toContain(BETA_NOTE);
+    expect(restyled).not.toContain(ALPHA_NOTE);
   });
 });

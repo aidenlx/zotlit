@@ -24,6 +24,7 @@ import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
 import {
+  citedItems,
   documentPresentation,
   samePresentation,
 } from "@/services/pandoc/document-presentation";
@@ -439,9 +440,8 @@ export class ReferencesView extends ItemView {
     }
 
     const { presentation } = declared;
-    const items = [...sources.values()].map((source) => source.csl);
     const outcome = await this.#deps.bibliographyRender.render(
-      items,
+      citedItems(sources),
       presentation,
     );
     if (generation !== this.#generation) return;

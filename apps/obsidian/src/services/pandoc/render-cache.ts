@@ -1,5 +1,7 @@
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
 
+import { createHash } from "node:crypto";
+
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -11,6 +13,11 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import {
+  effectivePresentation,
+  vaultPresentation,
+} from "./document-presentation";
+import type { EffectivePresentation } from "./document-presentation";
 import type { BibliographyEntry, RenderedCitation } from "./engine";
 import type { PandocEngineService } from "./service";
 import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
@@ -61,13 +68,6 @@ export interface RenderPresentation {
   locale?: string | null;
 }
 
-/** What the vault settings name, which every render inherits what it omits. */
-type VaultPresentation = {
-  styleId: string | null;
-  /** `null` is Style default: the selected style's own locale stays in charge. */
-  locale: string | null;
-};
-
 /** A completed bibliography and whether its style supplies Entry Markers. */
 export interface BibliographyRenderResult {
   entries: readonly BibliographyEntry[];
@@ -116,7 +116,7 @@ export class BibliographyRenderCache extends Service<void> {
     Promise<RenderAttempt<readonly RenderedCitation[]>>
   >(HELD_RENDERS);
   /** `undefined` until the first settings snapshot names the vault selections. */
-  #vault: VaultPresentation | undefined;
+  #vault: EffectivePresentation | undefined;
   /** The first unavailable selected style found in this plugin lifecycle. */
   #missingStyle: string | null = null;
 
@@ -253,11 +253,7 @@ export class BibliographyRenderCache extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    const next: VaultPresentation = {
-      styleId: settings["citation.references-style"],
-      // An empty Citation Locale asks for Style default, as an unset one does.
-      locale: settings["citation.locale"] || null,
-    };
+    const next = vaultPresentation(settings);
     const held = this.#vault;
     if (held && held.styleId === next.styleId && held.locale === next.locale) {
       return;
@@ -267,7 +263,7 @@ export class BibliographyRenderCache extends Service<void> {
       held
         ? "Vault citation presentation changed"
         : "Vault citation presentation selected",
-      next,
+      { styleId: next.styleId, locale: next.locale },
     );
     if (held) this.#invalidate();
   }
@@ -363,11 +359,10 @@ export class BibliographyRenderCache extends Service<void> {
 
   /** The vault selections where `presentation` names none of its own. */
   #styleRequest(presentation: RenderPresentation | undefined): CslStyleRequest {
-    const { styleId, locale } = presentation ?? {};
-    return {
-      styleId: styleId === undefined ? (this.#vault?.styleId ?? null) : styleId,
-      locale: locale === undefined ? (this.#vault?.locale ?? null) : locale,
-    };
+    return effectivePresentation(
+      presentation ?? {},
+      this.#vault ?? { styleId: null, locale: null },
+    );
   }
 
   /**
@@ -410,10 +405,14 @@ function enginePresentation(style: RenderStyle): {
 
 /**
  * The identity of one render: the style and Citation Locale that format it, the
- * independent parent the style resolved through, the works it covers in the
- * order they are cited, and — for an in-text render — the citations it formats.
+ * independent parent the style resolved through, the very CSL content it is
+ * formatted by, the works it covers in the order they are cited, and — for an
+ * in-text render — the citations it formats.
+ *
  * The parent belongs to that identity because a dependent style that starts
- * naming another parent renders another way under the same style ID.
+ * naming another parent renders another way under the same style ID, and the
+ * content belongs to it because a style edited in Zotero renders another way
+ * under the same style ID and the same parent.
  *
  * A CSL id names one Item — a Zotero item URI, an Indexed Key, or a citation
  * key — and none of the three can carry the separator, so the empty line
@@ -434,7 +433,20 @@ function renderKey({
     request.styleId ?? "",
     style.kind === "installed" ? (style.parentId ?? "") : "",
     request.locale ?? "",
+    contentIdentity(style),
     ...items.map((item) => item.id),
     ...(citations.length > 0 ? ["", ...citations] : []),
   ].join("\n");
+}
+
+/**
+ * What the resolved style formats with, as a value that changes with it: the
+ * digest of the CSL content the engine is handed. The embedded default style
+ * ships with the engine and carries no content of its own here, so it stands
+ * on the request alone.
+ */
+function contentIdentity(style: RenderStyle): string {
+  return style.kind === "installed"
+    ? createHash("sha256").update(style.xml).digest("base64")
+    : "";
 }

@@ -49,10 +49,9 @@ Better BibTeX CSL-JSON auto-export for automatic refresh and accept a manual
 Zotero CSL JSON export. Treat the bibliography as user-owned input: ZotLit
 supplies Citation Keys to Pandoc and leaves bibliography creation to Zotero.
 
-Leave the citation style with its owner. A style file the user supplies stays a
-Pandoc input; a Zotero-installed style belongs in the document property the live
-guide names, which the filter resolves during the run. Ask the user which one
-they mean before a document carries both.
+Leave the citation style with its owner. The live guide states which style input
+ZotLit resolves and which one stays Pandoc's; follow it. Ask the user which style
+they mean before a document carries more than one style input.
 
 Use the minimal `--defaults` invocation from the live guide. Quote every
 user-selected path and keep `--fail-if-warnings`, so a Citation Key missing

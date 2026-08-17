@@ -23,8 +23,10 @@ import {
   showCitation,
 } from "@/services/citation-text/present";
 import type {
+  CitationCoordinate,
   DocumentCitations,
   PresentedCitation,
+  ShownCitation,
 } from "@/services/citation-text/present";
 import {
   clickWikilinkCitation,
@@ -39,7 +41,6 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
-import type { Inlines } from "@/services/pandoc/ast";
 
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";
@@ -106,8 +107,8 @@ const renderedCitations = new WeakMap<HTMLElement, RenderedWikilinkCitation>();
 /** What one rendered wikilink Citation shows, and the works it names. */
 interface RenderedWikilinkCitation {
   works: readonly HoveredWork[];
-  /** The text the style formatted, which carries a note-class style's note. */
-  formatted: Inlines;
+  /** The occurrence it stands for, which a note-class style's note is read from. */
+  shown: ShownCitation;
 }
 
 /**
@@ -325,7 +326,7 @@ function renderedCitationAt(
     element,
     hover: {
       works: citation.works,
-      formatted: citation.formatted,
+      shown: citation.shown,
       // A widget is drawn in Live Preview alone, so that is the mode the
       // Require Mod gate of every hover on one is read for.
       where: { surface: "editor", editorMode: "live-preview" },
@@ -371,6 +372,7 @@ function renderedCitationAt(
  */
 class CitationDisplayWidget extends WidgetType {
   readonly #content;
+  readonly #shown;
   readonly #className;
   readonly #works;
   readonly #click;
@@ -380,12 +382,15 @@ class CitationDisplayWidget extends WidgetType {
     tokenClasses: readonly string[],
     options: {
       works: readonly HoveredWork[];
+      /** Which occurrence the widget stands for, read again on every popover read. */
+      shown: ShownCitation;
       /** What a plain left-click on the Citation does. */
       click: CitationClickAffordance;
     },
   ) {
     super();
     this.#content = content;
+    this.#shown = options.shown;
     this.#works = options.works;
     this.#click = options.click;
     this.#className = [
@@ -421,7 +426,7 @@ class CitationDisplayWidget extends WidgetType {
     showCitation(element, this.#content, "suppress");
     renderedCitations.set(element, {
       works: this.#works,
-      formatted: this.#content.text.content,
+      shown: this.#shown,
     });
     return element;
   }
@@ -489,14 +494,13 @@ function replacement(
   citations: DocumentCitations,
   click: CitationClickAffordance,
 ): Decoration | null {
-  const formatted = citationContent(decoration.citation, citations, {
-    kind: "offset",
-    start: decoration.start,
-  });
+  const at: CitationCoordinate = { kind: "offset", start: decoration.start };
+  const formatted = citationContent(decoration.citation, citations, at);
   if (formatted === null) return null;
   return Decoration.replace({
     widget: new CitationDisplayWidget(formatted, decoration.tokenClasses, {
       works: citedWorks(decoration),
+      shown: { citation: decoration.citation, at },
       click,
     }),
   });

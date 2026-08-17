@@ -142,7 +142,17 @@ export async function materializeCslStyle(
   await mkdir(directory, { recursive: true });
   const digest = createHash("sha256").update(xml).digest("hex");
   const path = join(directory, `${digest}${CSL_EXT}`);
-  const staging = join(directory, `.${digest}-${randomUUID()}.part`);
+  await using stack = new AsyncDisposableStack();
+  const staging = stack.adopt(
+    join(directory, `.${digest}-${randomUUID()}.part`),
+    (file) =>
+      rm(file, { force: true }).catch((error: unknown) => {
+        logger.warn("Cannot remove a staged CSL style file", {
+          staging: file,
+          error,
+        });
+      }),
+  );
   try {
     await writeFile(staging, xml, { flag: "wx" });
     await link(staging, path);
@@ -150,10 +160,6 @@ export async function materializeCslStyle(
     // The path already carries this exact content, which is the whole promise
     // a content address makes: another run materialized it first.
     if (!isErrno(error, "EEXIST")) throw error;
-  } finally {
-    await rm(staging, { force: true }).catch((error: unknown) => {
-      logger.warn("Cannot remove a staged CSL style file", { staging, error });
-    });
   }
   return path;
 }

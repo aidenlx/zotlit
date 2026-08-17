@@ -22,10 +22,13 @@ import type {
   BibliographyItemRef,
   BibliographyTransport,
 } from "@/services/pandoc/bibliography";
-import { documentPresentation } from "@/services/pandoc/document-presentation";
+import {
+  documentPresentation,
+  effectivePresentation,
+  vaultPresentation,
+} from "@/services/pandoc/document-presentation";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
-import type { RenderPresentation } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
@@ -90,12 +93,24 @@ export async function runPandocExport(
     });
     return;
   }
-  const { presentation } = declared;
+  // Where this export starts: the document's own effective Citation
+  // Presentation, read through the boundary every in-app surface reads it
+  // through, so the run opens on what Obsidian shows. The dialog holds the
+  // style for this run alone — nothing here is written back to the note — so a
+  // style the note names and Zotero cannot supply still opens the picker on
+  // that style, named as the missing one it is. The Citation Locale travels to
+  // citeproc through the effective CSL input; a Document Language reaches the
+  // writer through the note's own `lang` metadata as well, which is what makes
+  // it the exported document's language.
+  const effective = effectivePresentation(
+    declared.presentation,
+    vaultPresentation(settings.current),
+  );
   await zoteroPref.ready;
 
   const choices = await openPandocExportModal(app, {
     dataDir: zoteroPref.dataDir,
-    referencesStyleId: exportStyleId(presentation, settings),
+    referencesStyleId: effective.styleId,
     notePath: absolutePath(app, file),
   });
   if (!choices) return;
@@ -104,11 +119,8 @@ export async function runPandocExport(
   // where Zotero cannot supply that style: the run never falls back to another.
   const style = await exportPresentation(
     zoteroPref.dataDir,
-    {
-      styleId: choices.styleId,
-      locale: exportLocale(presentation, settings),
-    },
-    { documentStyle: choices.styleId === presentation.styleId },
+    { styleId: choices.styleId, locale: effective.locale },
+    { documentStyle: choices.styleId === declared.presentation.styleId },
   );
   if (style === null) {
     showExportFailure({ kind: "document-style-invalid" });
@@ -160,38 +172,6 @@ export async function runPandocExport(
   new BaseNotice(
     m.notice_pandoc_export_done({ file: basename(choices.destination) }),
   );
-}
-
-/**
- * Where the export dialog's style picker starts: the note's own Citation and
- * References Style, and the vault selection for a note that names none.
- *
- * The dialog holds the choice for this run alone — nothing here is written back
- * to the note — so a style the note names and Zotero cannot supply still opens
- * the picker on that style, named as the missing one it is.
- */
-function exportStyleId(
-  presentation: RenderPresentation,
-  settings: PandocExportDeps["settings"],
-): string | null {
-  const vault = settings.current?.["citation.references-style"] ?? null;
-  return presentation.styleId ?? vault;
-}
-
-/**
- * The Citation Locale the exported run formats in: the Document Language the
- * note declares, and the vault Citation Locale for a note that declares none.
- *
- * The Document Language reaches Pandoc through the note's own `lang` metadata
- * as well, which is what makes it the exported document's language. This is the
- * same value, carried to citeproc through the effective CSL input, so an
- * installed style renders in the language the document declares.
- */
-function exportLocale(
-  presentation: RenderPresentation,
-  settings: PandocExportDeps["settings"],
-): string | null {
-  return presentation.locale ?? (settings.current?.["citation.locale"] || null);
 }
 
 /**

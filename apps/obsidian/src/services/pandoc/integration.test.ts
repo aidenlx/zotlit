@@ -24,6 +24,7 @@ describe("Pandoc integration CLI", () => {
   it("returns the exact installed Pandoc Integration Pair in one response", () => {
     expect(JSON.parse(handlers[PANDOC_FILES_COMMAND]({}))).toEqual({
       contractVersion: 2,
+      command: PANDOC_FILES_COMMAND,
       pluginVersion: PLUGIN_VERSION,
       files: {
         [PANDOC_FILTER_FILENAME]: pandocCliFilter,

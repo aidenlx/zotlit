@@ -24,6 +24,7 @@ import { Temporal } from "@zotlit/shared/temporal";
 import {
   createCitationIndexHarness,
   KEY_A,
+  KEY_B,
   SettingsStub,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
@@ -55,7 +56,7 @@ vi.mock("@/views/pandoc-export/modal", async () => ({
     .answerExportModal,
 }));
 
-/** Zotero itself, answering for the one Item this vault cites. */
+/** Zotero itself, answering for the Items this vault cites. */
 vi.mock("@/services/pandoc/bibliography", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/services/pandoc/bibliography")>()),
   fetchBibliography: (await import("./citation-surface-mocks"))
@@ -86,19 +87,25 @@ vi.mock("@zotlit/db", async (importOriginal) => ({
 /** Instantiating the Haskell runtime dominates every timing here. */
 export const TIMEOUT = 60_000;
 
-/** The citation key the draft cites, which the harness resolves to {@link KEY_A}. */
+/** The citation key the draft cites first, which the harness resolves to {@link KEY_A}. */
 const CITATION_KEY = "doe2024";
+/** The citation key the draft cites second, which the harness resolves to {@link KEY_B}. */
+export const SECOND_CITATION_KEY = "roe2025";
 
-/** The note whose one citation every in-app surface below reads. */
+/**
+ * The note whose citations every in-app surface below reads. It cites two works
+ * in this order, so a numbering style has an ordered citation set to count and
+ * each surface can be read for the work it stands beside.
+ */
 const DRAFT = "draft.md";
-const DRAFT_BODY = `Cited @${CITATION_KEY}.`;
+const DRAFT_BODY = `Cited @${CITATION_KEY}. Then @${SECOND_CITATION_KEY}.`;
 
-/** The note the built-in export runs over, which cites that same work. */
+/** The note the built-in export runs over, which cites the first of those works. */
 export const EXPORT_NOTE = "export.md";
 const LINKPATH = "Doe 2024";
 export const EXPORT_BODY = `Cited [[${LINKPATH}]].\n`;
 
-/** The one work both notes cite, as the database and Zotero itself answer it. */
+/** The work both notes cite first, as the database and Zotero itself answer it. */
 const CITED_WORK: CitedWork = {
   libraryID: 1,
   key: "DOE2024",
@@ -126,6 +133,34 @@ const CITED_WORK: CitedWork = {
   },
 };
 
+/** The work the draft cites second, which every surface numbers after the first. */
+const SECOND_CITED_WORK: CitedWork = {
+  libraryID: 1,
+  key: "ROE2025",
+  row: {
+    key: "ROE2025",
+    itemID: 2,
+    groupID: null,
+    indexedKey: KEY_B,
+    creators: [{ creatorType: "author", lastName: "Alpha", firstName: "Bo" }],
+    primaryCreatorType: "author",
+    customFields: [],
+    fields: {
+      itemType: "book",
+      title: "A second study of nothing",
+      date: "2021",
+      citationKey: SECOND_CITATION_KEY,
+    },
+  },
+  csl: {
+    id: "alpha2021",
+    type: "article-journal",
+    title: "A second study of nothing",
+    author: [{ family: "Alpha", given: "Bo" }],
+    issued: { "date-parts": [[2021]] },
+  },
+};
+
 const WASM_PATH = join(
   dirname(createRequire(import.meta.url).resolve("pandoc-wasm")),
   "pandoc.wasm",
@@ -141,7 +176,7 @@ export interface CitationVaultOptions {
   /** The `lang` property both notes carry; `undefined` writes none. */
   documentLanguage?: unknown;
   /**
-   * Whether Zotero holds the work both notes cite; `false` leaves every
+   * Whether Zotero holds the works these notes cite; `false` leaves every
    * citation unresolved, so nothing reaches the bibliography.
    *
    * @default true
@@ -151,16 +186,20 @@ export interface CitationVaultOptions {
 
 /** One vault whose notes declare the Citation Presentation its surfaces render. */
 export interface CitationVault extends AsyncDisposable {
-  /** The Document Citation Text of the one citation the draft writes. */
-  citationText(): Promise<string | undefined>;
+  /**
+   * The Document Citation Text of one citation the draft writes.
+   *
+   * @param citekey which citation to read; the first one by default.
+   */
+  citationText(citekey?: string): Promise<string | undefined>;
   /** The References Sidebar entry, once its own render settles. */
   sidebarText(): Promise<string>;
   /** The References Sidebar once it settles on its minimal, note-scoped error. */
   minimalSidebarText(): Promise<string>;
-  /** The Citation Popover of that citation, as it fills, and then closed. */
-  popoverText(): Promise<string>;
+  /** The Citation Popover of one citation, as it fills, and then closed. */
+  popoverText(citekey?: string): Promise<string>;
   /** That same popover, left on screen while the vault changes under it. */
-  showPopover(): OpenPopover;
+  showPopover(citekey?: string): OpenPopover;
   /** What the sidebar's copy action puts on the clipboard, as plain text. */
   copiedBibliography(): Promise<string>;
   /** Whether the sidebar offers a Copied Bibliography right now. */
@@ -214,7 +253,10 @@ export async function openCitationVault({
   zoteroHoldsWork = true,
 }: CitationVaultOptions): Promise<CitationVault> {
   resetCitationSurfaceMocks();
-  if (zoteroHoldsWork) citedWorks.set(KEY_A, CITED_WORK);
+  if (zoteroHoldsWork) {
+    citedWorks.set(KEY_A, CITED_WORK);
+    citedWorks.set(KEY_B, SECOND_CITED_WORK);
+  }
 
   await using stack = new AsyncDisposableStack();
   const dataDir = stack.adopt(
@@ -352,8 +394,8 @@ export async function openCitationVault({
   /** The sidebar offers copy exactly when its own completed render is on screen. */
   const copyOffered = (): boolean => !copyAction().hasAttribute("disabled");
 
-  /** One Citation Popover over the draft's citation, shown until it is disposed. */
-  const showPopover = (): OpenPopover => {
+  /** One Citation Popover over one draft citation, shown until it is disposed. */
+  const showPopover = (citekey: string = CITATION_KEY): OpenPopover => {
     const parent: HoverParent = { hoverPopover: null };
     const targetEl = document.body.appendChild(document.createElement("span"));
     popover.show({
@@ -361,7 +403,14 @@ export async function openCitationVault({
       hoverParent: parent,
       sourcePath: DRAFT,
       targetEl,
-      works: [{ citekey: CITATION_KEY, indexedKey: KEY_A }],
+      works: [
+        {
+          citekey,
+          indexedKey: citekey === CITATION_KEY ? KEY_A : KEY_B,
+        },
+      ],
+      // The occurrence the pointer is on, as a rendered surface names it.
+      shown: { citation: { source: `@${citekey}`, keys: [] } },
       open: () => undefined,
     });
     return {
@@ -384,9 +433,9 @@ export async function openCitationVault({
 
   const held = stack.move();
   return {
-    async citationText() {
+    async citationText(citekey = CITATION_KEY) {
       const { formatted } = await citationText.load(harness.draft);
-      return firstText(formatted.get(`@${CITATION_KEY}`));
+      return firstText(formatted.get(`@${citekey}`));
     },
     async sidebarText() {
       await settle(copyOffered);
@@ -399,8 +448,8 @@ export async function openCitationVault({
       await settle(() => banner().length > 0);
       return view.contentEl.textContent ?? "";
     },
-    async popoverText() {
-      using shown = showPopover();
+    async popoverText(citekey) {
+      using shown = showPopover(citekey);
       return await shown.text();
     },
     showPopover,

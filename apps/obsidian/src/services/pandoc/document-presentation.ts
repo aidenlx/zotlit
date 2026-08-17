@@ -1,10 +1,14 @@
-// The Citation Presentation one Markdown document renders under, read from its own note properties.
+// The Citation Presentation one Markdown document renders under, read from its own note properties and the vault selections.
 
 import type { MetadataCache, TFile } from "obsidian";
+
+import type { CslItemData } from "@zotlit/db";
 
 import { FIELD_CITATION_STYLE, FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
+import type { ReferenceSource } from "@/services/citation-index/sources";
+import type { Settings } from "@/services/settings/schema";
 
 import type { RenderPresentation } from "./render-cache";
 
@@ -75,6 +79,60 @@ export function documentPresentation(
   }
 
   return { kind: "read", presentation };
+}
+
+/**
+ * A Citation Presentation with nothing left unsaid: the style and the Citation
+ * Locale a render is actually formatted under.
+ */
+export interface EffectivePresentation {
+  /** Installed CSL ID, or `null` for the engine's embedded default style. */
+  styleId: string | null;
+  /** `null` is Style default: the selected style's own locale stays in charge. */
+  locale: string | null;
+}
+
+/** The Citation Presentation the vault settings select. */
+export function vaultPresentation(
+  settings: Readonly<Settings> | null | undefined,
+): EffectivePresentation {
+  return {
+    styleId: settings?.["citation.references-style"] ?? null,
+    // An empty Citation Locale asks for Style default, as an unset one does.
+    locale: settings?.["citation.locale"] || null,
+  };
+}
+
+/**
+ * The Citation Presentation one document renders under, whole: what the
+ * document declares, and the vault selection for each half it leaves unsaid.
+ *
+ * In-app rendering, the References Sidebar, the Citation Popover, and built-in
+ * export all read this one precedence, so a document renders the same way
+ * wherever it is shown.
+ */
+export function effectivePresentation(
+  declared: RenderPresentation,
+  vault: EffectivePresentation,
+): EffectivePresentation {
+  const { styleId, locale } = declared;
+  return {
+    styleId: styleId === undefined ? vault.styleId : styleId,
+    locale: locale === undefined ? vault.locale : locale,
+  };
+}
+
+/**
+ * The works one document cites, in the order it cites them — the one ordered
+ * citation set every Citation Presentation surface renders from, so a numbering
+ * style counts the same works in the same order wherever they are shown.
+ *
+ * @param sources the cited Items by Indexed Key, in document order.
+ */
+export function citedItems(
+  sources: ReadonlyMap<string, ReferenceSource>,
+): CslItemData[] {
+  return [...sources.values()].map((source) => source.csl);
 }
 
 /** Whether two documents — or one document across a change — render alike. */

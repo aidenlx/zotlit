@@ -308,6 +308,10 @@ describe("citationLocaleError", () => {
       "x-pmr",
       "i-klingon",
       "en-GB-oed",
+      // Case carries no meaning in a language tag, irregular ones included.
+      "I-KLINGON",
+      "SGN-BE-FR",
+      "DE-de",
     ]) {
       expect(citationLocaleError(locale)).toBeUndefined();
     }

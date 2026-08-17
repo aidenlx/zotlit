@@ -204,10 +204,11 @@ export class CitekeyReading extends Service<void> {
       );
       const navigation: CitationNavigation = {
         works: citedWorks(citation, text),
-        // What this section shows in the citation's place, which is where a
-        // note-class style's own note text is read from. A citation left as
-        // source text shows none.
-        formatted: content?.text.content,
+        // The occurrence this section shows in the citation's place, which is
+        // where a note-class style's own note text is read from, however often
+        // the popover reads it again. A citation left as source text shows none.
+        shown:
+          content === null ? undefined : { citation, at: coordinates[index] },
         where: { surface: "reading" },
         open: (citekey, pane) => {
           void this.#citekeyEditor.openCitekey(citekey, pane);

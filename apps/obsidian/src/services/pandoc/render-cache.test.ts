@@ -222,10 +222,10 @@ async function makeHarness(
   };
 }
 
-function independentXml(styleId: string): string {
+function independentXml(styleId: string, title = "Selected"): string {
   return [
     '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">',
-    `<info><title>Selected</title><id>${styleId}</id></info>`,
+    `<info><title>${title}</title><id>${styleId}</id></info>`,
     "<bibliography><layout /></bibliography>",
     "</style>",
   ].join("\n");
@@ -234,6 +234,8 @@ function independentXml(styleId: string): string {
 async function installStyle(...styleIds: readonly string[]): Promise<
   AsyncDisposable & {
     dataDir: string;
+    /** Rewrite one installed style, as an edit in Zotero leaves it. */
+    edit(index: number, xml: string): Promise<void>;
   }
 > {
   await using stack = new AsyncDisposableStack();
@@ -249,9 +251,18 @@ async function installStyle(...styleIds: readonly string[]): Promise<
       independentXml(styleId),
     );
   }
+  /** A whole-second timestamp, which every filesystem stores exactly. */
+  let written = 1_700_000_000;
+  const edit = async (index: number, xml: string): Promise<void> => {
+    const path = join(stylesDir, `selected-${index}.csl`);
+    await writeFile(path, xml);
+    written += 1;
+    await utimes(path, written, written);
+  };
   const held = stack.move();
   return {
     dataDir,
+    edit,
     [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
 }
@@ -616,6 +627,25 @@ describe("BibliographyRenderCache", () => {
     expect(engine.requests).toHaveLength(2);
     expect(engine.requests[0]?.styleXml).toContain(`<id>${APA}</id>`);
     expect(engine.requests[1]?.styleXml).toContain(`<id>${IEEE}</id>`);
+  });
+
+  it("renders again when the selected style's own content changes", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+    const items = [item("alpha")];
+
+    await cache.render(items);
+    await installed.edit(0, independentXml(APA, "Edited in Zotero"));
+    await cache.render(items);
+
+    expect(engine.requests).toHaveLength(2);
+    expect(engine.requests[1]?.styleXml).toContain(
+      "<title>Edited in Zotero</title>",
+    );
   });
 
   it("holds one render per Citation Presentation", async () => {

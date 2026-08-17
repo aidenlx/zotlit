@@ -20,7 +20,7 @@ import {
   citationContent,
   sectionCoordinates,
 } from "@/services/citation-text/present";
-import type { PresentedCitation } from "@/services/citation-text/present";
+import type { ShownCitation } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
@@ -193,7 +193,11 @@ export class WikilinkReading extends Service<void> {
       // and click and all; only the Citation this surface rendered carries the
       // popover.
       if (!content) continue;
-      this.#attachPopover(run, content, ctx.sourcePath);
+      this.#attachPopover(
+        run,
+        { citation: citations[index]!, at: coordinates[index] },
+        ctx.sourcePath,
+      );
     }
   }
 
@@ -209,7 +213,7 @@ export class WikilinkReading extends Service<void> {
    */
   #attachPopover(
     run: readonly RunMember<HTMLAnchorElement>[],
-    content: PresentedCitation,
+    shown: ShownCitation,
     sourcePath: string,
   ): void {
     const element = run[0]!.source;
@@ -218,9 +222,10 @@ export class WikilinkReading extends Service<void> {
         citekey: citation.item.citekey,
         indexedKey: citation.indexedKey,
       })),
-      // What this section shows in the Citation's place, which is where a
-      // note-class style's own note text is read from.
-      formatted: content.text.content,
+      // The occurrence this section shows in the Citation's place, which is
+      // where a note-class style's own note text is read from, however often
+      // the popover reads it again.
+      shown,
       where: { surface: "reading" },
       open: (citekey, pane) => {
         void this.#citekeyEditor.openCitekey(citekey, pane);

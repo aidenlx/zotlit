@@ -77,6 +77,19 @@ export type CitationCoordinate =
   | { kind: "offset"; start: number }
   | ({ kind: "section"; ordinal: number } & SectionRange);
 
+/**
+ * Which Citation Occurrence one surface shows, as the value that outlives the
+ * text formatted for it: a consumer holding this reads the current text of that
+ * occurrence out of the document's own citations, however often they are read
+ * again.
+ */
+export interface ShownCitation {
+  /** The citation as its surface holds it. */
+  citation: HeldCitation;
+  /** {@link citationContent} */
+  at?: CitationCoordinate;
+}
+
 /** What one document's surfaces need to put text in their citations' place. */
 export interface DocumentCitations {
   /**

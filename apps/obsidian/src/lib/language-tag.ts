@@ -9,10 +9,14 @@
  * grandfathered tags — `art-lojban`, `zh-min-nan` — are ordinary language tags
  * in shape, so the grammar takes them without being told.
  *
+ * A tag carries its meaning whichever case it is written in, so `I-KLINGON`
+ * and `SGN-BE-FR` are the tags their lowercase spellings are.
+ *
  * @see https://www.rfc-editor.org/rfc/rfc5646#section-2.1 — the `Language-Tag` ABNF
+ * @see https://www.rfc-editor.org/rfc/rfc5646#section-2.1.1 — case carries no meaning
  */
 const LANGUAGE_TAG =
-  /^(?:(?:en-GB-oed|i-ami|i-bnn|i-default|i-enochian|i-hak|i-klingon|i-lux|i-mingo|i-navajo|i-pwn|i-tao|i-tay|i-tsu|sgn-BE-FR|sgn-BE-NL|sgn-CH-DE)|x(?:-[A-Za-z0-9]{1,8})+|(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*(?:-x(?:-[A-Za-z0-9]{1,8})+)?)$/;
+  /^(?:(?:en-GB-oed|i-ami|i-bnn|i-default|i-enochian|i-hak|i-klingon|i-lux|i-mingo|i-navajo|i-pwn|i-tao|i-tay|i-tsu|sgn-BE-FR|sgn-BE-NL|sgn-CH-DE)|x(?:-[A-Za-z0-9]{1,8})+|(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*(?:-x(?:-[A-Za-z0-9]{1,8})+)?)$/i;
 
 /**
  * Whether `tag` names a language a CSL processor and a Pandoc writer both read.

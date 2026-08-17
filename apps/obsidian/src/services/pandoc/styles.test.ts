@@ -294,6 +294,43 @@ describe("resolveInstalledStyle", () => {
     });
   });
 
+  it("reads a dependent style whichever way its XML writes attributes", async () => {
+    await using library = await installStyles();
+    // Single-quoted values and spaces around `=`: XML a parser reads exactly as
+    // it reads the double-quoted, tightly written form Zotero usually installs.
+    await library.writeCsl(
+      "nature-neuroscience.csl",
+      [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        "<style xmlns='http://purl.org/net/xbiblio/csl' version='1.0' default-locale = 'de-DE'>",
+        "  <info>",
+        "    <title>Nature Neuroscience</title>",
+        `    <id>${NATURE_NEUROSCIENCE}</id>`,
+        `    <link href = '${NATURE_NEUROSCIENCE}' rel = 'self'/>`,
+        `    <link href = '${NATURE}' rel = 'independent-parent'/>`,
+        "  </info>",
+        "</style>",
+      ].join("\n"),
+    );
+    await library.writeStyle("nature.csl", {
+      id: NATURE,
+      title: "Nature",
+      hidden: true,
+    });
+
+    const style = await resolveInstalledStyle(library.dataDir, {
+      styleId: NATURE_NEUROSCIENCE,
+    });
+
+    expect(style).toMatchObject({
+      kind: "installed",
+      styleId: NATURE_NEUROSCIENCE,
+      parentId: NATURE,
+    });
+    expect(installedXml(style)).toContain(`<id>${NATURE}</id>`);
+    expect(installedXml(style)).toContain('default-locale="de-DE"');
+  });
+
   it("renders an explicit Citation Locale over every style's own", async () => {
     await using library = await installStyles();
     await library.writeStyle("nature-neuroscience.csl", {

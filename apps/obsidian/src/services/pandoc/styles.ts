@@ -472,8 +472,14 @@ const TITLE = regex("<title>(?<title>[^<]*)</title>");
 const BIBLIOGRAPHY_WITH_ENTRY_MARKERS =
   /<bibliography\b[^>]*\bsecond-field-align\s*=/;
 const LINK_TAG = /<link\b[^>]*>/g;
-const HREF = regex('href="(?<href>[^"]*)"');
-const REL = regex('rel="(?<rel>[^"]*)"');
+/**
+ * XML writes an attribute value in either quote, and spaces around the `=` as
+ * it likes, so a style Zotero installed is read the way a parser reads it. A
+ * value carries neither quote character: the one it is written in would close
+ * it, and the other is `&quot;` or `&apos;` there.
+ */
+const HREF = regex("href\\s*=\\s*[\"'](?<href>[^\"']*)[\"']");
+const REL = regex("rel\\s*=\\s*[\"'](?<rel>[^\"']*)[\"']");
 /**
  * The root element every standalone CSL style opens with. The lookahead keeps
  * `<style-options>`, which a locale block carries, out of the match.
@@ -485,8 +491,10 @@ const STYLE_ELEMENT = "style";
 const RENDERING_ELEMENTS = new Set(["citation", "bibliography"]);
 /** How an XML parser reports content it cannot read: as an element of its own. */
 const PARSER_ERROR = "parsererror";
-const DEFAULT_LOCALE = regex('default-locale="(?<locale>[^"]*)"');
-const DEFAULT_LOCALE_ATTR = /\s*default-locale="[^"]*"/;
+const DEFAULT_LOCALE = regex(
+  "default-locale\\s*=\\s*[\"'](?<locale>[^\"']*)[\"']",
+);
+const DEFAULT_LOCALE_ATTR = /\s*default-locale\s*=\s*["'][^"']*["']/;
 
 /**
  * Well-formed XML rooted in a `cs:style` element, which every CSL file is — a

@@ -43,6 +43,8 @@ export function createPandocIntegrationHandlers(
       return JSON.stringify(
         {
           contractVersion: CONTRACT_VERSION,
+          // The namespace `contractVersion` belongs to (ADR 0026).
+          command: PANDOC_FILES_COMMAND,
           pluginVersion,
           files: pandocIntegrationFiles(),
         },
@@ -84,11 +86,11 @@ RETRIEVE OR REFRESH
 
         obsidian-cli ${PANDOC_FILES_COMMAND}
 
-    The JSON response contains contractVersion, pluginVersion, and both exact
-    files under files. Stage both files, compare both destination files, and
-    replace the pair when either file differs. Refresh the pair after ZotLit is
-    updated. The Citations settings page provides the same pair through Save
-    integration files.
+    The JSON response contains contractVersion, command, pluginVersion, and
+    both exact files under files. Stage both files, compare both destination
+    files, and replace the pair when either file differs. Refresh the pair after
+    ZotLit is updated. The Citations settings page provides the same pair
+    through Save integration files.
 
     contractVersion versions the pandoc commands alone; every other zotlit:*
     namespace versions its own CLI Contract independently.
