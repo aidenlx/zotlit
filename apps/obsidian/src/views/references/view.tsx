@@ -28,9 +28,10 @@ import {
   samePresentation,
 } from "@/services/pandoc/document-presentation";
 import type {
-  BibliographyRenderCache,
-  RenderPresentation,
-} from "@/services/pandoc/render-cache";
+  DocumentPresentation,
+  UnusableProperty,
+} from "@/services/pandoc/document-presentation";
+import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
@@ -112,13 +113,13 @@ export class ReferencesView extends ItemView {
   #citations: readonly Citation[] = [];
   /** Explicit citation-source errors of that note. */
   #errors: readonly DocumentCitationError[] = [];
+  /** Citation Presentation of that note, as the current list was rendered under. */
+  #presentation: DocumentPresentation = { kind: "read", presentation: {} };
   /**
-   * Citation Presentation of that note, as the current list was rendered under;
-   * `null` while its own style property names no style to render with.
+   * The note property that put the current minimal list on screen; `null` while
+   * the note's own presentation is not what stopped the render.
    */
-  #presentation: RenderPresentation | null = {};
-  /** The current list is minimal because that note's own style is unusable. */
-  #documentStyleError = false;
+  #documentPresentationError: UnusableProperty | null = null;
   /** Where the current list's render stands, as copy readiness reads it. */
   #formatting: ReferencesFormatting = "pending";
   /** Copy readiness as it was last published, so only a change is logged. */
@@ -243,9 +244,9 @@ export class ReferencesView extends ItemView {
     this.#refreshCopy();
     void this.#readCitationSet().then(({ file, citations, errors }) => {
       const path = file?.path ?? null;
-      // The note's own style property decides what its list is rendered under,
-      // so a frontmatter edit that leaves the Citations untouched still moves
-      // this list — and the entries formatted under the old style are stale.
+      // The note's own presentation properties decide what its list is rendered
+      // under, so a frontmatter edit that leaves the Citations untouched still
+      // moves this list — and the entries formatted before it are stale.
       const presentation = this.#readPresentation(file);
       const restyled = !samePresentation(this.#presentation, presentation);
       if (
@@ -290,9 +291,9 @@ export class ReferencesView extends ItemView {
   }
 
   /** The Citation Presentation one note renders under; no note renders as none. */
-  #readPresentation(file: TFile | null): RenderPresentation | null {
+  #readPresentation(file: TFile | null): DocumentPresentation {
     return file === null
-      ? {}
+      ? { kind: "read", presentation: {} }
       : documentPresentation(this.#deps.app.metadataCache, file);
   }
 
@@ -306,7 +307,7 @@ export class ReferencesView extends ItemView {
       this.#rendered.clear();
       this.#entryMarkers = null;
       this.#formattingFailed = false;
-      this.#documentStyleError = false;
+      this.#documentPresentationError = null;
     }
     this.#entrySerials = this.#readEntrySerials();
     const generation = ++this.#generation;
@@ -329,7 +330,7 @@ export class ReferencesView extends ItemView {
       listMode: this.#listMode(),
       engine,
       formattingFailed: this.#formattingFailed,
-      documentStyleError: this.#documentStyleError,
+      documentPresentationError: this.#documentPresentationError,
       dbReady: this.#deps.db.state === "ready",
       copy: this.#trackCopy(entries),
     });
@@ -421,22 +422,23 @@ export class ReferencesView extends ItemView {
    * applied even when it is empty, so each source it omitted becomes a
    * Reference Error.
    *
-   * A note whose own style is unusable never reaches the vault selection: it
-   * shows the minimal list with the error that names the note as the thing to
-   * repair, which also leaves the Copied Bibliography out of reach.
+   * A note whose own presentation is unusable never reaches the vault
+   * selections: it shows the minimal list with the error that names the note as
+   * the thing to repair, which also leaves the Copied Bibliography out of reach.
    */
   async #render(
     generation: number,
     citations: readonly Citation[],
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
-    const presentation = this.#presentation;
-    if (presentation === null) {
-      this.#documentStyleError = true;
+    const declared = this.#presentation;
+    if (declared.kind === "unusable") {
+      this.#documentPresentationError = declared.property;
       this.#showMinimal(citations, sources, false);
       return;
     }
 
+    const { presentation } = declared;
     const items = [...sources.values()].map((source) => source.csl);
     const outcome = await this.#deps.bibliographyRender.render(
       items,
@@ -445,14 +447,16 @@ export class ReferencesView extends ItemView {
     if (generation !== this.#generation) return;
 
     if (outcome.kind !== "rendered") {
-      this.#documentStyleError =
+      this.#documentPresentationError =
         outcome.kind === "unavailable" &&
         outcome.reason === "style-missing" &&
-        presentation.styleId !== undefined;
+        presentation.styleId !== undefined
+          ? "style"
+          : null;
       this.#showMinimal(citations, sources, outcome.kind === "failed");
       return;
     }
-    this.#documentStyleError = false;
+    this.#documentPresentationError = null;
 
     // Refilled rather than merged: the render covers every cited Item, so
     // what it leaves out is no longer cited, and the map's order is the
@@ -479,7 +483,7 @@ export class ReferencesView extends ItemView {
       entries,
       listMode: this.#listMode(),
       formattingFailed: false,
-      documentStyleError: false,
+      documentPresentationError: null,
       copy: this.#trackCopy(entries),
     });
   }
@@ -537,7 +541,7 @@ export class ReferencesView extends ItemView {
     });
     this.#store.setState({
       ...minimal,
-      documentStyleError: this.#documentStyleError,
+      documentPresentationError: this.#documentPresentationError,
       copy: this.#trackCopy(minimal.entries),
     });
   }

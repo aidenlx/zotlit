@@ -29,6 +29,12 @@ export const FIELD_CITEKEY = "citekey";
  */
 export const FIELD_CITATION_STYLE = "zotlit-csl";
 /**
+ * Document Language of one note, written as standard Pandoc metadata. It is the
+ * document-wide language every Pandoc writer reads, and the explicit Citation
+ * Locale citeproc renders that document's Citations and references in.
+ */
+export const FIELD_DOCUMENT_LANGUAGE = "lang";
+/**
  * Identity of an imported Zotero note. Disjoint from {@link FIELD_ZOTERO_KEY}
  * so imported notes never register as literature notes.
  */

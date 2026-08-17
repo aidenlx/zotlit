@@ -141,14 +141,14 @@ async function readBlocks(
   const { sources } = readReferenceSources(deps.db, citations);
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
-  // where the note's declared style cannot be rendered with.
-  const presentation = documentPresentation(deps.app.metadataCache, file);
+  // where the note's declared style or language cannot be rendered with.
+  const declared = documentPresentation(deps.app.metadataCache, file);
   const outcome =
-    presentation === null
+    declared.kind === "unusable"
       ? null
       : await deps.bibliographyRender.render(
           [...sources.values()].map((source) => source.csl),
-          presentation,
+          declared.presentation,
         );
   const entries = buildReferenceEntries(citations, sources, {
     bibliography:

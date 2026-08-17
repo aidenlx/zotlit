@@ -136,6 +136,8 @@ export interface CitationVaultOptions {
   settings: Partial<Settings>;
   /** The `zotlit-csl` property both notes carry; `undefined` writes none. */
   documentStyle?: unknown;
+  /** The `lang` property both notes carry; `undefined` writes none. */
+  documentLanguage?: unknown;
   /**
    * Whether Zotero holds the work both notes cite; `false` leaves every
    * citation unresolved, so nothing reaches the bibliography.
@@ -170,6 +172,8 @@ export interface CitationVault extends AsyncDisposable {
   noteBody(path: string): string | undefined;
   /** Rewrite the `zotlit-csl` both notes carry; `undefined` removes it. */
   setNoteStyle(declared: unknown): Promise<void>;
+  /** Rewrite the `lang` both notes carry; `undefined` removes it. */
+  setNoteLanguage(declared: unknown): Promise<void>;
   /** Drop new vault settings on every surface at once. */
   setSettings(next: Partial<Settings>): Promise<void>;
 }
@@ -202,6 +206,7 @@ export async function openCitationVault({
   styles,
   settings: overrides,
   documentStyle,
+  documentLanguage,
   zoteroHoldsWork = true,
 }: CitationVaultOptions): Promise<CitationVault> {
   resetCitationSurfaceMocks();
@@ -228,15 +233,35 @@ export async function openCitationVault({
   harness.metadataCache.fileCache.set(EXPORT_NOTE, {
     links: [link(LINKPATH)],
   } as CachedMetadata);
-  const writeStyleProperty = (declared: unknown): void => {
+  /** The presentation properties both notes carry right now. */
+  const declared: { style: unknown; language: unknown } = {
+    style: documentStyle,
+    language: documentLanguage,
+  };
+  const writeProperties = (): void => {
+    const properties: Record<string, unknown> = {};
+    if (declared.style !== undefined) properties["zotlit-csl"] = declared.style;
+    if (declared.language !== undefined) properties["lang"] = declared.language;
+    const frontmatter =
+      Object.keys(properties).length > 0 ? properties : undefined;
+    // Pandoc reads the Document Language out of the exported note's own source,
+    // which is what makes it the exported document's language, so that one
+    // property is written into the body the export reads as well. Every other
+    // property reaches ZotLit through Obsidian's metadata cache alone.
+    harness.vault.write(
+      harness.metadataCache.files.get(EXPORT_NOTE)!,
+      typeof declared.language === "string"
+        ? `---\nlang: ${JSON.stringify(declared.language)}\n---\n\n${EXPORT_BODY}`
+        : EXPORT_BODY,
+    );
     for (const path of [DRAFT, EXPORT_NOTE]) {
       harness.metadataCache.setFrontmatter(
         harness.metadataCache.files.get(path)!,
-        declared === undefined ? undefined : { "zotlit-csl": declared },
+        frontmatter,
       );
     }
   };
-  writeStyleProperty(documentStyle);
+  writeProperties();
 
   const engine = stack.use(
     await createCitationEngine(await readFile(WASM_PATH)),
@@ -398,9 +423,15 @@ export async function openCitationVault({
     noteStyle: (path) =>
       harness.metadataCache.fileCache.get(path)?.frontmatter?.["zotlit-csl"],
     noteBody: (path) => harness.vault.bodies.get(path),
-    async setNoteStyle(declared) {
-      writeStyleProperty(declared);
+    async setNoteStyle(style) {
+      declared.style = style;
+      writeProperties();
       // The pane rescans on the metadata change; the surfaces follow it.
+      await act(async () => undefined);
+    },
+    async setNoteLanguage(language) {
+      declared.language = language;
+      writeProperties();
       await act(async () => undefined);
     },
     async setSettings(next) {

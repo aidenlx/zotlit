@@ -78,13 +78,13 @@ async function render(
   listMode: ReferencesListMode,
   {
     formattingFailed = false,
-    documentStyleError = false,
+    documentPresentationError = null,
     engine = { kind: "installed", version: "test" },
     copy = { kind: "blocked", reason: "pending" },
   }: Partial<
     Pick<
       ReferencesState,
-      "formattingFailed" | "documentStyleError" | "engine" | "copy"
+      "formattingFailed" | "documentPresentationError" | "engine" | "copy"
     >
   > = {},
 ): Promise<HTMLElement> {
@@ -93,7 +93,7 @@ async function render(
     listMode,
     engine,
     formattingFailed,
-    documentStyleError,
+    documentPresentationError,
     dbReady: true,
     copy,
   };
@@ -452,8 +452,17 @@ describe("References banners", () => {
     ],
     [
       "an unusable note style",
-      { documentStyleError: true } satisfies Partial<ReferencesState>,
+      {
+        documentPresentationError: "style",
+      } satisfies Partial<ReferencesState>,
       "This note's citation and references style is unavailable",
+    ],
+    [
+      "an unusable document language",
+      {
+        documentPresentationError: "language",
+      } satisfies Partial<ReferencesState>,
+      "This note's document language is invalid",
     ],
   ])("keeps %s with the scrolling list region", async (_, state, title) => {
     const container = await render([summaryEntry], { kind: "minimal" }, state);

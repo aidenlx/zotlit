@@ -7,6 +7,7 @@ import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { ReferenceSource } from "@/services/citation-index/service";
+import type { UnusableProperty } from "@/services/pandoc/document-presentation";
 import { InlineContent } from "@/services/pandoc/inline-content";
 import type {
   PandocEngineFailure,
@@ -29,7 +30,9 @@ export function References() {
   const listMode = useReferencesStore((s) => s.listMode);
   const engine = useReferencesStore((s) => s.engine);
   const formattingFailed = useReferencesStore((s) => s.formattingFailed);
-  const documentStyleError = useReferencesStore((s) => s.documentStyleError);
+  const documentPresentationError = useReferencesStore(
+    (s) => s.documentPresentationError,
+  );
   const dbReady = useReferencesStore((s) => s.dbReady);
   const numbered = listMode.kind === "minimal";
   const serials = listMode.kind === "bibliography" && listMode.entrySerials;
@@ -49,13 +52,14 @@ export function References() {
             with the list they describe and the toolbar keeps its own place. */}
         <EngineSurface status={engine} />
         {/* The note itself is the repair, so this banner stands in front of
-            the vault-level guidance the failure banner gives. */}
-        {documentStyleError && engine.kind === "installed" && (
+            the vault-level guidance the failure banner gives, and it names the
+            property on that note the reader repairs. */}
+        {documentPresentationError !== null && engine.kind === "installed" && (
           <Banner
             tone="warning"
-            title={m.references_document_style_failed_title()}
+            title={documentPresentationTitle(documentPresentationError)}
           >
-            {m.references_document_style_failed_body()}
+            {documentPresentationBody(documentPresentationError)}
           </Banner>
         )}
         {formattingFailed && engine.kind === "installed" && (
@@ -133,6 +137,19 @@ function Toolbar() {
       </SidebarToolbar.Actions>
     </SidebarToolbar>
   );
+}
+
+/** The note property a document-scoped presentation failure asks the reader to repair. */
+function documentPresentationTitle(property: UnusableProperty): string {
+  return property === "language"
+    ? m.references_document_language_failed_title()
+    : m.references_document_style_failed_title();
+}
+
+function documentPresentationBody(property: UnusableProperty): string {
+  return property === "language"
+    ? m.references_document_language_failed_body()
+    : m.references_document_style_failed_body();
 }
 
 /** What the disabled copy action names in its tooltip as the thing to fix. */

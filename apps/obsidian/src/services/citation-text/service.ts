@@ -300,10 +300,12 @@ export class CitationText extends Service<void> {
       id: indexedKey,
     }));
 
-    // A document whose own style property names no style at all renders
+    // A document whose own presentation property names nothing at all renders
     // nothing: its citations keep the source the author wrote, rather than
-    // reading as though the vault selection were what the note declared.
-    const presentation = documentPresentation(this.#app.metadataCache, file);
+    // reading as though a vault selection were what the note declared.
+    const declared = documentPresentation(this.#app.metadataCache, file);
+    const presentation =
+      declared.kind === "read" ? declared.presentation : null;
     const rendered =
       presentation === null
         ? null

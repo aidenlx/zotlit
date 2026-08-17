@@ -122,6 +122,12 @@ The field takes a language tag such as `en-US`, `de`, or `zh-CN`. ZotLit rejects
 
 The locale applies to in-text citations, the References Sidebar, the Citation Popover, the copied bibliography, and built-in export. Built-in export applies it to citation processing only: a note that declares Pandoc `lang` keeps that language, and a note that declares none stays without one.
 
+A note can set its own locale with the standard Pandoc `lang` property. The property takes the same language tags this field takes. It overrides this setting for that note across in-text citations, the References Sidebar, the Citation Popover, the copied bibliography, and built-in export. Built-in export also passes it to Pandoc as the exported document's own language.
+
+A note whose `lang` is not a language tag stops instead of using this setting. Its citations stay native. The References Sidebar shows its minimal list with this banner, the copy action stays unavailable, and built-in export stops before the dialog opens.
+
+> This note's document language is invalid
+
 **Pandoc engine:** Formats in-text citations, references, and exports. Installation applies to every vault on this device.
 
 Before installation, its status is: "Not installed. References stay a plain list until you install it." This supported state does not show a lifecycle notice.

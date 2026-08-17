@@ -9,6 +9,7 @@ import type {
   DocumentCitationError,
   ReferenceSource,
 } from "@/services/citation-index/service";
+import type { UnusableProperty } from "@/services/pandoc/document-presentation";
 import type { PandocEngineStatus } from "@/services/pandoc/service";
 
 import { buildReferenceEntries } from "./entries";
@@ -70,10 +71,11 @@ export interface ReferencesState {
   /** A completed formatting attempt failed while the engine remained available. */
   formattingFailed: boolean;
   /**
-   * The active note's own Citation and References Style cannot be rendered
-   * with, which is a repair on that note rather than on the vault selection.
+   * The property whose value stops the active note's own Citation Presentation,
+   * which is a repair on that note rather than on a vault selection; `null`
+   * while nothing about that note is at fault.
    */
-  documentStyleError: boolean;
+  documentPresentationError: UnusableProperty | null;
   /** `false` while the Zotero database cannot be read. */
   dbReady: boolean;
   /** Whether the visible list can be copied, and why not. */
@@ -88,7 +90,7 @@ export function createReferencesStore() {
     listMode: { kind: "minimal" },
     engine: { kind: "absent" },
     formattingFailed: false,
-    documentStyleError: false,
+    documentPresentationError: null,
     dbReady: false,
     copy: { kind: "blocked", reason: "no-note" },
   }));

@@ -78,13 +78,19 @@ export async function runPandocExport(
     showEngineMissing(deps.openSettings);
     return;
   }
-  // A note whose own style property names no style stops here: the vault
+  // A note whose own presentation property names nothing stops here: a vault
   // selection never stands in for it, in the dialog or in the exported run.
-  const presentation = documentPresentation(app.metadataCache, file);
-  if (presentation === null) {
-    showExportFailure({ kind: "document-style-invalid" });
+  const declared = documentPresentation(app.metadataCache, file);
+  if (declared.kind === "unusable") {
+    showExportFailure({
+      kind:
+        declared.property === "language"
+          ? "document-language-invalid"
+          : "document-style-invalid",
+    });
     return;
   }
+  const { presentation } = declared;
   await zoteroPref.ready;
 
   const choices = await openPandocExportModal(app, {
@@ -100,7 +106,7 @@ export async function runPandocExport(
     zoteroPref.dataDir,
     {
       styleId: choices.styleId,
-      locale: settings.current?.["citation.locale"] || null,
+      locale: exportLocale(presentation, settings),
     },
     { documentStyle: choices.styleId === presentation.styleId },
   );
@@ -173,9 +179,25 @@ function exportStyleId(
 }
 
 /**
+ * The Citation Locale the exported run formats in: the Document Language the
+ * note declares, and the vault Citation Locale for a note that declares none.
+ *
+ * The Document Language reaches Pandoc through the note's own `lang` metadata
+ * as well, which is what makes it the exported document's language. This is the
+ * same value, carried to citeproc through the effective CSL input, so an
+ * installed style renders in the language the document declares.
+ */
+function exportLocale(
+  presentation: RenderPresentation,
+  settings: PandocExportDeps["settings"],
+): string | null {
+  return presentation.locale ?? (settings.current?.["citation.locale"] || null);
+}
+
+/**
  * What the engine formats the exported run with, read through the resolver the
  * app renders with, so an export formats a dependent style exactly as Obsidian
- * does, in the same vault Citation Locale. An installed style hands over its
+ * does, in the same effective Citation Locale. An installed style hands over its
  * content with that locale already applied; the embedded default style takes
  * the locale beside it.
  *
