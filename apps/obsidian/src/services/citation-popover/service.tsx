@@ -8,6 +8,7 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
+import { documentPresentation } from "@/services/pandoc/document-presentation";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
@@ -46,7 +47,8 @@ export interface CitationPopover {
  * entries come from the same bibliography render the References Sidebar shows,
  * so both surfaces agree on the References Style and go stale together — an
  * open popover reads its own entries again on the drop, and the read it was
- * already waiting on is left where it lands.
+ * already waiting on is left where it lands. The hovered note's own properties
+ * are the other input, so an edit to them redraws an open popover the same way.
  */
 export function createCitationPopover(
   deps: CitationPopoverDeps,
@@ -62,8 +64,13 @@ export function createCitationPopover(
         const own = ++reading;
         void fill(deps, popover, { request, current: () => own === reading });
       };
-      // The listener lives exactly as long as this popover does.
+      // Both listeners live exactly as long as this popover does.
       popover.register(deps.bibliographyRender.on("invalidated", draw));
+      popover.registerEvent(
+        deps.app.metadataCache.on("changed", (file) => {
+          if (file.path === request.sourcePath) draw();
+        }),
+      );
       draw();
     },
   };
@@ -132,12 +139,20 @@ async function readBlocks(
   }
   const { citations } = await deps.citationIndex.getDocumentCitationSet(file);
   const { sources } = readReferenceSources(deps.db, citations);
-  const outcome = await deps.bibliographyRender.render(
-    [...sources.values()].map((source) => source.csl),
-  );
+  // The hovered note's own Citation Presentation, so the popover shows what the
+  // References Sidebar of that note shows — including nothing formatted at all
+  // where the note's declared style cannot be rendered with.
+  const presentation = documentPresentation(deps.app.metadataCache, file);
+  const outcome =
+    presentation === null
+      ? null
+      : await deps.bibliographyRender.render(
+          [...sources.values()].map((source) => source.csl),
+          presentation,
+        );
   const entries = buildReferenceEntries(citations, sources, {
     bibliography:
-      outcome.kind === "rendered"
+      outcome?.kind === "rendered"
         ? { entries: renderedEntries(outcome.entries), complete: true }
         : undefined,
   });

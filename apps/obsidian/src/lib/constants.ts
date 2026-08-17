@@ -23,6 +23,12 @@ export const resourceReleaseUrl = (pluginVersion: string): string =>
 export const FIELD_ZOTERO_KEY = "zotero-key";
 export const FIELD_CITEKEY = "citekey";
 /**
+ * CSL ID of the Zotero-installed style one document renders its Citations and
+ * references with, overriding the vault Citation and References Style. The
+ * native Pandoc integration reads the same property.
+ */
+export const FIELD_CITATION_STYLE = "zotlit-csl";
+/**
  * Identity of an imported Zotero note. Disjoint from {@link FIELD_ZOTERO_KEY}
  * so imported notes never register as literature notes.
  */

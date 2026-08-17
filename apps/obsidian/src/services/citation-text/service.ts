@@ -33,8 +33,12 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import { documentPresentation } from "@/services/pandoc/document-presentation";
 import { holdsNote } from "@/services/pandoc/inline-content";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type {
+  BibliographyRenderCache,
+  RenderPresentation,
+} from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
 
 import { citationKey } from "./present";
@@ -296,18 +300,27 @@ export class CitationText extends Service<void> {
       id: indexedKey,
     }));
 
-    const rendered = await this.#bibliographyRender.renderCitations(
-      sources,
-      items,
-    );
+    // A document whose own style property names no style at all renders
+    // nothing: its citations keep the source the author wrote, rather than
+    // reading as though the vault selection were what the note declared.
+    const presentation = documentPresentation(this.#app.metadataCache, file);
+    const rendered =
+      presentation === null
+        ? null
+        : await this.#bibliographyRender.renderCitations(
+            sources,
+            items,
+            presentation,
+          );
     // A style whose citations are footnotes leaves a note in the rendered
     // content, which no surface can show. That output — not the style — is
     // what puts the whole document on Entry Serials.
     const entrySerials =
       rendered?.some(({ content }) => holdsNote(content)) ?? false;
-    const serials = entrySerials
-      ? await this.#readSerials(set.citations, works)
-      : null;
+    const serials =
+      presentation !== null && entrySerials
+        ? await this.#readSerials(set.citations, works, presentation)
+        : null;
 
     // Each occurrence keeps the text rendered for its own place in the
     // document, which is what a position-dependent style renders differently
@@ -370,10 +383,12 @@ export class CitationText extends Service<void> {
   async #readSerials(
     citations: readonly Citation[],
     works: ReadonlyMap<string, CitedItem>,
+    presentation: RenderPresentation,
   ): Promise<ReadonlyMap<string, number>> {
     const serials = new Map<string, number>();
     const outcome = await this.#bibliographyRender.render(
       bibliographyItems(citations, works),
+      presentation,
     );
     if (outcome.kind !== "rendered") {
       logger.debug("Cannot number the cited entries", { kind: outcome.kind });

@@ -27,11 +27,13 @@ export function showEngineMissing(openSettings: () => void): void {
 }
 
 /**
- * Everything that stops an export: the conversion's own failures, plus the
+ * Everything that stops an export: the conversion's own failures, the note's
+ * own unusable style, which stops the run before the engine sees it, plus the
  * destination write, which happens after the engine has already answered.
  */
 export type ExportProblem =
   | ExportFailure
+  | { kind: "document-style-invalid" }
   | { kind: "destination-unwritable"; detail: string };
 
 /** One message per failure arm, each naming the situation and its fix. */
@@ -85,6 +87,9 @@ export function showExportFailure(failure: ExportProblem): void {
           renderer.addText(
             m.pandoc_export_error_engine({ detail: failure.detail }),
           );
+          break;
+        case "document-style-invalid":
+          renderer.addText(m.pandoc_export_error_document_style());
           break;
         case "destination-unwritable":
           renderer.addText(

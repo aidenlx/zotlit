@@ -14,6 +14,7 @@ import type {
   Debouncer,
   EditorSuggestContext,
   EventRef,
+  Events,
   HoverParent,
   HoverPopover as ObsidianHoverPopover,
   IconName,
@@ -132,6 +133,11 @@ export class HoverPopover {
 
   register(cb: () => void): void {
     this.#unload.push(cb);
+  }
+
+  registerEvent(ref: EventRef): void {
+    const { e } = ref as unknown as { e: Events };
+    this.#unload.push(() => e.offref(ref));
   }
 
   show(): void {

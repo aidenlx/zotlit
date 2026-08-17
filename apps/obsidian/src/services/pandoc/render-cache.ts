@@ -153,14 +153,16 @@ export class BibliographyRenderCache extends Service<void> {
     if (this.#engine.getStatus().kind !== "installed") {
       return { kind: "unavailable", reason: "engine-absent" };
     }
-    if (items.length === 0) {
-      return { kind: "rendered", entries: [], hasEntryMarkers: false };
-    }
 
     const request = this.#styleRequest(presentation);
     const style = await this.#resolveStyle(request);
     if (style.kind === "failed") {
       return { kind: "unavailable", reason: "style-missing" };
+    }
+    // A document that cites nothing still renders under the style it names, so
+    // an unusable one is answered above rather than passed over here.
+    if (items.length === 0) {
+      return { kind: "rendered", entries: [], hasEntryMarkers: false };
     }
 
     const attempt = await this.#hold({

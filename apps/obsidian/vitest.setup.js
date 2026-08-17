@@ -115,4 +115,23 @@ if (typeof Node !== "undefined") {
   proto.createSpan ??= function (o, callback) {
     return proto.createEl.call(this, "span", o, callback);
   };
+  proto.setText ??= function (val) {
+    if (typeof val === "string") this.textContent = val;
+    else {
+      this.textContent = "";
+      this.append(val);
+    }
+  };
+}
+
+// The same runtime script patches every element with the `addClass()` family
+// the plugin styles its own notices and views with.
+if (typeof Element !== "undefined") {
+  const proto = Element.prototype;
+  proto.addClass ??= function (...classes) {
+    this.classList.add(...classes);
+  };
+  proto.addClasses ??= function (classes) {
+    this.classList.add(...classes);
+  };
 }

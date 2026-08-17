@@ -432,6 +432,21 @@ describe("BibliographyRenderCache", () => {
     expect(engine.requests).toHaveLength(0);
   });
 
+  it("stops a document that cites nothing under a style it cannot reach", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, missingStyles } = harness;
+
+    await expect(cache.render([], { styleId: IEEE })).resolves.toEqual({
+      kind: "unavailable",
+      reason: "style-missing",
+    });
+    expect(missingStyles).toEqual([]);
+  });
+
   it("asks again after a render the engine refused", async () => {
     await using harness = await makeHarness();
     const { cache, engine } = harness;

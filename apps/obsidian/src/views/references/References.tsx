@@ -29,6 +29,7 @@ export function References() {
   const listMode = useReferencesStore((s) => s.listMode);
   const engine = useReferencesStore((s) => s.engine);
   const formattingFailed = useReferencesStore((s) => s.formattingFailed);
+  const documentStyleError = useReferencesStore((s) => s.documentStyleError);
   const dbReady = useReferencesStore((s) => s.dbReady);
   const numbered = listMode.kind === "minimal";
   const serials = listMode.kind === "bibliography" && listMode.entrySerials;
@@ -47,6 +48,16 @@ export function References() {
         {/* The banners head this region rather than the pane, so they travel
             with the list they describe and the toolbar keeps its own place. */}
         <EngineSurface status={engine} />
+        {/* The note itself is the repair, so this banner stands in front of
+            the vault-level guidance the failure banner gives. */}
+        {documentStyleError && engine.kind === "installed" && (
+          <Banner
+            tone="warning"
+            title={m.references_document_style_failed_title()}
+          >
+            {m.references_document_style_failed_body()}
+          </Banner>
+        )}
         {formattingFailed && engine.kind === "installed" && (
           <Banner tone="warning" title={m.references_format_failed_title()}>
             {m.references_format_failed_body()}

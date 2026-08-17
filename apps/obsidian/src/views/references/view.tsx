@@ -23,7 +23,14 @@ import type {
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import {
+  documentPresentation,
+  samePresentation,
+} from "@/services/pandoc/document-presentation";
+import type {
+  BibliographyRenderCache,
+  RenderPresentation,
+} from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
@@ -105,6 +112,13 @@ export class ReferencesView extends ItemView {
   #citations: readonly Citation[] = [];
   /** Explicit citation-source errors of that note. */
   #errors: readonly DocumentCitationError[] = [];
+  /**
+   * Citation Presentation of that note, as the current list was rendered under;
+   * `null` while its own style property names no style to render with.
+   */
+  #presentation: RenderPresentation | null = {};
+  /** The current list is minimal because that note's own style is unusable. */
+  #documentStyleError = false;
   /** Where the current list's render stands, as copy readiness reads it. */
   #formatting: ReferencesFormatting = "pending";
   /** Copy readiness as it was last published, so only a change is logged. */
@@ -229,9 +243,15 @@ export class ReferencesView extends ItemView {
     this.#refreshCopy();
     void this.#readCitationSet().then(({ file, citations, errors }) => {
       const path = file?.path ?? null;
+      // The note's own style property decides what its list is rendered under,
+      // so a frontmatter edit that leaves the Citations untouched still moves
+      // this list — and the entries formatted under the old style are stale.
+      const presentation = this.#readPresentation(file);
+      const restyled = !samePresentation(this.#presentation, presentation);
       if (
         scan !== this.#scan ||
         (path === this.#path &&
+          !restyled &&
           citationsEqual(this.#citations, citations) &&
           documentCitationErrorsEqual(this.#errors, errors))
       ) {
@@ -241,11 +261,13 @@ export class ReferencesView extends ItemView {
       this.#path = path;
       this.#citations = citations;
       this.#errors = errors;
+      this.#presentation = presentation;
       logger.trace("References citations changed", {
         path,
         count: citations.length,
+        restyled,
       });
-      this.#reload();
+      this.#reload({ invalidate: restyled });
     });
   }
 
@@ -267,6 +289,13 @@ export class ReferencesView extends ItemView {
     };
   }
 
+  /** The Citation Presentation one note renders under; no note renders as none. */
+  #readPresentation(file: TFile | null): RenderPresentation | null {
+    return file === null
+      ? {}
+      : documentPresentation(this.#deps.app.metadataCache, file);
+  }
+
   /**
    * Re-read the cited Items and re-render the whole list — no incremental
    * diffing. `invalidate` drops the formatted entries too, for a change that
@@ -277,6 +306,7 @@ export class ReferencesView extends ItemView {
       this.#rendered.clear();
       this.#entryMarkers = null;
       this.#formattingFailed = false;
+      this.#documentStyleError = false;
     }
     this.#entrySerials = this.#readEntrySerials();
     const generation = ++this.#generation;
@@ -299,6 +329,7 @@ export class ReferencesView extends ItemView {
       listMode: this.#listMode(),
       engine,
       formattingFailed: this.#formattingFailed,
+      documentStyleError: this.#documentStyleError,
       dbReady: this.#deps.db.state === "ready",
       copy: this.#trackCopy(entries),
     });
@@ -389,20 +420,39 @@ export class ReferencesView extends ItemView {
    * completed render also shows the failure state. A completed render is
    * applied even when it is empty, so each source it omitted becomes a
    * Reference Error.
+   *
+   * A note whose own style is unusable never reaches the vault selection: it
+   * shows the minimal list with the error that names the note as the thing to
+   * repair, which also leaves the Copied Bibliography out of reach.
    */
   async #render(
     generation: number,
     citations: readonly Citation[],
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
+    const presentation = this.#presentation;
+    if (presentation === null) {
+      this.#documentStyleError = true;
+      this.#showMinimal(citations, sources, false);
+      return;
+    }
+
     const items = [...sources.values()].map((source) => source.csl);
-    const outcome = await this.#deps.bibliographyRender.render(items);
+    const outcome = await this.#deps.bibliographyRender.render(
+      items,
+      presentation,
+    );
     if (generation !== this.#generation) return;
 
     if (outcome.kind !== "rendered") {
+      this.#documentStyleError =
+        outcome.kind === "unavailable" &&
+        outcome.reason === "style-missing" &&
+        presentation.styleId !== undefined;
       this.#showMinimal(citations, sources, outcome.kind === "failed");
       return;
     }
+    this.#documentStyleError = false;
 
     // Refilled rather than merged: the render covers every cited Item, so
     // what it leaves out is no longer cited, and the map's order is the
@@ -429,6 +479,7 @@ export class ReferencesView extends ItemView {
       entries,
       listMode: this.#listMode(),
       formattingFailed: false,
+      documentStyleError: false,
       copy: this.#trackCopy(entries),
     });
   }
@@ -486,6 +537,7 @@ export class ReferencesView extends ItemView {
     });
     this.#store.setState({
       ...minimal,
+      documentStyleError: this.#documentStyleError,
       copy: this.#trackCopy(minimal.entries),
     });
   }

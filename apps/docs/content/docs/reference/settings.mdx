@@ -104,6 +104,18 @@ An unavailable style remains selected. In-text citations stay native, and the Re
 
 The first formatting attempt shows this notice once per plugin lifecycle: "The selected citation and references style isn’t installed in Zotero." Its **Open settings** action opens the Citations page.
 
+A note can select its own style with the `zotlit-csl` property. The property takes the CSL style ID of a style installed in Zotero. Every other note keeps the vault selection.
+
+That note uses its own style for in-text citations, the References Sidebar, the Citation Popover, and the copied bibliography. The built-in export dialog opens on the same style. The dialog holds a style you pick there for that run alone, and never writes it to the note.
+
+A note whose `zotlit-csl` names an unavailable style stops instead of using the vault selection. Its citations stay native. The References Sidebar shows its minimal list with this banner, and the copy action stays unavailable.
+
+> This note's citation and references style is unavailable
+
+Built-in export of that note opens on the same unavailable style and stops with a notice, unless you pick an available style in the dialog.
+
+An empty `zotlit-csl` property stops the note the same way, and its built-in export stops before the dialog opens. Remove the property to use the vault selection again.
+
 **Citation locale:** Sets the language for citation terms, dates, names, and sorting. Leave empty to use the language the selected style declares.
 
 The field takes a language tag such as `en-US`, `de`, or `zh-CN`. ZotLit rejects any other form and shows this message: "Enter a language code such as en-US, de, or zh-CN."

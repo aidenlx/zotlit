@@ -70,6 +70,19 @@ export class MockMetadataCache {
     this.#emit("changed", file, body, cache);
   }
 
+  /** Rewrite one note's properties, leaving the body and its links as they are. */
+  setFrontmatter(
+    file: TFile,
+    frontmatter: Record<string, unknown> | undefined,
+  ): void {
+    const cache = {
+      ...this.fileCache.get(file.path),
+      frontmatter,
+    } as CachedMetadata;
+    this.fileCache.set(file.path, cache);
+    this.#emit("changed", file, this.vault?.bodies.get(file.path) ?? "", cache);
+  }
+
   delete(file: TFile): void {
     this.fileCache.delete(file.path);
     this.files.delete(file.path);

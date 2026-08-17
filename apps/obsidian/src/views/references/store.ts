@@ -69,6 +69,11 @@ export interface ReferencesState {
   engine: PandocEngineStatus;
   /** A completed formatting attempt failed while the engine remained available. */
   formattingFailed: boolean;
+  /**
+   * The active note's own Citation and References Style cannot be rendered
+   * with, which is a repair on that note rather than on the vault selection.
+   */
+  documentStyleError: boolean;
   /** `false` while the Zotero database cannot be read. */
   dbReady: boolean;
   /** Whether the visible list can be copied, and why not. */
@@ -83,6 +88,7 @@ export function createReferencesStore() {
     listMode: { kind: "minimal" },
     engine: { kind: "absent" },
     formattingFailed: false,
+    documentStyleError: false,
     dbReady: false,
     copy: { kind: "blocked", reason: "no-note" },
   }));
