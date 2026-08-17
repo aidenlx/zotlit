@@ -433,6 +433,22 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     expect(text).toContain(`id="ref-${ZETA.id}"`);
   });
 
+  it("converts a document in the Citation Locale a request names", async () => {
+    const html = await engine.renderDocument({
+      markdown: DOCUMENT,
+      format: "html",
+      bibliography: [ZETA],
+      styleXml: NUMERIC_STYLE,
+      locale: "de-DE",
+      luaFilters: [RESOLVE_FILTER],
+      files: { "resolve-map.json": RESOLVE_MAP },
+    });
+
+    // The Citation Locale reaches the processor as the document's language,
+    // which the standalone template writes onto the document root.
+    expect(new TextDecoder().decode(html)).toContain('lang="de-DE"');
+  });
+
   it("serializes concurrent requests without crossing their virtual files", async () => {
     const finished: string[] = [];
     const track = async (item: CslItemData) => {

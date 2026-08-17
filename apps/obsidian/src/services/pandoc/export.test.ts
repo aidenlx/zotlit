@@ -175,14 +175,19 @@ describe("exportCitedDocument", () => {
     ).toEqual({ citations: {} });
   });
 
-  it("carries the chosen style through to the engine", async () => {
-    const running = run(CITED, { styleXml: "<style/>", format: "html" });
+  it("carries the chosen style and Citation Locale through to the engine", async () => {
+    const running = run(CITED, {
+      styleXml: "<style/>",
+      locale: "de-DE",
+      format: "html",
+    });
     await running;
 
     const [request] = running.ports.renderDocument.mock.calls[0] as [
       DocumentRequest,
     ];
     expect(request.styleXml).toBe("<style/>");
+    expect(request.locale).toBe("de-DE");
     expect(request.format).toBe("html");
   });
 

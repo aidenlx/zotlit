@@ -35,6 +35,11 @@ export interface BibliographyRequest extends SupersedableRequest {
   items: readonly CslItemData[];
   /** CSL style XML; the engine's embedded default style when omitted. */
   styleXml?: string;
+  /**
+   * Citation Locale to render in, which overrides the locale the style names.
+   * Omitted leaves the style's own locale in charge.
+   */
+  locale?: string;
 }
 
 /** One rendered bibliography entry, as typed AST. */
@@ -85,6 +90,11 @@ export interface CitationRequest extends SupersedableRequest {
   items: readonly CslItemData[];
   /** CSL style XML; the engine's embedded default style when omitted. */
   styleXml?: string;
+  /**
+   * Citation Locale to render in, which overrides the locale the style names.
+   * Omitted leaves the style's own locale in charge.
+   */
+  locale?: string;
 }
 
 export type DocumentFormat = "docx" | "html";
@@ -97,6 +107,11 @@ export interface DocumentRequest extends SupersedableRequest {
   bibliography: readonly CslItemData[];
   /** CSL style XML; the engine's embedded default style when omitted. */
   styleXml?: string;
+  /**
+   * Citation Locale to render in, which overrides the locale the style names.
+   * Omitted leaves the style's own locale in charge.
+   */
+  locale?: string;
   /** Lua filter sources, run in listed order before citation processing. */
   luaFilters?: readonly string[];
   /** Further files the filters read, such as a resolve map. */
@@ -201,6 +216,7 @@ class PandocCitationEngine implements CitationEngine {
   async #formatBibliography({
     items,
     styleXml,
+    locale,
     supersedes,
   }: BibliographyRequest): Promise<string> {
     const style = styleInput(styleXml);
@@ -210,6 +226,7 @@ class PandocCitationEngine implements CitationEngine {
         to: "json",
         standalone: false,
         filters: ["citeproc"],
+        ...(locale === undefined ? {} : { metadata: { lang: locale } }),
         ...style.options,
       },
       stdin: JSON.stringify(items),
@@ -224,6 +241,7 @@ class PandocCitationEngine implements CitationEngine {
     citations,
     items,
     styleXml,
+    locale,
     supersedes,
   }: CitationRequest): Promise<string> {
     const style = styleInput(styleXml);
@@ -236,7 +254,10 @@ class PandocCitationEngine implements CitationEngine {
         bibliography: [BIBLIOGRAPHY_FILE],
         // The bibliography is the sidebar's job; this render wants the in-text
         // citations alone.
-        metadata: { "suppress-bibliography": true },
+        metadata: {
+          "suppress-bibliography": true,
+          ...(locale === undefined ? {} : { lang: locale }),
+        },
         ...style.options,
       },
       stdin: citations.join("\n\n"),
@@ -254,6 +275,7 @@ class PandocCitationEngine implements CitationEngine {
     format,
     bibliography,
     styleXml,
+    locale,
     luaFilters = [],
     files = {},
     supersedes,
@@ -271,6 +293,7 @@ class PandocCitationEngine implements CitationEngine {
         filters: [...Object.keys(filterFiles), "citeproc"],
         bibliography: [BIBLIOGRAPHY_FILE],
         "output-file": outputName,
+        ...(locale === undefined ? {} : { metadata: { lang: locale } }),
         ...style.options,
       },
       stdin: markdown,

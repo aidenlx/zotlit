@@ -6,6 +6,15 @@
 // not defined` under Vitest without this stub.
 globalThis.window ??= globalThis;
 
+// Obsidian's renderer also supplies `DOMParser`, which source code reads XML
+// and HTML with. The `node` test environment has none, so a test that runs
+// such code borrows happy-dom's — the same parser the `happy-dom` environment
+// installs, here without taking that whole environment on.
+if (typeof globalThis.DOMParser === "undefined") {
+  const { Window } = await import("happy-dom");
+  globalThis.DOMParser = new Window().DOMParser;
+}
+
 // Obsidian patches every window (main and popout alike, each patched by its
 // own copy of this same runtime script) with a `createEl()`/`createDiv()`/
 // `createSpan()`/`createFragment()` global family and a `Node.prototype`

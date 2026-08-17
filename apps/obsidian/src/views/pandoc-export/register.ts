@@ -25,7 +25,8 @@ import type {
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
 import type { PandocEngineService } from "@/services/pandoc/service";
-import { loadStyleXml } from "@/services/pandoc/styles";
+import { resolveInstalledStyle } from "@/services/pandoc/styles";
+import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -97,7 +98,9 @@ export async function runPandocExport(
         },
         markdown: await app.vault.cachedRead(file),
         format: choices.format,
-        styleXml: await loadStyleXml(zoteroPref.dataDir, choices.styleId),
+        ...(await exportPresentation(zoteroPref.dataDir, {
+          styleId: choices.styleId,
+        })),
       },
       exportPorts(deps, await pandocEngine.getEngine()),
     );
@@ -129,6 +132,35 @@ export async function runPandocExport(
   new BaseNotice(
     m.notice_pandoc_export_done({ file: basename(choices.destination) }),
   );
+}
+
+/**
+ * What the engine formats the exported run with, read through the resolver the
+ * app renders with, so an export formats a dependent style exactly as Obsidian
+ * does. An installed style hands over its content with the Citation Locale
+ * already applied; the embedded default style takes that locale beside it.
+ *
+ * A selection Zotero cannot supply falls back to the embedded default style,
+ * still in the Citation Locale the request named.
+ */
+async function exportPresentation(
+  dataDir: string,
+  request: CslStyleRequest,
+): Promise<{ styleXml?: string; locale?: string }> {
+  const style = await resolveInstalledStyle(dataDir, request);
+  if (style.kind === "installed") return { styleXml: style.xml };
+  if (style.kind === "failed") {
+    logger.warn(
+      "Exporting with the embedded style: the chosen one is unusable",
+      {
+        styleId: style.styleId,
+        parentId: style.parentId,
+        reason: style.reason,
+      },
+    );
+    return { locale: request.locale ?? undefined };
+  }
+  return { locale: style.locale };
 }
 
 function exportPorts(

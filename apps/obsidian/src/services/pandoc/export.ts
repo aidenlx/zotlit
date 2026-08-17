@@ -29,6 +29,11 @@ export interface ExportRequest {
   format: DocumentFormat;
   /** CSL style XML; the engine's embedded default style when omitted. */
   styleXml?: string;
+  /**
+   * Citation Locale to render in, which overrides the locale the style names.
+   * Omitted leaves the style's own locale in charge.
+   */
+  locale?: string;
 }
 
 export interface ExportPorts {
@@ -121,6 +126,7 @@ export async function exportCitedDocument(
       format: request.format,
       bibliography: [...cited.items.values()],
       styleXml: request.styleXml,
+      locale: request.locale,
       luaFilters: [pandocSandboxFilter],
       files: {
         [PANDOC_RESOLVE_MAP_FILENAME]: JSON.stringify({ citations }),
