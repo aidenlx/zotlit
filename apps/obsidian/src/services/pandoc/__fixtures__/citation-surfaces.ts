@@ -33,6 +33,8 @@ import { CitationText } from "@/services/citation-text/service";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { Settings } from "@/services/settings/schema";
+import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
+import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
 import { runPandocExport } from "@/views/pandoc-export/register";
 import type { PandocExportDeps } from "@/views/pandoc-export/register";
 import { ReferencesView } from "@/views/references/view";
@@ -174,6 +176,8 @@ export interface CitationVault extends AsyncDisposable {
   setNoteStyle(declared: unknown): Promise<void>;
   /** Rewrite the `lang` both notes carry; `undefined` removes it. */
   setNoteLanguage(declared: unknown): Promise<void>;
+  /** Rewrite both properties the way the confirmed action writes them. */
+  setPresentation(choice: CitationPresentationChoice): Promise<void>;
   /** Drop new vault settings on every surface at once. */
   setSettings(next: Partial<Settings>): Promise<void>;
 }
@@ -238,12 +242,17 @@ export async function openCitationVault({
     style: documentStyle,
     language: documentLanguage,
   };
+  /** Those same properties as one record, the way a note carries them. */
+  const properties = (): Record<string, unknown> => {
+    const record: Record<string, unknown> = {};
+    if (declared.style !== undefined) record["zotlit-csl"] = declared.style;
+    if (declared.language !== undefined) record["lang"] = declared.language;
+    return record;
+  };
   const writeProperties = (): void => {
-    const properties: Record<string, unknown> = {};
-    if (declared.style !== undefined) properties["zotlit-csl"] = declared.style;
-    if (declared.language !== undefined) properties["lang"] = declared.language;
+    const written = properties();
     const frontmatter =
-      Object.keys(properties).length > 0 ? properties : undefined;
+      Object.keys(written).length > 0 ? written : undefined;
     // Pandoc reads the Document Language out of the exported note's own source,
     // which is what makes it the exported document's language, so that one
     // property is written into the body the export reads as well. Every other
@@ -432,6 +441,25 @@ export async function openCitationVault({
     async setNoteLanguage(language) {
       declared.language = language;
       writeProperties();
+      await act(async () => undefined);
+    },
+    async setPresentation(choice) {
+      // The action's own update, over the properties both notes carry, so the
+      // surfaces follow the one metadata change a confirmed dialog makes.
+      await applyCitationPresentation(
+        {
+          processFrontMatter: (_file, edit) => {
+            const written = properties();
+            edit(written);
+            declared.style = written["zotlit-csl"];
+            declared.language = written["lang"];
+            writeProperties();
+            return Promise.resolve();
+          },
+        },
+        harness.metadataCache.files.get(DRAFT)!,
+        choice,
+      );
       await act(async () => undefined);
     },
     async setSettings(next) {

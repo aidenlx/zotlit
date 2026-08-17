@@ -30,6 +30,7 @@ import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
+import { registerCitationPresentation } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
@@ -319,6 +320,12 @@ export default class ZotLitPlugin extends Plugin {
         this.app.setting.open();
         this.app.setting.openTabById(this.manifest.id);
       },
+    });
+
+    registerCitationPresentation(this, {
+      app: this.app,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
     });
 
     registerWelcomeView(this, {

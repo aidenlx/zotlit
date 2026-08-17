@@ -5,7 +5,11 @@ import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { openCitationVault, TIMEOUT } from "./__fixtures__/citation-surfaces";
+import {
+  EXPORT_NOTE,
+  openCitationVault,
+  TIMEOUT,
+} from "./__fixtures__/citation-surfaces";
 
 const VAULT_STYLE_ID = "http://www.zotero.org/styles/vault-localized";
 const NOTE_STYLE_ID = "http://www.zotero.org/styles/note-numbered";
@@ -225,5 +229,38 @@ describe("Document Language", { timeout: TIMEOUT }, () => {
     await expect(vault.copiedBibliography()).resolves.toContain(
       EDITOR["de-DE"],
     );
+  });
+
+  it("moves every surface with the one update the action writes", async () => {
+    await using vault = await openVault({ locale: "en-US" });
+    await expect(vault.citationText()).resolves.toBe(
+      `${EDITOR["en-US"]} ${VAULT_WORD}`,
+    );
+
+    // What a confirmed Set citation presentation dialog writes: the note's own
+    // style and its own Document Language, in one property update.
+    await vault.setPresentation({ styleId: NOTE_STYLE_ID, language: "de-DE" });
+
+    await expect(vault.citationText()).resolves.toBe(MARKER);
+    const sidebar = await vault.sidebarText();
+    expect(sidebar).toContain(MARKER);
+    expect(sidebar).toContain(EDITOR["de-DE"]);
+    await expect(vault.copiedBibliography()).resolves.toContain(
+      EDITOR["de-DE"],
+    );
+    const exported = await vault.exportNote();
+    expect(exported.openedOn).toBe(NOTE_STYLE_ID);
+    expect(exported.html).toContain(MARKER);
+    expect(exported.html).toMatch(/<html[^>]*lang="de-DE"/);
+
+    // Inheriting the style and resetting the language hands the note back to
+    // both vault selections at once.
+    await vault.setPresentation({ styleId: null, language: null });
+
+    await expect(vault.citationText()).resolves.toBe(
+      `${EDITOR["en-US"]} ${VAULT_WORD}`,
+    );
+    await expect(vault.sidebarText()).resolves.toContain(EDITOR["en-US"]);
+    expect(vault.noteStyle(EXPORT_NOTE)).toBe(undefined);
   });
 });

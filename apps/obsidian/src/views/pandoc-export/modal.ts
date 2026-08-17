@@ -8,9 +8,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
 import type { DocumentFormat } from "@/services/pandoc/engine";
-import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/setting-tab/citations";
+import { addStyleDropdown } from "@/views/style-dropdown";
 
 const logger = getLogger(["views", "pandoc-export"]);
 
@@ -74,32 +73,19 @@ export function openPandocExportModal(
       });
     });
 
-  new Setting(modal.contentEl)
-    .setName(m.pandoc_export_style_name())
-    .setDesc(m.pandoc_export_style_desc())
-    .addDropdown((dropdown) => {
-      let styles: readonly InstalledCslStyle[] = [];
-      const repopulate = (): void => {
-        dropdown.selectEl.replaceChildren();
-        for (const { value, label } of referencesStyleOptions(
-          styles,
-          styleId,
-        )) {
-          dropdown.addOption(value, label);
-        }
-        dropdown.setValue(styleId);
-      };
-      repopulate();
-      dropdown.onChange((value) => {
+  addStyleDropdown(
+    new Setting(modal.contentEl)
+      .setName(m.pandoc_export_style_name())
+      .setDesc(m.pandoc_export_style_desc()),
+    {
+      dataDir,
+      value: styleId,
+      options: referencesStyleOptions,
+      onChange: (value) => {
         styleId = value;
-      });
-      // The listing outlives the dropdown only until the modal closes, and a
-      // detached dropdown simply repopulates a detached element.
-      void listInstalledStyles(dataDir).then((installed) => {
-        styles = installed;
-        repopulate();
-      });
-    });
+      },
+    },
+  );
 
   const destinationSetting = new Setting(modal.contentEl)
     .setName(m.pandoc_export_destination_name())
