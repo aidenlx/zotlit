@@ -1,0 +1,1236 @@
+<!--
+PROTOTYPE — throwaway demo for ZotLit issue #705. Not shipped code; not tested by CI.
+
+Design question: when you run "Update all literature notes" or "Import all Zotero notes"
+over several Zotero Libraries, does this plan -> confirm -> run model feel right — one
+grouped confirmation, one progress stream, one snapshot per phase — while exact collection
+links and Indexed Keys keep targeting their named Library outside the scope?
+
+The full design (types, semantics, KISS/YAGNI evaluation) is the resolution comment on
+https://github.com/aidenlx/zotlit/issues/705 — this demo encodes its chosen design D.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Library batch planning — prototype</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-warn: var(--warn);
+        --color-ok: var(--ok);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f6f5f1;
+        --panel: #ffffff;
+        --ink: #21262b;
+        --muted: #63707a;
+        --line: #dde2e1;
+        --accent: #34597a;
+        --warn: #b1502e;
+        --ok: #4f7942;
+        --font-display: "Fraunces", ui-serif, serif;
+        --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #12151a;
+          --panel: #181d23;
+          --ink: #e7ebee;
+          --muted: #8b98a1;
+          --line: #2a3138;
+          --accent: #6fa0c9;
+          --warn: #e08a5c;
+          --ok: #8fbb52;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/jsx" id="app">
+      import React, { useReducer } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Library,
+        BookOpen,
+        Layers,
+        PlayCircle,
+        CheckCircle2,
+        AlertTriangle,
+        Clock,
+        Info,
+        XCircle,
+        Trash2,
+        RotateCcw,
+        Link2,
+        Ban,
+      } from "lucide-react";
+
+      // --- App ---
+
+      // ================================================================
+      // PURE MODULE — liftable into apps/obsidian/src/services/batch-scope.ts
+      // No DOM references. Everything below this line, down to "PURE MODULE END",
+      // operates on plain data only.
+      // ================================================================
+
+      // db:         { libraries, items, collections }
+      // library:    { libraryID, groupID, name }         groupID null = My Library
+      // item:       { itemID, libraryID, title, note, isNote?, collectionKeys }
+      //             note: "none" | "stale" | "current"
+      // collection: { libraryID, key, name }
+
+      /** My Library first, then groups ascending by groupID — the canonical order
+       *  every scope loop, header list, and expansion walks. */
+      function canonicalLibraries(libraries) {
+        const personal = libraries.filter((l) => l.groupID == null);
+        const groups = libraries
+          .filter((l) => l.groupID != null)
+          .slice()
+          .sort((a, b) => a.groupID - b.groupID);
+        return [...personal, ...groups];
+      }
+
+      function libraryName(library) {
+        return library.groupID == null ? "My Library" : library.name;
+      }
+
+      function librarySelector(library) {
+        return library.groupID == null
+          ? { type: "personal" }
+          : { type: "group", groupID: library.groupID };
+      }
+
+      function selectorKey(selector) {
+        return selector.type === "personal" ? "personal" : `group:${selector.groupID}`;
+      }
+
+      /**
+       * Resolves a saved Library Scope setting against the current database.
+       * saved: { mode: "all" } | { mode: "selected", libraries: Selector[] }
+       * Selector: { type: "personal" } | { type: "group", groupID }
+       * A malformed saved value falls back to My Library only, flagged via invalidSaved.
+       */
+      function resolveLibraryScope(libraries, saved) {
+        const ordered = canonicalLibraries(libraries);
+        const isValid =
+          saved &&
+          (saved.mode === "all" ||
+            (saved.mode === "selected" && Array.isArray(saved.libraries)));
+        const invalidSaved = !isValid;
+        const effective = isValid ? saved : { mode: "selected", libraries: [{ type: "personal" }] };
+
+        const asEntry = (l) => ({ selector: librarySelector(l), libraryID: l.libraryID, name: libraryName(l) });
+
+        if (effective.mode === "all") {
+          return { mode: "all", invalidSaved, available: ordered.map(asEntry), unavailable: [] };
+        }
+
+        const byKey = new Map(ordered.map((l) => [selectorKey(librarySelector(l)), l]));
+        const seen = new Set();
+        const availableUnordered = [];
+        const unavailable = [];
+        for (const sel of effective.libraries) {
+          const key = selectorKey(sel);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const lib = byKey.get(key);
+          if (lib) availableUnordered.push(asEntry(lib));
+          else unavailable.push(sel);
+        }
+        const rank = new Map(ordered.map((l, i) => [l.libraryID, i]));
+        availableUnordered.sort((a, b) => rank.get(a.libraryID) - rank.get(b.libraryID));
+        return { mode: "selected", invalidSaved, available: availableUnordered, unavailable };
+      }
+
+      function findLibraryByGroupID(libraries, groupID) {
+        if (groupID === 0) return libraries.find((l) => l.groupID == null) ?? null;
+        return libraries.find((l) => l.groupID === groupID) ?? null;
+      }
+
+      function itemsOfLibrary(db, libraryID) {
+        return db.items.filter((i) => i.libraryID === libraryID);
+      }
+
+      /**
+       * request: { groupID?, collectionKey?, scope }
+       * groupID: 0 = My Library, >0 = a group's stable groupID, absent = unqualified.
+       * scope (a resolveLibraryScope result) is read only when groupID is absent —
+       * an exact groupID/collectionKey always bypasses Library Scope entirely.
+       */
+      function resolveBatchScope(db, kind, request) {
+        if (request.groupID !== undefined) {
+          const library = findLibraryByGroupID(db.libraries, request.groupID);
+          if (!library) return { kind: "unavailable-target" };
+          if (request.collectionKey !== undefined) {
+            const collection = db.collections.find(
+              (c) => c.libraryID === library.libraryID && c.key === request.collectionKey,
+            );
+            if (!collection) return { kind: "collection-not-found" };
+            const itemIDs = itemsOfLibrary(db, library.libraryID)
+              .filter((i) => i.collectionKeys.includes(request.collectionKey))
+              .map((i) => i.itemID);
+            return { kind: "resolved", itemIDs };
+          }
+          return { kind: "resolved", itemIDs: itemsOfLibrary(db, library.libraryID).map((i) => i.itemID) };
+        }
+        const itemIDs = [];
+        for (const entry of request.scope.available) {
+          for (const item of itemsOfLibrary(db, entry.libraryID)) itemIDs.push(item.itemID);
+        }
+        return { kind: "resolved", itemIDs };
+      }
+
+      const ACTION_KIND = { "update-all": "update", "import-all-notes": "create" };
+
+      /**
+       * Classifies each item ID against the CURRENT db snapshot — an ID that no
+       * longer resolves to an item lands in notFound, whether it vanished before
+       * classification even started or between two phases.
+       */
+      function classify(db, itemIDs, kind) {
+        const actionKind = ACTION_KIND[kind];
+        const actions = [];
+        const notFound = [];
+        const upToDate = [];
+        for (const id of itemIDs) {
+          const item = db.items.find((i) => i.itemID === id);
+          if (!item) {
+            notFound.push({ id });
+            continue;
+          }
+          const actionable = !item.isNote && (kind === "update-all" ? item.note === "stale" : item.note === "none");
+          if (!actionable) {
+            upToDate.push({ id });
+            continue;
+          }
+          actions.push({
+            id,
+            label: item.title,
+            groupKey: `${item.libraryID}:${actionKind}`,
+            actionKind,
+            libraryID: item.libraryID,
+            status: "pending",
+          });
+        }
+        return { actions, notFound, upToDate };
+      }
+
+      const MULTI_HEADER = { update: "Update note", create: "Create note" };
+      const SINGLE_HEADER = { update: "Update note", create: "Import" };
+      const KIND_ORDER = ["update", "create"];
+
+      /** Ordered manifest sections: per Library (canonical order) x action kind.
+       *  When exactly one Library contributed, falls back to plain kind headers. */
+      function buildGroups(db, actions) {
+        const libraryIDs = new Set(actions.map((a) => a.libraryID));
+        const ordered = canonicalLibraries(db.libraries);
+        const nameOf = (id) => {
+          const l = ordered.find((x) => x.libraryID === id);
+          return l ? libraryName(l) : `Library ${id}`;
+        };
+        if (libraryIDs.size <= 1) {
+          const onlyID = [...libraryIDs][0];
+          return KIND_ORDER.filter((k) => actions.some((a) => a.actionKind === k)).map((k) => ({
+            key: `${onlyID}:${k}`,
+            header: SINGLE_HEADER[k],
+          }));
+        }
+        const groups = [];
+        for (const lib of ordered) {
+          if (!libraryIDs.has(lib.libraryID)) continue;
+          for (const k of KIND_ORDER) {
+            const key = `${lib.libraryID}:${k}`;
+            if (actions.some((a) => a.groupKey === key)) {
+              groups.push({ key, header: `${nameOf(lib.libraryID)} · ${MULTI_HEADER[k]}` });
+            }
+          }
+        }
+        return groups;
+      }
+
+      function buildManifest(db, kind, actions, notFound, upToDate, scope) {
+        const groups = buildGroups(db, actions);
+        const byGroup = new Map(groups.map((g) => [g.key, []]));
+        for (const a of actions) byGroup.get(a.groupKey)?.push(a);
+        const order = groups.flatMap((g) => byGroup.get(g.key).map((a) => a.id));
+        const actionsById = new Map(actions.map((a) => [a.id, a]));
+        const libraryCount = new Set(actions.map((a) => a.libraryID)).size;
+        const verb = kind === "update-all" ? "update" : "import";
+        let confirmIntro = `This will ${verb} ${actions.length} item${actions.length === 1 ? "" : "s"} across ${libraryCount} Librar${libraryCount === 1 ? "y" : "ies"}.`;
+        if (scope.unavailable.length > 0) {
+          confirmIntro += ` ${scope.unavailable.length} selected librar${scope.unavailable.length === 1 ? "y is" : "ies are"} unavailable and were skipped.`;
+        }
+        return { groups, byGroup, order, actionsById, notFound, upToDate, confirmIntro };
+      }
+
+      const IDLE_STATE = {
+        phase: "idle",
+        kind: null,
+        manifest: null,
+        progress: { done: 0, total: 0 },
+        result: null,
+        notice: null,
+      };
+
+      function summarize(manifest, extraCancelled) {
+        let created = 0,
+          updated = 0,
+          failed = 0;
+        for (const action of manifest.actionsById.values()) {
+          if (action.status === "done") {
+            if (action.actionKind === "create") created++;
+            else updated++;
+          } else if (action.status === "failed") failed++;
+        }
+        return {
+          created,
+          updated,
+          skipped: manifest.upToDate.length,
+          failed: failed + manifest.notFound.length,
+          cancelled: extraCancelled ?? 0,
+        };
+      }
+
+      /**
+       * Run-lifecycle reducer: idle -> expanded -> confirm -> running -> done.
+       * Each event carries the db it should read, so mutations between events are
+       * exactly the per-phase snapshot boundary: expansion (in START) reads db once,
+       * classification (also inside START, immediately after expansion) reads it
+       * again, and each TICK re-reads db for the row it is about to settle.
+       */
+      function batchReducer(state, event) {
+        switch (event.type) {
+          case "START": {
+            const { db, kind, target, scope } = event;
+            if (scope.available.length === 0) {
+              return { ...IDLE_STATE, phase: "done", kind, notice: "scope-unavailable" };
+            }
+            const resolved = resolveBatchScope(db, kind, { ...target, scope });
+            if (resolved.kind === "unavailable-target") {
+              return { ...IDLE_STATE, phase: "done", kind, notice: "unavailable-target" };
+            }
+            if (resolved.kind === "collection-not-found") {
+              return { ...IDLE_STATE, phase: "done", kind, notice: "collection-not-found" };
+            }
+            if (resolved.itemIDs.length === 0) {
+              return { ...IDLE_STATE, phase: "done", kind, notice: "empty" };
+            }
+            const { actions, notFound, upToDate } = classify(db, resolved.itemIDs, kind);
+            const manifest = buildManifest(db, kind, actions, notFound, upToDate, scope);
+            if (actions.length === 0) {
+              return {
+                phase: "done",
+                kind,
+                manifest,
+                progress: { done: 0, total: 0 },
+                notice: null,
+                result: summarize(manifest, 0),
+              };
+            }
+            const nextPhase = actions.length === 1 ? "running" : "confirm";
+            return {
+              phase: nextPhase,
+              kind,
+              manifest,
+              progress: { done: 0, total: actions.length },
+              notice: null,
+              result: null,
+            };
+          }
+          case "CONFIRM": {
+            if (state.phase !== "confirm") return state;
+            return { ...state, phase: "running" };
+          }
+          case "TICK": {
+            if (state.phase !== "running") return state;
+            const count = event.count ?? 1;
+            let manifest = state.manifest;
+            let done = state.progress.done;
+            for (let i = 0; i < count && done < state.progress.total; i++) {
+              const nextID = manifest.order.find((id) => manifest.actionsById.get(id).status === "pending");
+              if (nextID === undefined) break;
+              const stillExists = event.db.items.some((it) => it.itemID === nextID);
+              const settled = { ...manifest.actionsById.get(nextID), status: stillExists ? "done" : "failed" };
+              const actionsById = new Map(manifest.actionsById);
+              actionsById.set(nextID, settled);
+              manifest = { ...manifest, actionsById };
+              done += 1;
+            }
+            const progress = { done, total: state.progress.total };
+            if (done >= progress.total) {
+              return { ...state, phase: "done", manifest, progress, notice: null, result: summarize(manifest, 0) };
+            }
+            return { ...state, manifest, progress };
+          }
+          case "FINISH": {
+            if (state.phase !== "running" || state.progress.done < state.progress.total) return state;
+            return { ...state, phase: "done", notice: null, result: summarize(state.manifest, 0) };
+          }
+          case "CANCEL": {
+            if (state.phase !== "running") return state;
+            const cancelledCount = [...state.manifest.actionsById.values()].filter(
+              (a) => a.status === "pending",
+            ).length;
+            return { ...state, phase: "done", notice: "cancelled", result: summarize(state.manifest, cancelledCount) };
+          }
+          case "RESET":
+            return IDLE_STATE;
+          default:
+            return state;
+        }
+      }
+
+      // ================================================================
+      // PURE MODULE END
+      // ================================================================
+
+      // ---- SMOKE TESTS — run under `node <extracted-module>.js` ----
+      if (typeof document === "undefined") {
+        const libs = [
+          { libraryID: 1, groupID: null, name: "My Library" },
+          { libraryID: 2, groupID: 4837, name: "Lab Shared" },
+          { libraryID: 3, groupID: 5120, name: "Reading Club" },
+        ];
+        const items = [
+          { itemID: 101, libraryID: 1, title: "A", note: "stale", collectionKeys: [] },
+          { itemID: 102, libraryID: 1, title: "B", note: "none", collectionKeys: [] },
+          { itemID: 103, libraryID: 1, title: "C", note: "current", collectionKeys: [] },
+          { itemID: 201, libraryID: 2, title: "D", note: "stale", collectionKeys: ["COLLAB1"] },
+          { itemID: 202, libraryID: 2, title: "E", note: "none", collectionKeys: ["COLLAB1"] },
+          { itemID: 301, libraryID: 3, title: "F", note: "none", collectionKeys: ["COLLAB1"] },
+        ];
+        const collections = [
+          { libraryID: 2, key: "COLLAB1", name: "Shared reading" },
+          { libraryID: 3, key: "COLLAB1", name: "Club picks" },
+        ];
+        const db = { libraries: libs, items, collections };
+        let pass = 0;
+        let total = 0;
+        const check = (cond, label) => {
+          total++;
+          console.assert(cond, label);
+          if (cond) pass++;
+          else console.error("FAILED:", label);
+        };
+
+        const allScope = resolveLibraryScope(libs, { mode: "all" });
+        check(allScope.available.map((a) => a.libraryID).join(",") === "1,2,3", "1: canonical scope order, All Libraries");
+
+        const selScope = resolveLibraryScope(libs, {
+          mode: "selected",
+          libraries: [{ type: "group", groupID: 5120 }, { type: "personal" }],
+        });
+        check(selScope.available.map((a) => a.libraryID).join(",") === "1,3", "2: selected scope re-sorted into canonical order");
+
+        const partialScope = resolveLibraryScope(libs, {
+          mode: "selected",
+          libraries: [{ type: "personal" }, { type: "group", groupID: 4837 }, { type: "group", groupID: 9999 }],
+        });
+        check(partialScope.unavailable.length === 1 && partialScope.unavailable[0].groupID === 9999, "3a: absent selected group tracked as unavailable");
+        check(partialScope.available.map((a) => a.libraryID).join(",") === "1,2", "3b: remaining selected groups still available");
+
+        const fallback = resolveLibraryScope(libs, { mode: "bogus" });
+        check(fallback.invalidSaved === true && fallback.available.length === 1 && fallback.available[0].libraryID === 1, "4: invalid saved scope falls back to My Library");
+
+        const outOfScope = resolveLibraryScope(libs, { mode: "selected", libraries: [{ type: "personal" }] });
+        const exact = resolveBatchScope(db, "update-all", { groupID: 4837, scope: outOfScope });
+        check(exact.kind === "resolved" && exact.itemIDs.join(",") === "201,202", "5: exact groupID bypasses a Library outside scope");
+
+        const exactMy = resolveBatchScope(db, "update-all", { groupID: 0, scope: outOfScope });
+        check(exactMy.kind === "resolved" && exactMy.itemIDs.join(",") === "101,102,103", "6: groupID 0 resolves My Library exactly");
+
+        const missingTarget = resolveBatchScope(db, "update-all", { groupID: 9999, scope: allScope });
+        check(missingTarget.kind === "unavailable-target", "7: absent group -> unavailable-target");
+
+        const collab2 = resolveBatchScope(db, "update-all", { groupID: 4837, collectionKey: "COLLAB1", scope: allScope });
+        const collab3 = resolveBatchScope(db, "update-all", { groupID: 5120, collectionKey: "COLLAB1", scope: allScope });
+        check(collab2.kind === "resolved" && collab2.itemIDs.join(",") === "201,202", "8a: shared collection key resolves inside Lab Shared");
+        check(collab3.kind === "resolved" && collab3.itemIDs.join(",") === "301", "8b: same collection key resolves inside Reading Club");
+
+        const noColl = resolveBatchScope(db, "update-all", { groupID: 4837, collectionKey: "NOPE", scope: allScope });
+        check(noColl.kind === "collection-not-found", "9: unknown collection key -> collection-not-found");
+
+        const expanded = resolveBatchScope(db, "update-all", { scope: allScope });
+        check(expanded.itemIDs.join(",") === "101,102,103,201,202,301", "10: unqualified expansion concatenates scope.available in order");
+
+        const cls = classify(db, [101, 102, 103, 999], "update-all");
+        check(cls.actions.length === 1 && cls.actions[0].actionKind === "update", "11a: update-all classifies only stale notes as actions");
+        check(cls.upToDate.length === 2, "11b: none + current fold into up-to-date for update-all");
+        check(cls.notFound.length === 1 && cls.notFound[0].id === 999, "11c: missing item id classifies as not-found");
+
+        const clsImport = classify(db, [101, 102, 103], "import-all-notes");
+        check(clsImport.actions.length === 1 && clsImport.actions[0].actionKind === "create", "12: import-all-notes classifies only noteless items as actions");
+
+        const staleSnapshotDB = { ...db, items: db.items.filter((i) => i.itemID !== 102) };
+        const reclassified = classify(staleSnapshotDB, [101, 102], "update-all");
+        check(reclassified.notFound.some((n) => n.id === 102), "13: an id removed from the db between phases reclassifies as not-found");
+
+        const singleGroups = buildGroups(db, classify(db, [101, 102], "import-all-notes").actions);
+        check(singleGroups.length === 1 && singleGroups[0].header === "Import", "14: single-library contribution falls back to a plain kind header");
+
+        const multiActions = classify(db, [101, 201], "update-all").actions;
+        const multiGroups = buildGroups(db, multiActions);
+        check(
+          multiGroups[0].header === "My Library · Update note" && multiGroups[1].header === "Lab Shared · Update note",
+          "15: multi-library contribution groups under Library-named headers",
+        );
+
+        const noneAvailable = resolveLibraryScope(libs, { mode: "selected", libraries: [{ type: "group", groupID: 9999 }] });
+        check(noneAvailable.available.length === 0, "16a: every selected Library is unavailable");
+        const runNone = batchReducer(IDLE_STATE, { type: "START", db, kind: "update-all", target: {}, scope: noneAvailable });
+        check(runNone.phase === "done" && runNone.notice === "scope-unavailable" && runNone.manifest === null, "16b: scope-unavailable fires before any query runs");
+
+        const multiScope = resolveLibraryScope(libs, {
+          mode: "selected",
+          libraries: [{ type: "personal" }, { type: "group", groupID: 5120 }],
+        });
+        const oneItemMulti = batchReducer(IDLE_STATE, { type: "START", db, kind: "update-all", target: {}, scope: multiScope });
+        check(oneItemMulti.phase === "running", "17: one actionable item from a multi-Library expansion skips confirm");
+
+        const many = batchReducer(IDLE_STATE, { type: "START", db, kind: "update-all", target: {}, scope: allScope });
+        check(many.phase === "confirm", "18: two or more actionable items pause at confirm");
+
+        let cancelRun = batchReducer(many, { type: "CONFIRM" });
+        cancelRun = batchReducer(cancelRun, { type: "TICK", db, count: 1 });
+        cancelRun = batchReducer(cancelRun, { type: "CANCEL" });
+        check(
+          cancelRun.phase === "done" && cancelRun.notice === "cancelled" && cancelRun.result.cancelled === 1,
+          "19: cancel leaves the unreached row pending and reports it as cancelled",
+        );
+        check([...cancelRun.manifest.actionsById.values()].some((a) => a.status === "pending"), "19b: the pending row itself stays pending, not skipped");
+
+        const dbAfterDelete = { ...db, items: db.items.filter((i) => i.itemID !== 201) };
+        let midRun = batchReducer(many, { type: "CONFIRM" });
+        midRun = batchReducer(midRun, { type: "TICK", db: dbAfterDelete, count: 10 });
+        check(midRun.phase === "done" && midRun.result.failed === 1 && midRun.result.updated === 1, "20: an item deleted mid-run fails only that row while the batch still finishes");
+
+        let fullRun = batchReducer(IDLE_STATE, { type: "START", db, kind: "update-all", target: {}, scope: allScope });
+        fullRun = batchReducer(fullRun, { type: "CONFIRM" });
+        fullRun = batchReducer(fullRun, { type: "TICK", db, count: 10 });
+        check(
+          fullRun.result.updated === 2 && fullRun.result.skipped === 4 && fullRun.result.failed === 0,
+          "21: a clean full run accumulates created/updated/skipped/failed correctly",
+        );
+
+        console.log(`${pass}/${total} smoke assertions passed`);
+      }
+
+      // ---- SIMULATED SHELL (throwaway) ----
+
+      function seedDB() {
+        return {
+          libraries: [
+            { libraryID: 1, groupID: null, name: "My Library" },
+            { libraryID: 2, groupID: 4837, name: "Lab Shared" },
+            { libraryID: 3, groupID: 5120, name: "Reading Club" },
+          ],
+          items: [
+            { itemID: 1001, libraryID: 1, title: "Attention Is All You Need", note: "stale", collectionKeys: [] },
+            { itemID: 1002, libraryID: 1, title: "Climate Feedback Loops", note: "none", collectionKeys: [] },
+            { itemID: 1003, libraryID: 1, title: "A Theory of Justice", note: "current", collectionKeys: [] },
+            { itemID: 1004, libraryID: 1, title: "The Selfish Gene", note: "none", collectionKeys: [] },
+            { itemID: 1005, libraryID: 1, title: "Thinking, Fast and Slow", note: "stale", collectionKeys: [] },
+            { itemID: 2001, libraryID: 2, title: "CRISPR Off-Target Effects", note: "stale", collectionKeys: ["COLLAB1"] },
+            { itemID: 2002, libraryID: 2, title: "Deep Learning for Genomics", note: "none", collectionKeys: ["COLLAB1"] },
+            { itemID: 2003, libraryID: 2, title: "Protein Folding Benchmarks", note: "current", collectionKeys: [] },
+            { itemID: 2004, libraryID: 2, title: "Lab Meeting Notes Template", note: "none", isNote: true, collectionKeys: [] },
+            { itemID: 3001, libraryID: 3, title: "Nudge: Improving Decisions", note: "none", collectionKeys: ["COLLAB1"] },
+            { itemID: 3002, libraryID: 3, title: "The Structure of Scientific Revolutions", note: "stale", collectionKeys: [] },
+            { itemID: 3003, libraryID: 3, title: "Sapiens", note: "current", collectionKeys: [] },
+          ],
+          collections: [
+            { libraryID: 2, key: "COLLAB1", name: "Shared readings" },
+            { libraryID: 3, key: "COLLAB1", name: "Book club picks" },
+          ],
+        };
+      }
+
+      const NOTICE_TEXT = {
+        "scope-unavailable": "Every selected Library is unavailable. Nothing was queried.",
+        empty: "Nothing to do — no items matched.",
+        "unavailable-target": "That Library is not available in this database.",
+        "collection-not-found": "That collection was not found in the named Library.",
+        cancelled: "Run cancelled.",
+      };
+
+      const KIND_TITLE = { "update-all": "Update all literature notes", "import-all-notes": "Import all Zotero notes" };
+
+      function pushLog(log, text, tone) {
+        return [...log, { id: log.length, text, tone: tone ?? "info" }].slice(-24);
+      }
+
+      const INITIAL_STATE = {
+        db: seedDB(),
+        removedLibrary: null,
+        savedScope: { mode: "all" },
+        batch: IDLE_STATE,
+        walkthrough: null,
+        log: [{ id: 0, text: "Demo ready. Set a scope, then run a batch.", tone: "info" }],
+      };
+
+      function describeNotice(notice) {
+        return NOTICE_TEXT[notice] ?? notice;
+      }
+
+      function appReducer(state, action) {
+        switch (action.type) {
+          case "reset": {
+            return {
+              db: seedDB(),
+              removedLibrary: null,
+              savedScope: action.savedScope ?? { mode: "all" },
+              batch: IDLE_STATE,
+              walkthrough: action.walkthroughId ? { id: action.walkthroughId, step: 0 } : null,
+              log: [{ id: 0, text: action.note ?? "Demo reset.", tone: "info" }],
+            };
+          }
+          case "set-scope-mode": {
+            const savedScope =
+              action.mode === "all" ? { mode: "all" } : { mode: "selected", libraries: [{ type: "personal" }] };
+            return { ...state, savedScope, log: pushLog(state.log, `Library Scope set to ${action.mode === "all" ? "All Libraries" : "Selected Libraries"}.`) };
+          }
+          case "toggle-scope-member": {
+            if (state.savedScope.mode !== "selected") return state;
+            const key = selectorKey(action.selector);
+            const has = state.savedScope.libraries.some((s) => selectorKey(s) === key);
+            const libraries = has
+              ? state.savedScope.libraries.filter((s) => selectorKey(s) !== key)
+              : [...state.savedScope.libraries, action.selector];
+            return { ...state, savedScope: { mode: "selected", libraries } };
+          }
+          case "corrupt-scope": {
+            return { ...state, savedScope: { mode: "selected" }, log: pushLog(state.log, "Saved Library Scope corrupted (missing member list).", "warn") };
+          }
+          case "remove-lab-shared": {
+            const removedLibrary = state.db.libraries.find((l) => l.groupID === 4837) ?? state.removedLibrary;
+            const libraries = state.db.libraries.filter((l) => l.groupID !== 4837);
+            return { ...state, db: { ...state.db, libraries }, removedLibrary, log: pushLog(state.log, "Left the Lab Shared group — it disappears from the database.", "warn") };
+          }
+          case "restore-lab-shared": {
+            if (!state.removedLibrary) return state;
+            return {
+              ...state,
+              db: { ...state.db, libraries: [...state.db.libraries, state.removedLibrary] },
+              removedLibrary: null,
+              log: pushLog(state.log, "Rejoined the Lab Shared group.", "ok"),
+            };
+          }
+          case "delete-item": {
+            const item = state.db.items.find((i) => i.itemID === action.itemID);
+            return {
+              ...state,
+              db: { ...state.db, items: state.db.items.filter((i) => i.itemID !== action.itemID) },
+              log: pushLog(state.log, `Deleted "${item ? item.title : action.itemID}" from the database.`, "warn"),
+            };
+          }
+          case "run": {
+            const scope = resolveLibraryScope(state.db.libraries, state.savedScope);
+            const batch = batchReducer(IDLE_STATE, {
+              type: "START",
+              db: state.db,
+              kind: action.kind,
+              target: action.target ?? {},
+              scope,
+            });
+            let log = pushLog(state.log, `Ran "${KIND_TITLE[action.kind]}"${action.label ? ` (${action.label})` : ""}.`);
+            if (batch.notice) log = pushLog(log, describeNotice(batch.notice), "warn");
+            else if (batch.phase === "confirm") log = pushLog(log, `Plan ready: ${batch.manifest.confirmIntro}`);
+            else if (batch.phase === "running") log = pushLog(log, "Single item — confirmation skipped, running now.");
+            else if (batch.phase === "done") log = pushLog(log, "Nothing actionable — everything is already up to date.");
+            return { ...state, batch, log };
+          }
+          case "confirm": {
+            const batch = batchReducer(state.batch, { type: "CONFIRM" });
+            return { ...state, batch, log: pushLog(state.log, "Confirmed. Running…") };
+          }
+          case "tick": {
+            const batch = batchReducer(state.batch, { type: "TICK", db: state.db, count: action.count });
+            let log = state.log;
+            if (batch.phase === "done" && state.batch.phase !== "done") {
+              log = pushLog(log, `Run finished: ${batch.result.updated + batch.result.created} done, ${batch.result.failed} failed, ${batch.result.skipped} skipped.`, "ok");
+            }
+            return { ...state, batch, log };
+          }
+          case "cancel": {
+            const batch = batchReducer(state.batch, { type: "CANCEL" });
+            return { ...state, batch, log: pushLog(state.log, `Cancelled with ${batch.result.cancelled} item(s) left pending.`, "warn") };
+          }
+          case "walkthrough-advance": {
+            return { ...state, walkthrough: state.walkthrough ? { ...state.walkthrough, step: state.walkthrough.step + 1 } : null };
+          }
+          default:
+            return state;
+        }
+      }
+
+      // ---- Walkthrough scripts ----
+      // Each scenario resets to a known db + saved scope, then plays a short
+      // sequence of the same actions the free-play buttons dispatch.
+
+      const SELECTED_LAB_ONLY = { mode: "selected", libraries: [{ type: "group", groupID: 4837 }] };
+      const SELECTED_PERSONAL_AND_LAB = { mode: "selected", libraries: [{ type: "personal" }, { type: "group", groupID: 4837 }] };
+      const SELECTED_PERSONAL_AND_READING = { mode: "selected", libraries: [{ type: "personal" }, { type: "group", groupID: 5120 }] };
+
+      const SCENARIOS = {
+        w1: {
+          title: "W1 · All Libraries",
+          blurb: "The happy path: every Library is in scope, so the confirmation groups every actionable item under a Library header before the run finishes.",
+          preset: { mode: "all" },
+          steps: [
+            { label: "Set scope to All Libraries", note: "the scope panel shows all three Libraries available", action: { type: "set-scope-mode", mode: "all" } },
+            { label: "Run \"Update all literature notes\"", note: "the plan groups rows under three Library headers", action: { type: "run", kind: "update-all", target: {} } },
+            { label: "Confirm", note: "the state moves from confirm to running", action: { type: "confirm" } },
+            { label: "Tick x5", note: "the progress bar advances and rows settle", action: { type: "tick", count: 5 } },
+            { label: "Tick x5", note: "the run reaches the flat summary", action: { type: "tick", count: 5 } },
+          ],
+        },
+        w2: {
+          title: "W2 · One group unavailable",
+          blurb: "Selected scope covers My Library and Lab Shared, but Lab Shared has already been left — the confirmation still runs, with a warning sentence naming the skipped count.",
+          preset: SELECTED_PERSONAL_AND_LAB,
+          steps: [
+            { label: "Leave the Lab Shared group", note: "it drops out of the database entirely", action: { type: "remove-lab-shared" } },
+            { label: "Run \"Update all literature notes\"", note: "confirmIntro adds \"1 selected library is unavailable and was skipped\"", action: { type: "run", kind: "update-all", target: {} } },
+            { label: "Confirm", note: "only My Library's rows are in the plan", action: { type: "confirm" } },
+            { label: "Tick x5", note: "the batch completes over the available subset", action: { type: "tick", count: 5 } },
+          ],
+        },
+        w3: {
+          title: "W3 · Every selected Library unavailable",
+          blurb: "Selected scope names only Lab Shared, and that group is unavailable — the notice fires before any query, so no dialog ever opens.",
+          preset: SELECTED_LAB_ONLY,
+          steps: [
+            { label: "Leave the Lab Shared group", note: "the only selected Library disappears", action: { type: "remove-lab-shared" } },
+            { label: "Run \"Import all Zotero notes\"", note: "\"Every selected Library is unavailable\" — no manifest, no confirm", action: { type: "run", kind: "import-all-notes", target: {} } },
+          ],
+        },
+        w4: {
+          title: "W4 · Exact collection, out-of-scope group",
+          blurb: "A protocol link names Lab Shared's COLLAB1 collection directly. Library Scope only has My Library selected, but the exact target bypasses scope, and the shared collection key resolves inside the named Library only.",
+          preset: { mode: "selected", libraries: [{ type: "personal" }] },
+          steps: [
+            {
+              label: 'Simulate link "update-all library=4837 collection=COLLAB1"',
+              note: "a single-Library plan builds even though Lab Shared is out of scope",
+              action: { type: "run", kind: "update-all", target: { groupID: 4837, collectionKey: "COLLAB1" }, label: "library=4837 collection=COLLAB1" },
+            },
+            { label: "Confirm", note: "the plan header is plain — only one Library contributed", action: { type: "confirm" } },
+            { label: "Tick x5", note: "only Lab Shared's COLLAB1 items are touched, not Reading Club's", action: { type: "tick", count: 5 } },
+          ],
+        },
+        w5: {
+          title: "W5 · Link to an absent group",
+          blurb: 'A protocol link names a group this database was never a member of — the exact target resolves to "unavailable-target", with no item counts to report.',
+          preset: { mode: "all" },
+          steps: [
+            {
+              label: 'Simulate link "update-all library=9999"',
+              note: "the notice names no library — selectors carry no name to print",
+              action: { type: "run", kind: "update-all", target: { groupID: 9999 }, label: "library=9999" },
+            },
+          ],
+        },
+        w6: {
+          title: "W6 · Item deleted after confirmation",
+          blurb: "The plan is confirmed against one snapshot. Deleting an item before it is ticked shows the per-phase rule: only that row fails, and the batch still finishes.",
+          preset: { mode: "all" },
+          steps: [
+            { label: "Run \"Update all literature notes\"", note: "the plan captures the current items", action: { type: "run", kind: "update-all", target: {} } },
+            { label: "Confirm", note: "moves to running with every row pending", action: { type: "confirm" } },
+            { label: 'Delete "Attention Is All You Need"', note: "removed from the database, but still listed as pending in the plan", action: { type: "delete-item", itemID: 1001 } },
+            { label: "Tick x5", note: "that row settles as failed; the others settle normally", action: { type: "tick", count: 5 } },
+            { label: "Tick x5", note: "the run still reaches a summary, with exactly one failure", action: { type: "tick", count: 5 } },
+          ],
+        },
+        w7: {
+          title: "W7 · Cancel mid-run",
+          blurb: "Cancelling stops the stream where it stands: rows already settled keep their outcome, and every row that was never reached stays pending in the summary.",
+          preset: { mode: "all" },
+          steps: [
+            { label: "Run \"Update all literature notes\"", note: "a multi-row plan", action: { type: "run", kind: "update-all", target: {} } },
+            { label: "Confirm", note: "moves to running", action: { type: "confirm" } },
+            { label: "Tick x1", note: "one row settles", action: { type: "tick", count: 1 } },
+            { label: "Cancel", note: 'the summary reports "cancelled" and the unreached rows', action: { type: "cancel" } },
+          ],
+        },
+        w8: {
+          title: "W8 · Scope yields one item",
+          blurb: "Selected scope covers My Library and Reading Club; across both, exactly one item is actionable — the confirmation is skipped and the run starts immediately.",
+          preset: SELECTED_PERSONAL_AND_READING,
+          steps: [
+            {
+              label: "Run \"Import all Zotero notes\"",
+              note: "the flattened actionable count across both Libraries is 1, so phase jumps straight to running",
+              action: { type: "run", kind: "import-all-notes", target: {} },
+            },
+            { label: "Tick x1", note: "the single row settles and the run is already done", action: { type: "tick", count: 1 } },
+          ],
+        },
+      };
+      const SCENARIO_ORDER = ["w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8"];
+
+      // ---- UI ----
+
+      function Badge({ children, tone }) {
+        const toneClass =
+          tone === "warn" ? "border-warn text-warn" : tone === "ok" ? "border-ok text-ok" : "border-accent text-accent";
+        return (
+          <span className={`inline-flex items-center gap-1.5 rounded-full border ${toneClass} uppercase text-xs tracking-wide px-2.5 py-1`}>
+            {children}
+          </span>
+        );
+      }
+
+      function StatusIcon({ status }) {
+        if (status === "done") return <CheckCircle2 size={14} className="text-ok shrink-0" />;
+        if (status === "failed") return <AlertTriangle size={14} className="text-warn shrink-0" />;
+        return <Clock size={14} className="text-muted shrink-0" />;
+      }
+
+      function ManifestRows({ manifest }) {
+        return (
+          <div className="space-y-3">
+            {manifest.groups.map((g) => (
+              <div key={g.key}>
+                <p className="text-xs font-medium text-muted mb-1">{g.header}</p>
+                <ul className="space-y-1">
+                  {manifest.byGroup.get(g.key).map((a) => {
+                    const current = manifest.actionsById.get(a.id);
+                    return (
+                      <li key={a.id} className="flex items-center gap-2 text-sm border border-line rounded px-2 py-1.5 bg-panel">
+                        <StatusIcon status={current.status} />
+                        <span className="text-ink leading-snug">{current.label}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      function BatchPanel({ batch, dispatch }) {
+        if (batch.phase === "idle") {
+          return <p className="text-sm text-muted">No batch running. Use a Run button below.</p>;
+        }
+        if (batch.notice) {
+          return (
+            <div className="flex items-start gap-2 text-sm border border-warn rounded-md p-3 bg-panel">
+              <Info size={15} className="text-warn shrink-0 mt-0.5" />
+              <span>{describeNotice(batch.notice)}</span>
+            </div>
+          );
+        }
+        if (batch.phase === "confirm") {
+          return (
+            <div className="space-y-3">
+              <p className="text-sm text-ink">{batch.manifest.confirmIntro}</p>
+              <ManifestRows manifest={batch.manifest} />
+              <div className="text-xs text-muted">
+                {batch.manifest.upToDate.length} already up to date &middot; {batch.manifest.notFound.length} not found
+              </div>
+              <button
+                onClick={() => dispatch({ type: "confirm" })}
+                className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm font-medium hover:bg-accent hover:text-panel transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          );
+        }
+        if (batch.phase === "running") {
+          const pct = batch.progress.total === 0 ? 0 : Math.round((batch.progress.done / batch.progress.total) * 100);
+          return (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs text-muted">
+                  <span>
+                    {batch.progress.done} / {batch.progress.total}
+                  </span>
+                  <span>{pct}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-line overflow-hidden">
+                  <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+              <ManifestRows manifest={batch.manifest} />
+              <button
+                onClick={() => dispatch({ type: "cancel" })}
+                className="rounded-md border border-warn text-warn px-3 py-1.5 text-sm font-medium hover:bg-warn hover:text-panel transition-colors flex items-center gap-1.5"
+              >
+                <Ban size={14} /> Cancel
+              </button>
+            </div>
+          );
+        }
+        // done, no notice
+        const r = batch.result;
+        return (
+          <div className="space-y-2">
+            <div className="grid grid-cols-5 gap-2 text-center">
+              {[
+                ["Created", r.created, "ok"],
+                ["Updated", r.updated, "ok"],
+                ["Skipped", r.skipped, "accent"],
+                ["Failed", r.failed, "warn"],
+                ["Cancelled", r.cancelled, "warn"],
+              ].map(([label, value, tone]) => (
+                <div key={label} className="border border-line rounded-md p-2 bg-panel">
+                  <p className={`font-mono text-lg tabular-nums ${tone === "ok" ? "text-ok" : tone === "warn" ? "text-warn" : "text-accent"}`}>
+                    {value}
+                  </p>
+                  <p className="text-[11px] text-muted">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [state, dispatch] = useReducer(appReducer, INITIAL_STATE);
+        const { db, savedScope, batch, walkthrough, log } = state;
+        const scope = resolveLibraryScope(db.libraries, savedScope);
+        const activeScenario = walkthrough ? SCENARIOS[walkthrough.id] : null;
+
+        function runStep(step) {
+          dispatch(step.action);
+          dispatch({ type: "walkthrough-advance" });
+        }
+
+        return (
+          <main className="bg-ground text-ink font-body min-h-full px-6 py-10 lg:px-10">
+            <header className="max-w-[70ch] mb-8 space-y-3">
+              <Badge tone="warn">Prototype — throwaway — ZotLit #705</Badge>
+              <h1 className="font-display text-4xl font-bold text-balance">Multi-Library batch planning</h1>
+              <p className="text-muted leading-relaxed">
+                When you run "Update all literature notes" or "Import all Zotero notes" over
+                several Zotero Libraries, does this plan &rarr; confirm &rarr; run model feel
+                right — one grouped confirmation, one progress stream, one snapshot per phase —
+                while exact collection links and Indexed Keys keep targeting their named Library
+                outside the scope? Click through the state below, or run a guided walkthrough at
+                the bottom.
+              </p>
+              <button
+                onClick={() => dispatch({ type: "reset" })}
+                className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium hover:border-accent"
+              >
+                Reset demo
+              </button>
+            </header>
+
+            {/* ---------- Current state ---------- */}
+            <section className="space-y-5">
+              <h2 className="font-display text-xl font-bold">Current state</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+                {/* Libraries + scope */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3">
+                  <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                    <Library size={15} className="text-muted" /> Zotero database
+                  </h3>
+                  <ul className="space-y-1.5">
+                    {db.libraries.map((lib) => {
+                      const count = db.items.filter((i) => i.libraryID === lib.libraryID).length;
+                      return (
+                        <li key={lib.libraryID} className="flex items-center justify-between text-sm">
+                          <span>{libraryName(lib)}</span>
+                          <span className="font-mono text-xs text-muted tabular-nums">{count} items</span>
+                        </li>
+                      );
+                    })}
+                    {!db.libraries.some((l) => l.groupID === 4837) && (
+                      <li className="flex items-center justify-between text-sm text-muted italic">
+                        <span>Lab Shared (left)</span>
+                        <button onClick={() => dispatch({ type: "restore-lab-shared" })} className="text-xs text-accent hover:underline flex items-center gap-1">
+                          <RotateCcw size={11} /> rejoin
+                        </button>
+                      </li>
+                    )}
+                  </ul>
+                  <div className="pt-2 border-t border-line space-y-1.5">
+                    <p className="text-xs font-medium text-muted">Saved Library Scope</p>
+                    <p className="text-sm font-mono">
+                      {savedScope.mode === "all"
+                        ? "all"
+                        : Array.isArray(savedScope.libraries)
+                          ? `selected: [${savedScope.libraries.map((s) => (s.type === "personal" ? "personal" : `group ${s.groupID}`)).join(", ")}]`
+                          : "selected: (malformed)"}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-line space-y-1.5">
+                    <p className="text-xs font-medium text-muted">Resolved scope {scope.invalidSaved && <span className="text-warn">(fell back — saved value was invalid)</span>}</p>
+                    <p className="text-sm">
+                      available: {scope.available.length ? scope.available.map((a) => a.name).join(", ") : "none"}
+                    </p>
+                    {scope.unavailable.length > 0 && (
+                      <p className="text-sm text-warn">unavailable: {scope.unavailable.length} selected Library(ies)</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Items */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3">
+                  <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                    <BookOpen size={15} className="text-muted" /> Items
+                  </h3>
+                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                    {db.libraries.map((lib) => (
+                      <div key={lib.libraryID}>
+                        <p className="text-xs font-medium text-muted mb-1">{libraryName(lib)}</p>
+                        <ul className="space-y-1.5">
+                          {db.items
+                            .filter((i) => i.libraryID === lib.libraryID)
+                            .map((item) => (
+                              <li key={item.itemID} className="text-xs border border-line rounded px-2 py-1.5 space-y-0.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-ink leading-snug">{item.title}</span>
+                                  <button onClick={() => dispatch({ type: "delete-item", itemID: item.itemID })} className="text-muted hover:text-warn shrink-0">
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono text-[11px] text-muted border border-line rounded px-1 py-0.5">note: {item.note}</span>
+                                  {item.isNote && <span className="font-mono text-[11px] text-muted border border-line rounded px-1 py-0.5">is a note</span>}
+                                  {item.collectionKeys.length > 0 && (
+                                    <span className="font-mono text-[11px] text-accent border border-accent/50 rounded px-1 py-0.5">{item.collectionKeys.join(", ")}</span>
+                                  )}
+                                </div>
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Batch state */}
+                <div className="bg-panel border border-line rounded-lg p-4 space-y-3 lg:sticky lg:top-4">
+                  <h3 className="font-display font-bold text-sm flex items-center gap-1.5">
+                    <Layers size={15} className="text-muted" /> Batch machine — {batch.phase}
+                    {batch.kind && <span className="text-muted font-normal normal-case text-xs">({KIND_TITLE[batch.kind]})</span>}
+                  </h3>
+                  <BatchPanel batch={batch} dispatch={dispatch} />
+                  <details className="pt-2 border-t border-line">
+                    <summary className="cursor-pointer text-xs font-medium text-muted">Raw state</summary>
+                    <pre className="mt-2 overflow-x-auto font-mono text-[11px] bg-ground border border-line rounded-md p-2 leading-relaxed">
+                      {JSON.stringify(
+                        { savedScope, scope: { ...scope }, phase: batch.phase, notice: batch.notice, progress: batch.progress, result: batch.result },
+                        (k, v) => (v instanceof Map ? Object.fromEntries(v) : v),
+                        2,
+                      )}
+                    </pre>
+                  </details>
+                </div>
+              </div>
+            </section>
+
+            {/* ---------- Free play ---------- */}
+            <section className="mt-10 space-y-3">
+              <h2 className="font-display text-xl font-bold">Free-play</h2>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => dispatch({ type: "set-scope-mode", mode: "all" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent">
+                  Scope: All Libraries
+                </button>
+                <button onClick={() => dispatch({ type: "set-scope-mode", mode: "selected" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent">
+                  Scope: Selected Libraries
+                </button>
+                {savedScope.mode === "selected" && (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1">
+                    {db.libraries.map((lib) => {
+                      const selector = librarySelector(lib);
+                      const on = Array.isArray(savedScope.libraries) && savedScope.libraries.some((s) => selectorKey(s) === selectorKey(selector));
+                      return (
+                        <button
+                          key={lib.libraryID}
+                          onClick={() => dispatch({ type: "toggle-scope-member", selector })}
+                          className={`rounded-full border px-2 py-0.5 text-xs ${on ? "border-accent text-accent" : "border-line text-muted"}`}
+                        >
+                          {libraryName(lib)}
+                        </button>
+                      );
+                    })}
+                  </span>
+                )}
+                <button onClick={() => dispatch({ type: "corrupt-scope" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-warn hover:text-warn">
+                  Corrupt saved scope
+                </button>
+                <button onClick={() => dispatch({ type: "remove-lab-shared" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-warn hover:text-warn">
+                  Leave Lab Shared group
+                </button>
+                <button onClick={() => dispatch({ type: "restore-lab-shared" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-ok hover:text-ok">
+                  Rejoin Lab Shared group
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => dispatch({ type: "run", kind: "update-all", target: {} })} className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm font-medium hover:bg-accent hover:text-panel flex items-center gap-1.5">
+                  <PlayCircle size={14} /> Run "Update all"
+                </button>
+                <button onClick={() => dispatch({ type: "run", kind: "import-all-notes", target: {} })} className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm font-medium hover:bg-accent hover:text-panel flex items-center gap-1.5">
+                  <PlayCircle size={14} /> Run "Import all notes"
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "run", kind: "update-all", target: { groupID: 5120 }, label: "library=5120" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent flex items-center gap-1.5"
+                >
+                  <Link2 size={13} /> Link: update-all library=5120
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "run", kind: "update-all", target: { groupID: 4837, collectionKey: "COLLAB1" }, label: "library=4837 collection=COLLAB1" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent flex items-center gap-1.5"
+                >
+                  <Link2 size={13} /> Link: update-all library=4837 collection=COLLAB1
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "run", kind: "update-all", target: { groupID: 9999 }, label: "library=9999" })}
+                  className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent flex items-center gap-1.5"
+                >
+                  <Link2 size={13} /> Link: update-all library=9999
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => dispatch({ type: "confirm" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent">
+                  Confirm
+                </button>
+                <button onClick={() => dispatch({ type: "tick", count: 1 })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent">
+                  Tick &times;1
+                </button>
+                <button onClick={() => dispatch({ type: "tick", count: 5 })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent">
+                  Tick &times;5
+                </button>
+                <button onClick={() => dispatch({ type: "cancel" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-warn hover:text-warn">
+                  Cancel
+                </button>
+                <button onClick={() => dispatch({ type: "reset" })} className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm hover:border-accent">
+                  Reset
+                </button>
+              </div>
+            </section>
+
+            {/* ---------- Guided walkthroughs ---------- */}
+            <section className="mt-10 space-y-4">
+              <h2 className="font-display text-xl font-bold">Guided walkthroughs</h2>
+              <p className="text-xs text-muted">Starting a walkthrough resets the demo to that scenario's known state.</p>
+              <div className="flex flex-wrap gap-2 border-b border-line pb-3">
+                {SCENARIO_ORDER.map((id) => {
+                  const sc = SCENARIOS[id];
+                  const active = walkthrough && walkthrough.id === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => dispatch({ type: "reset", savedScope: sc.preset, walkthroughId: id, note: `Started ${sc.title}.` })}
+                      className={`rounded-md border px-3 py-1.5 text-sm font-medium ${active ? "border-accent text-accent" : "border-line hover:border-accent"}`}
+                    >
+                      {sc.title}
+                    </button>
+                  );
+                })}
+              </div>
+              {activeScenario && (
+                <div className="space-y-3 max-w-[70ch]">
+                  <p className="text-sm text-muted">{activeScenario.blurb}</p>
+                  <ol className="space-y-2">
+                    {activeScenario.steps.map((step, i) => {
+                      const done = i < walkthrough.step;
+                      const current = i === walkthrough.step;
+                      return (
+                        <li key={i} className={`flex items-start gap-3 ${done ? "opacity-50" : ""}`}>
+                          <button
+                            disabled={!current}
+                            onClick={() => runStep(step)}
+                            className={`shrink-0 rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-40 ${current ? "border-accent text-accent" : "border-line"}`}
+                          >
+                            {done ? <CheckCircle2 size={14} className="inline mr-1 text-ok" /> : null}
+                            {step.label}
+                          </button>
+                          <span className="text-xs text-muted pt-1.5">watch: {step.note}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {walkthrough.step >= activeScenario.steps.length && <p className="text-sm text-ok">Walkthrough complete — keep free-playing above.</p>}
+                  <button
+                    onClick={() => dispatch({ type: "reset", savedScope: activeScenario.preset, walkthroughId: walkthrough.id, note: `Restarted ${activeScenario.title}.` })}
+                    className="text-xs text-muted hover:text-ink underline decoration-dotted"
+                  >
+                    Restart
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* ---------- Event log ---------- */}
+            <section className="mt-10">
+              <div className="bg-panel border border-line rounded-lg p-4 space-y-2 max-w-[70ch]">
+                <h3 className="font-display font-bold text-sm">Event log</h3>
+                <ul className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {log.map((entry) => (
+                    <li key={entry.id} className={`flex items-start gap-2 text-sm ${entry.tone === "warn" ? "text-warn" : entry.tone === "ok" ? "text-ok" : "text-muted"}`}>
+                      {entry.tone === "warn" ? <AlertTriangle size={14} className="shrink-0 mt-0.5" /> : entry.tone === "ok" ? <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> : <Info size={14} className="shrink-0 mt-0.5" />}
+                      <span className="leading-snug">{entry.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          </main>
+        );
+      }
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, { transforms: ["jsx"], production: true });
+      const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+      await import(url);
+    </script>
+  </body>
+</html>
