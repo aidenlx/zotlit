@@ -2,6 +2,7 @@
 
 import type { CliData } from "obsidian";
 
+import { CONTRACT_VERSION } from "./contract";
 import {
   pandocCliFilter,
   pandocDefaults,
@@ -17,8 +18,6 @@ export type {
   SavePandocIntegrationOptions,
   SavePandocIntegrationResult,
 } from "./integration-save";
-
-const CONTRACT_VERSION = 1;
 
 type PandocIntegrationHandler = (params: CliData) => string;
 
@@ -94,6 +93,39 @@ RETRIEVE OR REFRESH
     contractVersion versions the pandoc commands alone; every other zotlit:*
     namespace versions its own CLI Contract independently.
 
+CITATION STYLE
+    A document selects a Zotero-installed style with the zotlit-csl property,
+    which holds one CSL style ID:
+
+        ---
+        zotlit-csl: http://www.zotero.org/styles/nature
+        ---
+
+    The CLI filter resolves that property before citeproc runs, through:
+
+        obsidian-cli zotlit:csl style="http://www.zotero.org/styles/nature"
+
+    Success returns contractVersion, command, the requested "styleId",
+    "parentId" for a dependent style, and "path": the absolute CSL file citeproc
+    opens. Failure returns { "errors": [...] } and stops the run.
+
+    A dependent style resolves to its independent parent's formatting under its
+    own default locale, which is why the response names a file of its own rather
+    than the installed parent.
+
+    path is addressed by the resolved content: the same content answers the same
+    path, and a style edited in Zotero answers another. Resolve on every run and
+    use the path the response carries; a path recorded from an earlier run can
+    name content that no longer matches the installed style.
+
+    Standard Pandoc inputs stay Pandoc's: a document that carries csl alone, or
+    a run that passes --csl, is converted without ZotLit reading either. A
+    document that carries both csl and zotlit-csl stops with csl-ambiguous.
+    ZotLit leaves lang untouched, so the document keeps the language it declares.
+
+    A pair saved under an earlier contractVersion reads no zotlit-csl. Refresh
+    the pair as RETRIEVE OR REFRESH describes before a document relies on it.
+
 RESOLVE
     The CLI filter calls this command during a normal Pandoc run:
 
@@ -110,6 +142,12 @@ ERRORS
     citation-key-missing         The resolved item has no citation key.
     duplicate-citation-key       Two cited items have the same citation key.
     unresolved-citation-intent   A #cite: target is not a literature note.
+    style-missing                Zotero has no style installed under that CSL ID.
+    parent-missing               The dependent style's independent parent is not installed.
+    style-unreadable             A CSL file of that style refuses to be read.
+    style-invalid                That style is no standalone CSL style.
+    csl-write-failed             The resolved CSL style could not be written.
+    csl-ambiguous                The document declares both csl and zotlit-csl.
 
 COMPATIBILITY
     Pandoc 3.1.1 or newer.

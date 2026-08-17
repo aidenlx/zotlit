@@ -23,7 +23,7 @@ describe("Pandoc integration CLI", () => {
 
   it("returns the exact installed Pandoc Integration Pair in one response", () => {
     expect(JSON.parse(handlers[PANDOC_FILES_COMMAND]({}))).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       pluginVersion: PLUGIN_VERSION,
       files: {
         [PANDOC_FILTER_FILENAME]: pandocCliFilter,
@@ -49,6 +49,16 @@ describe("Pandoc integration CLI", () => {
     expect(guide).toContain("citation-key-missing");
     expect(guide).toContain("duplicate-citation-key");
     expect(guide).toContain("unresolved-citation-intent");
+    expect(guide).toContain("zotlit-csl:");
+    expect(guide).toContain("obsidian-cli zotlit:csl style=");
+    expect(guide).toContain('"path"');
+    expect(guide).toContain("style-missing");
+    expect(guide).toContain("parent-missing");
+    expect(guide).toContain("style-unreadable");
+    expect(guide).toContain("style-invalid");
+    expect(guide).toContain("csl-write-failed");
+    expect(guide).toContain("csl-ambiguous");
+    expect(guide).toContain("Refresh");
     expect(guide).toContain("Pandoc 3.1.1 or newer");
     expect(guide).toContain("Obsidian 1.13.4 or newer");
     expect(guide).toContain("Obsidian installer 1.12.7 or newer");

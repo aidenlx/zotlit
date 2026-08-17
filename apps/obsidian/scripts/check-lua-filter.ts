@@ -20,6 +20,19 @@ import {
   PANDOC_RESOLVE_MAP_FILENAME,
 } from "../src/services/pandoc/filter/names.ts";
 import { buildFilterVariant } from "./lua-filter.ts";
+import "./source-alias.ts";
+
+// The `zotlit:csl` answers this script replies with come from the resolver the
+// plugin itself runs, so the materialized file native Pandoc cites with is the
+// one an installed ZotLit produces. Both are reached after the alias hook is
+// registered, and the style validator reads XML through the parser Obsidian's
+// renderer supplies.
+const { Window } = await import("happy-dom");
+Object.assign(globalThis, { DOMParser: new Window().DOMParser });
+const { materializeCslStyle, resolveCslStyle } =
+  await import("../src/services/pandoc/csl.ts");
+const { resolveInstalledStyle } =
+  await import("../src/services/pandoc/styles.ts");
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const filterDir = join(packageRoot, "src/services/pandoc/filter");
@@ -52,6 +65,66 @@ const RESOLVE_MAP = {
     "Smith 2021": "smith2021",
   },
 };
+
+/** doe2020 with an issue month, which each locale renders in its own language. */
+const CSL_REFERENCES = [
+  {
+    id: "doe2020",
+    type: "book",
+    title: "A Book",
+    author: [{ family: "Doe", given: "Jane" }],
+    issued: { "date-parts": [[2020, 3]] },
+  },
+];
+
+const CSL_PARENT = "http://www.zotero.org/styles/journal";
+const CSL_DEPENDENT = "http://www.zotero.org/styles/journal-german";
+const CSL_MISSING = "http://www.zotero.org/styles/uninstalled";
+
+/**
+ * Renders a fixed word and the issue month, so one rendered entry says both
+ * which style formatted it and which locale it was formatted in.
+ */
+const CSL_PARENT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info>
+    <title>Journal</title>
+    <id>${CSL_PARENT}</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><text variable="citation-number" prefix="[" suffix="]"/></layout></citation>
+  <bibliography>
+    <layout>
+      <text value="journal"/>
+      <date variable="issued" prefix=" ">
+        <date-part name="month" form="long"/>
+      </date>
+    </layout>
+  </bibliography>
+</style>`;
+
+/** A dependent style: an alias for its parent, save for the locale it sets. */
+const CSL_DEPENDENT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="de-DE">
+  <info>
+    <title>Journal (German)</title>
+    <id>${CSL_DEPENDENT}</id>
+    <link href="${CSL_PARENT}" rel="independent-parent"/>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+</style>`;
+
+/** A style file of the user's own, which Pandoc opens without ZotLit reading it. */
+const PANDOC_OWNED_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info>
+    <title>Pandoc owned</title>
+    <id>http://example.com/styles/pandoc-owned</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><text value="pandoc-owned-citation"/></layout></citation>
+  <bibliography><layout><text value="pandoc-owned-entry"/></layout></bibliography>
+</style>`;
 
 const ERROR_MAP = {
   errors: [
@@ -408,9 +481,15 @@ async function checkMapErrors(workspace: string): Promise<void> {
 interface Cli {
   workspace: string;
   notes: string;
-  /** The stub answers with this file and records how it was invoked. */
+  /** The stub answers `zotlit:resolve` with this file. */
   response: string;
+  /** The stub answers `zotlit:csl` with this file. */
+  cslResponse: string;
   callLog: string;
+  /** The Zotero data directory the installed styles sit in. */
+  dataDir: string;
+  /** Where a materialized Resolved CSL Style lands. */
+  store: string;
   env: NodeJS.ProcessEnv;
 }
 
@@ -423,16 +502,23 @@ async function setupCli(workspace: string): Promise<Cli> {
   const bin = join(workspace, "bin");
   const callLog = join(workspace, "obsidian-call.txt");
   const response = join(workspace, "obsidian-response.json");
+  const cslResponse = join(workspace, "obsidian-csl-response.json");
+  const dataDir = join(workspace, "zotero");
+  const styles = join(dataDir, "styles");
   await mkdir(notes, { recursive: true });
   await mkdir(bin, { recursive: true });
+  await mkdir(join(styles, "hidden"), { recursive: true });
 
   const stub = join(bin, "obsidian");
   await writeFile(
     stub,
     [
       "#!/bin/sh",
-      `printf '%s|%s\\n' "$PWD" "$*" > "${callLog}"`,
-      `exec cat "${response}"`,
+      `printf '%s|%s\\n' "$PWD" "$*" >> "${callLog}"`,
+      'case "$1" in',
+      `zotlit:csl) exec cat "${cslResponse}" ;;`,
+      `*) exec cat "${response}" ;;`,
+      "esac",
       "",
     ].join("\n"),
   );
@@ -448,29 +534,61 @@ async function setupCli(workspace: string): Promise<Cli> {
     await readFilterFile(PANDOC_DEFAULTS_FILENAME),
   );
 
+  // One Zotero install of a dependent style and its independent parent, one
+  // bibliography whose issue month a locale renders, and one style file the
+  // user owns.
+  await writeFile(join(styles, "hidden", "journal.csl"), CSL_PARENT_STYLE);
+  await writeFile(join(styles, "journal-german.csl"), CSL_DEPENDENT_STYLE);
+  await writeFile(
+    join(workspace, "csl-references.json"),
+    JSON.stringify(CSL_REFERENCES),
+  );
+  await writeFile(join(workspace, "pandoc-owned.csl"), PANDOC_OWNED_STYLE);
+
   return {
     workspace,
     notes,
     response,
+    cslResponse,
     callLog,
+    dataDir,
+    store: join(workspace, "csl-store"),
     env: { PATH: `${bin}:${process.env.PATH ?? ""}` },
   };
 }
 
 /**
  * Run from the workspace with a relative input, so the filter has to resolve the
- * absolute path and switch into the input's directory itself.
+ * absolute path and switch into the input's directory itself. The call log
+ * starts empty, so each run is read on its own.
  */
-function runCli(cli: Cli): Run {
+async function runCli(
+  cli: Cli,
+  {
+    bibliography = "references.json",
+    to = "plain",
+    standalone = false,
+    csl,
+  }: {
+    bibliography?: string;
+    to?: string;
+    standalone?: boolean;
+    /** A style file the user passes on the command line, as `--csl` does. */
+    csl?: string;
+  } = {},
+): Promise<Run> {
+  await rm(cli.callLog, { force: true });
   return pandoc(
     [
       "notes/input.md",
       "--defaults",
       join(cli.notes, PANDOC_DEFAULTS_FILENAME),
       "--bibliography",
-      "references.json",
+      bibliography,
       "--to",
-      "plain",
+      to,
+      ...(standalone ? ["--standalone"] : []),
+      ...(csl === undefined ? [] : ["--csl", csl]),
     ],
     { cwd: cli.workspace, env: cli.env },
   );
@@ -480,6 +598,12 @@ async function checkCliVariant(workspace: string): Promise<void> {
   const cli = await setupCli(workspace);
   await checkCliResolves(cli);
   await checkCliErrorPayload(cli);
+  await checkDependentStyle(cli);
+  await checkDocumentLanguage(cli);
+  await checkPandocOwnedStyle(cli);
+  await checkStyleAmbiguity(cli);
+  await checkCommandLineStyle(cli);
+  await checkUninstalledStyle(cli);
   await checkCliCallFails(cli);
 }
 
@@ -488,7 +612,7 @@ async function checkCliResolves(cli: Cli): Promise<void> {
   const name = "cli variant calls zotlit:resolve";
   await writeFile(cli.response, JSON.stringify(RESOLVE_MAP));
 
-  const run = runCli(cli);
+  const run = await runCli(cli);
   if (!checkRan(name, run)) return;
   check(name, flatten(run.stdout), "(Doe 2020, 33)");
 
@@ -502,7 +626,7 @@ async function checkCliErrorPayload(cli: Cli): Promise<void> {
   const name = "cli variant aborts on an error payload";
   await writeFile(cli.response, JSON.stringify(ERROR_MAP));
 
-  const run = runCli(cli);
+  const run = await runCli(cli);
   if (!checkStopped(name, run)) return;
   check(name, run.stderr, "[item-not-found]");
 }
@@ -511,11 +635,141 @@ async function checkCliErrorPayload(cli: Cli): Promise<void> {
 async function checkCliCallFails(cli: Cli): Promise<void> {
   checks += 1;
   const name = "cli variant aborts when the resolve call fails";
+  await writeFile(
+    join(cli.notes, "input.md"),
+    "[[Doe 2020#cite:locator=33]]\n",
+  );
   await rm(cli.response, { force: true });
 
-  const run = runCli(cli);
+  const run = await runCli(cli);
   if (!checkStopped(name, run)) return;
   check(name, run.stderr, "[resolve-call-failed]");
+}
+
+/**
+ * Answers `zotlit:csl` with what the plugin's own resolver produces for
+ * `styleId`, so citeproc opens the file an installed ZotLit would materialize.
+ */
+async function installCslResponse(cli: Cli, styleId: string): Promise<void> {
+  const response = await resolveCslStyle(styleId, {
+    resolve: (requested) =>
+      resolveInstalledStyle(cli.dataDir, { styleId: requested }),
+    materialize: (xml) => materializeCslStyle(xml, cli.store),
+  });
+  await writeFile(cli.cslResponse, JSON.stringify(response));
+}
+
+/** One document that selects a Zotero-installed style, in the notes directory. */
+async function writeStyledInput(
+  cli: Cli,
+  properties: readonly string[],
+): Promise<void> {
+  await writeFile(
+    join(cli.notes, "input.md"),
+    ["---", ...properties, "---", "", "[[Doe 2020]]", ""].join("\n"),
+  );
+  await writeFile(cli.response, JSON.stringify(RESOLVE_MAP));
+}
+
+/**
+ * The whole native chain: the filter resolves `zotlit-csl` through the shared
+ * resolver, and citeproc formats with the file it answers — the parent's
+ * layout under the dependent style's own default locale.
+ */
+async function checkDependentStyle(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "a dependent zotlit-csl style renders through its parent";
+  await writeStyledInput(cli, [`zotlit-csl: ${CSL_DEPENDENT}`]);
+  await installCslResponse(cli, CSL_DEPENDENT);
+
+  const run = await runCli(cli, { bibliography: "csl-references.json" });
+  if (!checkRan(name, run)) return;
+  check(name, flatten(run.stdout), "[1]", "journal März");
+  check(
+    name,
+    await readFile(cli.callLog, "utf8"),
+    `zotlit:csl style=${CSL_DEPENDENT}`,
+  );
+}
+
+/** ZotLit resolves the style and leaves the document language alone. */
+async function checkDocumentLanguage(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "the filter preserves document lang";
+  await writeStyledInput(cli, [`zotlit-csl: ${CSL_DEPENDENT}`, "lang: en-GB"]);
+  await installCslResponse(cli, CSL_DEPENDENT);
+
+  // Standalone Markdown carries the document metadata this check reads, and
+  // `-citations` keeps the citeproc-rendered text in the output: with that
+  // extension on, Pandoc 3.1.1 writes citations back in `[@key]` syntax.
+  const run = await runCli(cli, {
+    bibliography: "csl-references.json",
+    to: "markdown-citations",
+    standalone: true,
+  });
+  if (!checkRan(name, run)) return;
+  check(name, run.stdout, "lang: en-GB");
+  // The style resolved, and the document's own language governs citeproc over
+  // the locale that style declares.
+  check(name, flatten(run.stdout), "journal March");
+  checkAbsent(name, run.stdout, "zotlit-csl:");
+}
+
+/** A sole standard `csl` belongs to Pandoc, which opens it without ZotLit. */
+async function checkPandocOwnedStyle(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "a sole csl property stays Pandoc's own";
+  await writeStyledInput(cli, [
+    `csl: ${join(cli.workspace, "pandoc-owned.csl")}`,
+  ]);
+  await rm(cli.cslResponse, { force: true });
+
+  const run = await runCli(cli, { bibliography: "csl-references.json" });
+  if (!checkRan(name, run)) return;
+  check(name, flatten(run.stdout), "pandoc-owned-citation");
+  checkAbsent(name, await readFile(cli.callLog, "utf8"), "zotlit:csl");
+}
+
+/** Two style declarations name two owners, so the run stops instead of choosing. */
+async function checkStyleAmbiguity(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "csl and zotlit-csl together stop the run";
+  await writeStyledInput(cli, [
+    `csl: ${join(cli.workspace, "pandoc-owned.csl")}`,
+    `zotlit-csl: ${CSL_DEPENDENT}`,
+  ]);
+  await installCslResponse(cli, CSL_DEPENDENT);
+
+  const run = await runCli(cli, { bibliography: "csl-references.json" });
+  if (!checkStopped(name, run)) return;
+  check(name, run.stderr, "[csl-ambiguous]", '"csl"', '"zotlit-csl"');
+}
+
+/** `--csl` reaches the filter as document metadata, so the same rule applies. */
+async function checkCommandLineStyle(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "a --csl option and zotlit-csl together stop the run";
+  await writeStyledInput(cli, [`zotlit-csl: ${CSL_DEPENDENT}`]);
+  await installCslResponse(cli, CSL_DEPENDENT);
+
+  const run = await runCli(cli, {
+    bibliography: "csl-references.json",
+    csl: join(cli.workspace, "pandoc-owned.csl"),
+  });
+  if (!checkStopped(name, run)) return;
+  check(name, run.stderr, "[csl-ambiguous]");
+}
+
+/** The resolver's own diagnosis reaches the Pandoc run that asked for it. */
+async function checkUninstalledStyle(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "an uninstalled zotlit-csl style stops the run";
+  await writeStyledInput(cli, [`zotlit-csl: ${CSL_MISSING}`]);
+  await installCslResponse(cli, CSL_MISSING);
+
+  const run = await runCli(cli, { bibliography: "csl-references.json" });
+  if (!checkStopped(name, run)) return;
+  check(name, run.stderr, "[style-missing]", CSL_MISSING);
 }
 
 await main();

@@ -36,8 +36,6 @@ interface StyleFile extends InstalledCslStyle {
    * which is the one thing it may say that its independent parent does not.
    */
   defaultLocale: string | undefined;
-  /** The content encloses one `cs:style` element, which every CSL style is. */
-  isStyleElement: boolean;
 }
 
 /** The style and Citation Locale one render asks the resolver for. */
@@ -220,21 +218,29 @@ export class InstalledStyleCache {
       reason,
     });
 
-    // Every CSL file encloses one `cs:style` element, a dependent style as much
-    // as the independent style it points at, so the requested file answers for
-    // its own content before a parent's formatting stands in for it.
-    if (!requested.isStyleElement) {
-      logger.warn("The installed CSL style encloses no style element", {
+    // Read the mtimes first: a file written between the read and its stat would
+    // otherwise be held under an mtime it no longer has, and never re-read.
+    const stamps = await stampFiles([requested.path, independent.path]);
+
+    // Every CSL file is one `cs:style` document, a dependent style as much as
+    // the independent style it points at, so the requested file answers for its
+    // own markup before a parent's formatting stands in for it. A parent stands
+    // in for the formatting a dependent file leaves out, never for markup it
+    // holds broken.
+    const requestedXml = await readStyleXml(requested.path);
+    if (requestedXml === undefined) return failed("unreadable");
+    if (cslStyleRoot(requestedXml) === null) {
+      logger.warn("The installed CSL file is no readable CSL style", {
         styleId,
         path: requested.path,
       });
       return failed("invalid");
     }
 
-    // Read the mtimes first: a file written between the read and its stat would
-    // otherwise be held under an mtime it no longer has, and never re-read.
-    const stamps = await stampFiles([requested.path, independent.path]);
-    const xml = await readStyleXml(independent.path);
+    const xml =
+      requested.path === independent.path
+        ? requestedXml
+        : await readStyleXml(independent.path);
     if (xml === undefined) return failed("unreadable");
     if (!isStandaloneCslStyle(xml)) {
       logger.warn("The installed CSL style renders nothing on its own", {
@@ -448,7 +454,6 @@ function styleFileOf(path: string, xml: string): StyleFile | undefined {
     path,
     parentId: parentIdOf(info),
     defaultLocale: defaultLocaleOf(xml),
-    isStyleElement: isStyleElement(xml),
   };
 }
 
@@ -474,7 +479,6 @@ const REL = regex('rel="(?<rel>[^"]*)"');
  * `<style-options>`, which a locale block carries, out of the match.
  */
 const STYLE_ROOT = /<style(?=[\s/>])[^>]*>/;
-const STYLE_CLOSE = "</style>";
 /** The root element name of every CSL style, whichever prefix it carries. */
 const STYLE_ELEMENT = "style";
 /** The elements a processor formats with; a standalone style declares one. */
@@ -485,39 +489,34 @@ const DEFAULT_LOCALE = regex('default-locale="(?<locale>[^"]*)"');
 const DEFAULT_LOCALE_ATTR = /\s*default-locale="[^"]*"/;
 
 /**
- * Content that encloses one `cs:style` element, which every CSL file is —
- * a dependent style as much as the independent style it points at.
- *
- * Discovery runs this over every installed `.csl` file, so it stays a scan of
- * the text. The one file a render formats with is read as XML instead, by
- * {@link isStandaloneCslStyle}.
- */
-function isStyleElement(xml: string): boolean {
-  const root = STYLE_ROOT.exec(xml);
-  return (
-    root !== null && xml.includes(STYLE_CLOSE, root.index + root[0].length)
-  );
-}
-
-/**
- * Content a processor renders with on its own: well-formed XML rooted in a
- * `cs:style` element that holds the citation or bibliography it formats. A
- * dependent style declares neither of those, which is why it renders through
- * its independent parent.
+ * Well-formed XML rooted in a `cs:style` element, which every CSL file is — a
+ * dependent style as much as the independent style it points at.
  *
  * The whole document is read, so markup a processor would choke on — an
- * element left open, one closed as another — is answered here as a file to
- * repair, rather than reaching citeproc and failing the render.
+ * element left open, one closed as another — is answered as a file to repair,
+ * rather than reaching citeproc and failing the render.
+ *
+ * @returns the root `cs:style` element, or `null` for content that is no CSL style.
  */
-function isStandaloneCslStyle(xml: string): boolean {
+function cslStyleRoot(xml: string): Element | null {
   const parsed = new DOMParser().parseFromString(xml, "application/xml");
   // A parser that cannot read the content reports the failure inside the
   // document it hands back, as its root or beside the part it did read.
-  if (parsed.getElementsByTagName(PARSER_ERROR).length > 0) return false;
+  if (parsed.getElementsByTagName(PARSER_ERROR).length > 0) return null;
   const root = parsed.documentElement;
-  if (root.localName !== STYLE_ELEMENT) return false;
-  return [...root.children].some((child) =>
-    RENDERING_ELEMENTS.has(child.localName),
+  return root.localName === STYLE_ELEMENT ? root : null;
+}
+
+/**
+ * Content a processor renders with on its own: a CSL style document that holds
+ * the citation or bibliography it formats. A dependent style declares neither
+ * of those, which is why it renders through its independent parent.
+ */
+function isStandaloneCslStyle(xml: string): boolean {
+  const root = cslStyleRoot(xml);
+  return (
+    root !== null &&
+    [...root.children].some((child) => RENDERING_ELEMENTS.has(child.localName))
   );
 }
 

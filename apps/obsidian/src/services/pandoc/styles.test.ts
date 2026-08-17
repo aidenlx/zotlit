@@ -520,6 +520,13 @@ describe("resolveInstalledStyle", () => {
       "ieee.csl",
       `<style version="1.0"><info><id>${IEEE}</id></info><bibliography><layout/></citation></style>`,
     );
+    // A dependent style answers for its own markup: its parent stands in for
+    // the formatting it leaves out, never for markup it holds broken.
+    await library.writeCsl(
+      "nature-neuroscience.csl",
+      `<style version="1.0"><info><id>${NATURE_NEUROSCIENCE}</id><link href="${NATURE}" rel="independent-parent"/></info><layout/></citation></style>`,
+    );
+    await library.writeStyle("nature.csl", { id: NATURE, hidden: true });
 
     await expect(
       resolveInstalledStyle(library.dataDir, { styleId: APA }),
@@ -533,6 +540,16 @@ describe("resolveInstalledStyle", () => {
     ).resolves.toEqual({
       kind: "failed",
       styleId: IEEE,
+      reason: "invalid",
+    });
+    await expect(
+      resolveInstalledStyle(library.dataDir, {
+        styleId: NATURE_NEUROSCIENCE,
+      }),
+    ).resolves.toEqual({
+      kind: "failed",
+      styleId: NATURE_NEUROSCIENCE,
+      parentId: NATURE,
       reason: "invalid",
     });
   });

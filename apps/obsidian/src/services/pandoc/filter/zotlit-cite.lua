@@ -4,6 +4,9 @@
 -- One source, two built variants: the cli region shells out to a live Obsidian
 -- process, the sandbox region reads a pre-written resolve map. The build keeps
 -- exactly one of them; there is no runtime fallback between the two.
+--
+-- The cli variant also resolves a document's `zotlit-csl` property to the CSL
+-- file citeproc opens, through `zotlit:csl`.
 
 PANDOC_VERSION:must_be_at_least(
   "3.1.1",
@@ -30,10 +33,28 @@ local function report_errors()
   error(string.format("zotlit-cite: stopped on %d error(s)", #errors), 0)
 end
 
+--- Decodes one JSON response from a `zotlit:*` command.
+--- @return table payload
+local function decode_payload(response, code, source)
+  local ok, payload = pcall(pandoc.json.decode, response, false)
+  if not ok or type(payload) ~= "table" then
+    add_error(
+      code,
+      string.format("The %s is not valid JSON: %s", source, tostring(response))
+    )
+    report_errors()
+  end
+  return payload
+end
+
 --@variant cli
---- Calls the `zotlit:resolve` handler once, from the input file's directory so the
---- Obsidian CLI targets the vault that holds the input instead of the active vault.
-local function read_resolve_payload()
+--- The absolute path of the Markdown input, which names the vault the Obsidian
+--- CLI answers for.
+local input_absolute
+local function input_path()
+  if input_absolute then
+    return input_absolute
+  end
   local input = PANDOC_STATE.input_files[1]
   if not input then
     add_error(
@@ -42,31 +63,92 @@ local function read_resolve_payload()
     )
     report_errors()
   end
-  local absolute = input
-  if not pandoc.path.is_absolute(absolute) then
-    absolute = pandoc.path.normalize(
-      pandoc.path.join({ pandoc.system.get_working_directory(), absolute })
+  input_absolute = input
+  if not pandoc.path.is_absolute(input) then
+    input_absolute = pandoc.path.normalize(
+      pandoc.path.join({ pandoc.system.get_working_directory(), input })
     )
   end
+  return input_absolute
+end
 
+--- Calls one `zotlit:*` handler, from the input file's directory so the Obsidian
+--- CLI targets the vault that holds the input instead of the active vault.
+local function call_obsidian(code, arguments)
   local response
   local ok, err = pcall(function()
-    pandoc.system.with_working_directory(pandoc.path.directory(absolute), function()
-      response = pandoc.pipe("obsidian", { "zotlit:resolve", "file=" .. absolute }, "")
+    pandoc.system.with_working_directory(pandoc.path.directory(input_path()), function()
+      response = pandoc.pipe("obsidian", arguments, "")
     end)
   end)
   if not ok then
     add_error(
-      "resolve-call-failed",
+      code,
       string.format(
-        "`obsidian zotlit:resolve file=%s` failed: %s. Obsidian must be running with the input file's vault open and its command line interface enabled.",
-        absolute,
+        "`obsidian %s` failed: %s. Obsidian must be running with the input file's vault open and its command line interface enabled.",
+        table.concat(arguments, " "),
         tostring(err)
       )
     )
     report_errors()
   end
   return response
+end
+
+local function read_resolve_payload()
+  return call_obsidian(
+    "resolve-call-failed",
+    { "zotlit:resolve", "file=" .. input_path() }
+  )
+end
+
+--- The absolute CSL file `zotlit:csl` materializes for one installed style ID.
+local function csl_path(style)
+  local context = string.format("zotlit-csl: %s", style)
+  local payload = decode_payload(
+    call_obsidian("csl-call-failed", { "zotlit:csl", "style=" .. style }),
+    "csl-response-invalid",
+    "zotlit:csl response"
+  )
+  if payload.errors and #payload.errors > 0 then
+    for _, err in ipairs(payload.errors) do
+      add_error(
+        err.code or "csl-failed",
+        err.message or "The zotlit:csl response reported an error with no message.",
+        context
+      )
+    end
+    report_errors()
+  end
+  if type(payload.path) ~= "string" then
+    add_error(
+      "csl-response-invalid",
+      "The zotlit:csl response carries no style path.",
+      context
+    )
+    report_errors()
+  end
+  return payload.path
+end
+
+--- Replaces a sole `zotlit-csl` with the CSL path citeproc opens. A standard
+--- `csl` stays Pandoc's own, and `lang` is left as the document declares it.
+local function resolve_style(meta)
+  local requested = meta["zotlit-csl"]
+  if requested == nil then
+    return meta
+  end
+  if meta.csl ~= nil then
+    add_error(
+      "csl-ambiguous",
+      'The document declares its Citation and References Style twice: "csl" names a style file Pandoc opens, "zotlit-csl" names the Zotero-installed style ID ZotLit resolves. Keep one of them.'
+    )
+    report_errors()
+  end
+  local style = pandoc.utils.stringify(requested)
+  meta.csl = pandoc.MetaString(csl_path(style))
+  meta["zotlit-csl"] = nil
+  return meta
 end
 --@end
 
@@ -92,21 +174,22 @@ local function read_resolve_payload()
   handle:close()
   return response
 end
+
+--- The sandbox host renders with the style it hands the engine, so document
+--- metadata reaches Pandoc as the document wrote it.
+local function resolve_style(meta)
+  return meta
+end
 --@end
 
 --- The `linkpath -> citation key` map, keyed by decoded bare linkpath.
 --- @return table<string, string>
 local function load_citations()
-  local response = read_resolve_payload()
-  local ok, payload = pcall(pandoc.json.decode, response, false)
-  if not ok or type(payload) ~= "table" then
-    add_error(
-      "resolve-map-invalid",
-      string.format("The resolution map is not valid JSON: %s", tostring(response))
-    )
-    report_errors()
-  end
-
+  local payload = decode_payload(
+    read_resolve_payload(),
+    "resolve-map-invalid",
+    "resolution map"
+  )
   if payload.errors and #payload.errors > 0 then
     for _, err in ipairs(payload.errors) do
       add_error(
@@ -415,6 +498,7 @@ local function process_inlines(inlines)
 end
 
 function Pandoc(doc)
+  doc.meta = resolve_style(doc.meta)
   citations = load_citations()
   local converted = doc:walk({ Inlines = process_inlines })
   if #errors > 0 then
