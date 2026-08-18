@@ -31,8 +31,7 @@ The built-in Obsidian export command owns requests for export through ZotLit's m
 ## Set up or refresh the pair
 
 1. Retrieve the installed pair with the command named in the live guide.
-2. Parse its single JSON response and record the reported plugin version in
-   the final report.
+2. Record the reported plugin version in the final report.
 3. Compare both destination files byte for byte.
 4. When either file differs, stage both returned files and replace both
    destination files as one pair. Preserve the prior pair until both staged
@@ -49,15 +48,17 @@ Better BibTeX CSL-JSON auto-export for automatic refresh and accept a manual
 Zotero CSL JSON export. Treat the bibliography as user-owned input: ZotLit
 supplies Citation Keys to Pandoc and leaves bibliography creation to Zotero.
 
-Leave the citation style with its owner. The live guide states which style input
-ZotLit resolves and which one stays Pandoc's; follow it. Ask the user which style
-they mean before a document carries more than one style input.
+`zotlit-csl` is ZotLit-resolved; `csl` and `--csl` are Pandoc-owned. The live
+guide defines the cases. When a document carries both, identify the conflict to
+the user and ask which input to keep before running Pandoc.
 
-Use the minimal `--defaults` invocation from the live guide. Quote every
-user-selected path and keep `--fail-if-warnings`, so a Citation Key missing
-from the bibliography stops the export. Write to a unique staged output beside
-the requested output. In a normal export, let the Lua filter call
-`zotlit:resolve`.
+Native exports inherit `lang` from the document. The vault Citation Locale
+applies to in-app rendering and built-in export only.
+
+Use the minimal invocation from the live guide. Quote every user-selected path.
+Configure the run so a Citation Key missing from the bibliography stops the
+export. Write to a unique staged output beside the requested output. In a
+normal export, the Lua filter handles citation and style resolution.
 
 Publish the requested output only after Pandoc exits successfully and the
 staged file is non-empty. Confirm replacement when the requested output already
@@ -68,12 +69,12 @@ staged file.
 
 1. Read the native Pandoc error and confirm which input, workflow folder, bibliography, and output path were used.
 2. Confirm that the saved pair matches the current response from the installed plugin.
-3. Call `zotlit:resolve` directly only after the normal run fails, with the
-   absolute input path and the vault targeting established in **Start from the
-   installed contract**.
-4. Interpret the response through the error definitions and recovery guidance in the live guide.
-5. Compare every resolved Citation Key with the `id` values in the supplied
-   bibliography before retrying the normal Pandoc run.
+3. Route by error type:
+   - Style-related error: call `zotlit:csl` directly and interpret the
+     response through the guide's error definitions.
+   - Citation-related error: call `zotlit:resolve` directly and interpret
+     the response through the guide's error definitions. Compare resolved
+     Citation Keys against the supplied bibliography before retrying.
 
 When resolved keys are absent from the bibliography, name every missing key
 and ask the user for a refreshed Better BibTeX CSL-JSON auto-export or a new
