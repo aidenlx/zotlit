@@ -166,12 +166,7 @@ export class AnnotationView extends ItemView {
         workspace: this.#deps.app.workspace,
         noteFeature: this.#deps.noteFeature,
         getImportHandle: () => this.#importHandle,
-        onSettled: () => {
-          const activeFile = this.#deps.app.workspace.getActiveFile();
-          if (this.#itemKey !== null && activeFile) {
-            this.#prepareImportHandle(activeFile.path);
-          }
-        },
+        onSettled: () => this.#syncImportHandle(),
       }),
       renderComment: createCommentRenderer({
         app: this.#deps.app,
@@ -211,7 +206,14 @@ export class AnnotationView extends ItemView {
 
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
-        if (this.#followMode === "note") this.#reload();
+        if (this.#followMode === "note") {
+          this.#reload();
+          return;
+        }
+        // Reader- and linked-follow keep the same item across note switches,
+        // so no reload runs to refresh the drag-insert handle. Sync it here so
+        // it tracks the note a drag would land in.
+        this.#syncImportHandle();
       }),
     );
 
@@ -452,9 +454,7 @@ export class AnnotationView extends ItemView {
       itemDisplayLabel: this.#resolveDisplayLabel(),
     });
 
-    const activeFile = this.#deps.app.workspace.getActiveFile();
-    if (activeFile) this.#prepareImportHandle(activeFile.path);
-    else this.#importHandle = null;
+    this.#syncImportHandle();
 
     try {
       const client = db.client;
@@ -593,6 +593,18 @@ export class AnnotationView extends ItemView {
     this.#groupID = null;
     this.#itemKey = null;
     this.#importHandle = null;
+  }
+
+  /**
+   * Point the drag-insert import handle at the active note, in every follow
+   * mode. The handle is the active note's, not the loaded item's, so it tracks
+   * the active file rather than the load target.
+   */
+  #syncImportHandle(): void {
+    if (this.#itemKey === null) return;
+    const activeFile = this.#deps.app.workspace.getActiveFile();
+    if (activeFile) this.#prepareImportHandle(activeFile.path);
+    else this.#importHandle = null;
   }
 
   /**
