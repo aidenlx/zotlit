@@ -219,17 +219,13 @@
   "settings_db_source_id_profile": "Profile:",
   "settings_db_source_id_data": "Data:",
   "settings_db_source_id_value": "Source ID:",
-  "settings_db_library_name": "Default library",
-  "settings_db_library_desc": "Library used when inserting citations or listing items.",
-  "settings_db_library_user": "My Library",
-  "settings_db_library_unknown": "Library {libraryID}",
-  "settings_db_library_unavailable": "Open the Zotero database to choose a library.",
   "settings_library_scope_name": "Library scope",
   "settings_library_scope_desc": "Libraries used for item search, citation key resolution, and library-wide commands.",
   "settings_library_scope_all": "All libraries",
   "settings_library_scope_selected": "Selected libraries",
   "settings_library_scope_add": "Add library",
   "settings_library_scope_add_none": "Every library is already selected",
+  "settings_library_scope_personal": "My Library",
   "settings_library_scope_group": "Group {groupID}",
   "settings_library_scope_unavailable": "Unavailable in this Zotero database.",
   "settings_library_scope_invalid": "The saved library scope is invalid. ZotLit is using My Library until you select a library scope here.",
@@ -727,8 +723,20 @@
   "welcome_step_connect_title": "Connect to Zotero",
   "welcome_step_connect_checking": "Looking for Zotero in your default profile…",
   "welcome_step_connect_missing": "We couldn't find your Zotero data directory.",
-  "welcome_step_connect_connected": "{library} · {count} items",
-  "welcome_library_default": "My Library",
+  "welcome_step_connect_connected": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 item",
+        "category=*": "{formatted} items"
+      }
+    }
+  ],
   "welcome_action_open_settings": "Open settings",
   "welcome_action_locate": "Locate manually",
   "welcome_step_folder_title": "Choose where literature notes live",

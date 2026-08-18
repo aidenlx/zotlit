@@ -27,7 +27,7 @@ export interface WelcomeViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "ready" | "client" | "error" | "on">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
-  settings: Pick<SettingsService, "loaded" | "current" | "subscribe">;
+  settings: Pick<SettingsService, "subscribe">;
   setupActions: SetupActions;
 }
 

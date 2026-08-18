@@ -24,7 +24,7 @@ describe("candidateRow", () => {
   it("states the Item summary, the Library, and the bare Zotero item key", () => {
     expect(candidateRow(candidate())).toEqual({
       summary: "Doe (2024): A study of citations",
-      library: m.settings_db_library_user(),
+      library: m.settings_library_scope_personal(),
       key: "DOE2024",
     });
   });

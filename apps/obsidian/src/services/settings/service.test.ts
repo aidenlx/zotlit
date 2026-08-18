@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
 
 import {
+  migrateLegacyV0,
   migrateV1ToV2,
   migrateV2ToV3,
   migrateV3ToV4,
@@ -790,17 +791,52 @@ describe("SettingsService v1→v9 migration", () => {
     });
   });
 
-  it("v8 data selects my library and keeps the default library value", async () => {
-    const plugin = new PluginStub({
-      __VERSION__: 8,
-      "zotero.citation-library": 4,
-    });
+  it.each([1, 4] as const)(
+    "v8 data with default library %i selects my library and drops the retired key",
+    async (citationLibrary) => {
+      const plugin = new PluginStub({
+        __VERSION__: 8,
+        "zotero.citation-library": citationLibrary,
+      });
+      const saveSpy = vi.spyOn(plugin, "saveData");
+      const { service } = makeService({ plugin, migrateV8: migrateV8ToV9 });
+      await service.ready;
+      expect(service.current).toEqual({
+        ...defaults,
+        "zotero.library-scope": {
+          mode: "selected",
+          libraries: [{ type: "personal" }],
+        },
+      });
+      expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+        __VERSION__: 9,
+        "zotero.library-scope": {
+          mode: "selected",
+          libraries: [{ type: "personal" }],
+        },
+      });
+    },
+  );
+
+  it("legacy v0 data selects my library and drops the retired key", async () => {
+    const plugin = new PluginStub({ citationLibrary: 4 });
     const saveSpy = vi.spyOn(plugin, "saveData");
-    const { service } = makeService({ plugin, migrateV8: migrateV8ToV9 });
+    const { service } = makeService({
+      plugin,
+      migrateLegacy: migrateLegacyV0,
+      migrateV1: migrateV1ToV2,
+      migrateV2: migrateV2ToV3,
+      migrateV3: migrateV3ToV4,
+      migrateV4: migrateV4ToV5,
+      migrateV5: migrateV5ToV6,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
+      migrateV8: migrateV8ToV9,
+    });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
-      "zotero.citation-library": 4,
+      "citation.open-as-links": true,
       "zotero.library-scope": {
         mode: "selected",
         libraries: [{ type: "personal" }],
@@ -808,7 +844,7 @@ describe("SettingsService v1→v9 migration", () => {
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
       __VERSION__: 9,
-      "zotero.citation-library": 4,
+      "citation.open-as-links": true,
       "zotero.library-scope": {
         mode: "selected",
         libraries: [{ type: "personal" }],
@@ -816,11 +852,47 @@ describe("SettingsService v1→v9 migration", () => {
     });
   });
 
-  it("a fresh installation discovers every library", async () => {
-    const { service } = makeService({ plugin: new PluginStub(null) });
+  it("a fresh installation persists no override and discovers every library", async () => {
+    const plugin = new PluginStub(null);
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin });
     await service.ready;
     expect(service.current?.["zotero.library-scope"]).toEqual({ mode: "all" });
+    expect(saveSpy).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["all libraries", { mode: "all" }],
+    [
+      "my library alone",
+      { mode: "selected", libraries: [{ type: "personal" }] },
+    ],
+    [
+      "my library and groups in canonical order",
+      {
+        mode: "selected",
+        libraries: [
+          { type: "personal" },
+          { type: "group", groupID: 118 },
+          { type: "group", groupID: 4200309 },
+        ],
+      },
+    ],
+  ] as const)(
+    "a current v9 library scope naming %s loads unchanged and is not rewritten",
+    async (_label, scope) => {
+      const plugin = new PluginStub({
+        __VERSION__: 9,
+        "zotero.library-scope": scope,
+      });
+      const saveSpy = vi.spyOn(plugin, "saveData");
+      const { service } = makeService({ plugin });
+      await service.ready;
+      expect(service.current?.["zotero.library-scope"]).toEqual(scope);
+      expect(service.diagnostics).toEqual([]);
+      expect(saveSpy).not.toHaveBeenCalled();
+    },
+  );
 
   it("version 10 is future and falls back to defaults with a warning", async () => {
     const plugin = new PluginStub({ __VERSION__: 10 });
@@ -905,6 +977,40 @@ describe("SettingsService broken overrides", () => {
     expect(service.diagnostics).toEqual([
       { key: "server.enabled", value: "not-a-boolean" },
     ]);
+  });
+
+  it("keeps a broken library scope on disk until the user repairs it", async () => {
+    const brokenScope = { mode: "selected", libraries: [] };
+    const plugin = new PluginStub({
+      __VERSION__: 9,
+      "zotero.library-scope": brokenScope,
+    });
+    const { service } = makeService({ plugin });
+    await service.ready;
+
+    expect(service.current?.["zotero.library-scope"]).toEqual(
+      defaults["zotero.library-scope"],
+    );
+    expect(service.diagnostics).toEqual([
+      { key: "zotero.library-scope", value: brokenScope },
+    ]);
+
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "zotero.library-scope": brokenScope,
+      "note.literature-folder": "/moved",
+    });
+
+    service.update({ "zotero.library-scope": { mode: "all" } });
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "zotero.library-scope": { mode: "all" },
+      "note.literature-folder": "/moved",
+    });
   });
 
   it("replaces the raw override and clears the diagnostic on repair", async () => {

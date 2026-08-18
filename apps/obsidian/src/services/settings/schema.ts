@@ -1,7 +1,6 @@
 import { getLogLevels } from "@logtape/logtape";
 import * as v from "valibot";
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
 import {
   autoTrimSchema,
   DEFAULT_AUTO_TRIM,
@@ -118,7 +117,6 @@ export const schema = v.object({
 
   "zotero.auto-refresh": v.boolean(),
   "zotero.read-mode": zoteroReadMode,
-  "zotero.citation-library": settingsNumber,
   /**
    * Libraries used for item search, citation key resolution, and library-wide
    * commands. Strict by design — an out-of-order or empty selection is broken
@@ -172,7 +170,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,
   "zotero.auto-refresh": true,
   "zotero.read-mode": "auto",
-  "zotero.citation-library": USER_LIBRARY_ID,
   "zotero.library-scope": DEFAULT_LIBRARY_SCOPE,
   "attachment.folder-path": null,
   "attachment.import": true,

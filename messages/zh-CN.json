@@ -183,17 +183,13 @@
   "settings_db_source_id_profile": "配置文件：",
   "settings_db_source_id_data": "数据：",
   "settings_db_source_id_value": "源 ID：",
-  "settings_db_library_name": "默认文库",
-  "settings_db_library_desc": "插入引文或列出条目时使用的文库。",
-  "settings_db_library_user": "我的文库",
-  "settings_db_library_unknown": "文库 {libraryID}",
-  "settings_db_library_unavailable": "打开 Zotero 数据库以选择文库。",
   "settings_library_scope_name": "文库范围",
   "settings_library_scope_desc": "用于条目搜索、文献引用标识（citation key）解析和全库命令的文库。",
   "settings_library_scope_all": "所有文库",
   "settings_library_scope_selected": "选定文库",
   "settings_library_scope_add": "添加文库",
   "settings_library_scope_add_none": "所有文库均已选定",
+  "settings_library_scope_personal": "我的文库",
   "settings_library_scope_group": "群组 {groupID}",
   "settings_library_scope_unavailable": "在当前 Zotero 数据库中不可用。",
   "settings_library_scope_invalid": "保存的文库范围无效。在此重新选择文库范围之前，ZotLit 使用我的文库。",
@@ -689,8 +685,19 @@
   "welcome_step_connect_title": "连接到 Zotero",
   "welcome_step_connect_checking": "在您的默认配置文件中寻找 Zotero…",
   "welcome_step_connect_missing": "我们找不到您的 Zotero 数据目录。",
-  "welcome_step_connect_connected": "{library} · {count} 条目",
-  "welcome_library_default": "我的文库",
+  "welcome_step_connect_connected": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=*": "{formatted} 条目"
+      }
+    }
+  ],
   "welcome_action_open_settings": "打开设置",
   "welcome_action_locate": "手动定位",
   "welcome_step_folder_title": "选择文献笔记的存放位置",

@@ -9,6 +9,7 @@ import {
   migrateV5ToV6,
   migrateV6ToV7,
   migrateV7ToV8,
+  migrateV8ToV9,
 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
@@ -25,7 +26,7 @@ describe("migrateLegacyV0", () => {
     expect(migrateLegacyV0({})).toEqual({});
   });
 
-  it("remaps every non-default v0 key to its v1 dotted equivalent", () => {
+  it("remaps every non-default v0 key to its v1 dotted equivalent, dropping the retired default library", () => {
     expect(
       migrateLegacyV0({
         logLevel: "DEBUG",
@@ -59,7 +60,6 @@ describe("migrateLegacyV0", () => {
       "template.auto-trim-leading": "nl",
       "template.auto-trim-trailing": "slurp",
       "zotero.auto-refresh": false,
-      "zotero.citation-library": 2,
       "attachment.import": false,
       "attachment.folder-path": "ZtImg",
     });
@@ -590,5 +590,50 @@ describe("migrateV7ToV8", () => {
   it("returns an empty object for non-plain inputs", () => {
     expect(migrateV7ToV8(null)).toEqual({});
     expect(migrateV7ToV8(42)).toEqual({});
+  });
+});
+
+describe("migrateV8ToV9", () => {
+  const MY_LIBRARY = {
+    mode: "selected",
+    libraries: [{ type: "personal" }],
+  };
+
+  it.each([1, 4, "not-a-number"] as const)(
+    "selects my library and drops the default library value %s",
+    (citationLibrary) => {
+      expect(
+        migrateV8ToV9({
+          __VERSION__: 8,
+          "zotero.citation-library": citationLibrary,
+          "note.literature-folder": "Refs",
+        }),
+      ).toEqual({
+        __VERSION__: 8,
+        "note.literature-folder": "Refs",
+        "zotero.library-scope": MY_LIBRARY,
+      });
+    },
+  );
+
+  it("selects my library when no default library was ever saved", () => {
+    expect(migrateV8ToV9({ __VERSION__: 8 })).toEqual({
+      __VERSION__: 8,
+      "zotero.library-scope": MY_LIBRARY,
+    });
+  });
+
+  it("replaces a scope value that a future downgrade left behind", () => {
+    expect(
+      migrateV8ToV9({
+        __VERSION__: 8,
+        "zotero.library-scope": { mode: "all" },
+      }),
+    ).toEqual({ __VERSION__: 8, "zotero.library-scope": MY_LIBRARY });
+  });
+
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV8ToV9(null)).toEqual({});
+    expect(migrateV8ToV9(42)).toEqual({});
   });
 });

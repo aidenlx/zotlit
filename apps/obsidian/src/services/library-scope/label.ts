@@ -15,6 +15,6 @@ export function libraryLabel(library: AvailableLibrary): string {
  */
 export function selectorLabel(selector: LibrarySelector): string {
   return selector.type === "personal"
-    ? m.settings_db_library_user()
+    ? m.settings_library_scope_personal()
     : m.settings_library_scope_group({ groupID: selector.groupID });
 }

@@ -55,7 +55,7 @@ ZotLit also excludes citation-like text in code, math, `%%` comments, frontmatte
 
 ### Resolution
 
-ZotLit resolves Pandoc citation keys against Zotero's native citation key field in the **Default library**. It does not use the `citekey` frontmatter field for resolution.
+ZotLit resolves Pandoc citation keys against Zotero's native citation key field, across every library in your **Library scope**. It does not use the `citekey` frontmatter field for resolution.
 
 An item can appear as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. An unresolved key stays in its native source and appears as a Reference Error in the sidebar.
 

@@ -23,7 +23,7 @@ import type {
   SettingsKey,
   SettingTabContext,
 } from "./context";
-import { databasePageItems, libraryDefinition } from "./database";
+import { databasePageItems } from "./database";
 import {
   decodeLogLevel,
   diagnosticsPageItems,
@@ -172,7 +172,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
       resourcesGroup(ctx),
 
       // Hub — the most-used settings, no top-level heading (per Obsidian style).
-      libraryDefinition(ctx),
       ...libraryScopeItems(ctx),
       {
         name: m.settings_note_folder_name(),
