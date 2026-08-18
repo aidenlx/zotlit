@@ -26,8 +26,9 @@
  *   format and bloats user files.
  * - Default-equal override values are still explicit overrides and must
  *   persist; do not auto-delete a key because its value equals the default.
- * - V8 load is non-writing: non-schema keys and bad per-key values are dropped
- *   in memory only and may disappear on the next explicit save.
+ * - V8 load is non-writing: non-schema keys are dropped in memory only and may
+ *   disappear on the next explicit save, while a known key whose value fails
+ *   validation keeps its raw value on disk (see Broken overrides).
  * - V1 data migrates to v2 (`migrateV1`): every `note.frontmatter-fields` item
  *   gains a required `language`, stamped `"javascript"` except for the three
  *   byte-exact v1 default exprs, which become their Liquid equivalents.
@@ -47,6 +48,17 @@
  * - Keep schemas validation-only unless normalization is intentional: mutation
  *   stores the candidate object, while disk recovery stores per-key
  *   `safeParse` output.
+ *
+ * ## Broken overrides
+ *
+ * A v8 override on a known key whose value fails per-key validation is a
+ * *broken override*. Its effective value is that key's default in every
+ * snapshot (`current`, `loaded`, subscribers), while the raw value stays in
+ * `#broken` and is written back on every save, so an unrelated mutation cannot
+ * silently discard it. `diagnostics` names each broken key so a consumer can
+ * report it. `update()` and `reset()` of that key clear the entry, which is the
+ * only way the raw value leaves the file. Migration paths do not preserve
+ * broken values: they rewrite the file as best-effort cleanup.
  *
  * ## Out of scope
  *
@@ -103,6 +115,16 @@ export type SettingsPatch = {
   [K in keyof Settings]?: Settings[K] | typeof RESET_SETTING;
 };
 
+/** One known settings key whose persisted override failed validation. */
+export interface SettingsDiagnostic {
+  readonly key: keyof Settings;
+  /** The rejected value as persisted, kept until that key is updated or reset. */
+  readonly value: unknown;
+}
+
+/** Raw values of broken overrides, keyed by the settings key they belong to. */
+type BrokenOverrides = ReadonlyMap<SettingsKey, unknown>;
+
 export interface SettingsServiceOptions {
   plugin: Pick<Plugin, "loadData" | "saveData">;
   /**
@@ -153,6 +175,7 @@ export class SettingsService extends Service<void> {
   readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
 
   #overrides: Partial<Settings> = {};
+  #broken: BrokenOverrides = new Map();
   #loaded = false;
   #hydrationOrigin: HydrationOrigin | null = null;
   #pendingWrite: Promise<void> | undefined;
@@ -200,6 +223,21 @@ export class SettingsService extends Service<void> {
   }
 
   /**
+   * Broken overrides carried by the current state — the keys whose snapshot
+   * value is the schema default because the persisted value failed validation.
+   * Empty before load finishes and whenever the file is clean.
+   * @returns fresh clones of the rejected values, so a consumer that reports
+   * them cannot mutate what stays persisted. Values come from `data.json`, so
+   * they are JSON data and always structured-cloneable.
+   */
+  get diagnostics(): readonly SettingsDiagnostic[] {
+    return [...this.#broken].map(([key, value]) => ({
+      key,
+      value: structuredClone(value),
+    }));
+  }
+
+  /**
    * Bucketed origin of the completed load, for the release service's
    * same-launch onboarding branch. `null` before load finishes. This is the
    * in-memory signal: the Legacy Data marker self-destructs once migration
@@ -232,6 +270,7 @@ export class SettingsService extends Service<void> {
    * @param patchOrUpdater a partial patch or an updater function.
    * `RESET_SETTING` as a patch value deletes that key's override; any other
    * value (including one equal to the default) becomes an explicit override.
+   * Either way the key's broken override, if any, leaves the file.
    */
   update(
     patchOrUpdater:
@@ -248,6 +287,7 @@ export class SettingsService extends Service<void> {
     for (const key of Object.keys(patch)) assertWritableKey(key, "update");
 
     const nextOverrides = { ...this.#overrides };
+    const nextBroken = new Map(this.#broken);
     for (const key of Object.keys(patch)) {
       const value = (patch as Record<string, unknown>)[key];
       if (value === RESET_SETTING) {
@@ -255,15 +295,17 @@ export class SettingsService extends Service<void> {
       } else {
         (nextOverrides as Record<string, unknown>)[key] = value;
       }
+      nextBroken.delete(key as SettingsKey);
     }
 
-    return this.#commitMutation(nextOverrides, "update");
+    return this.#commitMutation(nextOverrides, nextBroken, "update");
   }
 
   /**
-   * Delete overrides for the given keys (or every override when `keys` is
-   * omitted). Validates the post-reset effective object through the full
-   * schema, schedules a debounced save, and returns a fresh clone.
+   * Delete overrides — broken ones included — for the given keys (or every
+   * override when `keys` is omitted). Validates the post-reset effective
+   * object through the full schema, schedules a debounced save, and returns a
+   * fresh clone.
    * @throws before load finished or on unknown keys.
    */
   reset(keys?: readonly (keyof Settings)[]): Readonly<Settings> {
@@ -274,15 +316,20 @@ export class SettingsService extends Service<void> {
     }
 
     const nextOverrides = { ...this.#overrides };
+    const nextBroken = new Map(this.#broken);
     if (keys === undefined) {
       for (const key of Object.keys(nextOverrides)) {
         delete nextOverrides[key as keyof Settings];
       }
+      nextBroken.clear();
     } else {
-      for (const key of keys) delete nextOverrides[key];
+      for (const key of keys) {
+        delete nextOverrides[key];
+        nextBroken.delete(key);
+      }
     }
 
-    return this.#commitMutation(nextOverrides, "reset");
+    return this.#commitMutation(nextOverrides, nextBroken, "reset");
   }
 
   /**
@@ -312,6 +359,7 @@ export class SettingsService extends Service<void> {
    */
   #commitMutation(
     nextOverrides: Partial<Settings>,
+    nextBroken: BrokenOverrides,
     op: "update" | "reset",
   ): Readonly<Settings> {
     const candidate: Settings = { ...defaults, ...nextOverrides };
@@ -324,6 +372,7 @@ export class SettingsService extends Service<void> {
       throw error;
     }
     this.#overrides = nextOverrides;
+    this.#broken = nextBroken;
     this.#notify();
     this.#scheduleSave();
     return candidate;
@@ -415,12 +464,21 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * Permissive v8 load: drop non-schema keys and bad per-key values, then
-   * full-schema check for cross-field constraints. Whole-object failure →
-   * defaults fallback with no rewrite.
+   * Permissive v8 load: drop non-schema keys, hold bad per-key values as
+   * broken overrides, then full-schema check for cross-field constraints.
+   * Whole-object failure → defaults fallback with no rewrite.
    */
   #loadV8(raw: Record<string, unknown>): void {
-    this.#overrides = this.#validateOverrides(raw, "v8 data") ?? {};
+    const validated = this.#validateOverrides(raw, "v8 data");
+    this.#overrides = validated?.cleaned ?? {};
+    this.#broken = validated?.broken ?? new Map();
+    if (this.#broken.size > 0) {
+      // `console` rather than LogTape: load runs before `LoggingService`
+      // configures the sinks, so a logger call here reaches nobody.
+      console.warn(
+        `invalid values in v8 data (${[...this.#broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
+      );
+    }
   }
 
   /** Run the v7→v8 compatibility migration and persist the cleaned result. */
@@ -432,11 +490,11 @@ export class SettingsService extends Service<void> {
       return;
     }
 
-    const cleaned = this.#validateOverrides(migrated, "v7 migration result");
-    this.#overrides = cleaned ?? {};
+    const validated = this.#validateOverrides(migrated, "v7 migration result");
+    this.#overrides = validated?.cleaned ?? {};
     await this.#writeBestEffort({
       [VERSION_KEY]: CURRENT_VERSION,
-      ...cleaned,
+      ...validated?.cleaned,
     });
   }
 
@@ -545,16 +603,16 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * Shared disk-recovery tail: drop non-schema keys and bad per-key values,
-   * then full-schema check for cross-field constraints. Returns the cleaned
-   * overrides, or `null` when full-schema validation fails (callers fall back
-   * to defaults). Failures are logged with `context` as the source prefix.
+   * Shared disk-recovery tail: split known keys into cleaned and broken
+   * overrides, then full-schema check the effective object for cross-field
+   * constraints. Returns `null` when that check fails (callers fall back to
+   * defaults). Failures are logged with `context` as the source prefix.
    */
   #validateOverrides(
     raw: Record<string, unknown>,
     context: string,
-  ): Partial<Settings> | null {
-    const cleaned = cleanKnownOverrides(raw);
+  ): { cleaned: Partial<Settings>; broken: BrokenOverrides } | null {
+    const { cleaned, broken } = cleanKnownOverrides(raw);
     const result = v.safeParse(schema, { ...defaults, ...cleaned });
     if (!result.success) {
       console.warn(
@@ -562,7 +620,7 @@ export class SettingsService extends Service<void> {
       );
       return null;
     }
-    return cleaned;
+    return { cleaned, broken };
   }
 
   /** Errors are logged but never bubble up — load continues with the already-chosen in-memory state. */
@@ -581,7 +639,11 @@ export class SettingsService extends Service<void> {
    * failures observable through `flush()`.
    */
   #performSave(): Promise<void> {
-    const payload = { [VERSION_KEY]: CURRENT_VERSION, ...this.#overrides };
+    const payload = {
+      [VERSION_KEY]: CURRENT_VERSION,
+      ...Object.fromEntries(this.#broken),
+      ...this.#overrides,
+    };
     let promise!: Promise<void>;
     promise = (async () => {
       try {
@@ -610,21 +672,26 @@ export class SettingsService extends Service<void> {
 
 /**
  * Drop non-schema keys (including reserved metadata), then per-key-validate
- * every schema-known override with `schema.entries[key]`. Silently dropping
- * bad values is intentional: they get a chance to disappear on the next
- * explicit settings write.
+ * every schema-known override with `schema.entries[key]`. A rejected value is
+ * returned as a broken override; the caller decides whether it survives.
  */
-function cleanKnownOverrides(raw: Record<string, unknown>): Partial<Settings> {
+function cleanKnownOverrides(raw: Record<string, unknown>): {
+  cleaned: Partial<Settings>;
+  broken: BrokenOverrides;
+} {
   const cleaned: Partial<Settings> = {};
+  const broken = new Map<SettingsKey, unknown>();
   for (const key of Object.keys(raw)) {
     if (!isSettingsKey(key)) continue;
     const entry = schema.entries[key];
     const result = v.safeParse(entry, raw[key]);
     if (result.success) {
       (cleaned as Record<string, unknown>)[key] = result.output;
+    } else {
+      broken.set(key, raw[key]);
     }
   }
-  return cleaned;
+  return { cleaned, broken };
 }
 
 /**

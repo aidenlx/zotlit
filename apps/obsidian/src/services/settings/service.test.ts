@@ -219,7 +219,7 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v8 invalid per-key values are dropped and the file is not rewritten", async () => {
+  it("v8 invalid per-key values fall back to their default and the file is not rewritten", async () => {
     const plugin = new PluginStub({
       __VERSION__: 8,
       "note.literature-folder": "/kept",
@@ -235,7 +235,7 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v8 frontmatter field missing language is dropped and other keys survive", async () => {
+  it("v8 frontmatter field missing language falls back to the default and other keys survive", async () => {
     const plugin = new PluginStub({
       __VERSION__: 8,
       "note.frontmatter-fields": [
@@ -792,6 +792,178 @@ describe("SettingsService v1→v8 migration", () => {
     await service.ready;
     expect(service.current).toEqual(defaults);
     expect(warnSpy).toHaveBeenCalled();
+  });
+});
+
+describe("SettingsService broken overrides", () => {
+  function makeBrokenService(): {
+    plugin: PluginStub;
+    service: SettingsService;
+  } {
+    return makeService({
+      plugin: new PluginStub({
+        __VERSION__: 8,
+        "server.enabled": "not-a-boolean",
+        "note.literature-folder": "/kept",
+      }),
+    });
+  }
+
+  it("has no diagnostics before load finishes", () => {
+    const { service } = makeBrokenService();
+    expect(service.diagnostics).toEqual([]);
+  });
+
+  it("reports the broken key and serves its default in every snapshot", async () => {
+    const { service } = makeBrokenService();
+    const seen: (object | null)[] = [];
+    service.subscribe((v) => seen.push(v));
+    await service.ready;
+
+    const effective = {
+      ...defaults,
+      "note.literature-folder": "/kept",
+    };
+    expect(service.current).toEqual(effective);
+    expect(await service.loaded).toEqual(effective);
+    expect(seen[1]).toEqual(effective);
+    expect(service.diagnostics).toEqual([
+      { key: "server.enabled", value: "not-a-boolean" },
+    ]);
+  });
+
+  it("hands out a clone, so a consumer cannot mutate the persisted value", async () => {
+    const { service, plugin } = makeService({
+      plugin: new PluginStub({
+        __VERSION__: 8,
+        "note.frontmatter-fields": [{ bogus: true }],
+      }),
+    });
+    await service.ready;
+
+    const handedOut = service.diagnostics[0]!.value as { bogus: boolean }[];
+    handedOut[0]!.bogus = false;
+
+    expect(service.diagnostics).toEqual([
+      { key: "note.frontmatter-fields", value: [{ bogus: true }] },
+    ]);
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "note.frontmatter-fields": [{ bogus: true }],
+      "note.literature-folder": "/moved",
+    });
+  });
+
+  it("keeps the broken raw override on disk when another setting changes", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "server.enabled": "not-a-boolean",
+      "note.literature-folder": "/moved",
+    });
+    expect(service.diagnostics).toEqual([
+      { key: "server.enabled", value: "not-a-boolean" },
+    ]);
+  });
+
+  it("replaces the raw override and clears the diagnostic on repair", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.update({ "server.enabled": true });
+    await service.flush();
+    expect(service.current?.["server.enabled"]).toBe(true);
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "server.enabled": true,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("keeps the broken override when a repair fails validation", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    expect(() =>
+      // @ts-expect-error — wrong type for runtime check
+      service.update({ "server.enabled": "still-not-a-boolean" }),
+    ).toThrow(/invalid settings/);
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(service.diagnostics).toEqual([
+      { key: "server.enabled", value: "not-a-boolean" },
+    ]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "server.enabled": "not-a-boolean",
+      "note.literature-folder": "/moved",
+    });
+  });
+
+  it("removes the raw override and clears the diagnostic on reset", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.reset(["server.enabled"]);
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("RESET_SETTING removes the raw override too", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.update({ "server.enabled": RESET_SETTING });
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("reset() with no arguments clears every broken override", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.reset();
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({ __VERSION__: 8 });
+  });
+
+  it("unknown keys stay dropped without a diagnostic", async () => {
+    const { service, plugin } = makeService({
+      plugin: new PluginStub({ __VERSION__: 8, unknownKey: "noise" }),
+    });
+    await service.ready;
+    expect(service.diagnostics).toEqual([]);
+    service.update({ "note.literature-folder": "/x" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "note.literature-folder": "/x",
+    });
+  });
+
+  it("migration keeps dropping invalid values instead of preserving them", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "server.enabled": "not-a-boolean",
+      "note.literature-folder": "/kept",
+    });
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 8,
+      "note.literature-folder": "/kept",
+    });
   });
 });
 
