@@ -61,6 +61,16 @@ An item can appear as a citation before it has a Literature Note. Opening that c
 
 The resolution data refreshes when the Zotero database changes. A re-keyed item updates after the next refresh.
 
+### A key that matches several items [#ambiguous-key]
+
+A citation key resolves to one Zotero item, to none, or to several. Several is an ambiguous key. It happens when two items in one library carry the same citation key, and when two libraries you both have in scope carry it once each.
+
+ZotLit never picks one of the matches. The editor, reading view, citation popover, and References Sidebar all report the same ambiguous state, and the key keeps its own identity: it adopts no candidate's item, and contributes no bibliography entry.
+
+In a Citation Cluster that holds both an ambiguous key and one that matches nothing, the unresolved key is what the cluster reports. It is the stronger failure, so it stays visible.
+
+Two things resolve an ambiguity. Give one of the items a different citation key in Zotero. Or narrow your [library scope](/docs/reference/settings#library-scope) until one candidate is left, which makes the key unique again.
+
 ## Wikilink citations
 
 An eligible Literature Note wikilink represents the Zotero item associated with that note. A valid Citation Fragment can add Pandoc details such as a prefix, locator, suffix, or author-suppression mode.
@@ -141,6 +151,8 @@ With **Pandoc citations** and **Open citations as links** on, ZotLit supports:
 - Four open-under-cursor commands.
 
 A single-item citation opens its Literature Note. ZotLit creates the note first when necessary. A multi-item citation opens a menu so you can choose an item.
+
+An [ambiguous key](#ambiguous-key) opens a picker instead, listing every item the key matches with its summary, library, and item key. The item you choose opens by its own identity, so the choice cannot land back on the same question. A click and the four open-under-cursor commands behave the same way.
 
 Source mode keeps the text editable. Ctrl-click opens a citation on Windows and Linux. Cmd-click opens it on macOS. Modifier clicks follow Obsidian's pane behavior.
 

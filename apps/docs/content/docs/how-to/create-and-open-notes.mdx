@@ -16,6 +16,8 @@ Open an existing Literature Note or create one from its Zotero item.
 
 The quick switcher searches your Zotero library and opens or creates a literature note for the item you pick.
 
+It searches every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each row names the library its item comes from. An empty search lists your most recently modified items first.
+
 <Steps>
   <Step>
     ### Open the quick switcher
@@ -56,6 +58,8 @@ ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key
 A click resolves the citation key against Zotero's native citation key field, across every library in your **Library scope** (set at the top of **Settings > ZotLit**). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
 
 If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
+
+If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
 
 The four open-under-cursor commands use **Open citations as links**; what hovering shows follows **Hover action** instead. **Show formatted citations** does not control navigation.
 

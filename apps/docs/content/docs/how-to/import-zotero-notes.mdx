@@ -114,7 +114,11 @@ For one collection, right-click it in the Zotero sidebar and choose **ZotLit > I
 
 Obsidian opens the **Import notes** modal described below, listing every note it found. Review the list, then confirm to start the batch.
 
-The Obsidian command covers every library in your **Library scope** (set in **Settings > ZotLit**). The Zotero entries cover the library or collection you right-clicked, whatever your library scope is. If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero."
+The Obsidian command covers every library in your [library scope](/docs/reference/settings#library-scope) (set in **Settings > ZotLit**). The Zotero entries cover the library or collection you right-clicked, whatever your library scope is.
+
+If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero." If the library no longer exists, it reports "That Zotero library is not available."
+
+While more than one library contributes notes, the **Import notes** modal names the library beside each heading. If a selected library is missing from your Zotero database, the import continues over the rest and states how many libraries it skipped. If none of your selected libraries is available, no modal opens and a notice reports "No library in the library scope is available."
 
 ## Re-import notes in batch
 

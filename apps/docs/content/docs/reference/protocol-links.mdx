@@ -112,6 +112,51 @@ obsidian://zotlit/import-notes?items=<id,id,...>&mode=<mode>&source-id=<hash>
 
 ---
 
+### update-all [#update-all]
+
+Creates or updates a literature note for every item in one library, optionally narrowed to one collection. Opens the same batch confirmation modal as `update-many`.
+
+```
+obsidian://zotlit/update-all?source-id=<hash>&library=<groupID>&collection=<key>
+```
+
+| Parameter    | Type       | Required | Description                                                                                                            |
+| ------------ | ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `source-id`  | 8-char hex | Yes      | Zotero install identifier                                                                                              |
+| `library`    | Integer    | No       | Zotero group ID of the target library. Absent or `0` targets **My Library**.                                           |
+| `collection` | 8-char key | No       | Collection key inside the target library. Covers that collection and its descendants. Absent covers the whole library. |
+
+---
+
+### import-all-notes [#import-all-notes]
+
+Imports every child note of a regular item and every standalone note in one library, optionally narrowed to one collection. Opens the same batch confirmation modal as `import-notes`. It gathers both note kinds, so it carries no `mode`.
+
+```
+obsidian://zotlit/import-all-notes?source-id=<hash>&library=<groupID>&collection=<key>
+```
+
+| Parameter    | Type       | Required | Description                                                                                                            |
+| ------------ | ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `source-id`  | 8-char hex | Yes      | Zotero install identifier                                                                                              |
+| `library`    | Integer    | No       | Zotero group ID of the target library. Absent or `0` targets **My Library**.                                           |
+| `collection` | 8-char key | No       | Collection key inside the target library. Covers that collection and its descendants. Absent covers the whole library. |
+
+#### The exact target [#exact-target]
+
+`library` names an exact target for both actions. ZotLit runs that one library, whatever your [library scope](/docs/reference/settings#library-scope) covers, so a link keeps working for a library you never selected. The same collection key can exist in two libraries; `library` decides which one the link means.
+
+A link that omits `library` targets **My Library**, as it always has. A permanent link written by an earlier ZotLit keeps its meaning.
+
+Two results end the action before any note is written:
+
+- A `library` this Zotero database no longer holds reports "That Zotero library is not available."
+- A `collection` the target library does not hold reports "Collection not found in Zotero."
+
+The Obsidian command palette runs the same two operations without an exact target. Those commands cover every available library in your library scope. See [Commands](/docs/reference/commands).
+
+---
+
 ### explore
 
 Opens the Template Data Explorer anchored on a specific item.
@@ -128,14 +173,16 @@ obsidian://zotlit/explore?item=<id>&source-id=<hash>
 
 ## Action summary
 
-| Action         | Single item | Batch | Scope param | Mode param |
-| -------------- | :---------: | :---: | :---------: | :--------: |
-| `open`         |     yes     |   —   |      —      |     —      |
-| `update`       |     yes     |   —   |     yes     |     —      |
-| `update-many`  |      —      |  yes  |     yes     |     —      |
-| `import-note`  |     yes     |   —   |      —      |    yes     |
-| `import-notes` |      —      |  yes  |      —      |    yes     |
-| `explore`      |     yes     |   —   |      —      |     —      |
+| Action             | Single item | Batch | Scope param | Mode param | Library param |
+| ------------------ | :---------: | :---: | :---------: | :--------: | :-----------: |
+| `open`             |     yes     |   —   |      —      |     —      |       —       |
+| `update`           |     yes     |   —   |     yes     |     —      |       —       |
+| `update-many`      |      —      |  yes  |     yes     |     —      |       —       |
+| `import-note`      |     yes     |   —   |      —      |    yes     |       —       |
+| `import-notes`     |      —      |  yes  |      —      |    yes     |       —       |
+| `update-all`       |      —      |  yes  |      —      |     —      |      yes      |
+| `import-all-notes` |      —      |  yes  |      —      |     —      |      yes      |
+| `explore`          |     yes     |   —   |      —      |     —      |       —       |
 
 ## See also
 

@@ -445,8 +445,9 @@ export function parseImportAllNotesProtocolQuery(
 /**
  * Build an `obsidian://zotlit/update-all?source-id=<hash>&library=<groupID>`
  * link for `Zotero.launchURL`. `groupID` 0 (or absent) means the personal
- * library; Obsidian checks it against its own configured library. A
- * `collectionKey` narrows the action to that collection and its descendants.
+ * library; Obsidian runs that library exactly, whatever its own Library Scope
+ * covers. A `collectionKey` narrows the action to that collection and its
+ * descendants.
  */
 export function buildUpdateAllProtocolUrl(
   sourceId: string,
