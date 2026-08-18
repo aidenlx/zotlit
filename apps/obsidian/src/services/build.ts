@@ -163,6 +163,7 @@ export function buildServices(
       batchImport: ({
         db,
         settings,
+        libraryScope,
         noteImport,
         noteIndex,
         template,
@@ -171,6 +172,7 @@ export function buildServices(
           view: createNoteImportView(plugin.app),
           db,
           settings,
+          libraryScope,
           noteImport,
           noteIndex,
           metadataCache: plugin.app.metadataCache,

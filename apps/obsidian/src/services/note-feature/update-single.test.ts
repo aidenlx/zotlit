@@ -29,6 +29,11 @@ function noteLessDeps(): SingleUpdateDeps {
       },
     } as unknown as SingleUpdateDeps["db"],
     settings: {} as SingleUpdateDeps["settings"],
+    libraryScope: {
+      resolveWith: () => {
+        throw new Error("create path reached: library scope resolved");
+      },
+    },
     noteFeature: {
       createNote: () => {
         throw new Error("create path reached: createNote called");

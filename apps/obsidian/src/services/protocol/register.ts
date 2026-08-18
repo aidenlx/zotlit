@@ -100,9 +100,10 @@ export function registerProtocolHandlers(
   // runs the same interactive flow as the `update-many` protocol link.
   stack.defer(
     deps.liveUpdate.on("update-many", (event) => {
-      void toast.promise(runBatchUpdate(deps, event.items, event.scope), {
-        success: batchUpdateNotice,
-      });
+      void toast.promise(
+        runBatchUpdate(deps, event.items, { scope: event.scope }),
+        { success: batchUpdateNotice },
+      );
     }),
   );
 
@@ -162,9 +163,12 @@ async function handleBatchProtocol(
   });
   if (!query) return;
 
-  await toast.promise(runBatchUpdate(deps, query.items, query.scope), {
-    success: batchUpdateNotice,
-  });
+  await toast.promise(
+    runBatchUpdate(deps, query.items, { scope: query.scope }),
+    {
+      success: batchUpdateNotice,
+    },
+  );
 }
 
 /** Open existing literature note, or create one if none exists. */
@@ -261,7 +265,7 @@ async function handleUpdateAllProtocol(
 
   await toast.promise(
     runBatchUpdateAll(deps, {
-      expectedGroupID: query.groupID,
+      groupID: query.groupID,
       collectionKey: query.collectionKey,
     }),
     { success: updateAllNotice },
@@ -281,7 +285,7 @@ async function handleImportAllNotesProtocol(
 
   await toast.promise(
     deps.batchImport.runBatchImportAll({
-      expectedGroupID: query.groupID,
+      groupID: query.groupID,
       collectionKey: query.collectionKey,
     }),
     batchImportAllToast(),
@@ -294,8 +298,10 @@ function updateAllNotice(result: BatchUpdateResult): string | undefined {
       return m.batch_update_db_unavailable();
     case "empty-selection":
       return m.batch_update_all_empty();
-    case "library-mismatch":
-      return m.batch_update_all_library_mismatch();
+    case "no-library-in-scope":
+      return m.batch_all_no_library_in_scope();
+    case "unavailable-target":
+      return m.batch_all_library_unavailable();
     case "collection-not-found":
       return m.notice_collection_not_found();
     default:

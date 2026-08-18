@@ -391,9 +391,11 @@ const collectionKeyValue = v.optional(v.pipe(v.string(), v.check(isItemKey)));
 
 /**
  * Query payload shared by `zotlit/update-all` and `zotlit/import-all-notes`:
- * a library, optionally narrowed to one collection and its descendants.
+ * one exact target library, optionally narrowed to one collection and its
+ * descendants. The target is exact — the receiver runs that library alone,
+ * whatever libraries its own discovery configuration covers.
  */
-const libraryScopeQuerySchema = v.pipe(
+const exactLibraryTargetQuerySchema = v.pipe(
   v.object({
     "source-id": sourceIdValue,
     library: v.optional(v.pipe(v.string(), v.regex(/^\d+$/u))),
@@ -408,9 +410,9 @@ const libraryScopeQuerySchema = v.pipe(
   })),
 );
 
-export const updateAllProtocolQuerySchema = libraryScopeQuerySchema;
+export const updateAllProtocolQuerySchema = exactLibraryTargetQuerySchema;
 
-export const importAllNotesProtocolQuerySchema = libraryScopeQuerySchema;
+export const importAllNotesProtocolQuerySchema = exactLibraryTargetQuerySchema;
 
 export type UpdateAllProtocolQuery = v.InferOutput<
   typeof updateAllProtocolQuerySchema
@@ -451,7 +453,7 @@ export function buildUpdateAllProtocolUrl(
   groupID?: number,
   collectionKey?: string,
 ): string {
-  return buildLibraryScopeUrl(updateAllProtocolActionId, sourceId, {
+  return buildExactLibraryTargetUrl(updateAllProtocolActionId, sourceId, {
     groupID,
     collectionKey,
   });
@@ -467,14 +469,14 @@ export function buildImportAllNotesProtocolUrl(
   groupID?: number,
   collectionKey?: string,
 ): string {
-  return buildLibraryScopeUrl(importAllNotesProtocolActionId, sourceId, {
+  return buildExactLibraryTargetUrl(importAllNotesProtocolActionId, sourceId, {
     groupID,
     collectionKey,
   });
 }
 
-/** Shared builder for the two {@link libraryScopeQuerySchema} actions. */
-function buildLibraryScopeUrl(
+/** Shared builder for the two {@link exactLibraryTargetQuerySchema} actions. */
+function buildExactLibraryTargetUrl(
   actionId: string,
   sourceId: string,
   scope: { groupID?: number; collectionKey?: string },

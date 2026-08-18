@@ -74,9 +74,21 @@
   "batch_update_confirm_button": "Update notes",
   "batch_update_unknown_item": "Item {id} (not in Zotero)",
   "batch_update_all_empty": "No items to update.",
-  "batch_update_all_library_mismatch": "The selected library does not match the default library in ZotLit settings.",
   "batch_import_all_empty": "No notes to import.",
-  "batch_import_all_library_mismatch": "The selected library does not match the default library in ZotLit settings.",
+  "batch_all_library_unavailable": "That Zotero library is not available.",
+  "batch_all_no_library_in_scope": "No library in the library scope is available.",
+  "batch_group_library": "{library} · {group}",
+  "batch_intro_with_unavailable": "{intro} {unavailable}",
+  "batch_libraries_unavailable": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 selected library is unavailable.",
+        "countPlural=*": "{count} selected libraries are unavailable."
+      }
+    }
+  ],
   "notice_collection_not_found": "Collection not found in Zotero.",
   "batch_import_item_not_note": "Item {id} (not a note)",
   "batch_import_item_trashed": "Item {id} (in trash)",

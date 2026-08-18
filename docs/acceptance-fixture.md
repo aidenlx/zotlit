@@ -104,6 +104,29 @@ The persisted key and value shape live in `LIBRARY_SCOPE_SETTING_KEY` and
 `PersistedLibraryScope` in `spec.ts`. They are the one place to update when the
 Library Scope setting changes shape.
 
+## Cancel a run mid-write
+
+A batch update writes 32 items at once and the fixture holds 12, so every item
+starts immediately and no item ever waits in a queue. A cancel that arrives one
+macrotask after the confirm click therefore finds the whole plan in flight, and
+the run reports `Done.`. Click Cancel in the same JavaScript turn as the confirm
+button to reach the write-phase abort:
+
+```sh
+obsidian-cli vault=zt-fixture-vault eval code='
+const modal = document.querySelector(".modal-container .modal");
+[...modal.querySelectorAll("button")].find((b) => b.classList.contains("mod-cta")).click();
+[...modal.querySelectorAll("button")].find((b) => /cancel/i.test(b.textContent)).click();
+'
+```
+
+The confirm click renders the progress phase before it returns, so the second
+click aborts the run that phase already started. The modal reports
+`Stopped. 0 created, 0 updated, 0 failed.` and lists every row under `Not run`.
+Delete one literature note before the run to prove the abort wrote nothing: the
+aborted run leaves the note absent, and the same run without the cancel creates
+it.
+
 ## Discard
 
 ```sh

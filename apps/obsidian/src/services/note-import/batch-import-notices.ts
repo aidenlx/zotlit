@@ -42,8 +42,10 @@ export function batchImportAllNotice(
   switch (result.outcome) {
     case "empty-selection":
       return m.batch_import_all_empty();
-    case "library-mismatch":
-      return m.batch_import_all_library_mismatch();
+    case "no-library-in-scope":
+      return m.batch_all_no_library_in_scope();
+    case "unavailable-target":
+      return m.batch_all_library_unavailable();
     case "collection-not-found":
       return m.notice_collection_not_found();
     default:
