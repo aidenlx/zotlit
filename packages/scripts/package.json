@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "imports": {
+    "#acceptance-fixture": "./lib/acceptance-fixture/build.ts",
     "#docs-availability-scan": "./lib/docs-availability-scan.ts",
     "#mdx-frontmatter": "./lib/mdx-frontmatter.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
@@ -18,7 +19,9 @@
   "scripts": {
     "release": "node scripts/release.ts",
     "preview-docs-availability": "node scripts/preview-docs-availability.ts",
-    "typecheck": "tsc --noEmit"
+    "fixture": "node scripts/acceptance-fixture.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@clack/prompts": "^0.11.0",
@@ -26,10 +29,12 @@
     "@types/node": "catalog:",
     "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
+    "@zotlit/db": "workspace:*",
     "arkregex": "catalog:",
     "semver": "^7.8.0",
     "typescript": "catalog:",
     "valibot": "catalog:",
+    "vitest": "catalog:",
     "zx": "^8.8.5"
   }
 }
