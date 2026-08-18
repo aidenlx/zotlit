@@ -2,6 +2,8 @@ import { existsSync, watch } from "node:fs";
 import type { FSWatcher, WatchOptions } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { getSchemaVersions, SUPPORTED_SCHEMA_VERSIONS } from "@zotlit/db";
+import type { ZoteroSchemaVersions } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type {
   DatabaseOptions,
@@ -113,6 +115,7 @@ export class DatabaseService extends Service<void> {
   #watchTimer: number | null = null;
   #watchTrusted = false;
   #sourceFingerprint: SourceFingerprint | null = null;
+  #schemaVersions: ZoteroSchemaVersions | null = null;
   #refreshInFlight: Promise<void> | null = null;
   #refreshAgain = false;
   #leaseCount = 0;
@@ -395,6 +398,7 @@ export class DatabaseService extends Service<void> {
       const client = createClient(uri, DB_OPTIONS);
       refreshStack.use(client.$client);
       this.#signalReadFallback(prepared);
+      this.#reportSchemaVersions(client);
 
       const previousReadStack = this.#activeReadStack;
       // Commit the new client before releasing the old read stack.
@@ -466,6 +470,42 @@ export class DatabaseService extends Service<void> {
     this.#missingDbSignalled = true;
     logger.info("Zotero database not found on this device", { dbPath });
     this.#emitter.emit("db-file-missing");
+  }
+
+  /**
+   * Records the Zotero schema versions once per distinct pair — on the first
+   * read, and again if Zotero migrates the database mid-session. `info` while
+   * the versions stay inside the verified range, `warn` once they leave it,
+   * where a query may read the wrong shape. The read proceeds either way, and a
+   * failed check never fails the refresh: an unreadable `version` table says
+   * nothing about the tables the queries use.
+   */
+  #reportSchemaVersions(client: NodeDatabaseClient): void {
+    let versions: ZoteroSchemaVersions;
+    try {
+      versions = getSchemaVersions(client);
+    } catch (error) {
+      logger.debug("Zotero schema version unreadable", { error });
+      return;
+    }
+    const previous = this.#schemaVersions;
+    this.#schemaVersions = versions;
+    if (
+      previous?.userdata === versions.userdata &&
+      previous.compatibility === versions.compatibility
+    )
+      return;
+    const fields = { ...versions, supportedRange: SUPPORTED_SCHEMA_VERSIONS };
+    if (versions.supported)
+      logger.info(
+        "Zotero schema version is within the supported range",
+        fields,
+      );
+    else
+      logger.warn(
+        "Zotero schema version is outside the range ZotLit is verified against",
+        fields,
+      );
   }
 
   #signalReadFallback(prepared: PreparedRead): void {

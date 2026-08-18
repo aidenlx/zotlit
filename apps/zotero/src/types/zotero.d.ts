@@ -28,6 +28,16 @@ declare global {
     }
 
     namespace MenuManager {
+      interface LibraryMenuContext {
+        // Zotero 10 removed the singular `collectionTreeRow` and passes the
+        // collections-pane selection as an array; the singular name survives
+        // as a property whose getter throws on read. `zotero-types@4.1.2`
+        // describes the Zotero 9 shape only, so the plural is added here and
+        // stays optional to keep Zotero 9 (where it is absent) typing.
+        // https://github.com/zotero/zotero/blob/10.0.0/chrome/content/zotero/zoteroPane.js#L4113
+        collectionTreeRows?: Zotero.CollectionTreeRow[];
+      }
+
       interface BaseMenuContext {
         // The dynamic `setL10nArgs` writes its value straight to
         // `dataset.l10nArgs` with no `JSON.stringify` (unlike the static

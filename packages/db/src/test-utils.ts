@@ -177,6 +177,10 @@ const FIXTURE_DDL = `
     value,
     primary key (setting, key)
   );
+  create table version (
+    schema text primary key,
+    version integer not null
+  );
 `;
 
 /** A minimal full DB item fixture (Hensher2011-shaped defaults), overridable via `fields`/`base`. */

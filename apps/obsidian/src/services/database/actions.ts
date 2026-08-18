@@ -22,6 +22,8 @@ export function addDatabaseActions(
     services.db.on("read-fallback", (notice) => {
       if (notice === "reflink-unsupported") {
         new BaseNotice(m.notice_db_reflink_unsupported());
+      } else if (notice === "wal-not-replayed") {
+        new BaseNotice(m.notice_db_wal_not_replayed());
       }
     }),
   );

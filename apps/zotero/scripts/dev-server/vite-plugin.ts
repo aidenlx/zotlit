@@ -221,7 +221,7 @@ function assertExistingFile(path: string, envName: string): void {
   } catch (error) {
     if (error instanceof Error && "code" in error) {
       throw new Error(
-        `${PREFIX} ${envName} must point to an existing Zotero 9 binary: ${path}. See ${ENV_EXAMPLE_PATH}.`,
+        `${PREFIX} ${envName} must point to an existing Zotero binary: ${path}. See ${ENV_EXAMPLE_PATH}.`,
         { cause: error },
       );
     }

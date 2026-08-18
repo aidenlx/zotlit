@@ -5,6 +5,8 @@ import type { TypedMenuOptions } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 import type { FluentMessageId } from "@/types/fluent";
 
+import { contextScope } from "./collection-scope.js";
+import type { RowScope } from "./collection-scope.js";
 import { importAllNotesInObsidian, updateAllInObsidian } from "./obsidian.js";
 
 const logger = appLogger.getChild(["menus", "collection"]);
@@ -17,42 +19,6 @@ type LibraryMenuContext = _ZoteroTypes.MenuManager.LibraryMenuContext;
 
 type CollectionMenuData = TypedMenuOptions<typeof MENU_TARGET>["menus"][number];
 
-/**
- * What a batch action covers: a whole library, or one collection within it.
- * `groupID` is `0` for the personal library and a positive integer for a group;
- * `collectionKey` is present on collection rows only.
- */
-interface RowScope {
-  groupID: number;
-  collectionKey?: string;
-}
-
-/**
- * Scope of a collections-pane row, or `null` when the row names something the
- * batch actions can't cover — a saved search, feed, the trash, duplicates,
- * unfiled, retracted, or publications.
- *
- * `Zotero.Groups.getGroupIDFromLibraryID` throws for the personal library, so
- * the group id resolves off the row's library id only when it names a group.
- */
-function rowScope(row: Zotero.CollectionTreeRow | undefined): RowScope | null {
-  if (row?.isCollection()) {
-    return {
-      groupID: groupIDFromLibrary(row.ref.libraryID as number),
-      collectionKey: row.ref.key as string,
-    };
-  }
-  if (row?.isGroup()) {
-    return { groupID: groupIDFromLibrary(row.ref.libraryID as number) };
-  }
-  return row?.isLibrary() ? { groupID: 0 } : null;
-}
-
-function groupIDFromLibrary(libraryID: number): number {
-  if (libraryID === Zotero.Libraries.userLibraryID) return 0;
-  return Zotero.Groups.getGroupIDFromLibraryID(libraryID);
-}
-
 /** One submenu entry, bound to the action it runs on the clicked row's scope. */
 function scopedMenuItem(
   l10nID: FluentMessageId,
@@ -62,9 +28,7 @@ function scopedMenuItem(
     menuType: "menuitem",
     l10nID,
     onCommand(_event: Event, context: LibraryMenuContext): void {
-      const scope = rowScope(
-        context.collectionTreeRow as Zotero.CollectionTreeRow | undefined,
-      );
+      const scope = contextScope(context);
       if (!scope) return;
       run(scope);
     },
@@ -82,10 +46,7 @@ export function registerCollectionMenu(pluginID: string): Disposable {
         menuType: "submenu",
         l10nID: "zotlit-menu-submenu",
         onShowing(_event: Event, context: LibraryMenuContext): void {
-          const row = context.collectionTreeRow as
-            | Zotero.CollectionTreeRow
-            | undefined;
-          context.setVisible(rowScope(row) !== null);
+          context.setVisible(contextScope(context) !== null);
         },
         menus: [
           scopedMenuItem("zotlit-menu-collection-update-all", (scope) => {

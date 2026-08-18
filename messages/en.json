@@ -184,6 +184,7 @@
   "settings_db_read_mode_immutable_desc": "Reads the database directly: recent edits may not appear immediately",
   "settings_db_active_read_mode": "Active mode: {mode}",
   "notice_db_reflink_unsupported": "Reflink clones are unavailable on this volume. ZotLit is reading the immutable Zotero database.",
+  "notice_db_wal_not_replayed": "ZotLit is reading the Zotero database directly, so recent Zotero edits may be missing — select Full copy under Read mode to include them.",
   "settings_db_status_loading": "Loading…",
   "settings_db_status_refreshing": "Refreshing…",
   "settings_db_status_degraded": "Failed to open",

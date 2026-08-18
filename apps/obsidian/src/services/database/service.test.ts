@@ -8,7 +8,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { buildSqliteUri, prepareRead } from "./read-source";
+import { buildSqliteUri, prepareRead, staleWalNotice } from "./read-source";
 import type {
   EffectiveReadMode,
   PreparedRead,
@@ -48,6 +48,37 @@ describe("read-source", () => {
       uriOptions: { mode: "ro", immutable: true },
       effectiveMode: "immutable",
     });
+  });
+
+  it("raises the stale-WAL notice for a non-empty WAL", async () => {
+    const source = join(dir, "zotero.sqlite");
+    await writeFile(`${source}-wal`, "wal");
+
+    await expect(staleWalNotice(source)).resolves.toBe("wal-not-replayed");
+  });
+
+  it("raises no stale-WAL notice when the WAL is empty", async () => {
+    const source = join(dir, "zotero.sqlite");
+    await writeFile(`${source}-wal`, "");
+
+    await expect(staleWalNotice(source)).resolves.toBeUndefined();
+  });
+
+  it("raises no stale-WAL notice when there is no WAL at all", async () => {
+    await expect(
+      staleWalNotice(join(dir, "zotero.sqlite")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("leaves a deliberately configured immutable read unflagged", async () => {
+    const source = join(dir, "zotero.sqlite");
+    await writeFile(source, "main");
+    await writeFile(`${source}-wal`, "wal");
+
+    await using prepared = await prepareRead("immutable", source);
+
+    expect(prepared.effectiveMode).toBe("immutable");
+    expect(prepared.fallbackNotice).toBeUndefined();
   });
 
   it("copies the main database and WAL into an owned temp dir", async () => {

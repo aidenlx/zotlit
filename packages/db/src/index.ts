@@ -25,6 +25,11 @@ export {
 } from "./lib/zt-csl-item";
 export { getZoteroIdentity, type ZoteroUserIdentity } from "./queries/account";
 export {
+  getSchemaVersions,
+  SUPPORTED_SCHEMA_VERSIONS,
+  type ZoteroSchemaVersions,
+} from "./queries/schema-version";
+export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,
   getItemRefByID,

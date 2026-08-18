@@ -14,11 +14,11 @@ ZotLit reads your Zotero data through three channels: a direct database read, pr
 
 While Zotero is running, it holds the database file open exclusively. ZotLit uses a read mode to access it without interfering.
 
-The default **Auto** setting picks the best available mode: **Reflink clone** on macOS, **Immutable source** on Windows and Linux. If the filesystem does not support reflinking, Auto falls back to Immutable source silently. You can override this in Settings.
+The default **Auto** setting picks the best available mode. It attempts a **Reflink clone** on macOS and Linux, and uses it wherever the filesystem supports copy-on-write cloning: APFS on macOS, Btrfs or reflink-enabled XFS on Linux. Where cloning is unavailable — Windows, and Linux filesystems such as ext4 — Auto falls back to **Immutable source**. You can override this in Settings.
 
-**Reflink clone** creates a fast, lightweight snapshot of the database. It sees recent edits and is the default on macOS.
+**Reflink clone** creates a fast, lightweight snapshot of the database. It sees recent edits, and it is what Auto uses on any macOS or Linux filesystem that supports cloning.
 
-**Immutable source** reads the database file directly without creating a copy. It is the default on Windows and Linux. Recent edits in Zotero (annotations you just made, notes you just typed) may not appear until Zotero writes them to disk. Enabling [live updates](/docs/how-to/set-up-live-updates) lets the companion trigger a database refresh when Zotero saves changes, which reduces this delay.
+**Immutable source** reads the database file directly without creating a copy. It is what Auto falls back to when cloning is unavailable. It reads only the main database file, so recent edits in Zotero (annotations you just made, notes you just typed) may not appear until Zotero folds them into that file. From Zotero 10 this gap is wider, because Zotero keeps recent writes in a separate write-ahead log until it checkpoints. Enabling [live updates](/docs/how-to/set-up-live-updates) lets the companion trigger a database refresh when Zotero saves changes, which reduces this delay.
 
 **Full copy** works on any filesystem and sees recent edits. It copies the entire database each time, so it is slower and uses more disk space, especially with large Zotero libraries. Auto never selects this mode; choose it manually if other modes are unavailable.
 

@@ -1,8 +1,11 @@
 /**
  * WAL-fresh read sources for the live Zotero SQLite database.
  *
- * Zotero keeps `zotero.sqlite` open in WAL mode with exclusive locking while it
- * runs, so recent writes live in `zotero.sqlite-wal` until a checkpoint. To read
+ * Zotero keeps `zotero.sqlite` open with exclusive locking while it runs. From
+ * Zotero 10 it also runs the database in WAL mode, so recent writes live in
+ * `zotero.sqlite-wal` until a checkpoint; Zotero 9 and earlier use a rollback
+ * journal and write no `-wal` file at all. Every path below keys off the
+ * presence of that file rather than off a version number, so both hold. To read
  * a fresh view without disturbing Zotero:
  *
  * - Clone modes (`reflink`/`copy`) copy the main DB plus its WAL into a fresh,
@@ -12,9 +15,16 @@
  * - `immutable` opens the source file in place with `immutable=1`. SQLite then
  *   assumes the file cannot change, skips locking, and reads the committed main
  *   DB only (it does not replay the live WAL). This is the safe fallback when
- *   cloning is unavailable.
+ *   cloning is unavailable. On Zotero 10 that costs freshness, so a non-empty
+ *   WAL raises {@link ReadFallbackNotice} `wal-not-replayed`.
+ *
+ * A Zotero 10 data dir holds no `-shm` file to clone: Zotero sets
+ * `locking_mode=EXCLUSIVE` before `journal_mode=WAL`, which keeps the WAL index
+ * in heap memory. Verified against a live Zotero 10.0 data directory.
  *
  * Fact: `node:sqlite` `DatabaseSync` does honor `file:` URI query params.
+ *
+ * @see https://github.com/zotero/zotero/blob/10.0.0/chrome/content/zotero/xpcom/db.js#L1551
  */
 
 import { delay } from "@std/async";
@@ -35,7 +45,7 @@ const RETRY_BACKOFF_MS = 25;
 
 export type ConfiguredReadMode = ZoteroReadMode;
 export type EffectiveReadMode = "reflink" | "copy" | "immutable";
-export type ReadFallbackNotice = "reflink-unsupported";
+export type ReadFallbackNotice = "reflink-unsupported" | "wal-not-replayed";
 
 export interface SqliteUriOptions {
   mode?: "ro";
@@ -81,11 +91,14 @@ export function buildSqliteUri(
 
 /**
  * `auto` and `reflink` both attempt the native reflink clone and, on a clone
- * *capability* failure, both degrade to `immutable`. They differ only in
- * loudness: `reflink` was an explicit request, so it surfaces a one-time
- * fallback notice; `auto` degrades silently. Neither falls back to full `copy` —
- * avoiding an automatic full-database duplication is preferred over forcing WAL
- * freshness on a volume that cannot reflink.
+ * *capability* failure, both degrade to `immutable`. Each then reports the one
+ * notice that explains its own outcome: `reflink` was an explicit request, so it
+ * names the unsupported clone; `auto` chose the mode on the user's behalf, so it
+ * names the freshness cost instead, which is how a Zotero 10 user learns to pick
+ * `copy`. A configured `immutable` is a deliberate choice and stays silent.
+ * Neither falls back to full `copy` on its own — avoiding an automatic
+ * full-database duplication is preferred over forcing WAL freshness on a volume
+ * that cannot reflink.
  *
  * Capability failures drive the fallback; source-access and transient I/O errors
  * propagate so the caller can report a refresh failure.
@@ -102,10 +115,29 @@ export async function prepareRead(
   } catch (error) {
     if (!(error instanceof ReflinkUnsupportedError)) throw error;
     const read = immutableRead(sourcePath);
-    return configuredMode === "reflink"
-      ? { ...read, fallbackNotice: "reflink-unsupported" }
-      : read;
+    if (configuredMode === "reflink")
+      return { ...read, fallbackNotice: "reflink-unsupported" };
+    const fallbackNotice = await staleWalNotice(sourcePath);
+    return fallbackNotice ? { ...read, fallbackNotice } : read;
   }
+}
+
+/**
+ * `wal-not-replayed` when reading the source in place would skip rows Zotero has
+ * already committed — an `immutable` read never replays the live WAL, so on
+ * Zotero 10 it hides every transaction since the last checkpoint. A non-empty
+ * `zotero.sqlite-wal` is exactly that condition; Zotero truncates the file on
+ * idle and on clean close, so a cleanly closed Zotero raises nothing.
+ *
+ * Measured against a live Zotero 10.0 data directory: five items created through
+ * Zotero read back as five rows from a main+WAL clone and as zero rows from an
+ * `immutable` read of the same source.
+ */
+export async function staleWalNotice(
+  sourcePath: string,
+): Promise<ReadFallbackNotice | undefined> {
+  const wal = await fingerprint(`${sourcePath}-wal`);
+  return wal.exists && wal.size > 0n ? "wal-not-replayed" : undefined;
 }
 
 function immutableRead(sourcePath: string): PreparedRead {

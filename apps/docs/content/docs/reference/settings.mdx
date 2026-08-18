@@ -172,9 +172,9 @@ These rows support conversion with a user-installed Pandoc CLI. They are separat
 | Option           | Behavior                                                                                                                                        |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Auto             | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero) for details. |
-| Reflink clone    | Fast, lightweight snapshot. Default on macOS.                                                                                                   |
+| Reflink clone    | Fast, lightweight snapshot. What Auto uses on macOS and Linux filesystems that support cloning.                                                 |
 | Full copy        | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. Auto does not select this mode.           |
-| Immutable source | Reads the database file directly. Default on Windows and Linux. Recent edits in Zotero may not appear immediately.                              |
+| Immutable source | Reads the database file directly. What Auto falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately.       |
 
 ### Advanced
 

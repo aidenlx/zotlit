@@ -27,7 +27,7 @@ See [Set up live updates](/docs/how-to/set-up-live-updates).
 
 Open **Settings > ZotLit > Zotero database** and check the **Read mode** setting.
 
-On Windows and Linux, **Auto** uses Immutable source, which reads only what Zotero has written to disk. Recent edits (annotations you just made, notes you just typed) may not be visible yet.
+**Auto** falls back to Immutable source wherever the filesystem cannot make a reflink clone — always on Windows, and on Linux filesystems such as ext4. Immutable source reads only the main database file, so recent edits (annotations you just made, notes you just typed) may not be visible yet. From Zotero 10 this affects more edits, because Zotero holds recent writes in a separate write-ahead log until it checkpoints.
 
 <Callout type="warn" title="Full copy is expensive">
   Switching to **Full copy** captures the most recent state, but it copies the

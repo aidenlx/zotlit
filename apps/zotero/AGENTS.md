@@ -1,6 +1,6 @@
 # @zotlit/zotero
 
-Zotero 9 (Firefox 140 ESR) companion plugin. No backward-compat with Zotero 8 or earlier.
+Zotero 9 and Zotero 10 (both Firefox 140 ESR) companion plugin. `strict_min_version` is `9.0` and `strict_max_version` is `10.*`, both in `package.json` under `zotero`. No backward-compat with Zotero 8 or earlier.
 
 ## Commands
 
@@ -15,6 +15,10 @@ Debug live runtime state (notifiers, `Zotero.*` returns, pref reads, HTTP notify
 ### HTTP
 
 Default transport is `fetch`. Switch to `Zotero.HTTP.request` only when need CORS bypass that `fetch` from chrome scope can't do.
+
+### Zotero 9 / 10 API shapes
+
+Both majors are supported, so code that touches an API they shape differently tests for the Zotero 10 shape and falls through to the Zotero 9 one. Test for **presence of the Zotero 10 name** — reading a name Zotero 10 removed can throw rather than return `undefined`, as `collectionTreeRow` does. `src/menus/collection-scope.ts` holds the pattern; [docs/zotero10_dev.md](../../docs/zotero10_dev.md) records the full 9 → 10 diff. Type gaps that `zotero-types` has yet to cover go in `src/types/zotero.d.ts`.
 
 ### Patching reader internals
 

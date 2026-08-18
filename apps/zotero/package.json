@@ -45,6 +45,6 @@
   "zotero": {
     "id": "zotlit@aidenlx.site",
     "strict_min_version": "9.0",
-    "strict_max_version": "9.*"
+    "strict_max_version": "10.*"
   }
 }
