@@ -146,13 +146,13 @@ While **Open citations as links** is off, a plain click on a citation ZotLit sho
 
 **Hover action** decides what hover shows, and one hover shows one result. It ships as **Citation popover**. It owns hover on its own: **Open citations as links** never gates it, so a citation ZotLit shows still answers hover with the popover while that setting is off.
 
-The citation popover shows the full bibliography entry of every cited item, in citation order, each with buttons to open its Literature Note, select it in Zotero, and open its attachment. An unresolved citation key says so in place of an entry.
+The citation popover shows the full bibliography entry of every cited item, in citation order, each with buttons to open its Literature Note, select it in Zotero, and open its attachment. An unresolved citation key says so in place of an entry. A citation key that matches several Zotero items says so too, and lists every item it matches with that item's library and item key.
 
 A style that writes its citations as footnotes shows the footnote text instead, with the same buttons in one row per cited item. Each row carries the item's number from the References Sidebar, the same number the citation shows in the text.
 
 A toggle on the **Require modifier key** sub-page under **Hover action** gates the popover in each editing mode. Source mode ships on, so the popover waits until you hold Ctrl (Windows and Linux) or Cmd (macOS) and plain-text editing stays uninterrupted. Live Preview and reading view ship off and show the popover on bare hover.
 
-**Page preview** keeps Obsidian's own page preview instead: a single-item citation previews its Literature Note under the Page preview plugin's settings, and a multi-item citation previews nothing. **Off** adds no ZotLit hover result, and Literature Note wikilinks keep Obsidian's native hover.
+**Page preview** keeps Obsidian's own page preview instead: a single-item citation previews its Literature Note under the Page preview plugin's settings, and a multi-item citation previews nothing. A citation key that matches several Zotero items previews nothing either, since no one of them is the item the key names. **Off** adds no ZotLit hover result, and Literature Note wikilinks keep Obsidian's native hover.
 
 The four commands have no default hotkeys:
 

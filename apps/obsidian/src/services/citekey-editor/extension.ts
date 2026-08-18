@@ -25,15 +25,20 @@ import type { TFile } from "obsidian";
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
+import type { CitekeyResolution } from "@/services/citation-index/service";
 import {
   citationContent,
   citationElement,
+  citationKeyStates,
+  citationState,
+  citationStateHooks,
   citedWorks,
-  literalSummaryOf,
-  unresolvedKeys,
+  citekeyState,
+  literalKeyStateOf,
 } from "@/services/citation-text/present";
 import type {
   CitationCoordinate,
+  CitationKeyState,
   DocumentCitations,
   PresentedCitation,
   ShownCitation,
@@ -64,7 +69,7 @@ import {
   isExcludedTokenClass,
   isFootnoteTokenClass,
   marksOutside,
-  resolveCitekeyMarks,
+  stateCitekeyMarks,
 } from "./decorate";
 import type { CitationRange } from "./decorate";
 import "./style.css";
@@ -75,13 +80,10 @@ const logger = getLogger("citekey-editor");
 export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
 
 /**
- * The Item a citekey names — read synchronously from the Citation Index's
- * resolution snapshot.
- *
- * @returns the Item's Indexed Key, which is the identity a work is joined to
- *   its entry by, or null for a key naming no live Zotero Item.
+ * What a citekey names — read synchronously from the Citation Index's
+ * resolution snapshot: one Zotero Item, none, or several candidates.
  */
-export type ResolveCitekey = (citekey: string) => string | null;
+export type ResolveCitekey = (citekey: string) => CitekeyResolution;
 
 /**
  * The resolution state the page preview branch reads.
@@ -128,8 +130,13 @@ export const citekeyDecorationsChanged = StateEffect.define<void>();
  */
 const MARK_CLASS = `cm-underline ${themeHook.citationKey}`;
 
-/** A citekey with no indexed Literature Note: a broken reference. */
-const UNRESOLVED_MARK_CLASS = `${MARK_CLASS} ${themeHook.citationKeyUnresolved}`;
+/**
+ * The classes one marked key carries for what it names, drawn from the shared
+ * classifier so a marked key and the Citation it is written in state one thing.
+ */
+function markClass(state: CitationKeyState): string {
+  return [MARK_CLASS, ...citationStateHooks(citationState([state]))].join(" ");
+}
 
 /**
  * What a plain click on a marked citekey reaches wherever Citations stay closed
@@ -142,26 +149,25 @@ const UNRESOLVED_MARK_CLASS = `${MARK_CLASS} ${themeHook.citationKeyUnresolved}`
 const EDIT_ATTRIBUTES = { "data-zt-click": "edit" };
 
 /**
- * The marks of one resolution state, in the two states Citekey Navigation
+ * The marks of every resolution state, in the two states Citekey Navigation
  * leaves a citekey in. A citekey that opens on click carries the link
  * affordance whole and states nothing further.
  */
 const CITEKEY_MARKS = {
-  open: {
-    resolved: Decoration.mark({ class: MARK_CLASS }),
-    unresolved: Decoration.mark({ class: UNRESOLVED_MARK_CLASS }),
-  },
-  edit: {
-    resolved: Decoration.mark({
-      class: MARK_CLASS,
-      attributes: EDIT_ATTRIBUTES,
-    }),
-    unresolved: Decoration.mark({
-      class: UNRESOLVED_MARK_CLASS,
-      attributes: EDIT_ATTRIBUTES,
-    }),
-  },
+  open: markDecorations(),
+  edit: markDecorations(EDIT_ATTRIBUTES),
 } as const;
+
+/** @param attributes what every mark of this set states about its own click. */
+function markDecorations(
+  attributes?: Record<string, string>,
+): Record<CitationKeyState, Decoration> {
+  return {
+    resolved: Decoration.mark({ class: markClass("resolved"), attributes }),
+    missing: Decoration.mark({ class: markClass("missing"), attributes }),
+    ambiguous: Decoration.mark({ class: markClass("ambiguous"), attributes }),
+  };
+}
 
 /** What the decoration pass produced, kept apart so the widgets can be atomic. */
 interface CitekeyDecorations {
@@ -344,10 +350,18 @@ export function citekeyEditorExtension(
           hoverParent: info,
           targetEl,
           sourcePath: info.file?.path ?? "",
-          works: intent.citekeys.map((key) => ({
-            citekey: key,
-            indexedKey: handlers.resolveCitekey(key) ?? undefined,
-          })),
+          works: intent.citekeys.map((key) => {
+            const resolution = handlers.resolveCitekey(key);
+            return {
+              citekey: key,
+              // An Ambiguous Citation Key adopts no candidate's identity, so
+              // the popover reads it as the key it is and names its candidates.
+              indexedKey:
+                resolution.kind === "unique"
+                  ? resolution.item.indexedKey
+                  : undefined,
+            };
+          }),
           open: handlers.open,
         });
       }
@@ -570,15 +584,15 @@ function buildDecorations(
         }
       }
 
-      const marks = resolveCitekeyMarks(
+      const marks = stateCitekeyMarks(
         marksOutside(citekeyMarks(line.text, isRuledOut), replaced),
-        (citekey) => handlers.resolveCitekey(citekey) !== null,
+        (citekey) => citekeyState(handlers.resolveCitekey(citekey)),
       );
       for (const mark of marks) {
         placed.push({
           from: line.from + mark.start,
           to: line.from + mark.end,
-          decoration: mark.resolved ? marksOf.resolved : marksOf.unresolved,
+          decoration: marksOf[mark.state],
           replaces: false,
         });
       }
@@ -618,16 +632,12 @@ function citationWidget(options: {
   const at: CitationCoordinate = { kind: "offset", start };
   const content = citationContent(citation, citations, at);
   if (content === null) return null;
-  const summaryOf = literalSummaryOf(citations);
-  const unresolved = unresolvedKeys(citation, summaryOf);
-  const themeClasses =
-    unresolved === 0
-      ? []
-      : [
-          unresolved === citation.keys.length
-            ? themeHook.citationKeyUnresolved
-            : themeHook.citationKeyPartiallyUnresolved,
-        ];
+  const stateOf = literalKeyStateOf(citations, (citekey) =>
+    citekeyState(handlers.resolveCitekey(citekey)),
+  );
+  const themeClasses = citationStateHooks(
+    citationState(citationKeyStates(citation, stateOf)),
+  );
   return new CitationWidget({
     source: citation.source,
     content,

@@ -7,7 +7,9 @@ import type {
 import type { HoveredWork } from "@/services/citekey-navigation";
 import type { ReferenceEntry } from "@/views/references/entries";
 
+import { ambiguousCandidates } from "./__fixtures__/ambiguous-candidates";
 import { citationPopoverBlocks } from "./blocks";
+import type { AmbiguousCandidatesOf } from "./blocks";
 
 /** One work a citation names, with the Item its entry is built under. */
 const work = (citekey: string): HoveredWork => ({
@@ -17,6 +19,9 @@ const work = (citekey: string): HoveredWork => ({
 
 /** One work whose citekey reaches no Zotero Item at all. */
 const unknown = (citekey: string): HoveredWork => ({ citekey });
+
+/** A document whose citekeys name at most one Item apiece. */
+const none: AmbiguousCandidatesOf = () => null;
 
 const occurrence = (raw: string): CitationOccurrence => ({
   kind: "citekey",
@@ -60,7 +65,7 @@ describe("citationPopoverBlocks", () => {
     const blocks = citationPopoverBlocks(
       [work("smith2025"), work("doe2024")],
       [renderedEntry("doe2024"), renderedEntry("smith2025")],
-      { serials: false },
+      { serials: false, ambiguous: none },
     );
 
     expect(blocks.map((block) => block.citekey)).toEqual([
@@ -87,7 +92,7 @@ describe("citationPopoverBlocks", () => {
           }),
         }),
       ],
-      { serials: false },
+      { serials: false, ambiguous: none },
     );
 
     expect(block).toMatchObject({
@@ -104,7 +109,7 @@ describe("citationPopoverBlocks", () => {
     const [block] = citationPopoverBlocks(
       [work("doe2024")],
       [renderedEntry("doe2024", { marker })],
-      { serials: false },
+      { serials: false, ambiguous: none },
     );
 
     expect(block).toMatchObject({ marker, serial: undefined });
@@ -114,10 +119,16 @@ describe("citationPopoverBlocks", () => {
     const entries = [renderedEntry("doe2024", { serial: 3 })];
 
     expect(
-      citationPopoverBlocks([work("doe2024")], entries, { serials: true })[0],
+      citationPopoverBlocks([work("doe2024")], entries, {
+        serials: true,
+        ambiguous: none,
+      })[0],
     ).toMatchObject({ serial: 3 });
     expect(
-      citationPopoverBlocks([work("doe2024")], entries, { serials: false })[0],
+      citationPopoverBlocks([work("doe2024")], entries, {
+        serials: false,
+        ambiguous: none,
+      })[0],
     ).toMatchObject({ serial: undefined });
   });
 
@@ -134,7 +145,7 @@ describe("citationPopoverBlocks", () => {
           linkpath: null,
         },
       ],
-      { serials: false },
+      { serials: false, ambiguous: none },
     );
 
     expect(block).toMatchObject({
@@ -163,12 +174,45 @@ describe("citationPopoverBlocks", () => {
           linkpath: null,
         },
       ],
-      { serials: false },
+      { serials: false, ambiguous: none },
     );
 
     expect(blocks).toEqual([
       { kind: "unresolved", citekey: "typo2024" },
       { kind: "unresolved", citekey: "gone2020" },
+    ]);
+  });
+
+  it("states the candidates of a citekey that names several Items", () => {
+    const blocks = citationPopoverBlocks([unknown("doe2024")], [], {
+      serials: false,
+      ambiguous: (citekey) =>
+        citekey === "doe2024" ? ambiguousCandidates : null,
+    });
+
+    expect(blocks).toEqual([
+      {
+        kind: "ambiguous",
+        citekey: "doe2024",
+        candidates: ambiguousCandidates,
+      },
+    ]);
+  });
+
+  it("keeps a citekey reaching no Item apart from an ambiguous one", () => {
+    const blocks = citationPopoverBlocks(
+      [unknown("typo2024"), unknown("doe2024")],
+      [],
+      {
+        serials: false,
+        ambiguous: (citekey) =>
+          citekey === "doe2024" ? ambiguousCandidates : null,
+      },
+    );
+
+    expect(blocks.map((block) => block.kind)).toEqual([
+      "unresolved",
+      "ambiguous",
     ]);
   });
 
@@ -178,7 +222,7 @@ describe("citationPopoverBlocks", () => {
       // under a citekey the document never writes as text.
       [{ citekey: "Wang 2020", indexedKey: "KEYdoe2024" }],
       [renderedEntry("doe2024")],
-      { serials: false },
+      { serials: false, ambiguous: none },
     );
 
     expect(blocks).toMatchObject([
@@ -195,7 +239,7 @@ describe("citationPopoverBlocks", () => {
       citationPopoverBlocks(
         [{ citekey: "doe2024", indexedKey: "GONE0002" }],
         [renderedEntry("doe2024")],
-        { serials: false },
+        { serials: false, ambiguous: none },
       ),
     ).toEqual([{ kind: "unresolved", citekey: "doe2024" }]);
   });
@@ -205,9 +249,7 @@ describe("citationPopoverBlocks", () => {
       citationPopoverBlocks(
         [unknown("nobody1999"), unknown("nothing2000")],
         [],
-        {
-          serials: false,
-        },
+        { serials: false, ambiguous: none },
       ),
     ).toEqual([
       { kind: "unresolved", citekey: "nobody1999" },

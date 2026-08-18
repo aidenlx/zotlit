@@ -315,6 +315,18 @@ describe("CitekeyEditor ambiguous citation keys", () => {
     await service[Symbol.asyncDispose]();
   });
 
+  // The page preview would have to pick one of the candidates to show, so it
+  // shows none of them: a hover implies no identity the key does not carry.
+  it("previews no note for a citekey that names several Items", async () => {
+    const { service } = await openEditor({
+      DOE2024: [{ path: "Doe 2024.md" }],
+      ROE2025g7: [{ path: "Roe 2025.md" }],
+    });
+
+    expect(service.hoverNotePath("doe2024")).toBeNull();
+    await service[Symbol.asyncDispose]();
+  });
+
   it("opens a chosen candidate by its exact Indexed Key without resolving the key again", async () => {
     vi.mocked(getItemsByID).mockReturnValue([]);
     const opened: { path: string; pane: unknown }[] = [];

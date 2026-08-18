@@ -403,6 +403,7 @@
   "references_db_unavailable": "打开 Zotero 数据库后即可查看参考文献。",
   "references_item_missing": "{linkpath} 指向的条目已不在 Zotero 文库中。",
   "references_citekey_unresolved": "@{citekey} 在 Zotero 文库中没有对应的条目。",
+  "references_citekey_ambiguous": "@{citekey} 在 Zotero 文库中对应多个条目。",
   "references_citation_fragment_invalid": "此链接包含无效的引用片段。",
   "references_open_note_invalid_fragment": "修复引用片段以打开其笔记",
   "references_go_to_occurrence": [

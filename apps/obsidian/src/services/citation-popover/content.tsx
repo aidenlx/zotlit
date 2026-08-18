@@ -7,11 +7,17 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
+import { candidateRow } from "@/services/citation-index/ambiguity";
 import type { Inlines } from "@/services/pandoc/ast";
 import { InlineContent } from "@/services/pandoc/inline-content";
 
 import type { CitationPopoverActions } from "./actions";
-import type { CitationEntryBlock, CitationPopoverBlock } from "./blocks";
+import type {
+  AmbiguousCitationBlock,
+  CitationEntryBlock,
+  CitationPopoverBlock,
+  UnresolvedCitationBlock,
+} from "./blocks";
 
 export interface CitationPopoverContentProps {
   /** One block per work the hovered citation names, in the order it names them. */
@@ -73,7 +79,7 @@ function EntryStack({
               <EntryActions block={block} actions={actions} />
             </>
           ) : (
-            <Unresolved citekey={block.citekey} />
+            <Broken block={block} />
           )}
         </div>
       ))}
@@ -123,7 +129,7 @@ function NoteCitation({
             {block.kind === "entry" ? (
               <EntryActions block={block} actions={actions} />
             ) : (
-              <Unresolved citekey={block.citekey} />
+              <Broken block={block} />
             )}
           </div>
         ))}
@@ -132,11 +138,46 @@ function NoteCitation({
   );
 }
 
-/** A citekey reaching no Zotero Item, which the popover explains in that work's place. */
-function Unresolved({ citekey }: { citekey: string }) {
+/**
+ * A citekey no entry stands for, explained in that work's place: one reaching
+ * no Zotero Item at all, or an Ambiguous Citation Key, which names the Items it
+ * matches so the reader can tell them apart in Zotero.
+ */
+function Broken({
+  block,
+}: {
+  block: UnresolvedCitationBlock | AmbiguousCitationBlock;
+}) {
+  if (block.kind === "unresolved") {
+    return (
+      <div className={cn(entryTextClass, "zt:text-destructive")}>
+        {m.references_citekey_unresolved({ citekey: block.citekey })}
+      </div>
+    );
+  }
   return (
-    <div className={cn(entryTextClass, "zt:text-destructive")}>
-      {m.references_citekey_unresolved({ citekey })}
+    <div className="zt:flex zt:flex-col zt:gap-1">
+      <div className={cn(entryTextClass, "zt:text-destructive")}>
+        {m.references_citekey_ambiguous({ citekey: block.citekey })}
+      </div>
+      <ul className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-1 zt:p-0">
+        {block.candidates.map((candidate) => {
+          const row = candidateRow(candidate);
+          return (
+            <li key={candidate.indexedKey} className={entryTextClass}>
+              <div className="zt:text-foreground zt:select-text">
+                {row.summary}
+              </div>
+              {/* The Library name and the key are two facts, so the row keeps
+                  them apart — the same three facts the candidate picker states. */}
+              <div className="zt:flex zt:gap-2 zt:text-xs zt:text-muted-foreground">
+                {row.library !== null && <span>{row.library}</span>}
+                <span>{row.key}</span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

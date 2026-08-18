@@ -3,6 +3,7 @@
 import type { CitationSource } from "@/lib/citation-fragment";
 import type { SectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { CitedWork } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { renderInlineContent } from "@/services/pandoc/inline-content";
@@ -141,14 +142,96 @@ export function literalSummaryOf({
 }
 
 /**
- * How many of one citation's keys reach no Zotero Item, which is what decides
- * between the resolved, partly unresolved, and wholly unresolved theme hooks.
+ * What one Citation Key reaches, as every surface showing it reports the
+ * reach: one Zotero Item, none at all, or several — an Ambiguous Citation Key,
+ * which names no one Item and so reaches nothing a surface can show.
  */
-export function unresolvedKeys(
+export type CitationKeyState = "resolved" | "missing" | "ambiguous";
+
+/** {@link CitationKeyState} of one Citation Key. */
+export type KeyStateOf = (citekey: string) => CitationKeyState;
+
+/**
+ * What one Citation reads as, over every Citation Key it names — the state its
+ * public theme hook stands for.
+ *
+ * A missing key outranks an Ambiguous one: a mixed cluster reports the
+ * strongest failure, so a key that reaches nothing at all stays visible.
+ */
+export type CitationState =
+  | "resolved"
+  | "unresolved"
+  | "partially-unresolved"
+  | "ambiguous";
+
+/** How one Citation Key resolution reads on a note surface. */
+export function citekeyState(resolution: CitekeyResolution): CitationKeyState {
+  switch (resolution.kind) {
+    case "unique":
+      return "resolved";
+    case "ambiguous":
+      return "ambiguous";
+    case "missing":
+      return "missing";
+  }
+}
+
+/**
+ * {@link KeyStateOf} for the literal citekeys one document writes.
+ *
+ * A key reaches its work when the document's own read reached that work, which
+ * is what a surface has text and a summary for; the resolution snapshot alone
+ * says whether a key that reached none is Ambiguous or missing.
+ */
+export function literalKeyStateOf(
+  citations: DocumentCitations,
+  stateOf: KeyStateOf,
+): KeyStateOf {
+  const summaryOf = literalSummaryOf(citations);
+  return (citekey) => {
+    if (summaryOf(citekey) !== undefined) return "resolved";
+    return stateOf(citekey) === "ambiguous" ? "ambiguous" : "missing";
+  };
+}
+
+/** The state of each key one Citation names, in the order it names them. */
+export function citationKeyStates(
   { keys }: CitationSource,
-  summaryOf: SummaryOf,
-): number {
-  return keys.filter((key) => summaryOf(key.citekey) === undefined).length;
+  stateOf: KeyStateOf,
+): CitationKeyState[] {
+  return keys.map((key) => stateOf(key.citekey));
+}
+
+/**
+ * The shared presentation classifier: what one Citation reads as, over the
+ * states of the keys it names. Editor and reading surfaces both classify
+ * through it, so one cluster reports one state wherever it is shown.
+ */
+export function citationState(
+  states: readonly CitationKeyState[],
+): CitationState {
+  if (states.some((state) => state === "missing")) {
+    return states.some((state) => state === "resolved")
+      ? "partially-unresolved"
+      : "unresolved";
+  }
+  return states.some((state) => state === "ambiguous")
+    ? "ambiguous"
+    : "resolved";
+}
+
+/** The public theme hooks one Citation carries for the state it reads as. */
+export function citationStateHooks(state: CitationState): string[] {
+  switch (state) {
+    case "resolved":
+      return [];
+    case "unresolved":
+      return [themeHook.citationKeyUnresolved];
+    case "partially-unresolved":
+      return [themeHook.citationKeyPartiallyUnresolved];
+    case "ambiguous":
+      return [themeHook.citationKeyAmbiguous];
+  }
 }
 
 /**

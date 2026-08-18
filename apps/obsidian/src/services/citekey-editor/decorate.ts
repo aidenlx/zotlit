@@ -2,7 +2,11 @@
 
 import { scanCitations, scanCitekeys } from "@/lib/citation-grammar";
 import type { TextSpan } from "@/lib/citation-grammar";
-import type { CitationSource } from "@/services/citation-text/present";
+import type {
+  CitationKeyState,
+  CitationSource,
+  KeyStateOf,
+} from "@/services/citation-text/present";
 
 /** A citekey span to mark, with the key the click flow resolves. */
 export interface CitekeyMark extends TextSpan {
@@ -92,24 +96,22 @@ export function citekeyMarks(
   return marks;
 }
 
-/** A citekey mark plus whether it resolves to a Literature Note. */
-export interface ResolvedCitekeyMark extends CitekeyMark {
-  resolved: boolean;
+/** A citekey mark plus what its key reaches. */
+export interface StatedCitekeyMark extends CitekeyMark {
+  state: CitationKeyState;
 }
 
 /**
  * Attaches resolution state to each mark, so the caller can style a broken
- * reference apart from one that resolves. Kept apart from {@link citekeyMarks}
- * so the click-target lookup, which needs no resolution state, stays free of a
- * resolver dependency.
- *
- * @param resolves {@link ../extension.ResolveCitekey}
+ * reference, an Ambiguous Citation Key, and a key that resolves apart. Kept
+ * apart from {@link citekeyMarks} so the click-target lookup, which needs no
+ * resolution state, stays free of a resolver dependency.
  */
-export function resolveCitekeyMarks(
+export function stateCitekeyMarks(
   marks: readonly CitekeyMark[],
-  resolves: (citekey: string) => boolean,
-): ResolvedCitekeyMark[] {
-  return marks.map((mark) => ({ ...mark, resolved: resolves(mark.citekey) }));
+  stateOf: KeyStateOf,
+): StatedCitekeyMark[] {
+  return marks.map((mark) => ({ ...mark, state: stateOf(mark.citekey) }));
 }
 
 /** One Citation of a line, at the range a widget would replace. */

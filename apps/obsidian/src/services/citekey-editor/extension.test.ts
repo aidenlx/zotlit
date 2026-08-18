@@ -36,6 +36,10 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField, Keymap } from "obsidian";
 
+import type {
+  CitekeyResolution,
+  SnapshotItem,
+} from "@/services/citation-index/service";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
 import {
@@ -59,6 +63,28 @@ const DOE_KEY = "DOE22345";
 
 /** The one Literature Note the page preview branch reads for `@doe2024`. */
 const NOTE_PATH = "lit/doe2024.md";
+
+/** One Item of the resolution snapshot, as the handler carries it. */
+const item = (indexedKey: string, itemID = 1): SnapshotItem => ({
+  itemID,
+  libraryID: 1,
+  key: indexedKey,
+  indexedKey,
+});
+
+/** The snapshot's answer for a key naming exactly one Item. */
+const unique = (indexedKey: string): CitekeyResolution => ({
+  kind: "unique",
+  item: item(indexedKey),
+});
+
+/** The snapshot's answer for an Ambiguous Citation Key. */
+const ambiguous: CitekeyResolution = {
+  kind: "ambiguous",
+  candidates: [item("DOE22345"), item("DOE22346", 2)],
+};
+
+const missing: CitekeyResolution = { kind: "missing" };
 
 const hover = (
   overrides: Partial<HoverPreferences> = {},
@@ -113,7 +139,7 @@ describe("citekeyEditorExtension theme hooks", () => {
           hoverPreferences: () => hover(),
           hoverNotePath: () => NOTE_PATH,
           resolveCitekey: (citekey) =>
-            citekey === "resolved" ? DOE_KEY : null,
+            citekey === "resolved" ? unique(DOE_KEY) : missing,
           navigationEnabled: () => true,
           showFormatted: () => true,
           citationText: () => null,
@@ -131,6 +157,44 @@ describe("citekeyEditorExtension theme hooks", () => {
     ).toBe("@unresolved");
   });
 
+  // An Ambiguous Citation Key reads apart from a key that reaches nothing, in
+  // both editor modes, and the document keeps the source the author wrote.
+  it("adds the literal ambiguous citation-key hook in both editor modes", () => {
+    for (const livePreviewMode of [false, true]) {
+      livePreview.mockReturnValue(livePreviewMode);
+      const doc = "@ambiguous and @unresolved";
+      using view = editorView({
+        parent: document.body,
+        state: EditorState.create({
+          doc,
+          extensions: citekeyEditorExtension({
+            open: () => undefined,
+            showPopover: () => undefined,
+            hoverPreferences: () => hover(),
+            hoverNotePath: () => NOTE_PATH,
+            resolveCitekey: (citekey) =>
+              citekey === "ambiguous" ? ambiguous : missing,
+            navigationEnabled: () => true,
+            showFormatted: () => true,
+            citationText: () => null,
+            requestCitationText: () => undefined,
+          }),
+        }),
+      });
+
+      const marked = view.dom.querySelector(".zt-citation-key-ambiguous");
+      expect(marked?.textContent).toBe("@ambiguous");
+      expect(marked?.classList.contains("zt-citation-key")).toBe(true);
+      expect(marked?.classList.contains("zt-citation-key-unresolved")).toBe(
+        false,
+      );
+      expect(
+        view.dom.querySelector(".zt-citation-key-unresolved")?.textContent,
+      ).toBe("@unresolved");
+      expect(view.state.doc.toString()).toBe(doc);
+    }
+  });
+
   it("states the marked key's click when the setting turns off", () => {
     livePreview.mockReturnValue(true);
     let navigationEnabled = true;
@@ -144,7 +208,7 @@ describe("citekeyEditorExtension theme hooks", () => {
           hoverPreferences: () => hover(),
           hoverNotePath: () => NOTE_PATH,
           resolveCitekey: (citekey) =>
-            citekey === "resolved" ? DOE_KEY : null,
+            citekey === "resolved" ? unique(DOE_KEY) : missing,
           navigationEnabled: () => navigationEnabled,
           showFormatted: () => false,
           citationText: () => null,
@@ -184,7 +248,7 @@ describe("citekeyEditorExtension theme hooks", () => {
             showPopover: (request) => requests.push(request),
             hoverPreferences: () => hover(),
             hoverNotePath: () => NOTE_PATH,
-            resolveCitekey: () => DOE_KEY,
+            resolveCitekey: () => unique(DOE_KEY),
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => true,
             citationText: () => ({
@@ -247,7 +311,7 @@ describe("citekeyEditorExtension delegated hover", () => {
             showPopover: (request) => requests.push(request),
             hoverPreferences: () => preferences,
             hoverNotePath: () => notePath,
-            resolveCitekey: () => DOE_KEY,
+            resolveCitekey: () => unique(DOE_KEY),
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => false,
             citationText: () => null,
@@ -410,7 +474,7 @@ describe("citekeyEditorExtension citation widgets", () => {
             showPopover: (request) => requests.push(request),
             hoverPreferences: () => hover(),
             hoverNotePath: () => NOTE_PATH,
-            resolveCitekey: () => DOE_KEY,
+            resolveCitekey: () => unique(DOE_KEY),
             navigationEnabled: () => false,
             showFormatted: () => true,
             citationText: () => held,

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { candidateRow } from "@/services/citation-index/ambiguity";
+import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 
-import { candidateMatches, candidateRow } from "./candidates";
-import type { AmbiguousCandidate } from "./service";
+import { candidateMatches } from "./candidates";
 
 function candidate(
   overrides: Partial<AmbiguousCandidate> = {},

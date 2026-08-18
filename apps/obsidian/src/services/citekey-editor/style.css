@@ -69,3 +69,11 @@
     text-decoration-line: var(--link-decoration-hover);
   }
 }
+
+/* A citekey naming several Zotero Items: it still opens — the candidates are
+   offered — so it keeps the link colour and takes the unresolved decoration,
+   which says the key alone does not reach one Item. */
+:where(.markdown-source-view.mod-cm6 span.zt-citation-key-ambiguous) {
+  text-decoration-color: var(--link-unresolved-decoration-color);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+}

@@ -4,34 +4,13 @@ import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { libraryLabel } from "@/services/library-scope/label";
-
+import { candidateRow } from "@/services/citation-index/ambiguity";
 import type {
   AmbiguousCandidate,
-  AmbiguousCitekey,
-  CitekeyEditor,
-} from "./service";
+  CandidateRow,
+} from "@/services/citation-index/ambiguity";
 
-/**
- * What one candidate row states, in the order it reads: the Item summary, the
- * Library holding it, and its bare Zotero item key — the three facts that tell
- * two candidates of one Library apart.
- */
-export interface CandidateRow {
-  summary: string;
-  /** Zotero's live Library name, or `null` when the scope no longer names it. */
-  library: string | null;
-  /** Bare Zotero item key, which the Library name qualifies into an identity. */
-  key: string;
-}
-
-export function candidateRow(candidate: AmbiguousCandidate): CandidateRow {
-  return {
-    summary: candidate.summary,
-    library: candidate.library ? libraryLabel(candidate.library) : null,
-    key: candidate.key,
-  };
-}
+import type { AmbiguousCitekey, CitekeyEditor } from "./service";
 
 /** Whether a candidate row answers a typed filter, over the text it shows. */
 export function candidateMatches(row: CandidateRow, query: string): boolean {

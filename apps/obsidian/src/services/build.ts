@@ -215,6 +215,7 @@ export function buildServices(
         citationIndex,
         citationText,
         bibliographyRender,
+        libraryScope,
       }): CitationPopover =>
         createCitationPopover({
           app: plugin.app,
@@ -222,6 +223,7 @@ export function buildServices(
           citationIndex,
           citationText,
           bibliographyRender,
+          libraryScope,
         }),
     })
     .use({
@@ -291,6 +293,7 @@ export function buildServices(
     .use({
       citekeyReading: ({
         citationText,
+        citationIndex,
         citationPopover,
         citekeyEditor,
         settings,
@@ -299,6 +302,7 @@ export function buildServices(
           app: plugin.app,
           plugin,
           citationText,
+          citationIndex,
           citationPopover,
           citekeyEditor,
           settings,

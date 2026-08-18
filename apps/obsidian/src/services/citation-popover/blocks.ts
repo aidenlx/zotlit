@@ -1,5 +1,6 @@
 // The blocks one hovered citation shows: its works' bibliography entries, in the order the citation names them.
 
+import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import type { OpenableAttachment } from "@/services/citation-index/service";
 import type { HoveredWork } from "@/services/citekey-navigation";
 import type { Inlines } from "@/services/pandoc/ast";
@@ -32,7 +33,30 @@ export interface UnresolvedCitationBlock {
   citekey: string;
 }
 
-export type CitationPopoverBlock = CitationEntryBlock | UnresolvedCitationBlock;
+/**
+ * A citekey naming several Zotero Items, which the popover explains by the
+ * candidates it names — the Ambiguous Citation Key state, told apart from a
+ * key that reaches nothing at all.
+ */
+export interface AmbiguousCitationBlock {
+  kind: "ambiguous";
+  citekey: string;
+  /** The Items the key names, in the order the resolution snapshot reports them. */
+  candidates: readonly AmbiguousCandidate[];
+}
+
+export type CitationPopoverBlock =
+  | CitationEntryBlock
+  | UnresolvedCitationBlock
+  | AmbiguousCitationBlock;
+
+/**
+ * The candidates one citekey names, or `null` for a key naming zero or one
+ * Item — the read that tells an Ambiguous Citation Key from a missing one.
+ */
+export type AmbiguousCandidatesOf = (
+  citekey: string,
+) => readonly AmbiguousCandidate[] | null;
 
 /**
  * The blocks one hovered citation stacks, in citation order.
@@ -49,11 +73,16 @@ export type CitationPopoverBlock = CitationEntryBlock | UnresolvedCitationBlock;
  *   in, as the References Sidebar builds them.
  * @param serials whether that document's citations show Entry Serials, which is
  *   what puts a serial in the gutter of an entry the style wrote no marker for.
+ * @param ambiguous the candidates a citekey naming several Items reaches, which
+ *   is what an ambiguous block states in place of an entry.
  */
 export function citationPopoverBlocks(
   works: readonly HoveredWork[],
   entries: readonly ReferenceEntry[],
-  { serials }: { serials: boolean },
+  {
+    serials,
+    ambiguous,
+  }: { serials: boolean; ambiguous: AmbiguousCandidatesOf },
 ): CitationPopoverBlock[] {
   const byItem = new Map(entries.map((entry) => [entry.id, entry]));
   return works.map(({ citekey, indexedKey }) => {
@@ -87,9 +116,14 @@ export function citationPopoverBlocks(
           attachments: entry.source.attachments,
         };
       // An Item the database no longer holds reaches no action either, so it
-      // reads as the same broken citation an unresolved citekey is.
-      default:
-        return { kind: "unresolved", citekey };
+      // reads as the same broken citation an unresolved citekey is — unless
+      // the key names several Items, which the candidates say for themselves.
+      default: {
+        const candidates = ambiguous(citekey);
+        return candidates === null
+          ? { kind: "unresolved", citekey }
+          : { kind: "ambiguous", citekey, candidates };
+      }
     }
   });
 }

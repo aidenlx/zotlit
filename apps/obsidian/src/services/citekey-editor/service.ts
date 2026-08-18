@@ -4,14 +4,14 @@
 import type { Extension } from "@codemirror/state";
 import type { App, Plugin } from "obsidian";
 
-import { getItemsByID, isChildItemFields } from "@zotlit/db";
-import type { Item } from "@zotlit/db";
+import { getItemsByID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import * as m from "@/lib/i18n/generated/messages";
-import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { describeCandidates } from "@/services/citation-index/ambiguity";
+import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import type {
   CitationIndex,
   SnapshotItem,
@@ -27,7 +27,6 @@ import type {
   NavigationPane,
 } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
-import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
@@ -57,19 +56,7 @@ export interface CitekeyEditorDeps {
   libraryScope: Pick<LibraryScopeService, "current">;
 }
 
-/**
- * One Item an Ambiguous Citation Key names, as a candidate row shows it: the
- * Item summary, its Library, and its bare Zotero item key — enough to tell two
- * Items of one Library apart. Carries the exact identity the row opens by, so
- * the choice never resolves the Citation Key again.
- */
-export interface AmbiguousCandidate extends SnapshotItem {
-  /** `Creators (Year): Title`, or the bare Zotero item key when the read
-   *  renders none. */
-  summary: string;
-  /** The Library holding the Item, or `null` when the scope no longer names it. */
-  library: AvailableLibrary | null;
-}
+export type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 
 /** One Ambiguous Citation Key, as the candidate picker is asked to show it. */
 export interface AmbiguousCitekey {
@@ -139,7 +126,7 @@ export class CitekeyEditor extends Service<void> {
       showPopover: (request) => this.#citationPopover.show(request),
       hoverPreferences: () => this.#hover,
       hoverNotePath: (citekey) => this.hoverNotePath(citekey),
-      resolveCitekey: (citekey) => this.#resolveCitekey(citekey),
+      resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
@@ -199,11 +186,6 @@ export class CitekeyEditor extends Service<void> {
     );
 
     this.commit(stack.move());
-  }
-
-  /** @see ResolveCitekey */
-  #resolveCitekey(citekey: string): string | null {
-    return this.#uniqueItem(citekey)?.indexedKey ?? null;
   }
 
   /**
@@ -326,7 +308,10 @@ export class CitekeyEditor extends Service<void> {
       });
       this.#emitter.emit("citekey-ambiguous", {
         citekey,
-        candidates: this.#describeCandidates(resolved.candidates),
+        candidates: describeCandidates(
+          { db: this.#db, libraryScope: this.#libraryScope },
+          resolved.candidates,
+        ),
         pane,
       });
       return;
@@ -410,46 +395,5 @@ export class CitekeyEditor extends Service<void> {
       path: file.path,
     });
     await workspace.openLinkText(file.path, "", pane, { active: true });
-  }
-
-  /**
-   * Reads each candidate's summary from the database and pairs it with the
-   * Library it lives in. A read the database cannot answer leaves the summary
-   * as the bare Zotero item key, so the picker still tells the candidates apart.
-   */
-  #describeCandidates(
-    candidates: readonly SnapshotItem[],
-  ): AmbiguousCandidate[] {
-    const libraries = new Map(
-      (this.#libraryScope.current?.available ?? []).map((library) => [
-        library.libraryID,
-        library,
-      ]),
-    );
-    let items = new Map<number, Item>();
-    try {
-      items = new Map(
-        getItemsByID(
-          this.#db.client,
-          candidates.map((candidate) => candidate.itemID),
-        ).map((item) => [item.itemID, item]),
-      );
-    } catch (error) {
-      logger.warn("Ambiguous citekey candidates read without summaries", {
-        error,
-      });
-    }
-    return candidates.map((candidate) => {
-      const item = items.get(candidate.itemID);
-      const fields = item?.fields;
-      return {
-        ...candidate,
-        summary:
-          item && fields && !isChildItemFields(fields)
-            ? itemSummary(item, fields).formatted
-            : candidate.key,
-        library: libraries.get(candidate.libraryID) ?? null,
-      };
-    });
   }
 }

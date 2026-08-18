@@ -8,8 +8,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { Inlines } from "@/services/pandoc/ast";
 
+import { ambiguousCandidates } from "./__fixtures__/ambiguous-candidates";
 import type { CitationPopoverActions } from "./actions";
-import type { CitationEntryBlock, CitationPopoverBlock } from "./blocks";
+import type {
+  AmbiguousCitationBlock,
+  CitationEntryBlock,
+  CitationPopoverBlock,
+} from "./blocks";
 import { CitationPopoverContent } from "./content";
 
 vi.mock("@/components/obsidian/icon-button", async () => {
@@ -41,6 +46,12 @@ const entry = (
   groupID: null,
   attachments: [],
   ...overrides,
+});
+
+const ambiguous = (citekey: string): AmbiguousCitationBlock => ({
+  kind: "ambiguous",
+  citekey,
+  candidates: ambiguousCandidates,
 });
 
 let root: Root | undefined;
@@ -185,6 +196,21 @@ describe("CitationPopoverContent", () => {
       m.references_citekey_unresolved({ citekey: "typo2024" }),
     );
     expect(iconsOf(unresolved!)).toEqual([]);
+  });
+
+  it("explains an ambiguous citekey by the candidates it names", async () => {
+    const container = await render([ambiguous("doe2024")]);
+
+    const [block] = blocksOf(container);
+    expect(block!.textContent).toContain(
+      m.references_citekey_ambiguous({ citekey: "doe2024" }),
+    );
+    // Every candidate row states the same three facts the picker states.
+    expect(block!.textContent).toContain("Doe (2024): A study of citations");
+    expect(block!.textContent).toContain("DOE2024A");
+    expect(block!.textContent).toContain("Shared group");
+    expect(block!.textContent).toContain("DOE2024B");
+    expect(iconsOf(block!)).toEqual([]);
   });
 
   it("opens for a citation none of whose keys reaches an Item", async () => {
