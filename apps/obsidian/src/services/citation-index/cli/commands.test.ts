@@ -271,7 +271,7 @@ describe("zotlit:cited-by", () => {
 
     expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: CITED_BY_COMMAND,
       ok: true,
       request: { key: ITEM_KEY },
@@ -576,7 +576,7 @@ describe("zotlit:cited-by", () => {
     expect(lookupItem).not.toHaveBeenCalled();
     expect(getCitedBy).not.toHaveBeenCalled();
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: CITED_BY_COMMAND,
       ok: false,
       request: { key: ITEM_KEY },
@@ -668,7 +668,7 @@ describe("zotlit:references", () => {
 
     expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: REFERENCES_COMMAND,
       ok: true,
       request: { file: DOCUMENT_PATH },
@@ -766,6 +766,99 @@ describe("zotlit:references", () => {
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
       syntaxes: { citekey: "excluded", wikilink: "included" },
+    });
+  });
+
+  it("reports an ambiguous citation key with the exact key of every candidate", async () => {
+    const { references, resolveCitekey } = setup({
+      document: {
+        citations: [
+          {
+            indexedKey: null,
+            linkpath: null,
+            refNumber: 1,
+            occurrences: [UNRESOLVED_OCCURRENCE],
+          },
+        ],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
+      citekeyResolution: {
+        kind: "ambiguous",
+        candidates: [
+          SNAPSHOT_ITEM,
+          {
+            itemID: 11,
+            libraryID: 4,
+            key: "ROEF6789",
+            indexedKey: "ROEF6789g7",
+          },
+        ],
+      },
+    });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(resolveCitekey).toHaveBeenCalledWith("roe2099");
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      entries: [
+        {
+          refNumber: 1,
+          kind: "ambiguous",
+          citekey: "roe2099",
+          candidates: [
+            { key: ITEM_KEY, libraryID: 1 },
+            { key: "ROEF6789g7", libraryID: 4 },
+          ],
+          occurrences: [UNRESOLVED_REPORTED],
+        },
+      ],
+    });
+  });
+
+  // A candidate is one work's exact identity, which zotlit:template-data reads
+  // in full and the sidebar presents; the index fact alone travels here.
+  it("names a candidate's library by its local id alone", async () => {
+    const { references } = setup({
+      document: {
+        citations: [
+          {
+            indexedKey: null,
+            linkpath: null,
+            refNumber: 1,
+            occurrences: [UNRESOLVED_OCCURRENCE],
+          },
+        ],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
+      citekeyResolution: {
+        kind: "ambiguous",
+        candidates: [SNAPSHOT_ITEM, { ...SNAPSHOT_ITEM, itemID: 11 }],
+      },
+    });
+
+    const [candidate] = JSON.parse(await references({ file: DOCUMENT_PATH }))
+      .entries[0].candidates;
+
+    expect(Object.keys(candidate)).toStrictEqual(["key", "libraryID"]);
+  });
+
+  it("keeps a citekey that names no item unresolved", async () => {
+    const { references } = setup({ citekeyResolution: { kind: "missing" } });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(JSON.parse(output)).toMatchObject({
+      entries: [
+        { kind: "resolved" },
+        { kind: "unresolved", citekey: "roe2099" },
+        { kind: "malformed" },
+        { kind: "missing" },
+      ],
     });
   });
 
@@ -984,7 +1077,13 @@ describe("zotlit:citations-guide", () => {
 
     const output = await guide({});
 
-    for (const kind of ["resolved", "unresolved", "missing", "malformed"]) {
+    for (const kind of [
+      "resolved",
+      "unresolved",
+      "ambiguous",
+      "missing",
+      "malformed",
+    ]) {
       expect(output).toContain(kind);
     }
     for (const state of [
@@ -1047,7 +1146,7 @@ describe("zotlit:citations-guide", () => {
     const output = await guide({ topic: "positions" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: CITATIONS_GUIDE_COMMAND,
       ok: false,
       diagnostic: {

@@ -7,6 +7,7 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -23,6 +24,7 @@ export interface ReferencesRegistrationDeps {
   app: App;
   db: DatabaseService;
   citationIndex: CitationIndex;
+  libraryScope: LibraryScopeService;
   citationText: CitationText;
   citekeyEditor: CitekeyEditor;
   pandocEngine: PandocEngineService;
@@ -38,6 +40,7 @@ export function registerReferencesView(
     app: deps.app,
     db: deps.db,
     citationIndex: deps.citationIndex,
+    libraryScope: deps.libraryScope,
     citationText: deps.citationText,
     citekeyEditor: deps.citekeyEditor,
     pandocEngine: deps.pandocEngine,

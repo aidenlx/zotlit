@@ -4,6 +4,7 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
+import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
 import type {
   Citation,
   DocumentCitationError,
@@ -133,10 +134,12 @@ export function minimalReferencesState(options: {
   sources: ReadonlyMap<string, ReferenceSource>;
   errors: readonly DocumentCitationError[];
   formattingFailed: boolean;
+  /** The candidates an Ambiguous Citation Key names; see {@link buildReferenceEntries}. */
+  ambiguous?: AmbiguousCandidatesOf;
 }): Pick<ReferencesState, "entries" | "listMode" | "formattingFailed"> {
-  const { citations, sources, errors, formattingFailed } = options;
+  const { citations, sources, errors, formattingFailed, ambiguous } = options;
   return {
-    entries: buildReferenceEntries(citations, sources, { errors }),
+    entries: buildReferenceEntries(citations, sources, { errors, ambiguous }),
     listMode: { kind: "minimal" },
     formattingFailed,
   };

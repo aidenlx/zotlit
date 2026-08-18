@@ -909,12 +909,30 @@ export class CitationIndex extends Service<void> {
     return omitted;
   }
 
-  /** Whether a literal-citekey Citation Occurrence resolves to `indexedKey`. */
+  /**
+   * Whether a literal-citekey Citation Occurrence cites `indexedKey`.
+   *
+   * An Ambiguous Citation Key names every one of its candidates here, so one
+   * occurrence answers for each of them: the reverse observation reports a
+   * possible citation relationship rather than omitting it. The forward
+   * direction stays untouched — the occurrence is still one Citation of the
+   * key itself, so no candidate gains a Citation record of its own.
+   */
   #citekeyOccurrenceCites(
     occurrence: CitationOccurrence,
     indexedKey: string,
   ): boolean {
-    return this.#uniqueItem(occurrence.raw)?.indexedKey === indexedKey;
+    const resolved = this.#snapshot.resolve(occurrence.raw);
+    switch (resolved.kind) {
+      case "missing":
+        return false;
+      case "unique":
+        return resolved.item.indexedKey === indexedKey;
+      case "ambiguous":
+        return resolved.candidates.some(
+          (candidate) => candidate.indexedKey === indexedKey,
+        );
+    }
   }
 
   /**

@@ -1701,6 +1701,63 @@ describe("CitationIndex ambiguous citation keys", () => {
       { indexedKey: null, linkpath: null, refNumber: 1 },
     ]);
   });
+
+  // The occurrence may cite either Item, so the reverse observation reports the
+  // possible relationship for each rather than omitting it from both.
+  it("attributes one ambiguous occurrence to every candidate", async () => {
+    const { draft, index, workspace } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      {
+        notes: false,
+        citekeys: [myLibraryRow, groupTwin],
+        libraryScope: bothLibraries(),
+      },
+    );
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    for (const indexedKey of [KEY_A, GROUP_KEY]) {
+      expect(index.getCitedBy(indexedKey).groups).toMatchObject([
+        { path: draft.path, occurrences: [{ raw: "doe2024" }] },
+      ]);
+    }
+  });
+
+  // One source occurrence stays one Citation of the key itself, however many
+  // Items the reverse observation attributes it to.
+  it("creates no Citation record per candidate", async () => {
+    const { draft, index } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote, and @doe2024 again." },
+      {
+        notes: false,
+        citekeys: [myLibraryRow, groupTwin],
+        libraryScope: bothLibraries(),
+      },
+    );
+
+    const citations = await citationsOf(index, draft);
+
+    expect(citations).toMatchObject([{ indexedKey: null, refNumber: 1 }]);
+    expect(citations[0]!.occurrences).toHaveLength(2);
+  });
+
+  it("stops attributing the occurrence once the scope narrows to one candidate", async () => {
+    const libraryScope = bothLibraries();
+    const { index, workspace } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
+    );
+    workspace.layoutReady();
+    await index.whenIndexed();
+    expect(index.getCitedBy(GROUP_KEY).groups).toHaveLength(1);
+
+    libraryScope.select([personalLibrary()]);
+    await index.whenResolved();
+    await yieldToMain();
+
+    expect(index.getCitedBy(GROUP_KEY).groups).toStrictEqual([]);
+    expect(index.getCitedBy(KEY_A).groups).toHaveLength(1);
+  });
 });
 
 /** Runs one index to completion over `documents`, leaving its scans in `store`. */

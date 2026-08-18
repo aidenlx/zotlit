@@ -419,6 +419,7 @@
   "references_open_note": "打开文献笔记",
   "references_open_note_missing": "没有文献笔记：条目已不在文库中",
   "references_open_note_unresolved": "该文献引用标识在 Zotero 文库中没有对应的条目",
+  "references_open_note_ambiguous": "该文献引用标识对应多个 Zotero 条目",
   "references_open_in_zotero": "在 Zotero 中打开",
   "references_open_attachment": "在 Zotero 中打开附件",
   "references_engine_hint_title": "排版这些参考文献",

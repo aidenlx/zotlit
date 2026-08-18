@@ -23,6 +23,7 @@ import {
   fileNotFoundDiagnostic,
   keyNotFoundDiagnostic,
   notSettledDiagnostic,
+  reportCandidates,
   reportGroups,
   reportOccurrences,
 } from "./envelope";
@@ -219,7 +220,9 @@ export function createCitationsCliHandlers(
         });
       }
 
-      const entries = referenceEntries(references);
+      const entries = referenceEntries(references, (citekey) =>
+        deps.index.resolveCitekey(citekey),
+      );
       return envelope(REFERENCES_COMMAND, {
         ok: true,
         ...echoed,
@@ -286,10 +289,7 @@ function resolveItem(
         kind: "fault",
         diagnostic: ambiguousCitekeyDiagnostic(
           citekey,
-          resolved.candidates.map(({ indexedKey, libraryID }) => ({
-            key: indexedKey,
-            libraryID,
-          })),
+          reportCandidates(resolved.candidates),
         ),
       };
     }
@@ -315,29 +315,45 @@ function resolveItem(
 }
 
 /**
- * The document's reference list, in the four kinds a CLI answer distinguishes.
+ * The document's reference list, in the five kinds a CLI answer distinguishes.
  *
  * A malformed entry names no work, so it sorts in by the one occurrence it
  * carries; every other entry keeps the Reference Number the index assigned it,
  * which leaves the whole list in first-occurrence order.
+ *
+ * @param resolveCitekey what a citekey names now, which is what tells an
+ *   Ambiguous Citation Key from one that names no Item at all.
  */
-function referenceEntries({
-  citations,
-  errors,
-  sources,
-}: DocumentReferences): ReferenceEntry[] {
+function referenceEntries(
+  { citations, errors, sources }: DocumentReferences,
+  resolveCitekey: (citekey: string) => CitekeyResolution,
+): ReferenceEntry[] {
   const entries: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, occurrences } of citations) {
     const reported = reportOccurrences(occurrences);
     if (indexedKey === null) {
-      // Every unresolved Citation is written as a citekey — a wikilink that
-      // resolves to no Item is no Citation at all — so its raw text names it.
-      entries.push({
-        refNumber,
-        kind: "unresolved",
-        citekey: occurrences[0]!.raw,
-        occurrences: reported,
-      });
+      // Every Citation naming no single Item is written as a citekey — a
+      // wikilink that resolves to no Item is no Citation at all — so its raw
+      // text names it. A key several items carry adopts none of them, which is
+      // why it reaches this branch alongside a key no item carries.
+      const citekey = occurrences[0]!.raw;
+      const resolved = resolveCitekey(citekey);
+      entries.push(
+        resolved.kind === "ambiguous"
+          ? {
+              refNumber,
+              kind: "ambiguous",
+              citekey,
+              candidates: reportCandidates(resolved.candidates),
+              occurrences: reported,
+            }
+          : {
+              refNumber,
+              kind: "unresolved",
+              citekey,
+              occurrences: reported,
+            },
+      );
       continue;
     }
     const source = sources.get(indexedKey);

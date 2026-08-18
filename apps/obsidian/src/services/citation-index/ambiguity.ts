@@ -49,6 +49,14 @@ export function candidateRow(candidate: AmbiguousCandidate): CandidateRow {
   };
 }
 
+/**
+ * The candidates one citekey names, or `null` for a key naming zero or one
+ * Item — the read that tells an Ambiguous Citation Key from a missing one.
+ */
+export type AmbiguousCandidatesOf = (
+  citekey: string,
+) => readonly AmbiguousCandidate[] | null;
+
 /** Where a candidate description reads its summary and its Library from. */
 export interface CandidateDeps {
   db: Pick<DatabaseService, "client">;

@@ -1,5 +1,5 @@
 // The candidates of one Ambiguous Citation Key, shared by the surfaces that
-// build and render its block.
+// build and render them.
 
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 

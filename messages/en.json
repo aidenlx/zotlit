@@ -448,6 +448,7 @@
   "references_open_note": "Open literature note",
   "references_open_note_missing": "No literature note — item is missing",
   "references_open_note_unresolved": "No Zotero item for this citation key",
+  "references_open_note_ambiguous": "Several Zotero items match this citation key",
   "references_open_in_zotero": "Open in Zotero",
   "references_open_attachment": "Open attachment in Zotero",
   "references_engine_hint_title": "Format these references",

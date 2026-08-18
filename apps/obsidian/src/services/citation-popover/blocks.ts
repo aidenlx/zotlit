@@ -1,6 +1,9 @@
 // The blocks one hovered citation shows: its works' bibliography entries, in the order the citation names them.
 
-import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
+import type {
+  AmbiguousCandidate,
+  AmbiguousCandidatesOf,
+} from "@/services/citation-index/ambiguity";
 import type { OpenableAttachment } from "@/services/citation-index/service";
 import type { HoveredWork } from "@/services/citekey-navigation";
 import type { Inlines } from "@/services/pandoc/ast";
@@ -49,14 +52,6 @@ export type CitationPopoverBlock =
   | CitationEntryBlock
   | UnresolvedCitationBlock
   | AmbiguousCitationBlock;
-
-/**
- * The candidates one citekey names, or `null` for a key naming zero or one
- * Item — the read that tells an Ambiguous Citation Key from a missing one.
- */
-export type AmbiguousCandidatesOf = (
-  citekey: string,
-) => readonly AmbiguousCandidate[] | null;
 
 /**
  * The blocks one hovered citation stacks, in citation order.

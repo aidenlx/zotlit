@@ -6,9 +6,9 @@ import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type { Inlines } from "@/services/pandoc/ast";
 
-import { ambiguousCandidates } from "./__fixtures__/ambiguous-candidates";
 import type { CitationPopoverActions } from "./actions";
 import type {
   AmbiguousCitationBlock,

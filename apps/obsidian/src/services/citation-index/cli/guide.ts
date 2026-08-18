@@ -36,6 +36,8 @@ const ENTRY_KINDS = {
     "A cited work the connected Zotero source holds. Adds key, citekey, summary, and linkpath; linkpath is null while the work has no Literature Note.",
   unresolved:
     "A citation key that names no item in the connected Zotero source. Adds citekey.",
+  ambiguous:
+    "A citation key several items carry in the current library scope, so it names none of them and the document cites no one work here. Adds citekey and candidates, each candidate { key, libraryID }; pass one candidate key to cited-by or zotlit:template-data to work with that item.",
   missing:
     "A work the index cites that the Zotero source no longer holds. Adds key.",
   malformed:

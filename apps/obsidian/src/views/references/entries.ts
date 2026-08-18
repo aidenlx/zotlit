@@ -1,6 +1,10 @@
 // One document's reference list: cited Items, the engine's bibliography, and the order the list reads in.
 
 import type {
+  AmbiguousCandidate,
+  AmbiguousCandidatesOf,
+} from "@/services/citation-index/ambiguity";
+import type {
   Citation,
   CitationOccurrence,
   DocumentCitationError,
@@ -60,6 +64,8 @@ type RenderedReferenceEntryBody = {
  * `missing` entry keeps a citation whose Item vanished visible, and an
  * `unresolved` entry does the same for a citekey that names no live Zotero
  * Item — Pandoc warns on an undefined citation rather than dropping it. An
+ * `ambiguous` entry is the other half of that pair: a citekey several Items
+ * answer to, which names the candidates rather than adopting one. An
  * `unrendered` entry keeps an Item a completed bibliography omitted as an
  * actionable Reference Error. A `rendered`, `summary`, or `unrendered` entry's
  * `linkpath` is `null` when its Item has no Literature Note yet, so the open
@@ -74,6 +80,12 @@ type CitationReferenceEntry = NumberedReferenceEntryBase &
     | { kind: "unrendered"; source: ReferenceSource; linkpath: string | null }
     | { kind: "missing"; linkpath: string | null }
     | { kind: "unresolved"; citekey: string }
+    | {
+        kind: "ambiguous";
+        citekey: string;
+        /** The Items the key names, in the resolution snapshot's own order. */
+        candidates: readonly AmbiguousCandidate[];
+      }
   );
 
 type MalformedReferenceEntry = ReferenceEntryBase & { kind: "malformed" };
@@ -84,6 +96,12 @@ export interface ReferenceBuildOptions {
   bibliography?: ReferenceBibliography;
   /** Citation source errors that stay outside the CSL bibliography. */
   errors?: readonly DocumentCitationError[];
+  /**
+   * The candidates an Ambiguous Citation Key names, which is what tells one
+   * apart from a citekey that names no Item at all. Omit it to read every
+   * citekey naming no one Item as `unresolved`.
+   */
+  ambiguous?: AmbiguousCandidatesOf;
 }
 
 /**
@@ -98,20 +116,23 @@ export interface ReferenceBuildOptions {
  *
  * A citekey naming no live Zotero Item keeps its raw text and trails the
  * ordered entries with the rest, since the bibliography holds no place for a
- * work the library does not know.
+ * work the library does not know. A citekey several Items answer to trails it
+ * the same way: it adopts no candidate, so the bibliography holds no place for
+ * it either.
  *
  * @param sources cited Items by Indexed Key; an Item the database no longer
  *   holds is simply absent, and its citation becomes a `missing` entry.
- * @param options rendered bibliography data and citation source errors. Omit
- *   the bibliography for the minimal reference list. A source-backed id becomes
- *   `unrendered` only when a completed bibliography leaves it out.
+ * @param options rendered bibliography data, citation source errors, and the
+ *   candidates of an Ambiguous Citation Key. Omit the bibliography for the
+ *   minimal reference list. A source-backed id becomes `unrendered` only when a
+ *   completed bibliography leaves it out.
  */
 export function buildReferenceEntries(
   citations: readonly Citation[],
   sources: ReadonlyMap<string, ReferenceSource>,
   options: ReferenceBuildOptions = {},
 ): ReferenceEntry[] {
-  const { bibliography, errors = [] } = options;
+  const { bibliography, errors = [], ambiguous } = options;
   const placed = new Map<
     string,
     NumberedReferenceEntryBase & Omit<RenderedReferenceEntryBody, "serial">
@@ -119,17 +140,18 @@ export function buildReferenceEntries(
   const trailing: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, linkpath, occurrences } of citations) {
     if (indexedKey === null) {
-      // Every Citation carries an occurrence, and an unresolved one is written
-      // as a citekey, so its raw text is what the row shows. The identity keeps
-      // the `@` it is written with, which an Indexed Key never starts with.
+      // Every Citation carries an occurrence, and one naming no single Item is
+      // written as a citekey, so its raw text is what the row shows. The
+      // identity keeps the `@` it is written with, which an Indexed Key never
+      // starts with.
       const citekey = occurrences[0]!.raw;
-      trailing.push({
-        id: `@${citekey}`,
-        refNumber,
-        occurrences,
-        kind: "unresolved",
-        citekey,
-      });
+      const base = { id: `@${citekey}`, refNumber, occurrences, citekey };
+      const candidates = ambiguous?.(citekey) ?? null;
+      trailing.push(
+        candidates
+          ? { ...base, kind: "ambiguous", candidates }
+          : { ...base, kind: "unresolved" },
+      );
       continue;
     }
     const base = { id: indexedKey, refNumber, linkpath, occurrences };

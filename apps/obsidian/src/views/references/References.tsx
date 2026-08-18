@@ -1,6 +1,7 @@
 import type { IconName } from "obsidian";
 import type { MouseEvent, ReactNode } from "react";
 
+import { AmbiguousCandidates } from "@/components/ambiguous-candidates";
 import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
@@ -371,6 +372,16 @@ function referencePresentation(
         noteDisabled: true,
         source: undefined,
       };
+    // The key names several Items, so no one note is this row's to open: the
+    // whole-row action stays disabled and the candidates say why.
+    case "ambiguous":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_open_note_ambiguous(),
+        noteDisabled: true,
+        source: undefined,
+      };
     case "malformed":
       return {
         gutter: "⚠",
@@ -411,6 +422,20 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
         <span className={cn(textClass, "zt:text-destructive")}>
           {m.references_citekey_unresolved({ citekey: entry.citekey })}
         </span>
+      );
+    // The candidates stand in place of the entry the key names none of, so the
+    // reader can tell the Items apart in Zotero and fix the key there.
+    case "ambiguous":
+      return (
+        <div className="zt:flex zt:flex-col zt:gap-1">
+          <span className={cn(textClass, "zt:text-destructive")}>
+            {m.references_citekey_ambiguous({ citekey: entry.citekey })}
+          </span>
+          <AmbiguousCandidates
+            candidates={entry.candidates}
+            textClass={textClass}
+          />
+        </div>
       );
     case "malformed":
       return (
