@@ -37,8 +37,12 @@ export function addStyleDropdown(
     let selected = value;
     const repopulate = (): void => {
       dropdown.selectEl.replaceChildren();
-      for (const entry of options(styles, selected)) {
+      // An entry the picker shows without offering — a style Zotero does not
+      // have — stays on screen as the selection it stands for, while the
+      // picker takes installed styles alone.
+      for (const [index, entry] of options(styles, selected).entries()) {
         dropdown.addOption(entry.value, entry.label);
+        if (entry.disabled) dropdown.selectEl.options[index]!.disabled = true;
       }
       dropdown.setValue(selected);
     };

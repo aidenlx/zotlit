@@ -125,8 +125,8 @@ CITATION STYLE
     document that carries both csl and zotlit-csl stops with csl-ambiguous.
     ZotLit leaves lang untouched, so the document keeps the language it declares.
 
-    A pair saved under an earlier contractVersion reads no zotlit-csl. Refresh
-    the pair as RETRIEVE OR REFRESH describes before a document relies on it.
+    A pair saved under this contractVersion reads zotlit-csl. Refresh the pair
+    as RETRIEVE OR REFRESH describes before a document relies on it.
 
 RESOLVE
     The CLI filter calls this command during a normal Pandoc run:

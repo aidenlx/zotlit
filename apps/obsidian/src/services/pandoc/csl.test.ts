@@ -7,7 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { CONTRACT_VERSION } from "./contract";
@@ -191,10 +191,15 @@ describe("zotlit:csl", () => {
   });
 });
 
-/** The absolute path a successful response carries, asserting there is one. */
+/**
+ * The path a successful response carries, asserting there is one and that it is
+ * absolute — citeproc opens it from whatever working directory Pandoc runs in.
+ */
 function pathOf(response: CslResponse): string {
   expect(response).not.toHaveProperty("errors");
-  return "path" in response ? response.path : "";
+  const path = "path" in response ? response.path : "";
+  expect(isAbsolute(path)).toBe(true);
+  return path;
 }
 
 interface StyleFixture {

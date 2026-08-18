@@ -195,9 +195,9 @@ export class InstalledStyleCache {
 
     const held = this.#held;
     if (held && held.dataDir === dataDir && held.styleId === styleId) {
-      if (await contentStands(held.reads)) {
+      if (await contentUnchanged(held.reads)) {
         logger.trace("CSL style cache hit", { styleId });
-        return resolved(held, locale);
+        return resolvedUnderLocale(held, locale);
       }
     }
     this.#held = undefined;
@@ -271,7 +271,7 @@ export class InstalledStyleCache {
       parentId: requested.parentId,
       path: independent.path,
     });
-    return resolved(content, locale);
+    return resolvedUnderLocale(content, locale);
   }
 }
 
@@ -280,7 +280,7 @@ export class InstalledStyleCache {
  * that override is the only thing a dependent style adds to the style it
  * depends on.
  */
-function resolved(
+function resolvedUnderLocale(
   content: StyleContent,
   locale: string | null | undefined,
 ): ResolvedCslStyle {
@@ -371,7 +371,7 @@ async function locateStyle(
  * A file that changed — or one no longer readable at all — leaves the held
  * style standing for content Zotero no longer installs.
  */
-async function contentStands(reads: readonly FileRead[]): Promise<boolean> {
+async function contentUnchanged(reads: readonly FileRead[]): Promise<boolean> {
   const current = await Promise.all(
     reads.map(({ path }) => readStyleXml(path)),
   );
@@ -462,7 +462,7 @@ async function readStyleXml(path: string): Promise<string | undefined> {
  * namespace, and a document is free to bind it to a prefix — `<cs:style>` says
  * what `<style>` says — so every element is read whichever way it is spelled.
  *
- * @see https://www.w3.org/TR/xml-names/#ns-qualnames — the `QName` production
+ * @see https://www.w3.org/TR/2009/REC-xml-names-20091208/#ns-qualnames — the `QName` production
  */
 const PREFIX = "(?:[^\\s/<>=:]+:)?";
 const INFO_BLOCK = regex(
@@ -495,6 +495,14 @@ const STYLE_ROOT = regex(`<(?<name>${PREFIX}style)(?=[\\s/>])[^>]*>`);
 const STYLE_ELEMENT = "style";
 /** The elements a processor formats with; a standalone style declares one. */
 const RENDERING_ELEMENTS = new Set(["citation", "bibliography"]);
+/**
+ * What a rendering element formats through. CSL requires one of these in every
+ * `cs:citation` and `cs:bibliography`, and a processor has nothing to render
+ * with without it.
+ *
+ * @see https://docs.citationstyles.org/en/v1.0.2/specification.html#layout
+ */
+const LAYOUT_ELEMENT = "layout";
 /** How an XML parser reports content it cannot read: as an element of its own. */
 const PARSER_ERROR = "parsererror";
 const DEFAULT_LOCALE = regex(
@@ -523,14 +531,24 @@ function cslStyleRoot(xml: string): Element | null {
 
 /**
  * Content a processor renders with on its own: a CSL style document that holds
- * the citation or bibliography it formats. A dependent style declares neither
- * of those, which is why it renders through its independent parent.
+ * the citation or bibliography it formats, laid out as CSL requires. A
+ * dependent style declares neither of those, which is why it renders through
+ * its independent parent.
+ *
+ * A rendering element without its layout formats nothing, so a style that
+ * carries one is a file to repair rather than content citeproc is handed.
  */
 function isStandaloneCslStyle(xml: string): boolean {
   const root = cslStyleRoot(xml);
   return (
     root !== null &&
-    [...root.children].some((child) => RENDERING_ELEMENTS.has(child.localName))
+    [...root.children].some(
+      (child) =>
+        RENDERING_ELEMENTS.has(child.localName) &&
+        [...child.children].some(
+          (grandchild) => grandchild.localName === LAYOUT_ELEMENT,
+        ),
+    )
   );
 }
 

@@ -1,16 +1,13 @@
-// Lets a script Node runs directly import plugin sources the way the sources
-// import each other. Vite and Vitest read that resolution from the tsconfig;
-// Node reads it from here.
-//
-// Registration happens as this module is evaluated, so an aliased module has to
-// be reached through `await import(...)`: a static import of one resolves before
-// any module body runs.
+// Lets a script Node runs directly import plugin sources under the `@/` alias.
 
 import { registerHooks } from "node:module";
 
 const ALIAS = "@/";
 const SOURCE = new URL("../src/", import.meta.url);
 
+// Registration happens as this module is evaluated, so an aliased module has to
+// be reached through `await import(...)`: a static import of one resolves before
+// any module body runs.
 registerHooks({
   /**
    * Resolves the two things the bundler resolves and Node does not: the `@/`

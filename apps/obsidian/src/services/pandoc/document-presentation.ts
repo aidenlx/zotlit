@@ -92,7 +92,6 @@ export interface EffectivePresentation {
   locale: string | null;
 }
 
-/** The Citation Presentation the vault settings select. */
 export function vaultPresentation(
   settings: Readonly<Settings> | null | undefined,
 ): EffectivePresentation {
@@ -179,7 +178,7 @@ export function documentCitationPresentation(
   };
 }
 
-/** Whether two documents — or one document across a change — render alike. */
+/** Two unusable presentations are alike only where the same property is at fault. */
 export function samePresentation(
   left: DocumentPresentation,
   right: DocumentPresentation,

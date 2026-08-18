@@ -131,6 +131,22 @@ describe("the Citation presentation dialog", () => {
     expect(dialog.style.options.at(-1)).toEqual({
       value: UNINSTALLED,
       label: m.settings_citation_references_style_missing({ id: UNINSTALLED }),
+      disabled: true,
+    });
+  });
+
+  it("refuses a style Zotero does not have as a selection of its own", async () => {
+    const dialog = await openDialog({
+      declared: { styleId: UNINSTALLED, language: "" },
+    });
+
+    dialog.style.choose(APA.id);
+    dialog.style.choose(UNINSTALLED);
+    dialog.button(m.citation_presentation_confirm()).click();
+
+    await expect(dialog.choice).resolves.toEqual({
+      styleId: APA.id,
+      language: null,
     });
   });
 

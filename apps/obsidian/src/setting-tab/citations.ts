@@ -191,6 +191,8 @@ export const STYLE_DEFAULT = "";
 export interface ReferencesStyleOption {
   value: string;
   label: string;
+  /** An entry the picker shows and refuses to take as a selection of its own. */
+  disabled?: boolean;
 }
 
 /**

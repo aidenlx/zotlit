@@ -92,9 +92,12 @@ describe("the styles a note is offered", () => {
       vaultStyleId: VAULT_STYLE_ID,
     });
 
+    // Shown as the selection it stands for, and out of reach as a choice: the
+    // dialog writes a style Zotero owns or none at all.
     expect(options.at(-1)).toEqual({
       value: missing,
       label: m.settings_citation_references_style_missing({ id: missing }),
+      disabled: true,
     });
   });
 });

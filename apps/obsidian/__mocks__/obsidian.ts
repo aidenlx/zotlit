@@ -700,12 +700,13 @@ export class Setting {
 
 export class DropdownComponent {
   /** Every entry the dropdown offers, in the order it offers them. */
-  options: { value: string; label: string }[] = [];
+  options: { value: string; label: string; disabled?: boolean }[] = [];
 
   selectEl = {
     replaceChildren: () => {
-      this.options = [];
+      this.options.length = 0;
     },
+    options: this.options,
   } as unknown as HTMLSelectElement;
 
   #value = "";
@@ -732,8 +733,9 @@ export class DropdownComponent {
     return this;
   }
 
-  /** Test helper: pick an entry, as the user does. */
+  /** Test helper: pick an entry, as the user does; a disabled entry refuses. */
   choose(value: string): void {
+    if (this.options.find((option) => option.value === value)?.disabled) return;
     this.#value = value;
     this.#changed?.(value);
   }

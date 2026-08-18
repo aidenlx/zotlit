@@ -49,7 +49,9 @@ export function declaredPresentation(
 /**
  * The style-picker entries: the vault style the note inherits first, then the
  * styles Zotero has installed. A style the note names and Zotero no longer has
- * keeps an entry of its own, so it stays selected and named as missing.
+ * keeps an entry of its own, so it stays selected and named as missing; the
+ * picker shows that entry and refuses to take it, so every style this dialog
+ * writes is one Zotero owns.
  */
 export function stylePickerOptions(
   styles: readonly InstalledCslStyle[],
@@ -71,6 +73,7 @@ export function stylePickerOptions(
     options.push({
       value: selected,
       label: m.settings_citation_references_style_missing({ id: selected }),
+      disabled: true,
     });
   }
   return options;

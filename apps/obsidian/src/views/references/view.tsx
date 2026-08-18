@@ -245,6 +245,18 @@ export class ReferencesView extends ItemView {
    */
   #rescan(): void {
     const scan = ++this.#scan;
+    // A presentation change makes the entries on screen stale the moment it is
+    // read, and the read that follows lands a turn later at the earliest, so
+    // the formatted entries go out of reach here rather than after it: no copy
+    // taken while the read runs carries the presentation left behind.
+    if (
+      !samePresentation(
+        this.#presentation,
+        this.#readPresentation(this.#activeMarkdownFile()),
+      )
+    ) {
+      this.#formatting = "pending";
+    }
     this.#refreshCopy();
     void this.#readCitationSet().then(({ file, citations, errors }) => {
       const path = file?.path ?? null;
@@ -284,8 +296,8 @@ export class ReferencesView extends ItemView {
   async #readCitationSet(): Promise<
     DocumentCitationSet & { file: TFile | null }
   > {
-    const file = this.#deps.app.workspace.getActiveFile();
-    if (!file || file.extension !== "md") {
+    const file = this.#activeMarkdownFile();
+    if (!file) {
       return { file: null, occurrences: [], citations: [], errors: [] };
     }
     return {
@@ -410,9 +422,13 @@ export class ReferencesView extends ItemView {
   }
 
   /** The active file when it is a note the citation index answers for. */
-  #activeMarkdownPath(): string | null {
+  #activeMarkdownFile(): TFile | null {
     const file = this.#deps.app.workspace.getActiveFile();
-    return file?.extension === "md" ? file.path : null;
+    return file?.extension === "md" ? file : null;
+  }
+
+  #activeMarkdownPath(): string | null {
+    return this.#activeMarkdownFile()?.path ?? null;
   }
 
   /**

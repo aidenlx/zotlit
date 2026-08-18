@@ -25,7 +25,7 @@ const LANGUAGE_TAG =
  * @see https://docs.citationstyles.org/en/v1.0.2/specification.html#locale-fallback
  */
 export function isLanguageTag(tag: string): boolean {
-  return LANGUAGE_TAG.test(tag) && writtenOnce(tag);
+  return LANGUAGE_TAG.test(tag) && noRepeatedSubtags(tag);
 }
 
 /** The shape a variant subtag is written in, which is what tells one apart. */
@@ -45,7 +45,7 @@ const VARIANT = /^(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3})$/;
  * @param tag one tag the grammar already took.
  * @see https://www.rfc-editor.org/rfc/rfc5646#section-2.2.9 — what a tag may write twice
  */
-function writtenOnce(tag: string): boolean {
+function noRepeatedSubtags(tag: string): boolean {
   const subtags = tag.toLowerCase().split("-");
   if (subtags[0] === "x") return true;
   const privateUse = subtags.indexOf("x", 1);
@@ -56,11 +56,11 @@ function writtenOnce(tag: string): boolean {
   );
   const end = extensions === -1 ? named.length : extensions;
   return (
-    saidOnce(named.slice(1, end).filter((subtag) => VARIANT.test(subtag))) &&
-    saidOnce(named.slice(end).filter((subtag) => subtag.length === 1))
+    allDistinct(named.slice(1, end).filter((subtag) => VARIANT.test(subtag))) &&
+    allDistinct(named.slice(end).filter((subtag) => subtag.length === 1))
   );
 }
 
-function saidOnce(subtags: readonly string[]): boolean {
+function allDistinct(subtags: readonly string[]): boolean {
   return new Set(subtags).size === subtags.length;
 }

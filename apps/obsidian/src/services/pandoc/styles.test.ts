@@ -632,6 +632,36 @@ describe("resolveInstalledStyle", () => {
     });
   });
 
+  it("reports a rendering element that formats nothing", async () => {
+    await using library = await installStyles();
+    // Well-formed XML rooted in a style element, carrying the bibliography and
+    // the citation that CSL requires a layout in. Such a style formats nothing
+    // at all, so it is a file to repair rather than content citeproc is handed.
+    await library.writeCsl(
+      "apa.csl",
+      `<style version="1.0"><info><id>${APA}</id></info><bibliography/></style>`,
+    );
+    await library.writeCsl(
+      "nature.csl",
+      `<style version="1.0"><info><id>${NATURE}</id></info><citation><sort><key variable="author"/></sort></citation></style>`,
+    );
+
+    await expect(
+      resolveInstalledStyle(library.dataDir, { styleId: APA }),
+    ).resolves.toEqual({
+      kind: "failed",
+      styleId: APA,
+      reason: "invalid",
+    });
+    await expect(
+      resolveInstalledStyle(library.dataDir, { styleId: NATURE }),
+    ).resolves.toEqual({
+      kind: "failed",
+      styleId: NATURE,
+      reason: "invalid",
+    });
+  });
+
   it("reports CSL a processor cannot read", async () => {
     await using library = await installStyles();
     // The citation element is left open. Such a style would otherwise reach
