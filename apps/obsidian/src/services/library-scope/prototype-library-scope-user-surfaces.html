@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prototype: Library Scope user surfaces</title>
+
+    <!--
+      PROTOTYPE — throwaway UI for ZotLit issue #702.
+
+      Design question:
+      What concrete Obsidian surfaces make Library Scope and an Ambiguous Citation Key
+      understandable without adding concepts that current user flows do not need?
+
+      Winner: A — Native + local.
+
+      Evaluation:
+      KISS — prefer native controls, existing surfaces, and local explanations.
+      YAGNI — reject new navigation, persistent banners, grouping modes, and resolution
+      workflows unless the prototype proves that the required states are unclear without them.
+
+      Design plan:
+      Treatment: utilitarian, native Obsidian settings and sidebar study.
+      Palette: paper #f7f7f8, ink #202124, muted #6f7077, violet #7c3aed,
+      border #dedee3, warning #c86b14. Dark equivalents are defined below.
+      Type: system UI for controls and Source Serif 4 for formatted references.
+      Layout: each variant shows the same four surfaces in an Obsidian-like workspace;
+      the variant may change hierarchy and grouping, while shared state preserves the scenario.
+    -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-panel-alt: var(--panel-alt);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-faint: var(--faint);
+        --color-accent: var(--accent);
+        --color-accent-soft: var(--accent-soft);
+        --color-border: var(--border);
+        --color-warning: var(--warning);
+        --color-warning-soft: var(--warning-soft);
+        --color-success: var(--success);
+        --font-display: var(--font-ui);
+        --font-body: var(--font-ui);
+        --font-content: var(--font-content);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f7f7f8;
+        --panel: #ffffff;
+        --panel-alt: #f0f0f2;
+        --ink: #202124;
+        --muted: #6f7077;
+        --faint: #92939a;
+        --accent: #7c3aed;
+        --accent-soft: #ede9fe;
+        --border: #dedee3;
+        --warning: #c86b14;
+        --warning-soft: #fff4e8;
+        --success: #2e7d58;
+        --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-content: "Source Serif 4", Georgia, serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #18181a;
+          --panel: #242427;
+          --panel-alt: #2d2d31;
+          --ink: #dcdddf;
+          --muted: #a5a6ad;
+          --faint: #7f8087;
+          --accent: #a78bfa;
+          --accent-soft: #3b3155;
+          --border: #3d3d43;
+          --warning: #f2a65a;
+          --warning-soft: #493522;
+          --success: #75c69a;
+        }
+      }
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useEffect,
+        useMemo,
+        useState,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        AlertTriangle,
+        BookOpen,
+        Check,
+        ChevronDown,
+        ChevronLeft,
+        ChevronRight,
+        CircleAlert,
+        FileText,
+        FolderSearch,
+        Info,
+        Library,
+        ListFilter,
+        Plus,
+        Search,
+        Settings,
+        Trash2,
+        X,
+      } from "lucide-react";
+
+      // --- Diagram ---
+      function decodeEntities(s) {
+        const el = document.createElement("textarea");
+        el.innerHTML = s;
+        return el.value;
+      }
+
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+
+      let mermaidMod = null;
+      export function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el) return { svg: null, error: `Missing diagram: ${src}` };
+          if (!mod) return { svg: null, error: null };
+          try {
+            return {
+              svg: mod.renderMermaidSVG(
+                decodeEntities(dedent(el.textContent)),
+                {
+                  bg: "var(--ground)",
+                  fg: "var(--ink)",
+                  transparent: true,
+                },
+              ),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-warning text-sm whitespace-pre-wrap">
+              {error}
+            </pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+      // --- App ---
+      const LIBRARIES = [
+        { id: "personal", name: "My Library", available: true },
+        { id: "human-factors", name: "Human Factors Lab", available: true },
+        { id: "climate", name: "Climate Methods", available: true },
+        { id: "field-notes", name: "Field Notes Collective", available: false },
+      ];
+
+      const ITEMS = [
+        {
+          id: "ABCD1234",
+          citekey: "lee2024",
+          library: "personal",
+          title: "Collaborative annotation in research workflows",
+          meta: "Lee and Patel, 2024 · Journal of Scholarly Practice",
+        },
+        {
+          id: "EFGH5678",
+          citekey: "lee2024",
+          library: "human-factors",
+          title:
+            "Collaborative annotation in research workflows: A replication study",
+          meta: "Lee, Morgan, and Patel, 2024 · Human Factors Review",
+        },
+        {
+          id: "IJKL9012",
+          citekey: "nguyen2023",
+          library: "climate",
+          title: "Methods for reproducible climate synthesis",
+          meta: "Nguyen and Rivera, 2023 · Climate Methods",
+        },
+      ];
+
+      const SCENARIOS = {
+        everyday: {
+          name: "Everyday",
+          scopeMode: "selected",
+          selected: ["personal"],
+          referenceKey: "lee2024",
+          notice: null,
+        },
+        unavailable: {
+          name: "Unavailable library",
+          scopeMode: "selected",
+          selected: ["personal", "field-notes"],
+          referenceKey: "lee2024",
+          notice: null,
+        },
+        ambiguous: {
+          name: "Ambiguous key",
+          scopeMode: "selected",
+          selected: ["personal", "human-factors"],
+          referenceKey: "lee2024",
+          notice: null,
+        },
+      };
+
+      let protoState = { scenario: "ambiguous", ...SCENARIOS.ambiguous };
+      const protoListeners = new Set();
+
+      function emitProtoState() {
+        for (const listener of protoListeners) listener();
+      }
+
+      function setProtoState(update) {
+        protoState =
+          typeof update === "function"
+            ? update(protoState)
+            : { ...protoState, ...update };
+        emitProtoState();
+      }
+
+      function useProtoState() {
+        return useSyncExternalStore(
+          (listener) => {
+            protoListeners.add(listener);
+            return () => protoListeners.delete(listener);
+          },
+          () => protoState,
+        );
+      }
+
+      function setScenario(key) {
+        setProtoState({ scenario: key, ...SCENARIOS[key] });
+      }
+
+      function setScopeMode(scopeMode) {
+        setProtoState({ scopeMode, notice: null });
+      }
+
+      function toggleLibrary(id) {
+        setProtoState((state) => {
+          if (state.selected.includes(id)) {
+            if (state.selected.length === 1) {
+              return {
+                ...state,
+                notice: {
+                  tone: "warning",
+                  text: "Selected libraries must include at least one library.",
+                },
+              };
+            }
+            return {
+              ...state,
+              selected: state.selected.filter((entry) => entry !== id),
+              notice: null,
+            };
+          }
+          return { ...state, selected: [...state.selected, id], notice: null };
+        });
+      }
+
+      function activeLibraries(state) {
+        return LIBRARIES.filter(
+          (library) =>
+            library.available &&
+            (state.scopeMode === "all" || state.selected.includes(library.id)),
+        );
+      }
+
+      function visibleItems(state) {
+        const active = new Set(
+          activeLibraries(state).map((library) => library.id),
+        );
+        return ITEMS.filter((item) => active.has(item.library));
+      }
+
+      function libraryName(id) {
+        return (
+          LIBRARIES.find((library) => library.id === id)?.name ??
+          "Unknown library"
+        );
+      }
+
+      function candidatesFor(state, citekey) {
+        return visibleItems(state).filter((item) => item.citekey === citekey);
+      }
+
+      function attemptInsert(item) {
+        const candidates = candidatesFor(protoState, item.citekey);
+        if (candidates.length > 1) {
+          setProtoState({
+            notice: {
+              tone: "warning",
+              text: `Could not insert @${item.citekey}. This citation key matches ${candidates.length} items in the library scope. Change a citation key in Zotero, then try again.`,
+            },
+          });
+          return;
+        }
+        setProtoState({
+          notice: { tone: "success", text: `Inserted [@${item.citekey}].` },
+        });
+      }
+
+      function PrototypeHeader({ variant, summary, cost }) {
+        return (
+          <header className="mx-auto flex w-full max-w-[1500px] flex-col gap-3 px-5 pt-5 md:px-8 md:pt-8">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+              <span>Throwaway prototype</span>
+              <span aria-hidden>·</span>
+              <span>Issue #702</span>
+            </div>
+            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+              <div className="max-w-4xl">
+                <h1 className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">
+                  Library scope user surfaces
+                </h1>
+                <p className="mt-2 max-w-[72ch] text-sm leading-6 text-muted md:text-base">
+                  Can users understand All versus Selected libraries,
+                  unavailable selections, library labels, blocked ambiguous
+                  insertion, and ambiguous citation key reference errors?
+                </p>
+              </div>
+              <div className="min-w-72 border-l-2 border-accent pl-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">
+                  {variant}
+                </div>
+                <div className="mt-1 text-sm text-ink">{summary}</div>
+                <div className="mt-1 text-xs text-muted">
+                  KISS/YAGNI cost: {cost}
+                </div>
+              </div>
+            </div>
+          </header>
+        );
+      }
+
+      function StateReadout({ state }) {
+        const active = activeLibraries(state);
+        const unavailable = LIBRARIES.filter(
+          (library) =>
+            !library.available && state.selected.includes(library.id),
+        );
+        const candidates = candidatesFor(state, state.referenceKey);
+        return (
+          <section className="mx-auto grid w-full max-w-[1500px] gap-px overflow-hidden border border-border bg-border text-xs md:grid-cols-4">
+            <div className="bg-panel px-3 py-2">
+              <span className="text-muted">Mode</span>
+              <div className="mt-0.5 font-medium">
+                {state.scopeMode === "all"
+                  ? "All libraries"
+                  : "Selected libraries"}
+              </div>
+            </div>
+            <div className="bg-panel px-3 py-2">
+              <span className="text-muted">Available in scope</span>
+              <div className="mt-0.5 font-medium">
+                {active.map((library) => library.name).join(", ") || "None"}
+              </div>
+            </div>
+            <div className="bg-panel px-3 py-2">
+              <span className="text-muted">Unavailable selections</span>
+              <div className="mt-0.5 font-medium">
+                {unavailable.map((library) => library.name).join(", ") ||
+                  "None"}
+              </div>
+            </div>
+            <div className="bg-panel px-3 py-2">
+              <span className="text-muted">@{state.referenceKey}</span>
+              <div
+                className={`mt-0.5 font-medium ${candidates.length > 1 ? "text-warning" : "text-success"}`}
+              >
+                {candidates.length > 1
+                  ? `Ambiguous · ${candidates.length} items`
+                  : candidates.length === 1
+                    ? "Unique"
+                    : "Missing"}
+              </div>
+            </div>
+          </section>
+        );
+      }
+
+      // --- Variant A ---
+      function VariantA() {
+        const state = useProtoState();
+        const items = visibleItems(state);
+        const candidates = candidatesFor(state, state.referenceKey);
+        const selectedLibraries = LIBRARIES.filter((library) =>
+          state.selected.includes(library.id),
+        );
+        const addableLibraries = LIBRARIES.filter(
+          (library) =>
+            library.available && !state.selected.includes(library.id),
+        );
+        const isAmbiguous = candidates.length > 1;
+
+        return (
+          <main className="min-h-screen bg-ground pb-32 font-body text-ink">
+            <PrototypeHeader
+              variant="A · Native + local"
+              summary="Use familiar controls and explain library identity at the point of choice."
+              cost="Low — one setting, row metadata, and an existing warning state."
+            />
+
+            <div className="mx-auto mt-5 flex w-full max-w-[1500px] flex-wrap gap-2 px-5 text-xs text-muted md:px-8">
+              <span className="border border-border bg-panel px-2.5 py-1.5">
+                Tests whether local labels are sufficient
+              </span>
+              <span className="border border-border bg-panel px-2.5 py-1.5">
+                Adds no scope banner, grouping, or resolver
+              </span>
+            </div>
+
+            <section className="mx-auto mt-4 w-full max-w-[1500px] px-5 md:px-8">
+              <div className="overflow-hidden border border-border bg-panel shadow-sm">
+                <div className="flex h-11 items-center gap-2 border-b border-border bg-panel-alt px-3">
+                  <div className="flex gap-1" aria-hidden="true">
+                    <span className="h-2.5 w-2.5 rounded-full bg-faint" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-faint" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-faint" />
+                  </div>
+                  <div className="ml-2 flex items-center gap-2 text-xs text-muted">
+                    <BookOpen size={14} />
+                    <span>Research notes</span>
+                    <span aria-hidden>›</span>
+                    <span className="text-ink">Annotation practices.md</span>
+                  </div>
+                </div>
+
+                <div className="grid min-h-[670px] lg:grid-cols-[minmax(350px,0.86fr)_minmax(440px,1.18fr)_minmax(260px,0.72fr)]">
+                  <aside className="border-b border-border bg-panel-alt lg:border-b-0 lg:border-r">
+                    <div className="flex h-12 items-center justify-between border-b border-border px-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <Settings size={16} />
+                        ZotLit settings
+                      </div>
+                      <X size={16} className="text-muted" aria-hidden="true" />
+                    </div>
+
+                    <div className="flex flex-col gap-6 p-5">
+                      <div className="flex flex-col gap-1">
+                        <h2 className="text-base font-semibold">General</h2>
+                        <p className="text-xs leading-5 text-muted">
+                          Choose which Zotero libraries ZotLit uses for search
+                          and citation keys.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <label
+                          htmlFor="variant-a-scope"
+                          className="text-sm font-medium"
+                        >
+                          Library scope
+                        </label>
+                        <select
+                          id="variant-a-scope"
+                          value={state.scopeMode}
+                          onChange={(event) => setScopeMode(event.target.value)}
+                          className="h-9 w-full border border-border bg-panel px-2.5 text-sm text-ink"
+                        >
+                          <option value="all">All libraries</option>
+                          <option value="selected">Selected libraries</option>
+                        </select>
+                        <p className="text-xs leading-5 text-muted">
+                          Search results and citation-key checks use this scope.
+                        </p>
+                      </div>
+
+                      {state.scopeMode === "selected" && (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-end justify-between gap-3">
+                            <div>
+                              <h3 className="text-sm font-medium">Libraries</h3>
+                              <p className="mt-0.5 text-xs text-muted">
+                                {state.selected.length} selected
+                              </p>
+                            </div>
+                            {addableLibraries.length > 0 && (
+                              <label className="flex items-center gap-1.5 text-xs font-medium text-accent">
+                                <Plus size={14} />
+                                <span className="sr-only">Add library</span>
+                                <select
+                                  aria-label="Add library"
+                                  value=""
+                                  onChange={(event) => {
+                                    if (event.target.value)
+                                      toggleLibrary(event.target.value);
+                                  }}
+                                  className="max-w-36 border border-border bg-panel px-2 py-1.5 text-xs text-ink"
+                                >
+                                  <option value="">Add library</option>
+                                  {addableLibraries.map((library) => (
+                                    <option key={library.id} value={library.id}>
+                                      {library.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
+                          </div>
+
+                          <div className="divide-y divide-border border-y border-border bg-panel">
+                            {selectedLibraries.map((library) => (
+                              <div
+                                key={library.id}
+                                className={`flex min-h-12 items-center gap-3 px-3 py-2 ${
+                                  library.available ? "" : "bg-warning-soft"
+                                }`}
+                              >
+                                <Library
+                                  size={16}
+                                  className={
+                                    library.available
+                                      ? "text-muted"
+                                      : "text-warning"
+                                  }
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm">
+                                    {library.name}
+                                  </div>
+                                  {!library.available && (
+                                    <div className="mt-0.5 text-xs text-warning">
+                                      Unavailable
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  aria-label={`Remove ${library.name}`}
+                                  onClick={() => toggleLibrary(library.id)}
+                                  className="p-1.5 text-muted hover:bg-panel-alt hover:text-ink"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs leading-5 text-muted">
+                            Unavailable libraries stay visible until you remove
+                            them.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </aside>
+
+                  <section className="relative flex min-h-[590px] flex-col border-b border-border lg:border-b-0 lg:border-r">
+                    <div className="flex h-12 items-center gap-2 border-b border-border px-4 text-xs text-muted">
+                      <FileText size={15} />
+                      <span>Annotation practices</span>
+                    </div>
+
+                    <article className="mx-auto flex w-full max-w-[68ch] flex-1 flex-col gap-5 px-6 py-9 md:px-10">
+                      <h2 className="font-content text-3xl font-semibold leading-tight">
+                        Collaborative annotation practices
+                      </h2>
+                      <p className="font-content text-base leading-7 text-ink">
+                        Shared annotations become useful when readers can trace
+                        each claim to its source and keep citation identity
+                        stable across libraries.
+                      </p>
+                      <div className="font-content text-base leading-7">
+                        Prior work describes the same coordination problem in
+                        adjacent research settings{" "}
+                        <span className="bg-accent-soft px-1 text-accent">
+                          [@lee2024]
+                        </span>
+                        .
+                      </div>
+
+                      <div className="mt-2 border border-border bg-panel shadow-lg">
+                        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+                          <Search size={15} className="text-muted" />
+                          <input
+                            aria-label="Search citations"
+                            placeholder="Search citations…"
+                            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                          />
+                          <span className="text-xs text-muted">
+                            {items.length} results
+                          </span>
+                        </div>
+                        <div className="divide-y divide-border">
+                          {items.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => attemptInsert(item)}
+                              className="flex w-full items-start gap-3 px-3 py-3 text-left hover:bg-panel-alt"
+                            >
+                              <FileText
+                                size={16}
+                                className="mt-0.5 shrink-0 text-muted"
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium">
+                                  {item.title}
+                                </span>
+                                <span className="mt-1 block truncate text-xs text-muted">
+                                  {item.meta}
+                                </span>
+                                <span className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
+                                  <Library size={12} />
+                                  {libraryName(item.library)}
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-xs font-medium text-accent">
+                                @{item.citekey}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {state.notice && (
+                        <div
+                          role="status"
+                          className={`flex items-start gap-3 border px-3 py-3 text-sm leading-5 ${
+                            state.notice.tone === "warning"
+                              ? "border-warning bg-warning-soft text-ink"
+                              : "border-success bg-panel text-ink"
+                          }`}
+                        >
+                          {state.notice.tone === "warning" ? (
+                            <CircleAlert
+                              size={17}
+                              className="mt-0.5 shrink-0 text-warning"
+                            />
+                          ) : (
+                            <Check
+                              size={17}
+                              className="mt-0.5 shrink-0 text-success"
+                            />
+                          )}
+                          <span>{state.notice.text}</span>
+                        </div>
+                      )}
+                    </article>
+                  </section>
+
+                  <aside className="bg-panel-alt">
+                    <div className="flex h-12 items-center justify-between border-b border-border px-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <BookOpen size={16} />
+                        References
+                      </div>
+                      <span className="text-xs text-muted">1 key</span>
+                    </div>
+
+                    <div className="p-3">
+                      <button
+                        type="button"
+                        disabled={isAmbiguous || candidates.length === 0}
+                        className={`w-full border border-border bg-panel text-left enabled:hover:bg-panel-alt disabled:cursor-not-allowed ${
+                          isAmbiguous
+                            ? "border-l-4 border-l-warning"
+                            : "border-l-4 border-l-success"
+                        }`}
+                      >
+                        <span className="flex items-start gap-2 border-b border-border px-3 py-3">
+                          {isAmbiguous ? (
+                            <AlertTriangle
+                              size={16}
+                              className="mt-0.5 shrink-0 text-warning"
+                            />
+                          ) : (
+                            <Check
+                              size={16}
+                              className="mt-0.5 shrink-0 text-success"
+                            />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold">
+                              @{state.referenceKey}
+                            </span>
+                            <span
+                              className={`mt-0.5 block text-xs ${isAmbiguous ? "text-warning" : "text-success"}`}
+                            >
+                              {isAmbiguous
+                                ? "Ambiguous citation key"
+                                : "Citation key found"}
+                            </span>
+                          </span>
+                        </span>
+
+                        <span className="flex flex-col gap-2 px-3 py-3">
+                          {isAmbiguous && (
+                            <span className="text-xs leading-5 text-muted">
+                              This key matches {candidates.length} items in the
+                              library scope.
+                            </span>
+                          )}
+                          <span className="flex flex-col gap-1.5">
+                            {candidates.map((item) => (
+                              <span
+                                key={item.id}
+                                className="flex items-center gap-2 text-xs text-muted"
+                              >
+                                <Library size={12} className="shrink-0" />
+                                <span className="truncate">
+                                  {libraryName(item.library)}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </span>
+
+                        <span
+                          className={`flex items-center justify-center gap-2 border-t border-border px-3 py-2.5 text-xs font-medium ${
+                            isAmbiguous ? "text-faint" : "text-accent"
+                          }`}
+                        >
+                          <FileText size={14} />
+                          {isAmbiguous
+                            ? "Note action unavailable"
+                            : "Open note"}
+                        </span>
+                      </button>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </section>
+
+            <div className="px-5 md:px-8">
+              <StateReadout state={state} />
+            </div>
+          </main>
+        );
+      }
+      // --- Variant A END ---
+
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<VariantA />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
