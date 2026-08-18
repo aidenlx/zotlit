@@ -3,16 +3,20 @@ import type { CachedMetadata } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
-import { defaults } from "@/services/settings/schema";
 
 import type { CitedBySnapshot, Citation, CitationIndex } from "./service";
 import {
   createCitationIndexHarness,
   DatabaseStub,
+  GROUP_LIBRARY_ID,
+  groupLibrary,
   KEY_A,
   KEY_B,
+  LibraryScopeStub,
   link,
   MemoryStore,
+  MY_LIBRARY_ID,
+  personalLibrary,
   SettingsStub,
 } from "./test-harness";
 import type {
@@ -441,7 +445,8 @@ describe("CitationIndex", () => {
       { indexedKey: KEY_B, refNumber: 1 },
     ]);
     expect(index.resolveCitekey("doe2024")).toMatchObject({
-      indexedKey: KEY_A,
+      kind: "unique",
+      item: { indexedKey: KEY_A },
     });
 
     metadataCache.change(draft, "As @roe2025 wrote, see [[Roe 2025]].");
@@ -613,22 +618,27 @@ describe("CitationIndex resolution", () => {
     const db = new DatabaseStub({ readyImmediately: false });
     const { index } = await makeHarness({}, { db, notes: false });
 
-    expect(index.resolveCitekey("doe2024")).toBeNull();
+    expect(index.resolveCitekey("doe2024")).toEqual({ kind: "missing" });
     const waiting = index.whenResolved();
 
     db.settle();
     await waiting;
 
     expect(index.resolveCitekey("doe2024")).toEqual({
-      itemID: 1,
-      indexedKey: KEY_A,
+      kind: "unique",
+      item: {
+        itemID: 1,
+        libraryID: MY_LIBRARY_ID,
+        key: "DOE2024",
+        indexedKey: KEY_A,
+      },
     });
   });
 
   it("rebuilds on the database changed event, dropping the old key and adding the new one", async () => {
     const { index, citekeys, db } = await makeHarness({}, { notes: false });
-    expect(index.resolveCitekey("doe2024")).not.toBeNull();
-    expect(index.resolveCitekey("doe2024b")).toBeNull();
+    expect(index.resolveCitekey("doe2024").kind).toBe("unique");
+    expect(index.resolveCitekey("doe2024b").kind).toBe("missing");
 
     citekeys.rows = citekeys.rows.map((row) =>
       row.citekey === "doe2024" ? { ...row, citekey: "doe2024b" } : row,
@@ -641,10 +651,10 @@ describe("CitationIndex resolution", () => {
     await yieldToMain();
 
     expect(notified).toBeGreaterThan(0);
-    expect(index.resolveCitekey("doe2024")).toBeNull();
-    expect(index.resolveCitekey("doe2024b")).toEqual({
-      itemID: 1,
-      indexedKey: KEY_A,
+    expect(index.resolveCitekey("doe2024")).toEqual({ kind: "missing" });
+    expect(index.resolveCitekey("doe2024b")).toMatchObject({
+      kind: "unique",
+      item: { itemID: 1, indexedKey: KEY_A },
     });
   });
 
@@ -659,18 +669,23 @@ describe("CitationIndex resolution", () => {
     expect(notified).toBe(0);
   });
 
-  it("reads the configured citation library and rebuilds when it changes", async () => {
-    const { index, citekeys, settings } = await makeHarness(
+  it("reads every local library and rebuilds when Library Scope changes", async () => {
+    const libraryScope = new LibraryScopeStub([
+      personalLibrary(),
+      groupLibrary(),
+    ]);
+    const { index, citekeys } = await makeHarness(
       {},
-      { notes: false },
+      { notes: false, libraryScope },
     );
-    expect(citekeys.calls).toContain(defaults["zotero.citation-library"]);
+    expect(citekeys.calls).toEqual([MY_LIBRARY_ID, GROUP_LIBRARY_ID]);
 
-    settings.update({ "zotero.citation-library": 2 });
+    citekeys.calls.length = 0;
+    libraryScope.select([personalLibrary()]);
     await index.whenResolved();
     await yieldToMain();
 
-    expect(citekeys.calls).toContain(2);
+    expect(citekeys.calls).toEqual([MY_LIBRARY_ID, GROUP_LIBRARY_ID]);
   });
 
   it("settles whenResolved unresolved when the database is degraded", async () => {
@@ -680,7 +695,7 @@ describe("CitationIndex resolution", () => {
 
     await index.whenResolved();
 
-    expect(index.resolveCitekey("doe2024")).toBeNull();
+    expect(index.resolveCitekey("doe2024")).toEqual({ kind: "missing" });
   });
 
   it("settles whenResolved when disposal interrupts the first rebuild", async () => {
@@ -1037,21 +1052,34 @@ describe("CitationIndex resolution", () => {
 
   it("keeps a cross-library wikilink while literal resolution changes library", async () => {
     const body = "@roe2025 [[Roe 2025]]";
-    const { citekeys, draft, index, metadataCache, settings, workspace } =
-      await makeHarness(
-        { "draft.md": body },
-        {
-          citekeys: [
-            {
-              itemID: 1,
-              key: "DOE2024",
-              indexedKey: KEY_A,
-              citekey: "doe2024",
-            },
-          ],
-          settings: { "citation.wikilink-citations": true },
-        },
-      );
+    const libraryScope = new LibraryScopeStub([
+      personalLibrary(),
+      groupLibrary(),
+    ]);
+    libraryScope.select([personalLibrary()]);
+    const { draft, index, metadataCache, workspace } = await makeHarness(
+      { "draft.md": body },
+      {
+        citekeys: [
+          {
+            itemID: 1,
+            libraryID: MY_LIBRARY_ID,
+            key: "DOE2024",
+            indexedKey: KEY_A,
+            citekey: "doe2024",
+          },
+          {
+            itemID: 2,
+            libraryID: GROUP_LIBRARY_ID,
+            key: "ROE2025",
+            indexedKey: KEY_B,
+            citekey: "roe2025",
+          },
+        ],
+        libraryScope,
+        settings: { "citation.wikilink-citations": true },
+      },
+    );
     metadataCache.fileCache.set(draft.path, {
       links: [link("Roe 2025", body.indexOf("[["))],
     } as CachedMetadata);
@@ -1064,15 +1092,7 @@ describe("CitationIndex resolution", () => {
       { kind: "wikilink" },
     ]);
 
-    citekeys.rows = [
-      {
-        itemID: 2,
-        key: "ROE2025",
-        indexedKey: KEY_B,
-        citekey: "roe2025",
-      },
-    ];
-    settings.update({ "zotero.citation-library": 2 });
+    libraryScope.select([personalLibrary(), groupLibrary()]);
     await yieldToMain();
 
     expect(snapshots.at(-1)?.groups[0]?.occurrences).toMatchObject([
@@ -1189,6 +1209,7 @@ describe("CitationIndex resolution", () => {
     citekeys.rows = [
       {
         itemID: 1,
+        libraryID: MY_LIBRARY_ID,
         key: "DOE2024",
         indexedKey: KEY_B,
         citekey: "doe2024",
@@ -1535,6 +1556,150 @@ describe("CitationIndex one-shot reads", () => {
     workspace.layoutReady();
     await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
     expect(index.getCitedBy(KEY_A).resolution).toBe("degraded");
+  });
+});
+
+describe("CitationIndex ambiguous citation keys", () => {
+  /** An Indexed Key of the group Library the multi-Library fixtures use. */
+  const GROUP_KEY = "GRP12345g7";
+
+  const myLibraryRow = {
+    itemID: 1,
+    libraryID: MY_LIBRARY_ID,
+    key: "DOE2024",
+    indexedKey: KEY_A,
+    citekey: "doe2024",
+  };
+  /** A second Item of My Library answering to the same citekey. */
+  const sameLibraryTwin = {
+    itemID: 2,
+    libraryID: MY_LIBRARY_ID,
+    key: "ROE2025",
+    indexedKey: KEY_B,
+    citekey: "doe2024",
+  };
+  /** An Item of the group Library answering to the same citekey. A lower
+   *  `itemID` than its My Library twin, so Library order alone can order them. */
+  const groupTwin = {
+    itemID: 1,
+    libraryID: GROUP_LIBRARY_ID,
+    key: "GRP12345",
+    indexedKey: GROUP_KEY,
+    citekey: "doe2024",
+  };
+
+  function bothLibraries(): LibraryScopeStub {
+    return new LibraryScopeStub([personalLibrary(), groupLibrary()]);
+  }
+
+  it("classifies two Items of one Library under the same key as ambiguous", async () => {
+    const { index } = await makeHarness(
+      {},
+      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
+    );
+
+    expect(index.resolveCitekey("doe2024")).toEqual({
+      kind: "ambiguous",
+      candidates: [
+        {
+          itemID: 1,
+          libraryID: MY_LIBRARY_ID,
+          key: "DOE2024",
+          indexedKey: KEY_A,
+        },
+        {
+          itemID: 2,
+          libraryID: MY_LIBRARY_ID,
+          key: "ROE2025",
+          indexedKey: KEY_B,
+        },
+      ],
+    });
+  });
+
+  it("classifies Items of two Libraries as ambiguous, in canonical Library order", async () => {
+    const { index } = await makeHarness(
+      {},
+      {
+        notes: false,
+        citekeys: [groupTwin, myLibraryRow],
+        libraryScope: bothLibraries(),
+      },
+    );
+
+    const resolved = index.resolveCitekey("doe2024");
+    expect(resolved.kind).toBe("ambiguous");
+    expect(
+      resolved.kind === "ambiguous"
+        ? resolved.candidates.map((candidate) => candidate.indexedKey)
+        : [],
+    ).toEqual([KEY_A, GROUP_KEY]);
+  });
+
+  it("narrows an ambiguous key to unique when Library Scope drops a candidate", async () => {
+    const libraryScope = bothLibraries();
+    const { index } = await makeHarness(
+      {},
+      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
+    );
+    expect(index.resolveCitekey("doe2024").kind).toBe("ambiguous");
+
+    libraryScope.select([personalLibrary()]);
+    await index.whenResolved();
+    await yieldToMain();
+
+    expect(index.resolveCitekey("doe2024")).toMatchObject({
+      kind: "unique",
+      item: { indexedKey: KEY_A },
+    });
+  });
+
+  it("resolves an exact Indexed Key of a Library outside the scope", async () => {
+    const libraryScope = bothLibraries();
+    libraryScope.select([personalLibrary()]);
+    const { index } = await makeHarness(
+      {},
+      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
+    );
+
+    expect(index.resolveCitekey("doe2024")).toMatchObject({ kind: "unique" });
+    expect(index.citekeyOf(GROUP_KEY)).toBe("doe2024");
+  });
+
+  it("emits one change for a candidate order change and none for an equal refresh", async () => {
+    const { index, citekeys, db } = await makeHarness(
+      {},
+      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
+    );
+    let notified = 0;
+    index.on("resolution-changed", () => notified++);
+
+    db.changed();
+    await index.whenResolved();
+    await yieldToMain();
+    expect(notified).toBe(0);
+
+    citekeys.rows = [sameLibraryTwin, myLibraryRow];
+    db.changed();
+    await index.whenResolved();
+    await yieldToMain();
+
+    expect(notified).toBe(1);
+    expect(index.resolveCitekey("doe2024")).toMatchObject({
+      kind: "ambiguous",
+      candidates: [{ indexedKey: KEY_B }, { indexedKey: KEY_A }],
+    });
+  });
+
+  it("keeps an ambiguous literal citation under its own Citation Key", async () => {
+    const { draft, index } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
+    );
+
+    expect(await citationsOf(index, draft)).toMatchObject([
+      { indexedKey: null, linkpath: null, refNumber: 1 },
+    ]);
   });
 });
 

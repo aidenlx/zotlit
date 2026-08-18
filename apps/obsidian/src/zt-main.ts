@@ -18,6 +18,7 @@ import { registerAttachmentSkipNotice } from "./services/attachment-import/notic
 import { buildServices } from "./services/build";
 import { registerCitationsCli } from "./services/citation-index/cli/register";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
+import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
@@ -233,6 +234,7 @@ export default class ZotLitPlugin extends Plugin {
       lookup: services.itemLookup,
       noteFeature: services.noteFeature,
       settings: services.settings,
+      citationIndex: services.citationIndex,
     });
     registerQuickSwitch(this, {
       app: this.app,
@@ -361,6 +363,9 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
     stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
+    stack.defer(
+      registerCitekeyCandidatePicker(this.app, services.citekeyEditor),
+    );
     stack.defer(
       registerLibraryScopeNotices(services.libraryScope, () => {
         revealSetting(

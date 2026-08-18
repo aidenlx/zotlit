@@ -48,6 +48,8 @@ export const DIAGNOSTIC_HINTS = {
     "Run the command again after a short wait; the Citation Index is still scanning the vault or resolving citation keys.",
   KEY_NOT_FOUND:
     "Select a Zotero key or a citation key that names an item in the connected Zotero source.",
+  AMBIGUOUS_CITEKEY:
+    "Run the command again with key=<zotero-key>, taken from the candidates in details.",
   FILE_NOT_FOUND:
     "Pass file= the vault-relative path of a Markdown note, as file=folder/note.md.",
 } as const satisfies Record<string, string>;
@@ -64,7 +66,16 @@ export interface Diagnostic {
     | { target: "source"; expected: string; actual: string | null }
     | { key: string }
     | { citekey: string }
+    | { citekey: string; candidates: readonly AmbiguousCandidateKey[] }
     | { file: string };
+}
+
+/** One item an Ambiguous Citation Key names, by the key that selects it alone. */
+export interface AmbiguousCandidateKey {
+  /** Zotero key: the cross-library identity ZotLit indexes by. */
+  key: string;
+  /** Local id of the library holding the item, which names that library. */
+  libraryID: number;
 }
 
 /**
@@ -271,6 +282,19 @@ export function citekeyNotFoundDiagnostic(citekey: string): Diagnostic {
     "KEY_NOT_FOUND",
     `No Zotero item carries the citation key '${citekey}'.`,
     { citekey },
+  );
+}
+
+/** An Ambiguous Citation Key names several items, so it selects none of them.
+ *  The candidates carry the exact keys that each select one. */
+export function ambiguousCitekeyDiagnostic(
+  citekey: string,
+  candidates: readonly AmbiguousCandidateKey[],
+): Diagnostic {
+  return diagnostic(
+    "AMBIGUOUS_CITEKEY",
+    `${candidates.length} Zotero items carry the citation key '${citekey}' in the current library scope.`,
+    { citekey, candidates },
   );
 }
 

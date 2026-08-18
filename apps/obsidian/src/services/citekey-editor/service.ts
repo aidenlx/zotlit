@@ -4,13 +4,18 @@
 import type { Extension } from "@codemirror/state";
 import type { App, Plugin } from "obsidian";
 
-import { getItemsByID } from "@zotlit/db";
+import { getItemsByID, isChildItemFields } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import * as m from "@/lib/i18n/generated/messages";
+import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type {
+  CitationIndex,
+  SnapshotItem,
+} from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
 import {
@@ -22,6 +27,8 @@ import type {
   NavigationPane,
 } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteWithToast } from "@/services/note-feature/update-single";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -46,11 +53,37 @@ export interface CitekeyEditorDeps {
   citationPopover: CitationPopover;
   settings: SettingsService;
   citationIndex: Pick<CitationIndex, "resolveCitekey" | "on" | "whenResolved">;
+  /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
+  libraryScope: Pick<LibraryScopeService, "current">;
+}
+
+/**
+ * One Item an Ambiguous Citation Key names, as a candidate row shows it: the
+ * Item summary, its Library, and its bare Zotero item key — enough to tell two
+ * Items of one Library apart. Carries the exact identity the row opens by, so
+ * the choice never resolves the Citation Key again.
+ */
+export interface AmbiguousCandidate extends SnapshotItem {
+  /** `Creators (Year): Title`, or the bare Zotero item key when the read
+   *  renders none. */
+  summary: string;
+  /** The Library holding the Item, or `null` when the scope no longer names it. */
+  library: AvailableLibrary | null;
+}
+
+/** One Ambiguous Citation Key, as the candidate picker is asked to show it. */
+export interface AmbiguousCitekey {
+  citekey: string;
+  candidates: readonly AmbiguousCandidate[];
+  /** Where the chosen candidate's Literature Note opens. */
+  pane: NavigationPane;
 }
 
 interface CitekeyEditorEvents {
   "db-unavailable": (citekey: string) => void;
   "citekey-not-found": (citekey: string) => void;
+  /** The citekey names several Items; a UI subscriber asks which one to open. */
+  "citekey-ambiguous": (ambiguous: AmbiguousCitekey) => void;
 }
 
 /**
@@ -73,6 +106,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #citationPopover;
   readonly #settings;
   readonly #citationIndex;
+  readonly #libraryScope;
   readonly #emitter = createNanoEvents<CitekeyEditorEvents>();
   readonly #extension: Extension;
 
@@ -97,6 +131,7 @@ export class CitekeyEditor extends Service<void> {
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.#citationIndex = deps.citationIndex;
+    this.#libraryScope = deps.libraryScope;
     this.#extension = citekeyEditorExtension({
       open: (citekey, pane) => {
         void this.openCitekey(citekey, pane);
@@ -168,7 +203,17 @@ export class CitekeyEditor extends Service<void> {
 
   /** @see ResolveCitekey */
   #resolveCitekey(citekey: string): string | null {
-    return this.#citationIndex.resolveCitekey(citekey)?.indexedKey ?? null;
+    return this.#uniqueItem(citekey)?.indexedKey ?? null;
+  }
+
+  /**
+   * The one Item a citekey names. An Ambiguous Citation Key answers with
+   * nothing: it adopts no candidate's identity, so every surface reading this
+   * treats it as a key that opens no single Item.
+   */
+  #uniqueItem(citekey: string): SnapshotItem | null {
+    const resolved = this.#citationIndex.resolveCitekey(citekey);
+    return resolved.kind === "unique" ? resolved.item : null;
   }
 
   #restyleEditors(): void {
@@ -251,10 +296,11 @@ export class CitekeyEditor extends Service<void> {
    * The Literature Note a page preview may show: the one note indexed under
    * the Indexed Key a citekey resolves to. A citekey with zero or several
    * notes answers with nothing, which keeps every preview path clear of the
-   * create-then-open flow.
+   * create-then-open flow. An Ambiguous Citation Key names no one Item, so it
+   * answers with nothing too.
    */
   hoverNotePath(citekey: string): string | null {
-    const item = this.#citationIndex.resolveCitekey(citekey);
+    const item = this.#uniqueItem(citekey);
     if (!item) return null;
     const matches = this.#noteIndex.getNotesByItemKey(item.indexedKey);
     return matches.length === 1 ? matches[0]!.path : null;
@@ -262,17 +308,30 @@ export class CitekeyEditor extends Service<void> {
 
   /**
    * The Zotero Item a citekey names decides what opens: an existing note for
-   * its Indexed Key wins, and only an Item with no note at all creates one.
+   * its Indexed Key wins, and only an Item with no note at all creates one. A
+   * citekey naming several Items opens nothing by itself — it reports its
+   * candidates, and the choice opens one of them exactly.
    */
   async openCitekey(citekey: string, pane: NavigationPane): Promise<void> {
-    const { workspace } = this.#app;
     await Promise.all([
       this.#noteIndex.whenIndexed(),
       this.#citationIndex.whenResolved(),
     ]);
 
-    const item = this.#citationIndex.resolveCitekey(citekey);
-    if (!item) {
+    const resolved = this.#citationIndex.resolveCitekey(citekey);
+    if (resolved.kind === "ambiguous") {
+      logger.debug("Citekey names several items", {
+        citekey,
+        candidates: resolved.candidates.length,
+      });
+      this.#emitter.emit("citekey-ambiguous", {
+        citekey,
+        candidates: this.#describeCandidates(resolved.candidates),
+        pane,
+      });
+      return;
+    }
+    if (resolved.kind === "missing") {
       if (this.#db.state !== "ready") {
         logger.debug("Citekey open blocked", {
           citekey,
@@ -289,10 +348,37 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
 
+    await this.#openItem(resolved.item, pane, citekey);
+  }
+
+  /**
+   * Opens one candidate of an Ambiguous Citation Key by its exact Indexed Key.
+   * The candidate already carries the identity the picker showed, so the
+   * Citation Key is never resolved again and the choice cannot re-enter
+   * ambiguity.
+   */
+  async openCandidate(
+    candidate: AmbiguousCandidate,
+    pane: NavigationPane,
+  ): Promise<void> {
+    await this.#noteIndex.whenIndexed();
+    await this.#openItem(candidate, pane);
+  }
+
+  /**
+   * @param citekey the key the Item was reached by, for the not-found report
+   *   an exact candidate has no key to name.
+   */
+  async #openItem(
+    item: SnapshotItem,
+    pane: NavigationPane,
+    citekey?: string,
+  ): Promise<void> {
+    const { workspace } = this.#app;
     const existing = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
     if (existing) {
       logger.debug("Opened citekey note", {
-        citekey,
+        indexedKey: item.indexedKey,
         path: existing.path,
         branch: "existing",
       });
@@ -305,19 +391,65 @@ export class CitekeyEditor extends Service<void> {
     const [zoteroItem] = getItemsByID(this.#db.client, [item.itemID]);
     if (!zoteroItem) {
       logger.debug("Citekey open blocked", {
-        citekey,
+        indexedKey: item.indexedKey,
         branch: "citekey-not-found",
       });
-      this.#emitter.emit("citekey-not-found", citekey);
+      this.#emitter.emit("citekey-not-found", citekey ?? item.key);
       return;
     }
 
     const file = await createNoteWithToast(this.#noteFeature, zoteroItem);
     if (!file) {
-      logger.debug("Citekey note creation cancelled", { citekey });
+      logger.debug("Citekey note creation cancelled", {
+        indexedKey: item.indexedKey,
+      });
       return;
     }
-    logger.debug("Created citekey note", { citekey, path: file.path });
+    logger.debug("Created citekey note", {
+      indexedKey: item.indexedKey,
+      path: file.path,
+    });
     await workspace.openLinkText(file.path, "", pane, { active: true });
+  }
+
+  /**
+   * Reads each candidate's summary from the database and pairs it with the
+   * Library it lives in. A read the database cannot answer leaves the summary
+   * as the bare Zotero item key, so the picker still tells the candidates apart.
+   */
+  #describeCandidates(
+    candidates: readonly SnapshotItem[],
+  ): AmbiguousCandidate[] {
+    const libraries = new Map(
+      (this.#libraryScope.current?.available ?? []).map((library) => [
+        library.libraryID,
+        library,
+      ]),
+    );
+    let items = new Map<number, Item>();
+    try {
+      items = new Map(
+        getItemsByID(
+          this.#db.client,
+          candidates.map((candidate) => candidate.itemID),
+        ).map((item) => [item.itemID, item]),
+      );
+    } catch (error) {
+      logger.warn("Ambiguous citekey candidates read without summaries", {
+        error,
+      });
+    }
+    return candidates.map((candidate) => {
+      const item = items.get(candidate.itemID);
+      const fields = item?.fields;
+      return {
+        ...candidate,
+        summary:
+          item && fields && !isChildItemFields(fields)
+            ? itemSummary(item, fields).formatted
+            : candidate.key,
+        library: libraries.get(candidate.libraryID) ?? null,
+      };
+    });
   }
 }

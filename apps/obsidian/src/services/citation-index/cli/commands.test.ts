@@ -10,6 +10,7 @@ import type {
   CitationSyntax,
   CitationSyntaxes,
   CitedBySnapshot,
+  CitekeyResolution,
   ReferenceSource,
   SnapshotItem,
 } from "@/services/citation-index/service";
@@ -32,7 +33,12 @@ const IDENTITY = {
 const ITEM_KEY = "ABCD2345";
 const ITEM_CITEKEY = "doe2024";
 const ITEM_SUMMARY = "Doe (2024): A study of citations";
-const SNAPSHOT_ITEM: SnapshotItem = { itemID: 7, indexedKey: ITEM_KEY };
+const SNAPSHOT_ITEM: SnapshotItem = {
+  itemID: 7,
+  libraryID: 1,
+  key: ITEM_KEY,
+  indexedKey: ITEM_KEY,
+};
 const PRESENT: ItemLookup = { presence: "present", summary: ITEM_SUMMARY };
 
 const OCCURRENCE = {
@@ -189,7 +195,7 @@ interface SetupOptions {
   settleTimeoutMs?: number;
   snapshot?: CitedBySnapshot;
   lookup?: ItemLookup;
-  citekeyItem?: SnapshotItem | null;
+  citekeyResolution?: CitekeyResolution;
   document?: DocumentReferences | null;
   resolution?: CitationKeyResolution;
   syntaxes?: CitationSyntaxes;
@@ -200,12 +206,12 @@ interface SetupOptions {
 function setup(options: SetupOptions = {}) {
   const settle = options.settle ?? "settled";
   const lookup = options.lookup ?? PRESENT;
-  const citekeyItem = options.citekeyItem ?? null;
+  const citekeyResolution = options.citekeyResolution ?? { kind: "missing" };
   const documentReferences =
     options.document === undefined ? DOCUMENT : options.document;
   const getIdentity = vi.fn(() => IDENTITY);
   const waitUntilSettled = vi.fn(() => Promise.resolve(settle));
-  const resolveCitekey = vi.fn(() => citekeyItem);
+  const resolveCitekey = vi.fn(() => citekeyResolution);
   const citekeyOf = vi.fn(() => ITEM_CITEKEY);
   const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
   const lookupItem = vi.fn(() => lookup);
@@ -382,7 +388,7 @@ describe("zotlit:cited-by", () => {
 
   it("resolves a citation key through the resolution snapshot", async () => {
     const { citedBy, resolveCitekey, getCitedBy, lookupItem } = setup({
-      citekeyItem: SNAPSHOT_ITEM,
+      citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
     });
 
     const output = await citedBy({ citekey: ITEM_CITEKEY });
@@ -399,7 +405,7 @@ describe("zotlit:cited-by", () => {
 
   it("keeps the snapshot's verdict when a citation key names an item the source read leaves out", async () => {
     const { citedBy } = setup({
-      citekeyItem: SNAPSHOT_ITEM,
+      citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
       lookup: { presence: "absent", summary: null },
     });
 
@@ -508,7 +514,9 @@ describe("zotlit:cited-by", () => {
   });
 
   it("reports a citation key that resolves to no item", async () => {
-    const { citedBy, getCitedBy } = setup({ citekeyItem: null });
+    const { citedBy, getCitedBy } = setup({
+      citekeyResolution: { kind: "missing" },
+    });
 
     const output = await citedBy({ citekey: "roe2099" });
 
@@ -518,6 +526,43 @@ describe("zotlit:cited-by", () => {
       diagnostic: {
         code: "KEY_NOT_FOUND",
         details: { citekey: "roe2099" },
+      },
+    });
+  });
+
+  it("reports a citation key that names several items, with the key of each", async () => {
+    const { citedBy, getCitedBy } = setup({
+      citekeyResolution: {
+        kind: "ambiguous",
+        candidates: [
+          SNAPSHOT_ITEM,
+          {
+            itemID: 11,
+            libraryID: 4,
+            key: "ROEF6789",
+            indexedKey: "ROEF6789g7",
+          },
+        ],
+      },
+    });
+
+    const output = await citedBy({ citekey: ITEM_CITEKEY });
+
+    // An Ambiguous Citation Key selects no Item, so the answer names the
+    // candidates instead of reading the citations of a chosen one.
+    expect(getCitedBy).not.toHaveBeenCalled();
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "AMBIGUOUS_CITEKEY",
+        hint: DIAGNOSTIC_HINTS.AMBIGUOUS_CITEKEY,
+        details: {
+          citekey: ITEM_CITEKEY,
+          candidates: [
+            { key: ITEM_KEY, libraryID: 1 },
+            { key: "ROEF6789g7", libraryID: 4 },
+          ],
+        },
       },
     });
   });
@@ -591,7 +636,7 @@ describe("zotlit:cited-by", () => {
           order.push("settle");
           return Promise.resolve("settled");
         },
-        resolveCitekey: () => null,
+        resolveCitekey: () => ({ kind: "missing" }),
         citekeyOf: () => ITEM_CITEKEY,
         getCitedBy: () => {
           order.push("cited-by");

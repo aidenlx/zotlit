@@ -9,13 +9,14 @@ import type {
   CitationSyntax,
   CitationSyntaxes,
   CitedBySnapshot,
+  CitekeyResolution,
   DatabaseReadability,
   DocumentCitationError,
   ReferenceSource,
-  SnapshotItem,
 } from "@/services/citation-index/service";
 
 import {
+  ambiguousCitekeyDiagnostic,
   citekeyNotFoundDiagnostic,
   diagnostic,
   envelope,
@@ -86,8 +87,9 @@ interface CitationsCliDeps {
   settleTimeoutMs?: number;
   index: {
     waitUntilSettled: (timeoutMs: number) => Promise<CitationSettleOutcome>;
-    /** The Item a citation key names, through the Citekey Resolution Snapshot. */
-    resolveCitekey: (citekey: string) => SnapshotItem | null;
+    /** What a citation key names through the Citekey Resolution Snapshot: no
+     *  Item, exactly one, or the candidates that make it Ambiguous. */
+    resolveCitekey: (citekey: string) => CitekeyResolution;
     citekeyOf: (indexedKey: string) => string | null;
     getCitedBy: (indexedKey: string) => CitedBySnapshot;
     /** How well citation keys resolve now; a references answer reports it, the
@@ -173,15 +175,16 @@ export function createCitationsCliHandlers(
       if (admission.kind === "rejected") return admission.response;
       const { echoed } = admission;
 
-      const item = resolveItem(deps, request.value);
-      if (item === null) {
+      const selected = resolveItem(deps, request.value);
+      if (selected.kind === "fault") {
         return envelope(CITED_BY_COMMAND, {
           ok: false,
           ...echoed,
-          diagnostic: selectorNotFound(request.value),
+          diagnostic: selected.diagnostic,
         });
       }
 
+      const { item } = selected;
       const snapshot = deps.index.getCitedBy(item.key);
       const groups = reportGroups(snapshot.groups);
       return envelope(CITED_BY_COMMAND, {
@@ -250,43 +253,65 @@ function invalidRequest(
   });
 }
 
+/** The Item a selector named, or the diagnostic that says why it named none. */
+type SelectedItem =
+  | { kind: "selected"; item: CitedItem }
+  | { kind: "fault"; diagnostic: Diagnostic };
+
 /**
  * The Item a selector names, in the identities the payload reports. One source
  * read answers both the presence a key selector is gated on and the summary
  * every answer carries.
  *
- * @returns `null` when the connected source names no such Item. A database
- *   that cannot be read answers the Item as selected instead: the payload's
- *   `resolution` state is what reports the degradation, so an unreadable
- *   library never masquerades as a missing Item. A citekey selector keeps the
- *   resolution snapshot's verdict on which Item it names, and takes the source
- *   read for the summary alone.
+ * @returns the fault the selector earned when it names no one Item: no Item at
+ *   all, or the several an Ambiguous Citation Key names, each reported as the
+ *   Zotero key that selects it alone. A database that cannot be read answers
+ *   the Item as selected instead: the payload's `resolution` state is what
+ *   reports the degradation, so an unreadable library never masquerades as a
+ *   missing Item. A citekey selector keeps the resolution snapshot's verdict on
+ *   which Item it names, and takes the source read for the summary alone.
  */
 function resolveItem(
   deps: CitationsCliDeps,
   selector: CitedBySelector,
-): CitedItem | null {
+): SelectedItem {
   if ("citekey" in selector) {
     const { citekey } = selector;
     const resolved = deps.index.resolveCitekey(citekey);
-    if (resolved === null) return null;
-    const { indexedKey } = resolved;
+    if (resolved.kind === "missing") {
+      return { kind: "fault", diagnostic: citekeyNotFoundDiagnostic(citekey) };
+    }
+    if (resolved.kind === "ambiguous") {
+      return {
+        kind: "fault",
+        diagnostic: ambiguousCitekeyDiagnostic(
+          citekey,
+          resolved.candidates.map(({ indexedKey, libraryID }) => ({
+            key: indexedKey,
+            libraryID,
+          })),
+        ),
+      };
+    }
+    const { indexedKey } = resolved.item;
     return {
-      key: indexedKey,
-      citekey,
-      summary: deps.lookupItem(indexedKey).summary,
+      kind: "selected",
+      item: {
+        key: indexedKey,
+        citekey,
+        summary: deps.lookupItem(indexedKey).summary,
+      },
     };
   }
   const { key } = selector;
   const { presence, summary } = deps.lookupItem(key);
-  if (presence === "absent") return null;
-  return { key, citekey: deps.index.citekeyOf(key), summary };
-}
-
-function selectorNotFound(selector: CitedBySelector): Diagnostic {
-  return "citekey" in selector
-    ? citekeyNotFoundDiagnostic(selector.citekey)
-    : keyNotFoundDiagnostic(selector.key);
+  if (presence === "absent") {
+    return { kind: "fault", diagnostic: keyNotFoundDiagnostic(key) };
+  }
+  return {
+    kind: "selected",
+    item: { key, citekey: deps.index.citekeyOf(key), summary },
+  };
 }
 
 /**

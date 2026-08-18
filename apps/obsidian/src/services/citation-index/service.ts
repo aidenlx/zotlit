@@ -3,13 +3,14 @@
 import { TFile } from "obsidian";
 import type { App, LinkCache, TAbstractFile } from "obsidian";
 
-import { getCitekeysByLibrary, USER_LIBRARY_ID } from "@zotlit/db";
+import { getCitekeysByLibrary } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -25,7 +26,7 @@ import {
 } from "./scan";
 import type { CitationOccurrence, CitationSyntax } from "./scan";
 import { CitekeySnapshot } from "./snapshot";
-import type { ReadCitekeys, SnapshotItem } from "./snapshot";
+import type { CitekeyResolution, ReadCitekeys, SnapshotItem } from "./snapshot";
 import { openCitekeyStore } from "./store";
 import type { CitekeyRecord, CitekeyStore, FileScan } from "./store";
 
@@ -41,7 +42,7 @@ export {
   type CitationSyntax,
   type MalformedWikilinkCitation,
 } from "./scan";
-export type { SnapshotItem } from "./snapshot";
+export type { CitekeyResolution, SnapshotItem } from "./snapshot";
 export {
   readReferenceSources,
   toOpenableAttachments,
@@ -156,6 +157,11 @@ export interface CitationIndexOptions {
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
+  /** Which Libraries a Citation Key resolves against. */
+  libraryScope: Pick<
+    LibraryScopeService,
+    "ready" | "current" | "libraries" | "on"
+  >;
   /**
    * Where scans survive a restart; a store that fails to open costs a full
    * rescan and nothing else.
@@ -190,6 +196,7 @@ export class CitationIndex extends Service<void> {
   readonly #noteIndex;
   readonly #settings;
   readonly #db;
+  readonly #libraryScope;
   readonly #openStore;
   readonly #readCitekeys;
   readonly #emitter = createNanoEvents<CitationIndexEvents>();
@@ -214,7 +221,6 @@ export class CitationIndex extends Service<void> {
   #rebuildSeq = 0;
   #resolved = false;
   #resolution: CitationKeyResolution = "resolving";
-  #libraryID: number;
 
   ready: Promise<void>;
 
@@ -224,10 +230,9 @@ export class CitationIndex extends Service<void> {
     this.#noteIndex = options.noteIndex;
     this.#settings = options.settings;
     this.#db = options.db;
+    this.#libraryScope = options.libraryScope;
     this.#openStore = options.openStore ?? openCitekeyStore;
     this.#readCitekeys = options.readCitekeys ?? getCitekeysByLibrary;
-    this.#libraryID =
-      options.settings.current?.["zotero.citation-library"] ?? USER_LIBRARY_ID;
     this.ready = this.#load();
   }
 
@@ -427,9 +432,12 @@ export class CitationIndex extends Service<void> {
     return omitted;
   }
 
-  /** The Zotero Item a native citation key names, read synchronously. */
-  resolveCitekey(citekey: string): SnapshotItem | null {
-    return this.#snapshot.byCitekey(citekey);
+  /**
+   * What a native citation key names in the current Library Scope, read
+   * synchronously: no Item, exactly one, or several candidates.
+   */
+  resolveCitekey(citekey: string): CitekeyResolution {
+    return this.#snapshot.resolve(citekey);
   }
 
   /** The native citation key of an Item — the wikilink display text. */
@@ -547,6 +555,11 @@ export class CitationIndex extends Service<void> {
       ),
     );
     stack.defer(this.#db.on("changed", () => void this.#rebuildSnapshot()));
+    // Library Scope decides which Libraries a Citation Key resolves against,
+    // so narrowing or widening it can turn an Ambiguous key unique and back.
+    stack.defer(
+      this.#libraryScope.on("changed", () => void this.#rebuildSnapshot()),
+    );
 
     // A store that fails to open leaves the index whole and unpersisted, so the
     // failure costs a rescan per launch rather than the feature.
@@ -655,10 +668,14 @@ export class CitationIndex extends Service<void> {
   }
 
   /**
-   * Rebuilds the resolution snapshot from one bulk database read. Sequenced by
-   * {@link #rebuildSeq}, so a rebuild superseded mid-flight by a newer one
-   * settles without touching the maps. A degraded database, or a read that
-   * throws, leaves the maps as they were rather than clearing them.
+   * Rebuilds the resolution snapshot from one bulk read per local Library.
+   * Sequenced by {@link #rebuildSeq}, so a rebuild superseded mid-flight by a
+   * newer one settles without touching the maps. A degraded database, or a
+   * read that throws, leaves the maps as they were rather than clearing them.
+   *
+   * Every local Library is read, because the reverse lookup by exact Indexed
+   * Key covers them all; Library Scope then decides which of those rows the
+   * forward Citation Key lookup answers from.
    */
   async #rebuildSnapshot(): Promise<void> {
     this.#rebuildSeq += 1;
@@ -666,6 +683,7 @@ export class CitationIndex extends Service<void> {
     this.#setResolution("resolving");
     try {
       await this.#db.ready;
+      await this.#libraryScope.ready;
     } catch (error) {
       logger.warn("Resolution snapshot database unavailable", { error });
       if (this.#stopped || seq !== this.#rebuildSeq) return;
@@ -676,17 +694,22 @@ export class CitationIndex extends Service<void> {
 
     let changed = false;
     let resolution: CitationKeyResolution = "ready";
-    if (this.#db.state !== "ready") {
+    const scope = this.#libraryScope.current;
+    if (this.#db.state !== "ready" || scope === null) {
       resolution = "degraded";
-      logger.debug("Resolution snapshot rebuild skipped, database not ready", {
-        libraryID: this.#libraryID,
-      });
+      logger.debug("Resolution snapshot rebuild skipped, database not ready");
     } else {
       try {
-        const rows = this.#readCitekeys(this.#db.client, this.#libraryID);
-        changed = this.#snapshot.replace(rows);
+        const inScope = new Set(
+          scope.available.map((library) => library.libraryID),
+        );
+        const rows = this.#libraryScope.libraries.flatMap((library) =>
+          this.#readCitekeys(this.#db.client, library.libraryID),
+        );
+        changed = this.#snapshot.replace(rows, inScope);
         logger.debug("Resolution snapshot rebuilt", {
-          libraryID: this.#libraryID,
+          libraries: this.#libraryScope.libraries.length,
+          inScope: inScope.size,
           count: rows.length,
           changed,
         });
@@ -891,7 +914,16 @@ export class CitationIndex extends Service<void> {
     occurrence: CitationOccurrence,
     indexedKey: string,
   ): boolean {
-    return this.#snapshot.byCitekey(occurrence.raw)?.indexedKey === indexedKey;
+    return this.#uniqueItem(occurrence.raw)?.indexedKey === indexedKey;
+  }
+
+  /**
+   * The one Item a citekey names, or `null` when it names none — and equally
+   * when it names several, which adopts no candidate's Indexed Key.
+   */
+  #uniqueItem(citekey: string): SnapshotItem | null {
+    const resolved = this.#snapshot.resolve(citekey);
+    return resolved.kind === "unique" ? resolved.item : null;
   }
 
   /** Whether a wikilink Citation Occurrence resolves to `indexedKey`. */
@@ -917,7 +949,10 @@ export class CitationIndex extends Service<void> {
       );
       return indexedKey ? { indexedKey, linkpath: occurrence.raw } : null;
     }
-    const item = this.#snapshot.byCitekey(occurrence.raw);
+    // An Ambiguous Citation Key keeps its own identity here: it adopts no
+    // candidate's Indexed Key, so it stays a Citation of the key itself and
+    // contributes no CSL work.
+    const item = this.#uniqueItem(occurrence.raw);
     if (!item) return null;
     const [note] = this.#noteIndex.getNotesByItemKey(item.indexedKey);
     return { indexedKey: item.indexedKey, linkpath: note?.path ?? null };
@@ -925,16 +960,6 @@ export class CitationIndex extends Service<void> {
 
   /** Apply citation settings without stopping the internal scan or resolution. */
   #applySettings(settings: Readonly<Settings>): void {
-    const nextLibraryID = settings["zotero.citation-library"];
-    if (nextLibraryID !== this.#libraryID) {
-      logger.info("Citation library changed", {
-        prev: this.#libraryID,
-        next: nextLibraryID,
-      });
-      this.#libraryID = nextLibraryID;
-      void this.#rebuildSnapshot();
-    }
-
     const nextPandoc = settings["citation.pandoc-citations"];
     const nextWikilinks = settings["citation.wikilink-citations"];
     const membershipChanged =

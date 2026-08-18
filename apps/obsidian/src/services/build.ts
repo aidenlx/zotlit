@@ -178,8 +178,14 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, db }) =>
-        new CitationIndex({ app: plugin.app, noteIndex, settings, db }),
+      citationIndex: ({ noteIndex, settings, db, libraryScope }) =>
+        new CitationIndex({
+          app: plugin.app,
+          noteIndex,
+          settings,
+          db,
+          libraryScope,
+        }),
     })
     .use({
       pandocEngine: () => createPandocEngineService(plugin.app),
@@ -227,6 +233,7 @@ export function buildServices(
         citationPopover,
         settings,
         citationIndex,
+        libraryScope,
       }) =>
         new CitekeyEditor({
           app: plugin.app,
@@ -238,6 +245,7 @@ export function buildServices(
           citationPopover,
           settings,
           citationIndex,
+          libraryScope,
         }),
     })
     .use({
