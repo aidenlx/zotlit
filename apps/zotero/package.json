@@ -2,7 +2,7 @@
   "name": "@zotlit/zotero",
   "version": "2.0.1",
   "private": true,
-  "description": "Zotero companion plugin for ZotLit — exports literature notes and annotations to Obsidian.",
+  "description": "Zotero companion plugin for ZotLit",
   "author": "AidenLx",
   "type": "module",
   "scripts": {
