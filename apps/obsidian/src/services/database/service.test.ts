@@ -75,7 +75,6 @@ describe("read-source", () => {
 describe("DatabaseService", () => {
   let prepareMock: ReturnType<typeof vi.fn>;
   let snapshotMock: ReturnType<typeof vi.fn>;
-  let reapStaleReadTempsMock: ReturnType<typeof vi.fn>;
   let createClientMock: ReturnType<typeof vi.fn>;
   let watchMock: ReturnType<typeof vi.fn>;
   let existsSyncMock: ReturnType<typeof vi.fn>;
@@ -90,7 +89,6 @@ describe("DatabaseService", () => {
 
     prepareMock = vi.fn();
     snapshotMock = vi.fn(async () => fingerprint("/zotero/zotero.sqlite"));
-    reapStaleReadTempsMock = vi.fn(async () => undefined);
     createClientMock = vi.fn();
     watchMock = vi.fn(() => ({ close: vi.fn() }));
     existsSyncMock = vi.fn(() => false);
@@ -101,7 +99,6 @@ describe("DatabaseService", () => {
         ...actual,
         prepareRead: prepareMock,
         snapshotSource: snapshotMock,
-        reapStaleReadTemps: reapStaleReadTempsMock,
       };
     });
     vi.doMock("@zotlit/db/client/node", () => ({
@@ -156,19 +153,11 @@ describe("DatabaseService", () => {
         "file:///clone/zotero.sqlite?mode=ro",
         { jit: true },
       );
-      expect(reapStaleReadTempsMock).toHaveBeenCalledWith(
-        expect.any(AbortSignal),
-      );
-      const reapSignal = reapStaleReadTempsMock.mock
-        .calls[0]![0] as AbortSignal;
-      expect(reapSignal.aborted).toBe(false);
       expect(service.state).toBe("ready");
       expect(service.activeReadMode).toBe("copy");
       expect(service.client).toBe(client);
     }
 
-    const reapSignal = reapStaleReadTempsMock.mock.calls[0]![0] as AbortSignal;
-    expect(reapSignal.aborted).toBe(true);
     expect(client.$client.close).toHaveBeenCalledOnce();
     expect(read[Symbol.asyncDispose]).toHaveBeenCalledOnce();
   });

@@ -78,10 +78,14 @@ async function render(
   listMode: ReferencesListMode,
   {
     formattingFailed = false,
+    documentPresentationError = null,
     engine = { kind: "installed", version: "test" },
     copy = { kind: "blocked", reason: "pending" },
   }: Partial<
-    Pick<ReferencesState, "formattingFailed" | "engine" | "copy">
+    Pick<
+      ReferencesState,
+      "formattingFailed" | "documentPresentationError" | "engine" | "copy"
+    >
   > = {},
 ): Promise<HTMLElement> {
   state = {
@@ -89,6 +93,7 @@ async function render(
     listMode,
     engine,
     formattingFailed,
+    documentPresentationError,
     dbReady: true,
     copy,
   };
@@ -444,6 +449,20 @@ describe("References banners", () => {
       "a formatting failure",
       { formattingFailed: true } satisfies Partial<ReferencesState>,
       "ZotLit could not format these references",
+    ],
+    [
+      "an unusable note style",
+      {
+        documentPresentationError: "style",
+      } satisfies Partial<ReferencesState>,
+      "This note's citation and references style is unavailable",
+    ],
+    [
+      "an unusable document language",
+      {
+        documentPresentationError: "language",
+      } satisfies Partial<ReferencesState>,
+      "This note's document language is invalid",
     ],
   ])("keeps %s with the scrolling list region", async (_, state, title) => {
     const container = await render([summaryEntry], { kind: "minimal" }, state);

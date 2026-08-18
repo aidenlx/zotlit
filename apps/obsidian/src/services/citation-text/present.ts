@@ -77,6 +77,19 @@ export type CitationCoordinate =
   | { kind: "offset"; start: number }
   | ({ kind: "section"; ordinal: number } & SectionRange);
 
+/**
+ * Which Citation Occurrence one surface shows, as the value that outlives the
+ * text formatted for it: a consumer holding this reads the current text of that
+ * occurrence out of the document's own citations, however often they are read
+ * again.
+ */
+export interface ShownCitation {
+  /** The citation as its surface holds it. */
+  citation: HeldCitation;
+  /** {@link citationContent} */
+  at?: CitationCoordinate;
+}
+
 /** What one document's surfaces need to put text in their citations' place. */
 export interface DocumentCitations {
   /**
@@ -186,6 +199,32 @@ export function citationContent(
   const occurrences = formatted.get(citationKey(citation));
   if (occurrences === undefined) return null;
   return occurrenceAt(occurrences, at) ?? occurrences[0]!;
+}
+
+/**
+ * What one Citation shows to a surface that outlives the read it was placed
+ * from — the Citation Popover, which reads the document again on every change
+ * to it while the pointer rests where the hover started.
+ *
+ * A coordinate names one occurrence of the document as it stood at the hover.
+ * An edit that moves that occurrence — a note property written into the
+ * frontmatter moves every offset and section of the body below it — leaves the
+ * coordinate naming none, and a position-dependent style renders each
+ * occurrence differently, so another occurrence's text is not this one's to
+ * show.
+ *
+ * @returns `null` where the occurrence this surface stands for has no formatted
+ *   text of its own to show.
+ */
+export function shownCitationContent(
+  { citation, at }: ShownCitation,
+  { formatted }: DocumentCitations,
+): PresentedCitation | null {
+  const occurrences = formatted.get(citationKey(citation));
+  if (occurrences === undefined) return null;
+  return at === undefined
+    ? occurrences[0]!
+    : (occurrenceAt(occurrences, at) ?? null);
 }
 
 /** @returns the occurrence `at` names, or undefined when it names none of them. */

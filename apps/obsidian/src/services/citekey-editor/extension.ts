@@ -33,8 +33,10 @@ import {
   unresolvedKeys,
 } from "@/services/citation-text/present";
 import type {
+  CitationCoordinate,
   DocumentCitations,
   PresentedCitation,
+  ShownCitation,
 } from "@/services/citation-text/present";
 import {
   attachCitationNavigation,
@@ -423,6 +425,7 @@ interface EditedDocument {
 class CitationWidget extends WidgetType {
   readonly #source;
   readonly #content;
+  readonly #shown;
   readonly #works;
   readonly #sourcePath;
   readonly #handlers;
@@ -433,6 +436,8 @@ class CitationWidget extends WidgetType {
   constructor(options: {
     source: string;
     content: PresentedCitation;
+    /** Which occurrence the widget stands for, read again on every popover read. */
+    shown: ShownCitation;
     works: readonly CitedWork[];
     sourcePath: string;
     handlers: CitekeyEditorHandlers;
@@ -445,6 +450,7 @@ class CitationWidget extends WidgetType {
     super();
     this.#source = options.source;
     this.#content = options.content;
+    this.#shown = options.shown;
     this.#works = options.works;
     this.#sourcePath = options.sourcePath;
     this.#handlers = options.handlers;
@@ -470,9 +476,10 @@ class CitationWidget extends WidgetType {
     ]);
     const navigation: CitationNavigation = {
       works: this.#works,
-      // What this widget shows in the citation's place, which is where a
-      // note-class style's own note text is read from.
-      formatted: this.#content.text.content,
+      // The occurrence this widget stands in the citation's place, which is
+      // where a note-class style's own note text is read from, however often
+      // the popover reads it again.
+      shown: this.#shown,
       where: { surface: "editor", editorMode: "live-preview" },
       open: this.#handlers.open,
       showPopover: this.#handlers.showPopover,
@@ -608,10 +615,8 @@ function citationWidget(options: {
     handlers,
     footnote,
   } = options;
-  const content = citationContent(citation, citations, {
-    kind: "offset",
-    start,
-  });
+  const at: CitationCoordinate = { kind: "offset", start };
+  const content = citationContent(citation, citations, at);
   if (content === null) return null;
   const summaryOf = literalSummaryOf(citations);
   const unresolved = unresolvedKeys(citation, summaryOf);
@@ -626,6 +631,7 @@ function citationWidget(options: {
   return new CitationWidget({
     source: citation.source,
     content,
+    shown: { citation, at },
     works: citedWorks(citation, citations),
     sourcePath: path,
     handlers,

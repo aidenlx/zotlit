@@ -4,7 +4,7 @@ import { Menu } from "obsidian";
 import type { HoverParent, Workspace } from "obsidian";
 
 import { getLogger } from "@/lib/log";
-import type { Inlines } from "@/services/pandoc/ast";
+import type { ShownCitation } from "@/services/citation-text/present";
 
 import { citationHoverIntent } from "./hover";
 import type { CitationHoverIntent, HoverPreferences } from "./hover";
@@ -46,11 +46,13 @@ export interface CitationHoverRequest {
   /** The works the citation names, in the order it names them. */
   works: readonly HoveredWork[];
   /**
-   * The text the style formatted for the hovered occurrence, where the surface
-   * shows it in the citation's place. A surface showing the citation's own
-   * source text carries none, and its popover stands on the entries alone.
+   * The occurrence the pointer is on, where the surface shows formatted text in
+   * the citation's place — which is what the popover reads a note-class style's
+   * own note text through, on every read it makes. A surface showing the
+   * citation's own source text carries none, and its popover stands on the
+   * entries alone.
    */
-  formatted?: Inlines;
+  shown?: ShownCitation;
   /** The open-or-create flow every citekey surface shares. */
   open: (citekey: string, pane: NavigationPane) => void;
 }
@@ -63,10 +65,11 @@ export interface CitationHover {
   /** The works the citation names, in the order it names them. */
   works: readonly HoveredWork[];
   /**
-   * The formatted text this citation is rendered as, where the surface renders
-   * one — what a note-class style's own note text reaches the popover through.
+   * The occurrence this citation stands for, where the surface renders
+   * formatted text — what a note-class style's own note text reaches the
+   * popover through.
    */
-  formatted?: Inlines;
+  shown?: ShownCitation;
   where: GestureSurface;
   /** The open-or-create flow every citekey surface shares. */
   open: (citekey: string, pane: NavigationPane) => void;
@@ -319,7 +322,7 @@ export function hoverWikilinkCitation(
     event,
     targetEl: element,
     works: hover.works,
-    formatted: hover.formatted,
+    shown: hover.shown,
     open: hover.open,
   });
 }
@@ -383,7 +386,7 @@ function hover(
     event,
     targetEl: element,
     works,
-    formatted: navigation.formatted,
+    shown: navigation.shown,
     open: navigation.open,
   });
 }

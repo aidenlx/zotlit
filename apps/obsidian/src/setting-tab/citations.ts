@@ -6,6 +6,7 @@ import type {
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { isLanguageTag } from "@/lib/language-tag";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { HoverAction } from "@/services/settings/schema";
@@ -103,6 +104,18 @@ export function citationsPageItems(
           desc: referencesStyleDescription(false),
           render: (setting) => renderReferencesStyleRow(setting, ctx),
         },
+        {
+          name: m.settings_citation_locale_name(),
+          desc: m.settings_citation_locale_desc(),
+          control: {
+            type: "text",
+            key: "citation.locale",
+            // Empty leaves the selected style's own default locale in charge.
+            defaultValue: "",
+            placeholder: m.settings_citation_locale_default(),
+            validate: citationLocaleError,
+          },
+        },
         pandocEngineDefinition(ctx),
       ],
     },
@@ -162,6 +175,15 @@ function requireModPage(
   };
 }
 
+/**
+ * @returns why the Citation Locale was refused, or nothing for one the CSL
+ *   processor reads — an empty value included, which is Style default.
+ */
+export function citationLocaleError(locale: string): string | undefined {
+  if (locale === "" || isLanguageTag(locale)) return undefined;
+  return m.settings_citation_locale_invalid();
+}
+
 /** Dropdown sentinel for the embedded default style; a style ID is never empty. */
 export const STYLE_DEFAULT = "";
 
@@ -169,6 +191,8 @@ export const STYLE_DEFAULT = "";
 export interface ReferencesStyleOption {
   value: string;
   label: string;
+  /** An entry the picker shows and refuses to take as a selection of its own. */
+  disabled?: boolean;
 }
 
 /**

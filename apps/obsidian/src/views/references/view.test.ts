@@ -192,7 +192,12 @@ beforeEach(async () => {
         return {} as EventRef;
       },
     },
-    metadataCache: { on: () => ({}) as EventRef },
+    metadataCache: {
+      on: () => ({}) as EventRef,
+      // No note here declares a style of its own, so every list is rendered
+      // under the vault Citation Presentation.
+      getFileCache: () => null,
+    },
   } as unknown as App;
 
   view = new TestReferencesView(
@@ -231,6 +236,7 @@ beforeEach(async () => {
         decline: () => undefined,
       },
       bibliographyRender: {
+        vaultPresentation: { styleId: null, locale: null },
         render: () => {
           const deferred = Promise.withResolvers<RenderedBibliography>();
           renders.push(deferred);

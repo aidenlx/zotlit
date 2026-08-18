@@ -163,6 +163,21 @@ const POSITION_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   </bibliography>
 </style>`;
 
+/**
+ * Renders one localized term and nothing else, so a rendered entry says which
+ * Citation Locale citeproc formatted it in.
+ */
+const LOCALE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info>
+    <title>Localized</title>
+    <id>http://example.com/localized</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><text variable="citation-number"/></layout></citation>
+  <bibliography><layout><text term="editor" form="long"/></layout></bibliography>
+</style>`;
+
 const RESOLVE_MAP = JSON.stringify({ citations: { "Zeta 2020": ZETA.id } });
 const DOCUMENT = "Cited here [[Zeta 2020]].\n\n# References\n";
 
@@ -221,6 +236,26 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     engine = await openEngine();
     return () => engine[Symbol.asyncDispose]();
   });
+
+  /** The cited document as standalone HTML, formatted in {@link LOCALE_STYLE}. */
+  async function citedHtml({
+    markdown = DOCUMENT,
+    locale,
+  }: {
+    markdown?: string;
+    locale?: string;
+  }): Promise<string> {
+    const html = await engine.renderDocument({
+      markdown,
+      format: "html",
+      bibliography: [ZETA],
+      styleXml: LOCALE_STYLE,
+      locale,
+      luaFilters: [RESOLVE_FILTER],
+      files: { "resolve-map.json": RESOLVE_MAP },
+    });
+    return new TextDecoder().decode(html);
+  }
 
   it("hands the bibliography over as typed inlines, in the style's order", async () => {
     const entries = await engine.renderBibliography({
@@ -431,6 +466,35 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     const text = new TextDecoder().decode(html);
     expect(text).toContain(`data-cites="${ZETA.id}"`);
     expect(text).toContain(`id="ref-${ZETA.id}"`);
+  });
+
+  it("converts a document in the Citation Locale a request names", async () => {
+    const html = await citedHtml({ locale: "de-DE" });
+
+    // The locale reaches citation processing, and the converted document
+    // acquires no language of its own from it.
+    expect(html).toContain("Herausgeber");
+    expect(/<html[^>]*lang=/.test(html)).toBe(false);
+  });
+
+  it("leaves a document that declares its own language in it", async () => {
+    const html = await citedHtml({
+      markdown: `---\nlang: fr\n---\n\n${DOCUMENT}`,
+      locale: "de-DE",
+    });
+
+    expect(html).toContain('lang="fr"');
+    expect(html).toContain("éditeur");
+  });
+
+  it("reads a document's own metadata as the document's, marker name and all", async () => {
+    const html = await citedHtml({
+      markdown: `---\nlang: fr\nzotlit-citation-locale: true\n---\n\n${DOCUMENT}`,
+      locale: "de-DE",
+    });
+
+    expect(html).toContain('lang="fr"');
+    expect(html).toContain("éditeur");
   });
 
   it("serializes concurrent requests without crossing their virtual files", async () => {

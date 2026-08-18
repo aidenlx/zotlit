@@ -110,6 +110,15 @@ Opens the References Sidebar for the active note.
 | --------------- | ---------------- |
 | Command palette | Always available |
 
+<Command>ZotLit: Set citation presentation</Command>
+
+Opens a modal that sets the citation and references style and the document language of the active Markdown note. Confirming writes the `zotlit-csl` and `lang` properties of that note together. Choosing the vault style or the language reset removes the matching property.
+
+| Entry point     | Details                              |
+| --------------- | ------------------------------------ |
+| Command palette | Active on a Markdown note            |
+| More options    | The note's **More options** menu (⋮) |
+
 <Command>ZotLit: Export note with citations</Command>
 
 Opens the built-in export modal for the active Markdown note. The command requires the Pandoc engine when you run it.
@@ -237,6 +246,7 @@ Opens the release notes for the installed ZotLit version.
 | Open citation key under cursor to the right  |   yes   |   no   |    no     | Cursor on citation key |
 | Open citation key under cursor in new window |   yes   |   no   |    no     | Cursor on citation key |
 | Open references                              |   yes   |   no   |    no     |           no           |
+| Set citation presentation                    |   yes   |   no   |    yes    |  Active Markdown note  |
 | Export note with citations                   |   yes   |   no   |    no     |  Active Markdown note  |
 | Update literature note                       |   yes   |   no   |    yes    |           no           |
 | Update literature note metadata              |   yes   |   no   |    yes    |           no           |

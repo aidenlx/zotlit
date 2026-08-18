@@ -22,10 +22,16 @@ import type {
   BibliographyItemRef,
   BibliographyTransport,
 } from "@/services/pandoc/bibliography";
+import {
+  documentPresentation,
+  effectivePresentation,
+  vaultPresentation,
+} from "@/services/pandoc/document-presentation";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
 import type { PandocEngineService } from "@/services/pandoc/service";
-import { loadStyleXml } from "@/services/pandoc/styles";
+import { resolveInstalledStyle } from "@/services/pandoc/styles";
+import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -75,14 +81,51 @@ export async function runPandocExport(
     showEngineMissing(deps.openSettings);
     return;
   }
+  // A note whose own presentation property names nothing stops here: a vault
+  // selection never stands in for it, in the dialog or in the exported run.
+  const declared = documentPresentation(app.metadataCache, file);
+  if (declared.kind === "unusable") {
+    showExportFailure({
+      kind:
+        declared.property === "language"
+          ? "document-language-invalid"
+          : "document-style-invalid",
+    });
+    return;
+  }
+  // Where this export starts: the document's own effective Citation
+  // Presentation, read through the boundary every in-app surface reads it
+  // through, so the run opens on what Obsidian shows. The dialog holds the
+  // style for this run alone — nothing here is written back to the note — so a
+  // style the note names and Zotero cannot supply still opens the picker on
+  // that style, named as the missing one it is. The Citation Locale travels to
+  // citeproc through the effective CSL input; a Document Language reaches the
+  // writer through the note's own `lang` metadata as well, which is what makes
+  // it the exported document's language.
+  const effective = effectivePresentation(
+    declared.presentation,
+    vaultPresentation(settings.current),
+  );
   await zoteroPref.ready;
 
   const choices = await openPandocExportModal(app, {
     dataDir: zoteroPref.dataDir,
-    referencesStyleId: settings.current?.["citation.references-style"] ?? null,
+    referencesStyleId: effective.styleId,
     notePath: absolutePath(app, file),
   });
   if (!choices) return;
+
+  // The style the note itself named, carried into this run unchanged, stops it
+  // where Zotero cannot supply that style: the run never falls back to another.
+  const style = await exportPresentation(
+    zoteroPref.dataDir,
+    { styleId: choices.styleId, locale: effective.locale },
+    { documentStyle: choices.styleId === declared.presentation.styleId },
+  );
+  if (style === null) {
+    showExportFailure({ kind: "document-style-invalid" });
+    return;
+  }
 
   using notice = new LazyNotice();
   notice.setMessage(m.notice_pandoc_export_running());
@@ -97,7 +140,7 @@ export async function runPandocExport(
         },
         markdown: await app.vault.cachedRead(file),
         format: choices.format,
-        styleXml: await loadStyleXml(zoteroPref.dataDir, choices.styleId),
+        ...style,
       },
       exportPorts(deps, await pandocEngine.getEngine()),
     );
@@ -129,6 +172,50 @@ export async function runPandocExport(
   new BaseNotice(
     m.notice_pandoc_export_done({ file: basename(choices.destination) }),
   );
+}
+
+/**
+ * What the engine formats the exported run with, read through the resolver the
+ * app renders with, so an export formats a dependent style exactly as Obsidian
+ * does, in the same effective Citation Locale. An installed style hands over its
+ * content with that locale already applied; the embedded default style takes
+ * the locale beside it.
+ *
+ * A vault selection Zotero cannot supply falls back to the embedded default
+ * style, still in the Citation Locale the request named.
+ *
+ * @param documentStyle whether the request carries the style the note itself
+ *   named, which speaks for that note alone.
+ * @returns what the engine formats with, or `null` where the note's own style
+ *   is unusable — that document stops rather than exporting in another style.
+ */
+async function exportPresentation(
+  dataDir: string,
+  request: CslStyleRequest,
+  { documentStyle }: { documentStyle: boolean },
+): Promise<{ styleXml?: string; locale?: string } | null> {
+  const style = await resolveInstalledStyle(dataDir, request);
+  if (style.kind === "installed") return { styleXml: style.xml };
+  if (style.kind === "failed") {
+    const unusable = {
+      styleId: style.styleId,
+      parentId: style.parentId,
+      reason: style.reason,
+    };
+    if (documentStyle) {
+      logger.warn(
+        "Stopping the export: the note's own style is unusable",
+        unusable,
+      );
+      return null;
+    }
+    logger.warn(
+      "Exporting with the embedded style: the chosen one is unusable",
+      unusable,
+    );
+    return { locale: request.locale ?? undefined };
+  }
+  return { locale: style.locale };
 }
 
 function exportPorts(

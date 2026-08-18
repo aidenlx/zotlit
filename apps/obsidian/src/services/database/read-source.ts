@@ -29,8 +29,6 @@ import { getLogger } from "@/lib/log";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
 import type { ZoteroReadMode } from "@/services/settings/schema";
 
-export { reapStaleReadTemps } from "./reap-stale-read-temps";
-
 const logger = getLogger(["database", "read-source"]);
 const CLONE_ATTEMPTS = 3;
 const RETRY_BACKOFF_MS = 25;

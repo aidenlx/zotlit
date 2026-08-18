@@ -6,6 +6,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
 import {
+  citationLocaleError,
   citationsPageItems,
   referencesStyleDescription,
   referencesStyleOptions,
@@ -266,6 +267,17 @@ describe("citation formatting settings", () => {
       "CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.",
     );
     expect(group.items[1]).toMatchObject({
+      name: "Citation locale",
+      desc: "Sets the language for citation terms, dates, names, and sorting. Leave empty to use the language the selected style declares.",
+      control: {
+        type: "text",
+        key: "citation.locale",
+        defaultValue: "",
+        placeholder: "Style default",
+      },
+    });
+    expect(defaults["citation.locale"]).toBeNull();
+    expect(group.items[2]).toMatchObject({
       name: "Pandoc engine",
       desc: expect.stringMatching(
         /^Formats in-text citations, references, and exports\. Installation applies to every vault on this device\./,
@@ -277,5 +289,50 @@ describe("citation formatting settings", () => {
     expect(referencesStyleDescription(true).textContent).toBe(
       "This style isn’t installed in Zotero. Install it in Zotero or select another style.",
     );
+  });
+});
+
+describe("citationLocaleError", () => {
+  it("accepts the locale forms Pandoc and CSL read", () => {
+    for (const locale of [
+      "",
+      "de",
+      "en-US",
+      "pt-BR",
+      "zh-Hans-CN",
+      "es-419",
+      // Pandoc sorts a bibliography by the collation this extension names.
+      "de-u-co-phonebk",
+      // The extended language, private-use, and irregular tags BCP 47 keeps.
+      "zh-cmn-Hans-CN",
+      "x-pmr",
+      "i-klingon",
+      "en-GB-oed",
+      // Case carries no meaning in a language tag, irregular ones included.
+      "I-KLINGON",
+      "SGN-BE-FR",
+      "DE-de",
+    ]) {
+      expect(citationLocaleError(locale)).toBeUndefined();
+    }
+  });
+
+  it("names the form an unreadable locale should take", () => {
+    for (const locale of [
+      "en_US",
+      "en US",
+      " de-DE",
+      "1234",
+      "de-",
+      "de--DE",
+      "abcdefghi",
+      // A tag writes each variant and each extension once.
+      "de-1901-1901",
+      "en-u-ca-gregory-u-nu-latn",
+    ]) {
+      expect(citationLocaleError(locale)).toBe(
+        "Enter a language code such as en-US, de, or zh-CN.",
+      );
+    }
   });
 });

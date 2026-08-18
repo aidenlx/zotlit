@@ -154,8 +154,24 @@ The raw source range shown around one Citation Occurrence in the Cited By Sideba
 _Avoid_: matched line, context preview, source preview
 
 **Citation and References Style**:
-The CSL style used for both Document Citation Text and rendered entries in the References Sidebar, stored in synced settings as a CSL style ID. Zotero owns the available styles; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
+The Zotero-installed CSL style used for both Document Citation Text and rendered entries in the References Sidebar. A vault selection supplies the default, and a document's `zotlit-csl` property can select its own installed style by CSL ID. Zotero owns style installation; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
 _Avoid_: citation style (conflicts with the `cite` Template's format), references style (omits in-text Citations), CSL file (names the file, not the selection)
+
+**Resolved CSL Style**:
+The standalone CSL file that ZotLit derives from a Zotero-installed Citation and References Style. For an independent style, it contains that style. For a dependent style, it combines the parent style's formatting with the dependent style's default locale. The app, built-in export, and native Pandoc integration use the same resolver; the `zotlit:csl` command materializes a content-addressed file and returns its absolute path.
+_Avoid_: parent CSL file (loses the dependent style's locale), exported style (suggests a user-owned copy)
+
+**Citation Locale**:
+The locale the CSL processor uses for localized terms, dates, names, and collation in one document. Document Language overrides the vault Citation Locale; Style Default delegates to the selected CSL style, then to the processor fallback. It is independent of Obsidian's interface language and an Item's language.
+_Avoid_: citation language, interface language, item language
+
+**Document Language** _(Pandoc)_:
+The main language declared by a note's standard Pandoc `lang` metadata, which also supplies its explicit Citation Locale. **Set citation presentation** labels this value **Document language**; choosing **Use vault citation locale and remove document language** removes `lang` and restores the vault Citation Locale for citation processing.
+_Avoid_: citation language (names only one effect), ZotLit language
+
+**Citation Presentation**:
+The document-specific combination of Citation and References Style and Citation Locale shared by Document Citation Text, the References Sidebar, the Citation Popover, the Copied Bibliography, and the initial built-in export choices. Vault selections supply defaults that `zotlit-csl` and `lang` can override; an invalid document override leaves citation source visible, shows the minimal References Sidebar with a note-scoped error, and keeps bibliography copy unavailable instead of silently falling back.
+_Avoid_: citation format (omits references and locale), render settings
 
 **Pandoc Engine**:
 The Pandoc WASM binary that formats references and runs the built-in export, pinned per plugin release to one upstream release asset and its SHA-256. A user starts the download from settings; ZotLit verifies the bytes against the pin before they become the cache, stores them uncompressed and content-addressed, and shares them with every vault on the device. Uninstall reaches the whole device. The engine's absence is a normal mode, and its download, checksum, and startup failures each name themselves so one fallback surface guides the user out.
@@ -235,6 +251,9 @@ The reading-mode surface of In-text Citation Rendering for Wikilink Citations: a
 _Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 
 ### Index and identity
+
+**Library Scope**:
+The set of Libraries used for discovery and unqualified batch operations. It is either All Libraries or a non-empty set of Selected Libraries; unavailable selections remain part of the scope while available Libraries continue to serve discovery.
 
 **Note Index**:
 A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.

@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
@@ -167,7 +167,8 @@ class SettingsStub {
   }
 }
 
-interface Harness {
+/** One render cache and the stubs it reads, torn down with the test that holds it. */
+interface Harness extends AsyncDisposable {
   cache: BibliographyRenderCache;
   engine: EngineStub;
   pandocEngine: PandocEngineStub;
@@ -180,16 +181,11 @@ interface Harness {
   missingStyles: string[];
 }
 
-const caches: BibliographyRenderCache[] = [];
-
-afterEach(async () => {
-  for (const cache of caches.splice(0)) await cache[Symbol.asyncDispose]();
-});
-
 async function makeHarness(
   overrides: Partial<Settings> = {},
   dataDir?: string,
 ): Promise<Harness> {
+  await using stack = new AsyncDisposableStack();
   const db = new DatabaseStub();
   const pandocEngine = new PandocEngineStub();
   const zoteroPref = new ZoteroPrefStub(dataDir);
@@ -197,13 +193,14 @@ async function makeHarness(
     "citation.references-style": null,
     ...overrides,
   });
-  const cache = new BibliographyRenderCache({
-    db,
-    pandocEngine,
-    zoteroPref,
-    settings,
-  });
-  caches.push(cache);
+  const cache = stack.use(
+    new BibliographyRenderCache({
+      db,
+      pandocEngine,
+      zoteroPref,
+      settings,
+    }),
+  );
   await cache.ready;
 
   const invalidations: number[] = [];
@@ -211,6 +208,7 @@ async function makeHarness(
   const missingStyles: string[] = [];
   cache.onStyleMissing((styleId) => missingStyles.push(styleId));
 
+  const held = stack.move();
   return {
     cache,
     engine: pandocEngine.engine,
@@ -220,37 +218,110 @@ async function makeHarness(
     settings,
     invalidations,
     missingStyles,
+    [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
 }
 
-async function installStyle(styleId: string): Promise<
+function independentXml(styleId: string, title = "Selected"): string {
+  return [
+    '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">',
+    `<info><title>${title}</title><id>${styleId}</id></info>`,
+    "<bibliography><layout /></bibliography>",
+    "</style>",
+  ].join("\n");
+}
+
+async function installStyle(...styleIds: readonly string[]): Promise<
   AsyncDisposable & {
     dataDir: string;
+    /** Rewrite one installed style, as an edit in Zotero leaves it. */
+    edit(index: number, xml: string): Promise<void>;
   }
 > {
-  const dataDir = await mkdtemp(join(tmpdir(), "zotlit-render-style-"));
+  await using stack = new AsyncDisposableStack();
+  const dataDir = stack.adopt(
+    await mkdtemp(join(tmpdir(), "zotlit-render-style-")),
+    (dir) => rm(dir, { recursive: true, force: true }),
+  );
   const stylesDir = join(dataDir, "styles");
   await mkdir(stylesDir, { recursive: true });
-  await writeFile(
-    join(stylesDir, "selected.csl"),
-    [
-      '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">',
-      `<info><title>Selected</title><id>${styleId}</id></info>`,
-      "<bibliography><layout /></bibliography>",
-      "</style>",
-    ].join("\n"),
-  );
+  for (const [index, styleId] of styleIds.entries()) {
+    await writeFile(
+      join(stylesDir, `selected-${index}.csl`),
+      independentXml(styleId),
+    );
+  }
+  /** A whole-second timestamp, which every filesystem stores exactly. */
+  let written = 1_700_000_000;
+  const edit = async (index: number, xml: string): Promise<void> => {
+    const path = join(stylesDir, `selected-${index}.csl`);
+    await writeFile(path, xml);
+    written += 1;
+    await utimes(path, written, written);
+  };
+  const held = stack.move();
   return {
     dataDir,
-    async [Symbol.asyncDispose]() {
-      await rm(dataDir, { recursive: true, force: true });
-    },
+    edit,
+    [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
+  };
+}
+
+const DEPENDENT = "http://www.zotero.org/styles/dependent";
+
+/**
+ * One dependent style beside both independent parents it can name, so pointing
+ * it at the other parent is a single file write. Each write moves the file's
+ * timestamp on, which is what tells the resolver to read the file again.
+ */
+async function installDependent(parentId: string): Promise<
+  AsyncDisposable & {
+    dataDir: string;
+    pointAt(parentId: string): Promise<void>;
+  }
+> {
+  await using stack = new AsyncDisposableStack();
+  const dataDir = stack.adopt(
+    await mkdtemp(join(tmpdir(), "zotlit-render-parent-")),
+    (dir) => rm(dir, { recursive: true, force: true }),
+  );
+  const stylesDir = join(dataDir, "styles");
+  await mkdir(join(stylesDir, "hidden"), { recursive: true });
+  for (const [index, id] of [APA, IEEE].entries()) {
+    await writeFile(
+      join(stylesDir, "hidden", `parent-${index}.csl`),
+      independentXml(id),
+    );
+  }
+  const path = join(stylesDir, "dependent.csl");
+  /** A whole-second timestamp, which every filesystem stores exactly. */
+  let written = 1_700_000_000;
+  const pointAt = async (id: string): Promise<void> => {
+    await writeFile(
+      path,
+      [
+        '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">',
+        `<info><title>Dependent</title><id>${DEPENDENT}</id>`,
+        `<link href="${id}" rel="independent-parent"/></info>`,
+        "</style>",
+      ].join("\n"),
+    );
+    written += 1;
+    await utimes(path, written, written);
+  };
+  await pointAt(parentId);
+  const held = stack.move();
+  return {
+    dataDir,
+    pointAt,
+    [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
 }
 
 describe("BibliographyRenderCache", () => {
   it("hands two consumers of the same ordered cited set one render", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
     const items = [item("alpha"), item("zebra")];
 
     const [first, second] = await Promise.all([
@@ -277,7 +348,8 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("renders again for a different cited set, order included", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
 
     await cache.render([item("alpha"), item("zebra")]);
     await cache.render([item("zebra"), item("alpha")]);
@@ -287,7 +359,8 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("drops every render when the Zotero database changes", async () => {
-    const { cache, engine, db, invalidations } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine, db, invalidations } = harness;
     const items = [item("alpha")];
 
     await cache.render(items);
@@ -299,7 +372,8 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("drops every render when the Zotero data directory moves", async () => {
-    const { cache, engine, zoteroPref, invalidations } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine, zoteroPref, invalidations } = harness;
     const items = [item("alpha")];
 
     await cache.render(items);
@@ -311,7 +385,8 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("drops every render when the Citation and References Style changes", async () => {
-    const { cache, engine, settings, invalidations } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine, settings, invalidations } = harness;
     const items = [item("alpha")];
 
     await cache.render(items);
@@ -329,7 +404,8 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("drops every render when the engine comes or goes", async () => {
-    const { cache, engine, pandocEngine, invalidations } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine, pandocEngine, invalidations } = harness;
     const items = [item("alpha")];
 
     await cache.render(items);
@@ -341,9 +417,10 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("formats nothing while no engine is installed", async () => {
-    const { cache, engine, pandocEngine, missingStyles } = await makeHarness({
+    await using harness = await makeHarness({
       "citation.references-style": APA,
     });
+    const { cache, engine, pandocEngine, missingStyles } = harness;
     pandocEngine.setStatus({ kind: "absent" });
 
     await expect(cache.render([item("alpha")])).resolves.toEqual({
@@ -355,7 +432,8 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("formats nothing for a document that cites nothing", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
 
     await expect(cache.render([])).resolves.toEqual({
       kind: "rendered",
@@ -365,8 +443,24 @@ describe("BibliographyRenderCache", () => {
     expect(engine.requests).toHaveLength(0);
   });
 
+  it("stops a document that cites nothing under a style it cannot reach", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, missingStyles } = harness;
+
+    await expect(cache.render([], { styleId: IEEE })).resolves.toEqual({
+      kind: "unavailable",
+      reason: "style-missing",
+    });
+    expect(missingStyles).toEqual([]);
+  });
+
   it("asks again after a render the engine refused", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
     const items = [item("alpha")];
 
     engine.fails = true;
@@ -380,9 +474,10 @@ describe("BibliographyRenderCache", () => {
   });
 
   it("keeps an unavailable selected style out of every formatting surface", async () => {
-    const { cache, engine, missingStyles } = await makeHarness({
+    await using harness = await makeHarness({
       "citation.references-style": APA,
     });
+    const { cache, engine, missingStyles } = harness;
 
     await expect(cache.render([item("alpha")])).resolves.toEqual({
       kind: "unavailable",
@@ -404,10 +499,11 @@ describe("BibliographyRenderCache", () => {
 
   it("uses the selected installed style for bibliography and in-text formatting", async () => {
     await using installed = await installStyle(APA);
-    const { cache, engine } = await makeHarness(
+    await using harness = await makeHarness(
       { "citation.references-style": APA },
       installed.dataDir,
     );
+    const { cache, engine } = harness;
 
     await cache.render([item("alpha")]);
     await cache.renderCitations(["[@alpha]"], [item("alpha")]);
@@ -415,13 +511,183 @@ describe("BibliographyRenderCache", () => {
     expect(engine.requests[0]?.styleXml).toContain(`<id>${APA}</id>`);
     expect(engine.citationRequests[0]?.styleXml).toContain(`<id>${APA}</id>`);
   });
+
+  it("renders the style and Citation Locale a request names of its own", async () => {
+    await using installed = await installStyle(APA, IEEE);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")], { styleId: IEEE });
+    await cache.renderCitations(["[@alpha]"], [item("alpha")], {
+      styleId: IEEE,
+      locale: "de-DE",
+    });
+
+    expect(engine.requests[0]?.styleXml).toContain(`<id>${IEEE}</id>`);
+    expect(engine.citationRequests[0]?.styleXml).toContain(
+      'default-locale="de-DE"',
+    );
+  });
+
+  it("renders every surface in the vault Citation Locale", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA, "citation.locale": "de-DE" },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")]);
+    await cache.renderCitations(["[@alpha]"], [item("alpha")]);
+
+    expect(engine.requests[0]?.styleXml).toContain('default-locale="de-DE"');
+    expect(engine.citationRequests[0]?.styleXml).toContain(
+      'default-locale="de-DE"',
+    );
+  });
+
+  it("renders the embedded default style in the vault Citation Locale", async () => {
+    await using harness = await makeHarness({ "citation.locale": "de-DE" });
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")]);
+
+    expect(engine.requests[0]?.styleXml).toBeUndefined();
+    expect(engine.requests[0]?.locale).toBe("de-DE");
+  });
+
+  it("leaves an empty vault Citation Locale to the style", async () => {
+    await using harness = await makeHarness({ "citation.locale": "" });
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")]);
+
+    expect(engine.requests[0]?.locale).toBeUndefined();
+  });
+
+  it("drops every render when the vault Citation Locale changes", async () => {
+    await using harness = await makeHarness();
+    const { cache, engine, settings, invalidations } = harness;
+    const items = [item("alpha")];
+
+    await cache.render(items);
+    await cache.renderCitations(["[@alpha]"], items);
+    settings.update({ "citation.locale": "de-DE" });
+    await cache.render(items);
+    await cache.renderCitations(["[@alpha]"], items);
+    // The same locale again is no change at all.
+    settings.update({ "citation.locale": "de-DE" });
+
+    expect(invalidations).toHaveLength(1);
+    expect(engine.requests).toHaveLength(2);
+    expect(engine.citationRequests).toHaveLength(2);
+    expect(engine.requests[1]?.locale).toBe("de-DE");
+    expect(engine.citationRequests[1]?.locale).toBe("de-DE");
+  });
+
+  it("renders the embedded default style for a request that names Default", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")], { styleId: null });
+
+    expect(engine.requests[0]?.styleXml).toBeUndefined();
+  });
+
+  it("renders the embedded default style in the Citation Locale a request names", async () => {
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
+
+    await cache.render([item("alpha")], { styleId: null, locale: "de-DE" });
+
+    expect(engine.requests[0]?.styleXml).toBeUndefined();
+    expect(engine.requests[0]?.locale).toBe("de-DE");
+  });
+
+  it("renders again when a dependent style names another parent", async () => {
+    await using installed = await installDependent(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": DEPENDENT },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+    const items = [item("alpha")];
+
+    await cache.render(items);
+    await installed.pointAt(IEEE);
+    await cache.render(items);
+
+    expect(engine.requests).toHaveLength(2);
+    expect(engine.requests[0]?.styleXml).toContain(`<id>${APA}</id>`);
+    expect(engine.requests[1]?.styleXml).toContain(`<id>${IEEE}</id>`);
+  });
+
+  it("renders again when the selected style's own content changes", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+    const items = [item("alpha")];
+
+    await cache.render(items);
+    await installed.edit(0, independentXml(APA, "Edited in Zotero"));
+    await cache.render(items);
+
+    expect(engine.requests).toHaveLength(2);
+    expect(engine.requests[1]?.styleXml).toContain(
+      "<title>Edited in Zotero</title>",
+    );
+  });
+
+  it("holds one render per Citation Presentation", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, engine } = harness;
+    const items = [item("alpha")];
+
+    await cache.render(items);
+    await cache.render(items, { locale: "de-DE" });
+    await cache.render(items, { locale: "de-DE" });
+
+    expect(engine.requests).toHaveLength(2);
+    expect(engine.requests[0]?.styleXml).not.toContain("default-locale");
+    expect(engine.requests[1]?.styleXml).toContain('default-locale="de-DE"');
+  });
+
+  it("blames the vault for its own selection alone", async () => {
+    await using installed = await installStyle(APA);
+    await using harness = await makeHarness(
+      { "citation.references-style": APA },
+      installed.dataDir,
+    );
+    const { cache, missingStyles } = harness;
+
+    await expect(
+      cache.render([item("alpha")], { styleId: IEEE }),
+    ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" });
+
+    expect(missingStyles).toEqual([]);
+  });
 });
 
 describe("BibliographyRenderCache citations", () => {
   const items = [item("alpha")];
 
   it("hands two consumers of the same document one render", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
 
     const [first, second] = await Promise.all([
       cache.renderCitations(["[@alpha]", "@alpha"], items),
@@ -437,7 +703,8 @@ describe("BibliographyRenderCache citations", () => {
   });
 
   it("renders again for other citations of the same cited set", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
 
     await cache.renderCitations(["[@alpha]"], items);
     await cache.renderCitations(["@alpha"], items);
@@ -446,7 +713,8 @@ describe("BibliographyRenderCache citations", () => {
   });
 
   it("drops citation renders with the bibliography renders", async () => {
-    const { cache, engine, settings } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine, settings } = harness;
 
     await cache.renderCitations(["[@alpha]"], items);
     settings.update({ "citation.references-style": IEEE });
@@ -457,7 +725,8 @@ describe("BibliographyRenderCache citations", () => {
   });
 
   it("formats nothing while no engine is installed", async () => {
-    const { cache, engine, pandocEngine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine, pandocEngine } = harness;
     pandocEngine.setStatus({ kind: "absent" });
 
     await expect(
@@ -467,14 +736,16 @@ describe("BibliographyRenderCache citations", () => {
   });
 
   it("formats nothing for a document that cites nothing", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
 
     await expect(cache.renderCitations([], [])).resolves.toEqual([]);
     expect(engine.citationRequests).toHaveLength(0);
   });
 
   it("asks again after a render the engine refused", async () => {
-    const { cache, engine } = await makeHarness();
+    await using harness = await makeHarness();
+    const { cache, engine } = harness;
 
     engine.fails = true;
     await expect(

@@ -10,7 +10,6 @@ import type {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
-import { DisposableAbortController } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
@@ -19,7 +18,6 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import {
   buildSqliteUri,
   prepareRead,
-  reapStaleReadTemps,
   snapshotSource,
   sourceFingerprintsEqual,
 } from "./read-source";
@@ -250,11 +248,6 @@ export class DatabaseService extends Service<void> {
     const settings = await this.#settings.loaded;
 
     await using stack = new AsyncDisposableStack();
-    const reapAbort = stack.use(new DisposableAbortController());
-    void reapStaleReadTemps(reapAbort.signal).catch((error) => {
-      if (reapAbort.signal.aborted) return;
-      logger.warn("Failed to reap stale database read temps", { error });
-    });
     stack.defer(() => this.#disposeWatchers());
     stack.defer(async () => {
       await this.#activeReadStack?.disposeAsync();

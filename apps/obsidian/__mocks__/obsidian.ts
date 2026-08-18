@@ -14,6 +14,7 @@ import type {
   Debouncer,
   EditorSuggestContext,
   EventRef,
+  Events,
   HoverParent,
   HoverPopover as ObsidianHoverPopover,
   IconName,
@@ -132,6 +133,11 @@ export class HoverPopover {
 
   register(cb: () => void): void {
     this.#unload.push(cb);
+  }
+
+  registerEvent(ref: EventRef): void {
+    const { e } = ref as unknown as { e: Events };
+    this.#unload.push(() => e.offref(ref));
   }
 
   show(): void {
@@ -577,33 +583,286 @@ export function debounce<T extends unknown[], V>(
   return debouncer;
 }
 
-/** Base-class stand-ins for `Modal` and `ButtonComponent`. The plugin's
- * modal/button subclasses only need something constructible to extend at import
- * time; no test opens a modal, so the members stay unimplemented. */
+/**
+ * Stand-in for `Modal`. Every instance lands on `Modal.instances`, so a test
+ * reaches the dialog a function opened without that function returning it. The
+ * `contentEl` is the dialog's own, so the rows built on it are readable through
+ * {@link settingsOf}, and `close()` runs the close callback the way dismissing
+ * the dialog does.
+ */
 export class Modal {
+  static instances: Modal[] = [];
+
   containerEl: HTMLElement = noticeElStub;
   modalEl: HTMLElement = noticeElStub;
-  contentEl: HTMLElement = noticeElStub;
-  constructor(readonly app: App) {}
-  open(): void {}
-  close(): void {}
+  contentEl: HTMLElement = containerElStub();
+
+  title = "";
+  isOpen = false;
+
+  #closed: (() => unknown) | null = null;
+
+  constructor(readonly app: App) {
+    Modal.instances.push(this);
+  }
+
+  setTitle(title: string): this {
+    this.title = title;
+    return this;
+  }
+
+  setCloseCallback(cb: () => unknown): this {
+    this.#closed = cb;
+    return this;
+  }
+
+  open(): void {
+    this.isOpen = true;
+  }
+
+  close(): void {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    this.#closed?.();
+  }
+
   onOpen(): void {}
   onClose(): void {}
 }
 
+/** Minimal container a `Setting` row attaches itself to. */
+function containerElStub(): HTMLElement {
+  return {
+    addClass: (_cls: string) => {},
+    addClasses: (_classes: string[]) => {},
+    querySelector: (_selector: string): HTMLElement | null => null,
+  } as unknown as HTMLElement;
+}
+
+const settingRows = new WeakMap<HTMLElement, Setting[]>();
+
+/** The rows built on one container, in the order they were built. */
+export function settingsOf(containerEl: HTMLElement): Setting[] {
+  return settingRows.get(containerEl) ?? [];
+}
+
+/**
+ * Stand-in for one `Setting` row. It records what it was named and holds the
+ * components it was given, so a test reads a dialog the way a user does and
+ * drives it through {@link DropdownComponent.choose}, {@link
+ * TextComponent.type}, and {@link ButtonComponent.click}.
+ */
+export class Setting {
+  /** Every component added to this row, in the order it was added. */
+  readonly components: (
+    | ButtonComponent
+    | DropdownComponent
+    | ExtraButtonComponent
+    | TextComponent
+  )[] = [];
+
+  name = "";
+  desc = "";
+
+  constructor(readonly containerEl: HTMLElement) {
+    const rows = settingRows.get(containerEl) ?? [];
+    rows.push(this);
+    settingRows.set(containerEl, rows);
+  }
+
+  setName(name: string): this {
+    this.name = name;
+    return this;
+  }
+
+  setDesc(desc: string): this {
+    this.desc = desc;
+    return this;
+  }
+
+  addDropdown(cb: (dropdown: DropdownComponent) => unknown): this {
+    return this.#add(new DropdownComponent(this.containerEl), cb);
+  }
+
+  addText(cb: (text: TextComponent) => unknown): this {
+    return this.#add(new TextComponent(this.containerEl), cb);
+  }
+
+  addButton(cb: (button: ButtonComponent) => unknown): this {
+    return this.#add(new ButtonComponent(this.containerEl), cb);
+  }
+
+  addExtraButton(cb: (button: ExtraButtonComponent) => unknown): this {
+    return this.#add(new ExtraButtonComponent(this.containerEl), cb);
+  }
+
+  #add<
+    T extends
+      | ButtonComponent
+      | DropdownComponent
+      | ExtraButtonComponent
+      | TextComponent,
+  >(component: T, cb: (component: T) => unknown): this {
+    this.components.push(component);
+    cb(component);
+    return this;
+  }
+}
+
+export class DropdownComponent {
+  /** Every entry the dropdown offers, in the order it offers them. */
+  options: { value: string; label: string; disabled?: boolean }[] = [];
+
+  selectEl = {
+    replaceChildren: () => {
+      this.options.length = 0;
+    },
+    options: this.options,
+  } as unknown as HTMLSelectElement;
+
+  #value = "";
+  #changed: ((value: string) => unknown) | null = null;
+
+  constructor(readonly containerEl: HTMLElement) {}
+
+  addOption(value: string, label: string): this {
+    this.options.push({ value, label });
+    return this;
+  }
+
+  getValue(): string {
+    return this.#value;
+  }
+
+  setValue(value: string): this {
+    this.#value = value;
+    return this;
+  }
+
+  onChange(cb: (value: string) => unknown): this {
+    this.#changed = cb;
+    return this;
+  }
+
+  /** Test helper: pick an entry, as the user does; a disabled entry refuses. */
+  choose(value: string): void {
+    if (this.options.find((option) => option.value === value)?.disabled) return;
+    this.#value = value;
+    this.#changed?.(value);
+  }
+}
+
+/** The input surface a dialog seeds a value in and refuses one through. */
+function inputElStub(): HTMLInputElement {
+  const input = {
+    value: "",
+    placeholder: "",
+    validationMessage: "",
+    setCustomValidity: (message: string) => {
+      input.validationMessage = message;
+    },
+    reportValidity: () => !input.validationMessage,
+  };
+  return input as unknown as HTMLInputElement;
+}
+
+export class TextComponent {
+  inputEl: HTMLInputElement = inputElStub();
+
+  #changed: ((value: string) => unknown) | null = null;
+
+  constructor(readonly containerEl: HTMLElement) {}
+
+  getValue(): string {
+    return this.inputEl.value;
+  }
+
+  setValue(value: string): this {
+    this.inputEl.value = value;
+    return this;
+  }
+
+  setPlaceholder(placeholder: string): this {
+    this.inputEl.placeholder = placeholder;
+    return this;
+  }
+
+  onChange(cb: (value: string) => unknown): this {
+    this.#changed = cb;
+    return this;
+  }
+
+  /** Test helper: type a value, as the user does. */
+  type(value: string): void {
+    this.setValue(value);
+    this.#changed?.(value);
+  }
+}
+
+/**
+ * The borderless icon action a row carries beside its control. It is read by
+ * the tooltip it names, which is the label the user gets from it.
+ */
+export class ExtraButtonComponent {
+  icon = "";
+  /** The label the button carries, as the user reads it on hover. */
+  tooltip = "";
+
+  #clicked: ((evt: MouseEvent) => unknown) | null = null;
+
+  constructor(readonly containerEl: HTMLElement) {}
+
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  onClick(cb: (evt: MouseEvent) => unknown): this {
+    this.#clicked = cb;
+    return this;
+  }
+
+  /** Test helper: press the button, as the user does. */
+  click(): void {
+    this.#clicked?.({} as MouseEvent);
+  }
+}
+
 export class ButtonComponent {
   buttonEl: HTMLElement = noticeElStub;
+
+  /** The label the button carries, as the user reads it. */
+  text = "";
+
+  #clicked: ((evt: MouseEvent) => unknown) | null = null;
+
   constructor(readonly containerEl: HTMLElement) {}
-  onClick(_cb: (evt: MouseEvent) => unknown): this {
+
+  onClick(cb: (evt: MouseEvent) => unknown): this {
+    this.#clicked = cb;
     return this;
   }
-  setButtonText(_text: string): this {
+
+  setButtonText(text: string): this {
+    this.text = text;
     return this;
   }
+
   setCta(): this {
     return this;
   }
+
   setWarning(): this {
     return this;
+  }
+
+  /** Test helper: press the button, as the user does. */
+  click(): void {
+    this.#clicked?.({} as MouseEvent);
   }
 }

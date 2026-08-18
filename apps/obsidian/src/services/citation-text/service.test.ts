@@ -164,6 +164,7 @@ async function makeHarness({
       whenIndexed: () => Promise.resolve(),
     },
     bibliographyRender: {
+      vaultPresentation: { styleId: null, locale: null },
       renderCitations: (citations: readonly string[]) => {
         citationRequests.push({ citations });
         if (formatCitations) return formatCitations(citations);

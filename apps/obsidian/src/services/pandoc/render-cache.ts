@@ -1,5 +1,7 @@
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
 
+import { createHash } from "node:crypto";
+
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -11,9 +13,15 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import {
+  effectivePresentation,
+  vaultPresentation,
+} from "./document-presentation";
+import type { EffectivePresentation } from "./document-presentation";
 import type { BibliographyEntry, RenderedCitation } from "./engine";
 import type { PandocEngineService } from "./service";
-import { StyleXmlCache, styleHasEntryMarkers } from "./styles";
+import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
+import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
 const logger = getLogger(["pandoc", "render-cache"]);
 
@@ -45,6 +53,21 @@ export interface BibliographyRenderCacheOptions {
   settings: Pick<SettingsService, "ready" | "subscribe">;
 }
 
+/**
+ * The Citation Presentation one render asks for. An omitted member inherits the
+ * vault selection, which is what a caller that renders the vault default asks
+ * for by passing nothing at all.
+ */
+export interface RenderPresentation {
+  /**
+   * Installed CSL ID to render with, or `null` for the engine's embedded
+   * default style.
+   */
+  styleId?: string | null;
+  /** Citation Locale to render in, overriding the style's own default locale. */
+  locale?: string | null;
+}
+
 /** A completed bibliography and whether its style supplies Entry Markers. */
 export interface BibliographyRenderResult {
   entries: readonly BibliographyEntry[];
@@ -57,10 +80,10 @@ export type BibliographyRenderOutcome =
   | { kind: "unavailable"; reason: "engine-absent" | "style-missing" }
   | { kind: "failed" };
 
-type RenderAttempt<T> =
-  | { kind: "rendered"; value: T }
-  | { kind: "style-missing" }
-  | { kind: "failed" };
+type RenderAttempt<T> = { kind: "rendered"; value: T } | { kind: "failed" };
+
+/** A Resolved CSL Style a render can actually run with. */
+type RenderStyle = Exclude<ResolvedCslStyle, { kind: "failed" }>;
 
 /**
  * Formats whole bibliographies in the Citation and References Style, and hands the same
@@ -68,10 +91,11 @@ type RenderAttempt<T> =
  *
  * A bibliography entry is not a pure function of its Item — Entry Markers and
  * disambiguation depend on the whole cited set — so the whole list is the unit
- * that is cached, keyed by Citation and References Style and the ordered cited set. What
- * makes a render stale makes every render stale: a Zotero database change, a
- * Citation and References Style change, and an engine that came or went each drop the cache
- * whole and announce it through {@link BibliographyRenderEvents.invalidated}.
+ * that is cached, keyed by the Citation Presentation it was rendered under and
+ * the ordered cited set. What makes a render stale makes every render stale: a
+ * Zotero database change, a vault Citation Presentation change, and an engine
+ * that came or went each drop the cache whole and announce it through
+ * {@link BibliographyRenderEvents.invalidated}.
  *
  * Nothing is written to disk: a render is derived from the library and the
  * style, both of which the plugin can read again.
@@ -82,7 +106,7 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #zoteroPref;
   readonly #settings;
   readonly #emitter = createNanoEvents<BibliographyRenderEvents>();
-  readonly #styles = new StyleXmlCache();
+  readonly #styles = new InstalledStyleCache();
   /** Bibliography renders by {@link renderKey}. */
   readonly #renders = new BoundedCache<
     Promise<RenderAttempt<BibliographyRenderResult>>
@@ -91,8 +115,8 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #citations = new BoundedCache<
     Promise<RenderAttempt<readonly RenderedCitation[]>>
   >(HELD_RENDERS);
-  /** `undefined` until the first settings snapshot names the selected style. */
-  #styleId: string | null | undefined;
+  /** `undefined` until the first settings snapshot names the vault selections. */
+  #vault: EffectivePresentation | undefined;
   /** The first unavailable selected style found in this plugin lifecycle. */
   #missingStyle: string | null = null;
 
@@ -116,35 +140,40 @@ export class BibliographyRenderCache extends Service<void> {
    * compares renders by reference.
    *
    * @param items the cited works as CSL-JSON, in the order they are cited.
+   * @param presentation the style and Citation Locale to render under; the
+   *   vault selection where it names none.
    * @returns the formatted bibliography, or the unavailable or failed state
    *   that tells the sidebar to show its plain list.
    */
   async render(
     items: readonly CslItemData[],
+    presentation?: RenderPresentation,
   ): Promise<BibliographyRenderOutcome> {
     await this.ready.catch(() => undefined);
     if (this.#engine.getStatus().kind !== "installed") {
       return { kind: "unavailable", reason: "engine-absent" };
     }
+
+    const request = this.#styleRequest(presentation);
+    const style = await this.#resolveStyle(request);
+    if (style.kind === "failed") {
+      return { kind: "unavailable", reason: "style-missing" };
+    }
+    // A document that cites nothing still renders under the style it names, so
+    // an unusable one is answered above rather than passed over here.
     if (items.length === 0) {
       return { kind: "rendered", entries: [], hasEntryMarkers: false };
     }
 
-    const styleId = this.#styleId ?? null;
     const attempt = await this.#hold({
       held: this.#renders,
-      key: renderKey(styleId, items),
-      format: () => this.#runBibliography(items, styleId),
+      key: renderKey({ request, style, items }),
+      format: () => this.#runBibliography(items, style),
       kind: "bibliography",
     });
-    switch (attempt.kind) {
-      case "rendered":
-        return { kind: "rendered", ...attempt.value };
-      case "style-missing":
-        return { kind: "unavailable", reason: "style-missing" };
-      case "failed":
-        return { kind: "failed" };
-    }
+    return attempt.kind === "rendered"
+      ? { kind: "rendered", ...attempt.value }
+      : { kind: "failed" };
   }
 
   /**
@@ -159,25 +188,41 @@ export class BibliographyRenderCache extends Service<void> {
    * @param citations each citation as the source writes it, in document order.
    * @param items the works those citations name, each `id` the key the source
    *   names that work by.
+   * @param presentation the style and Citation Locale to render under; the
+   *   vault selection where it names none.
    * @returns one formatted citation per source, in the same order; `null` when
    *   the engine or selected style is unavailable, or the render failed.
    */
   async renderCitations(
     citations: readonly string[],
     items: readonly CslItemData[],
+    presentation?: RenderPresentation,
   ): Promise<readonly RenderedCitation[] | null> {
     await this.ready.catch(() => undefined);
     if (this.#engine.getStatus().kind !== "installed") return null;
     if (citations.length === 0) return [];
 
-    const styleId = this.#styleId ?? null;
+    const request = this.#styleRequest(presentation);
+    const style = await this.#resolveStyle(request);
+    if (style.kind === "failed") return null;
+
     const attempt = await this.#hold({
       held: this.#citations,
-      key: renderKey(styleId, items, citations),
-      format: () => this.#runCitations(citations, items, styleId),
+      key: renderKey({ request, style, items, citations }),
+      format: () => this.#runCitations(citations, items, style),
       kind: "citations",
     });
     return attempt.kind === "rendered" ? attempt.value : null;
+  }
+
+  /**
+   * The vault Citation Presentation each document inherits the halves it leaves
+   * unsaid from — Style default for both until the first settings snapshot
+   * names the selections. A surface composing one document's whole presentation
+   * reads it from here, so it renders under what this cache renders under.
+   */
+  get vaultPresentation(): EffectivePresentation {
+    return this.#vault ?? { styleId: null, locale: null };
   }
 
   on<K extends keyof BibliographyRenderEvents>(
@@ -203,8 +248,8 @@ export class BibliographyRenderCache extends Service<void> {
     stack.defer(
       this.#zoteroPref.on("resolved-changed", () => this.#invalidate()),
     );
-    // Fires synchronously with the loaded settings, which is where the selected
-    // style is first read; only a later one is a change.
+    // Fires synchronously with the loaded settings, which is where the vault
+    // selections are first read; only a later one is a change.
     stack.defer(
       this.#settings.subscribe((settings) => {
         if (settings) this.#applySettings(settings);
@@ -218,17 +263,19 @@ export class BibliographyRenderCache extends Service<void> {
   }
 
   #applySettings(settings: Readonly<Settings>): void {
-    const next = settings["citation.references-style"];
-    if (next === this.#styleId) return;
-    const initial = this.#styleId === undefined;
-    this.#styleId = next;
+    const next = vaultPresentation(settings);
+    const held = this.#vault;
+    if (held && held.styleId === next.styleId && held.locale === next.locale) {
+      return;
+    }
+    this.#vault = next;
     logger.info(
-      initial
-        ? "Citation and references style selected"
-        : "Citation and references style changed",
-      { styleId: next },
+      held
+        ? "Vault citation presentation changed"
+        : "Vault citation presentation selected",
+      { styleId: next.styleId, locale: next.locale },
     );
-    if (!initial) this.#invalidate();
+    if (held) this.#invalidate();
   }
 
   /**
@@ -277,16 +324,17 @@ export class BibliographyRenderCache extends Service<void> {
 
   async #runBibliography(
     items: readonly CslItemData[],
-    styleId: string | null,
+    style: RenderStyle,
   ): Promise<RenderAttempt<BibliographyRenderResult>> {
     try {
-      const styleXml = await this.#resolveStyle(styleId);
-      if (styleXml.kind === "missing") return { kind: "style-missing" };
-      const xml = styleXml.kind === "installed" ? styleXml.xml : undefined;
+      const presentation = enginePresentation(style);
       const engine = await this.#engine.getEngine();
-      const entries = await engine.renderBibliography({ items, styleXml: xml });
+      const entries = await engine.renderBibliography({
+        items,
+        ...presentation,
+      });
       const hasEntryMarkers =
-        styleHasEntryMarkers(xml) ||
+        styleHasEntryMarkers(presentation.styleXml) ||
         entries.some((entry) => entry.marker !== undefined);
       logger.debug("Bibliography rendered", {
         count: entries.length,
@@ -302,16 +350,14 @@ export class BibliographyRenderCache extends Service<void> {
   async #runCitations(
     citations: readonly string[],
     items: readonly CslItemData[],
-    styleId: string | null,
+    style: RenderStyle,
   ): Promise<RenderAttempt<readonly RenderedCitation[]>> {
     try {
-      const styleXml = await this.#resolveStyle(styleId);
-      if (styleXml.kind === "missing") return { kind: "style-missing" };
       const engine = await this.#engine.getEngine();
       const rendered = await engine.renderCitations({
         citations,
         items,
-        styleXml: styleXml.kind === "installed" ? styleXml.xml : undefined,
+        ...enginePresentation(style),
       });
       logger.debug("Citations rendered", { count: rendered.length });
       return { kind: "rendered", value: rendered };
@@ -321,13 +367,29 @@ export class BibliographyRenderCache extends Service<void> {
     }
   }
 
-  async #resolveStyle(styleId: string | null) {
-    const style = await this.#styles.resolve(this.#zoteroPref.dataDir, styleId);
-    if (style.kind === "missing" && this.#missingStyle === null) {
+  /** The vault selections where `presentation` names none of its own. */
+  #styleRequest(presentation: RenderPresentation | undefined): CslStyleRequest {
+    return effectivePresentation(presentation ?? {}, this.vaultPresentation);
+  }
+
+  /**
+   * A style the vault selected and Zotero cannot supply is a vault-level
+   * repair, which is the one the warning and the lifecycle notice guide to. A
+   * request that names its own style speaks for the document that named it, so
+   * it fails without claiming the vault selection is at fault.
+   */
+  async #resolveStyle(request: CslStyleRequest): Promise<ResolvedCslStyle> {
+    const style = await this.#styles.resolve(this.#zoteroPref.dataDir, request);
+    if (style.kind !== "failed") return style;
+
+    logger.debug("Cannot resolve the requested citation style", {
+      styleId: style.styleId,
+      parentId: style.parentId,
+      reason: style.reason,
+    });
+    const selected = this.#vault?.styleId ?? null;
+    if (style.styleId === selected && this.#missingStyle === null) {
       this.#missingStyle = style.styleId;
-      logger.debug("Selected citation style is unavailable", {
-        styleId: style.styleId,
-      });
       this.#emitter.emit("style-missing", style.styleId);
     }
     return style;
@@ -335,20 +397,63 @@ export class BibliographyRenderCache extends Service<void> {
 }
 
 /**
- * The identity of one render: the style that formats it, the works it covers in
- * the order they are cited, and — for an in-text render — the citations it
- * formats. A CSL id names one Item — a Zotero item URI, an Indexed Key, or a
- * citation key — and none of the three can carry the separator, so the empty
- * line between the two lists keeps them apart.
+ * What the engine formats one Resolved CSL Style with: an installed style hands
+ * over its content, and the embedded default style takes the Citation Locale as
+ * the locale to render in.
  */
-function renderKey(
-  styleId: string | null,
-  items: readonly CslItemData[],
-  citations: readonly string[] = [],
-): string {
+function enginePresentation(style: RenderStyle): {
+  styleXml?: string;
+  locale?: string;
+} {
+  return style.kind === "installed"
+    ? { styleXml: style.xml }
+    : { locale: style.locale };
+}
+
+/**
+ * The identity of one render: the style and Citation Locale that format it, the
+ * independent parent the style resolved through, the very CSL content it is
+ * formatted by, the works it covers in the order they are cited, and — for an
+ * in-text render — the citations it formats.
+ *
+ * The parent belongs to that identity because a dependent style that starts
+ * naming another parent renders another way under the same style ID, and the
+ * content belongs to it because a style edited in Zotero renders another way
+ * under the same style ID and the same parent.
+ *
+ * A CSL id names one Item — a Zotero item URI, an Indexed Key, or a citation
+ * key — and none of the three can carry the separator, so the empty line
+ * between the two lists keeps them apart.
+ */
+function renderKey({
+  request,
+  style,
+  items,
+  citations = [],
+}: {
+  request: CslStyleRequest;
+  style: RenderStyle;
+  items: readonly CslItemData[];
+  citations?: readonly string[];
+}): string {
   return [
-    styleId ?? "",
+    request.styleId ?? "",
+    style.kind === "installed" ? (style.parentId ?? "") : "",
+    request.locale ?? "",
+    contentIdentity(style),
     ...items.map((item) => item.id),
     ...(citations.length > 0 ? ["", ...citations] : []),
   ].join("\n");
+}
+
+/**
+ * What the resolved style formats with, as a value that changes with it: the
+ * digest of the CSL content the engine is handed. The embedded default style
+ * ships with the engine and carries no content of its own here, so it stands
+ * on the request alone.
+ */
+function contentIdentity(style: RenderStyle): string {
+  return style.kind === "installed"
+    ? createHash("sha256").update(style.xml).digest("base64")
+    : "";
 }
