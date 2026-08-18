@@ -2,6 +2,7 @@ import { getLanguage, Plugin, requestUrl } from "obsidian";
 import semverGte from "semver/functions/gte";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { initI18n } from "./lib/i18n";
@@ -19,11 +20,13 @@ import { registerCitationsCli } from "./services/citation-index/cli/register";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
+import { reapReadClones } from "./services/database/reap-temps";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
+import { reapCslStore } from "./services/pandoc/reap-temps";
 import { registerPandocResolve } from "./services/pandoc/register";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
@@ -179,6 +182,15 @@ export default class ZotLitPlugin extends Plugin {
     // Local stack gives automatic rollback if any synchronous startup wiring
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
+
+    // Clear the temp residue of crashed runs before any service adds more.
+    // Fire-and-forget: a launch never waits on housekeeping, and unloading
+    // mid-sweep aborts it. Each producer owns what its own residue is, and
+    // each reap reports its own failures rather than raising them.
+    const reapAbort = stack.use(new DisposableAbortController());
+    void reapReadClones({ signal: reapAbort.signal });
+    void reapCslStore({ signal: reapAbort.signal });
+
     const { services } = buildServices(this, stack);
 
     this.addSettingTab(

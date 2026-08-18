@@ -2,9 +2,11 @@
 // `zotlit:csl` contract.
 
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { Temporal } from "@zotlit/shared/temporal";
 
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
@@ -21,6 +23,9 @@ export const CSL_COMMAND = "zotlit:csl";
 const STORE_DIR = "zotlit-pandoc-csl";
 
 const CSL_EXT = ".csl";
+
+/** Extension of a style still being written, under a private name. */
+export const CSL_STAGING_EXT = ".part";
 
 export type CslErrorCode =
   /** Zotero has no installed style carrying the requested CSL ID. */
@@ -112,7 +117,7 @@ export async function resolveCslStyle(
           code: "csl-write-failed",
           styleId,
           parentId: style.parentId,
-          message: `Cannot write the resolved CSL style of "${styleId}" to "${storeDirectory()}": ${describe(error)}. Restore write access to that directory, then run the command again.`,
+          message: `Cannot write the resolved CSL style of "${styleId}" to "${cslStoreDirectory()}": ${describe(error)}. Restore write access to that directory, then run the command again.`,
         },
       ],
     };
@@ -137,14 +142,14 @@ export async function resolveCslStyle(
  */
 export async function materializeCslStyle(
   xml: string,
-  directory = storeDirectory(),
+  directory = cslStoreDirectory(),
 ): Promise<string> {
   await mkdir(directory, { recursive: true });
   const digest = createHash("sha256").update(xml).digest("hex");
   const path = join(directory, `${digest}${CSL_EXT}`);
   await using stack = new AsyncDisposableStack();
   const staging = stack.adopt(
-    join(directory, `.${digest}-${randomUUID()}.part`),
+    join(directory, `.${digest}-${randomUUID()}${CSL_STAGING_EXT}`),
     (file) =>
       rm(file, { force: true }).catch((error: unknown) => {
         logger.warn("Cannot remove a staged CSL style file", {
@@ -160,12 +165,34 @@ export async function materializeCslStyle(
     // The path already carries this exact content, which is the whole promise
     // a content address makes: another run materialized it first.
     if (!isErrno(error, "EEXIST")) throw error;
+    await restamp(path);
   }
   return path;
 }
 
-function storeDirectory(): string {
-  return join(tmpdir(), STORE_DIR);
+/**
+ * Move the entry's timestamp to now, so the store reaper ages a style from its
+ * last use rather than from its first materialization — a style still in use is
+ * then never evicted out from under the Pandoc run about to open it.
+ *
+ * A failed restamp only costs an early eviction, and an early eviction only
+ * costs one rewrite, so it never fails the resolve.
+ */
+async function restamp(path: string): Promise<void> {
+  const now = Temporal.Now.instant().epochMilliseconds / 1000;
+  await utimes(path, now, now).catch((error: unknown) => {
+    logger.debug("Cannot restamp a materialized CSL style", { path, error });
+  });
+}
+
+/**
+ * The store both {@link materializeCslStyle} and the store reaper address, so
+ * the layout rule stands in one place.
+ *
+ * @see reapCslStore
+ */
+export function cslStoreDirectory(parent = tmpdir()): string {
+  return join(parent, STORE_DIR);
 }
 
 const MESSAGES: Record<

@@ -4,11 +4,15 @@ import {
   readFile,
   readdir,
   rm,
+  stat,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+
+import { Temporal } from "@zotlit/shared/temporal";
 
 import { CONTRACT_VERSION } from "./contract";
 import { CSL_COMMAND, materializeCslStyle, resolveCslStyle } from "./csl";
@@ -82,6 +86,20 @@ describe("zotlit:csl", () => {
     });
 
     expect(pathOf(await zotero.csl(PARENT))).not.toBe(first);
+  });
+
+  it("restamps the style it hands out, so use holds off the store reaper", async () => {
+    await using zotero = await installStyles();
+
+    const path = pathOf(await zotero.csl(PARENT));
+    const stale = Temporal.Instant.from("2024-01-01T00:00:00Z");
+    const staleSeconds = stale.epochMilliseconds / 1000;
+    await utimes(path, staleSeconds, staleSeconds);
+
+    // The second resolve finds the content already materialized and writes
+    // nothing; only the restamp separates its answer from an untouched file.
+    expect(pathOf(await zotero.csl(PARENT))).toBe(path);
+    expect((await stat(path)).mtimeMs).toBeGreaterThan(stale.epochMilliseconds);
   });
 
   it("never exposes a partial file to a concurrent run", async () => {
