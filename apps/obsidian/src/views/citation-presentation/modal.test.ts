@@ -1,6 +1,7 @@
 import {
   ButtonComponent,
   DropdownComponent,
+  ExtraButtonComponent,
   Modal,
   settingsOf,
   TextComponent,
@@ -60,6 +61,18 @@ async function openDialog(options: Partial<CitationPresentationModalOptions>) {
         );
       if (!button) throw new Error(`the dialog offers no "${text}" button`);
       return button as ButtonComponent;
+    },
+    /** One icon action of the dialog, by the label its tooltip carries. */
+    iconButton: (tooltip: string) => {
+      const button = rows
+        .flatMap((row) => row.components)
+        .find(
+          (component) =>
+            component instanceof ExtraButtonComponent &&
+            component.tooltip === tooltip,
+        );
+      if (!button) throw new Error(`the dialog offers no "${tooltip}" action`);
+      return button as ExtraButtonComponent;
     },
   };
 }
@@ -174,7 +187,7 @@ describe("the Citation presentation dialog", () => {
       declared: { styleId: null, language: "de-DE" },
     });
     // The reset says what emptying the field does, so the copy is part of it.
-    const reset = dialog.button(
+    const reset = dialog.iconButton(
       "Use vault citation locale and remove document language",
     );
 

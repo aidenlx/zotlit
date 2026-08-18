@@ -79,10 +79,13 @@ export function openCitationPresentationModal(
       text.onChange(() => text.inputEl.setCustomValidity(""));
     })
     // Emptying the field removes the property, which is what hands the note
-    // back to the vault Citation Locale, so the reset says both.
-    .addButton((button) =>
+    // back to the vault Citation Locale, so the reset says both. It says it
+    // from a tooltip: a sentence long enough to explain the reset is longer
+    // than the row has for a label, and reads as one either way.
+    .addExtraButton((button) =>
       button
-        .setButtonText(m.citation_presentation_language_reset())
+        .setIcon("rotate-ccw")
+        .setTooltip(m.citation_presentation_language_reset())
         .onClick(() => {
           languageInput.setValue("");
           languageInput.inputEl.setCustomValidity("");

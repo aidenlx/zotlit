@@ -654,8 +654,12 @@ export function settingsOf(containerEl: HTMLElement): Setting[] {
  */
 export class Setting {
   /** Every component added to this row, in the order it was added. */
-  readonly components: (ButtonComponent | DropdownComponent | TextComponent)[] =
-    [];
+  readonly components: (
+    | ButtonComponent
+    | DropdownComponent
+    | ExtraButtonComponent
+    | TextComponent
+  )[] = [];
 
   name = "";
   desc = "";
@@ -688,10 +692,17 @@ export class Setting {
     return this.#add(new ButtonComponent(this.containerEl), cb);
   }
 
-  #add<T extends ButtonComponent | DropdownComponent | TextComponent>(
-    component: T,
-    cb: (component: T) => unknown,
-  ): this {
+  addExtraButton(cb: (button: ExtraButtonComponent) => unknown): this {
+    return this.#add(new ExtraButtonComponent(this.containerEl), cb);
+  }
+
+  #add<
+    T extends
+      | ButtonComponent
+      | DropdownComponent
+      | ExtraButtonComponent
+      | TextComponent,
+  >(component: T, cb: (component: T) => unknown): this {
     this.components.push(component);
     cb(component);
     return this;
@@ -785,6 +796,40 @@ export class TextComponent {
   type(value: string): void {
     this.setValue(value);
     this.#changed?.(value);
+  }
+}
+
+/**
+ * The borderless icon action a row carries beside its control. It is read by
+ * the tooltip it names, which is the label the user gets from it.
+ */
+export class ExtraButtonComponent {
+  icon = "";
+  /** The label the button carries, as the user reads it on hover. */
+  tooltip = "";
+
+  #clicked: ((evt: MouseEvent) => unknown) | null = null;
+
+  constructor(readonly containerEl: HTMLElement) {}
+
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  onClick(cb: (evt: MouseEvent) => unknown): this {
+    this.#clicked = cb;
+    return this;
+  }
+
+  /** Test helper: press the button, as the user does. */
+  click(): void {
+    this.#clicked?.({} as MouseEvent);
   }
 }
 
