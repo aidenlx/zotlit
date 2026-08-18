@@ -342,3 +342,21 @@ export function migrateV7ToV8(raw: unknown): Record<string, unknown> {
       typeof openPandocLinks === "boolean" ? openPandocLinks : true,
   };
 }
+
+/**
+ * Introduce Library Scope. Every upgraded installation lands on Selected
+ * Libraries holding My Library, whatever its Default Library was: an existing
+ * user keeps a conservative discovery scope and widens it deliberately, while
+ * the new default, All Libraries, governs fresh installs only. The Default
+ * Library value stays untouched for the consumers that still read it.
+ */
+export function migrateV8ToV9(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  return {
+    ...raw,
+    "zotero.library-scope": {
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    },
+  };
+}

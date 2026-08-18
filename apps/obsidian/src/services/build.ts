@@ -11,6 +11,7 @@ import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
+import { LibraryScopeService } from "./library-scope/service";
 import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
 import { createNoteFeature } from "./note-feature";
@@ -34,6 +35,7 @@ import {
   migrateV5ToV6,
   migrateV6ToV7,
   migrateV7ToV8,
+  migrateV8ToV9,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
@@ -72,6 +74,7 @@ export function buildServices(
           migrateV5: migrateV5ToV6,
           migrateV6: migrateV6ToV7,
           migrateV7: migrateV7ToV8,
+          migrateV8: migrateV8ToV9,
         }),
     })
     .use({
@@ -124,10 +127,14 @@ export function buildServices(
         }),
     })
     .use({
-      itemLookup: ({ db, settings }) =>
+      libraryScope: ({ db, settings }) =>
+        new LibraryScopeService({ db, settings }),
+    })
+    .use({
+      itemLookup: ({ db, libraryScope }) =>
         new ItemLookup({
           db,
-          settings,
+          libraryScope,
           getChsSegmenter: () => getChsSegmenter(plugin.app),
         }),
     })

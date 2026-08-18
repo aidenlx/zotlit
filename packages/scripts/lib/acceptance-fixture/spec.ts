@@ -2,11 +2,21 @@
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 
-/** Stable selector for My Library, alongside the numeric group selectors. */
+/** Names My Library in the printed Library table, beside the group IDs. */
 export const PERSONAL_SELECTOR = "my-library";
 
 /** A stable Library selector: My Library, or a Zotero group by its group ID. */
-export type LibrarySelector = typeof PERSONAL_SELECTOR | number;
+export type LibrarySelector =
+  | { readonly type: "personal" }
+  | { readonly type: "group"; readonly groupID: number };
+
+/** My Library, which every valid Selected Libraries case starts from. */
+export const MY_LIBRARY: LibrarySelector = { type: "personal" };
+
+/** One group Library by its stable Zotero group ID. */
+export function group(groupID: number): LibrarySelector {
+  return { type: "group", groupID };
+}
 
 export interface FixtureLibrary {
   libraryID: number;
@@ -372,9 +382,9 @@ export type PersistedLibraryScope =
     };
 
 /**
- * Settings key the scope is written under. The Library Scope setting itself
- * lands in a later ticket; this constant and {@link PersistedLibraryScope} are
- * the single seam to update when it does.
+ * Settings key the scope is written under. This constant and
+ * {@link PersistedLibraryScope} are the single seam to update when the Library
+ * Scope setting changes shape.
  */
 export const LIBRARY_SCOPE_SETTING_KEY = "zotero.library-scope";
 
@@ -396,7 +406,7 @@ export const SCOPE_CASES: readonly FixtureScopeCase[] = [
     summary: "Selected Libraries, every selector available.",
     scope: {
       mode: "selected",
-      libraries: [PERSONAL_SELECTOR, 118, 990117, 4200309],
+      libraries: [MY_LIBRARY, group(118), group(990117), group(4200309)],
     },
   },
   {
@@ -404,13 +414,16 @@ export const SCOPE_CASES: readonly FixtureScopeCase[] = [
     summary: "Selected Libraries, one selector unavailable.",
     scope: {
       mode: "selected",
-      libraries: [PERSONAL_SELECTOR, 118, 606001],
+      libraries: [MY_LIBRARY, group(118), group(606001)],
     },
   },
   {
     id: "unavailable",
     summary: "Selected Libraries, no selector available.",
-    scope: { mode: "selected", libraries: [606001, 606002] },
+    scope: {
+      mode: "selected",
+      libraries: [group(606001), group(606002)],
+    },
   },
 ];
 

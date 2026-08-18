@@ -5,6 +5,7 @@ import { isChildItemFields } from "@zotlit/db";
 import type { JournalArticleFields } from "@zotlit/zotero-types";
 
 import { itemSummary } from "@/lib/item-summary";
+import { libraryLabel } from "@/services/library-scope/label";
 import type { SettingsService } from "@/services/settings/service";
 
 import type { SearchHit } from "./service";
@@ -36,6 +37,11 @@ export function renderSuggestion(
 
   if (settings.current?.["citation.show-citekey-in-suggester"] && citationKey) {
     contentEl.createDiv({ cls: "citekey", text: citationKey });
+  }
+
+  // Present only while several Libraries can contribute; see ItemLookup.
+  if (hit.library) {
+    contentEl.createDiv({ cls: "library", text: libraryLabel(hit.library) });
   }
 
   if (hit.item.fields.itemType === "journalArticle") {

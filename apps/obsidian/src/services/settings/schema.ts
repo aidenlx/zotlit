@@ -9,6 +9,10 @@ import {
 } from "@zotlit/templates/constants";
 import type { AutoTrim } from "@zotlit/templates/constants";
 
+import {
+  DEFAULT_LIBRARY_SCOPE,
+  libraryScopeSchema,
+} from "@/services/library-scope/scope";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -115,6 +119,12 @@ export const schema = v.object({
   "zotero.auto-refresh": v.boolean(),
   "zotero.read-mode": zoteroReadMode,
   "zotero.citation-library": settingsNumber,
+  /**
+   * Libraries used for item search, citation key resolution, and library-wide
+   * commands. Strict by design — an out-of-order or empty selection is broken
+   * input, not something to normalize; see `services/library-scope/scope.ts`.
+   */
+  "zotero.library-scope": libraryScopeSchema,
 
   "attachment.folder-path": v.nullable(v.string()),
   "attachment.import": v.boolean(),
@@ -163,6 +173,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "zotero.auto-refresh": true,
   "zotero.read-mode": "auto",
   "zotero.citation-library": USER_LIBRARY_ID,
+  "zotero.library-scope": DEFAULT_LIBRARY_SCOPE,
   "attachment.folder-path": null,
   "attachment.import": true,
   // Absent until the release check records a launch; see the release service.

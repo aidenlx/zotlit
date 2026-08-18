@@ -19,7 +19,13 @@ export interface SearchHit<T> {
 }
 
 export interface SearchIndex {
-  libraryID: number;
+  /**
+   * Canonical rank of each Library in the index, by local `libraryID`. One
+   * composite index spans every Library in scope, so ordering needs a stable
+   * Library tie-breaker that does not depend on database row order.
+   */
+  libraryRank: ReadonlyMap<number, number>;
+  /** Every indexed item in global order: newest first, then Library, then item. */
   items: readonly IndexedItem[];
   byId: ReadonlyMap<number, IndexedItem>;
   yearById: ReadonlyMap<number, string>;
@@ -72,7 +78,12 @@ export interface SearchIndexOptions {
 }
 
 export interface BuildIndexOptions {
-  libraryID: number;
+  /**
+   * Local `libraryID`s of every Library the index covers, in canonical order.
+   * Their positions become the Library tie-breaker; a `libraryID` absent from
+   * this list sorts after every listed one.
+   */
+  libraries: readonly number[];
   languageLookup?: LanguageNameLookup | null;
 }
 
@@ -96,14 +107,14 @@ const SEARCH_FIELDS = [
 /** Accumulates a {@link SearchIndex} across batches so a large library can be
  * indexed in chunks with the caller yielding between {@link add} calls. */
 export interface SearchIndexBuilder {
-  /** Index a batch of items, preserving insertion order in `index.items`. */
+  /** Index a batch of items; {@link build} imposes the global order. */
   add(items: readonly IndexedItem[]): void;
   build(): SearchIndex;
 }
 
 export function createIndexBuilder(
   tokenizerOpts: TokenizerOptions,
-  { libraryID, languageLookup = null }: BuildIndexOptions,
+  { libraries, languageLookup = null }: BuildIndexOptions,
 ): SearchIndexBuilder {
   const mini = new MiniSearch<IndexedSearchDocument>({
     idField: "id",
@@ -112,6 +123,7 @@ export function createIndexBuilder(
     tokenize: (text) => tokenize(text, tokenizerOpts),
     processTerm,
   });
+  const libraryRank = new Map(libraries.map((id, rank) => [id, rank]));
   const items: IndexedItem[] = [];
   const byId = new Map<number, IndexedItem>();
   const yearById = new Map<number, string>();
@@ -131,9 +143,28 @@ export function createIndexBuilder(
       mini.addAll(indexed);
     },
     build() {
-      return { libraryID, items, byId, yearById, citationKeyById, mini };
+      // Chunks arrive one Library at a time, so the composite order is imposed
+      // here rather than by insertion: one global sort over the whole corpus.
+      items.sort(orderComparator(libraryRank));
+      return { libraryRank, items, byId, yearById, citationKeyById, mini };
     },
   };
+}
+
+/**
+ * Canonical global order — most recently modified first, then canonical Library
+ * order, then item id. Every ranking path ends here, so equal scores and equal
+ * timestamps still produce one stable order across identical searches.
+ */
+function orderComparator(
+  libraryRank: ReadonlyMap<number, number>,
+): (a: IndexedItem, b: IndexedItem) => number {
+  const rankOf = (item: IndexedItem): number =>
+    libraryRank.get(item.libraryID) ?? libraryRank.size;
+  return (a, b) =>
+    b.dateModified.epochMilliseconds - a.dateModified.epochMilliseconds ||
+    rankOf(a) - rankOf(b) ||
+    a.itemID - b.itemID;
 }
 
 export function buildIndex(
@@ -181,11 +212,16 @@ export function searchIndex(
   opts: SearchIndexOptions,
 ): SearchHit<IndexedItem>[] {
   const scoring = opts.scoring ?? DEFAULT_SCORING;
+  const compareOrder = orderComparator(index.libraryRank);
   const cleaned = cleanQuery(query);
   const keyQuery = cleaned.toUpperCase();
   if (ZOTERO_KEY_RE.test(keyQuery)) {
-    const item = index.items.find((candidate) => candidate.key === keyQuery);
-    return item ? [{ item, score: Infinity, matches: [] }] : [];
+    // A bare Zotero Key is unique only inside one Library, so every Library in
+    // scope that holds it contributes a result rather than the first one found.
+    return index.items
+      .filter((candidate) => candidate.key === keyQuery)
+      .slice(0, opts.limit)
+      .map((item) => ({ item, score: Infinity, matches: [] }));
   }
 
   const tokens = queryTokens(cleaned, opts.tokenizer);
@@ -200,7 +236,7 @@ export function searchIndex(
   };
   const scored = [...candidates.values()]
     .map((candidate) => rankCandidate(candidate, tokens, ctx))
-    .sort(compareRankedCandidates)
+    .sort((a, b) => compareRankedCandidates(a, b, compareOrder))
     .slice(0, opts.limit);
 
   const termsUnion = new Set<string>();
@@ -394,19 +430,15 @@ function rankCandidate(
 function compareRankedCandidates(
   a: RankedCandidate,
   b: RankedCandidate,
+  compareOrder: (a: IndexedItem, b: IndexedItem) => number,
 ): number {
   if (a.tier !== b.tier) return a.tier - b.tier;
   if (a.tier === 1 && b.tier === 1) {
     return (
-      a.citationKeyLength - b.citationKeyLength ||
-      compareModifiedDesc(a.item, b.item)
+      a.citationKeyLength - b.citationKeyLength || compareOrder(a.item, b.item)
     );
   }
-  return b.score - a.score || compareModifiedDesc(a.item, b.item);
-}
-
-function compareModifiedDesc(a: IndexedItem, b: IndexedItem): number {
-  return b.dateModified.epochMilliseconds - a.dateModified.epochMilliseconds;
+  return b.score - a.score || compareOrder(a.item, b.item);
 }
 
 function toSearchDocument(

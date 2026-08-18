@@ -4,6 +4,11 @@ import type { ItemFields, JournalArticleFields } from "@zotlit/zotero-types";
 
 export interface ItemFixtureOptions {
   key: string;
+  /**
+   * Set it where one key repeats across Libraries.
+   * @default key.charCodeAt(0)
+   */
+  itemID?: number;
   libraryID?: number;
   itemType?: ItemFields["itemType"];
   title?: string | null;
@@ -25,7 +30,7 @@ export interface ItemFixtureOptions {
 export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
   const creators = options.creators ?? [];
   return {
-    itemID: options.key.charCodeAt(0),
+    itemID: options.itemID ?? options.key.charCodeAt(0),
     libraryID: options.libraryID ?? 1,
     key: options.key,
     indexedKey: options.key,
@@ -48,7 +53,7 @@ export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
 export function makeItem(options: ItemFixtureOptions): Item {
   const itemType = options.itemType ?? "book";
   const base: BaseItem = {
-    itemID: options.key.charCodeAt(0),
+    itemID: options.itemID ?? options.key.charCodeAt(0),
     libraryID: options.libraryID ?? 1,
     key: options.key,
     indexedKey: options.key,

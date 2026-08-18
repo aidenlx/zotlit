@@ -23,6 +23,7 @@ import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
+import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
@@ -198,6 +199,7 @@ export default class ZotLitPlugin extends Plugin {
         plugin: this,
         settings: services.settings,
         db: services.db,
+        libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
@@ -359,6 +361,15 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
     stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
+    stack.defer(
+      registerLibraryScopeNotices(services.libraryScope, () => {
+        revealSetting(
+          this.app,
+          this.manifest.id,
+          m.settings_library_scope_name(),
+        );
+      }),
+    );
 
     // A Zotero item add/modify/trash push means the database changed; feed it
     // into the same coalesced refresh lane as the filesystem watchers.

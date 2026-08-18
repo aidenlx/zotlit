@@ -336,7 +336,7 @@ function writePrefs(layout: FixtureLayout): Promise<void> {
 }
 
 /** ZotLit's settings version, so the vault loads without a migration pass. */
-const SETTINGS_VERSION = 8;
+const SETTINGS_VERSION = 9;
 
 async function writeVault(
   layout: FixtureLayout,

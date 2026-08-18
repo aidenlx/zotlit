@@ -240,7 +240,7 @@ describe("the generated Obsidian vault", () => {
       await readFile(layout.pluginDataPath, "utf-8"),
     ) as Record<string, unknown>;
 
-    expect(data.__VERSION__).toBe(8);
+    expect(data.__VERSION__).toBe(9);
     expect(data[LIBRARY_SCOPE_SETTING_KEY]).toEqual({ mode: "all" });
   });
 

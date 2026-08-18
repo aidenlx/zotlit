@@ -102,7 +102,7 @@ reload the plugin to pick it up. A build also accepts a case:
 
 The persisted key and value shape live in `LIBRARY_SCOPE_SETTING_KEY` and
 `PersistedLibraryScope` in `spec.ts`. They are the one place to update when the
-Library Scope setting itself lands.
+Library Scope setting changes shape.
 
 ## Discard
 
