@@ -1,8 +1,9 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -92,6 +93,8 @@ describe("read-source", () => {
       expect(prepared.effectiveMode).toBe("copy");
       expect(prepared.uriOptions).toEqual({ mode: "ro" });
       expect(prepared.path).not.toBe(source);
+      // Source and temp folder share a volume here, so placement stays put.
+      expect(dirname(dirname(prepared.path))).toBe(tmpdir());
       await expect(readFile(prepared.path, "utf8")).resolves.toBe("main");
       await expect(readFile(`${prepared.path}-wal`, "utf8")).resolves.toBe(
         "wal",
@@ -109,6 +112,7 @@ describe("DatabaseService", () => {
   let createClientMock: ReturnType<typeof vi.fn>;
   let watchMock: ReturnType<typeof vi.fn>;
   let existsSyncMock: ReturnType<typeof vi.fn>;
+  let reapMock: ReturnType<typeof vi.fn>;
   let settings: FakeSettings;
   let zoteroPref: FakeZoteroPref;
   let DatabaseService: typeof import("./service").DatabaseService;
@@ -123,6 +127,7 @@ describe("DatabaseService", () => {
     createClientMock = vi.fn();
     watchMock = vi.fn(() => ({ close: vi.fn() }));
     existsSyncMock = vi.fn(() => false);
+    reapMock = vi.fn(async () => {});
 
     vi.doMock("./read-source", async (importOriginal) => {
       const actual = await importOriginal<typeof import("./read-source")>();
@@ -135,6 +140,7 @@ describe("DatabaseService", () => {
     vi.doMock("@zotlit/db/client/node", () => ({
       createClient: createClientMock,
     }));
+    vi.doMock("./reap-temps", () => ({ reapReadClones: reapMock }));
     vi.doMock("node:fs", async (importOriginal) => {
       const actual = await importOriginal<typeof import("node:fs")>();
       return {
@@ -154,6 +160,7 @@ describe("DatabaseService", () => {
     vi.doUnmock("./read-source");
     vi.doUnmock("@zotlit/db/client/node");
     vi.doUnmock("node:fs");
+    vi.doUnmock("./reap-temps");
   });
 
   /** Drives the parent-directory watcher the service bound most recently. */
@@ -244,6 +251,35 @@ describe("DatabaseService", () => {
       ["immutable", "/zotero/zotero.sqlite"],
       ["immutable", "/next/zotero.sqlite"],
     ]);
+  });
+
+  it("sweeps read snapshots beside each database path it binds, once each", async () => {
+    prepareMock
+      .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/three.sqlite", "copy"));
+    createClientMock
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient());
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+
+    expect(reapMock).toHaveBeenCalledExactlyOnceWith({
+      parent: join("/zotero", ZOTERO_DB_READ_PARENT_DIRNAME),
+    });
+
+    await service.refresh();
+    expect(reapMock).toHaveBeenCalledOnce();
+
+    zoteroPref.setDatabasePath("/next/zotero.sqlite");
+    await waitForCallCount(prepareMock, 3);
+    await waitForCallCount(reapMock, 2);
+
+    expect(reapMock).toHaveBeenLastCalledWith({
+      parent: join("/next", ZOTERO_DB_READ_PARENT_DIRNAME),
+    });
   });
 
   it("keeps refreshing active across coalesced trailing reruns", async () => {

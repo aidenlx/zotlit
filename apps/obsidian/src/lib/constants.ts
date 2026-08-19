@@ -75,3 +75,11 @@ export const RESERVED_KEYS: ReadonlySet<string> = new Set([
 export const ZOTERO_DB_FILENAME = "zotero.sqlite";
 export const ZOTERO_WAL_FILENAME = "zotero.sqlite-wal";
 export const ZOTERO_DB_READ_TEMP_PREFIX = "zotlit-db-";
+/**
+ * Parent folder for read snapshots placed beside the Zotero database instead of
+ * in the system temp folder. Dot-prefixed so it stays out of the way, and named
+ * so a user who finds it knows who wrote it.
+ *
+ * @see `planReadParents` in `services/database/read-parent.ts` for when it is used.
+ */
+export const ZOTERO_DB_READ_PARENT_DIRNAME = ".zotlit-db-reads";

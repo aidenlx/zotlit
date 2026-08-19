@@ -17,6 +17,7 @@ import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import { readParentBeside } from "./read-parent";
 import {
   buildSqliteUri,
   prepareRead,
@@ -30,6 +31,7 @@ import type {
   ReadFallbackNotice,
   SourceFingerprint,
 } from "./read-source";
+import { reapReadClones } from "./reap-temps";
 
 const logger = getLogger("database");
 const DB_OPTIONS: DatabaseOptions = {
@@ -122,6 +124,7 @@ export class DatabaseService extends Service<void> {
   #deferredRefresh: PromiseWithResolvers<void> | null = null;
   #torndown = false;
   #lastSourcePath: string | null = null;
+  #sweptReadParent: string | null = null;
   #lastConfiguredMode: ConfiguredReadMode | null = null;
   #lastAutoRefresh: boolean | null = null;
   readonly #shownFallbackNotices = new Set<string>();
@@ -378,6 +381,7 @@ export class DatabaseService extends Service<void> {
       const settings = this.#settings.current ?? (await this.#settings.loaded);
       const sourcePath = this.#zoteroPref.databasePath;
       const configuredMode = settings["zotero.read-mode"];
+      this.#reapReadParent(sourcePath);
       // Fingerprinted before the read, never after: a Zotero write that lands
       // while we clone then still differs from what we record, so the next
       // watcher tick refreshes instead of being gated away as our own echo.
@@ -452,6 +456,30 @@ export class DatabaseService extends Service<void> {
         this.#emitter.emit("degraded", degraded);
       }
     }
+  }
+
+  /**
+   * A snapshot placed beside the database leaves its residue there, where the
+   * plugin-load sweep of the system temp folder never looks. Sweep that parent
+   * whenever the bound database path moves it, so a crashed session leaves
+   * nothing next to the user's Zotero data and a newly bound path is cleared
+   * too. Fire-and-forget, as at load: a sweep never throws, and a refresh never
+   * waits on housekeeping.
+   *
+   * Residue is recognized by owner PID, which is meaningful on one machine only.
+   * A data directory shared live between two machines — an external drive that
+   * is also cloud-synced — can therefore read the other machine's PID as dead.
+   * The divert gate keeps that setup rare: a synced folder normally sits on the
+   * OS volume, where snapshots never leave the temp folder in the first place.
+   *
+   * @see {@link reapReadClones} for what counts as residue.
+   */
+  #reapReadParent(sourcePath: string): void {
+    const parent = readParentBeside(sourcePath);
+    if (parent === this.#sweptReadParent) return;
+    this.#sweptReadParent = parent;
+    logger.debug("Sweeping read snapshots beside the database", { parent });
+    void reapReadClones({ parent });
   }
 
   /**

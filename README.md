@@ -68,7 +68,7 @@ New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/
 
 > [!IMPORTANT]
 > **Zotero database access**
-> ZotLit reads your Zotero database directly, including files stored outside your Obsidian vault (Zotero's data directory, attachments on external drives or cloud storage). It reads only and does not write to your Zotero database.
+> ZotLit reads your Zotero database directly, including files stored outside your Obsidian vault (Zotero's data directory, attachments on external drives or cloud storage). It reads only and does not write to your Zotero database. When your Zotero data directory sits on a different drive than your system temp folder, ZotLit keeps its short-lived database snapshots in a `.zotlit-db-reads` folder inside that data directory, which you can delete at any time.
 
 > [!IMPORTANT]
 > **Network use**
