@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -20,6 +21,7 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import {
+  BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
   getFixtureLayout,
@@ -30,6 +32,7 @@ import {
   selectScopeCase,
 } from "./build.ts";
 import type { FixtureLayout } from "./build.ts";
+import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 
 import { getWorkspaceRoot } from "#package-roots";
 
@@ -65,6 +68,12 @@ function indexedItems(
   return getIndexedItemsByID(db, getIndexedItemIDsByLibrary(db, libraryID));
 }
 
+async function digest(path: string): Promise<string> {
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
+}
+
 /** Semantic snapshot a rebuild has to reproduce exactly. */
 function readSemantics(databasePath: string): string {
   using sqlite = new DatabaseSync(databasePath, { readOnly: true });
@@ -83,10 +92,37 @@ function readSemantics(databasePath: string): string {
 }
 
 describe("the generated Zotero database", () => {
-  it("opens through ZotLit's database layer at a supported schema version", () => {
+  it("opens through ZotLit's database layer at the Zotero 10 schema versions", () => {
     using db = openClient();
 
-    expect(getSchemaVersions(db)).toMatchObject({ supported: true });
+    expect(getSchemaVersions(db)).toEqual({
+      ...PRISTINE_SCHEMA_VERSIONS,
+      supported: true,
+    });
+  });
+
+  it("passes the integrity checks a real Zotero runs at startup", () => {
+    using sqlite = new DatabaseSync(layout.databasePath, { readOnly: true });
+
+    expect(sqlite.prepare("pragma integrity_check").all()).toEqual([
+      { integrity_check: "ok" },
+    ]);
+    expect(sqlite.prepare("pragma foreign_key_check").all()).toEqual([]);
+  });
+
+  it("carries Zotero's own item types and base-field mappings", () => {
+    using db = openClient();
+
+    // A bookSection stores its container under `bookTitle`, which only reads
+    // back as `publicationTitle` through Zotero's own base-field mapping.
+    const bookSection = indexedItems(db, 1).find(
+      (item) => item.key === "EEEE5555",
+    );
+
+    expect(bookSection).toMatchObject({
+      itemType: "bookSection",
+      publicationTitle: "Collected Personal Essays",
+    });
   });
 
   it("exposes My Library plus group Libraries, one of them read-only", () => {
@@ -219,11 +255,48 @@ describe("the generated Zotero database", () => {
     expect(at(1, "AAAAAAAA")).toBeGreaterThan(at(2, "AAAAAAAA"));
   });
 
-  it("rebuilds to the same semantic data", async () => {
+  // Zotero's schema defaults several timestamp columns to `CURRENT_TIMESTAMP`.
+  // A row that falls back to that default carries the time of the build, so two
+  // builds stop matching. Every Fixture timestamp is therefore a fixed Spec
+  // value, and this guard covers the columns a later Spec grows into.
+  it("stamps every clock-defaulted column from the Spec", () => {
+    using sqlite = new DatabaseSync(layout.databasePath, { readOnly: true });
+    const query = <T>(sql: string): T[] => sqlite.prepare(sql).all() as T[];
+
+    const stamps = query<{ name: string }>(
+      "select name from sqlite_master where type = 'table'",
+    ).flatMap(({ name: table }) =>
+      query<{ name: string; dflt_value: string | null }>(
+        `pragma table_info("${table}")`,
+      )
+        .filter((column) => column.dflt_value === "CURRENT_TIMESTAMP")
+        .flatMap((column) =>
+          query<{ stamp: string }>(
+            `select distinct "${column.name}" as stamp from "${table}"`,
+          ).map(({ stamp }) => ({ column: `${table}.${column.name}`, stamp })),
+        ),
+    );
+    const spec = new Set([
+      BUILD_TIMESTAMP,
+      ...ITEMS.map((item) => item.dateModified),
+      ...NOTES.map((note) => note.dateModified),
+    ]);
+    const offenders = stamps
+      .filter(({ stamp }) => !spec.has(stamp))
+      .map(({ column, stamp }) => `${column} = ${stamp}`);
+
+    expect(offenders).toEqual([]);
+    // A build that stamped nothing would pass the check above vacuously.
+    expect(stamps).not.toEqual([]);
+  });
+
+  it("rebuilds to the same semantic data, byte for byte", async () => {
     const before = readSemantics(layout.databasePath);
+    const bytes = await digest(layout.databasePath);
     await buildFixture(layout);
 
     expect(readSemantics(layout.databasePath)).toBe(before);
+    expect(await digest(layout.databasePath)).toBe(bytes);
   });
 });
 

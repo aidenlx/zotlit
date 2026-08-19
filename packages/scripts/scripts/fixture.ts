@@ -20,6 +20,10 @@ import {
   UNAVAILABLE_GROUP_IDS,
 } from "#fixture";
 import { renderGuide } from "#fixture/guide";
+import {
+  harvestPristineTemplate,
+  PRISTINE_TEMPLATE_PATH,
+} from "#fixture/pristine";
 import { getWorkspaceRoot } from "#package-roots";
 import {
   launchPairedZotero,
@@ -42,6 +46,10 @@ async function findPluginBundle(): Promise<string | undefined> {
     () => dir,
     () => undefined,
   );
+}
+
+function kilobytes(bytes: number): string {
+  return `${Math.round(bytes / 1024).toLocaleString("en-US")} KB`;
 }
 
 function printPaths(): void {
@@ -121,6 +129,24 @@ const cli = yargs(hideBin(process.argv))
       const { appBundle, pid } = await launchPairedZotero(layout);
       console.log(`Launched the Paired Zotero from ${appBundle} (pid ${pid})`);
       printPaths();
+    },
+  )
+  .command(
+    "harvest",
+    `re-capture the pristine Zotero database template from a Zotero ${PINNED_ZOTERO_VERSION} first run`,
+    () => {},
+    async () => {
+      const report = await harvestPristineTemplate(
+        join(workspaceRoot, "tmp", "fixture-harvest"),
+      );
+      console.log(`Harvested from ${report.appBundle}`);
+      console.log(
+        `  userdata ${report.userdata} / compatibility ${report.compatibility}`,
+      );
+      console.log(
+        `  ${kilobytes(report.bytes)} of database, ${kilobytes(report.compressedBytes)} committed`,
+      );
+      console.log(`Wrote ${PRISTINE_TEMPLATE_PATH}`);
     },
   )
   .command(

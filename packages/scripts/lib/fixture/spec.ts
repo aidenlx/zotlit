@@ -82,6 +82,14 @@ export interface FixtureCollection {
   name: string;
 }
 
+/**
+ * What `CURRENT_TIMESTAMP` reads as while a build runs. Zotero's schema
+ * defaults ten columns to the clock, and a column the Spec does not stamp
+ * falls back to one of them, so the build pins the clock instead of letting
+ * the time of the build reach the database.
+ */
+export const BUILD_TIMESTAMP = "2026-08-19 08:00:00";
+
 /** `SHAREDCL` repeats in three Libraries, so a collection target must name one. */
 export const COLLECTIONS: readonly FixtureCollection[] = [
   { collectionID: 1, libraryID: 1, key: "SHAREDCL", name: "Shared key" },

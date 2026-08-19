@@ -1,5 +1,7 @@
 // Man-page-style reference for the Fixture, built from the spec's data.
 
+import { PINNED_ZOTERO_VERSION } from "./paired-zotero.ts";
+import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 import {
   COLLECTIONS,
   ITEMS,
@@ -181,6 +183,35 @@ Delete one literature note before the run to prove the abort wrote nothing: the
 aborted run leaves the note absent, and the same run without the cancel creates
 it.`;
 
+const PRISTINE_TEMPLATE_SECTION = `PRISTINE TEMPLATE
+
+Every build copies packages/scripts/lib/fixture/pristine-zotero.sqlite.gz — a
+Zotero ${PINNED_ZOTERO_VERSION} database, created by Zotero itself — and inserts the Spec's
+rows into the copy, so the Paired Zotero opens a database of its own making.
+The template declares userdata ${PRISTINE_SCHEMA_VERSIONS.userdata} / compatibility ${PRISTINE_SCHEMA_VERSIONS.compatibility}, and a build fails when it
+declares anything else. See ADR 0022.
+
+Regenerate it after a Zotero schema bump:
+
+1. Raise PINNED_ZOTERO_VERSION in packages/scripts/lib/fixture/paired-zotero.ts
+   to the Zotero release the Fixture should target.
+2. Raise PRISTINE_SCHEMA_VERSIONS in packages/scripts/lib/fixture/pristine.ts to
+   the userdata and compatibility versions that release writes, and widen
+   SUPPORTED_SCHEMA_VERSIONS in packages/db/src/queries/schema-version.ts to
+   cover them.
+3. Run:
+
+     pnpm fixture harvest
+
+   It first-runs the managed Zotero on an empty data directory, waits for the
+   database to initialize, quits Zotero, checkpoints and vacuums the result,
+   and rewrites the committed template. It reports the versions it captured.
+4. Rebuild and run the generator suite:
+
+     pnpm fixture && turbo run test --filter=@zotlit/scripts
+
+5. Commit the template with the version bumps.`;
+
 const CHANGING_THE_FIXTURE_SECTION = `CHANGING THE FIXTURE
 
 Edit packages/scripts/lib/fixture/spec.ts and rebuild.
@@ -199,6 +230,7 @@ export function renderGuide(): string {
     SCOPE_CASES_SECTION,
     VAULT_SETUP_SECTION,
     CANCEL_TESTING_SECTION,
+    PRISTINE_TEMPLATE_SECTION,
     CHANGING_THE_FIXTURE_SECTION,
   ].join("\n\n");
 }

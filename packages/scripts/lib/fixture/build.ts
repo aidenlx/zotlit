@@ -6,9 +6,10 @@ import { DatabaseSync } from "node:sqlite";
 import type { SQLInputValue } from "node:sqlite";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { assertSchemaVersions, writePristineDatabase } from "./pristine.ts";
 import {
+  BUILD_TIMESTAMP,
   COLLECTIONS,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
@@ -22,6 +23,7 @@ import type { FixtureItem, PersistedLibraryScope } from "./spec.ts";
 // The spec is part of this module's public surface: one import specifier
 // covers building the Fixture and reading what it is supposed to contain.
 export {
+  BUILD_TIMESTAMP,
   COLLECTIONS,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
@@ -104,7 +106,7 @@ export async function buildFixture(
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
 
-  writeDatabase(layout.databasePath);
+  await writeDatabase(layout.databasePath);
   await writePrefs(layout);
   await writeVault(layout, options);
 }
@@ -126,51 +128,101 @@ export async function discardFixture(layout: FixtureLayout): Promise<void> {
   await rm(layout.root, { recursive: true, force: true });
 }
 
-/**
- * Zotero schema versions the Fixture claims. Inside
- * `SUPPORTED_SCHEMA_VERSIONS`, so ZotLit reads it as a supported database.
- */
-const SCHEMA_VERSIONS = { userdata: 125, compatibility: 7 } as const;
-
-const ITEM_TYPE_IDS = { journalArticle: 1, bookSection: 2 } as const;
-const NOTE_ITEM_TYPE_ID = 4;
-const FIELD_IDS = {
-  title: 10,
-  citationKey: 11,
-  date: 12,
-  publicationTitle: 13,
-  bookTitle: 20,
-} as const;
-const AUTHOR_CREATOR_TYPE_ID = 1;
-
-function containerFieldID(itemType: FixtureItem["itemType"]): number {
-  return itemType === "bookSection"
-    ? FIELD_IDS.bookTitle
-    : FIELD_IDS.publicationTitle;
-}
-
 type Row = readonly SQLInputValue[];
 
-function writeDatabase(databasePath: string): void {
+/**
+ * Lay the pristine template down and insert the Spec's rows into the copy.
+ * The template carries Zotero's own schema — tables, triggers, foreign keys,
+ * and the global schema's item types and fields — so the ids below are read
+ * back by name rather than declared here.
+ */
+async function writeDatabase(databasePath: string): Promise<void> {
+  await writePristineDatabase(databasePath);
   using db = new DatabaseSync(databasePath);
-  seedDatabase(db);
+  // A user-defined function shadows the `CURRENT_TIMESTAMP` keyword on this
+  // connection, column defaults included, so a stamp the Spec forgets lands on
+  // a fixed value rather than the time of the build. The connection closes with
+  // this scope, so a Paired Zotero that opens the file later keeps a real clock.
+  db.function(
+    "current_timestamp",
+    { deterministic: true },
+    () => BUILD_TIMESTAMP,
+  );
+  assertSchemaVersions(db);
+  seedDatabase(db, readSchemaIDs(db));
 }
 
-function seedDatabase(db: DatabaseSync): void {
-  createFixtureSchema(db);
+/** The global-schema ids the Spec's rows reference, resolved by name. */
+interface SchemaIDs {
+  itemTypes: Record<FixtureItem["itemType"] | "note", number>;
+  fields: Record<
+    "title" | "citationKey" | "date" | "publicationTitle" | "bookTitle",
+    number
+  >;
+  authorCreatorType: number;
+}
 
+function readSchemaIDs(db: DatabaseSync): SchemaIDs {
+  const lookup = <T extends string>(
+    sql: string,
+    column: string,
+    names: readonly T[],
+  ): Record<T, number> => {
+    const statement = db.prepare(sql);
+    return Object.fromEntries(
+      names.map((name) => {
+        const row = statement.get(name) as Record<string, number> | undefined;
+        const id = row?.[column];
+        if (id === undefined) {
+          throw new Error(
+            `the pristine template carries no "${name}" in its global schema.`,
+          );
+        }
+        return [name, id];
+      }),
+    ) as Record<T, number>;
+  };
+
+  return {
+    itemTypes: lookup(
+      "select itemTypeID from itemTypesCombined where typeName = ?",
+      "itemTypeID",
+      ["journalArticle", "bookSection", "note"],
+    ),
+    fields: lookup(
+      "select fieldID from fieldsCombined where fieldName = ?",
+      "fieldID",
+      ["title", "citationKey", "date", "publicationTitle", "bookTitle"],
+    ),
+    authorCreatorType: lookup(
+      "select creatorTypeID from creatorTypes where creatorType = ?",
+      "creatorTypeID",
+      ["author"],
+    ).author,
+  };
+}
+
+function containerFieldID(
+  ids: SchemaIDs,
+  itemType: FixtureItem["itemType"],
+): number {
+  return itemType === "bookSection"
+    ? ids.fields.bookTitle
+    : ids.fields.publicationTitle;
+}
+
+function seedDatabase(db: DatabaseSync, ids: SchemaIDs): void {
   const insert = (sql: string, rows: readonly Row[]): void => {
     const statement = db.prepare(sql);
     for (const row of rows) statement.run(...row);
   };
 
-  insert("insert into version (schema, version) values (?, ?)", [
-    ["userdata", SCHEMA_VERSIONS.userdata],
-    ["compatibility", SCHEMA_VERSIONS.compatibility],
-  ]);
-
+  // Zotero's first run already created My Library, so the Spec's row for it
+  // updates that row instead of colliding with it.
   insert(
-    "insert into libraries (libraryID, type, editable, filesEditable) values (?, ?, ?, ?)",
+    "insert into libraries (libraryID, type, editable, filesEditable) values (?, ?, ?, ?)" +
+      " on conflict (libraryID) do update set type = excluded.type," +
+      " editable = excluded.editable, filesEditable = excluded.filesEditable",
     LIBRARIES.map((library) => [
       library.libraryID,
       library.type,
@@ -179,49 +231,11 @@ function seedDatabase(db: DatabaseSync): void {
     ]),
   );
   insert(
-    "insert into groups (groupID, libraryID, name) values (?, ?, ?)",
+    "insert into groups (groupID, libraryID, name, description, version) values (?, ?, ?, '', 0)",
     LIBRARIES.filter((library) => library.groupID !== null).map((library) => [
       library.groupID,
       library.libraryID,
       library.name,
-    ]),
-  );
-
-  insert("insert into itemTypes (itemTypeID, typeName) values (?, ?)", [
-    [ITEM_TYPE_IDS.journalArticle, "journalArticle"],
-    [ITEM_TYPE_IDS.bookSection, "bookSection"],
-    [3, "attachment"],
-    [NOTE_ITEM_TYPE_ID, "note"],
-    [5, "annotation"],
-  ]);
-  insert(
-    "insert into fieldsCombined (fieldID, fieldName, custom) values (?, ?, 0)",
-    Object.entries(FIELD_IDS).map(([fieldName, fieldID]) => [
-      fieldID,
-      fieldName,
-    ]),
-  );
-  // `bookSection.bookTitle` resolves to the `publicationTitle` base field, the
-  // alias path the indexed-item reader has to walk.
-  insert(
-    "insert into baseFieldMappingsCombined (itemTypeID, baseFieldID, fieldID) values (?, ?, ?)",
-    [
-      [
-        ITEM_TYPE_IDS.bookSection,
-        FIELD_IDS.publicationTitle,
-        FIELD_IDS.bookTitle,
-      ],
-    ],
-  );
-  insert(
-    "insert into creatorTypes (creatorTypeID, creatorType) values (?, ?)",
-    [[AUTHOR_CREATOR_TYPE_ID, "author"]],
-  );
-  insert(
-    "insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField) values (?, ?, 1)",
-    Object.values(ITEM_TYPE_IDS).map((itemTypeID) => [
-      itemTypeID,
-      AUTHOR_CREATOR_TYPE_ID,
     ]),
   );
 
@@ -235,32 +249,30 @@ function seedDatabase(db: DatabaseSync): void {
     ]),
   );
 
+  const itemRow = (
+    item: {
+      itemID: number;
+      libraryID: number;
+      key: string;
+      dateModified: string;
+    },
+    itemTypeID: number,
+  ): Row => [
+    item.itemID,
+    itemTypeID,
+    item.dateModified,
+    item.dateModified,
+    item.dateModified,
+    item.libraryID,
+    item.key,
+  ];
   insert(
     "insert into items (itemID, itemTypeID, dateAdded, dateModified, clientDateModified, libraryID, key)" +
       " values (?, ?, ?, ?, ?, ?, ?)",
-    ITEMS.map((item) => [
-      item.itemID,
-      ITEM_TYPE_IDS[item.itemType],
-      item.dateModified,
-      item.dateModified,
-      item.dateModified,
-      item.libraryID,
-      item.key,
-    ]),
-  );
-
-  insert(
-    "insert into items (itemID, itemTypeID, dateAdded, dateModified, clientDateModified, libraryID, key)" +
-      " values (?, ?, ?, ?, ?, ?, ?)",
-    NOTES.map((note) => [
-      note.itemID,
-      NOTE_ITEM_TYPE_ID,
-      note.dateModified,
-      note.dateModified,
-      note.dateModified,
-      note.libraryID,
-      note.key,
-    ]),
+    [
+      ...ITEMS.map((item) => itemRow(item, ids.itemTypes[item.itemType])),
+      ...NOTES.map((note) => itemRow(note, ids.itemTypes.note)),
+    ],
   );
   insert(
     "insert into itemNotes (itemID, parentItemID, note, title) values (?, ?, ?, ?)",
@@ -272,46 +284,33 @@ function seedDatabase(db: DatabaseSync): void {
     ]),
   );
 
-  // One value row per (item, field) pair keeps `valueID` derivable from the
-  // spec, so a rebuild reproduces the same ids without a lookup table.
-  const fieldValues = ITEMS.flatMap((item) => [
-    { itemID: item.itemID, fieldID: FIELD_IDS.title, value: item.title },
-    { itemID: item.itemID, fieldID: FIELD_IDS.date, value: item.date },
-    {
-      itemID: item.itemID,
-      fieldID: containerFieldID(item.itemType),
-      value: item.containerTitle,
-    },
-    ...(item.citationKey === null
-      ? []
-      : [
-          {
-            itemID: item.itemID,
-            fieldID: FIELD_IDS.citationKey,
-            value: item.citationKey,
-          },
-        ]),
-  ]);
-  insert(
-    "insert into itemDataValues (valueID, value) values (?, ?)",
-    fieldValues.map((entry, index) => [index + 1, entry.value]),
-  );
-  insert(
-    "insert into itemData (itemID, fieldID, valueID) values (?, ?, ?)",
-    fieldValues.map((entry, index) => [entry.itemID, entry.fieldID, index + 1]),
-  );
+  seedItemData(insert, ids);
 
+  // `creators` is keyed by name across the whole database, so two items by the
+  // same person would share one row. Ids follow first use, which the Spec's own
+  // order fixes, so a rebuild reproduces them.
+  const creators = new Map<string, FixtureCreator & { creatorID: number }>();
+  for (const { creator } of ITEMS) {
+    const key = creatorKey(creator);
+    if (!creators.has(key)) {
+      creators.set(key, { creatorID: creators.size + 1, ...creator });
+    }
+  }
   insert(
     "insert into creators (creatorID, firstName, lastName, fieldMode) values (?, ?, ?, 0)",
-    ITEMS.map((item) => [
-      item.itemID,
-      item.creator.firstName,
-      item.creator.lastName,
+    [...creators.values()].map((creator) => [
+      creator.creatorID,
+      creator.firstName,
+      creator.lastName,
     ]),
   );
   insert(
     "insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (?, ?, ?, 0)",
-    ITEMS.map((item) => [item.itemID, item.itemID, AUTHOR_CREATOR_TYPE_ID]),
+    ITEMS.map((item) => [
+      item.itemID,
+      creators.get(creatorKey(item.creator))!.creatorID,
+      ids.authorCreatorType,
+    ]),
   );
 
   insert(
@@ -319,6 +318,63 @@ function seedDatabase(db: DatabaseSync): void {
     [...ITEMS, ...NOTES].flatMap((item) =>
       item.collectionIDs.map((collectionID) => [collectionID, item.itemID]),
     ),
+  );
+}
+
+type FixtureCreator = FixtureItem["creator"];
+
+/** `creators` is unique on `(lastName, firstName, fieldMode)`, all fieldMode 0. */
+function creatorKey({ firstName, lastName }: FixtureCreator): string {
+  return JSON.stringify([lastName, firstName]);
+}
+
+/**
+ * `itemDataValues.value` is unique across the database, so repeated titles,
+ * dates, and container names share one value row. Ids follow first use, which
+ * the Spec's own order fixes, so a rebuild reproduces them.
+ *
+ * `valueNormalized` stays unset: Zotero itself leaves it null whenever the
+ * normalized form matches the ASCII-lowercased value, which holds for every
+ * ASCII value the Spec carries. Search reads `coalesce(valueNormalized, value)`.
+ */
+function seedItemData(
+  insert: (sql: string, rows: readonly Row[]) => void,
+  ids: SchemaIDs,
+): void {
+  const fieldValues = ITEMS.flatMap((item) => [
+    { itemID: item.itemID, fieldID: ids.fields.title, value: item.title },
+    { itemID: item.itemID, fieldID: ids.fields.date, value: item.date },
+    {
+      itemID: item.itemID,
+      fieldID: containerFieldID(ids, item.itemType),
+      value: item.containerTitle,
+    },
+    ...(item.citationKey === null
+      ? []
+      : [
+          {
+            itemID: item.itemID,
+            fieldID: ids.fields.citationKey,
+            value: item.citationKey,
+          },
+        ]),
+  ]);
+
+  const valueIDs = new Map<string, number>();
+  for (const { value } of fieldValues) {
+    if (!valueIDs.has(value)) valueIDs.set(value, valueIDs.size + 1);
+  }
+  insert(
+    "insert into itemDataValues (valueID, value) values (?, ?)",
+    [...valueIDs].map(([value, valueID]) => [valueID, value]),
+  );
+  insert(
+    "insert into itemData (itemID, fieldID, valueID) values (?, ?, ?)",
+    fieldValues.map((entry) => [
+      entry.itemID,
+      entry.fieldID,
+      valueIDs.get(entry.value)!,
+    ]),
   );
 }
 

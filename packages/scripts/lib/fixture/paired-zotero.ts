@@ -2,6 +2,7 @@
 // launches it on the Fixture's profile beside a personal Zotero.
 
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   access,
@@ -168,10 +169,34 @@ async function extractAppBundle(
   }
 }
 
-/** The Fixture directories the Paired Zotero opens. */
-export interface PairedZoteroTarget {
+/** The profile and data directory a Zotero process opens. */
+export interface ZoteroTarget {
   profileDir: string;
   dataDir: string;
+}
+
+/**
+ * Start `appBundle` on `target`, beside a personal Zotero.
+ *
+ * @param options.detached `true` lets the instance outlive the command;
+ * `false` keeps the child attached, so a caller can wait for it and signal it.
+ */
+export function spawnZotero(
+  appBundle: string,
+  target: ZoteroTarget,
+  options: { detached: boolean },
+): ChildProcess {
+  return spawn(
+    getZoteroBinary(appBundle),
+    ["-profile", target.profileDir, "-datadir", target.dataDir],
+    {
+      detached: options.detached,
+      stdio: "ignore",
+      // Gecko otherwise hands the command line to an already-running Zotero,
+      // which would raise a window on the personal library instead.
+      env: { ...process.env, MOZ_NO_REMOTE: "1" },
+    },
+  );
 }
 
 export interface PairedZotero {
@@ -186,7 +211,7 @@ export interface PairedZotero {
  * @throws when the Fixture is not built, or no app bundle resolves.
  */
 export async function launchPairedZotero(
-  target: PairedZoteroTarget,
+  target: ZoteroTarget,
 ): Promise<PairedZotero> {
   for (const dir of [target.profileDir, target.dataDir]) {
     await access(dir).catch(() => {
@@ -197,17 +222,7 @@ export async function launchPairedZotero(
   }
 
   const appBundle = await resolveZoteroApp();
-  const child = spawn(
-    getZoteroBinary(appBundle),
-    ["-profile", target.profileDir, "-datadir", target.dataDir],
-    {
-      detached: true,
-      stdio: "ignore",
-      // Gecko otherwise hands the command line to an already-running Zotero,
-      // which would raise a window on the personal library instead.
-      env: { ...process.env, MOZ_NO_REMOTE: "1" },
-    },
-  );
+  const child = spawnZotero(appBundle, target, { detached: true });
   child.unref();
 
   const { pid } = child;

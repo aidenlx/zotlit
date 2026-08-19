@@ -1,9 +1,6 @@
 # The Fixture database copies a committed pristine template
 
-> **Status: proposed.** This ADR records the decision ahead of the work that
-> implements it: the committed template, its regeneration command, the
-> managed Zotero download, and `pnpm fixture zotero` described below land in
-> the follow-up work that builds toward this design.
+> **Status: accepted.**
 
 The Fixture pairs with a real Zotero 10 instance (the Paired Zotero), so its
 `zotero.sqlite` must be a full-fidelity database that survives Zotero's
@@ -30,8 +27,13 @@ serves both the template harvest and the Paired Zotero.
 
 ## Consequences
 
-- The committed template is a small binary; regeneration is a documented
-  one-command step, needed only when Zotero bumps its schema.
+- The committed template is a small binary — `pnpm fixture harvest` stores it
+  gzipped, because Zotero's 32 KB page layout makes a first-run database 5 MB
+  of mostly empty pages. Regeneration is that one command, needed only when
+  Zotero bumps its schema; `pnpm fixture --help` carries the procedure.
+- The template already holds Zotero's global schema, so the build reads item
+  type, field, and creator type ids back by name instead of declaring them,
+  and Zotero's own foreign keys and triggers check every inserted row.
 - After a Paired Zotero session the database drifts from the Spec; rebuilding
   the Fixture is the reset. The Fixture is disposable by design, so this is
   accepted.
