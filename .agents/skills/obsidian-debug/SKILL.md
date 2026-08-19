@@ -9,18 +9,22 @@ description: |
 
 # Debug Loop
 
-Drive the running Obsidian app through `obsidian-cli` to verify plugin changes against real
+Drive the running Obsidian app through `obsidian` to verify plugin changes against real
 rendered state. The DOM is the source of truth.
 
 ## Vault setup, once per worktree
 
 CLI Contract: `obsidian-vault 2`.
 
-1. Run `packages/scripts/scripts/obsidian-vault.ts --help`.
-2. Compare its `contractVersion` with the pin above. When they differ, follow
+1. Run `obsidian version`. If the command is missing, follow the official
+   [Obsidian CLI installation guide](https://obsidian.md/help/cli#Install%20Obsidian%20CLI),
+   then restart the terminal. Use the registered `obsidian` command on every
+   platform.
+2. Run `packages/scripts/scripts/obsidian-vault.ts --help`.
+3. Compare its `contractVersion` with the pin above. When they differ, follow
    the live help for this run.
-3. Before you use a vault command, read its `<command> --help` output.
-4. Build the plugin, then use the live `open` command to prepare this
+4. Before you use a vault command, read its `<command> --help` output.
+5. Build the plugin, then use the live `open` command to prepare this
    worktree's Development Vault:
 
 ```bash
@@ -36,13 +40,13 @@ the vault down.
 
 | Command | What it does |
 |---|---|
-| `obsidian-cli vault=<id> plugin:reload id=zotlit` | Reload the plugin after a build |
-| `obsidian-cli vault=<id> commands filter=zotlit` | List available plugin commands |
-| `obsidian-cli vault=<id> command id=zotlit:<cmd>` | Run a command |
-| `obsidian-cli vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
-| `obsidian-cli vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
-| `obsidian-cli vault=<id> dev:errors` | Captured errors |
-| `obsidian-cli vault=<id> dev:console` | Console output |
+| `obsidian vault=<id> plugin:reload id=zotlit` | Reload the plugin after a build |
+| `obsidian vault=<id> commands filter=zotlit` | List available plugin commands |
+| `obsidian vault=<id> command id=zotlit:<cmd>` | Run a command |
+| `obsidian vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
+| `obsidian vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
+| `obsidian vault=<id> dev:errors` | Captured errors |
+| `obsidian vault=<id> dev:console` | Console output |
 
 The CLI always exits 0. Read the output text: `=> ` prefixes a result, and failures come back as
 `Error: …` or `Vault not found.`
@@ -51,14 +55,14 @@ The CLI always exits 0. Read the output text: `=> ` prefixes a result, and failu
 
 1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` copies the bundle into
    this worktree's Development Vault.
-2. **Reload** — `obsidian-cli vault=<id> plugin:reload id=zotlit`.
-3. **Open** — `obsidian-cli command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
-4. **Probe** — `obsidian-cli eval code='…'` with `getComputedStyle(el)` /
+2. **Reload** — `obsidian vault=<id> plugin:reload id=zotlit`.
+3. **Open** — `obsidian command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
+4. **Probe** — `obsidian eval code='…'` with `getComputedStyle(el)` /
    `el.getBoundingClientRect()` to assert what actually rendered. A computed-style assertion is
    worth more than eyeballing a screenshot, and it is the only way to catch a state that expires
    on its own — a flash class is gone by the time the capture lands.
-5. **Screenshot** — `obsidian-cli dev:screenshot path=<absolute-path>`. Save inside the workspace.
-6. **Errors** — `obsidian-cli dev:errors` / `obsidian-cli dev:console`.
+5. **Screenshot** — `obsidian dev:screenshot path=<absolute-path>`. Save inside the workspace.
+6. **Errors** — `obsidian dev:errors` / `obsidian dev:console`.
 
 ## Driving state
 
@@ -115,14 +119,14 @@ Build a Stress Build with `pnpm fixture stress`. Read the current Device Overrid
 change it:
 
 ```bash
-obsidian-cli vault=<id> eval \
+obsidian vault=<id> eval \
   code='app.plugins.plugins.zotlit.services.zoteroPref.dataDirOverride'
 ```
 
 Point the live plugin at the absolute `tmp/acceptance-fixture/zotero-data` path:
 
 ```bash
-obsidian-cli vault=<id> eval \
+obsidian vault=<id> eval \
   code='app.plugins.plugins.zotlit.services.zoteroPref.setDataDir("<absolute path>")'
 ```
 

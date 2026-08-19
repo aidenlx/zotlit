@@ -1,10 +1,11 @@
-// Resolves a real Zotero app bundle — an override or the managed install — and
+// Resolves a real Zotero application — an override or the managed install — and
 // launches it on the Fixture's profile beside a personal Zotero. It also owns
 // the preferences that profile carries, because they describe what a real
 // Zotero does on a profile it has never opened.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   access,
@@ -16,12 +17,15 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { arch as hostArch, homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream } from "node:stream/web";
+import { promisify } from "node:util";
 import { $ } from "zx";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * The official Zotero build the Paired Zotero runs. A deliberate constant: it
@@ -29,98 +33,151 @@ import { $ } from "zx";
  */
 export const PINNED_ZOTERO_VERSION = "10.0";
 
-/** Environment variable that points the launcher at any app bundle. */
 export const ZOTERO_APP_ENV = "ZOTERO_APP";
 
-const APP_BUNDLE_NAME = "Zotero.app";
-const BINARY_SUBPATH = join("Contents", "MacOS", "zotero");
+const DOWNLOAD_ROOT = `https://download.zotero.org/client/release/${PINNED_ZOTERO_VERSION}`;
 
-const DOWNLOAD_URL = `https://download.zotero.org/client/release/${PINNED_ZOTERO_VERSION}/Zotero-${PINNED_ZOTERO_VERSION}.dmg`;
+export interface ManagedZoteroLayout {
+  applicationDir: string;
+  archiveName: string;
+  cacheDir: string;
+  downloadUrl: string;
+}
 
-/** Per-user cache keyed by version, so one download serves every worktree. */
-function getManagedZoteroDir(): string {
-  return join(
-    homedir(),
-    "Library",
-    "Caches",
-    "zotlit",
-    "zotero",
-    PINNED_ZOTERO_VERSION,
+export function getManagedZoteroLayout({
+  arch = hostArch(),
+  env = process.env,
+  home = homedir(),
+  platform = process.platform,
+}: {
+  arch?: NodeJS.Architecture;
+  env?: NodeJS.ProcessEnv;
+  home?: string;
+  platform?: NodeJS.Platform;
+} = {}): ManagedZoteroLayout {
+  if (platform === "darwin") {
+    const cacheDir = join(
+      home,
+      "Library",
+      "Caches",
+      "zotlit",
+      "zotero",
+      PINNED_ZOTERO_VERSION,
+    );
+    const archiveName = `Zotero-${PINNED_ZOTERO_VERSION}.dmg`;
+    return {
+      applicationDir: join(cacheDir, "Zotero.app"),
+      archiveName,
+      cacheDir,
+      downloadUrl: `${DOWNLOAD_ROOT}/${archiveName}`,
+    };
+  }
+  if (platform === "win32") {
+    const target =
+      arch === "arm64"
+        ? "win-arm64"
+        : arch === "x64"
+          ? "win-x64"
+          : arch === "ia32"
+            ? "win32"
+            : undefined;
+    if (!target) {
+      throw new Error(`unsupported Windows architecture for Zotero: ${arch}.`);
+    }
+    const cacheDir = join(
+      env.LOCALAPPDATA ?? join(home, "AppData", "Local"),
+      "zotlit",
+      "zotero",
+      PINNED_ZOTERO_VERSION,
+      target,
+    );
+    const archiveName = `Zotero-${PINNED_ZOTERO_VERSION}_${target}.zip`;
+    return {
+      applicationDir: join(cacheDir, `Zotero_${target}`),
+      archiveName,
+      cacheDir,
+      downloadUrl: `${DOWNLOAD_ROOT}/${archiveName}`,
+    };
+  }
+  throw new Error(
+    `the Paired Zotero runs on macOS and Windows; this host reports ${platform}.`,
   );
 }
 
-export function getZoteroBinary(appBundle: string): string {
-  return join(appBundle, BINARY_SUBPATH);
+export function getZoteroBinary(applicationDir: string): string {
+  return process.platform === "win32"
+    ? join(applicationDir, "zotero.exe")
+    : join(applicationDir, "Contents", "MacOS", "zotero");
 }
 
-function isAppBundle(appBundle: string): Promise<boolean> {
-  return access(getZoteroBinary(appBundle), constants.X_OK).then(
+function isApplicationDir(applicationDir: string): Promise<boolean> {
+  return access(getZoteroBinary(applicationDir), constants.X_OK).then(
     () => true,
     () => false,
   );
 }
 
 /**
- * The app bundle the Paired Zotero runs: `ZOTERO_APP` when set, else the
+ * The application folder the Paired Zotero runs: `ZOTERO_APP` when set, else the
  * managed install, downloaded on first use and reused from cache afterwards.
  *
- * @throws when the override names no app bundle, or the download fails.
+ * @throws when the override names no application folder, or the download fails.
  */
 export async function resolveZoteroApp(): Promise<string> {
-  requireMacOS();
+  const layout = getManagedZoteroLayout();
 
   const override = process.env[ZOTERO_APP_ENV];
   if (override) {
-    if (await isAppBundle(override)) return override;
+    if (await isApplicationDir(override)) return override;
     throw new Error(
-      `${ZOTERO_APP_ENV} names ${override}, which holds no ${BINARY_SUBPATH}.` +
-        ` Point it at a Zotero app bundle, or unset it to use the managed Zotero ${PINNED_ZOTERO_VERSION}.`,
+      `${ZOTERO_APP_ENV} names ${override}, which holds no ${getZoteroBinary(override)}.` +
+        ` Point it at a Zotero application folder, or unset it to use the managed Zotero ${PINNED_ZOTERO_VERSION}.`,
     );
   }
 
-  const cacheDir = getManagedZoteroDir();
-  const appBundle = join(cacheDir, APP_BUNDLE_NAME);
-  if (await isAppBundle(appBundle)) return appBundle;
+  if (await isApplicationDir(layout.applicationDir)) {
+    return layout.applicationDir;
+  }
 
-  await installManagedZotero(cacheDir);
-  return appBundle;
-}
-
-function requireMacOS(): void {
-  if (process.platform === "darwin") return;
-  throw new Error(
-    `the Paired Zotero runs on macOS; this host reports ${process.platform}.`,
-  );
+  await installManagedZotero(layout);
+  if (!(await isApplicationDir(layout.applicationDir))) {
+    throw new Error(
+      `the managed Zotero archive did not contain ${getZoteroBinary(layout.applicationDir)}.`,
+    );
+  }
+  return layout.applicationDir;
 }
 
 /**
- * Download the pinned DMG and lay its app bundle into `cacheDir`. Stages the
+ * Download the pinned archive and lay its application into `cacheDir`. Stages the
  * whole install beside the destination and renames it into place, so an
  * interrupted run leaves no half-copied bundle for the next run to trust.
  */
-async function installManagedZotero(cacheDir: string): Promise<void> {
-  const staging = `${cacheDir}.incomplete`;
-  const dmgPath = join(staging, `Zotero-${PINNED_ZOTERO_VERSION}.dmg`);
+async function installManagedZotero(
+  layout: ManagedZoteroLayout,
+): Promise<void> {
+  const staging = `${layout.cacheDir}.incomplete`;
+  const archivePath = join(staging, layout.archiveName);
 
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
   try {
     console.log(
-      `Downloading Zotero ${PINNED_ZOTERO_VERSION} from ${DOWNLOAD_URL}`,
+      `Downloading Zotero ${PINNED_ZOTERO_VERSION} from ${layout.downloadUrl}`,
     );
-    await download(DOWNLOAD_URL, dmgPath);
-    await extractAppBundle(dmgPath, staging);
-    await rm(dmgPath);
-    await rm(cacheDir, { recursive: true, force: true });
-    await mkdir(dirname(cacheDir), { recursive: true });
-    await rename(staging, cacheDir);
-    console.log(`Installed the managed Zotero at ${cacheDir}`);
+    await download(layout.downloadUrl, archivePath);
+    await extractApplication(archivePath, staging);
+    await rm(archivePath);
+    await rm(layout.cacheDir, { recursive: true, force: true });
+    await mkdir(dirname(layout.cacheDir), { recursive: true });
+    await rename(staging, layout.cacheDir);
+    console.log(`Installed the managed Zotero at ${layout.cacheDir}`);
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
     throw new Error(
-      `could not install the managed Zotero ${PINNED_ZOTERO_VERSION} from ${DOWNLOAD_URL}:` +
+      `could not install the managed Zotero ${PINNED_ZOTERO_VERSION} from ${layout.downloadUrl}:` +
         ` ${error instanceof Error ? error.message : String(error)}.` +
-        ` Set ${ZOTERO_APP_ENV} to an existing Zotero app bundle to skip the download.`,
+        ` Set ${ZOTERO_APP_ENV} to an existing Zotero application folder to skip the download.`,
       { cause: error },
     );
   }
@@ -159,14 +216,18 @@ async function* reportProgress(
  * carries symlinks, extended attributes, and a code signature that only the
  * macOS tools reproduce faithfully.
  */
-async function extractAppBundle(
-  dmgPath: string,
+async function extractApplication(
+  archivePath: string,
   destination: string,
 ): Promise<void> {
+  if (process.platform === "win32") {
+    await execFileAsync("tar.exe", ["-xf", archivePath, "-C", destination]);
+    return;
+  }
   const mountPoint = await mkdtemp(join(tmpdir(), "zotlit-zotero-"));
   try {
-    await $`hdiutil attach ${dmgPath} -nobrowse -readonly -quiet -mountpoint ${mountPoint}`;
-    await $`ditto ${join(mountPoint, APP_BUNDLE_NAME)} ${join(destination, APP_BUNDLE_NAME)}`;
+    await $`hdiutil attach ${archivePath} -nobrowse -readonly -quiet -mountpoint ${mountPoint}`;
+    await $`ditto ${join(mountPoint, "Zotero.app")} ${join(destination, "Zotero.app")}`;
   } finally {
     await $`hdiutil detach ${mountPoint} -quiet`.nothrow();
     await rm(mountPoint, { recursive: true, force: true });
@@ -249,18 +310,18 @@ async function installCompanionProxy(
 }
 
 /**
- * Start `appBundle` on `target`, beside a personal Zotero.
+ * Start `applicationDir` on `target`, beside a personal Zotero.
  *
  * @param options.detached `true` lets the instance outlive the command;
  * `false` keeps the child attached, so a caller can wait for it and signal it.
  */
 export function spawnZotero(
-  appBundle: string,
+  applicationDir: string,
   target: ZoteroTarget,
   options: { detached: boolean },
 ): ChildProcess {
   return spawn(
-    getZoteroBinary(appBundle),
+    getZoteroBinary(applicationDir),
     ["-profile", target.profileDir, "-datadir", target.dataDir],
     {
       detached: options.detached,
@@ -273,7 +334,7 @@ export function spawnZotero(
 }
 
 export interface PairedZotero {
-  appBundle: string;
+  applicationDir: string;
   pid: number;
 }
 
@@ -282,7 +343,7 @@ export interface PairedZotero {
  * detached so the command returns and the instance outlives it.
  *
  * @throws when the Fixture or companion build is missing, the companion
- * manifest is invalid, or no app bundle resolves.
+ * manifest is invalid, or no application directory resolves.
  */
 export async function launchPairedZotero(
   target: ZoteroTarget,
@@ -297,11 +358,11 @@ export async function launchPairedZotero(
   }
 
   await installCompanionProxy(target.profileDir, companionDir);
-  const appBundle = await resolveZoteroApp();
-  const child = spawnZotero(appBundle, target, { detached: true });
+  const applicationDir = await resolveZoteroApp();
+  const child = spawnZotero(applicationDir, target, { detached: true });
   child.unref();
 
   const { pid } = child;
-  if (pid === undefined) throw new Error(`could not start ${appBundle}.`);
-  return { appBundle, pid };
+  if (pid === undefined) throw new Error(`could not start ${applicationDir}.`);
+  return { applicationDir, pid };
 }

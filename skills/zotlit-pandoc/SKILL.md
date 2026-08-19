@@ -9,9 +9,9 @@ description: "Set up, refresh, run, and diagnose ZotLit's Native Pandoc Workflow
 
 Complete these steps before changing files, running Pandoc, or calling the resolver.
 
-1. Run `obsidian-cli help zotlit` and use only the commands it reports.
+1. Run `obsidian help zotlit` and use only the commands it reports.
 2. Target the vault that owns the input file. Put `vault=<vault-name>` before the command when the working directory does not select it unambiguously.
-3. Run `obsidian-cli zotlit:pandoc-guide` against that vault. Treat this live guide as the source of truth for ZotLit commands, file names, compatibility floors, resolver responses, and error codes.
+3. Run `obsidian zotlit:pandoc-guide` against that vault. Treat this live guide as the source of truth for ZotLit commands, file names, compatibility floors, resolver responses, and error codes.
 
 Read the guide again after a ZotLit update or when a saved integration pair might be stale.
 

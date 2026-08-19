@@ -12,9 +12,9 @@
 // Creating needs Obsidian 1.13.4+ with "Command line interface" enabled
 // (Settings → General) and one open vault window to host the eval calls.
 
+import { execFile } from "node:child_process";
 import {
   access,
-  constants,
   cp,
   mkdir,
   readFile,
@@ -22,13 +22,12 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { connect } from "node:net";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import { $ } from "zx";
 
 import { getDevVaultDir, getFixtureVaultDir } from "#dev-vault";
 import {
@@ -40,6 +39,8 @@ import {
 } from "#fixture";
 import { getWorkspaceRoot } from "#package-roots";
 
+const execFileAsync = promisify(execFile);
+
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
 const defaultVault = getDevVaultDir(workspaceRoot);
@@ -47,14 +48,7 @@ const fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
 const fixtureVault = getFixtureVaultDir(workspaceRoot);
 const pluginId = "zotlit";
 const CONTRACT_VERSION = 2;
-const OBSIDIAN_CLI_ENV = "OBSIDIAN_CLI";
 const HOST_VAULT_ENV = "ZT_HOST_VAULT";
-
-const cliCandidates = [
-  "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli",
-  join(homedir(), "Applications/Obsidian.app/Contents/MacOS/obsidian-cli"),
-  join(homedir(), ".local/bin/obsidian-cli"),
-];
 
 interface VaultEntry {
   path: string;
@@ -62,33 +56,16 @@ interface VaultEntry {
   open?: boolean;
 }
 
-let cliPath: string | undefined;
-
-async function getCli(): Promise<string> {
-  if (cliPath) return cliPath;
-  const override = process.env[OBSIDIAN_CLI_ENV];
-  if (override) return (cliPath = override);
-
-  const found = await $({ nothrow: true })`which obsidian-cli`;
-  if (found.exitCode === 0) return (cliPath = found.stdout.trim());
-
-  for (const candidate of cliCandidates) {
-    try {
-      await access(candidate, constants.X_OK);
-      return (cliPath = candidate);
-    } catch {
-      continue;
-    }
-  }
-  throw new Error(
-    `obsidian-cli not found. Set ${OBSIDIAN_CLI_ENV} to its path.`,
-  );
-}
-
-/** Where Obsidian keeps `obsidian.json`, the per-vault state, and Partitions. */
+/** Where Obsidian keeps `obsidian.json`, per-vault state, and Partitions. */
 function obsidianUserData(): string {
+  if (process.platform === "win32") {
+    return join(
+      process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"),
+      "obsidian",
+    );
+  }
   if (process.platform === "darwin") {
-    return join(homedir(), "Library/Application Support/obsidian");
+    return join(homedir(), "Library", "Application Support", "obsidian");
   }
   if (process.platform === "linux") {
     return join(
@@ -101,37 +78,9 @@ function obsidianUserData(): string {
   );
 }
 
-/** Obsidian creates this socket at start and unlinks it when it quits. */
-function cliSocketPath(): string {
-  const base =
-    process.platform === "darwin"
-      ? homedir()
-      : (process.env.XDG_RUNTIME_DIR ?? homedir());
-  return join(base, ".obsidian-cli.sock");
-}
-
-/**
- * Whether a live Obsidian answers its CLI socket. Connecting proves the app is
- * up without launching it. This probes the socket rather than the `obsidian-cli`
- * binary, because a missing binary or a disabled CLI setting would otherwise
- * read as "closed" and send a live registry down the offline edit path.
- */
-function isObsidianRunning(): Promise<boolean> {
-  return new Promise((settle) => {
-    const socket = connect(cliSocketPath());
-    const finish = (running: boolean) => {
-      socket.destroy();
-      settle(running);
-    };
-    socket.on("connect", () => finish(true));
-    socket.on("error", () => finish(false));
-  });
-}
-
 /** The Obsidian CLI always exits 0 — failures come back only as output text. */
 async function cli(args: string[]): Promise<string> {
-  const bin = await getCli();
-  const result = await $({ nothrow: true })`${bin} ${args}`;
+  const result = await execFileAsync("obsidian", args, { windowsHide: true });
   return `${result.stdout}${result.stderr}`.trim();
 }
 
@@ -144,9 +93,16 @@ async function obEval(code: string, target?: string): Promise<string> {
   ]);
   if (text === "") return "";
   if (!text.startsWith("=> ")) {
-    throw new Error(`obsidian-cli eval failed: ${text}`);
+    throw new Error(`obsidian eval failed: ${text}`);
   }
   return text.slice(3);
+}
+
+function isObsidianRunning(): Promise<boolean> {
+  return obEval("true").then(
+    (answer) => answer === "true",
+    () => false,
+  );
 }
 
 async function vaultList(host?: string): Promise<Record<string, VaultEntry>> {
@@ -190,11 +146,12 @@ async function resolveHost(exclude?: string): Promise<string> {
     return id;
   }
 
-  const focused = await obEval("app.appId").catch(() => {
+  const focused = await obEval("app.appId").catch(() => "");
+  if (!focused) {
     throw new Error(
       `no Obsidian window answered. Open a vault, or set ${HOST_VAULT_ENV}.`,
     );
-  });
+  }
   if (focused !== exclude) return focused;
 
   const vaults = await vaultList(focused);
@@ -326,6 +283,45 @@ async function create(
   await linkFixture(id);
 }
 
+/** Release Windows file handles while the generated Fixture is replaced. */
+async function suspendLoadedPlugin(abs: string): Promise<AsyncDisposableStack> {
+  await using suspension = new AsyncDisposableStack();
+  if (process.platform !== "win32" || !(await isObsidianRunning())) {
+    return suspension.move();
+  }
+
+  const host = await resolveHost();
+  const vaults = await vaultList(host);
+  const id = findVaultId(vaults, abs);
+  if (!id || vaults[id]?.open !== true) return suspension.move();
+
+  const loaded = await obEval(
+    `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
+    id,
+  ).catch(() => "false");
+  if (loaded !== "true") return suspension.move();
+
+  const disabled = await cli([
+    `vault=${id}`,
+    "plugin:disable",
+    `id=${pluginId}`,
+  ]);
+  if (!disabled.toLowerCase().startsWith("disabled:")) {
+    throw new Error(`could not disable ZotLit in ${id}: ${disabled}`);
+  }
+  suspension.defer(async () => {
+    const enabled = await cli([
+      `vault=${id}`,
+      "plugin:enable",
+      `id=${pluginId}`,
+    ]);
+    if (!enabled.toLowerCase().startsWith("enabled:")) {
+      throw new Error(`could not re-enable ZotLit in ${id}: ${enabled}`);
+    }
+  });
+  return suspension.move();
+}
+
 /**
  * Rebuild and re-copy the Fixture Vault over an existing Development Vault.
  * The vault folder path stays the same, so Obsidian's registry needs no update.
@@ -340,18 +336,21 @@ async function sync(
     throw new Error(`no vault at ${abs}. Run 'create' first.`);
   });
 
-  // Build before a purge so the generated seed captures the current dev bundle.
-  await rebuildFixtureVault(abs, scopeCase);
+  {
+    await using _pluginSuspension = await suspendLoadedPlugin(abs);
+    // Build before a purge so the generated seed captures the current dev bundle.
+    await rebuildFixtureVault(abs, scopeCase);
 
-  // `--purge` deletes the folder first, so renamed or removed Fixture files
-  // drop out too, not just the ones the Fixture Vault still has.
-  if (purge) {
-    await purgeVault(abs);
-    await mkdir(abs, { recursive: true });
-  }
+    // `--purge` deletes the folder first, so renamed or removed Fixture files
+    // drop out too, not just the ones the Fixture Vault still has.
+    if (purge) {
+      await purgeVault(abs);
+      await mkdir(abs, { recursive: true });
+    }
 
-  if (abs !== resolve(fixtureVault)) {
-    await cp(fixtureVault, abs, { recursive: true, force: true });
+    if (abs !== resolve(fixtureVault)) {
+      await cp(fixtureVault, abs, { recursive: true, force: true });
+    }
   }
 
   console.error(`synced ${fixtureVault} -> ${abs}`);
@@ -588,17 +587,21 @@ async function purgeVault(abs: string): Promise<void> {
 
   // A folder outside any repo has nothing tracked, but any other git failure
   // means the guard never ran — refuse rather than delete on an unproven check.
-  const tracked = await $({
-    nothrow: true,
-    quiet: true,
-    cwd: abs,
-  })`git ls-files -- .`;
-  if (tracked.exitCode !== 0 && !/not a git repository/i.test(tracked.stderr)) {
-    throw new Error(
-      `could not check tracked files in ${abs}: ${tracked.stderr.trim() || `git exited ${tracked.exitCode}`}`,
-    );
+  let tracked = "";
+  try {
+    ({ stdout: tracked } = await execFileAsync("git", ["ls-files", "--", "."], {
+      cwd: abs,
+      windowsHide: true,
+    }));
+  } catch (error) {
+    const result = error as { code?: unknown; stderr?: string };
+    if (!/not a git repository/i.test(result.stderr ?? "")) {
+      throw new Error(
+        `could not check tracked files in ${abs}: ${result.stderr?.trim() || `git exited ${String(result.code)}`}`,
+      );
+    }
   }
-  if (tracked.stdout.trim()) {
+  if (tracked.trim()) {
     throw new Error(
       `refusing to purge a folder holding git-tracked files: ${abs}`,
     );
@@ -667,7 +670,6 @@ generated seed. Open and sync keep extra Development Vault files unless
 --purge is set. Remove keeps the folder unless --purge is set.
 
 Environment:
-  ${OBSIDIAN_CLI_ENV}   path to the obsidian-cli binary
   ${HOST_VAULT_ENV}  vault name or id whose window hosts eval calls`;
 
 const vaultCli = yargs(hideBin(process.argv))
@@ -737,7 +739,7 @@ const vaultCli = yargs(hideBin(process.argv))
   )
   .command(
     "status",
-    "print whether a live Obsidian answers its CLI socket",
+    "print whether a live Obsidian answers the registered CLI command",
     () => {},
     async () => {
       console.log((await isObsidianRunning()) ? "running" : "stopped");

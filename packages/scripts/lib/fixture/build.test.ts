@@ -335,6 +335,9 @@ describe("the generated Zotero database", () => {
     );
     expect(paths.get("LINKURL2")).toBeNull();
     expect(isAbsolute(paths.get("PDFLINKD")!)).toBe(true);
+    expect(attachments.find(({ key }) => key === "PDFLINKD")?.path).toBe(
+      join(layout.linkedFilesDir, "sakimas-song.pdf"),
+    );
     expect(attachments.find(({ key }) => key === "LINKURL2")?.path).toBe(
       "https://www.storybookscanada.ca/stories/en/0315/",
     );

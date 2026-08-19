@@ -34,7 +34,7 @@
         "@zotlit/zotero#build:dev"
       ],
       "cache": false,
-      "passThroughEnv": ["OBSIDIAN_CLI", "ZT_HOST_VAULT", "ZOTERO_APP"]
+      "passThroughEnv": ["ZT_HOST_VAULT", "ZOTERO_APP"]
     },
     "e2e": {
       "dependsOn": [

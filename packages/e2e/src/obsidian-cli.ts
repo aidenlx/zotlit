@@ -5,47 +5,15 @@
 // directly: it has no public exports, it's a script, not a library — see
 // docs/obsidian-cli-vault-routing.md for the routing/transport background.
 
-import { access, constants } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-import { $ } from "zx";
+import { promisify } from "node:util";
 
-const OBSIDIAN_CLI_ENV = "OBSIDIAN_CLI";
-
-const cliCandidates = [
-  "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli",
-  join(homedir(), "Applications/Obsidian.app/Contents/MacOS/obsidian-cli"),
-  join(homedir(), ".local/bin/obsidian-cli"),
-];
-
-let cliPath: string | undefined;
-
-async function getCli(): Promise<string> {
-  if (cliPath) return cliPath;
-  const override = process.env[OBSIDIAN_CLI_ENV];
-  if (override) return (cliPath = override);
-
-  const found = await $({ nothrow: true })`which obsidian-cli`;
-  if (found.exitCode === 0) return (cliPath = found.stdout.trim());
-
-  for (const candidate of cliCandidates) {
-    try {
-      await access(candidate, constants.X_OK);
-      return (cliPath = candidate);
-    } catch {
-      continue;
-    }
-  }
-  throw new Error(
-    `obsidian-cli not found. Set ${OBSIDIAN_CLI_ENV} to its path.`,
-  );
-}
+const execFileAsync = promisify(execFile);
 
 /** The Obsidian CLI always exits 0 — failures come back only as output text. */
 export async function cli(args: string[]): Promise<string> {
-  const bin = await getCli();
-  const result = await $({ nothrow: true })`${bin} ${args}`;
+  const result = await execFileAsync("obsidian", args, { windowsHide: true });
   return `${result.stdout}${result.stderr}`.trim();
 }
 
@@ -60,7 +28,7 @@ function parseReply(text: string): string {
   const lastIndex = text.lastIndexOf(marker);
   if (lastIndex !== -1) return text.slice(lastIndex + marker.length);
   if (text.startsWith("=> ")) return text.slice(3);
-  throw new Error(`obsidian-cli reply had no "=> " line: ${text}`);
+  throw new Error(`obsidian reply had no "=> " line: ${text}`);
 }
 
 /**

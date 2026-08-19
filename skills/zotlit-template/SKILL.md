@@ -9,10 +9,10 @@ description: "Create, edit, diagnose, and verify ZotLit templates and managed fr
 
 Follow these steps in order before editing any template or frontmatter configuration.
 
-1. `obsidian-cli help zotlit` — commands reject unrecognized parameters; never guess a name.
-2. `obsidian-cli zotlit:template-status` — pass `expect-source=<identity.source.id>` to every later command.
-3. `obsidian-cli zotlit:template-guide`
-4. `obsidian-cli zotlit:template-guide topic=liquid`
+1. `obsidian help zotlit` — commands reject unrecognized parameters; never guess a name.
+2. `obsidian zotlit:template-status` — pass `expect-source=<identity.source.id>` to every later command.
+3. `obsidian zotlit:template-guide`
+4. `obsidian zotlit:template-guide topic=liquid`
 
 This skill is written against Template Workbench CLI Contract version 2 — the `contractVersion` every workbench answer carries. When an answer reports another number, run `zotlit:template-guide` again and follow the live guide over this skill.
 
@@ -28,7 +28,7 @@ not `.<field>`.
 
 Start with `zotlit:template-data`; use `zotlit:template-schema` only when a
 required field or nested shape is unclear. Quote keys such as `."$defs"` that
-start with `$`. Before the first `zotlit:template-schema` call, run `obsidian-cli zotlit:template-guide topic=data`.
+start with `$`. Before the first `zotlit:template-schema` call, run `obsidian zotlit:template-guide topic=data`.
 
 Save the downloaded schema file wherever temporary files belong on the
 current system, and reuse it for every later question about the same schema.
@@ -48,7 +48,7 @@ When the request already names a concrete edit — a field to add, a layout to c
 Otherwise, **grill** the user to reach a concrete goal. Many users cannot describe what they want in template terms — guide them there.
 
 1. Ask what they want their notes to look like or what they want to change. One open question.
-2. If the answer is vague, consult `obsidian-cli zotlit:template-guide` and offer two or three concrete possibilities drawn from what the current template roots support (e.g. "Would you like to include annotation highlights? Add Zotero tags? Change how the citation key appears?").
+2. If the answer is vague, consult `obsidian zotlit:template-guide` and offer two or three concrete possibilities drawn from what the current template roots support (e.g. "Would you like to include annotation highlights? Add Zotero tags? Change how the citation key appears?").
 3. Once the goal is clear, summarize it back in one or two sentences and confirm with the user before proceeding.
 
 Ask questions one at a time. If a fact can be found via the CLI, look it up rather than asking. The decisions are the user's — put each one to them and wait.
@@ -58,9 +58,9 @@ Ask questions one at a time. If a fact can be found via the CLI, look it up rath
 Put `vault=<vault-name>` first when the target is ambiguous:
 
 ```sh
-obsidian-cli vault=MyVault zotlit:template-status
+obsidian vault=MyVault zotlit:template-status
 ```
 
 Without `vault=`, the vault containing the working directory handles the command. Outside a vault, the most recently focused vault handles it. Confirm `identity.vault` once, then keep the same prefix.
 
-`obsidian-cli vault` shows the active vault. `obsidian-cli vaults` lists all known vaults.
+`obsidian vault` shows the active vault. `obsidian vaults` lists all known vaults.

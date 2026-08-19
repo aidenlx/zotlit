@@ -17,12 +17,12 @@ function testPorts(overrides: Partial<PairedRunPorts> = {}): PairedRunPorts {
       path: "/workspace/tests/fixture-vault-test-fixture",
     }),
     openPairedZotero: async () => ({
-      appBundle: "/Applications/Zotero.app",
+      applicationDir: "/Applications/Zotero.app",
       pid: 804,
     }),
     startDevelopmentSession: async () => ({
       ready: Promise.resolve({
-        appBundle: "/Applications/Zotero.app",
+        applicationDir: "/Applications/Zotero.app",
         pid: 804,
       }),
       closed: Promise.resolve(),
@@ -73,7 +73,7 @@ describe("Paired Run", () => {
       },
       openPairedZotero: async () => {
         if (!prepared) throw new Error("Fixture was not prepared");
-        return { appBundle: "/Applications/Zotero.app", pid: 804 };
+        return { applicationDir: "/Applications/Zotero.app", pid: 804 };
       },
       reportReady: (result) => {
         ready = result;
@@ -91,7 +91,7 @@ describe("Paired Run", () => {
         id: "fixture-vault-test-fixture",
         path: "/workspace/tests/fixture-vault-test-fixture",
       },
-      zotero: { appBundle: "/Applications/Zotero.app", pid: 804 },
+      zotero: { applicationDir: "/Applications/Zotero.app", pid: 804 },
     });
   });
 
@@ -123,7 +123,10 @@ describe("Paired Run", () => {
     await startedSignal.promise;
     expect(reports).toEqual([]);
 
-    readySignal.resolve({ appBundle: "/Applications/Zotero.app", pid: 804 });
+    readySignal.resolve({
+      applicationDir: "/Applications/Zotero.app",
+      pid: 804,
+    });
     await reportedSignal.promise;
     expect(reports).toHaveLength(1);
 

@@ -6,10 +6,11 @@
 // `describe.skipIf` below runs before test collection, so `vitest run` exits
 // 0 with every test reported as skipped rather than erroring.
 
+import { execFile } from "node:child_process";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { $ } from "zx";
 
 import {
   findScopeCase,
@@ -34,6 +35,13 @@ const vaultScriptPath = join(
 // Fixture Vault (`getFixtureLayout(...).vaultDir`) — see
 // policies/scratch-artifacts.md.
 const e2eVaultPath = join(workspaceRoot, "tmp", "e2e-fixture-vault");
+const execFileAsync = promisify(execFile);
+
+function runVaultScript(args: string[]) {
+  return execFileAsync(process.execPath, [vaultScriptPath, ...args], {
+    windowsHide: true,
+  });
+}
 
 // The one My Library Fixture Item this suite renders and asserts against —
 // itemID is unique across every Library, so it names the item without
@@ -41,8 +49,8 @@ const e2eVaultPath = join(workspaceRoot, "tmp", "e2e-fixture-vault");
 const targetItem = ITEMS.find((item) => item.itemID === 1)!;
 
 async function isObsidianReachable(): Promise<boolean> {
-  const result = await $({ nothrow: true })`node ${vaultScriptPath} status`;
-  return result.stdout.trim() === "running";
+  const result = await runVaultScript(["status"]).catch(() => undefined);
+  return result?.stdout.trim() === "running";
 }
 
 const reachable = await isObsidianReachable();
@@ -64,19 +72,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Rebuilds the Fixture (default Scope Case "all"), copies the Fixture
     // Vault to e2eVaultPath, registers + opens it, links its Device Overrides
     // to the Fixture profile and database, and confirms the plugin loaded.
-    const created = await $`node ${vaultScriptPath} create ${e2eVaultPath}`;
+    const created = await runVaultScript(["create", e2eVaultPath]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
   }, 180000);
 
   afterAll(async () => {
     // Never let teardown itself throw and mask a test failure, but log a
     // warning on a nonzero exit rather than silently swallowing it.
-    const removed = await $({
-      nothrow: true,
-    })`node ${vaultScriptPath} remove ${e2eVaultPath} --purge`;
-    if (removed.exitCode !== 0) {
+    try {
+      await runVaultScript(["remove", e2eVaultPath, "--purge"]);
+    } catch (error) {
       console.warn(
-        `obsidian-vault remove --purge exited ${removed.exitCode}: ${removed.stderr}`,
+        `obsidian-vault remove --purge failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }, 120000);

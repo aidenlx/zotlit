@@ -69,6 +69,7 @@ export async function spawnZotero({
     stdio,
     env: {
       ...process.env,
+      MOZ_NO_REMOTE: "1",
       XPCOM_DEBUG_BREAK: "stack",
       NS_TRACE_MALLOC_DISABLE_STACKS: "1",
     },
@@ -231,15 +232,19 @@ function zoteroArgs({
   port,
   devtools,
 }: ZoteroArgsOptions): string[] {
-  const args = ["--purgecaches", "--new-instance", "--profile", profilePath];
+  const windows = process.platform === "win32";
+  const optionPrefix = windows ? "-" : "--";
+  const args = windows
+    ? ["-wait-for-browser", "-profile", profilePath]
+    : ["--purgecaches", "--new-instance", "--profile", profilePath];
 
   if (dataDir !== undefined) {
-    args.push("--dataDir", dataDir);
+    args.push(windows ? "-datadir" : "--dataDir", dataDir);
   }
   if (devtools) {
-    args.push("--jsdebugger");
+    args.push(`${optionPrefix}jsdebugger`);
   }
-  args.push(`--start-debugger-server=${port}`);
+  args.push(`${optionPrefix}start-debugger-server=${port}`);
 
   return args;
 }

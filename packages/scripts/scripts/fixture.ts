@@ -200,11 +200,16 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     "zotero",
-    `launch the Paired Zotero on the Fixture (set ${ZOTERO_APP_ENV} to run a bundle instead of the managed Zotero ${PINNED_ZOTERO_VERSION})`,
+    `launch the Paired Zotero on the Fixture (set ${ZOTERO_APP_ENV} to run an application folder instead of the managed Zotero ${PINNED_ZOTERO_VERSION})`,
     () => {},
     async () => {
-      const { appBundle, pid } = await launchPairedZotero(layout, companionDir);
-      console.log(`Launched the Paired Zotero from ${appBundle} (pid ${pid})`);
+      const { applicationDir, pid } = await launchPairedZotero(
+        layout,
+        companionDir,
+      );
+      console.log(
+        `Launched the Paired Zotero from ${applicationDir} (pid ${pid})`,
+      );
       printPaths();
     },
   )
@@ -216,7 +221,7 @@ const cli = yargs(hideBin(process.argv))
       const report = await harvestPristineTemplate(
         join(workspaceRoot, "tmp", "fixture-harvest"),
       );
-      console.log(`Harvested from ${report.appBundle}`);
+      console.log(`Harvested from ${report.applicationDir}`);
       console.log(
         `  userdata ${report.userdata} / compatibility ${report.compatibility}`,
       );

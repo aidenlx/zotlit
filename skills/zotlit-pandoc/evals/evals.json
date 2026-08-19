@@ -7,7 +7,7 @@
       "expected_output": "Reads Obsidian CLI help and the live Pandoc CLI Guide first, retrieves and saves the complete version-matched pair to the selected folder, reuses the supplied bibliography, and runs the guide's defaults-based Pandoc command with quoted paths and fail-if-warnings.",
       "files": [],
       "assertions": [
-        "Reads `obsidian-cli help zotlit` and the live `zotlit:pandoc-guide` before writing files or running Pandoc.",
+        "Reads `obsidian help zotlit` and the live `zotlit:pandoc-guide` before writing files or running Pandoc.",
         "Retrieves and saves both integration files as one version-matched pair in the user-selected folder.",
         "Reuses the supplied Better BibTeX CSL-JSON bibliography and lets the Lua filter call the resolver during the normal export.",
         "Runs the defaults-based native Pandoc invocation with quoted paths and `--fail-if-warnings`."

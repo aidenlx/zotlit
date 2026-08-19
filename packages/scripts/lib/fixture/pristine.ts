@@ -97,7 +97,7 @@ export function assertSchemaVersions(db: DatabaseSync): SchemaVersions {
 }
 
 export interface HarvestReport {
-  appBundle: string;
+  applicationDir: string;
   userdata: number;
   compatibility: number;
   /** Size of the harvested database on disk. */
@@ -139,9 +139,9 @@ export async function harvestPristineTemplate(
     [...QUIET_FIRST_RUN_PREFS, ""].join("\n"),
   );
 
-  const appBundle = await resolveZoteroApp();
-  console.log(`First-running ${appBundle} on an empty data directory`);
-  const zotero = spawnZotero(appBundle, target, { detached: false });
+  const applicationDir = await resolveZoteroApp();
+  console.log(`First-running ${applicationDir} on an empty data directory`);
+  const zotero = spawnZotero(applicationDir, target, { detached: false });
   try {
     await waitForInitialization(zotero, target.dataDir);
     console.log("Zotero settled; quitting it");
@@ -149,7 +149,7 @@ export async function harvestPristineTemplate(
     await quit(zotero);
   }
 
-  const report = compact(databasePath, appBundle);
+  const report = compact(databasePath, applicationDir);
   const template = gzipSync(await readFile(databasePath), { level: 9 });
   await writeFile(PRISTINE_TEMPLATE_PATH, template);
   await rm(workDir, { recursive: true, force: true });
@@ -237,7 +237,7 @@ async function quit(zotero: ChildProcess): Promise<void> {
  */
 function compact(
   databasePath: string,
-  appBundle: string,
+  applicationDir: string,
 ): Omit<HarvestReport, "compressedBytes"> {
   using db = new DatabaseSync(databasePath);
   db.exec("pragma wal_checkpoint(truncate)");
@@ -266,7 +266,7 @@ function compact(
     page_count: number;
   };
   return {
-    appBundle,
+    applicationDir,
     ...versions,
     bytes: pageSize.page_size * pageCount.page_count,
   };

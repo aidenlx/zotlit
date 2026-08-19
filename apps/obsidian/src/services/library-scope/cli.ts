@@ -185,7 +185,7 @@ function rejectAccepted(
       return {
         parameter: "vault",
         message:
-          "vault must come before the command name (obsidian-cli vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.",
+          "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.",
       };
     }
     return {

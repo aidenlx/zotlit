@@ -235,7 +235,7 @@ probes worth running during that loop:
 
 Then confirm it holds up across themes:
 
-1. Toggle **Settings → Appearance → Base color scheme** between Light and Dark — your component should look correct in both with no extra CSS. Confirm which is active with `obsidian-cli eval code='document.body.className'` (expect `theme-light` / `theme-dark`).
+1. Toggle **Settings → Appearance → Base color scheme** between Light and Dark — your component should look correct in both with no extra CSS. Confirm which is active with `obsidian eval code='document.body.className'` (expect `theme-light` / `theme-dark`).
 2. Change the accent color — interactive elements should follow it.
 3. Try a popular community theme (Minimal, Things) — your component should still look at home. If something feels off, you're probably hardcoding a value that the theme is overriding.
 

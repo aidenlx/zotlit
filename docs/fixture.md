@@ -59,9 +59,17 @@ packages/scripts/scripts/obsidian-vault.ts open --purge
 
 Vault creation needs Obsidian 1.13.4 or later. Enable **Settings → General → Advanced → Command line interface**, and keep one Obsidian vault window open to host the registration calls.
 
+Verify the registered cross-platform command in a new terminal:
+
+```sh
+obsidian version
+```
+
+Use the registered `obsidian` command on Windows, macOS, and Linux. If the command is missing, follow the official [Obsidian CLI installation guide](https://obsidian.md/help/cli#Install%20Obsidian%20CLI), then restart the terminal. ZotLit calls this command directly.
+
 ## Run a Paired Run
 
-A Paired Run opens Paired Zotero and a Development Vault on the same Fixture. Use it to prepare both applications for a manual smoke test on macOS.
+A Paired Run opens Paired Zotero and a Development Vault on the same Fixture. Use it to prepare both applications for a manual smoke test on macOS or Windows.
 
 Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Settings → General → Advanced → Command line interface**, and keep one vault window open as the host.
 
@@ -83,7 +91,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 
 The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed.
 
-Both commands check for an existing Paired Zotero before they rebuild the Fixture. Close that instance if the command refuses to start. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero on macOS](#run-the-paired-zotero-on-macos).
+Both commands check for an existing Paired Zotero before they rebuild the Fixture. Close that instance if the command refuses to start. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately.
 
@@ -118,7 +126,7 @@ pnpm fixture partial
 
 Use `all`, `available`, `partial`, or `unavailable` in each command.
 
-## Run the Paired Zotero on macOS
+## Run the Paired Zotero
 
 Paired Zotero is a real Zotero 10 instance that opens the Fixture profile and data directory. Build the Fixture first, then launch it:
 
@@ -127,23 +135,33 @@ pnpm fixture
 pnpm fixture zotero
 ```
 
-The launcher uses the pinned Zotero version in `packages/scripts/lib/fixture/paired-zotero.ts`. On first use, it downloads the official macOS DMG and installs the application at:
+The launcher uses the pinned Zotero version in `packages/scripts/lib/fixture/paired-zotero.ts`. On first use, it downloads the official macOS DMG or the Windows portable archive for the host architecture. It installs the application in a per-user, per-version cache:
 
-```text
-~/Library/Caches/zotlit/zotero/<version>/Zotero.app
-```
+| Platform | Managed application |
+| --- | --- |
+| macOS | `~/Library/Caches/zotlit/zotero/<version>/Zotero.app` |
+| Windows | `%LOCALAPPDATA%\zotlit\zotero\<version>\<target>\Zotero_<target>` |
 
-The cache is per user and per version. All worktrees reuse it. The Fixture profile disables automatic application updates, first-run prompts, sync, and backups so the managed application stays on the pinned version.
+All worktrees reuse the cache. Windows selects the `win-arm64`, `win-x64`, or `win32` target from the Node.js host architecture. The Fixture profile disables automatic application updates, first-run prompts, sync, and backups so the managed application stays on the pinned version.
 
 Before launch, the command writes a Gecko extension proxy into the Fixture profile. The proxy maps the ZotLit companion add-on ID to the absolute `apps/zotero/dist-dev/addon` path in the current worktree.
 
-Set `ZOTERO_APP` to run a different application bundle through the same profile and companion setup:
+Set `ZOTERO_APP` to run a different application through the same profile and companion setup.
+
+On macOS:
 
 ```sh
 ZOTERO_APP=/Applications/Zotero.app pnpm fixture zotero
 ```
 
-The override must contain an executable at `Contents/MacOS/zotero`. Unset `ZOTERO_APP` to use the managed application.
+On Windows PowerShell:
+
+```powershell
+$env:ZOTERO_APP = "C:\Program Files\Zotero"
+pnpm fixture zotero
+```
+
+The override must contain `Contents/MacOS/zotero` on macOS or `zotero.exe` on Windows. Unset `ZOTERO_APP` to use the managed application.
 
 A Paired Zotero session can change the generated database. Close Paired Zotero and run `pnpm fixture` to reset the complete Fixture to the Fixture Spec. This reset behavior is part of [ADR 0022](adr/0022-fixture-database-copies-a-committed-pristine-template.md).
 
@@ -161,7 +179,7 @@ Before regeneration, align these version declarations with the target Zotero rel
 
 Raise the pinned application version and the pristine schema values together. Widen the supported schema ranges when the target release writes versions outside the current ranges.
 
-Regenerate the template with one command on macOS:
+Regenerate the template with one command on macOS or Windows:
 
 ```sh
 pnpm fixture harvest

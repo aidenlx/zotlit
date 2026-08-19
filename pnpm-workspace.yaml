@@ -24,6 +24,7 @@ catalog:
   "@types/react-dom": ^19.2.0
   ajv: ^8.20.0
   arkregex: ^0.0.5
+  cross-env: ^10.1.0
   eta: 4.6.0
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
