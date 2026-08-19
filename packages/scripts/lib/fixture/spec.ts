@@ -114,10 +114,21 @@ export interface FixtureItem {
   containerTitle: string;
   /** Publication year, as Zotero stores the raw `date` string. */
   date: string;
-  creator: { firstName: string; lastName: string };
+  creators: readonly FixtureCreator[];
+  tags?: readonly { name: string; type: 0 | 1 }[];
+  /** Related Item keys in the same Library, stored reciprocally by the Spec. */
+  relatedKeys?: readonly string[];
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
   dateModified: string;
   collectionIDs: readonly number[];
+}
+
+export interface FixtureCreator {
+  firstName: string | null;
+  lastName: string;
+  creatorType: "author" | "contributor" | "editor";
+  /** `1` stores a single-field institutional name in {@link lastName}. */
+  fieldMode: 0 | 1;
 }
 
 /**
@@ -137,7 +148,31 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Alpha of the personal library",
     containerTitle: "Journal of Personal Records",
     date: "2024",
-    creator: { firstName: "Ada", lastName: "Personal" },
+    creators: [
+      {
+        firstName: "Ada",
+        lastName: "Personal",
+        creatorType: "author",
+        fieldMode: 0,
+      },
+      {
+        firstName: "Erin",
+        lastName: "Editor",
+        creatorType: "editor",
+        fieldMode: 0,
+      },
+      {
+        firstName: null,
+        lastName: "ZotLit Research Collective",
+        creatorType: "contributor",
+        fieldMode: 1,
+      },
+    ],
+    tags: [
+      { name: "fixture-core", type: 0 },
+      { name: "read-later", type: 1 },
+    ],
+    relatedKeys: ["EEEE5555"],
     dateModified: "2025-03-10 12:00:00",
     collectionIDs: [1, 4],
   },
@@ -150,7 +185,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Within-library duplicate, first item",
     containerTitle: "Journal of Personal Records",
     date: "2020",
-    creator: { firstName: "Bo", lastName: "Duplicate" },
+    creators: [author("Bo", "Duplicate")],
     dateModified: "2025-03-09 12:00:00",
     collectionIDs: [1],
   },
@@ -163,7 +198,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Within-library duplicate, second item",
     containerTitle: "Journal of Personal Records",
     date: "2020",
-    creator: { firstName: "Cai", lastName: "Duplicate" },
+    creators: [author("Cai", "Duplicate")],
     dateModified: "2025-03-08 12:00:00",
     collectionIDs: [],
   },
@@ -176,7 +211,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Cross-library duplicate, personal side",
     containerTitle: "Journal of Personal Records",
     date: "2019",
-    creator: { firstName: "Dee", lastName: "Across" },
+    creators: [author("Dee", "Across")],
     dateModified: "2025-03-07 12:00:00",
     collectionIDs: [4],
   },
@@ -189,7 +224,8 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Personal item without a citation key",
     containerTitle: "Collected Personal Essays",
     date: "2018",
-    creator: { firstName: "Eli", lastName: "Unkeyed" },
+    creators: [author("Eli", "Unkeyed")],
+    relatedKeys: ["AAAAAAAA"],
     dateModified: "2025-03-06 12:00:00",
     collectionIDs: [],
   },
@@ -202,7 +238,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Alpha of the shared reading group",
     containerTitle: "Journal of Shared Reading",
     date: "2023",
-    creator: { firstName: "Fay", lastName: "Shared" },
+    creators: [author("Fay", "Shared")],
     dateModified: "2025-03-05 12:00:00",
     collectionIDs: [2],
   },
@@ -215,7 +251,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Beta of the shared reading group",
     containerTitle: "Journal of Shared Reading",
     date: "2022",
-    creator: { firstName: "Gil", lastName: "Shared" },
+    creators: [author("Gil", "Shared")],
     dateModified: "2025-03-04 12:00:00",
     collectionIDs: [2],
   },
@@ -228,7 +264,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Cross-library duplicate, lab side",
     containerTitle: "Lab Archive Proceedings",
     date: "2019",
-    creator: { firstName: "Hal", lastName: "Across" },
+    creators: [author("Hal", "Across")],
     dateModified: "2025-03-03 12:00:00",
     collectionIDs: [3],
   },
@@ -241,7 +277,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Alpha of the lab archive",
     containerTitle: "Lab Archive Proceedings",
     date: "2021",
-    creator: { firstName: "Ivy", lastName: "Archive" },
+    creators: [author("Ivy", "Archive")],
     dateModified: "2025-03-04 12:00:00",
     collectionIDs: [3],
   },
@@ -254,7 +290,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Alpha of the read-only consortium",
     containerTitle: "Consortium Reading Room Notes",
     date: "2020",
-    creator: { firstName: "Jo", lastName: "Consortium" },
+    creators: [author("Jo", "Consortium")],
     dateModified: "2025-03-02 12:00:00",
     collectionIDs: [],
   },
@@ -267,7 +303,7 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Personal tie, lower item id",
     containerTitle: "Journal of Personal Records",
     date: "2017",
-    creator: { firstName: "Kim", lastName: "Tie" },
+    creators: [author("Kim", "Tie")],
     dateModified: "2025-03-01 12:00:00",
     collectionIDs: [],
   },
@@ -280,11 +316,15 @@ export const ITEMS: readonly FixtureItem[] = [
     title: "Personal tie, higher item id",
     containerTitle: "Journal of Personal Records",
     date: "2017",
-    creator: { firstName: "Lin", lastName: "Tie" },
+    creators: [author("Lin", "Tie")],
     dateModified: "2025-03-01 12:00:00",
     collectionIDs: [],
   },
 ];
+
+function author(firstName: string, lastName: string): FixtureCreator {
+  return { firstName, lastName, creatorType: "author", fieldMode: 0 };
+}
 
 export interface FixtureNote {
   itemID: number;
@@ -301,6 +341,7 @@ export interface FixtureNote {
   note: string;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
   dateModified: string;
+  trashed?: boolean;
   /**
    * Collections the note is filed in. A child note carries none: Zotero files
    * it with its parent item rather than in a collection of its own.
@@ -373,6 +414,17 @@ export const NOTES: readonly FixtureNote[] = [
     title: "Reading notes on the consortium alpha",
     note: '<div data-schema-version="9"><h1>Reading notes on the consortium alpha</h1><p>A child note in a read-only group Library.</p></div>',
     dateModified: "2025-02-23 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 19,
+    libraryID: 1,
+    key: "TRASHED2",
+    parentItemID: null,
+    title: "A deliberately trashed Note",
+    note: '<div data-schema-version="9"><h1>A deliberately trashed Note</h1><p>Present in the Fixture database and hidden from ordinary Note queries.</p></div>',
+    dateModified: "2025-02-22 12:00:00",
+    trashed: true,
     collectionIDs: [],
   },
 ];

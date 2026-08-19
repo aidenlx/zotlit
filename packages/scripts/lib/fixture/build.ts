@@ -19,7 +19,11 @@ import {
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
 } from "./spec.ts";
-import type { FixtureItem, PersistedLibraryScope } from "./spec.ts";
+import type {
+  FixtureCreator,
+  FixtureItem,
+  PersistedLibraryScope,
+} from "./spec.ts";
 
 // The spec is part of this module's public surface: one import specifier
 // covers building the Fixture and reading what it is supposed to contain.
@@ -38,6 +42,7 @@ export {
 } from "./spec.ts";
 export type {
   FixtureCollection,
+  FixtureCreator,
   FixtureItem,
   FixtureLibrary,
   FixtureNote,
@@ -160,7 +165,7 @@ interface SchemaIDs {
     "title" | "citationKey" | "date" | "publicationTitle" | "bookTitle",
     number
   >;
-  authorCreatorType: number;
+  creatorTypes: Record<FixtureCreator["creatorType"], number>;
 }
 
 function readSchemaIDs(db: DatabaseSync): SchemaIDs {
@@ -195,11 +200,11 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
       "fieldID",
       ["title", "citationKey", "date", "publicationTitle", "bookTitle"],
     ),
-    authorCreatorType: lookup(
+    creatorTypes: lookup(
       "select creatorTypeID from creatorTypes where creatorType = ?",
       "creatorTypeID",
-      ["author"],
-    ).author,
+      ["author", "contributor", "editor"],
+    ),
   };
 }
 
@@ -291,26 +296,69 @@ function seedDatabase(db: DatabaseSync, ids: SchemaIDs): void {
   // same person would share one row. Ids follow first use, which the Spec's own
   // order fixes, so a rebuild reproduces them.
   const creators = new Map<string, FixtureCreator & { creatorID: number }>();
-  for (const { creator } of ITEMS) {
+  for (const creator of ITEMS.flatMap((item) => item.creators)) {
     const key = creatorKey(creator);
     if (!creators.has(key)) {
       creators.set(key, { creatorID: creators.size + 1, ...creator });
     }
   }
   insert(
-    "insert into creators (creatorID, firstName, lastName, fieldMode) values (?, ?, ?, 0)",
+    "insert into creators (creatorID, firstName, lastName, fieldMode) values (?, ?, ?, ?)",
     [...creators.values()].map((creator) => [
       creator.creatorID,
       creator.firstName,
       creator.lastName,
+      creator.fieldMode,
     ]),
   );
   insert(
-    "insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (?, ?, ?, 0)",
-    ITEMS.map((item) => [
-      item.itemID,
-      creators.get(creatorKey(item.creator))!.creatorID,
-      ids.authorCreatorType,
+    "insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (?, ?, ?, ?)",
+    ITEMS.flatMap((item) =>
+      item.creators.map((creator, orderIndex) => [
+        item.itemID,
+        creators.get(creatorKey(creator))!.creatorID,
+        ids.creatorTypes[creator.creatorType],
+        orderIndex,
+      ]),
+    ),
+  );
+
+  const tags = new Map<string, number>();
+  for (const tag of ITEMS.flatMap((item) => item.tags ?? [])) {
+    if (!tags.has(tag.name)) tags.set(tag.name, tags.size + 1);
+  }
+  insert(
+    "insert into tags (tagID, name) values (?, ?)",
+    [...tags].map(([name, tagID]) => [tagID, name]),
+  );
+  insert(
+    "insert into itemTags (itemID, tagID, type) values (?, ?, ?)",
+    ITEMS.flatMap((item) =>
+      (item.tags ?? []).map((tag) => [
+        item.itemID,
+        tags.get(tag.name)!,
+        tag.type,
+      ]),
+    ),
+  );
+
+  const relationPredicateID = ensureRelationPredicate(db);
+  insert(
+    "insert into itemRelations (itemID, predicateID, object) values (?, ?, ?)",
+    ITEMS.flatMap((item) =>
+      (item.relatedKeys ?? []).map((relatedKey) => [
+        item.itemID,
+        relationPredicateID,
+        relatedItemUri(item, relatedKey),
+      ]),
+    ),
+  );
+
+  insert(
+    "insert into deletedItems (itemID, dateDeleted) values (?, ?)",
+    NOTES.filter((note) => note.trashed).map((note) => [
+      note.itemID,
+      note.dateModified,
     ]),
   );
 
@@ -322,11 +370,50 @@ function seedDatabase(db: DatabaseSync, ids: SchemaIDs): void {
   );
 }
 
-type FixtureCreator = FixtureItem["creator"];
+/** `creators` is unique on `(lastName, firstName, fieldMode)`. */
+function creatorKey({
+  firstName,
+  lastName,
+  fieldMode,
+}: FixtureCreator): string {
+  return JSON.stringify([lastName, firstName, fieldMode]);
+}
 
-/** `creators` is unique on `(lastName, firstName, fieldMode)`, all fieldMode 0. */
-function creatorKey({ firstName, lastName }: FixtureCreator): string {
-  return JSON.stringify([lastName, firstName]);
+function ensureRelationPredicate(db: DatabaseSync): number {
+  const existing = db
+    .prepare(
+      "select predicateID from relationPredicates where predicate = 'dc:relation'",
+    )
+    .get() as { predicateID: number } | undefined;
+  if (existing) return existing.predicateID;
+
+  const { predicateID } = db
+    .prepare(
+      "select coalesce(max(predicateID), 0) + 1 as predicateID from relationPredicates",
+    )
+    .get() as { predicateID: number };
+  db.prepare(
+    "insert into relationPredicates (predicateID, predicate) values (?, 'dc:relation')",
+  ).run(predicateID);
+  return predicateID;
+}
+
+function relatedItemUri(item: FixtureItem, relatedKey: string): string {
+  const target = ITEMS.find(
+    (candidate) =>
+      candidate.libraryID === item.libraryID && candidate.key === relatedKey,
+  );
+  if (!target) {
+    throw new Error(
+      `Related Item ${relatedKey} is not in library ${item.libraryID}.`,
+    );
+  }
+  const library = LIBRARIES.find(
+    (candidate) => candidate.libraryID === item.libraryID,
+  )!;
+  return library.groupID === null
+    ? `http://zotero.org/users/local/fixture/items/${target.key}`
+    : `http://zotero.org/groups/${library.groupID}/items/${target.key}`;
 }
 
 /**

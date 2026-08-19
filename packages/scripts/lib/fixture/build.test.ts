@@ -9,12 +9,16 @@ import {
   getCollectionIDByKey,
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
+  getItemsByID,
   getLibraries,
   getNoteItemIDsByCollection,
   getNoteItemIDsByLibrary,
   getNoteRefsByItemIDs,
+  getRelatedKeysByItemID,
   getSchemaVersions,
+  getTrashedNoteItemIDs,
   isItemKey,
+  resolveItemTags,
 } from "@zotlit/db";
 import type { IndexedItem } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
@@ -124,6 +128,59 @@ describe("the generated Zotero database", () => {
       itemType: "bookSection",
       publicationTitle: "Collected Personal Essays",
     });
+  });
+
+  it("reads manual and automatic tags through the public tag query", () => {
+    using db = openClient();
+
+    expect(
+      resolveItemTags(db, 1, new Map()).map(({ tag, type }) => ({
+        name: tag.name,
+        type,
+      })),
+    ).toEqual([
+      { name: "fixture-core", type: 0 },
+      { name: "read-later", type: 1 },
+    ]);
+  });
+
+  it("reads reciprocal related Items through the public relation query", () => {
+    using db = openClient();
+
+    expect(getRelatedKeysByItemID(db, 1)).toEqual(["EEEE5555"]);
+    expect(getRelatedKeysByItemID(db, 5)).toEqual(["AAAAAAAA"]);
+  });
+
+  it("reads multiple creator roles and a single-field name in Zotero order", () => {
+    using db = openClient();
+
+    expect(getItemsByID(db, [1])[0]?.creators).toEqual([
+      {
+        firstName: "Ada",
+        lastName: "Personal",
+        creatorType: "author",
+        fieldMode: 0,
+      },
+      {
+        firstName: "Erin",
+        lastName: "Editor",
+        creatorType: "editor",
+        fieldMode: 0,
+      },
+      {
+        firstName: null,
+        lastName: "ZotLit Research Collective",
+        creatorType: "contributor",
+        fieldMode: 1,
+      },
+    ]);
+  });
+
+  it("reads a trashed Note through the public trash query", () => {
+    using db = openClient();
+
+    expect(getTrashedNoteItemIDs(db, [19])).toEqual(new Set([19]));
+    expect(getNoteRefsByItemIDs(db, [19])).toEqual([]);
   });
 
   it("exposes My Library plus group Libraries, one of them read-only", () => {
