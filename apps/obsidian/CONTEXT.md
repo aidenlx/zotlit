@@ -134,7 +134,7 @@ An active-document identifier assigned to each distinct Literature Note Citation
 _Avoid_: citation key, reference index, Entry Serial (bibliography-ordered, not first-occurrence)
 
 **Reference Error** _(Obsidian)_:
-A References Sidebar entry for an unresolved citation key, a missing Item, a malformed Citation Fragment while Wikilink Citations is on, or a source-backed Item omitted from a completed bibliography rendering.
+A References Sidebar entry for an unresolved or ambiguous Citation Key, a missing Item, a malformed Citation Fragment while Wikilink Citations is on, or a source-backed Item omitted from a completed bibliography rendering.
 _Avoid_: broken reference, missing reference (names only one cause)
 
 **References Sidebar** _(Obsidian)_:
@@ -263,8 +263,12 @@ The plugin-owned, internal vault-wide index of Citation Occurrences across both 
 _Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
 
 **Citekey Resolution Snapshot**:
-The Citation Index's in-memory map from a native Zotero citation key to its Item, and back, scoped to the configured citation library and rebuilt wholesale whenever the Zotero database changes.
+The Citation Index's point-in-time answer for mapping Citation Keys to Items. Citation Key discovery covers the available Libraries in Library Scope; reverse lookup by exact Indexed Key covers every local Library.
 _Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuild)
+
+**Ambiguous Citation Key**:
+A Citation Key that names more than one Item in Library Scope, whether the candidates are in one Library or several Libraries. Distinct from `duplicate-citation-key`, a document-scoped collision among cited works.
+_Avoid_: duplicate citation key, citation key conflict
 
 **Citation Occurrence**:
 One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
