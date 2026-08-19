@@ -1,0 +1,275 @@
+// The End-to-end Run suite — drives the plugin in a real desktop Obsidian
+// window against the Fixture, over the official Obsidian CLI. See
+// packages/e2e/AGENTS.md and packages/scripts/CONTEXT.md for vocabulary.
+//
+// Skips cleanly (not fails) when no desktop Obsidian is reachable: the
+// `describe.skipIf` below runs before test collection, so `vitest run` exits
+// 0 with every test reported as skipped rather than erroring.
+
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { $ } from "zx";
+
+import {
+  findScopeCase,
+  getFixtureLayout,
+  getFixtureRoot,
+  ITEMS,
+  LIBRARIES,
+  LIBRARY_SCOPE_SETTING_KEY,
+} from "@zotlit/scripts/fixture";
+import type { LibrarySelector } from "@zotlit/scripts/fixture";
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+
+import { cliCommand, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+
+const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+const vaultScriptPath = join(
+  workspaceRoot,
+  "packages",
+  "scripts",
+  "scripts",
+  "obsidian-vault.ts",
+);
+// Distinct from the per-worktree dev vault (`getDevVaultDir`) and the raw
+// Fixture Vault (`getFixtureLayout(...).vaultDir`) — see
+// policies/scratch-artifacts.md.
+const e2eVaultPath = join(workspaceRoot, "tmp", "e2e-fixture-vault");
+
+// The one My Library Fixture Item this suite renders and asserts against —
+// itemID is unique across every Library, so it names the item without
+// needing to filter on libraryID too (key "AAAAAAAA" repeats in library 2).
+const targetItem = ITEMS.find((item) => item.itemID === 1)!;
+
+// `create` seeds the vault from the Fixture, but ZotLit itself still defaults
+// to auto-detecting a real, locally installed Zotero's data directory (a
+// per-vault Device Override in localStorage, not a vault setting) — so the
+// e2e vault must be pointed at the Fixture's own Zotero data directory
+// explicitly, or every assertion below would run against whatever Zotero
+// library happens to be installed on the host instead of the Fixture.
+const fixtureDataDir = getFixtureLayout(getFixtureRoot(workspaceRoot)).dataDir;
+
+async function isObsidianReachable(): Promise<boolean> {
+  const result = await $({ nothrow: true })`node ${vaultScriptPath} status`;
+  return result.stdout.trim() === "running";
+}
+
+const reachable = await isObsidianReachable();
+
+describe.skipIf(!reachable)("End-to-end Run", () => {
+  let vaultId = "";
+
+  beforeAll(async () => {
+    // `create` reuses whatever plugin bundle already sits in the target
+    // vault's own plugin folder (the same way it reuses the per-worktree dev
+    // vault's bundle, which `build:dev`'s Vite plugin copies there directly).
+    // A fresh e2e vault has no such folder yet, so seed it from
+    // `apps/obsidian/dist-dev` ourselves before `create` looks for it.
+    const pluginBundleDir = join(workspaceRoot, "apps", "obsidian", "dist-dev");
+    const e2ePluginDir = join(e2eVaultPath, ".obsidian", "plugins", "zotlit");
+    await mkdir(e2ePluginDir, { recursive: true });
+    await cp(pluginBundleDir, e2ePluginDir, { recursive: true });
+
+    // Rebuilds the Fixture (default Scope Case "all"), copies the Fixture
+    // Vault to e2eVaultPath, registers + opens it, and confirms the plugin
+    // loaded — throws (non-zero exit) if any step fails.
+    const created = await $`node ${vaultScriptPath} create ${e2eVaultPath}`;
+    vaultId = created.stdout.trim().split("\n")[0]!.trim();
+
+    // Point the freshly opened vault at the Fixture's own Zotero data
+    // directory — see the comment on `fixtureDataDir` above.
+    const pointed = await obEvalUntil(
+      vaultId,
+      `app.plugins.plugins.zotlit.services.zoteroPref.setDataDir(${JSON.stringify(fixtureDataDir)}); "ok"`,
+      { expected: "ok", tries: 20 },
+    );
+    if (!pointed) {
+      throw new Error(
+        `could not point vault ${vaultId} at the Fixture's Zotero data directory`,
+      );
+    }
+
+    // `setDataDir` returns before the plugin's own database connection has
+    // finished reopening against the new directory (an internal async
+    // refresh the CLI reply doesn't wait on) — poll until a live query
+    // reports every Fixture Library, proving the reopen against the
+    // Fixture's own data is complete rather than still pointed at whatever
+    // real Zotero install the host happens to have.
+    const dbReady = await waitFor(async () => {
+      try {
+        const response = await cliCommand(vaultId, "zotlit:library-scope");
+        const status = JSON.parse(response) as {
+          available?: unknown[];
+        };
+        return (status.available?.length ?? 0) === LIBRARIES.length;
+      } catch {
+        return false;
+      }
+    }, 40);
+    if (!dbReady) {
+      throw new Error(
+        `vault ${vaultId} never reconnected to the Fixture's Zotero data`,
+      );
+    }
+  }, 180000);
+
+  afterAll(async () => {
+    // Never let teardown itself throw and mask a test failure, but log a
+    // warning on a nonzero exit rather than silently swallowing it.
+    const removed = await $({
+      nothrow: true,
+    })`node ${vaultScriptPath} remove ${e2eVaultPath} --purge`;
+    if (removed.exitCode !== 0) {
+      console.warn(
+        `obsidian-vault remove --purge exited ${removed.exitCode}: ${removed.stderr}`,
+      );
+    }
+  }, 120000);
+
+  // Covers both the "rendered literature note" and "batch operation"
+  // acceptance-criteria bullets together — a deliberate simplification, not
+  // an oversight: update-all-notes is itself a batch write of Literature
+  // Notes, so exercising it also exercises rendering one.
+  it("renders a Literature Note via the update-all-notes batch operation", async () => {
+    const noteName = targetItem.literatureNoteName ?? targetItem.key;
+    const notePath = join(e2eVaultPath, "literatures", `${noteName}.md`);
+
+    const triggered = await obEvalUntil(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:update-all-notes')",
+      { expected: "true", tries: 20 },
+    );
+    expect(triggered).toBe(true);
+
+    // The Fixture's My Library carries more than one Literature Note, so
+    // `runBatchUpdateAll` (apps/obsidian/src/services/note-feature/update-batch.ts)
+    // takes its multi-item path: a confirmation `BatchModal`, not an
+    // immediate write — the same modal a person clicking the command would
+    // see. Confirming it is an ordinary user action, not a bypass; the modal
+    // classifies items asynchronously, so this polls for the button first.
+    const confirmClicked = await obEvalUntil(
+      vaultId,
+      "(function(){var btns=Array.from(document.querySelectorAll('.modal button'));var btn=btns.find(function(b){return b.textContent.trim()==='Update notes'});if(btn){btn.click();return 'clicked';}return 'pending';})()",
+      { expected: "clicked", tries: 40 },
+    );
+    expect(confirmClicked).toBe(true);
+
+    // The seed file the Fixture Vault ships already carries the title
+    // heading and the `zotero-key`/`citekey` frontmatter, so polling for
+    // those alone would pass even if the batch update silently no-oped.
+    // `related`/`collections` frontmatter come only from a genuine re-render
+    // against the Fixture's Zotero data — `targetItem` (see above) has both,
+    // per the Fixture Spec (`relatedKeys: ["EEEE5555"]`, `collectionIDs: [1, 4]`).
+    let content = "";
+    const rendered = await waitFor(async () => {
+      content = await readFile(notePath, "utf-8").catch(() => "");
+      return content.includes("related:");
+    }, 40);
+
+    expect(rendered).toBe(true);
+    expect(content).toContain(`zotero-key: ${targetItem.key}`);
+    expect(content).toContain(`citekey: ${targetItem.citationKey}`);
+    expect(content).toContain(`# ${targetItem.title}`);
+    expect(content).toContain("related:");
+    expect(content).toContain("collections:");
+  });
+
+  it("reflects a Scope Case switch through zotlit:library-scope", async () => {
+    const availableCase = findScopeCase("available");
+    const dataPath = join(
+      e2eVaultPath,
+      ".obsidian",
+      "plugins",
+      "zotlit",
+      "data.json",
+    );
+
+    // Rewrite the e2e vault's own copy — the shared Fixture layout's vault
+    // copy was already copied into the e2e vault during `create`; editing
+    // that shared source afterward would have no further effect.
+    const raw = await readFile(dataPath, "utf-8");
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    data[LIBRARY_SCOPE_SETTING_KEY] = availableCase.scope;
+    await writeFile(dataPath, JSON.stringify(data, null, 2));
+
+    // An ordinary user action (the Community Plugins toggle), not a bypass —
+    // it makes the plugin re-read data.json from disk.
+    const toggled = await obEvalUntil(
+      vaultId,
+      "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
+      { expected: "true", tries: 20 },
+    );
+    expect(toggled).toBe(true);
+
+    const reloaded = await obEvalUntil(
+      vaultId,
+      "String('zotlit' in app.plugins.plugins)",
+      { expected: "true" },
+    );
+    expect(reloaded).toBe(true);
+
+    // Dispatched as a registered CLI command, not `eval` — the way a real
+    // caller would invoke it. Retried a few times: a window fresh off a
+    // reload can still answer stray noise ahead of a well-formed reply.
+    let scope: LibraryScopeReport | undefined;
+    await waitFor(async () => {
+      try {
+        const response = await cliCommand(vaultId, "zotlit:library-scope");
+        scope = JSON.parse(response) as LibraryScopeReport;
+        return true;
+      } catch {
+        return false;
+      }
+    }, 10);
+    if (!scope) {
+      throw new Error("zotlit:library-scope never returned a parseable reply");
+    }
+
+    expect(scope.ok).toBe(true);
+    expect(scope.mode).toBe(availableCase.scope.mode);
+    if (availableCase.scope.mode === "selected") {
+      expect(scope.available).toHaveLength(
+        availableCase.scope.libraries.length,
+      );
+      expect(scope.unavailable ?? []).toHaveLength(0);
+      const gotLibraryIDs = (scope.available ?? [])
+        .map((entry) => entry.libraryID)
+        .toSorted((a, b) => a - b);
+      expect(gotLibraryIDs).toEqual(
+        expectedLibraryIDs(availableCase.scope.libraries),
+      );
+    }
+  });
+});
+
+/** The `zotlit:library-scope` reply shape this suite reads (see
+ *  apps/obsidian/src/services/library-scope/cli.ts). */
+interface LibraryScopeReport {
+  contractVersion: number;
+  ok: boolean;
+  mode?: "all" | "selected";
+  invalid?: boolean;
+  available?: { selector: unknown; libraryID: number; name: string | null }[];
+  unavailable?: unknown[];
+}
+
+/** Maps the Scope Case's stable selectors to the Fixture's libraryIDs. */
+function expectedLibraryIDs(selectors: readonly LibrarySelector[]): number[] {
+  return selectors
+    .map((selector) => {
+      const library =
+        selector.type === "personal"
+          ? LIBRARIES.find((candidate) => candidate.groupID === null)
+          : LIBRARIES.find(
+              (candidate) => candidate.groupID === selector.groupID,
+            );
+      if (!library) {
+        throw new Error(
+          `no Fixture Library for selector ${JSON.stringify(selector)}`,
+        );
+      }
+      return library.libraryID;
+    })
+    .toSorted((a, b) => a - b);
+}

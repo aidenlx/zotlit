@@ -35,6 +35,14 @@
       ],
       "cache": false
     },
+    "e2e": {
+      "dependsOn": [
+        "^build",
+        "@zotlit/obsidian#build:dev",
+        "@zotlit/zotero#build:dev"
+      ],
+      "cache": false
+    },
     "//#lint:repo:deps": {
       "dependsOn": [
         "@zotlit/db#build",

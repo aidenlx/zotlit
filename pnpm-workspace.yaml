@@ -39,6 +39,7 @@ catalog:
   valibot: ^1.0.0
   vite: ^8.1.5
   vitest: ^4.0.13
+  zx: ^8.8.5
 
 # zotero-types declares two transitive deps as GitHub specs, which
 # blockExoticSubdeps refuses. Scope overrides to zotero-types only so we

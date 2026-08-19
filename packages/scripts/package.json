@@ -14,6 +14,7 @@
     "#dev-vault": "./lib/dev-vault.ts"
   },
   "exports": {
+    "./fixture": "./lib/fixture/build.ts",
     "./obsidian-manifest": "./lib/obsidian-manifest.ts",
     "./package-roots": "./lib/package-roots.ts",
     "./dev-vault": "./lib/dev-vault.ts"
@@ -39,6 +40,6 @@
     "valibot": "catalog:",
     "vitest": "catalog:",
     "yargs": "^18.1.0",
-    "zx": "^8.8.5"
+    "zx": "catalog:"
   }
 }

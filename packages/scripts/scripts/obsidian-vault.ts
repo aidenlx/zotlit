@@ -560,6 +560,14 @@ const vaultCli = yargs(hideBin(process.argv))
     },
   )
   .command(
+    "status",
+    "print whether a live Obsidian answers its CLI socket",
+    () => {},
+    async () => {
+      console.log((await isObsidianRunning()) ? "running" : "stopped");
+    },
+  )
+  .command(
     "id [vault-path]",
     "print the registered id for a vault path",
     (y) => y.positional("vault-path", vaultPathPosition),

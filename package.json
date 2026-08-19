@@ -13,6 +13,7 @@
     "deploy:docs": "mise exec node@24 -- vercel deploy apps/docs",
     "dev": "turbo run dev",
     "fixture": "turbo run fixture --output-logs=full --",
+    "e2e": "turbo run e2e --output-logs=full --",
     "test": "turbo run test",
     "lint": "turbo run //#lint:repo",
     "lint:fix": "turbo run //#lint:repo -- --fix",
