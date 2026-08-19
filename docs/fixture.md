@@ -1,12 +1,12 @@
-# Multi-Library acceptance fixture
+# The Fixture
 
 A disposable Zotero database plus a disposable Obsidian vault, generated from a
-committed specification. Live acceptance of Library Scope runs against this
-fixture instead of a personal Zotero profile.
+committed specification. Live acceptance of Library Scope runs against the
+Fixture instead of a personal Zotero profile.
 
 Everything lands under `tmp/acceptance-fixture/`, which git ignores. Nothing in
-the fixture is personal data, and every build reproduces the same semantic
-content from `packages/scripts/lib/acceptance-fixture/spec.ts`.
+the Fixture is personal data, and every build reproduces the same semantic
+content from `packages/scripts/lib/fixture/spec.ts`.
 
 ## Build
 
@@ -15,19 +15,19 @@ pnpm fixture
 ```
 
 One command from a clean checkout. It builds the workspace packages the
-generator needs plus the ZotLit dev bundle, deletes any previous fixture, and
+generator needs plus the ZotLit dev bundle, deletes any previous Fixture, and
 writes:
 
-| Path                                          | Role                                          |
-| --------------------------------------------- | --------------------------------------------- |
-| `tmp/acceptance-fixture/zotero-data/`         | Stands in for a Zotero data directory         |
-| `tmp/acceptance-fixture/zotero-profile/`      | Zotero profile whose `prefs.js` names that data directory |
-| `tmp/acceptance-fixture/zt-fixture-vault/`    | Disposable Obsidian vault                     |
+| Path                                       | Role                                                      |
+| ------------------------------------------ | --------------------------------------------------------- |
+| `tmp/acceptance-fixture/zotero-data/`      | Stands in for a Zotero data directory                     |
+| `tmp/acceptance-fixture/zotero-profile/`   | Zotero profile whose `prefs.js` names that data directory |
+| `tmp/acceptance-fixture/zt-fixture-vault/` | Disposable Obsidian vault                                 |
 
 The vault gets ZotLit installed and enabled: `pnpm fixture` builds
 `apps/obsidian/dist-dev` through turbo and copies it into the vault's plugin
-folder. Running `packages/scripts/scripts/acceptance-fixture.ts` on its own
-skips that build, so the vault carries the fixture data with ZotLit neither
+folder. Running `packages/scripts/scripts/fixture.ts` on its own
+skips that build, so the vault carries the Fixture's data with ZotLit neither
 installed nor enabled, and it says so.
 
 ## Point ZotLit at it
@@ -36,7 +36,7 @@ installed nor enabled, and it says so.
 2. In that vault, open the ZotLit settings and set **Zotero profile** to
    `tmp/acceptance-fixture/zotero-profile` through "Choose folder…". ZotLit reads
    the data directory from that profile's `prefs.js`, so one override moves the
-   whole install onto the fixture.
+   whole install onto the Fixture.
 
 The override is a Device Override in the vault's local storage, so it never
 touches your real Zotero settings. From an Obsidian window on that vault, the
@@ -47,7 +47,7 @@ obsidian-cli vault=zt-fixture-vault eval \
   "code=app.saveLocalStorage('zotlit-zotero-paths',{profileDir:'<abs path>/tmp/acceptance-fixture/zotero-profile'})"
 ```
 
-## What the fixture contains
+## What the Fixture contains
 
 | Selector     | `libraryID` | Membership | Name                    |
 | ------------ | ----------- | ---------- | ----------------------- |
@@ -106,7 +106,7 @@ Library Scope setting changes shape.
 
 ## Cancel a run mid-write
 
-A batch update writes 32 items at once and the fixture holds 12, so every item
+A batch update writes 32 items at once and the Fixture holds 12, so every item
 starts immediately and no item ever waits in a queue. A cancel that arrives one
 macrotask after the confirm click therefore finds the whole plan in flight, and
 the run reports `Done.`. Click Cancel in the same JavaScript turn as the confirm
@@ -140,9 +140,9 @@ registered it:
 packages/scripts/scripts/obsidian-vault.ts remove tmp/acceptance-fixture/zt-fixture-vault --purge
 ```
 
-## Changing the fixture
+## Changing the Fixture
 
-Edit `packages/scripts/lib/acceptance-fixture/spec.ts` and rebuild.
-`packages/scripts/lib/acceptance-fixture/build.test.ts` guards the properties
-the acceptance run depends on, including that a rebuild reproduces the same
+Edit `packages/scripts/lib/fixture/spec.ts` and rebuild.
+`packages/scripts/lib/fixture/build.test.ts` guards the properties
+the End-to-end Run depends on, including that a rebuild reproduces the same
 semantic data.

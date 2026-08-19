@@ -1,4 +1,4 @@
-// Materializes the multi-Library acceptance fixture described by `spec.ts`.
+// Materializes the Fixture described by `spec.ts`.
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -20,7 +20,7 @@ import {
 import type { FixtureItem, PersistedLibraryScope } from "./spec.ts";
 
 // The spec is part of this module's public surface: one import specifier
-// covers building a fixture and reading what it is supposed to contain.
+// covers building the Fixture and reading what it is supposed to contain.
 export {
   COLLECTIONS,
   DEFAULT_SCOPE_CASE,
@@ -43,7 +43,7 @@ export type {
   PersistedLibraryScope,
 } from "./spec.ts";
 
-/** Every path a maintainer or a test needs from a built fixture. */
+/** Every path a maintainer or a test needs from a built Fixture. */
 export interface FixtureLayout {
   /** The whole disposable tree — `discardFixture` removes exactly this. */
   root: string;
@@ -59,7 +59,7 @@ export interface FixtureLayout {
 
 const PLUGIN_ID = "zotlit";
 
-/** Where the fixture lives, under the workspace scratch area (git-ignored). */
+/** Where the Fixture lives, under the workspace scratch area (git-ignored). */
 export function getFixtureRoot(workspaceRoot: string): string {
   return join(workspaceRoot, "tmp", "acceptance-fixture");
 }
@@ -84,7 +84,7 @@ export interface BuildOptions {
   scopeCase?: string;
   /**
    * Built plugin bundle to copy into the vault (`apps/obsidian/dist-dev`).
-   * Absent, the vault carries the fixture data with ZotLit neither installed
+   * Absent, the vault carries the Fixture's data with ZotLit neither installed
    * nor enabled, so it opens but verifies no tracer.
    */
   pluginBundleDir?: string;
@@ -115,7 +115,7 @@ export async function selectScopeCase(
   id: string,
 ): Promise<void> {
   const raw = await readFile(layout.pluginDataPath, "utf-8").catch(() => {
-    throw new Error(`no fixture vault at ${layout.vaultDir}. Build it first.`);
+    throw new Error(`no Fixture Vault at ${layout.vaultDir}. Build it first.`);
   });
   const data = JSON.parse(raw) as Record<string, unknown>;
   data[LIBRARY_SCOPE_SETTING_KEY] = findScopeCase(id).scope;
@@ -127,7 +127,7 @@ export async function discardFixture(layout: FixtureLayout): Promise<void> {
 }
 
 /**
- * Zotero schema versions the fixture claims. Inside
+ * Zotero schema versions the Fixture claims. Inside
  * `SUPPORTED_SCHEMA_VERSIONS`, so ZotLit reads it as a supported database.
  */
 const SCHEMA_VERSIONS = { userdata: 125, compatibility: 7 } as const;
@@ -323,7 +323,7 @@ function seedDatabase(db: DatabaseSync): void {
 }
 
 /**
- * A Zotero profile whose prefs point at the fixture data directory, so one
+ * A Zotero profile whose prefs point at the Fixture's data directory, so one
  * profile-directory override in ZotLit switches the whole install over.
  */
 function writePrefs(layout: FixtureLayout): Promise<void> {
@@ -379,7 +379,7 @@ async function writeVault(
   });
 
   // Literature Notes for the My Library items give an update batch existing
-  // notes to act on and leave every other fixture item as create work.
+  // notes to act on and leave every other Fixture item as create work.
   for (const item of ITEMS.filter(
     (candidate) => candidate.libraryID === USER_LIBRARY_ID,
   )) {

@@ -1,4 +1,4 @@
-// Deterministic description of the disposable multi-Library acceptance fixture.
+// Deterministic description of the Fixture.
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 
@@ -66,7 +66,7 @@ export const LIBRARIES: readonly FixtureLibrary[] = [
 ];
 
 /**
- * Group IDs the fixture never creates. A saved scope that names one exercises
+ * Group IDs the Fixture never creates. A saved scope that names one exercises
  * the unavailable-selector paths without any database edit.
  */
 export const UNAVAILABLE_GROUP_IDS: readonly number[] = [606001, 606002];
@@ -398,7 +398,7 @@ export interface FixtureScopeCase {
 export const SCOPE_CASES: readonly FixtureScopeCase[] = [
   {
     id: "all",
-    summary: "All Libraries — every fixture Library joins discovery.",
+    summary: "All Libraries — every Fixture Library joins discovery.",
     scope: { mode: "all" },
   },
   {

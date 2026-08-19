@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Builds, re-scopes, and discards the disposable multi-Library acceptance
-// fixture. See docs/acceptance-fixture.md for the maintainer workflow.
+// Builds, re-scopes, and discards the Fixture. See docs/fixture.md for the
+// maintainer workflow.
 
 import { access } from "node:fs/promises";
 import { join } from "node:path";
@@ -17,15 +17,15 @@ import {
   SCOPE_CASES,
   selectScopeCase,
   UNAVAILABLE_GROUP_IDS,
-} from "#acceptance-fixture";
+} from "#fixture";
 import { getWorkspaceRoot } from "#package-roots";
 
 const usage = `Usage:
-  acceptance-fixture.ts                      build with the default scope case
-  acceptance-fixture.ts build [scope-case]   rebuild the fixture from the spec
-  acceptance-fixture.ts select <scope-case>  re-scope the built vault
-  acceptance-fixture.ts paths                print the fixture paths
-  acceptance-fixture.ts discard              delete the whole fixture
+  fixture.ts                      build with the default scope case
+  fixture.ts build [scope-case]   rebuild the fixture from the spec
+  fixture.ts select <scope-case>  re-scope the built vault
+  fixture.ts paths                print the fixture paths
+  fixture.ts discard              delete the whole fixture
 
 Scope cases:
 ${SCOPE_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}`;
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
       const scopeCase = argument ?? DEFAULT_SCOPE_CASE;
       const pluginBundleDir = await findPluginBundle();
       await buildFixture(layout, { scopeCase, pluginBundleDir });
-      console.log(`Built the acceptance fixture at ${layout.root}`);
+      console.log(`Built the Fixture at ${layout.root}`);
       printPaths();
       console.log("Libraries:");
       printLibraries();
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
 
 await main().catch((error: unknown) => {
   console.error(
-    `acceptance-fixture: ${error instanceof Error ? error.message : String(error)}`,
+    `fixture: ${error instanceof Error ? error.message : String(error)}`,
   );
   process.exitCode = 1;
 });

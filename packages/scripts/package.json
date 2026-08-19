@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "imports": {
-    "#acceptance-fixture": "./lib/acceptance-fixture/build.ts",
     "#docs-availability-scan": "./lib/docs-availability-scan.ts",
+    "#fixture": "./lib/fixture/build.ts",
     "#mdx-frontmatter": "./lib/mdx-frontmatter.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
     "#package-roots": "./lib/package-roots.ts",
@@ -19,7 +19,7 @@
   "scripts": {
     "release": "node scripts/release.ts",
     "preview-docs-availability": "node scripts/preview-docs-availability.ts",
-    "fixture": "node scripts/acceptance-fixture.ts",
+    "fixture": "node scripts/fixture.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
