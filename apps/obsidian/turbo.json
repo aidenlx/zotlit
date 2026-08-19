@@ -19,6 +19,16 @@
         "$TURBO_ROOT$/messages/**"
       ]
     },
+    "build:dev": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
+      "outputs": ["dist-dev/**"],
+      "outputLogs": "errors-only"
+    },
     "typecheck": {
       "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
     },

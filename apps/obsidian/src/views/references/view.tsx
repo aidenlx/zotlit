@@ -8,6 +8,8 @@ import { writeClipboardRichText } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { describeCandidates } from "@/services/citation-index/ambiguity";
+import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
@@ -23,6 +25,7 @@ import type {
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import {
   documentCitationPresentation,
   documentPresentation,
@@ -62,7 +65,12 @@ const logger = getLogger(["views", "references"]);
 export interface ReferencesViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
-  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
+  citationIndex: Pick<
+    CitationIndex,
+    "getDocumentCitationSet" | "resolveCitekey" | "on"
+  >;
+  /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
+  libraryScope: Pick<LibraryScopeService, "current">;
   /** Opens the Literature Note a citekey names, creating it first when it has none. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /**
@@ -306,6 +314,19 @@ export class ReferencesView extends ItemView {
     };
   }
 
+  /**
+   * The Items an Ambiguous Citation Key names, or `null` for a citekey that
+   * names no Item at all. Read as the list is built, so a row states the
+   * candidates the current Library Scope names. Bound once, since every build
+   * of the list hands the same reader over.
+   */
+  readonly #ambiguousCandidates: AmbiguousCandidatesOf = (citekey) => {
+    const resolved = this.#deps.citationIndex.resolveCitekey(citekey);
+    return resolved.kind === "ambiguous"
+      ? describeCandidates(this.#deps, resolved.candidates)
+      : null;
+  };
+
   /** The Citation Presentation one note renders under; no note renders as none. */
   #readPresentation(file: TFile | null): DocumentPresentation {
     return file === null
@@ -336,6 +357,7 @@ export class ReferencesView extends ItemView {
         complete: false,
       },
       errors: this.#errors,
+      ambiguous: this.#ambiguousCandidates,
     });
 
     // Retained formatted entries answer for the render that is about to be
@@ -506,6 +528,7 @@ export class ReferencesView extends ItemView {
         complete: true,
       },
       errors: this.#errors,
+      ambiguous: this.#ambiguousCandidates,
     });
     this.#store.setState({
       entries,
@@ -566,6 +589,7 @@ export class ReferencesView extends ItemView {
       sources,
       errors: this.#errors,
       formattingFailed,
+      ambiguous: this.#ambiguousCandidates,
     });
     this.#store.setState({
       ...minimal,

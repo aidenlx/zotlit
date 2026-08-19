@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 import { getIndexSignature, getLibraries } from "@zotlit/db";
 
 import type { DatabaseService } from "@/services/database/service";
-import type { Settings, SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 export type ConnectionReadout =
@@ -13,8 +12,7 @@ export type ConnectionReadout =
   | {
       status: "connected";
       path: string;
-      /** Group library name, or `null` for the user library (UI resolves the default label). */
-      library: string | null;
+      /** Items across every library the database holds, independent of Library Scope. */
       itemCount: number;
     };
 
@@ -29,30 +27,30 @@ interface ConnectionQueryDeps {
 
 export interface ReadConnectionStatusDeps extends ConnectionQueryDeps {
   db: Pick<DatabaseService, "state" | "ready" | "client" | "error">;
-  settings: Pick<SettingsService, "loaded">;
 }
 
 export interface ReadConnectionSyncDeps extends ConnectionQueryDeps {
   db: Pick<DatabaseService, "state" | "client" | "error">;
-  settings: Pick<SettingsService, "current">;
 }
 
-function connectedReadout(
-  deps: ConnectionQueryDeps,
-  settings: Readonly<Settings>,
-): ConnectionReadout {
+/**
+ * Step 1 answers "is Zotero reachable, and does it hold anything", so it counts
+ * every library the database holds rather than a configured subset — Library
+ * Scope governs discovery, not whether the connection is healthy.
+ */
+function connectedReadout(deps: ConnectionQueryDeps): ConnectionReadout {
   const loadLibraries = deps.loadLibraries ?? getLibraries;
   const loadIndexSignature = deps.loadIndexSignature ?? getIndexSignature;
 
-  const libraryID = settings["zotero.citation-library"];
   const client = deps.db.client;
-
-  const library =
-    loadLibraries(client).find((l) => l.libraryID === libraryID)?.name ?? null;
-  const itemCount = loadIndexSignature(client, libraryID).count;
+  const itemCount = loadLibraries(client).reduce(
+    (total, library) =>
+      total + loadIndexSignature(client, library.libraryID).count,
+    0,
+  );
   const path = deps.zoteroPref.dataDir.replace(homedir(), "~");
 
-  return { status: "connected", path, library, itemCount };
+  return { status: "connected", path, itemCount };
 }
 
 export async function readConnectionStatus(
@@ -64,16 +62,15 @@ export async function readConnectionStatus(
   // reflects the broken location instead of stale item data.
   if (deps.db.state !== "ready" || deps.db.error) return { status: "missing" };
 
-  const settings = await deps.settings.loaded;
-  return connectedReadout(deps, settings);
+  return connectedReadout(deps);
 }
 
 /**
  * Synchronous readout for seeding step 1 before the view's first paint.
- * @returns `null` when the DB is still doing its first load or settings haven't
- * loaded yet — the caller shows the checking spinner until the async readout
- * lands. When the DB is already settled (the common open path), the definite
- * readout is available synchronously, so the spinner never has to flash.
+ * @returns `null` when the DB is still doing its first load — the caller shows
+ * the checking spinner until the async readout lands. When the DB is already
+ * settled (the common open path), the definite readout is available
+ * synchronously, so the spinner never has to flash.
  */
 export function readConnectionSync(
   deps: ReadConnectionSyncDeps,
@@ -81,8 +78,5 @@ export function readConnectionSync(
   if (deps.db.state === "loading") return null;
   if (deps.db.state !== "ready" || deps.db.error) return { status: "missing" };
 
-  const settings = deps.settings.current;
-  if (!settings) return null;
-
-  return connectedReadout(deps, settings);
+  return connectedReadout(deps);
 }

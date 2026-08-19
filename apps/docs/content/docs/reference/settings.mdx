@@ -17,10 +17,49 @@ Open settings from **Settings > Community plugins > ZotLit**.
 
 The hub page shows when you first open ZotLit settings.
 
-| Label                      | Key                       | Control                                | Default       |
-| -------------------------- | ------------------------- | -------------------------------------- | ------------- |
-| **Default library**        | `zotero.citation-library` | Dropdown (lists your Zotero libraries) | My Library    |
-| **Literature note folder** | `note.literature-folder`  | Folder picker                          | `literatures` |
+| Label                      | Key                      | Control                                     | Default       |
+| -------------------------- | ------------------------ | ------------------------------------------- | ------------- |
+| **Library scope**          | `zotero.library-scope`   | All libraries, or an editable selected list | All libraries |
+| **Literature note folder** | `note.literature-folder` | Folder picker                               | `literatures` |
+
+### Library scope [#library-scope]
+
+The libraries ZotLit uses for item search, citation key resolution, and library-wide commands. Everything that already names one item, note, or library keeps that exact target: a menu entry or link from Zotero runs against the library it came from, and a literature note stays tied to its own item.
+
+**All libraries** follows your Zotero database. A group library you join later is in scope at once, read-only groups included, and a group you leave drops out.
+
+**Selected libraries** stays exactly as you set it. A group library you join later stays out of scope until you add it.
+
+**Add library** offers the libraries you have not selected yet, and each row's delete action removes one. The last remaining row has no delete action, so the list is never empty.
+
+Switching to **Selected libraries** starts at **My Library**. Switching to **All libraries** discards the list you had.
+
+ZotLit stores each selection as a stable reference: **My Library** as itself, a group library by its Zotero group ID. Group names and Zotero's internal library numbers are never stored, so a renamed group keeps its place in the list and shows its current name.
+
+#### An unavailable library [#unavailable-library]
+
+A selected group can be missing from the connected Zotero database, because you left the group or because you connected a different Zotero data directory. It keeps its place in the list and shows as **Group `{ID}`** with the note "Unavailable in this Zotero database." Rejoin the group to restore its name, or delete the row to drop it.
+
+Search, citation key resolution, and library-wide commands run over the libraries that are available. A library-wide command states how many selected libraries it had to skip.
+
+#### While the database is unavailable [#database-unavailable]
+
+ZotLit lists your libraries from the connected Zotero database. While that database is unreadable, the library scope controls are disabled and show "Open the Zotero database to edit the library scope."
+
+Your saved scope is untouched. See [Fix stale data from Zotero](/docs/how-to/fix-stale-data) for the connection itself.
+
+#### Recovery from an invalid scope [#invalid-scope]
+
+ZotLit can fail to read a saved scope, after an edited `data.json` or a vault synced from a newer ZotLit. It keeps the broken value on disk rather than overwriting it, and an unrelated settings change leaves that value in place.
+
+ZotLit shows the notice "Library scope is invalid" once, marks the setting with a standing warning, and searches **My Library** alone until you repair the setting. The first change you make here writes over the broken value and clears both warnings.
+
+<Callout type="info" title="What an upgrade sets">
+  An upgrade from an earlier ZotLit version starts at **Selected libraries**
+  with **My Library**, whatever library you had selected before. Widen the scope
+  here to search your group libraries. A fresh installation starts at **All
+  libraries**.
+</Callout>
 
 ## Citations
 

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import type { CitationKeyState } from "@/services/citation-text/present";
+
 import {
   citationRanges,
   citekeyMarks,
   isExcludedTokenClass,
   isFootnoteTokenClass,
   marksOutside,
-  resolveCitekeyMarks,
+  stateCitekeyMarks,
 } from "./decorate";
 
 const never = (): boolean => false;
@@ -50,20 +52,25 @@ describe("citekeyMarks", () => {
   });
 });
 
-describe("resolveCitekeyMarks", () => {
+describe("stateCitekeyMarks", () => {
   it("attaches resolution state per mark, keeping their spans and citekeys", () => {
-    const marks = citekeyMarks("[see @a, p. 3; @b]", never);
-    const resolved = new Set(["a"]);
-    expect(
-      resolveCitekeyMarks(marks, (citekey) => resolved.has(citekey)),
-    ).toEqual([
-      { start: 5, end: 7, citekey: "a", resolved: true },
-      { start: 15, end: 17, citekey: "b", resolved: false },
+    const marks = citekeyMarks("[see @a, p. 3; @b; @c]", never);
+    const states = new Map<string, CitationKeyState>([
+      ["a", "resolved"],
+      ["b", "missing"],
+      ["c", "ambiguous"],
     ]);
+    expect(stateCitekeyMarks(marks, (citekey) => states.get(citekey)!)).toEqual(
+      [
+        { start: 5, end: 7, citekey: "a", state: "resolved" },
+        { start: 15, end: 17, citekey: "b", state: "missing" },
+        { start: 19, end: 21, citekey: "c", state: "ambiguous" },
+      ],
+    );
   });
 
   it("resolves nothing against an empty mark list", () => {
-    expect(resolveCitekeyMarks([], () => true)).toEqual([]);
+    expect(stateCitekeyMarks([], () => "resolved")).toEqual([]);
   });
 });
 

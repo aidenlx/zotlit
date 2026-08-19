@@ -79,10 +79,6 @@ export interface ZotLitSettingsV0 {
   /** Watch Zotero's SQLite files and auto-refresh the in-memory database when Zotero writes changes. Default: true. */
   autoRefresh: boolean;
 
-  // --- Zotero database connection (v1: services/zotero-db/connector/settings.ts) ---
-  /** Zotero library id used as the citation source (1 = personal "My Library"; >1 = group libraries). Default: 1. */
-  citationLibrary: number;
-
   // --- Image excerpt importer (v1: services/zotero-db/img-import/settings.ts) ---
   /** How PDF image-annotation excerpts are brought into the vault: "symlink" links to Zotero's cache, "copy" duplicates the file, false disables import. */
   imgExcerptImport: false | "symlink" | "copy";
@@ -147,7 +143,6 @@ const V0_KEY_MAP: ReadonlyArray<
   ["serverHostname", "server.hostname"],
   ["autoPairEta", "template.auto-pair-eta"],
   ["autoRefresh", "zotero.auto-refresh"],
-  ["citationLibrary", "zotero.citation-library"],
   ["imgExcerptPath", "attachment.folder-path"],
 ];
 
@@ -340,5 +335,25 @@ export function migrateV7ToV8(raw: unknown): Record<string, unknown> {
     ...rest,
     "citation.open-as-links":
       typeof openPandocLinks === "boolean" ? openPandocLinks : true,
+  };
+}
+
+/**
+ * Introduce Library Scope and retire the Default Library. Every upgraded
+ * installation lands on Selected Libraries holding My Library, whatever its
+ * Default Library was: an existing user keeps a conservative discovery scope
+ * and widens it deliberately, while the new default, All Libraries, governs
+ * fresh installs only. The Default Library value is dropped, because Library
+ * Scope is the only Library configuration left to read.
+ */
+export function migrateV8ToV9(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "zotero.citation-library": _retiredDefaultLibrary, ...rest } = raw;
+  return {
+    ...rest,
+    "zotero.library-scope": {
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    },
   };
 }

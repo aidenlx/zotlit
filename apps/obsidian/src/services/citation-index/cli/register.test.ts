@@ -137,6 +137,7 @@ describe("Citations CLI registration", () => {
         citationIndex: {
           waitUntilSettled: () => Promise.resolve("settled"),
           getDocumentCitationSet,
+          resolveCitekey: () => ({ kind: "missing" }),
           resolution: "ready",
           syntaxes: () => ({ citekey: "included", wikilink: "excluded" }),
           documentOmittedSyntaxes: () => Promise.resolve([]),

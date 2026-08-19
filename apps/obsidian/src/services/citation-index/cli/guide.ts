@@ -21,7 +21,7 @@ import type { CITED_BY_PARAMS, REFERENCES_PARAMS } from "./request";
 const SELECTORS = {
   key: "A Zotero key: an 8-character item key, with a 'g<group-id>' suffix for an item in a group library. cited-by takes exactly one of key= or citekey=.",
   citekey:
-    "A citation key, written as it appears in the note body without the leading '@'. It names an item through the citation-key snapshot.",
+    "A citation key, written as it appears in the note body without the leading '@'. It names an item through the citation-key snapshot. A key several items carry in the current library scope names none of them: the answer is AMBIGUOUS_CITEKEY, and details.candidates lists every candidate as { key, libraryID }, so key= selects the intended one.",
   file: "The vault-relative path of one Markdown note, as file=folder/note.md. Any Markdown note answers: a document need not be a Literature Note to cite works.",
   "expect-source":
     "The Zotero source the call expects, checked before any data load. It asserts the Zotero source, not the vault; put vault=<vault-name> before the command name to select the vault.",
@@ -36,6 +36,8 @@ const ENTRY_KINDS = {
     "A cited work the connected Zotero source holds. Adds key, citekey, summary, and linkpath; linkpath is null while the work has no Literature Note.",
   unresolved:
     "A citation key that names no item in the connected Zotero source. Adds citekey.",
+  ambiguous:
+    "A citation key several items carry in the current library scope, so it names none of them and the document cites no one work here. Adds citekey and candidates, each candidate { key, libraryID }; pass one candidate key to cited-by or zotlit:template-data to work with that item.",
   missing:
     "A work the index cites that the Zotero source no longer holds. Adds key.",
   malformed:

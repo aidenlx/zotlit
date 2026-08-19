@@ -24,6 +24,14 @@
   text-decoration-style: var(--link-unresolved-decoration-style);
 }
 
+/* A Citation naming several Zotero Items under one key keeps the link colour —
+   the candidates are still reachable — and takes the unresolved decoration,
+   which says the key alone does not reach one Item. */
+:where(.markdown-rendered span.zt-citation-key-ambiguous) {
+  text-decoration-color: var(--link-unresolved-decoration-color);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+}
+
 /* The link hover colour says the click opens something, so it is drawn only
    where it does. */
 @media (hover: hover) {

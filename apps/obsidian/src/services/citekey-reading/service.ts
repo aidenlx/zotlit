@@ -6,14 +6,18 @@ import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 import { getLogger } from "@/lib/log";
 import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import {
   citationContent,
   citationElement,
+  citationKeyStates,
+  citationState,
+  citationStateHooks,
   citedWorks,
-  literalSummaryOf,
+  citekeyState,
+  literalKeyStateOf,
   sectionCoordinates,
-  unresolvedKeys,
 } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
@@ -43,6 +47,8 @@ export interface CitekeyReadingDeps {
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "load" | "on" | "peek">;
+  /** What a literal citekey names, which is what tells missing from Ambiguous. */
+  citationIndex: Pick<CitationIndex, "resolveCitekey">;
   /** The open-or-create flow every citekey surface shares, and what hover previews. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
@@ -74,6 +80,7 @@ export class CitekeyReading extends Service<void> {
   readonly #app;
   readonly #plugin;
   readonly #citationText;
+  readonly #citationIndex;
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
@@ -91,6 +98,7 @@ export class CitekeyReading extends Service<void> {
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#citationText = deps.citationText;
+    this.#citationIndex = deps.citationIndex;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
@@ -177,7 +185,9 @@ export class CitekeyReading extends Service<void> {
       void this.#citationText.load(file);
       return;
     }
-    const summaryOf = literalSummaryOf(text);
+    const stateOf = literalKeyStateOf(text, (citekey) =>
+      citekeyState(this.#citationIndex.resolveCitekey(citekey)),
+    );
     const doc = el.ownerDocument;
     // Which occurrence each citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
@@ -186,16 +196,10 @@ export class CitekeyReading extends Service<void> {
       const content = this.#showFormatted
         ? citationContent(citation, text, coordinates[index])
         : null;
-      const unresolved = unresolvedKeys(citation, summaryOf);
+      const states = citationKeyStates(citation, stateOf);
       const themeClasses = [
         themeHook.citationKey,
-        ...(unresolved === 0
-          ? []
-          : [
-              unresolved === citation.keys.length
-                ? themeHook.citationKeyUnresolved
-                : themeHook.citationKeyPartiallyUnresolved,
-            ]),
+        ...citationStateHooks(citationState(states)),
       ];
       const element = citationElement(
         doc,
@@ -233,8 +237,9 @@ export class CitekeyReading extends Service<void> {
       // nothing, the way it does on any other rendered text. A citation none of
       // whose keys reaches a Zotero Item has nothing to open anyway; it stays
       // wrapped so themes can style its error state, and its entries say as
-      // much.
-      if (this.#navigationEnabled && unresolved < citation.keys.length) {
+      // much. An Ambiguous Citation Key names no one Item either, so a citation
+      // resting on those alone opens nothing.
+      if (this.#navigationEnabled && states.includes("resolved")) {
         markCitationClick(element, "open");
         attachCitationNavigation(element, navigation);
         return element;

@@ -19,6 +19,9 @@
   "notice_db_refresh_failed": "Failed to refresh Zotero database.",
   "notice_db_not_found_on_device": "Zotero wasn't found on this device.",
   "notice_db_not_found_action": "Set up connection",
+  "notice_library_scope_invalid": "Library scope is invalid",
+  "notice_library_scope_invalid_explanation": "ZotLit is using My Library until you select a library scope.",
+  "notice_library_scope_invalid_action": "Open settings",
   "command_open_lit_note_name": "Open literature note quick switcher",
   "command_open_citekey_name": "Open citation key under cursor",
   "command_open_citekey_new_tab_name": "Open citation key under cursor in new tab",
@@ -71,9 +74,21 @@
   "batch_update_confirm_button": "Update notes",
   "batch_update_unknown_item": "Item {id} (not in Zotero)",
   "batch_update_all_empty": "No items to update.",
-  "batch_update_all_library_mismatch": "The selected library does not match the default library in ZotLit settings.",
   "batch_import_all_empty": "No notes to import.",
-  "batch_import_all_library_mismatch": "The selected library does not match the default library in ZotLit settings.",
+  "batch_all_library_unavailable": "That Zotero library is not available.",
+  "batch_all_no_library_in_scope": "No library in the library scope is available.",
+  "batch_group_library": "{library} · {group}",
+  "batch_intro_with_unavailable": "{intro} {unavailable}",
+  "batch_libraries_unavailable": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 selected library is unavailable.",
+        "countPlural=*": "{count} selected libraries are unavailable."
+      }
+    }
+  ],
   "notice_collection_not_found": "Collection not found in Zotero.",
   "batch_import_item_not_note": "Item {id} (not a note)",
   "batch_import_item_trashed": "Item {id} (in trash)",
@@ -155,6 +170,9 @@
   "notice_template_not_ready": "Templates are still loading. Try again in a moment.",
   "notice_citekey_not_found": "No Zotero item with citation key @{citekey}.",
   "notice_citekey_db_unavailable": "Open the Zotero database to look up citation key @{citekey}.",
+  "notice_citekey_ambiguous_insert": "Citation key @{citekey} matches multiple Zotero items. Change it in Zotero before inserting a citation.",
+  "notice_citekey_not_ready": "Citation keys are still loading. Try again in a moment.",
+  "citekey_ambiguous_placeholder": "Select the item to open for @{citekey}",
   "instruction_navigate": "to navigate",
   "instruction_dismiss": "to dismiss",
   "instruction_insert_citation": "to insert citation",
@@ -201,11 +219,17 @@
   "settings_db_source_id_profile": "Profile:",
   "settings_db_source_id_data": "Data:",
   "settings_db_source_id_value": "Source ID:",
-  "settings_db_library_name": "Default library",
-  "settings_db_library_desc": "Library used when inserting citations or listing items.",
-  "settings_db_library_user": "My Library",
-  "settings_db_library_unknown": "Library {libraryID}",
-  "settings_db_library_unavailable": "Open the Zotero database to choose a library.",
+  "settings_library_scope_name": "Library scope",
+  "settings_library_scope_desc": "Libraries used for item search, citation key resolution, and library-wide commands.",
+  "settings_library_scope_all": "All libraries",
+  "settings_library_scope_selected": "Selected libraries",
+  "settings_library_scope_add": "Add library",
+  "settings_library_scope_add_none": "Every library is already selected",
+  "settings_library_scope_personal": "My Library",
+  "settings_library_scope_group": "Group {groupID}",
+  "settings_library_scope_unavailable": "Unavailable in this Zotero database.",
+  "settings_library_scope_invalid": "The saved library scope is invalid. ZotLit is using My Library until you select a library scope here.",
+  "settings_library_scope_db_unavailable": "Open the Zotero database to edit the library scope.",
   "command_open_annot_view_name": "Open Zotero annotations",
   "annot_view_name": "Zotero annotations",
   "annot_view_empty": "Open a literature note to see annotations.",
@@ -416,6 +440,7 @@
   "references_db_unavailable": "Open the Zotero database to see references.",
   "references_item_missing": "{linkpath} points to an item that is no longer in your Zotero library.",
   "references_citekey_unresolved": "@{citekey} matches no item in your Zotero library.",
+  "references_citekey_ambiguous": "@{citekey} matches multiple items in your Zotero library.",
   "references_citation_fragment_invalid": "This link has an invalid citation fragment.",
   "references_open_note_invalid_fragment": "Fix the citation fragment to open its note",
   "references_go_to_occurrence": [
@@ -431,6 +456,7 @@
   "references_open_note": "Open literature note",
   "references_open_note_missing": "No literature note — item is missing",
   "references_open_note_unresolved": "No Zotero item for this citation key",
+  "references_open_note_ambiguous": "Several Zotero items match this citation key",
   "references_open_in_zotero": "Open in Zotero",
   "references_open_attachment": "Open attachment in Zotero",
   "references_engine_hint_title": "Format these references",
@@ -697,8 +723,20 @@
   "welcome_step_connect_title": "Connect to Zotero",
   "welcome_step_connect_checking": "Looking for Zotero in your default profile…",
   "welcome_step_connect_missing": "We couldn't find your Zotero data directory.",
-  "welcome_step_connect_connected": "{library} · {count} items",
-  "welcome_library_default": "My Library",
+  "welcome_step_connect_connected": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 item",
+        "category=*": "{formatted} items"
+      }
+    }
+  ],
   "welcome_action_open_settings": "Open settings",
   "welcome_action_locate": "Locate manually",
   "welcome_step_folder_title": "Choose where literature notes live",

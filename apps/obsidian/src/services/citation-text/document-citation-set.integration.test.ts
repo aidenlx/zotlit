@@ -19,6 +19,7 @@ import {
   KEY_B,
   link,
   makeFile,
+  MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
 import { createCitationEngine } from "@/services/pandoc/engine";
@@ -364,18 +365,30 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     ).toBe("[1]");
   });
 
-  // Zotero holds no uniqueness rule for a citation key, and the resolution
-  // snapshot is first-wins, so a literal key reaches the winner while a
-  // wikilink to the loser still derives that same spelling.
-  it("renders a duplicate citation key from the Item each syntax reaches", async () => {
+  // Zotero holds no uniqueness rule for a citation key, so one key can name
+  // two Items. The literal spelling then keeps its own identity and adopts
+  // neither candidate, while the wikilink names one Item exactly and renders.
+  it("keeps an ambiguous literal key out of CSL while its wikilink still renders", async () => {
     const body = "@doe2024 then [[Roe 2025]].";
     await using harness = await createCitationIndexHarness(
       { "draft.md": body },
       {
         settings: { "citation.wikilink-citations": true },
         citekeys: [
-          { itemID: 1, key: "DOE2024", indexedKey: KEY_A, citekey: "doe2024" },
-          { itemID: 2, key: "ROE2025", indexedKey: KEY_B, citekey: "doe2024" },
+          {
+            itemID: 1,
+            libraryID: MY_LIBRARY_ID,
+            key: "DOE2024",
+            indexedKey: KEY_A,
+            citekey: "doe2024",
+          },
+          {
+            itemID: 2,
+            libraryID: MY_LIBRARY_ID,
+            key: "ROE2025",
+            indexedKey: KEY_B,
+            citekey: "doe2024",
+          },
         ],
       },
     );
@@ -388,10 +401,14 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
     // The first scan of a document announces itself, which drops a citation
     // text read that raced it; the surfaces answer that by asking again.
-    await harness.index.getDocumentCitationSet(harness.draft);
+    const set = await harness.index.getDocumentCitationSet(harness.draft);
     const { formatted } = await text.load(harness.draft);
 
-    expect(firstText(formatted.get("@doe2024"))).toBe("Zeta");
+    expect(set.citations).toMatchObject([
+      { indexedKey: null, occurrences: [{ kind: "citekey", raw: "doe2024" }] },
+      { indexedKey: KEY_B, occurrences: [{ kind: "wikilink" }] },
+    ]);
+    expect(formatted.get("@doe2024")).toBeUndefined();
     expect(
       firstText(
         formatted.get(citationKey({ source: "[@doe2024]", works: [KEY_B] })),

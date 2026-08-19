@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type {
   Citation,
   CitationOccurrence,
@@ -347,5 +348,59 @@ describe("buildReferenceEntries", () => {
         (entry) => entry.kind,
       ),
     ).toStrictEqual(["rendered", "unresolved"]);
+  });
+
+  describe("an Ambiguous Citation Key", () => {
+    it("names its candidates instead of reading as unresolved", () => {
+      expect(
+        buildReferenceEntries([unresolved("doe2024", 1, [3, 7])], new Map(), {
+          ambiguous: () => ambiguousCandidates,
+        }),
+      ).toStrictEqual([
+        {
+          id: "@doe2024",
+          refNumber: 1,
+          occurrences: [
+            occurrenceAt(3, "citekey", "doe2024"),
+            occurrenceAt(7, "citekey", "doe2024"),
+          ],
+          kind: "ambiguous",
+          citekey: "doe2024",
+          candidates: ambiguousCandidates,
+        },
+      ]);
+    });
+
+    it("stays unresolved for a citekey that names no Item at all", () => {
+      expect(
+        buildReferenceEntries([unresolved("typo2024", 1)], new Map(), {
+          ambiguous: () => null,
+        }),
+      ).toMatchObject([{ kind: "unresolved", citekey: "typo2024" }]);
+    });
+
+    // The key adopts no candidate, so the bibliography holds no place for it,
+    // and its Reference Number is the one the index assigned the Citation.
+    it("trails the bibliography's own order, keeping its Reference Number", () => {
+      const citations = [unresolved("doe2024", 1), citation("BOOK0002", 2)];
+      const sources = new Map([["BOOK0002", source("BOOK0002", "ref-two")]]);
+      const bibliography = completed(
+        new Map([["ref-two", rendered("Two", "[1]")]]),
+      );
+
+      expect(
+        buildReferenceEntries(citations, sources, {
+          bibliography,
+          ambiguous: (citekey) =>
+            citekey === "doe2024" ? ambiguousCandidates : null,
+        }).map((entry) => [
+          entry.kind,
+          "refNumber" in entry ? entry.refNumber : null,
+        ]),
+      ).toStrictEqual([
+        ["rendered", 2],
+        ["ambiguous", 1],
+      ]);
+    });
   });
 });

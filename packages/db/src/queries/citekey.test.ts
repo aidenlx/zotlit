@@ -91,11 +91,18 @@ describe("getCitekeysByLibrary", () => {
       expect.arrayContaining([
         {
           itemID: 1,
+          libraryID: USER_LIBRARY_ID,
           key: "USER1",
           indexedKey: "USER1",
           citekey: "doe2024alpha",
         },
-        { itemID: 6, key: "USER2", indexedKey: "USER2", citekey: "shared2024" },
+        {
+          itemID: 6,
+          libraryID: USER_LIBRARY_ID,
+          key: "USER2",
+          indexedKey: "USER2",
+          citekey: "shared2024",
+        },
       ]),
     );
     expect(rows).toHaveLength(2);
@@ -107,12 +114,14 @@ describe("getCitekeysByLibrary", () => {
       expect.arrayContaining([
         {
           itemID: 7,
+          libraryID: 2,
           key: "GRP1",
           indexedKey: "GRP1g17",
           citekey: "shared2024",
         },
         {
           itemID: 9,
+          libraryID: 2,
           key: "GRP2",
           indexedKey: "GRP2g17",
           citekey: "groupkey2025",

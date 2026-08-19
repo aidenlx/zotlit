@@ -3,12 +3,14 @@
 import type { App } from "obsidian";
 
 import { getLogger } from "@/lib/log";
+import { describeCandidates } from "@/services/citation-index/ambiguity";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { Inlines } from "@/services/pandoc/ast";
 import {
   documentCitationPresentation,
@@ -31,7 +33,12 @@ const logger = getLogger("citation-popover");
 export interface CitationPopoverDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client">;
-  citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
+  citationIndex: Pick<
+    CitationIndex,
+    "getDocumentCitationSet" | "resolveCitekey"
+  >;
+  /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
+  libraryScope: Pick<LibraryScopeService, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
   citationText: Pick<CitationText, "load">;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
@@ -189,6 +196,15 @@ async function readBlocks(
   return {
     blocks: citationPopoverBlocks(request.works, entries, {
       serials: text.entrySerials,
+      // Read as the popover fills, so an Ambiguous Citation Key states the
+      // candidates the current Library Scope names — and no candidate is
+      // described for the citations that resolve.
+      ambiguous: (citekey) => {
+        const resolution = deps.citationIndex.resolveCitekey(citekey);
+        return resolution.kind === "ambiguous"
+          ? describeCandidates(deps, resolution.candidates)
+          : null;
+      },
     }),
     note: formatted ? noteContent(formatted.text.content) : undefined,
   };

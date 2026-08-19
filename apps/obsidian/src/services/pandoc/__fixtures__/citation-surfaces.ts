@@ -385,6 +385,7 @@ export async function openCitationVault({
     citationIndex: harness.index,
     citationText,
     bibliographyRender: cache,
+    libraryScope: harness.libraryScope,
   });
 
   const copyAction = (): HTMLElement =>

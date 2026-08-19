@@ -78,6 +78,8 @@ export function getCitekeyByItemKey(
 /** One live item of the citation library that carries a native citation key. */
 export interface LibraryCitekey {
   itemID: number;
+  /** Local id of the library holding the item, which names that library. */
+  libraryID: number;
   /** Bare Zotero item key. */
   key: string;
   /** `key`, or `key` + `g` + groupID for a group library. */
@@ -126,6 +128,7 @@ export function getCitekeysByLibrary(
     if (row.itemID == null) continue;
     rows.push({
       itemID: row.itemID,
+      libraryID,
       key,
       indexedKey: formatIndexedKey(key, groupID),
       citekey,

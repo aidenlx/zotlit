@@ -125,7 +125,8 @@ if (typeof Node !== "undefined") {
 }
 
 // The same runtime script patches every element with the `addClass()` family
-// the plugin styles its own notices and views with.
+// the plugin styles its own notices and views with, and with `empty()`, which
+// a suggestion renderer calls to clear a reused row before drawing it.
 if (typeof Element !== "undefined") {
   const proto = Element.prototype;
   proto.addClass ??= function (...classes) {
@@ -133,5 +134,8 @@ if (typeof Element !== "undefined") {
   };
   proto.addClasses ??= function (classes) {
     this.classList.add(...classes);
+  };
+  proto.empty ??= function () {
+    while (this.firstChild) this.removeChild(this.firstChild);
   };
 }

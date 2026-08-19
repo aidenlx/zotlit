@@ -23,9 +23,16 @@ import type {
   BatchRunControls,
   BatchRunResult,
 } from "@/services/batch-run";
-import { resolveBatchScope } from "@/services/batch-scope";
-import type { BatchScopeOptions } from "@/services/batch-scope";
+import {
+  batchGroupKey,
+  batchGroups,
+  batchLibraries,
+  planBatchScope,
+  withUnavailableLibraries,
+} from "@/services/batch-scope";
+import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -48,6 +55,8 @@ export interface NoteImportDeps {
   view: NoteImportView;
   db: Pick<DatabaseService, "state" | "client" | "acquireRead">;
   settings: Pick<SettingsService, "loaded">;
+  /** Which Libraries an unqualified library-wide import covers. */
+  libraryScope: Pick<LibraryScopeService, "resolveWith">;
   noteImport: Pick<NoteImporter, "importNote">;
   noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
@@ -67,7 +76,7 @@ export interface BatchImport {
     itemIDs: readonly number[],
   ): Promise<BatchImportResult>;
   /** @see {@link runBatchImportAll} */
-  runBatchImportAll(opts?: BatchScopeOptions): Promise<BatchImportResult>;
+  runBatchImportAll(target?: BatchTarget): Promise<BatchImportResult>;
   /** @see {@link runChildImportByKey} */
   runChildImportByKey(indexedKey: string): Promise<BatchImportResult | null>;
   /** @see {@link reimportNoteByKey} */
@@ -79,8 +88,8 @@ export interface BatchImport {
 
 export function createBatchImport(deps: NoteImportDeps): BatchImport {
   return {
-    runBatchImport: (mode, itemIDs) => runBatchImport(deps, mode, itemIDs),
-    runBatchImportAll: (opts) => runBatchImportAll(deps, opts),
+    runBatchImport: (mode, itemIDs) => runBatchImport(deps, { mode, itemIDs }),
+    runBatchImportAll: (target) => runBatchImportAll(deps, target),
     runChildImportByKey: (indexedKey) => runChildImportByKey(deps, indexedKey),
     reimportNoteByKey: (noteKey, targetFile) =>
       reimportNoteByKey(deps, noteKey, targetFile),
@@ -107,7 +116,8 @@ interface NotFoundEntry {
 export type BatchImportResult =
   | { outcome: "db-unavailable" }
   | { outcome: "empty-selection" }
-  | { outcome: "library-mismatch" }
+  | { outcome: "no-library-in-scope" }
+  | { outcome: "unavailable-target" }
   | { outcome: "collection-not-found" }
   | { outcome: "not-found"; count: number }
   | { outcome: "batch-modal" }
@@ -124,14 +134,24 @@ export type BatchImportResult =
  *   first (an unattended single-key trigger shouldn't silently clobber).
  * - `mode="note"`, ≥2 ids — open the {@link FlatManifest} modal.
  *
+ * The count is the flattened total, so a Library Scope expansion reaching one
+ * note takes the same single-note path an explicit single id does.
+ *
  * Returns a preflight {@link BatchImportResult}; modal/single paths surface their
  * own feedback, so the caller only notices the early-exit outcomes.
+ *
+ * @param request.unavailableLibraries selected Libraries this database holds no
+ *   Library for; stated in the confirmation introduction.
  */
 async function runBatchImport(
   deps: NoteImportDeps,
-  mode: ImportMode,
-  itemIDs: readonly number[],
+  request: {
+    mode: ImportMode;
+    itemIDs: readonly number[];
+    unavailableLibraries?: number;
+  },
 ): Promise<BatchImportResult> {
+  const { mode, itemIDs, unavailableLibraries = 0 } = request;
   if (deps.db.state !== "ready") {
     logger.warn("Batch import: database not ready", { count: itemIDs.length });
     return { outcome: "db-unavailable" };
@@ -149,53 +169,51 @@ async function runBatchImport(
   if (itemIDs.length === 1) {
     return importSingleNote(deps, itemIDs[0]!);
   }
-  openNoteImportModal(deps, itemIDs);
+  openNoteImportModal(deps, itemIDs, unavailableLibraries);
   return { outcome: "batch-modal" };
 }
 
 /**
- * Import every Zotero note in scope — the whole configured citation library, or
- * one collection and its descendants. Both note kinds are gathered: the child
- * notes of the regular items in scope and the standalone notes filed there. The
- * resolved notes then run through the same flow as an explicit `mode="note"`
- * import, so the user still confirms in the batch modal before anything writes.
+ * Import every Zotero note a target covers. An exact `target` names one Library,
+ * optionally narrowed to one collection; no target expands every available
+ * Library of the current Library Scope, in canonical order, under this one
+ * planning lease. Both note kinds are gathered: the child notes of the regular
+ * items in scope and the standalone notes filed there. The resolved notes then
+ * run through the same flow as an explicit `mode="note"` import, so the user
+ * still confirms in the batch modal before anything writes.
  *
- * @param opts.expectedGroupID when set, the configured library's group ID must
- *   match — `0` means the personal library, a positive integer names a group.
- *   A mismatch returns `library-mismatch` without scanning.
- * @param opts.collectionKey when set, narrows the run to that collection and
- *   every collection nested under it. A key this database doesn't hold returns
- *   `collection-not-found`.
+ * @param target.groupID names the exact Library the run covers — `0` for
+ *   My Library, a positive integer for a group. A group this database doesn't
+ *   hold returns `unavailable-target` without scanning.
+ * @param target.collectionKey narrows the run to that collection of the named
+ *   Library and every collection nested under it. A key that Library doesn't
+ *   hold returns `collection-not-found`.
  */
 async function runBatchImportAll(
   deps: NoteImportDeps,
-  opts?: BatchScopeOptions,
+  target: BatchTarget = {},
 ): Promise<BatchImportResult> {
   if (deps.db.state !== "ready") {
     logger.warn("Batch import all: database not ready");
     return { outcome: "db-unavailable" };
   }
 
-  const settings = await deps.settings.loaded;
-
-  let noteItemIDs: readonly number[];
-  {
-    using lease = await deps.db.acquireRead();
-    const scope = resolveBatchScope(lease.client, "notes", {
-      libraryID: settings["zotero.citation-library"],
-      ...opts,
-    });
-    if (scope.outcome !== "resolved") {
-      return { outcome: scope.outcome };
-    }
-    noteItemIDs = scope.itemIDs;
+  const plan = await planBatchScope(deps, "notes", target);
+  if (plan.outcome !== "resolved") {
+    return { outcome: plan.outcome };
   }
 
   logger.info("Batch import all resolved", {
-    collectionKey: opts?.collectionKey,
-    notes: noteItemIDs.length,
+    groupID: target.groupID,
+    collectionKey: target.collectionKey,
+    unavailableLibraries: plan.unavailableLibraries,
+    notes: plan.itemIDs.length,
   });
-  return runBatchImport(deps, "note", noteItemIDs);
+  return runBatchImport(deps, {
+    mode: "note",
+    itemIDs: plan.itemIDs,
+    unavailableLibraries: plan.unavailableLibraries,
+  });
 }
 
 /** Light row label for a note ref: its title, else a key fallback. */
@@ -224,7 +242,11 @@ function toAction(
 }
 
 function actionToTask(action: ImportAction): FlatTask {
-  return { id: action.note.itemID, label: action.label, kind: action.kind };
+  return {
+    id: action.note.itemID,
+    label: action.label,
+    kind: batchGroupKey(action.note.libraryID, action.kind),
+  };
 }
 
 function needsImport(action: ImportAction): boolean {
@@ -238,6 +260,7 @@ function needsImport(action: ImportAction): boolean {
 function openNoteImportModal(
   deps: NoteImportDeps,
   itemIDs: readonly number[],
+  unavailableLibraries: number,
 ): void {
   const ids = distinct(itemIDs);
   let runnableActions: ImportAction[] = [];
@@ -250,9 +273,12 @@ function openNoteImportModal(
       runFailed: m.batch_import_run_failed(),
       progressLabel: m.batch_import_loading(),
       confirmIntro: ({ actionable, notFound }) =>
-        actionable === 0
-          ? m.batch_import_confirm_none({ count: notFound })
-          : m.batch_import_confirm_intro({ count: actionable }),
+        withUnavailableLibraries(
+          actionable === 0
+            ? m.batch_import_confirm_none({ count: notFound })
+            : m.batch_import_confirm_intro({ count: actionable }),
+          unavailableLibraries,
+        ),
       confirmButton: m.batch_import_confirm_button(),
       runSummary: importRunSummary(() => notFoundCount),
     },
@@ -265,10 +291,10 @@ function openNoteImportModal(
       return new FlatManifest({
         tasks: runnableActions.map(actionToTask),
         notFound: classified.notFound,
-        groups: [
+        groups: batchGroups(classified.libraries, [
           { kind: "create", header: m.batch_import_group_import },
           { kind: "overwrite", header: m.batch_import_group_overwrite },
-        ],
+        ]),
         upToDate: upToDate.map((a) => ({ label: a.label })),
         upToDateHeader: m.batch_import_group_up_to_date,
         notFoundHeader: m.batch_update_group_not_found,
@@ -291,7 +317,11 @@ async function classifyNoteImport(
   deps: NoteImportDeps,
   itemIDs: readonly number[],
   controls: BatchClassifyControls,
-): Promise<{ actions: ImportAction[]; notFound: NotFoundEntry[] }> {
+): Promise<{
+  actions: ImportAction[];
+  notFound: NotFoundEntry[];
+  libraries: BatchLibrary[];
+}> {
   using lease = await deps.db.acquireRead();
   const client = lease.client;
   const memo: GroupIDMemo = new Map();
@@ -312,11 +342,15 @@ async function classifyNoteImport(
       });
     }
   });
+  const libraries = batchLibraries(
+    client,
+    new Set(actions.filter(needsImport).map((action) => action.note.libraryID)),
+  );
   logClassified("note", actions, {
     total: itemIDs.length,
     notFound: notFound.length,
   });
-  return { actions, notFound };
+  return { actions, notFound, libraries };
 }
 
 // ---------------------------------------------------------------------------
@@ -562,7 +596,7 @@ async function runChildImportByKey(
         ?.itemID
     : undefined;
   if (itemID == null) return null;
-  return runBatchImport(deps, "child", [itemID]);
+  return runBatchImport(deps, { mode: "child", itemIDs: [itemID] });
 }
 
 export type ReimportResult =

@@ -18,11 +18,13 @@ import { registerAttachmentSkipNotice } from "./services/attachment-import/notic
 import { buildServices } from "./services/build";
 import { registerCitationsCli } from "./services/citation-index/cli/register";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
+import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
+import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
@@ -198,6 +200,7 @@ export default class ZotLitPlugin extends Plugin {
         plugin: this,
         settings: services.settings,
         db: services.db,
+        libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
@@ -222,6 +225,7 @@ export default class ZotLitPlugin extends Plugin {
           app: this.app,
           db: services.db,
           settings: services.settings,
+          libraryScope: services.libraryScope,
           noteFeature: services.noteFeature,
           noteIndex: services.noteIndex,
         }),
@@ -231,6 +235,7 @@ export default class ZotLitPlugin extends Plugin {
       lookup: services.itemLookup,
       noteFeature: services.noteFeature,
       settings: services.settings,
+      citationIndex: services.citationIndex,
     });
     registerQuickSwitch(this, {
       app: this.app,
@@ -245,6 +250,7 @@ export default class ZotLitPlugin extends Plugin {
         app: this.app,
         settings: services.settings,
         db: services.db,
+        libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
@@ -288,6 +294,7 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       citationIndex: services.citationIndex,
+      libraryScope: services.libraryScope,
       citationText: services.citationText,
       citekeyEditor: services.citekeyEditor,
       pandocEngine: services.pandocEngine,
@@ -359,6 +366,18 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
     stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
+    stack.defer(
+      registerCitekeyCandidatePicker(this.app, services.citekeyEditor),
+    );
+    stack.defer(
+      registerLibraryScopeNotices(services.libraryScope, () => {
+        revealSetting(
+          this.app,
+          this.manifest.id,
+          m.settings_library_scope_name(),
+        );
+      }),
+    );
 
     // A Zotero item add/modify/trash push means the database changed; feed it
     // into the same coalesced refresh lane as the filesystem watchers.

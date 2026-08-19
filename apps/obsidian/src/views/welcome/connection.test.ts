@@ -6,15 +6,10 @@ import type { IndexSignature, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { DatabaseError } from "@/services/database/service";
-import type { Settings } from "@/services/settings/service";
 
 import { readConnectionStatus } from "./connection";
 
 const CLIENT = {} as NodeDatabaseClient;
-
-function settingsWith(libraryID: number): Settings {
-  return { "zotero.citation-library": libraryID } as Settings;
-}
 
 describe("readConnectionStatus", () => {
   it("db not ready → missing, without touching the injected queries", async () => {
@@ -33,7 +28,6 @@ describe("readConnectionStatus", () => {
         error: null,
       },
       zoteroPref: { dataDir: "/opt/zotero-data" },
-      settings: { loaded: Promise.resolve(settingsWith(1)) },
       loadLibraries,
       loadIndexSignature,
     });
@@ -59,7 +53,6 @@ describe("readConnectionStatus", () => {
         error: new DatabaseError("refresh-failed"),
       },
       zoteroPref: { dataDir: "/opt/zotero-data" },
-      settings: { loaded: Promise.resolve(settingsWith(1)) },
       loadLibraries,
       loadIndexSignature,
     });
@@ -69,7 +62,7 @@ describe("readConnectionStatus", () => {
     expect(loadIndexSignature).not.toHaveBeenCalled();
   });
 
-  it("ready + user library → connected with library: null", async () => {
+  it("ready → connected with the item count of the one library", async () => {
     const loadLibraries = vi.fn((): Library[] => [
       { libraryID: 1, type: "user", groupID: null, name: null },
     ]);
@@ -85,7 +78,6 @@ describe("readConnectionStatus", () => {
         error: null,
       },
       zoteroPref: { dataDir: "/opt/zotero-data" },
-      settings: { loaded: Promise.resolve(settingsWith(1)) },
       loadLibraries,
       loadIndexSignature,
     });
@@ -93,18 +85,27 @@ describe("readConnectionStatus", () => {
     expect(result).toEqual({
       status: "connected",
       path: "/opt/zotero-data",
-      library: null,
       itemCount: 42,
     });
     expect(loadIndexSignature).toHaveBeenCalledWith(CLIENT, 1);
   });
 
-  it("ready + group library → connected with the group's name", async () => {
+  it("totals every library the database holds, whatever the library scope is", async () => {
     const loadLibraries = vi.fn((): Library[] => [
+      { libraryID: 1, type: "user", groupID: null, name: null },
       { libraryID: 2, type: "group", groupID: 99, name: "Shared Library" },
+      { libraryID: 3, type: "group", groupID: 100, name: "Reading Group" },
+    ]);
+    const counts = new Map([
+      [1, 42],
+      [2, 7],
+      [3, 3],
     ]);
     const loadIndexSignature = vi.fn(
-      (): IndexSignature => ({ count: 7, checksum: 0 }),
+      (_client: NodeDatabaseClient, libraryID: number): IndexSignature => ({
+        count: counts.get(libraryID) ?? 0,
+        checksum: 0,
+      }),
     );
 
     const result = await readConnectionStatus({
@@ -115,15 +116,11 @@ describe("readConnectionStatus", () => {
         error: null,
       },
       zoteroPref: { dataDir: "/opt/zotero-data" },
-      settings: { loaded: Promise.resolve(settingsWith(2)) },
       loadLibraries,
       loadIndexSignature,
     });
 
-    expect(result).toMatchObject({
-      status: "connected",
-      library: "Shared Library",
-    });
+    expect(result).toMatchObject({ status: "connected", itemCount: 52 });
   });
 
   it("abbreviates a data dir under the home directory to ~", async () => {
@@ -140,11 +137,10 @@ describe("readConnectionStatus", () => {
         error: null,
       },
       zoteroPref: { dataDir: join(homedir(), "Zotero") },
-      settings: { loaded: Promise.resolve(settingsWith(1)) },
       loadLibraries,
       loadIndexSignature,
     });
 
-    expect(result).toMatchObject({ path: "~/Zotero" });
+    expect(result).toMatchObject({ path: "~/Zotero", itemCount: 0 });
   });
 });

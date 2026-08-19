@@ -1,26 +1,34 @@
 /**
- * Search-index lifecycle for the citation library, kept fresh with a
+ * Search-index lifecycle for the Library Scope, kept fresh with a
  * stale-while-revalidate (SWR) rebuild model:
  *
+ * - One **composite index** spans every available Library in scope. Per-Library
+ *   BM25 scores are not comparable, so they are never merged: the whole corpus
+ *   is indexed together and ranked once, globally.
  * - A database refresh (`db.on("changed")`) rebuilds in the background while
  *   {@link ItemLookup.search} keeps serving the cached index — search never
  *   blocks on a rebuild, so frequent Zotero writes don't freeze suggestions.
- * - A change-gate reads a cheap `(count, checksum)` {@link IndexSignature} first
- *   and skips the rebuild when nothing indexed moved, so the common "refresh
- *   fired but no indexed field changed" case costs one aggregate query.
+ * - A change-gate reads a cheap per-Library `(count, checksum)`
+ *   {@link IndexSignature} **vector** first and skips the rebuild when nothing
+ *   indexed moved in any covered Library.
  * - Rebuilds are single-flight with a trailing rerun ({@link #scheduleRebuild}):
  *   a refresh arriving mid-build lets the build finish, then reruns once, so a
  *   burst of refreshes converges instead of restarting.
  * - Each rebuild pins one DB snapshot ({@link DatabaseService.acquireRead}) for
- *   both its signature read and its chunked hydration, so the cached signature is
- *   atomic with the index it labels and a concurrent refresh cannot tear chunks
- *   across snapshots. The build hydrates in `dateModified`-desc chunks
- *   ({@link #buildLibraryIndex}), yielding the main thread between chunks so a
- *   large library stays responsive.
+ *   its scope resolution, its signature reads, and its chunked hydration, so the
+ *   cached signatures are atomic with the index they label and a concurrent
+ *   refresh cannot tear chunks across snapshots. The build hydrates one Library
+ *   at a time in `dateModified`-desc chunks, yielding the main thread between
+ *   chunks so a large scope stays responsive; {@link SearchIndexBuilder.build}
+ *   then imposes the global order over the whole corpus.
  *
- * A citation-library switch is a hard reset: it bumps {@link #generation} to
- * abandon any in-flight build and search hydration bound to the old library, and
- * drops the cache so the new library builds from scratch.
+ * A Library Scope change is a hard invalidation: it bumps {@link #generation} to
+ * abandon any in-flight build and search hydration bound to the old scope, and
+ * drops the cache so the new scope builds from scratch. A group rename leaves
+ * the covered Libraries alone, so it refreshes labels without rebuilding.
+ *
+ * No fixed Library or Item limit applies; the chunked build is what keeps a
+ * large scope affordable.
  */
 import { chunk } from "@std/collections/chunk";
 import { getLanguage } from "obsidian";
@@ -46,12 +54,24 @@ import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { DatabaseError } from "@/services/database/service";
 import type { DatabaseService } from "@/services/database/service";
+import { availableKey } from "@/services/library-scope/scope";
+import type {
+  AvailableLibrary,
+  ResolvedLibraryScope,
+} from "@/services/library-scope/scope";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
-export type SearchHit = EngineSearchHit<Item>;
+
+export interface SearchHit extends EngineSearchHit<Item> {
+  /**
+   * The Library this hit came from, for a muted label on the result row, or
+   * `null` when one Library is available and the label would say nothing.
+   */
+  library: AvailableLibrary | null;
+}
 
 /** Items hydrated and indexed per yield, keeping each synchronous slice short
  * enough that the main thread can paint between chunks during a rebuild. */
@@ -59,7 +79,7 @@ const INDEX_CHUNK_SIZE = 50;
 
 export interface ItemLookupDeps {
   db: DatabaseService;
-  settings: SettingsService;
+  libraryScope: LibraryScopeService;
   getChsSegmenter?: () => ChsSegmenter | null;
   loadItemIDs?: (
     db: NodeDatabaseClient,
@@ -80,18 +100,32 @@ export interface ItemLookupDeps {
 }
 
 interface ItemCache {
-  libraryID: number;
+  /** Identity of the Libraries this index covers; see {@link availableKey}. */
+  scopeKey: string;
+  /** Those Libraries, in canonical order — the source of result labels. */
+  libraries: readonly AvailableLibrary[];
   index: SearchIndex;
-  signature: IndexSignature;
+  /** One signature per covered Library, in the same canonical order. */
+  signatures: readonly IndexSignature[];
 }
 
-function signaturesEqual(a: IndexSignature, b: IndexSignature): boolean {
-  return a.count === b.count && a.checksum === b.checksum;
+function signaturesEqual(
+  a: readonly IndexSignature[],
+  b: readonly IndexSignature[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (signature, index) =>
+        signature.count === b[index]!.count &&
+        signature.checksum === b[index]!.checksum,
+    )
+  );
 }
 
 export class ItemLookup extends Service<void> {
   readonly #db;
-  readonly #settings;
+  readonly #libraryScope;
   readonly #languageLookup;
   readonly #getChsSegmenter;
   readonly #loadItemIDs;
@@ -102,10 +136,11 @@ export class ItemLookup extends Service<void> {
   #cache: ItemCache | null = null;
   #rebuildInFlight: Promise<void> | null = null;
   #rebuildAgain = false;
-  #lastLibraryID: number | null = null;
-  /** Bumped only on library switch — the hard-abort token for an in-flight build
-   * and in-flight search hydration whose library is now wrong. Data refreshes do
-   * not bump it; they reconcile via the change-gate and a trailing rebuild. */
+  /** Libraries the index should cover, or `null` while the scope is unresolved. */
+  #scopeKey: string | null = null;
+  /** Bumped only on a scope change — the hard-abort token for an in-flight build
+   * and in-flight search hydration whose Libraries are now wrong. Data refreshes
+   * do not bump it; they reconcile via the change-gate and a trailing rebuild. */
   #generation = 0;
   readonly #intl = new Intl.Segmenter(undefined, { granularity: "word" });
   #tokenizerOpts: TokenizerOptions;
@@ -115,7 +150,7 @@ export class ItemLookup extends Service<void> {
   constructor(deps: ItemLookupDeps) {
     super();
     this.#db = deps.db;
-    this.#settings = deps.settings;
+    this.#libraryScope = deps.libraryScope;
     this.#languageLookup = createLanguageLookup(getLanguage());
     this.#getChsSegmenter = deps.getChsSegmenter ?? (() => null);
     this.#loadItemIDs = deps.loadItemIDs ?? getIndexedItemIDsByLibrary;
@@ -134,8 +169,8 @@ export class ItemLookup extends Service<void> {
 
     const t0 = performance.now();
     const generation = this.#generation;
-    const index = await this.#loadIfNeeded();
-    if (!index) {
+    const cache = await this.#loadIfNeeded();
+    if (!cache) {
       logger.debug("Search skipped; no index available", {
         queryLength: query.length,
       });
@@ -143,21 +178,23 @@ export class ItemLookup extends Service<void> {
     }
 
     const trimmed = query.trim();
+    // `index.items` is already in global most-recently-modified order, so the
+    // empty query is that order truncated to the limit.
     const leanHits =
       trimmed.length === 0
-        ? index.items.slice(0, limit).map((item) => ({
+        ? cache.index.items.slice(0, limit).map((item) => ({
             item,
             score: 0,
             matches: [],
           }))
-        : searchIndex(index, trimmed, {
+        : searchIndex(cache.index, trimmed, {
             tokenizer: this.#tokenizerOpts,
             limit,
           });
-    const hits = await this.#hydrateHits(index.libraryID, leanHits, generation);
+    const hits = await this.#hydrateHits(cache, leanHits, generation);
 
     logger.debug("Search completed", {
-      libraryID: index.libraryID,
+      libraries: cache.libraries.length,
       queryLength: trimmed.length,
       hits: hits.length,
       durationMs: performance.now() - t0,
@@ -166,71 +203,87 @@ export class ItemLookup extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const settings = await this.#settings.loaded;
-    this.#lastLibraryID = settings["zotero.citation-library"];
-
     await using stack = new AsyncDisposableStack();
     stack.defer(this.#db.on("changed", () => this.#invalidate()));
     stack.defer(
-      this.#settings.subscribe((next) => {
-        if (next === null) return;
-        this.#onSettingsChanged(next);
-      }),
+      this.#libraryScope.on("changed", (scope) => this.#onScopeChanged(scope)),
     );
 
     this.commit(stack.move());
-    logger.info("Item lookup ready", { libraryID: this.#lastLibraryID });
 
-    await this.#db.ready;
+    // Library Scope settles the database on its own way to ready, so its
+    // resolution is the only startup signal this service waits on.
+    await this.#libraryScope.ready;
+    const scope = this.#libraryScope.current;
+    this.#scopeKey = scope && availableKey(scope.available);
+    logger.info("Item lookup ready", { scopeKey: this.#scopeKey });
 
     void this.#loadIfNeeded().catch((error) => {
       logger.error("Initial item index load failed", {
         error,
-        libraryID: this.#lastLibraryID,
+        scopeKey: this.#scopeKey,
       });
     });
   }
 
-  #onSettingsChanged(settings: Readonly<Settings>): void {
-    const libraryID = settings["zotero.citation-library"];
-    if (libraryID === this.#lastLibraryID) return;
-    logger.debug("Citation library changed", {
-      from: this.#lastLibraryID,
-      to: libraryID,
+  /**
+   * A scope change makes the cached index wrong, not merely stale: hard-abort
+   * any in-flight build/hydration (generation bump) and drop the cache. A
+   * refresh that only renames a group leaves the covered Libraries alone, so it
+   * keeps the index and only refreshes the labels drawn from it.
+   */
+  #onScopeChanged(scope: ResolvedLibraryScope | null): void {
+    const scopeKey = scope && availableKey(scope.available);
+    if (scopeKey === this.#scopeKey) {
+      if (scope) this.#relabel(scope.available);
+      return;
+    }
+    logger.debug("Library scope changed", {
+      from: this.#scopeKey,
+      to: scopeKey,
     });
-    this.#lastLibraryID = libraryID;
-    // A switched library makes the cached index wrong, not merely stale: hard-abort
-    // any in-flight build/hydration (generation bump) and drop the cache.
+    this.#scopeKey = scopeKey;
     this.#generation += 1;
     this.#cache = null;
     void this.#scheduleRebuild();
+  }
+
+  /**
+   * Adopt the current names of the Libraries the cached index already covers.
+   * Result labels read from {@link ItemCache.libraries}, so a rename that leaves
+   * the covered Libraries alone still has to reach them.
+   */
+  #relabel(libraries: readonly AvailableLibrary[]): void {
+    if (this.#cache === null) return;
+    if (this.#cache.scopeKey !== availableKey(libraries)) return;
+    this.#cache = { ...this.#cache, libraries };
   }
 
   /** Database refresh: keep serving the stale index (SWR) and rebuild in the
    * background. {@link #generation} is untouched so the in-flight build finishes. */
   #invalidate(): void {
     logger.debug("Item index invalidated by database change", {
-      libraryID: this.#lastLibraryID,
+      scopeKey: this.#scopeKey,
     });
     void this.#scheduleRebuild();
   }
 
   /** Serve the cached index immediately when present (stale-while-revalidate);
-   * only block on a build when there is no valid index for the current library. */
-  async #loadIfNeeded(): Promise<SearchIndex | null> {
+   * only block on a build when there is no valid index for the current scope. */
+  async #loadIfNeeded(): Promise<ItemCache | null> {
     if (this.#db.state !== "ready") {
       this.#cache = null;
       logger.debug("Item index load skipped; database not ready");
       return null;
     }
-    const libraryID = this.#lastLibraryID;
-    if (libraryID === null) {
-      logger.debug("Item index load skipped; no library configured");
+    const scopeKey = this.#scopeKey;
+    if (scopeKey === null) {
+      logger.debug("Item index load skipped; library scope unresolved");
       return null;
     }
-    if (this.#cache?.libraryID === libraryID) {
-      logger.debug("Item index cache hit", { libraryID });
-      return this.#cache.index;
+    if (this.#cache?.scopeKey === scopeKey) {
+      logger.debug("Item index cache hit", { scopeKey });
+      return this.#cache;
     }
     // Join an in-flight rebuild rather than scheduling another — a read must not
     // inject a trailing rerun into the rebuild lane.
@@ -239,10 +292,10 @@ export class ItemLookup extends Service<void> {
       joining
         ? "Item index load joining in-flight rebuild"
         : "Item index load triggering rebuild",
-      { libraryID },
+      { scopeKey },
     );
     await (this.#rebuildInFlight ?? this.#scheduleRebuild());
-    return this.#cache?.libraryID === libraryID ? this.#cache.index : null;
+    return this.#cache?.scopeKey === scopeKey ? this.#cache : null;
   }
 
   /**
@@ -255,12 +308,12 @@ export class ItemLookup extends Service<void> {
     if (this.#rebuildInFlight) {
       this.#rebuildAgain = true;
       logger.debug("Item index rebuild coalesced; trailing rerun scheduled", {
-        libraryID: this.#lastLibraryID,
+        scopeKey: this.#scopeKey,
       });
       return this.#rebuildInFlight;
     }
     logger.debug("Item index rebuild lane started", {
-      libraryID: this.#lastLibraryID,
+      scopeKey: this.#scopeKey,
     });
     this.#rebuildInFlight = this.#rebuildLoop().finally(() => {
       this.#rebuildInFlight = null;
@@ -274,7 +327,7 @@ export class ItemLookup extends Service<void> {
       await this.#rebuildOnce();
       if (this.#rebuildAgain) {
         logger.debug("Item index rebuild trailing rerun triggered", {
-          libraryID: this.#lastLibraryID,
+          scopeKey: this.#scopeKey,
         });
       }
     } while (this.#rebuildAgain);
@@ -285,43 +338,47 @@ export class ItemLookup extends Service<void> {
       logger.debug("Item index rebuild skipped; database not ready");
       return;
     }
-    const libraryID = this.#lastLibraryID;
-    if (libraryID === null) {
-      logger.debug("Item index rebuild skipped; no library configured");
-      return;
-    }
     const generation = this.#generation;
     const t0 = performance.now();
     try {
-      // Pin one DB snapshot for the signature read and the whole chunked build:
-      // a concurrent refresh cannot swap the client between chunks (a torn index),
-      // and the cached signature describes exactly the index stored with it.
+      // Pin one DB snapshot for the scope resolution, the signature reads and
+      // the whole chunked build: a concurrent refresh cannot swap the client
+      // between chunks (a torn index), and the cached signatures describe
+      // exactly the index stored with them.
       using lease = await this.#db.acquireRead();
       const { client } = lease;
-      const signature = await this.#loadSignature(client, libraryID);
+      const { available } = this.#libraryScope.resolveWith(client);
+      const scopeKey = availableKey(available);
+      const signatures: IndexSignature[] = [];
+      for (const library of available) {
+        signatures.push(await this.#loadSignature(client, library.libraryID));
+      }
       if (
-        this.#cache?.libraryID === libraryID &&
-        signaturesEqual(this.#cache.signature, signature)
+        this.#cache?.scopeKey === scopeKey &&
+        signaturesEqual(this.#cache.signatures, signatures)
       ) {
-        logger.debug("Item index up to date; skipping rebuild", { libraryID });
+        // Nothing indexed moved, but a group rename would still have landed in
+        // this resolution, and result labels are read from the cache.
+        this.#relabel(available);
+        logger.debug("Item index up to date; skipping rebuild", { scopeKey });
         return;
       }
       this.#tokenizerOpts = this.#createTokenizerOpts();
-      const index = await this.#buildLibraryIndex(
+      const index = await this.#buildCompositeIndex(
         client,
-        libraryID,
+        available,
         generation,
       );
       if (index === null || generation !== this.#generation) {
         logger.debug("Discarding superseded item index build", {
-          libraryID,
+          scopeKey,
           generation,
         });
         return;
       }
-      this.#cache = { libraryID, index, signature };
+      this.#cache = { scopeKey, libraries: available, index, signatures };
       logger.info("Item index built", {
-        libraryID,
+        libraries: available.length,
         count: index.items.length,
         durationMs: performance.now() - t0,
       });
@@ -330,55 +387,58 @@ export class ItemLookup extends Service<void> {
         // Keep serving the stale index; the next refresh retries the rebuild.
         logger.debug("Item index rebuild skipped; database unavailable", {
           error,
-          libraryID,
+          scopeKey: this.#scopeKey,
         });
         return;
       }
       // A background rebuild must not reject the promise search() awaits — log and
       // keep serving the stale index, mirroring DatabaseService's refresh loop.
-      logger.error("Item index rebuild failed", { error, libraryID });
+      logger.error("Item index rebuild failed", {
+        error,
+        scopeKey: this.#scopeKey,
+      });
     }
   }
 
   /**
-   * Build the library index in dateModified-desc chunks — one lightweight id
-   * query up front, then per-chunk hydration — yielding the main thread between
-   * chunks so a large library does not freeze the UI. All reads use the caller's
-   * pinned `client` so every chunk reflects one DB snapshot. A library switch
-   * bumps {@link #generation}; the per-chunk guard then abandons this now-wrong
-   * build.
+   * Build one composite index over every Library in scope — per Library, one
+   * lightweight id query up front, then per-chunk hydration — yielding the main
+   * thread between chunks so a large scope does not freeze the UI. All reads use
+   * the caller's pinned `client` so every chunk reflects one DB snapshot. A
+   * scope change bumps {@link #generation}; the per-chunk guard then abandons
+   * this now-wrong build.
    *
-   * @returns the built index, or `null` when a library switch superseded it.
+   * @returns the built index, or `null` when a scope change superseded it.
    */
-  async #buildLibraryIndex(
+  async #buildCompositeIndex(
     client: NodeDatabaseClient,
-    libraryID: number,
+    libraries: readonly AvailableLibrary[],
     generation: number,
   ): Promise<SearchIndex | null> {
-    const itemIDs = await this.#loadItemIDs(client, libraryID);
-    logger.debug("Item index build started", {
-      libraryID,
-      itemCount: itemIDs.length,
-      chunkSize: INDEX_CHUNK_SIZE,
-    });
     const builder = createIndexBuilder(this.#tokenizerOpts, {
-      libraryID,
+      libraries: libraries.map((library) => library.libraryID),
       languageLookup: this.#languageLookup,
     });
-    for (const ids of chunk(itemIDs, INDEX_CHUNK_SIZE)) {
-      if (generation !== this.#generation) {
-        logger.debug("Item index build abandoned mid-chunk; library switched", {
-          libraryID,
-          generation,
-        });
-        return null;
+    for (const library of libraries) {
+      const itemIDs = await this.#loadItemIDs(client, library.libraryID);
+      logger.debug("Item index build started for a library", {
+        libraryID: library.libraryID,
+        itemCount: itemIDs.length,
+        chunkSize: INDEX_CHUNK_SIZE,
+      });
+      for (const ids of chunk(itemIDs, INDEX_CHUNK_SIZE)) {
+        if (generation !== this.#generation) {
+          logger.debug("Item index build abandoned mid-chunk; scope changed", {
+            generation,
+          });
+          return null;
+        }
+        builder.add(await this.#loadItems(client, ids));
+        await yieldToMain();
       }
-      builder.add(await this.#loadItems(client, ids));
-      await yieldToMain();
     }
     if (generation !== this.#generation) {
-      logger.debug("Item index build abandoned post-chunks; library switched", {
-        libraryID,
+      logger.debug("Item index build abandoned post-chunks; scope changed", {
         generation,
       });
       return null;
@@ -394,7 +454,7 @@ export class ItemLookup extends Service<void> {
   }
 
   async #hydrateHits(
-    libraryID: number,
+    cache: ItemCache,
     leanHits: readonly EngineSearchHit<IndexedItem>[],
     generation: number,
   ): Promise<SearchHit[]> {
@@ -411,10 +471,7 @@ export class ItemLookup extends Service<void> {
       if (error instanceof DatabaseError) {
         logger.debug(
           "Search hydration skipped because the database is unavailable",
-          {
-            error,
-            libraryID,
-          },
+          { error, scopeKey: cache.scopeKey },
         );
         return [];
       }
@@ -422,16 +479,33 @@ export class ItemLookup extends Service<void> {
     }
 
     if (generation !== this.#generation) {
-      logger.debug("Search hydration discarded; library switched", {
-        libraryID,
+      logger.debug("Search hydration discarded; scope changed", {
+        scopeKey: cache.scopeKey,
         generation,
       });
       return [];
     }
 
+    // One available Library makes every label identical, so the rows carry none.
+    const labels =
+      cache.libraries.length > 1
+        ? new Map(
+            cache.libraries.map((library) => [library.libraryID, library]),
+          )
+        : null;
+
     return leanHits.flatMap((hit) => {
       const item = hydrated.get(hit.item.itemID);
-      return item ? [{ item, score: hit.score, matches: hit.matches }] : [];
+      return item
+        ? [
+            {
+              item,
+              score: hit.score,
+              matches: hit.matches,
+              library: labels?.get(item.libraryID) ?? null,
+            },
+          ]
+        : [];
     });
   }
 }

@@ -94,10 +94,12 @@ export function createReferenceActions(
       });
     },
     onOpenNote(entry) {
-      // An unresolved citekey reaches no note, and a missing entry's Item
-      // could not be read at all; both keep their row's action disabled.
+      // An unresolved citekey reaches no note, an ambiguous one reaches
+      // several and adopts none, and a missing entry's Item could not be read
+      // at all; each keeps its row's action disabled.
       if (
         entry.kind === "unresolved" ||
+        entry.kind === "ambiguous" ||
         entry.kind === "missing" ||
         entry.kind === "malformed"
       ) {

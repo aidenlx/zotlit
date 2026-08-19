@@ -39,6 +39,14 @@
   vertical-align: middle;
 }
 
+/* Which Library a result came from. Rendered only when several Libraries are
+ * in scope, so it stays muted rather than competing with the title. */
+.zt-citations .library {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+}
+
 .zt-citations .meta {
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);

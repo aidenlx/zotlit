@@ -18,8 +18,14 @@ import type {
   BatchRunControls,
   BatchRunResult,
 } from "@/services/batch-run";
-import { resolveBatchScope } from "@/services/batch-scope";
-import type { BatchScopeOptions } from "@/services/batch-scope";
+import {
+  batchGroupKey,
+  batchGroups,
+  batchLibraries,
+  planBatchScope,
+  withUnavailableLibraries,
+} from "@/services/batch-scope";
+import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
@@ -30,9 +36,10 @@ import type { SingleUpdateDeps } from "./update-single";
 
 const logger = getLogger("batch-update");
 
-type BatchAction =
-  | { itemID: number; label: string; kind: "update"; file: TFile }
-  | { itemID: number; label: string; kind: "create" };
+type BatchAction = { itemID: number; label: string; libraryID: number } & (
+  | { kind: "update"; file: TFile }
+  | { kind: "create" }
+);
 
 interface NotFoundEntry {
   itemID: number;
@@ -61,11 +68,22 @@ interface RunContext {
 export type BatchUpdateResult =
   | { outcome: "db-unavailable" }
   | { outcome: "empty-selection" }
-  | { outcome: "library-mismatch" }
+  | { outcome: "no-library-in-scope" }
+  | { outcome: "unavailable-target" }
   | { outcome: "collection-not-found" }
   | { outcome: "not-found" }
   | { outcome: "single-update" }
   | { outcome: "batch-modal" };
+
+export interface BatchUpdateOptions {
+  /** How much of each existing note an update refreshes. */
+  scope?: UpdateScope;
+  /**
+   * Selected Libraries this database holds no Library for. Stated in the
+   * confirmation introduction so a partial run is visible before it writes.
+   */
+  unavailableLibraries?: number;
+}
 
 /**
  * Batch-update or create literature notes for `itemIDs`. Owns the
@@ -76,14 +94,18 @@ export type BatchUpdateResult =
  * - `≥2` — open the {@link BatchModal}; classification runs inside it as a
  *   chunked loading phase (see {@link classifyActions}), then confirm → run.
  *
+ * The count is the flattened total, so a Library Scope expansion reaching one
+ * item takes the same single-item path an explicit single id does.
+ *
  * Returns a discriminated result so the caller can map outcomes to UI feedback
  * (notice / toast) without coupling the logic to presentation.
  */
 export async function runBatchUpdate(
   deps: SingleUpdateDeps,
   itemIDs: readonly number[],
-  scope: UpdateScope = "full",
+  opts: BatchUpdateOptions = {},
 ): Promise<BatchUpdateResult> {
+  const { scope = "full", unavailableLibraries = 0 } = opts;
   if (deps.db.state !== "ready") {
     logger.warn("Batch update: database not ready", { count: itemIDs.length });
     return { outcome: "db-unavailable" };
@@ -124,9 +146,12 @@ export async function runBatchUpdate(
           : m.batch_update_run_failed(),
       progressLabel: m.batch_update_progress_label(),
       confirmIntro: ({ actionable, notFound }) =>
-        actionable === 0
-          ? m.batch_update_confirm_none({ count: notFound })
-          : m.batch_update_confirm_intro({ count: actionable }),
+        withUnavailableLibraries(
+          actionable === 0
+            ? m.batch_update_confirm_none({ count: notFound })
+            : m.batch_update_confirm_intro({ count: actionable }),
+          unavailableLibraries,
+        ),
       confirmButton: m.batch_update_confirm_button(),
       runSummary: (result, state) =>
         state.aborted
@@ -143,16 +168,16 @@ export async function runBatchUpdate(
       });
       actions = classified.actions;
       return new FlatManifest({
-        tasks: actions.map(({ itemID, label, kind }) => ({
+        tasks: actions.map(({ itemID, label, kind, libraryID }) => ({
           id: itemID,
           label,
-          kind,
+          kind: batchGroupKey(libraryID, kind),
         })),
         notFound: classified.notFound,
-        groups: [
+        groups: batchGroups(classified.libraries, [
           { kind: "update", header: m.batch_update_group_update },
           { kind: "create", header: m.batch_update_group_create },
-        ],
+        ]),
         // Non-actionable, so it rides the static informational slot rather than
         // a task group — this keeps them out of the actionable count driving
         // the confirm intro.
@@ -190,6 +215,7 @@ async function classifyActions(
   actions: BatchAction[];
   skipped: NotFoundEntry[];
   notFound: NotFoundEntry[];
+  libraries: BatchLibrary[];
 }> {
   // Pin the client for the chunked loop's whole async lifetime so a concurrent
   // refresh cannot swap it out between `yieldToMain()` yields.
@@ -211,15 +237,21 @@ async function classifyActions(
       }
       const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
       const label = itemLabel(ref.title, itemID);
+      const row = { itemID, label, libraryID: ref.libraryID };
       if (file) {
-        actions.push({ itemID, label, kind: "update", file });
+        actions.push({ ...row, kind: "update", file });
       } else if (scope === "metadata") {
         skipped.push({ itemID, label });
       } else {
-        actions.push({ itemID, label, kind: "create" });
+        actions.push({ ...row, kind: "create" });
       }
     }
   });
+
+  const libraries = batchLibraries(
+    client,
+    new Set(actions.map((action) => action.libraryID)),
+  );
 
   logger.info("Batch update classified", () => {
     const { update = [], create = [] } = Object.groupBy(actions, (t) => t.kind);
@@ -229,9 +261,10 @@ async function classifyActions(
       create: create.length,
       skipped: skipped.length,
       notFound: notFound.length,
+      libraries: libraries.length,
     };
   });
-  return { actions, skipped, notFound };
+  return { actions, skipped, notFound, libraries };
 }
 
 async function executeBatchActions(
@@ -331,42 +364,39 @@ async function runAction(
 }
 
 /**
- * Fetch every regular item in scope — the whole configured citation library, or
- * one collection and its descendants — and run a batch update. The modal's
- * loading phase shows progress while items are classified, and the user can
- * cancel before the run starts.
+ * Fetch every regular item a target covers and run a batch update. An exact
+ * `target` names one Library, optionally narrowed to one collection; no target
+ * expands every available Library of the current Library Scope, in canonical
+ * order, under this one planning lease. The modal's loading phase shows progress
+ * while items are classified, and the user can cancel before the run starts.
  *
- * @param opts.expectedGroupID when set, the configured library's group ID must
- *   match — `0` means the personal library, a positive integer names a group.
- *   A mismatch returns `library-mismatch` without scanning.
- * @param opts.collectionKey when set, narrows the run to that collection and
- *   every collection nested under it. A key this database doesn't hold returns
- *   `collection-not-found`.
+ * @param target.groupID names the exact Library the run covers — `0` for
+ *   My Library, a positive integer for a group. A group this database doesn't
+ *   hold returns `unavailable-target` without scanning.
+ * @param target.collectionKey narrows the run to that collection of the named
+ *   Library and every collection nested under it. A key that Library doesn't
+ *   hold returns `collection-not-found`.
  */
 export async function runBatchUpdateAll(
   deps: SingleUpdateDeps,
-  opts?: BatchScopeOptions,
+  target: BatchTarget = {},
 ): Promise<BatchUpdateResult> {
   if (deps.db.state !== "ready") {
     logger.warn("Batch update all: database not ready");
     return { outcome: "db-unavailable" };
   }
 
-  const settings = await deps.settings.loaded;
-
-  using lease = await deps.db.acquireRead();
-  const scope = resolveBatchScope(lease.client, "literature-items", {
-    libraryID: settings["zotero.citation-library"],
-    ...opts,
-  });
-  if (scope.outcome !== "resolved") {
-    return { outcome: scope.outcome };
+  const plan = await planBatchScope(deps, "literature-items", target);
+  if (plan.outcome !== "resolved") {
+    return { outcome: plan.outcome };
   }
-  if (scope.itemIDs.length === 0) {
+
+  if (plan.itemIDs.length === 0) {
     return { outcome: "empty-selection" };
   }
-
-  return runBatchUpdate(deps, scope.itemIDs);
+  return runBatchUpdate(deps, plan.itemIDs, {
+    unavailableLibraries: plan.unavailableLibraries,
+  });
 }
 
 function itemLabel(title: string | null, itemID: number): string {

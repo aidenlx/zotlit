@@ -325,6 +325,8 @@ function batchUpdateAllNotice(result: BatchUpdateResult): string | undefined {
       return m.batch_update_db_unavailable();
     case "empty-selection":
       return m.batch_update_all_empty();
+    case "no-library-in-scope":
+      return m.batch_all_no_library_in_scope();
     default:
       return undefined;
   }

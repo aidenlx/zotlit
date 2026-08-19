@@ -22,6 +22,10 @@
     "test": {
       "dependsOn": ["^build", "transit"]
     },
+    "fixture": {
+      "dependsOn": ["^build", "@zotlit/obsidian#build:dev"],
+      "cache": false
+    },
     "//#lint:repo:deps": {
       "dependsOn": [
         "@zotlit/db#build",

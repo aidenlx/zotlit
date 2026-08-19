@@ -8,6 +8,7 @@ import {
   getItemDisplayRefByID,
   getItemsByKey,
   getLibraries,
+  getLibraryByGroupID,
   getNoteByItemID,
   getNoteByKey,
   getNoteItemIDsByCollection,
@@ -20,6 +21,12 @@ import type { ChildNote, Library, Note } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { Temporal } from "@zotlit/shared/temporal";
 
+import type {
+  AvailableLibrary,
+  LibrarySelector,
+  ResolvedLibraryScope,
+} from "@/services/library-scope/scope";
+import { selectorOf } from "@/services/library-scope/scope";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type {
@@ -45,6 +52,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     getItemsByKey: vi.fn(),
     getNoteByKey: vi.fn(),
     getLibraries: vi.fn(),
+    getLibraryByGroupID: vi.fn(),
     getCollectionIDByKey: vi.fn(),
     getNoteItemIDsByLibrary: vi.fn(),
     getNoteItemIDsByCollection: vi.fn(),
@@ -92,12 +100,12 @@ async function driveLastModal(): Promise<{
   return { manifest, onItemSettled };
 }
 
-function makeRef(itemID: number): ChildNote {
+function makeRef(itemID: number, libraryID = USER_LIBRARY_ID): ChildNote {
   const key = `NOTE${itemID}`;
   return {
     itemID,
-    libraryID: USER_LIBRARY_ID,
-    groupID: null,
+    libraryID,
+    groupID: libraryID === USER_LIBRARY_ID ? null : 7,
     parentItemID: 1,
     key,
     indexedKey: formatIndexedKey(key, null),
@@ -136,13 +144,43 @@ function makeFile(path: string): TFile {
   return { path } as TFile;
 }
 
-/** The configured citation library in every fixture: the personal one. */
 const PERSONAL_LIBRARY: Library = {
   libraryID: USER_LIBRARY_ID,
   type: "user",
   groupID: null,
   name: null,
 };
+
+/** A group whose local id sorts after the personal library's own row order. */
+const GROUP_LIBRARY: Library = {
+  libraryID: 12,
+  type: "group",
+  groupID: 7,
+  name: "Reading group",
+};
+
+function availableLibrary(library: Library): AvailableLibrary {
+  return {
+    selector: selectorOf(library)!,
+    libraryID: library.libraryID,
+    name: library.name,
+  };
+}
+
+function scopeOf(
+  libraries: readonly Library[],
+  unavailable: readonly LibrarySelector[] = [],
+): ResolvedLibraryScope {
+  return {
+    mode: "selected",
+    invalid: false,
+    available: libraries.map(availableLibrary),
+    unavailable,
+  };
+}
+
+/** The Library Scope every fixture resolves, unless a test replaces it. */
+let currentScope: ResolvedLibraryScope = scopeOf([PERSONAL_LIBRARY]);
 
 function makeDeps(
   settings: Partial<Settings>,
@@ -169,6 +207,7 @@ function makeDeps(
       acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
     },
     settings: { loaded: Promise.resolve({ ...defaults, ...settings }) },
+    libraryScope: { resolveWith: () => currentScope },
     noteImport: { importNote },
     noteIndex: {
       whenIndexed: async () => {},
@@ -200,7 +239,15 @@ beforeEach(() => {
   vi.mocked(getNoteByItemID).mockReset();
   vi.mocked(getItemsByKey).mockReset();
   vi.mocked(getNoteByKey).mockReset();
-  vi.mocked(getLibraries).mockReset().mockReturnValue([PERSONAL_LIBRARY]);
+  currentScope = scopeOf([PERSONAL_LIBRARY]);
+  vi.mocked(getLibraries)
+    .mockReset()
+    .mockReturnValue([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+  vi.mocked(getLibraryByGroupID)
+    .mockReset()
+    .mockImplementation((_client, groupID) =>
+      groupID === GROUP_LIBRARY.groupID ? GROUP_LIBRARY : null,
+    );
   vi.mocked(getCollectionIDByKey).mockReset().mockReturnValue(100);
   vi.mocked(getNoteItemIDsByLibrary).mockReset().mockReturnValue([]);
   vi.mocked(getNoteItemIDsByCollection).mockReset().mockReturnValue([]);
@@ -219,83 +266,195 @@ describe("runBatchImportAll", () => {
     expect(openedModals).toHaveLength(0);
   });
 
-  it("stops on a library mismatch before scanning for notes", async () => {
+  it("reports an empty library scope before querying any note", async () => {
+    currentScope = scopeOf([], [{ type: "group", groupID: 7 }]);
     const { deps } = makeDeps({});
 
-    await expect(
-      createBatchImport(deps).runBatchImportAll({ expectedGroupID: 7 }),
-    ).resolves.toEqual({ outcome: "library-mismatch" });
+    await expect(createBatchImport(deps).runBatchImportAll()).resolves.toEqual({
+      outcome: "no-library-in-scope",
+    });
     expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
     expect(openedModals).toHaveLength(0);
   });
 
-  it("accepts a matching group library", async () => {
-    vi.mocked(getLibraries).mockReturnValue([
-      { ...PERSONAL_LIBRARY, groupID: 7 },
+  it("imports every note of every library in scope, in canonical order", async () => {
+    currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+    vi.mocked(getNoteItemIDsByLibrary).mockImplementation(
+      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [50] : [51]),
+    );
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
+      makeRef(50),
+      makeRef(51, GROUP_LIBRARY.libraryID),
     ]);
-    vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50]);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50)]);
-    const { deps } = makeDeps({});
-
-    const result = await createBatchImport(deps).runBatchImportAll({
-      expectedGroupID: 7,
-    });
-
-    expect(result).not.toEqual({ outcome: "library-mismatch" });
-  });
-
-  it("reports an unknown collection key instead of an empty scope", async () => {
-    vi.mocked(getCollectionIDByKey).mockReturnValue(undefined);
-    const { deps } = makeDeps({});
-
-    await expect(
-      createBatchImport(deps).runBatchImportAll({ collectionKey: COLLECTION }),
-    ).resolves.toEqual({ outcome: "collection-not-found" });
-    expect(getNoteItemIDsByCollection).not.toHaveBeenCalled();
-  });
-
-  it("reports an empty selection for a collection that holds no notes", async () => {
-    const { deps } = makeDeps({});
-
-    await expect(
-      createBatchImport(deps).runBatchImportAll({ collectionKey: COLLECTION }),
-    ).resolves.toEqual({ outcome: "empty-selection" });
-    expect(openedModals).toHaveLength(0);
-  });
-
-  it("imports every note the library holds", async () => {
-    vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
-    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
     const { deps } = makeDeps({});
 
     const result = await createBatchImport(deps).runBatchImportAll();
 
     expect(result).toEqual({ outcome: "batch-modal" });
-    expect(getNoteItemIDsByLibrary).toHaveBeenCalledWith(
-      expect.anything(),
-      USER_LIBRARY_ID,
-    );
+    expect(
+      vi.mocked(getNoteItemIDsByLibrary).mock.calls.map(([, id]) => id),
+    ).toEqual([USER_LIBRARY_ID, GROUP_LIBRARY.libraryID]);
     const { manifest } = await driveLastModal();
     expect(manifest.options.tasks.map((task: FlatTask) => task.id)).toEqual([
       50, 51,
     ]);
+    expect(
+      manifest.options.groups.map((group: any) => group.header({ count: 1 })),
+    ).toEqual([
+      "My Library · Import (1)",
+      "My Library · Overwrite (1)",
+      "Reading group · Import (1)",
+      "Reading group · Overwrite (1)",
+    ]);
   });
 
-  it("scopes to the named collection within the configured library", async () => {
-    vi.mocked(getNoteItemIDsByCollection).mockReturnValue([50, 51]);
+  it("keeps action-only headings while one library contributes", async () => {
+    currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+    vi.mocked(getNoteItemIDsByLibrary).mockImplementation(
+      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [50, 51] : []),
+    );
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
     const { deps } = makeDeps({});
 
-    const result = await createBatchImport(deps).runBatchImportAll({
-      collectionKey: COLLECTION,
+    await createBatchImport(deps).runBatchImportAll();
+
+    const { manifest } = await driveLastModal();
+    expect(
+      manifest.options.groups.map((group: any) => group.header({ count: 2 })),
+    ).toEqual(["Import (2)", "Overwrite (2)"]);
+  });
+
+  it("runs the available subset and states the unavailable library count", async () => {
+    currentScope = scopeOf(
+      [PERSONAL_LIBRARY],
+      [
+        { type: "group", groupID: 8 },
+        { type: "group", groupID: 9 },
+      ],
+    );
+    vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    const { deps } = makeDeps({});
+
+    await createBatchImport(deps).runBatchImportAll();
+
+    const opts = openedModals.at(-1)!;
+    await driveLastModal();
+    expect(opts.text.confirmIntro({ actionable: 2, notFound: 0 })).toContain(
+      "2 selected libraries are unavailable.",
+    );
+  });
+
+  it("routes a one-note multi-library expansion to the single-note path", async () => {
+    currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+    vi.mocked(getNoteItemIDsByLibrary).mockImplementation(
+      (_client, libraryID) => (libraryID === USER_LIBRARY_ID ? [] : [51]),
+    );
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
+      makeRef(51, GROUP_LIBRARY.libraryID),
+    ]);
+    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(51));
+    const { deps } = makeDeps({});
+
+    const result = await createBatchImport(deps).runBatchImportAll();
+
+    expect(result).toMatchObject({ outcome: "single" });
+    expect(openedModals).toHaveLength(0);
+  });
+
+  describe("exact target", () => {
+    it("resolves the named group outside library scope", async () => {
+      currentScope = scopeOf([PERSONAL_LIBRARY]);
+      vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
+      vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
+        makeRef(50),
+        makeRef(51),
+      ]);
+      const { deps } = makeDeps({});
+
+      const result = await createBatchImport(deps).runBatchImportAll({
+        groupID: 7,
+      });
+
+      expect(result).toEqual({ outcome: "batch-modal" });
+      expect(getNoteItemIDsByLibrary).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        GROUP_LIBRARY.libraryID,
+      );
     });
 
-    expect(result).toEqual({ outcome: "batch-modal" });
-    expect(getNoteItemIDsByCollection).toHaveBeenCalledWith(expect.anything(), {
-      libraryID: USER_LIBRARY_ID,
-      collectionKey: COLLECTION,
+    it("resolves an absent library parameter to My Library", async () => {
+      currentScope = scopeOf([GROUP_LIBRARY]);
+      vi.mocked(getNoteItemIDsByLibrary).mockReturnValue([50, 51]);
+      vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
+        makeRef(50),
+        makeRef(51),
+      ]);
+      const { deps } = makeDeps({});
+
+      await createBatchImport(deps).runBatchImportAll({ groupID: 0 });
+
+      expect(getNoteItemIDsByLibrary).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        USER_LIBRARY_ID,
+      );
     });
-    expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+
+    it("reports an unavailable group instead of a settings mismatch", async () => {
+      const { deps } = makeDeps({});
+
+      await expect(
+        createBatchImport(deps).runBatchImportAll({ groupID: 99 }),
+      ).resolves.toEqual({ outcome: "unavailable-target" });
+      expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+      expect(openedModals).toHaveLength(0);
+    });
+
+    it("resolves a collection inside the named library only", async () => {
+      vi.mocked(getNoteItemIDsByCollection).mockReturnValue([50, 51]);
+      vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
+        makeRef(50),
+        makeRef(51),
+      ]);
+      const { deps } = makeDeps({});
+
+      const result = await createBatchImport(deps).runBatchImportAll({
+        groupID: 7,
+        collectionKey: COLLECTION,
+      });
+
+      expect(result).toEqual({ outcome: "batch-modal" });
+      expect(getNoteItemIDsByCollection).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        { libraryID: GROUP_LIBRARY.libraryID, collectionKey: COLLECTION },
+      );
+      expect(getNoteItemIDsByLibrary).not.toHaveBeenCalled();
+    });
+
+    it("reports an unknown collection key instead of an empty scope", async () => {
+      vi.mocked(getCollectionIDByKey).mockReturnValue(undefined);
+      const { deps } = makeDeps({});
+
+      await expect(
+        createBatchImport(deps).runBatchImportAll({
+          groupID: 0,
+          collectionKey: COLLECTION,
+        }),
+      ).resolves.toEqual({ outcome: "collection-not-found" });
+      expect(getNoteItemIDsByCollection).not.toHaveBeenCalled();
+    });
+
+    it("reports an empty selection for a collection that holds no notes", async () => {
+      const { deps } = makeDeps({});
+
+      await expect(
+        createBatchImport(deps).runBatchImportAll({
+          groupID: 0,
+          collectionKey: COLLECTION,
+        }),
+      ).resolves.toEqual({ outcome: "empty-selection" });
+      expect(openedModals).toHaveLength(0);
+    });
   });
 });
 
@@ -520,7 +679,7 @@ describe("note-mode modal classify + run", () => {
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
     expect(importNote.mock.calls[0]![1]).toMatchObject({ targetFile: target });
   });
 
@@ -560,7 +719,7 @@ describe("up-to-date classification", () => {
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks).toHaveLength(1);
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "create" });
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:create" });
     expect(manifest.options.upToDate).toHaveLength(1);
     expect(manifest.options.upToDate[0]).toMatchObject({ label: "Note 50" });
     expect(importNote).toHaveBeenCalledTimes(1);
@@ -583,7 +742,7 @@ describe("up-to-date classification", () => {
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
     expect(manifest.options.upToDate).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(2);
   });
@@ -610,7 +769,7 @@ describe("up-to-date classification", () => {
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
     expect(manifest.options.upToDate).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(2);
   });
@@ -637,7 +796,7 @@ describe("up-to-date classification", () => {
     await createBatchImport(deps).runBatchImport("note", [50, 51]);
     const { manifest } = await driveLastModal();
 
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "overwrite" });
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:overwrite" });
     expect(manifest.options.upToDate).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(2);
   });
@@ -653,8 +812,8 @@ describe("up-to-date classification", () => {
     const { manifest } = await driveLastModal();
 
     expect(manifest.options.tasks).toHaveLength(2);
-    expect(manifest.options.tasks[0]).toMatchObject({ kind: "create" });
-    expect(manifest.options.tasks[1]).toMatchObject({ kind: "create" });
+    expect(manifest.options.tasks[0]).toMatchObject({ kind: "1:create" });
+    expect(manifest.options.tasks[1]).toMatchObject({ kind: "1:create" });
     expect(manifest.options.upToDate).toHaveLength(0);
     expect(importNote).toHaveBeenCalledTimes(2);
   });

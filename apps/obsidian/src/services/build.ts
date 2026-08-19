@@ -11,6 +11,7 @@ import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
+import { LibraryScopeService } from "./library-scope/service";
 import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
 import { createNoteFeature } from "./note-feature";
@@ -34,6 +35,7 @@ import {
   migrateV5ToV6,
   migrateV6ToV7,
   migrateV7ToV8,
+  migrateV8ToV9,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
@@ -72,6 +74,7 @@ export function buildServices(
           migrateV5: migrateV5ToV6,
           migrateV6: migrateV6ToV7,
           migrateV7: migrateV7ToV8,
+          migrateV8: migrateV8ToV9,
         }),
     })
     .use({
@@ -124,10 +127,14 @@ export function buildServices(
         }),
     })
     .use({
-      itemLookup: ({ db, settings }) =>
+      libraryScope: ({ db, settings }) =>
+        new LibraryScopeService({ db, settings }),
+    })
+    .use({
+      itemLookup: ({ db, libraryScope }) =>
         new ItemLookup({
           db,
-          settings,
+          libraryScope,
           getChsSegmenter: () => getChsSegmenter(plugin.app),
         }),
     })
@@ -156,6 +163,7 @@ export function buildServices(
       batchImport: ({
         db,
         settings,
+        libraryScope,
         noteImport,
         noteIndex,
         template,
@@ -164,6 +172,7 @@ export function buildServices(
           view: createNoteImportView(plugin.app),
           db,
           settings,
+          libraryScope,
           noteImport,
           noteIndex,
           metadataCache: plugin.app.metadataCache,
@@ -171,8 +180,14 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, db }) =>
-        new CitationIndex({ app: plugin.app, noteIndex, settings, db }),
+      citationIndex: ({ noteIndex, settings, db, libraryScope }) =>
+        new CitationIndex({
+          app: plugin.app,
+          noteIndex,
+          settings,
+          db,
+          libraryScope,
+        }),
     })
     .use({
       pandocEngine: () => createPandocEngineService(plugin.app),
@@ -202,6 +217,7 @@ export function buildServices(
         citationIndex,
         citationText,
         bibliographyRender,
+        libraryScope,
       }): CitationPopover =>
         createCitationPopover({
           app: plugin.app,
@@ -209,6 +225,7 @@ export function buildServices(
           citationIndex,
           citationText,
           bibliographyRender,
+          libraryScope,
         }),
     })
     .use({
@@ -220,6 +237,7 @@ export function buildServices(
         citationPopover,
         settings,
         citationIndex,
+        libraryScope,
       }) =>
         new CitekeyEditor({
           app: plugin.app,
@@ -231,6 +249,7 @@ export function buildServices(
           citationPopover,
           settings,
           citationIndex,
+          libraryScope,
         }),
     })
     .use({
@@ -276,6 +295,7 @@ export function buildServices(
     .use({
       citekeyReading: ({
         citationText,
+        citationIndex,
         citationPopover,
         citekeyEditor,
         settings,
@@ -284,6 +304,7 @@ export function buildServices(
           app: plugin.app,
           plugin,
           citationText,
+          citationIndex,
           citationPopover,
           citekeyEditor,
           settings,

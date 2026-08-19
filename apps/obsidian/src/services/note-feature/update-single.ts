@@ -7,6 +7,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   NoteFeature,
@@ -29,6 +30,8 @@ export interface SingleUpdateDeps {
   settings: SettingsService;
   noteFeature: NoteFeature;
   noteIndex: NoteIndex;
+  /** Which Libraries an unqualified library-wide update covers. */
+  libraryScope: Pick<LibraryScopeService, "resolveWith">;
 }
 
 /**

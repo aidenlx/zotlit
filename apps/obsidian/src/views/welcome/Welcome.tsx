@@ -142,8 +142,7 @@ function StepConnect() {
             </code>
             <span className="zt:text-sm zt:text-muted-foreground">
               {m.welcome_step_connect_connected({
-                library: connection.library ?? m.welcome_library_default(),
-                count: new Intl.NumberFormat().format(connection.itemCount),
+                count: connection.itemCount,
               })}
             </span>
           </div>

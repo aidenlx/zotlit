@@ -3,10 +3,16 @@ import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ClipboardRepresentation } from "@/lib/clipboard";
+import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
+import type {
+  CitationOccurrence,
+  ReferenceSource,
+} from "@/services/citation-index/service";
 
 import { createReferenceActions } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
 import type { CopiedBibliography } from "./copied-bibliography";
+import type { ReferenceEntry } from "./entries";
 import type { ReferencesCopyTarget } from "./store";
 
 /** What the toolbar offered when the copy action was clicked. */
@@ -65,6 +71,64 @@ beforeEach(() => {
     Promise.resolve<ClipboardRepresentation>("rich"),
   );
   notify = vi.fn();
+});
+
+describe("onOpenNote", () => {
+  /** One occurrence of the citekey, which is what a row would open by. */
+  const occurrence: CitationOccurrence = {
+    kind: "citekey",
+    raw: "doe2024",
+    position: {
+      start: { line: 0, col: 0, offset: 0 },
+      end: { line: 0, col: 8, offset: 8 },
+    },
+  };
+
+  function openNote(entry: ReferenceEntry) {
+    const openCitekey = vi.fn();
+    const openLinkText = vi.fn();
+    createReferenceActions({
+      app: { workspace: { openLinkText } } as unknown as App,
+      getSourcePath: () => "notes/tidal.md",
+      openCitekey,
+      onOpenEngineSettings: () => undefined,
+      onChangeStyle: () => undefined,
+      onDismissEngineHint: () => undefined,
+      getCopySnapshot,
+      writeClipboard,
+      notify,
+    }).onOpenNote(entry);
+    return { openCitekey, openLinkText };
+  }
+
+  // The key names several Items, so no one note is this row's to open — and
+  // creating one would put the wrong Item's note in the vault.
+  it("reaches no note for an Ambiguous Citation Key", () => {
+    const { openCitekey, openLinkText } = openNote({
+      id: "@doe2024",
+      refNumber: 1,
+      occurrences: [occurrence],
+      kind: "ambiguous",
+      citekey: "doe2024",
+      candidates: ambiguousCandidates,
+    });
+
+    expect(openCitekey).not.toHaveBeenCalled();
+    expect(openLinkText).not.toHaveBeenCalled();
+  });
+
+  it("creates and opens the note of a cited Item that has none yet", () => {
+    const { openCitekey } = openNote({
+      id: "BOOK0001",
+      refNumber: 1,
+      occurrences: [occurrence],
+      kind: "summary",
+      source: {} as ReferenceSource,
+      linkpath: null,
+    });
+
+    expect(openCitekey).toHaveBeenCalledExactlyOnceWith("doe2024");
+  });
 });
 
 describe("onCopyBibliography", () => {

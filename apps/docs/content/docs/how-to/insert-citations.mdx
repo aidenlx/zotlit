@@ -12,6 +12,8 @@ import { Command } from "@/components/command";
 
 Use the Citation Suggester or command palette to insert a Markdown citation from your Zotero library.
 
+Both entry points search every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each suggestion names the library its item comes from. With one library in scope, that label is left off.
+
 Citation insertion works independently of the Document Citation Set and In-text Citation Rendering. You can insert citations with both source settings off and with **Show formatted citations** off.
 
 ## Insert while typing
@@ -82,6 +84,14 @@ If the selected item has no citation key, nothing is inserted and a notice appea
 
   </Step>
 </Steps>
+
+## When a citation key matches several items [#ambiguous-key]
+
+A citation key can belong to more than one Zotero item, whether the twins sit in one library or in two libraries you have in scope. Inserted text carries the key alone, so it would no longer name the item you picked.
+
+ZotLit therefore refuses the insert, from either entry point, and shows: "Citation key `@{key}` matches multiple Zotero items. Change it in Zotero before inserting a citation." Give one of the items a distinct citation key in Zotero, or narrow your library scope to the library you meant, then insert again.
+
+Keys already written in your notes stay readable. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work) for what such a key does in the editor, the citation popover, and the References Sidebar.
 
 ## Citation formats
 

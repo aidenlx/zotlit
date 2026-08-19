@@ -13,6 +13,10 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import type { DatabaseEvents } from "@/services/database/service";
+import type {
+  AvailableLibrary,
+  ResolvedLibraryScope,
+} from "@/services/library-scope/scope";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -22,6 +26,30 @@ import type { ReadCitekeys } from "./snapshot";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
+
+/** Local ids of the two Libraries the multi-Library fixtures use. */
+export const MY_LIBRARY_ID = 1;
+export const GROUP_LIBRARY_ID = 4;
+
+export function personalLibrary(
+  libraryID: number = MY_LIBRARY_ID,
+): AvailableLibrary {
+  return { selector: { type: "personal" }, libraryID, name: null };
+}
+
+/** @param overrides the facts one fixture varies; the rest keep the defaults
+ *   the multi-Library fixtures share. */
+export function groupLibrary({
+  groupID = 7,
+  libraryID = GROUP_LIBRARY_ID,
+  name = "Shared group",
+}: {
+  groupID?: number;
+  libraryID?: number;
+  name?: string;
+} = {}): AvailableLibrary {
+  return { selector: { type: "group", groupID }, libraryID, name };
+}
 
 type Callback = (...args: unknown[]) => void;
 
@@ -249,14 +277,77 @@ export class CitekeysStub {
   read: ReadCitekeys = (_db, libraryID) => {
     this.calls.push(libraryID);
     if (this.error) throw this.error;
-    return this.rows;
+    return this.rows.filter((row) => row.libraryID === libraryID);
   };
+}
+
+/**
+ * The Libraries the active database holds and the scope resolved over them —
+ * the stand-in for `LibraryScopeService` the Citation Index resolves against.
+ */
+export class LibraryScopeStub {
+  libraries: AvailableLibrary[];
+  ready = Promise.resolve();
+  readonly #listeners = new Set<() => void>();
+  #current: ResolvedLibraryScope | null;
+
+  constructor(libraries: AvailableLibrary[] = [personalLibrary()]) {
+    this.libraries = libraries;
+    this.#current = allOf(libraries);
+  }
+
+  get current(): ResolvedLibraryScope | null {
+    return this.#current;
+  }
+
+  on(_event: "changed", cb: () => void): () => void {
+    this.#listeners.add(cb);
+    return () => this.#listeners.delete(cb);
+  }
+
+  /** Narrow or widen the scope over the Libraries the database already holds. */
+  select(available: AvailableLibrary[]): void {
+    this.#current = {
+      mode: "selected",
+      invalid: false,
+      available,
+      unavailable: [],
+    };
+    this.#emit();
+  }
+
+  /** Every local Library joins the scope, as All Libraries does. */
+  selectAll(libraries: AvailableLibrary[] = this.libraries): void {
+    this.libraries = libraries;
+    this.#current = allOf(libraries);
+    this.#emit();
+  }
+
+  #emit(): void {
+    for (const listener of this.#listeners) listener();
+  }
+}
+
+function allOf(libraries: AvailableLibrary[]): ResolvedLibraryScope {
+  return { mode: "all", invalid: false, available: libraries, unavailable: [] };
 }
 
 function defaultCitekeys(): LibraryCitekey[] {
   return [
-    { itemID: 1, key: "DOE2024", indexedKey: KEY_A, citekey: "doe2024" },
-    { itemID: 2, key: "ROE2025", indexedKey: KEY_B, citekey: "roe2025" },
+    {
+      itemID: 1,
+      libraryID: MY_LIBRARY_ID,
+      key: "DOE2024",
+      indexedKey: KEY_A,
+      citekey: "doe2024",
+    },
+    {
+      itemID: 2,
+      libraryID: MY_LIBRARY_ID,
+      key: "ROE2025",
+      indexedKey: KEY_B,
+      citekey: "roe2025",
+    },
   ];
 }
 
@@ -336,6 +427,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
   workspace: MockWorkspace;
   db: DatabaseStub;
   citekeys: CitekeysStub;
+  libraryScope: LibraryScopeStub;
 }
 
 export interface CitationIndexHarnessOptions {
@@ -346,6 +438,7 @@ export interface CitationIndexHarnessOptions {
   notes?: boolean;
   settingsService?: SettingsStub;
   awaitReady?: boolean;
+  libraryScope?: LibraryScopeStub;
 }
 
 export async function createCitationIndexHarness(
@@ -360,6 +453,7 @@ export async function createCitationIndexHarness(
   const store = options.store ?? new MemoryStore();
   const db = options.db ?? new DatabaseStub();
   const citekeys = new CitekeysStub(options.citekeys ?? defaultCitekeys());
+  const libraryScope = options.libraryScope ?? new LibraryScopeStub();
 
   const addFile = (path: string, body: string): TFile => {
     const added = makeFile(path, body);
@@ -397,6 +491,7 @@ export async function createCitationIndexHarness(
       noteIndex,
       settings,
       db,
+      libraryScope,
       readCitekeys: citekeys.read,
       openStore: () => Promise.resolve(store),
     }),
@@ -420,6 +515,7 @@ export async function createCitationIndexHarness(
     workspace,
     db,
     citekeys,
+    libraryScope,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }

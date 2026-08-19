@@ -55,11 +55,21 @@ ZotLit also excludes citation-like text in code, math, `%%` comments, frontmatte
 
 ### Resolution
 
-ZotLit resolves Pandoc citation keys against Zotero's native citation key field in the **Default library**. It does not use the `citekey` frontmatter field for resolution.
+ZotLit resolves Pandoc citation keys against Zotero's native citation key field, across every library in your **Library scope**. It does not use the `citekey` frontmatter field for resolution.
 
 An item can appear as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. An unresolved key stays in its native source and appears as a Reference Error in the sidebar.
 
 The resolution data refreshes when the Zotero database changes. A re-keyed item updates after the next refresh.
+
+### A key that matches several items [#ambiguous-key]
+
+A citation key resolves to one Zotero item, to none, or to several. Several is an ambiguous key. It happens when two items in one library carry the same citation key, and when two libraries you both have in scope carry it once each.
+
+ZotLit never picks one of the matches. The editor, reading view, citation popover, and References Sidebar all report the same ambiguous state, and the key keeps its own identity: it adopts no candidate's item, and contributes no bibliography entry.
+
+In a Citation Cluster that holds both an ambiguous key and one that matches nothing, the unresolved key is what the cluster reports. It is the stronger failure, so it stays visible.
+
+Two things resolve an ambiguity. Give one of the items a different citation key in Zotero. Or narrow your [library scope](/docs/reference/settings#library-scope) until one candidate is left, which makes the key unique again.
 
 ## Wikilink citations
 
@@ -99,6 +109,8 @@ When formatting succeeds, the sidebar follows the selected style's bibliography 
 The sidebar stays available without formatted output. It shows a minimal list in first-occurrence order when the engine or selected style is unavailable. A render failure clears stale formatted entries, shows the error, and displays the minimal list.
 
 A Reference Error points to its exact source occurrence so you can correct the note.
+
+A citation key that matches several Zotero items is a Reference Error too. Its row lists every item the key matches with that item's library and item key, and its **Open literature note** action stays disabled, since no one of them is the item the key names.
 
 ### Sidebar actions
 
@@ -140,19 +152,21 @@ With **Pandoc citations** and **Open citations as links** on, ZotLit supports:
 
 A single-item citation opens its Literature Note. ZotLit creates the note first when necessary. A multi-item citation opens a menu so you can choose an item.
 
+An [ambiguous key](#ambiguous-key) opens a picker instead, listing every item the key matches with its summary, library, and item key. The item you choose opens by its own identity, so the choice cannot land back on the same question. A click and the four open-under-cursor commands behave the same way.
+
 Source mode keeps the text editable. Ctrl-click opens a citation on Windows and Linux. Cmd-click opens it on macOS. Modifier clicks follow Obsidian's pane behavior.
 
 While **Open citations as links** is off, a plain click on a citation ZotLit shows puts the cursor in its Markdown source in Live Preview, so the text expands for editing, the same as a click on bold text. A plain click in reading view does nothing. Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
 
 **Hover action** decides what hover shows, and one hover shows one result. It ships as **Citation popover**. It owns hover on its own: **Open citations as links** never gates it, so a citation ZotLit shows still answers hover with the popover while that setting is off.
 
-The citation popover shows the full bibliography entry of every cited item, in citation order, each with buttons to open its Literature Note, select it in Zotero, and open its attachment. An unresolved citation key says so in place of an entry.
+The citation popover shows the full bibliography entry of every cited item, in citation order, each with buttons to open its Literature Note, select it in Zotero, and open its attachment. An unresolved citation key says so in place of an entry. A citation key that matches several Zotero items says so too, and lists every item it matches with that item's library and item key.
 
 A style that writes its citations as footnotes shows the footnote text instead, with the same buttons in one row per cited item. Each row carries the item's number from the References Sidebar, the same number the citation shows in the text.
 
 A toggle on the **Require modifier key** sub-page under **Hover action** gates the popover in each editing mode. Source mode ships on, so the popover waits until you hold Ctrl (Windows and Linux) or Cmd (macOS) and plain-text editing stays uninterrupted. Live Preview and reading view ship off and show the popover on bare hover.
 
-**Page preview** keeps Obsidian's own page preview instead: a single-item citation previews its Literature Note under the Page preview plugin's settings, and a multi-item citation previews nothing. **Off** adds no ZotLit hover result, and Literature Note wikilinks keep Obsidian's native hover.
+**Page preview** keeps Obsidian's own page preview instead: a single-item citation previews its Literature Note under the Page preview plugin's settings, and a multi-item citation previews nothing. A citation key that matches several Zotero items previews nothing either, since no one of them is the item the key names. **Off** adds no ZotLit hover result, and Literature Note wikilinks keep Obsidian's native hover.
 
 The four commands have no default hotkeys:
 

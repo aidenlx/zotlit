@@ -282,6 +282,33 @@ export function sanitizeHTMLToDom(html: string): DocumentFragment {
   return template.content;
 }
 
+/**
+ * Appends `text` to `el`, wrapping each match range in the highlight span the
+ * real renderer uses. Needs a DOM, so its callers run under
+ * `// @vitest-environment happy-dom`.
+ */
+// oxlint-disable-next-line max-params -- mirrors Obsidian's own signature.
+export function renderMatches(
+  el: HTMLElement,
+  text: string,
+  matches: [number, number][] | null,
+  offset = 0,
+): void {
+  let at = 0;
+  for (const [start, end] of matches ?? []) {
+    const from = start + offset;
+    const to = end + offset;
+    if (from < at || from >= text.length) continue;
+    el.appendChild(document.createTextNode(text.slice(at, from)));
+    const highlight = document.createElement("span");
+    highlight.className = "suggestion-highlight";
+    highlight.textContent = text.slice(from, to);
+    el.appendChild(highlight);
+    at = to;
+  }
+  el.appendChild(document.createTextNode(text.slice(at)));
+}
+
 export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replaceAll(/\/+/g, "/").replace(/\/$/, "");
 }

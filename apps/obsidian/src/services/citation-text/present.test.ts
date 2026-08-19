@@ -7,10 +7,19 @@ import { rendered } from "./__fixtures__";
 import {
   citationContent,
   citationElement,
+  citationState,
+  citationStateHooks,
   citedWorks,
+  citekeyState,
+  literalKeyStateOf,
   sectionCoordinates,
 } from "./present";
-import type { CitationSource, DocumentCitations } from "./present";
+import type {
+  CitationKeyState,
+  CitationSource,
+  CitationState,
+  DocumentCitations,
+} from "./present";
 
 /** One citation, read out of the source text that is nothing but that citation. */
 function citation(source: string): CitationSource {
@@ -93,6 +102,104 @@ describe("citedWorks", () => {
         (work) => work.citekey,
       ),
     ).toEqual(["a", "b"]);
+  });
+});
+
+describe("citationState", () => {
+  const stateFor = (
+    ...states: readonly CitationKeyState[]
+  ): CitationState | undefined => citationState(states);
+
+  it("reads a citation whose every key names an Item as resolved", () => {
+    expect(stateFor("resolved", "resolved")).toBe("resolved");
+  });
+
+  it("reads a citation no key of which names an Item as unresolved", () => {
+    expect(stateFor("missing", "missing")).toBe("unresolved");
+  });
+
+  it("reads a cluster of resolved and missing keys as partly unresolved", () => {
+    expect(stateFor("resolved", "missing")).toBe("partially-unresolved");
+  });
+
+  it("reads a key naming several Items as ambiguous, beside resolved keys", () => {
+    expect(stateFor("ambiguous")).toBe("ambiguous");
+    expect(stateFor("resolved", "ambiguous")).toBe("ambiguous");
+  });
+
+  // The strongest failure stays visible: a key that reaches nothing at all
+  // outranks one that reaches several.
+  it("lets a missing key outrank ambiguity in a mixed cluster", () => {
+    expect(stateFor("ambiguous", "missing")).toBe("unresolved");
+    expect(stateFor("resolved", "ambiguous", "missing")).toBe(
+      "partially-unresolved",
+    );
+  });
+
+  it("reads a citation naming no key at all as resolved", () => {
+    expect(citationState([])).toBe("resolved");
+  });
+});
+
+// The class names are a public promise to themes, so the state each one stands
+// for is asserted by its literal name.
+describe("citationStateHooks", () => {
+  it("names one public theme hook per state a citation reads as", () => {
+    expect(citationStateHooks("resolved")).toEqual([]);
+    expect(citationStateHooks("unresolved")).toEqual([
+      "zt-citation-key-unresolved",
+    ]);
+    expect(citationStateHooks("partially-unresolved")).toEqual([
+      "zt-citation-key-partially-unresolved",
+    ]);
+    expect(citationStateHooks("ambiguous")).toEqual([
+      "zt-citation-key-ambiguous",
+    ]);
+  });
+});
+
+describe("citekeyState", () => {
+  it("reads what one resolution names", () => {
+    expect(citekeyState({ kind: "missing" })).toBe("missing");
+    expect(
+      citekeyState({
+        kind: "unique",
+        item: {
+          itemID: 1,
+          libraryID: 1,
+          key: "ZETA1234",
+          indexedKey: "ZETA1234",
+        },
+      }),
+    ).toBe("resolved");
+    expect(citekeyState({ kind: "ambiguous", candidates: [] })).toBe(
+      "ambiguous",
+    );
+  });
+});
+
+describe("literalKeyStateOf", () => {
+  const citations = citedDocument({
+    a: { indexedKey: "1/ZETA", summary: "Zeta (2020)" },
+  });
+
+  it("reads a key the document's own read reached as resolved", () => {
+    expect(literalKeyStateOf(citations, () => "missing")("a")).toBe("resolved");
+  });
+
+  it("reads a key that reached no work by what the snapshot names", () => {
+    expect(literalKeyStateOf(citations, () => "ambiguous")("twin")).toBe(
+      "ambiguous",
+    );
+    expect(literalKeyStateOf(citations, () => "missing")("ghost")).toBe(
+      "missing",
+    );
+  });
+
+  // The Item resolves, but the read could not render a summary for it, so no
+  // surface has anything to show in the citation's place.
+  it("reads a key whose Item the document could not read as missing", () => {
+    expect(literalKeyStateOf(citations, () => "resolved")("b")).toBe("missing");
   });
 });
 

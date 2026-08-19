@@ -10,6 +10,7 @@ import type {
   CitationSyntax,
   CitationSyntaxes,
   CitedBySnapshot,
+  CitekeyResolution,
   ReferenceSource,
   SnapshotItem,
 } from "@/services/citation-index/service";
@@ -32,7 +33,12 @@ const IDENTITY = {
 const ITEM_KEY = "ABCD2345";
 const ITEM_CITEKEY = "doe2024";
 const ITEM_SUMMARY = "Doe (2024): A study of citations";
-const SNAPSHOT_ITEM: SnapshotItem = { itemID: 7, indexedKey: ITEM_KEY };
+const SNAPSHOT_ITEM: SnapshotItem = {
+  itemID: 7,
+  libraryID: 1,
+  key: ITEM_KEY,
+  indexedKey: ITEM_KEY,
+};
 const PRESENT: ItemLookup = { presence: "present", summary: ITEM_SUMMARY };
 
 const OCCURRENCE = {
@@ -189,7 +195,7 @@ interface SetupOptions {
   settleTimeoutMs?: number;
   snapshot?: CitedBySnapshot;
   lookup?: ItemLookup;
-  citekeyItem?: SnapshotItem | null;
+  citekeyResolution?: CitekeyResolution;
   document?: DocumentReferences | null;
   resolution?: CitationKeyResolution;
   syntaxes?: CitationSyntaxes;
@@ -200,12 +206,12 @@ interface SetupOptions {
 function setup(options: SetupOptions = {}) {
   const settle = options.settle ?? "settled";
   const lookup = options.lookup ?? PRESENT;
-  const citekeyItem = options.citekeyItem ?? null;
+  const citekeyResolution = options.citekeyResolution ?? { kind: "missing" };
   const documentReferences =
     options.document === undefined ? DOCUMENT : options.document;
   const getIdentity = vi.fn(() => IDENTITY);
   const waitUntilSettled = vi.fn(() => Promise.resolve(settle));
-  const resolveCitekey = vi.fn(() => citekeyItem);
+  const resolveCitekey = vi.fn(() => citekeyResolution);
   const citekeyOf = vi.fn(() => ITEM_CITEKEY);
   const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
   const lookupItem = vi.fn(() => lookup);
@@ -265,7 +271,7 @@ describe("zotlit:cited-by", () => {
 
     expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: CITED_BY_COMMAND,
       ok: true,
       request: { key: ITEM_KEY },
@@ -382,7 +388,7 @@ describe("zotlit:cited-by", () => {
 
   it("resolves a citation key through the resolution snapshot", async () => {
     const { citedBy, resolveCitekey, getCitedBy, lookupItem } = setup({
-      citekeyItem: SNAPSHOT_ITEM,
+      citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
     });
 
     const output = await citedBy({ citekey: ITEM_CITEKEY });
@@ -399,7 +405,7 @@ describe("zotlit:cited-by", () => {
 
   it("keeps the snapshot's verdict when a citation key names an item the source read leaves out", async () => {
     const { citedBy } = setup({
-      citekeyItem: SNAPSHOT_ITEM,
+      citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
       lookup: { presence: "absent", summary: null },
     });
 
@@ -508,7 +514,9 @@ describe("zotlit:cited-by", () => {
   });
 
   it("reports a citation key that resolves to no item", async () => {
-    const { citedBy, getCitedBy } = setup({ citekeyItem: null });
+    const { citedBy, getCitedBy } = setup({
+      citekeyResolution: { kind: "missing" },
+    });
 
     const output = await citedBy({ citekey: "roe2099" });
 
@@ -522,6 +530,43 @@ describe("zotlit:cited-by", () => {
     });
   });
 
+  it("reports a citation key that names several items, with the key of each", async () => {
+    const { citedBy, getCitedBy } = setup({
+      citekeyResolution: {
+        kind: "ambiguous",
+        candidates: [
+          SNAPSHOT_ITEM,
+          {
+            itemID: 11,
+            libraryID: 4,
+            key: "ROEF6789",
+            indexedKey: "ROEF6789g7",
+          },
+        ],
+      },
+    });
+
+    const output = await citedBy({ citekey: ITEM_CITEKEY });
+
+    // An Ambiguous Citation Key selects no Item, so the answer names the
+    // candidates instead of reading the citations of a chosen one.
+    expect(getCitedBy).not.toHaveBeenCalled();
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "AMBIGUOUS_CITEKEY",
+        hint: DIAGNOSTIC_HINTS.AMBIGUOUS_CITEKEY,
+        details: {
+          citekey: ITEM_CITEKEY,
+          candidates: [
+            { key: ITEM_KEY, libraryID: 1 },
+            { key: "ROEF6789g7", libraryID: 4 },
+          ],
+        },
+      },
+    });
+  });
+
   it("rejects a source mismatch before any data load", async () => {
     const { citedBy, waitUntilSettled, lookupItem, getCitedBy } = setup();
 
@@ -531,7 +576,7 @@ describe("zotlit:cited-by", () => {
     expect(lookupItem).not.toHaveBeenCalled();
     expect(getCitedBy).not.toHaveBeenCalled();
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: CITED_BY_COMMAND,
       ok: false,
       request: { key: ITEM_KEY },
@@ -591,7 +636,7 @@ describe("zotlit:cited-by", () => {
           order.push("settle");
           return Promise.resolve("settled");
         },
-        resolveCitekey: () => null,
+        resolveCitekey: () => ({ kind: "missing" }),
         citekeyOf: () => ITEM_CITEKEY,
         getCitedBy: () => {
           order.push("cited-by");
@@ -623,7 +668,7 @@ describe("zotlit:references", () => {
 
     expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 1,
+      contractVersion: 2,
       command: REFERENCES_COMMAND,
       ok: true,
       request: { file: DOCUMENT_PATH },
@@ -721,6 +766,99 @@ describe("zotlit:references", () => {
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
       syntaxes: { citekey: "excluded", wikilink: "included" },
+    });
+  });
+
+  it("reports an ambiguous citation key with the exact key of every candidate", async () => {
+    const { references, resolveCitekey } = setup({
+      document: {
+        citations: [
+          {
+            indexedKey: null,
+            linkpath: null,
+            refNumber: 1,
+            occurrences: [UNRESOLVED_OCCURRENCE],
+          },
+        ],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
+      citekeyResolution: {
+        kind: "ambiguous",
+        candidates: [
+          SNAPSHOT_ITEM,
+          {
+            itemID: 11,
+            libraryID: 4,
+            key: "ROEF6789",
+            indexedKey: "ROEF6789g7",
+          },
+        ],
+      },
+    });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(resolveCitekey).toHaveBeenCalledWith("roe2099");
+    expect(JSON.parse(output)).toMatchObject({
+      ok: true,
+      entries: [
+        {
+          refNumber: 1,
+          kind: "ambiguous",
+          citekey: "roe2099",
+          candidates: [
+            { key: ITEM_KEY, libraryID: 1 },
+            { key: "ROEF6789g7", libraryID: 4 },
+          ],
+          occurrences: [UNRESOLVED_REPORTED],
+        },
+      ],
+    });
+  });
+
+  // A candidate is one work's exact identity, which zotlit:template-data reads
+  // in full and the sidebar presents; the index fact alone travels here.
+  it("names a candidate's library by its local id alone", async () => {
+    const { references } = setup({
+      document: {
+        citations: [
+          {
+            indexedKey: null,
+            linkpath: null,
+            refNumber: 1,
+            occurrences: [UNRESOLVED_OCCURRENCE],
+          },
+        ],
+        errors: [],
+        sources: new Map(),
+        database: "ready",
+      },
+      citekeyResolution: {
+        kind: "ambiguous",
+        candidates: [SNAPSHOT_ITEM, { ...SNAPSHOT_ITEM, itemID: 11 }],
+      },
+    });
+
+    const [candidate] = JSON.parse(await references({ file: DOCUMENT_PATH }))
+      .entries[0].candidates;
+
+    expect(Object.keys(candidate)).toStrictEqual(["key", "libraryID"]);
+  });
+
+  it("keeps a citekey that names no item unresolved", async () => {
+    const { references } = setup({ citekeyResolution: { kind: "missing" } });
+
+    const output = await references({ file: DOCUMENT_PATH });
+
+    expect(JSON.parse(output)).toMatchObject({
+      entries: [
+        { kind: "resolved" },
+        { kind: "unresolved", citekey: "roe2099" },
+        { kind: "malformed" },
+        { kind: "missing" },
+      ],
     });
   });
 
@@ -939,7 +1077,13 @@ describe("zotlit:citations-guide", () => {
 
     const output = await guide({});
 
-    for (const kind of ["resolved", "unresolved", "missing", "malformed"]) {
+    for (const kind of [
+      "resolved",
+      "unresolved",
+      "ambiguous",
+      "missing",
+      "malformed",
+    ]) {
       expect(output).toContain(kind);
     }
     for (const state of [
@@ -1002,7 +1146,7 @@ describe("zotlit:citations-guide", () => {
     const output = await guide({ topic: "positions" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: CITATIONS_GUIDE_COMMAND,
       ok: false,
       diagnostic: {

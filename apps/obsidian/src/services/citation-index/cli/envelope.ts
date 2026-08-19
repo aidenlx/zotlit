@@ -16,10 +16,11 @@ import type {
   CitationSyntaxes,
   CitedByGroup,
   DatabaseReadability,
+  SnapshotItem,
 } from "@/services/citation-index/service";
 
 /** The wire format of the `zotlit:` citation commands, versioned on its own. */
-export const CONTRACT_VERSION = 1;
+export const CONTRACT_VERSION = 2;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface CitationsIdentity {
@@ -35,7 +36,7 @@ export interface CitationsIdentity {
 }
 
 /**
- * The documented diagnostic codes of contract version 1, each defined with
+ * The documented diagnostic codes of contract version 2, each defined with
  * the recovery action its diagnostic carries. This record is the single source
  * of both, so a new code arrives with its own hint.
  */
@@ -48,6 +49,8 @@ export const DIAGNOSTIC_HINTS = {
     "Run the command again after a short wait; the Citation Index is still scanning the vault or resolving citation keys.",
   KEY_NOT_FOUND:
     "Select a Zotero key or a citation key that names an item in the connected Zotero source.",
+  AMBIGUOUS_CITEKEY:
+    "Run the command again with key=<zotero-key>, taken from the candidates in details.",
   FILE_NOT_FOUND:
     "Pass file= the vault-relative path of a Markdown note, as file=folder/note.md.",
 } as const satisfies Record<string, string>;
@@ -64,7 +67,32 @@ export interface Diagnostic {
     | { target: "source"; expected: string; actual: string | null }
     | { key: string }
     | { citekey: string }
+    | { citekey: string; candidates: readonly AmbiguousCandidateKey[] }
     | { file: string };
+}
+
+/**
+ * One item an Ambiguous Citation Key names, by the key that selects it alone.
+ *
+ * Index facts only (ADR 0024): the library is named by its local id rather
+ * than by the display name a sidebar shows, and item data stays with
+ * `zotlit:template-data`, which the exact key here selects.
+ */
+export interface AmbiguousCandidateKey {
+  /** Zotero key: the cross-library identity ZotLit indexes by. */
+  key: string;
+  /** Local id of the library holding the item, which names that library. */
+  libraryID: number;
+}
+
+/** The candidates of one Ambiguous Citation Key, as every answer reports them. */
+export function reportCandidates(
+  candidates: readonly SnapshotItem[],
+): AmbiguousCandidateKey[] {
+  return candidates.map(({ indexedKey, libraryID }) => ({
+    key: indexedKey,
+    libraryID,
+  }));
 }
 
 /**
@@ -174,12 +202,15 @@ interface CitedByPayload {
 }
 
 /**
- * One entry of a document's reference list. The References Sidebar's six kinds
- * collapse to four here, because the rendered / summary / unrendered
+ * One entry of a document's reference list. The References Sidebar's seven
+ * kinds collapse to five here, because the rendered / summary / unrendered
  * distinction only reports Pandoc Engine state (ADR 0024):
  *
  * - `resolved` — a cited Item the connected Zotero source holds, with its identity.
  * - `unresolved` — a citation key that names no live Zotero Item.
+ * - `ambiguous` — a citation key several Items carry in the current library
+ *   scope, so it names none of them; the candidates carry the exact keys that
+ *   each select one.
  * - `missing` — an Item the index cites that the database no longer holds.
  * - `malformed` — citation intent that cannot be parsed, so it names no work
  *   and joins no Document Citation Set; it therefore carries no Reference Number.
@@ -197,6 +228,13 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
       linkpath: string | null;
     }
   | { refNumber: number; kind: "unresolved"; citekey: string }
+  | {
+      refNumber: number;
+      kind: "ambiguous";
+      citekey: string;
+      /** Every candidate, in the resolution snapshot's own order. */
+      candidates: readonly AmbiguousCandidateKey[];
+    }
   | { refNumber: number; kind: "missing"; key: string }
   | { kind: "malformed" }
 );
@@ -271,6 +309,19 @@ export function citekeyNotFoundDiagnostic(citekey: string): Diagnostic {
     "KEY_NOT_FOUND",
     `No Zotero item carries the citation key '${citekey}'.`,
     { citekey },
+  );
+}
+
+/** An Ambiguous Citation Key names several items, so it selects none of them.
+ *  The candidates carry the exact keys that each select one. */
+export function ambiguousCitekeyDiagnostic(
+  citekey: string,
+  candidates: readonly AmbiguousCandidateKey[],
+): Diagnostic {
+  return diagnostic(
+    "AMBIGUOUS_CITEKEY",
+    `${candidates.length} Zotero items carry the citation key '${citekey}' in the current library scope.`,
+    { citekey, candidates },
   );
 }
 
