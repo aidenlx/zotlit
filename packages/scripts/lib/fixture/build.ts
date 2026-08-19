@@ -1,7 +1,7 @@
 // Materializes the Fixture described by `spec.ts`.
 
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { SQLInputValue } from "node:sqlite";
 
@@ -10,6 +10,8 @@ import { USER_LIBRARY_ID } from "@zotlit/db";
 import { QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { assertSchemaVersions, writePristineDatabase } from "./pristine.ts";
 import {
+  ANNOTATIONS,
+  ATTACHMENTS,
   BUILD_TIMESTAMP,
   COLLECTIONS,
   DEFAULT_SCOPE_CASE,
@@ -20,6 +22,7 @@ import {
   NOTES,
 } from "./spec.ts";
 import type {
+  FixtureAttachment,
   FixtureCreator,
   FixtureItem,
   PersistedLibraryScope,
@@ -28,6 +31,8 @@ import type {
 // The spec is part of this module's public surface: one import specifier
 // covers building the Fixture and reading what it is supposed to contain.
 export {
+  ANNOTATIONS,
+  ATTACHMENTS,
   BUILD_TIMESTAMP,
   COLLECTIONS,
   DEFAULT_SCOPE_CASE,
@@ -41,6 +46,9 @@ export {
   UNAVAILABLE_GROUP_IDS,
 } from "./spec.ts";
 export type {
+  FixtureAnnotation,
+  FixtureAsset,
+  FixtureAttachment,
   FixtureCollection,
   FixtureCreator,
   FixtureItem,
@@ -58,6 +66,8 @@ export interface FixtureLayout {
   /** Stands in for a Zotero data directory; holds `zotero.sqlite`. */
   dataDir: string;
   databasePath: string;
+  /** Host-native files referenced by `linked_file` Attachment rows. */
+  linkedFilesDir: string;
   /** Stands in for a Zotero profile directory; its `prefs.js` names `dataDir`. */
   profileDir: string;
   vaultDir: string;
@@ -80,6 +90,7 @@ export function getFixtureLayout(root: string): FixtureLayout {
     root,
     dataDir,
     databasePath: join(dataDir, "zotero.sqlite"),
+    linkedFilesDir: join(root, "linked-files"),
     profileDir: join(root, "zotero-profile"),
     vaultDir,
     pluginDir,
@@ -112,7 +123,8 @@ export async function buildFixture(
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
 
-  await writeDatabase(layout.databasePath);
+  await writeDatabase(layout);
+  await writeAttachmentFiles(layout);
   await writePrefs(layout);
   await writeVault(layout, options);
 }
@@ -136,15 +148,63 @@ export async function discardFixture(layout: FixtureLayout): Promise<void> {
 
 type Row = readonly SQLInputValue[];
 
+const ATTACHMENT_LINK_MODES = {
+  imported_file: 0,
+  imported_url: 1,
+  linked_file: 2,
+  linked_url: 3,
+} as const;
+
+const ASSET_DIR = join(import.meta.dirname, "assets", "sakimas-song");
+
+function attachmentDatabasePath(
+  attachment: FixtureAttachment,
+  layout: FixtureLayout,
+): string {
+  switch (attachment.linkMode) {
+    case "imported_file":
+    case "imported_url":
+      return `storage:${attachment.path}`;
+    case "linked_file":
+      return join(layout.linkedFilesDir, attachment.path);
+    case "linked_url":
+      return attachment.path;
+  }
+}
+
+function attachmentFilePath(
+  attachment: FixtureAttachment,
+  layout: FixtureLayout,
+): string | null {
+  switch (attachment.linkMode) {
+    case "imported_file":
+    case "imported_url":
+      return join(layout.dataDir, "storage", attachment.key, attachment.path);
+    case "linked_file":
+      return join(layout.linkedFilesDir, attachment.path);
+    case "linked_url":
+      return null;
+  }
+}
+
+async function writeAttachmentFiles(layout: FixtureLayout): Promise<void> {
+  for (const attachment of ATTACHMENTS) {
+    if (attachment.sourceAsset === null) continue;
+    const destination = attachmentFilePath(attachment, layout)!;
+    await mkdir(dirname(destination), { recursive: true });
+    await cp(join(ASSET_DIR, attachment.sourceAsset), destination);
+  }
+}
+
 /**
  * Lay the pristine template down and insert the Spec's rows into the copy.
  * The template carries Zotero's own schema — tables, triggers, foreign keys,
  * and the global schema's item types and fields — so the ids below are read
  * back by name rather than declared here.
  */
-async function writeDatabase(databasePath: string): Promise<void> {
-  await writePristineDatabase(databasePath);
-  using db = new DatabaseSync(databasePath);
+async function writeDatabase(layout: FixtureLayout): Promise<void> {
+  await writePristineDatabase(layout.databasePath);
+  using db = new DatabaseSync(layout.databasePath);
   // A user-defined function shadows the `CURRENT_TIMESTAMP` keyword on this
   // connection, column defaults included, so a stamp the Spec forgets lands on
   // a fixed value rather than the time of the build. The connection closes with
@@ -155,12 +215,15 @@ async function writeDatabase(databasePath: string): Promise<void> {
     () => BUILD_TIMESTAMP,
   );
   assertSchemaVersions(db);
-  seedDatabase(db, readSchemaIDs(db));
+  seedDatabase(db, readSchemaIDs(db), layout);
 }
 
 /** The global-schema ids the Spec's rows reference, resolved by name. */
 interface SchemaIDs {
-  itemTypes: Record<FixtureItem["itemType"] | "note", number>;
+  itemTypes: Record<
+    FixtureItem["itemType"] | "annotation" | "attachment" | "note",
+    number
+  >;
   fields: Record<
     "title" | "citationKey" | "date" | "publicationTitle" | "bookTitle",
     number
@@ -193,7 +256,7 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
     itemTypes: lookup(
       "select itemTypeID from itemTypesCombined where typeName = ?",
       "itemTypeID",
-      ["journalArticle", "bookSection", "note"],
+      ["journalArticle", "bookSection", "note", "attachment", "annotation"],
     ),
     fields: lookup(
       "select fieldID from fieldsCombined where fieldName = ?",
@@ -217,7 +280,11 @@ function containerFieldID(
     : ids.fields.publicationTitle;
 }
 
-function seedDatabase(db: DatabaseSync, ids: SchemaIDs): void {
+function seedDatabase(
+  db: DatabaseSync,
+  ids: SchemaIDs,
+  layout: FixtureLayout,
+): void {
   const insert = (sql: string, rows: readonly Row[]): void => {
     const statement = db.prepare(sql);
     for (const row of rows) statement.run(...row);
@@ -278,6 +345,12 @@ function seedDatabase(db: DatabaseSync, ids: SchemaIDs): void {
     [
       ...ITEMS.map((item) => itemRow(item, ids.itemTypes[item.itemType])),
       ...NOTES.map((note) => itemRow(note, ids.itemTypes.note)),
+      ...ATTACHMENTS.map((attachment) =>
+        itemRow(attachment, ids.itemTypes.attachment),
+      ),
+      ...ANNOTATIONS.map((annotation) =>
+        itemRow(annotation, ids.itemTypes.annotation),
+      ),
     ],
   );
   insert(
@@ -287,6 +360,31 @@ function seedDatabase(db: DatabaseSync, ids: SchemaIDs): void {
       note.parentItemID,
       note.note,
       note.title,
+    ]),
+  );
+  insert(
+    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values (?, ?, ?, ?, ?)",
+    ATTACHMENTS.map((attachment) => [
+      attachment.itemID,
+      attachment.parentItemID,
+      ATTACHMENT_LINK_MODES[attachment.linkMode],
+      attachment.contentType,
+      attachmentDatabasePath(attachment, layout),
+    ]),
+  );
+  insert(
+    "insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal)" +
+      " values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+    ANNOTATIONS.map((annotation) => [
+      annotation.itemID,
+      annotation.parentItemID,
+      annotation.type,
+      annotation.text,
+      annotation.comment,
+      annotation.color,
+      annotation.pageLabel,
+      annotation.sortIndex,
+      JSON.stringify(annotation.position),
     ]),
   );
 

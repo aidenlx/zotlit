@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  getAnnotationsByKey,
+  getAttachmentsByParents,
   getCitekeysByLibrary,
   getCollectionIDByKey,
   getIndexedItemIDsByLibrary,
@@ -23,8 +25,11 @@ import {
 import type { IndexedItem } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { attachmentAbsPath } from "@zotlit/db/path";
 
 import {
+  ANNOTATIONS,
+  ATTACHMENTS,
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
@@ -56,13 +61,17 @@ beforeAll(async () => {
 afterAll(() => fixture.disposeAsync());
 
 /** A fixture client whose SQLite handle closes with the enclosing scope. */
-function openClient(): NodeDatabaseClient & Disposable {
-  const db = createClient(layout.databasePath);
+function openClientAt(databasePath: string): NodeDatabaseClient & Disposable {
+  const db = createClient(databasePath);
   return Object.assign(db, {
     [Symbol.dispose]: () => {
       db.$client.close();
     },
   });
+}
+
+function openClient(): NodeDatabaseClient & Disposable {
+  return openClientAt(layout.databasePath);
 }
 
 /** Indexed items of one Library, in the reader's own `dateModified desc` order. */
@@ -79,10 +88,12 @@ async function digest(path: string): Promise<string> {
     .digest("hex");
 }
 
-/** Semantic snapshot a rebuild has to reproduce exactly. */
-function readSemantics(databasePath: string): string {
-  using sqlite = new DatabaseSync(databasePath, { readOnly: true });
-  const rows = sqlite
+/** Semantic snapshot a build has to reproduce, apart from its host-native path. */
+function readSemantics(fixtureLayout: FixtureLayout): string {
+  using sqlite = new DatabaseSync(fixtureLayout.databasePath, {
+    readOnly: true,
+  });
+  const items = sqlite
     .prepare(
       `select i.itemID, i.libraryID, i.key, i.dateModified, v.value as citationKey
          from items i
@@ -93,7 +104,68 @@ function readSemantics(databasePath: string): string {
         order by i.itemID`,
     )
     .all();
-  return JSON.stringify(rows);
+  using db = openClientAt(fixtureLayout.databasePath);
+  const attachments = getAttachmentsByParents(db, [20]).map(
+    ({ dateAdded, dateModified, ...attachment }) => ({
+      ...attachment,
+      path: attachment.linkMode === 2 ? "<host-native-path>" : attachment.path,
+      dateAdded: dateAdded.epochMilliseconds,
+      dateModified: dateModified.epochMilliseconds,
+    }),
+  );
+  const annotations = getAnnotationsByKey(
+    db,
+    ANNOTATIONS.map(({ key }) => key),
+    1,
+  ).map(({ dateAdded, dateModified, ...annotation }) => ({
+    ...annotation,
+    dateAdded: dateAdded.epochMilliseconds,
+    dateModified: dateModified.epochMilliseconds,
+  }));
+  return JSON.stringify({ items, attachments, annotations });
+}
+
+async function readAttachmentTree(
+  fixtureLayout: FixtureLayout,
+): Promise<readonly { key: string; sha256: string | null }[]> {
+  using db = openClientAt(fixtureLayout.databasePath);
+  return Promise.all(
+    getAttachmentsByParents(db, [20])
+      .filter(({ linkMode }) => linkMode !== 3)
+      .map(async (attachment) => {
+        const path = attachmentAbsPath(attachment, {
+          dataDir: fixtureLayout.dataDir,
+          baseAttachmentPath: null,
+        })!;
+        const sha256 = await digest(path).catch(() => null);
+        return { key: attachment.key, sha256 };
+      }),
+  );
+}
+
+/** Page box from the committed PDF's uncompressed page tree. */
+function readPdfPageBox(pdf: Buffer, pageIndex: number): number[] {
+  const source = pdf.toString("latin1");
+  const objectBody = (id: number): string => {
+    const start = source.indexOf(`\n${id} 0 obj\n`);
+    const end = source.indexOf("\nendobj", start);
+    return source.slice(start, end);
+  };
+  const pages = objectBody(2);
+  const kidsStart = pages.indexOf("[", pages.indexOf("/Kids"));
+  const kidsEnd = pages.indexOf("]", kidsStart);
+  const pageIDs = pages
+    .slice(kidsStart + 1, kidsEnd)
+    .split("\n")
+    .map((line) => Number.parseInt(line, 10))
+    .filter(Number.isFinite);
+  const page = objectBody(pageIDs[pageIndex]!);
+  const boxStart = page.indexOf("[", page.indexOf("/MediaBox"));
+  const boxEnd = page.indexOf("]", boxStart);
+  return page
+    .slice(boxStart + 1, boxEnd)
+    .split(" ")
+    .map(Number);
 }
 
 describe("the generated Zotero database", () => {
@@ -183,6 +255,117 @@ describe("the generated Zotero database", () => {
     expect(getNoteRefsByItemIDs(db, [19])).toEqual([]);
   });
 
+  it("resolves every file-backed Attachment and preserves one deliberate miss", async () => {
+    using db = openClient();
+    const attachments = getAttachmentsByParents(db, [20]);
+
+    expect(new Set(attachments.map(({ linkMode }) => linkMode))).toEqual(
+      new Set([0, 1, 2, 3]),
+    );
+
+    const paths = new Map(
+      attachments.map((attachment) => [
+        attachment.key,
+        attachmentAbsPath(attachment, {
+          dataDir: layout.dataDir,
+          baseAttachmentPath: null,
+        }),
+      ]),
+    );
+    expect(paths.get("LINKURL2")).toBeNull();
+    expect(isAbsolute(paths.get("PDFLINKD")!)).toBe(true);
+    expect(attachments.find(({ key }) => key === "LINKURL2")?.path).toBe(
+      "https://www.storybookscanada.ca/stories/en/0315/",
+    );
+
+    const fileStates = await Promise.all(
+      [...paths]
+        .filter((entry): entry is [string, string] => entry[1] !== null)
+        .map(async ([key, path]) => ({
+          key,
+          exists: await stat(path).then(
+            () => true,
+            () => false,
+          ),
+        })),
+    );
+    expect(fileStates).toEqual([
+      { key: "PDFSTR22", exists: true },
+      { key: "HTMLSNAP", exists: true },
+      { key: "PDFLINKD", exists: true },
+      { key: "MISSNG22", exists: false },
+    ]);
+  });
+
+  it("reads PDF Annotations whose anchors fit the source page", async () => {
+    using db = openClient();
+    const annotations = getAnnotationsByKey(db, ["HIGHLGHT", "NTMARK22"], 1);
+
+    expect(
+      annotations.map(({ key, parentKey, type, pageLabel }) => ({
+        key,
+        parentKey,
+        type,
+        pageLabel,
+      })),
+    ).toEqual([
+      { key: "HIGHLGHT", parentKey: "PDFSTR22", type: 1, pageLabel: "2" },
+      { key: "NTMARK22", parentKey: "PDFSTR22", type: 2, pageLabel: "2" },
+    ]);
+
+    const pdf = getAttachmentsByParents(db, [20]).find(
+      ({ key }) => key === "PDFSTR22",
+    )!;
+    const pdfPath = attachmentAbsPath(pdf, {
+      dataDir: layout.dataDir,
+      baseAttachmentPath: null,
+    })!;
+    const pdfBytes = await readFile(pdfPath);
+    expect(createHash("sha256").update(pdfBytes).digest("hex")).toBe(
+      "c16a4daca0352fad9fec09a59083ed2b2e36cd8e963395a8dd79ebb4432437e5",
+    );
+    const [minX, minY, maxX, maxY] = readPdfPageBox(pdfBytes, 1);
+    expect([minX, minY, maxX, maxY]).toEqual([0, 0, 792, 612]);
+
+    for (const annotation of annotations) {
+      const position = annotation.position as {
+        pageIndex: number;
+        rects: [number, number, number, number][];
+      };
+      expect(position.pageIndex).toBe(1);
+      expect(position.rects.length).toBeGreaterThan(0);
+      for (const [left, bottom, right, top] of position.rects) {
+        expect(minX! <= left && left < right && right <= maxX!).toBe(true);
+        expect(minY! <= bottom && bottom < top && top <= maxY!).toBe(true);
+      }
+    }
+  });
+
+  it("builds an offline HTML snapshot with the licensed story", async () => {
+    using db = openClient();
+    const snapshot = getAttachmentsByParents(db, [20]).find(
+      ({ key }) => key === "HTMLSNAP",
+    )!;
+    const path = attachmentAbsPath(snapshot, {
+      dataDir: layout.dataDir,
+      baseAttachmentPath: null,
+    })!;
+    const html = await readFile(path, "utf-8");
+
+    expect(createHash("sha256").update(html).digest("hex")).toBe(
+      "41dd001c025c2e3fce1464583154bf9eec72534242bed778436d34be99705a44",
+    );
+    expect(html).toContain("Sakima lived with his parents");
+    expect(html).toContain("Written by Ursula Nafula");
+    expect(html).toContain("Illustrated by Peris Wachuka");
+    expect(html).toContain("Creative Commons Attribution 4.0 International");
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<audio");
+    expect(html).not.toContain('src="http');
+    expect(html).not.toContain('href="/');
+  });
+
   it("exposes My Library plus group Libraries, one of them read-only", () => {
     using db = openClient();
 
@@ -225,6 +408,8 @@ describe("the generated Zotero database", () => {
     const keys = [
       ...ITEMS.map((item) => item.key),
       ...NOTES.map((note) => note.key),
+      ...ATTACHMENTS.map((attachment) => attachment.key),
+      ...ANNOTATIONS.map((annotation) => annotation.key),
       ...COLLECTIONS.map((collection) => collection.key),
     ];
 
@@ -338,6 +523,8 @@ describe("the generated Zotero database", () => {
       BUILD_TIMESTAMP,
       ...ITEMS.map((item) => item.dateModified),
       ...NOTES.map((note) => note.dateModified),
+      ...ATTACHMENTS.map((attachment) => attachment.dateModified),
+      ...ANNOTATIONS.map((annotation) => annotation.dateModified),
     ]);
     const offenders = stamps
       .filter(({ stamp }) => !spec.has(stamp))
@@ -348,12 +535,34 @@ describe("the generated Zotero database", () => {
     expect(stamps).not.toEqual([]);
   });
 
-  it("rebuilds to the same semantic data, byte for byte", async () => {
-    const before = readSemantics(layout.databasePath);
+  it("rebuilds the same semantics and files at another host-native path", async () => {
+    const before = readSemantics(layout);
+    const filesBefore = await readAttachmentTree(layout);
+    const comparisonLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-rebuild-")),
+    );
+    fixture.defer(() =>
+      rm(comparisonLayout.root, { recursive: true, force: true }),
+    );
+    await buildFixture(comparisonLayout);
+
+    expect(readSemantics(comparisonLayout)).toBe(before);
+    expect(await readAttachmentTree(comparisonLayout)).toEqual(filesBefore);
+
+    using firstDb = openClientAt(layout.databasePath);
+    using secondDb = openClientAt(comparisonLayout.databasePath);
+    const linkedPath = (db: NodeDatabaseClient): string | null =>
+      getAttachmentsByParents(db, [20]).find(({ linkMode }) => linkMode === 2)!
+        .path;
+    expect(linkedPath(firstDb)).not.toBe(linkedPath(secondDb));
+  });
+
+  it("rebuilds one layout byte for byte", async () => {
+    const before = readSemantics(layout);
     const bytes = await digest(layout.databasePath);
     await buildFixture(layout);
 
-    expect(readSemantics(layout.databasePath)).toBe(before);
+    expect(readSemantics(layout)).toBe(before);
     expect(await digest(layout.databasePath)).toBe(bytes);
   });
 });

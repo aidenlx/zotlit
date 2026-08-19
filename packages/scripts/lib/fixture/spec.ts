@@ -320,6 +320,19 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2025-03-01 12:00:00",
     collectionIDs: [],
   },
+  {
+    itemID: 20,
+    libraryID: 1,
+    key: "SAKIMA22",
+    itemType: "bookSection",
+    citationKey: "nafulaSakimasSong",
+    title: "Sakima’s song",
+    containerTitle: "African Storybook",
+    date: "2015",
+    creators: [author("Ursula", "Nafula")],
+    dateModified: "2025-02-21 12:00:00",
+    collectionIDs: [1],
+  },
 ];
 
 function author(firstName: string, lastName: string): FixtureCreator {
@@ -426,6 +439,145 @@ export const NOTES: readonly FixtureNote[] = [
     dateModified: "2025-02-22 12:00:00",
     trashed: true,
     collectionIDs: [],
+  },
+];
+
+export type FixtureAsset = "sakimas-song.html" | "sakimas-song.pdf";
+
+export interface FixtureAttachment {
+  itemID: number;
+  libraryID: number;
+  /** Bare Zotero key for the Attachment row. */
+  key: string;
+  parentItemID: number;
+  linkMode: "imported_file" | "imported_url" | "linked_file" | "linked_url";
+  contentType: "application/pdf" | "text/html";
+  /** Storage filename, linked filename, or URL, according to {@link linkMode}. */
+  path: string;
+  /** Committed source to copy; `null` makes a URL row or deliberate miss. */
+  sourceAsset: FixtureAsset | null;
+  /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
+  dateModified: string;
+}
+
+/**
+ * File-backed rows cover every storage and linked-file branch. `LINKURL2`
+ * exercises the URL-only branch, while `MISSNG22` resolves to the one path the
+ * generator deliberately leaves absent.
+ */
+export const ATTACHMENTS: readonly FixtureAttachment[] = [
+  {
+    itemID: 21,
+    libraryID: 1,
+    key: "PDFSTR22",
+    parentItemID: 20,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    path: "sakimas-song.pdf",
+    sourceAsset: "sakimas-song.pdf",
+    dateModified: "2025-02-20 12:00:00",
+  },
+  {
+    itemID: 22,
+    libraryID: 1,
+    key: "HTMLSNAP",
+    parentItemID: 20,
+    linkMode: "imported_url",
+    contentType: "text/html",
+    path: "sakimas-song.html",
+    sourceAsset: "sakimas-song.html",
+    dateModified: "2025-02-19 12:00:00",
+  },
+  {
+    itemID: 23,
+    libraryID: 1,
+    key: "PDFLINKD",
+    parentItemID: 20,
+    linkMode: "linked_file",
+    contentType: "application/pdf",
+    path: "sakimas-song.pdf",
+    sourceAsset: "sakimas-song.pdf",
+    dateModified: "2025-02-18 12:00:00",
+  },
+  {
+    itemID: 24,
+    libraryID: 1,
+    key: "LINKURL2",
+    parentItemID: 20,
+    linkMode: "linked_url",
+    contentType: "text/html",
+    path: "https://www.storybookscanada.ca/stories/en/0315/",
+    sourceAsset: null,
+    dateModified: "2025-02-17 12:00:00",
+  },
+  {
+    itemID: 25,
+    libraryID: 1,
+    key: "MISSNG22",
+    parentItemID: 20,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    path: "deliberately-missing.pdf",
+    sourceAsset: null,
+    dateModified: "2025-02-16 12:00:00",
+  },
+];
+
+export interface FixtureAnnotation {
+  itemID: number;
+  libraryID: number;
+  /** Bare Zotero key for the Annotation row. */
+  key: string;
+  parentItemID: number;
+  type: 1 | 2;
+  text: string | null;
+  comment: string | null;
+  color: string;
+  pageLabel: string;
+  sortIndex: string;
+  position: {
+    pageIndex: number;
+    rects: readonly (readonly [number, number, number, number])[];
+  };
+  /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
+  dateModified: string;
+}
+
+/** Real page-2 anchors in the 792 × 612 point PDF page box. */
+export const ANNOTATIONS: readonly FixtureAnnotation[] = [
+  {
+    itemID: 26,
+    libraryID: 1,
+    key: "HIGHLGHT",
+    parentItemID: 21,
+    type: 1,
+    text: "Sakima lived with his parents and his four year old sister.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "2",
+    sortIndex: "00001|000000|00389",
+    position: {
+      pageIndex: 1,
+      rects: [
+        [389, 531, 710, 553],
+        [389, 505, 688, 527],
+      ],
+    },
+    dateModified: "2025-02-15 12:00:00",
+  },
+  {
+    itemID: 27,
+    libraryID: 1,
+    key: "NTMARK22",
+    parentItemID: 21,
+    type: 2,
+    text: null,
+    comment: "The opening establishes Sakima’s family and home.",
+    color: "#ffd400",
+    pageLabel: "2",
+    sortIndex: "00001|000001|00730",
+    position: { pageIndex: 1, rects: [[730, 537, 748, 555]] },
+    dateModified: "2025-02-14 12:00:00",
   },
 ];
 
