@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
-// Builds, re-scopes, and discards the Fixture. See docs/fixture.md for the
-// maintainer workflow.
+// Builds, re-scopes, and discards the Fixture. Run 'fixture.ts guide' for reference.
 
 import { access } from "node:fs/promises";
 import { join } from "node:path";
@@ -18,6 +17,7 @@ import {
   selectScopeCase,
   UNAVAILABLE_GROUP_IDS,
 } from "#fixture";
+import { renderGuide } from "#fixture/guide";
 import { getWorkspaceRoot } from "#package-roots";
 import {
   launchPairedZotero,
@@ -32,6 +32,7 @@ const usage = `Usage:
   fixture.ts paths                print the fixture paths
   fixture.ts zotero               launch the Paired Zotero on the fixture
   fixture.ts discard              delete the whole fixture
+  fixture.ts guide                print the fixture reference
 
 Scope cases:
 ${SCOPE_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}
@@ -110,6 +111,9 @@ async function main(): Promise<void> {
     case "discard":
       await discardFixture(layout);
       console.log(`Deleted ${layout.root}`);
+      break;
+    case "guide":
+      console.log(renderGuide());
       break;
     default:
       console.error(usage);
