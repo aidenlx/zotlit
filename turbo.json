@@ -9,6 +9,11 @@
       "outputs": ["dist/**"],
       "outputLogs": "errors-only"
     },
+    "build:dev": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist-dev/**"],
+      "outputLogs": "errors-only"
+    },
     "dev": {
       "cache": false,
       "persistent": true
@@ -23,7 +28,11 @@
       "dependsOn": ["^build", "transit"]
     },
     "fixture": {
-      "dependsOn": ["^build", "@zotlit/obsidian#build:dev"],
+      "dependsOn": [
+        "^build",
+        "@zotlit/obsidian#build:dev",
+        "@zotlit/zotero#build:dev"
+      ],
       "cache": false
     },
     "//#lint:repo:deps": {

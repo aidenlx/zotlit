@@ -1,5 +1,7 @@
 // Resolves a real Zotero app bundle — an override or the managed install — and
-// launches it on the Fixture's profile beside a personal Zotero.
+// launches it on the Fixture's profile beside a personal Zotero. It also owns
+// the preferences that profile carries, because they describe what a real
+// Zotero does on a profile it has never opened.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -9,11 +11,13 @@ import {
   constants,
   mkdir,
   mkdtemp,
+  readFile,
   rename,
   rm,
+  writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream } from "node:stream/web";
@@ -169,10 +173,79 @@ async function extractAppBundle(
   }
 }
 
+/**
+ * What Zotero does on a profile it has never opened: it loads the start page in
+ * the developer's browser, shows guidance popups and an upgrade banner, asks
+ * to enable sideloaded add-ons and set up sync, and starts backing the database
+ * up. Each preference here turns one of those off, and `app.update.auto` holds
+ * {@link PINNED_ZOTERO_VERSION} in place. Zotero rides Gecko 140, where
+ * `app.update.auto` is the live knob: it ships the pref as `true` and patches
+ * `UpdateUtils` to keep reading it from `prefs.js`.
+ *
+ * @see {@link https://github.com/zotero/zotero/blob/22f08d1ced/chrome/content/zotero/zoteroPane.js#L636}
+ * for the branch that opens the start page.
+ * @see {@link https://github.com/zotero/zotero/blob/22f08d1ced/test/runtests.sh#L143-L166}
+ * for the same Zotero preference names in Zotero's own test harness.
+ * @see {@link https://github.com/zotero/zotero/blob/22f08d1ced/app/scripts/fetch_xulrunner#L155}
+ * for the patch that keeps `app.update.auto` live.
+ */
+export const QUIET_FIRST_RUN_PREFS = [
+  'user_pref("extensions.autoDisableScopes", 0);',
+  'user_pref("extensions.zotero.firstRun2", false);',
+  'user_pref("extensions.zotero.firstRunGuidance", false);',
+  'user_pref("extensions.zotero.showPostUpgradeBanner", false);',
+  'user_pref("extensions.zotero.sync.autoSync", false);',
+  'user_pref("extensions.zotero.sync.reminder.setUp.enabled", false);',
+  'user_pref("extensions.zotero.sync.reminder.autoSync.enabled", false);',
+  'user_pref("extensions.zotero.backup.numBackups", 0);',
+  'user_pref("extensions.zotero.automaticScraperUpdates", false);',
+  'user_pref("app.update.auto", false);',
+] as const;
+
 /** The profile and data directory a Zotero process opens. */
 export interface ZoteroTarget {
   profileDir: string;
   dataDir: string;
+}
+
+interface CompanionManifest {
+  applications?: { zotero?: { id?: unknown } };
+}
+
+async function installCompanionProxy(
+  profileDir: string,
+  companionDir: string,
+): Promise<void> {
+  const manifestPath = join(companionDir, "manifest.json");
+  const rawManifest = await readFile(manifestPath, "utf-8").catch((error) => {
+    throw new Error(
+      `no companion build at ${companionDir}. Build it with 'pnpm fixture' before launching the Paired Zotero.`,
+      { cause: error },
+    );
+  });
+
+  let manifest: CompanionManifest | undefined;
+  try {
+    const parsed: unknown = JSON.parse(rawManifest);
+    if (typeof parsed === "object" && parsed !== null) {
+      manifest = parsed as CompanionManifest;
+    }
+  } catch (error) {
+    throw new Error(`the companion manifest at ${manifestPath} is not JSON.`, {
+      cause: error,
+    });
+  }
+
+  const addonId = manifest?.applications?.zotero?.id;
+  if (typeof addonId !== "string" || addonId.length === 0) {
+    throw new Error(
+      `the companion manifest at ${manifestPath} has no applications.zotero.id.`,
+    );
+  }
+
+  const extensionsDir = join(profileDir, "extensions");
+  await mkdir(extensionsDir, { recursive: true });
+  await writeFile(join(extensionsDir, addonId), resolve(companionDir));
 }
 
 /**
@@ -208,10 +281,12 @@ export interface PairedZotero {
  * Start the Paired Zotero on the Fixture's profile and data directory,
  * detached so the command returns and the instance outlives it.
  *
- * @throws when the Fixture is not built, or no app bundle resolves.
+ * @throws when the Fixture or companion build is missing, the companion
+ * manifest is invalid, or no app bundle resolves.
  */
 export async function launchPairedZotero(
   target: ZoteroTarget,
+  companionDir: string,
 ): Promise<PairedZotero> {
   for (const dir of [target.profileDir, target.dataDir]) {
     await access(dir).catch(() => {
@@ -221,6 +296,7 @@ export async function launchPairedZotero(
     });
   }
 
+  await installCompanionProxy(target.profileDir, companionDir);
   const appBundle = await resolveZoteroApp();
   const child = spawnZotero(appBundle, target, { detached: true });
   child.unref();

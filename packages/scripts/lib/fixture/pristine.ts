@@ -17,6 +17,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 
 import {
   PINNED_ZOTERO_VERSION,
+  QUIET_FIRST_RUN_PREFS,
   resolveZoteroApp,
   spawnZotero,
 } from "./paired-zotero.ts";
@@ -114,19 +115,6 @@ const QUIET_POLLS = 8;
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
 /**
- * A first run Zotero should never be asked to do: guidance popups, remote
- * schema refreshes, and sync all add variance to what lands in the database.
- */
-const HARVEST_PREFS = [
-  'user_pref("extensions.zotero.firstRunGuidance", false);',
-  'user_pref("extensions.zotero.firstRun2", false);',
-  'user_pref("extensions.zotero.sync.autoSync", false);',
-  'user_pref("extensions.zotero.automaticScraperUpdates", false);',
-  'user_pref("app.update.auto", false);',
-  "",
-].join("\n");
-
-/**
  * First-run the pinned Zotero on an empty data directory and capture the
  * database it creates as the committed template. `workDir` holds the throwaway
  * profile and data directory, and is removed on the way out.
@@ -146,7 +134,10 @@ export async function harvestPristineTemplate(
   await rm(workDir, { recursive: true, force: true });
   await mkdir(target.profileDir, { recursive: true });
   await mkdir(target.dataDir, { recursive: true });
-  await writeFile(join(target.profileDir, "prefs.js"), HARVEST_PREFS);
+  await writeFile(
+    join(target.profileDir, "prefs.js"),
+    [...QUIET_FIRST_RUN_PREFS, ""].join("\n"),
+  );
 
   const appBundle = await resolveZoteroApp();
   console.log(`First-running ${appBundle} on an empty data directory`);

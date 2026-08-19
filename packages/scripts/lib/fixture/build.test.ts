@@ -32,6 +32,7 @@ import {
   selectScopeCase,
 } from "./build.ts";
 import type { FixtureLayout } from "./build.ts";
+import { QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 
 import { getWorkspaceRoot } from "#package-roots";
@@ -306,6 +307,20 @@ describe("the generated Obsidian vault", () => {
 
     expect(prefs).toContain(JSON.stringify(layout.dataDir));
     expect(prefs).toContain("extensions.zotero.useDataDir");
+  });
+
+  it("quiets the first run, so a Paired Zotero opens no start page", async () => {
+    const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
+
+    // `firstRun2` is the one that opens the start page; the rest keep the
+    // profile quiet in other ways.
+    for (const line of QUIET_FIRST_RUN_PREFS) expect(prefs).toContain(line);
+  });
+
+  it("starts the companion without a sideload confirmation", async () => {
+    const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
+
+    expect(prefs).toContain('user_pref("extensions.autoDisableScopes", 0);');
   });
 
   it("saves a Library Scope the plugin can load", async () => {

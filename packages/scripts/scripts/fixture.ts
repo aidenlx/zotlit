@@ -35,6 +35,7 @@ const scopeCaseIds = SCOPE_CASES.map((c) => c.id).join(", ");
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const layout = getFixtureLayout(getFixtureRoot(workspaceRoot));
+const companionDir = join(workspaceRoot, "apps", "zotero", "dist-dev", "addon");
 
 /**
  * The dev build of the plugin. `pnpm fixture` builds it first, so it is missing
@@ -126,7 +127,7 @@ const cli = yargs(hideBin(process.argv))
     `launch the Paired Zotero on the fixture (set ${ZOTERO_APP_ENV} to run a bundle instead of the managed Zotero ${PINNED_ZOTERO_VERSION})`,
     () => {},
     async () => {
-      const { appBundle, pid } = await launchPairedZotero(layout);
+      const { appBundle, pid } = await launchPairedZotero(layout, companionDir);
       console.log(`Launched the Paired Zotero from ${appBundle} (pid ${pid})`);
       printPaths();
     },

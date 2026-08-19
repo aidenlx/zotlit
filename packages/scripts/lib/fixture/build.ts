@@ -7,6 +7,7 @@ import type { SQLInputValue } from "node:sqlite";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 
+import { QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { assertSchemaVersions, writePristineDatabase } from "./pristine.ts";
 import {
   BUILD_TIMESTAMP,
@@ -380,12 +381,15 @@ function seedItemData(
 
 /**
  * A Zotero profile whose prefs point at the Fixture's data directory, so one
- * profile-directory override in ZotLit switches the whole install over.
+ * profile-directory override in ZotLit switches the whole install over. The
+ * same profile carries {@link QUIET_FIRST_RUN_PREFS}, because a Paired Zotero
+ * launches on it.
  */
 function writePrefs(layout: FixtureLayout): Promise<void> {
   const lines = [
     'user_pref("extensions.zotero.useDataDir", true);',
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
+    ...QUIET_FIRST_RUN_PREFS,
     "",
   ];
   return writeFile(join(layout.profileDir, "prefs.js"), lines.join("\n"));
