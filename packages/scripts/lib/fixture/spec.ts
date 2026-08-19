@@ -333,6 +333,19 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2025-02-21 12:00:00",
     collectionIDs: [1],
   },
+  {
+    itemID: 28,
+    libraryID: 1,
+    key: "IANNP5A2",
+    itemType: "journalArticle",
+    citationKey: "ioannidisWhyMost2005",
+    title: "Why Most Published Research Findings Are False",
+    containerTitle: "PLoS Medicine",
+    date: "2005",
+    creators: [author("John P. A.", "Ioannidis")],
+    dateModified: "2025-02-13 12:00:00",
+    collectionIDs: [1],
+  },
 ];
 
 function author(firstName: string, lastName: string): FixtureCreator {
@@ -442,7 +455,10 @@ export const NOTES: readonly FixtureNote[] = [
   },
 ];
 
-export type FixtureAsset = "sakimas-song.html" | "sakimas-song.pdf";
+export type FixtureAsset =
+  | "ioannidis-2005/ioannidis-2005.pdf"
+  | "sakimas-song/sakimas-song.html"
+  | "sakimas-song/sakimas-song.pdf";
 
 export interface FixtureAttachment {
   itemID: number;
@@ -474,7 +490,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     linkMode: "imported_file",
     contentType: "application/pdf",
     path: "sakimas-song.pdf",
-    sourceAsset: "sakimas-song.pdf",
+    sourceAsset: "sakimas-song/sakimas-song.pdf",
     dateModified: "2025-02-20 12:00:00",
   },
   {
@@ -485,7 +501,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     linkMode: "imported_url",
     contentType: "text/html",
     path: "sakimas-song.html",
-    sourceAsset: "sakimas-song.html",
+    sourceAsset: "sakimas-song/sakimas-song.html",
     dateModified: "2025-02-19 12:00:00",
   },
   {
@@ -496,7 +512,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     linkMode: "linked_file",
     contentType: "application/pdf",
     path: "sakimas-song.pdf",
-    sourceAsset: "sakimas-song.pdf",
+    sourceAsset: "sakimas-song/sakimas-song.pdf",
     dateModified: "2025-02-18 12:00:00",
   },
   {
@@ -520,6 +536,17 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     path: "deliberately-missing.pdf",
     sourceAsset: null,
     dateModified: "2025-02-16 12:00:00",
+  },
+  {
+    itemID: 29,
+    libraryID: 1,
+    key: "IANPDF25",
+    parentItemID: 28,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    path: "ioannidis-2005.pdf",
+    sourceAsset: "ioannidis-2005/ioannidis-2005.pdf",
+    dateModified: "2025-02-12 12:00:00",
   },
 ];
 

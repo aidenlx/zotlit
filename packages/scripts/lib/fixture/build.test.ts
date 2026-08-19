@@ -48,6 +48,9 @@ import { getWorkspaceRoot } from "#package-roots";
 
 let layout: FixtureLayout;
 const fixture = new AsyncDisposableStack();
+const ATTACHMENT_PARENT_IDS = [
+  ...new Set(ATTACHMENTS.map(({ parentItemID }) => parentItemID)),
+];
 
 beforeAll(async () => {
   // Workspace scratch, not the system temp dir — see policies/scratch-artifacts.md.
@@ -105,7 +108,7 @@ function readSemantics(fixtureLayout: FixtureLayout): string {
     )
     .all();
   using db = openClientAt(fixtureLayout.databasePath);
-  const attachments = getAttachmentsByParents(db, [20]).map(
+  const attachments = getAttachmentsByParents(db, ATTACHMENT_PARENT_IDS).map(
     ({ dateAdded, dateModified, ...attachment }) => ({
       ...attachment,
       path: attachment.linkMode === 2 ? "<host-native-path>" : attachment.path,
@@ -130,7 +133,7 @@ async function readAttachmentTree(
 ): Promise<readonly { key: string; sha256: string | null }[]> {
   using db = openClientAt(fixtureLayout.databasePath);
   return Promise.all(
-    getAttachmentsByParents(db, [20])
+    getAttachmentsByParents(db, ATTACHMENT_PARENT_IDS)
       .filter(({ linkMode }) => linkMode !== 3)
       .map(async (attachment) => {
         const path = attachmentAbsPath(attachment, {
@@ -295,6 +298,44 @@ describe("the generated Zotero database", () => {
       { key: "PDFLINKD", exists: true },
       { key: "MISSNG22", exists: false },
     ]);
+  });
+
+  it("reads a real academic article with its imported PDF", async () => {
+    using db = openClient();
+    const article = indexedItems(db, 1).find(({ key }) => key === "IANNP5A2");
+
+    expect(article).toMatchObject({
+      itemType: "journalArticle",
+      title: "Why Most Published Research Findings Are False",
+      publicationTitle: "PLoS Medicine",
+      date: "2005",
+      creators: [
+        {
+          firstName: "John P. A.",
+          lastName: "Ioannidis",
+          fieldMode: 0,
+        },
+      ],
+    });
+
+    const attachment = getAttachmentsByParents(db, [28]).find(
+      ({ key }) => key === "IANPDF25",
+    )!;
+    const path = attachmentAbsPath(attachment, {
+      dataDir: layout.dataDir,
+      baseAttachmentPath: null,
+    })!;
+    const pdf = await readFile(path);
+
+    expect(attachment).toMatchObject({
+      linkMode: 0,
+      contentType: "application/pdf",
+      path: "storage:ioannidis-2005.pdf",
+    });
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(createHash("sha256").update(pdf).digest("hex")).toBe(
+      "ffc1005680cb620eec4c913437dfabbf311b535cfe16cbaeb2faec1f92afc362",
+    );
   });
 
   it("reads PDF Annotations whose anchors fit the source page", async () => {

@@ -155,7 +155,7 @@ const ATTACHMENT_LINK_MODES = {
   linked_url: 3,
 } as const;
 
-const ASSET_DIR = join(import.meta.dirname, "assets", "sakimas-song");
+const ASSET_DIR = join(import.meta.dirname, "assets");
 
 function attachmentDatabasePath(
   attachment: FixtureAttachment,
