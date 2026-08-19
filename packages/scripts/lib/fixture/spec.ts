@@ -713,6 +713,68 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
   },
 ];
 
+const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
+const STRESS_BUILD_SEED = 0x5eed_0000;
+
+/** Synthetic Item count used by `pnpm fixture stress`. */
+export const DEFAULT_STRESS_ITEM_COUNT = 25_000;
+export const STRESS_ITEM_COUNT_CONSTRAINT = "a non-negative safe integer";
+
+function stressItemKey(index: number): string {
+  let value = index;
+  let suffix = "";
+  for (let place = 0; place < 7; place++) {
+    suffix =
+      STRESS_ITEM_KEY_ALPHABET[value % STRESS_ITEM_KEY_ALPHABET.length]! +
+      suffix;
+    value = Math.floor(value / STRESS_ITEM_KEY_ALPHABET.length);
+  }
+  return `S${suffix}`;
+}
+
+/** Additive synthetic corpus for an on-demand Stress Build. */
+export function createStressItems(count: number): readonly FixtureItem[] {
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new Error(
+      `stress item count must be ${STRESS_ITEM_COUNT_CONSTRAINT}, got ${count}`,
+    );
+  }
+
+  const firstItemID =
+    Math.max(
+      ...ITEMS.map(({ itemID }) => itemID),
+      ...NOTES.map(({ itemID }) => itemID),
+      ...ATTACHMENTS.map(({ itemID }) => itemID),
+      ...ANNOTATIONS.map(({ itemID }) => itemID),
+    ) + 1;
+
+  return Array.from({ length: count }, (_, index) => {
+    const seededIndex = STRESS_BUILD_SEED + index;
+    const ordinal = index + 1;
+    const library = LIBRARIES[seededIndex % LIBRARIES.length]!;
+    const collection = COLLECTIONS.find(
+      ({ libraryID }) => libraryID === library.libraryID,
+    );
+    return {
+      itemID: firstItemID + index,
+      libraryID: library.libraryID,
+      key: stressItemKey(seededIndex),
+      itemType: "journalArticle",
+      citationKey: `stress${String(ordinal).padStart(7, "0")}`,
+      title: `Synthetic stress item ${ordinal}`,
+      containerTitle: "Stress Build Journal",
+      date: String(2000 + (seededIndex % 25)),
+      creators: [author("Stress", `Author ${ordinal}`)],
+      tags: [
+        { name: "stress-build", type: 0 },
+        { name: `stress-bucket-${seededIndex % 16}`, type: 1 },
+      ],
+      dateModified: "2025-01-01 00:00:00",
+      collectionIDs: collection ? [collection.collectionID] : [],
+    };
+  });
+}
+
 /**
  * Persisted Library Scope, in the shape the specification fixes: All Libraries,
  * or a non-empty set of stable selectors in canonical order (My Library first,

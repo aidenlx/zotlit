@@ -4,12 +4,14 @@ import { PINNED_ZOTERO_VERSION } from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 import {
   COLLECTIONS,
+  DEFAULT_STRESS_ITEM_COUNT,
   ITEMS,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   PERSONAL_SELECTOR,
   SCOPE_CASES,
+  STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
 } from "./spec.ts";
 import type { FixtureItem, FixtureNote } from "./spec.ts";
@@ -217,6 +219,18 @@ const CHANGING_THE_FIXTURE_SECTION = `CHANGING THE FIXTURE
 Edit packages/scripts/lib/fixture/spec.ts and rebuild.
 packages/scripts/lib/fixture/build.test.ts guards the spec properties.`;
 
+const STRESS_BUILD_SECTION = `STRESS BUILD
+
+Build an additive deterministic corpus for performance work:
+
+  pnpm fixture stress
+
+This adds ${DEFAULT_STRESS_ITEM_COUNT.toLocaleString("en-US")} synthetic Items with creators, tags, and Citation Keys across all Fixture Libraries. The corpus uses one fixed seed. Pass ${STRESS_ITEM_COUNT_CONSTRAINT} to change the scale:
+
+  pnpm fixture stress 100000
+
+The ordinary pnpm fixture command keeps the Fixture at its committed Spec size.`;
+
 /**
  * Renders the Fixture reference: data-derived Library, Collection, Item, and
  * Note tables plus the vault-setup and cancel-testing procedures.
@@ -230,6 +244,7 @@ export function renderGuide(): string {
     SCOPE_CASES_SECTION,
     VAULT_SETUP_SECTION,
     CANCEL_TESTING_SECTION,
+    STRESS_BUILD_SECTION,
     PRISTINE_TEMPLATE_SECTION,
     CHANGING_THE_FIXTURE_SECTION,
   ].join("\n\n");

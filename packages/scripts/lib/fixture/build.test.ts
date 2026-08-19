@@ -11,6 +11,7 @@ import {
   getCitekeysByLibrary,
   getCollectionIDByKey,
   getIndexedItemIDsByLibrary,
+  getIndexedItemIDsByCollection,
   getIndexedItemsByID,
   getItemsByID,
   getLibraries,
@@ -84,6 +85,62 @@ function indexedItems(
   libraryID: number,
 ): IndexedItem[] {
   return getIndexedItemsByID(db, getIndexedItemIDsByLibrary(db, libraryID));
+}
+
+function indexedItemCount(db: NodeDatabaseClient): number {
+  return getLibraries(db).reduce(
+    (count, library) =>
+      count + getIndexedItemIDsByLibrary(db, library.libraryID).length,
+    0,
+  );
+}
+
+async function buildTemporaryStressFixture(
+  prefix: string,
+  stressItemCount: number,
+): Promise<FixtureLayout> {
+  const generatedLayout = getFixtureLayout(
+    await mkdtemp(join(dirname(layout.root), prefix)),
+  );
+  fixture.defer(() =>
+    rm(generatedLayout.root, { recursive: true, force: true }),
+  );
+  await buildFixture(generatedLayout, { stressItemCount });
+  return generatedLayout;
+}
+
+/** Public-query snapshot of every discoverable Item's generated semantics. */
+function readIndexedItemSemantics(fixtureLayout: FixtureLayout): string {
+  using db = openClientAt(fixtureLayout.databasePath);
+  const itemIDs = getLibraries(db).flatMap(({ libraryID }) =>
+    getIndexedItemIDsByLibrary(db, libraryID),
+  );
+  const collectionItems = new Map(
+    COLLECTIONS.map((collection) => [
+      collection.collectionID,
+      new Set(
+        getIndexedItemIDsByCollection(db, {
+          libraryID: collection.libraryID,
+          collectionKey: collection.key,
+        }),
+      ),
+    ]),
+  );
+  const tagMemo = new Map();
+  const items = getIndexedItemsByID(db, itemIDs).map(
+    ({ dateModified, ...item }) => ({
+      ...item,
+      dateModified: dateModified.epochMilliseconds,
+      tags: resolveItemTags(db, item.itemID, tagMemo).map(({ tag, type }) => ({
+        name: tag.name,
+        type,
+      })),
+      collectionIDs: [...collectionItems]
+        .filter(([, members]) => members.has(item.itemID))
+        .map(([collectionID]) => collectionID),
+    }),
+  );
+  return JSON.stringify(items);
 }
 
 async function digest(path: string): Promise<string> {
@@ -607,6 +664,127 @@ describe("the generated Zotero database", () => {
     expect(readSemantics(layout)).toBe(before);
     expect(await digest(layout.databasePath)).toBe(bytes);
   });
+});
+
+describe("a Stress Build", () => {
+  it("leaves the default build at the Fixture Spec size", () => {
+    using db = openClient();
+    expect(indexedItemCount(db)).toBe(ITEMS.length);
+  });
+
+  it("adds the requested number of discoverable Items", async () => {
+    const stressLayout = await buildTemporaryStressFixture(
+      "fixture-stress-",
+      32,
+    );
+
+    using db = openClientAt(stressLayout.databasePath);
+    expect(indexedItemCount(db)).toBe(ITEMS.length + 32);
+  });
+
+  it("preserves Fixture invariants and generates deterministic rich content", async () => {
+    const stressLayout = await buildTemporaryStressFixture(
+      "fixture-stress-content-",
+      64,
+    );
+    const comparisonLayout = await buildTemporaryStressFixture(
+      "fixture-stress-comparison-",
+      64,
+    );
+
+    expect(readIndexedItemSemantics(comparisonLayout)).toBe(
+      readIndexedItemSemantics(stressLayout),
+    );
+
+    using db = openClientAt(stressLayout.databasePath);
+    const synthetic = indexedItems(db, 1).find(
+      ({ key }) => key === "S39PX7R9",
+    )!;
+    expect(synthetic).toMatchObject({
+      citationKey: "stress0000001",
+      title: "Synthetic stress item 1",
+      creators: [
+        {
+          firstName: "Stress",
+          lastName: "Author 1",
+          fieldMode: 0,
+        },
+      ],
+    });
+    expect(
+      resolveItemTags(db, synthetic.itemID, new Map()).map(({ tag, type }) => ({
+        name: tag.name,
+        type,
+      })),
+    ).toEqual([
+      { name: "stress-bucket-0", type: 1 },
+      { name: "stress-build", type: 0 },
+    ]);
+
+    const citekeyCount = getLibraries(db).reduce(
+      (count, library) =>
+        count + getCitekeysByLibrary(db, library.libraryID).length,
+      0,
+    );
+    expect(citekeyCount).toBe(
+      ITEMS.filter(({ citationKey }) => citationKey !== null).length + 64,
+    );
+    expect(
+      getCitekeysByLibrary(db, 1).filter(
+        ({ citekey }) => citekey === "duplicateWithin2020",
+      ),
+    ).toHaveLength(2);
+    expect(
+      getCitekeysByLibrary(db, 3).filter(
+        ({ citekey }) => citekey === "duplicateAcross2019",
+      ),
+    ).toHaveLength(1);
+    expect(getLibraries(db).map(({ libraryID }) => libraryID)).toEqual([
+      1, 2, 3, 4,
+    ]);
+    expect(
+      [1, 2, 3, 4].map(
+        (libraryID) => getNoteItemIDsByLibrary(db, libraryID).length,
+      ),
+    ).toEqual([3, 1, 1, 1]);
+    expect(
+      [1, 2, 3].map((libraryID) =>
+        getCollectionIDByKey(db, {
+          libraryID,
+          collectionKey: "SHAREDCL",
+        }),
+      ),
+    ).toEqual([1, 2, 3]);
+    expect(
+      [1, 2].map(
+        (libraryID) =>
+          indexedItems(db, libraryID).find(({ key }) => key === "AAAAAAAA")!
+            .key,
+      ),
+    ).toEqual(["AAAAAAAA", "AAAAAAAA"]);
+
+    for (const scopeCase of SCOPE_CASES) {
+      await selectScopeCase(stressLayout, scopeCase.id);
+      const data = JSON.parse(
+        await readFile(stressLayout.pluginDataPath, "utf-8"),
+      ) as Record<string, unknown>;
+      expect(data[LIBRARY_SCOPE_SETTING_KEY]).toEqual(scopeCase.scope);
+    }
+  });
+
+  it(
+    "builds and opens a 25,000-Item synthetic corpus",
+    { timeout: 120_000 },
+    async () => {
+      const stressLayout = await buildTemporaryStressFixture(
+        "fixture-stress-large-",
+        25_000,
+      );
+
+      using db = openClientAt(stressLayout.databasePath);
+      expect(indexedItemCount(db)).toBe(ITEMS.length + 25_000);
+    },
+  );
 });
 
 describe("the generated Obsidian vault", () => {

@@ -10,6 +10,7 @@ import { hideBin } from "yargs/helpers";
 import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_STRESS_ITEM_COUNT,
   discardFixture,
   getFixtureLayout,
   getFixtureRoot,
@@ -17,6 +18,7 @@ import {
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   selectScopeCase,
+  STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
 } from "#fixture";
 import { renderGuide } from "#fixture/guide";
@@ -70,10 +72,20 @@ function printLibraries(): void {
   console.log(`  unavailable selectors: ${UNAVAILABLE_GROUP_IDS.join(", ")}`);
 }
 
-async function build(scopeCase: string): Promise<void> {
+async function build({
+  scopeCase,
+  stressItemCount,
+}: {
+  scopeCase: string;
+  stressItemCount?: number;
+}): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
-  await buildFixture(layout, { scopeCase, pluginBundleDir });
-  console.log(`Built the Fixture at ${layout.root}`);
+  await buildFixture(layout, { scopeCase, stressItemCount, pluginBundleDir });
+  console.log(
+    stressItemCount === undefined
+      ? `Built the Fixture at ${layout.root}`
+      : `Built a Stress Build with ${stressItemCount.toLocaleString("en-US")} synthetic Items at ${layout.root}`,
+  );
   printPaths();
   console.log("Libraries:");
   printLibraries();
@@ -97,7 +109,23 @@ const cli = yargs(hideBin(process.argv))
         default: DEFAULT_SCOPE_CASE,
       }),
     async (argv) => {
-      await build(argv["scope-case"]);
+      await build({ scopeCase: argv["scope-case"] });
+    },
+  )
+  .command(
+    "stress [item-count]",
+    "rebuild with an additive synthetic corpus",
+    (y) =>
+      y.positional("item-count", {
+        describe: `number of synthetic Items to add; must be ${STRESS_ITEM_COUNT_CONSTRAINT}`,
+        type: "number",
+        default: DEFAULT_STRESS_ITEM_COUNT,
+      }),
+    async (argv) => {
+      await build({
+        scopeCase: DEFAULT_SCOPE_CASE,
+        stressItemCount: argv["item-count"],
+      });
     },
   )
   .command(

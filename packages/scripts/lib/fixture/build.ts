@@ -17,6 +17,7 @@ import {
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   COLLECTIONS,
+  createStressItems,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
   ITEMS,
@@ -39,6 +40,7 @@ export {
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   COLLECTIONS,
+  createStressItems,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
   ITEMS,
@@ -48,6 +50,10 @@ export {
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   UNAVAILABLE_GROUP_IDS,
+} from "./spec.ts";
+export {
+  DEFAULT_STRESS_ITEM_COUNT,
+  STRESS_ITEM_COUNT_CONSTRAINT,
 } from "./spec.ts";
 export type {
   FixtureAnnotation,
@@ -68,6 +74,8 @@ export type { FixtureLayout } from "./layout.ts";
 export interface BuildOptions {
   /** Scope case the fresh vault starts on. */
   scopeCase?: string;
+  /** Number of additive synthetic Items in an on-demand Stress Build. */
+  stressItemCount?: number;
   /**
    * Built plugin bundle to copy into the vault (`apps/obsidian/dist-dev`).
    * Absent, the vault carries the Fixture's data with ZotLit neither installed
@@ -86,11 +94,15 @@ export async function buildFixture(
   layout: FixtureLayout,
   options: BuildOptions = {},
 ): Promise<void> {
+  const items =
+    options.stressItemCount === undefined
+      ? ITEMS
+      : [...ITEMS, ...createStressItems(options.stressItemCount)];
+
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
-
-  await writeDatabase(layout);
+  await writeDatabase(layout, items);
   await writeAttachmentFiles(layout);
   await writePrefs(layout);
   await writeVault(layout, options);
@@ -171,7 +183,10 @@ async function writeAttachmentFiles(layout: FixtureLayout): Promise<void> {
  * and the global schema's item types and fields — so the ids below are read
  * back by name rather than declared here.
  */
-async function writeDatabase(layout: FixtureLayout): Promise<void> {
+async function writeDatabase(
+  layout: FixtureLayout,
+  items: readonly FixtureItem[],
+): Promise<void> {
   await writePristineDatabase(layout.databasePath);
   using db = new DatabaseSync(layout.databasePath);
   // A user-defined function shadows the `CURRENT_TIMESTAMP` keyword on this
@@ -184,7 +199,14 @@ async function writeDatabase(layout: FixtureLayout): Promise<void> {
     () => BUILD_TIMESTAMP,
   );
   assertSchemaVersions(db);
-  seedDatabase(db, readSchemaIDs(db), layout);
+  db.exec("begin");
+  try {
+    seedDatabase(db, readSchemaIDs(db), { layout, items });
+    db.exec("commit");
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
+  }
 }
 
 /** The global-schema ids the Spec's rows reference, resolved by name. */
@@ -252,7 +274,7 @@ function containerFieldID(
 function seedDatabase(
   db: DatabaseSync,
   ids: SchemaIDs,
-  layout: FixtureLayout,
+  { layout, items }: { layout: FixtureLayout; items: readonly FixtureItem[] },
 ): void {
   const insert = (sql: string, rows: readonly Row[]): void => {
     const statement = db.prepare(sql);
@@ -312,7 +334,7 @@ function seedDatabase(
     "insert into items (itemID, itemTypeID, dateAdded, dateModified, clientDateModified, libraryID, key)" +
       " values (?, ?, ?, ?, ?, ?, ?)",
     [
-      ...ITEMS.map((item) => itemRow(item, ids.itemTypes[item.itemType])),
+      ...items.map((item) => itemRow(item, ids.itemTypes[item.itemType])),
       ...NOTES.map((note) => itemRow(note, ids.itemTypes.note)),
       ...ATTACHMENTS.map((attachment) =>
         itemRow(attachment, ids.itemTypes.attachment),
@@ -357,13 +379,13 @@ function seedDatabase(
     ]),
   );
 
-  seedItemData(insert, ids);
+  seedItemData(insert, ids, items);
 
   // `creators` is keyed by name across the whole database, so two items by the
   // same person would share one row. Ids follow first use, which the Spec's own
   // order fixes, so a rebuild reproduces them.
   const creators = new Map<string, FixtureCreator & { creatorID: number }>();
-  for (const creator of ITEMS.flatMap((item) => item.creators)) {
+  for (const creator of items.flatMap((item) => item.creators)) {
     const key = creatorKey(creator);
     if (!creators.has(key)) {
       creators.set(key, { creatorID: creators.size + 1, ...creator });
@@ -380,7 +402,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex) values (?, ?, ?, ?)",
-    ITEMS.flatMap((item) =>
+    items.flatMap((item) =>
       item.creators.map((creator, orderIndex) => [
         item.itemID,
         creators.get(creatorKey(creator))!.creatorID,
@@ -391,7 +413,7 @@ function seedDatabase(
   );
 
   const tags = new Map<string, number>();
-  for (const tag of ITEMS.flatMap((item) => item.tags ?? [])) {
+  for (const tag of items.flatMap((item) => item.tags ?? [])) {
     if (!tags.has(tag.name)) tags.set(tag.name, tags.size + 1);
   }
   insert(
@@ -400,7 +422,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemTags (itemID, tagID, type) values (?, ?, ?)",
-    ITEMS.flatMap((item) =>
+    items.flatMap((item) =>
       (item.tags ?? []).map((tag) => [
         item.itemID,
         tags.get(tag.name)!,
@@ -412,11 +434,11 @@ function seedDatabase(
   const relationPredicateID = ensureRelationPredicate(db);
   insert(
     "insert into itemRelations (itemID, predicateID, object) values (?, ?, ?)",
-    ITEMS.flatMap((item) =>
+    items.flatMap((item) =>
       (item.relatedKeys ?? []).map((relatedKey) => [
         item.itemID,
         relationPredicateID,
-        relatedItemUri(item, relatedKey),
+        relatedItemUri(item, relatedKey, items),
       ]),
     ),
   );
@@ -431,7 +453,7 @@ function seedDatabase(
 
   insert(
     "insert into collectionItems (collectionID, itemID) values (?, ?)",
-    [...ITEMS, ...NOTES].flatMap((item) =>
+    [...items, ...NOTES].flatMap((item) =>
       item.collectionIDs.map((collectionID) => [collectionID, item.itemID]),
     ),
   );
@@ -465,8 +487,12 @@ function ensureRelationPredicate(db: DatabaseSync): number {
   return predicateID;
 }
 
-function relatedItemUri(item: FixtureItem, relatedKey: string): string {
-  const target = ITEMS.find(
+function relatedItemUri(
+  item: FixtureItem,
+  relatedKey: string,
+  items: readonly FixtureItem[],
+): string {
+  const target = items.find(
     (candidate) =>
       candidate.libraryID === item.libraryID && candidate.key === relatedKey,
   );
@@ -495,8 +521,9 @@ function relatedItemUri(item: FixtureItem, relatedKey: string): string {
 function seedItemData(
   insert: (sql: string, rows: readonly Row[]) => void,
   ids: SchemaIDs,
+  items: readonly FixtureItem[],
 ): void {
-  const fieldValues = ITEMS.flatMap((item) => [
+  const fieldValues = items.flatMap((item) => [
     { itemID: item.itemID, fieldID: ids.fields.title, value: item.title },
     { itemID: item.itemID, fieldID: ids.fields.date, value: item.date },
     {
