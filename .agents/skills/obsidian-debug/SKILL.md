@@ -14,34 +14,23 @@ rendered state. The DOM is the source of truth.
 
 ## Vault setup, once per worktree
 
-Each worktree debugs against its own vault at `tests/zt-vault-<worktree>`, seeded from the tracked
-`tests/zt-vault` template and gitignored. `build:dev` copies the bundle into the vault of the
-worktree you build from. Build once, then register:
+CLI Contract: `obsidian-vault 1`.
+
+1. Run `packages/scripts/scripts/obsidian-vault.ts --help`.
+2. Compare its `contractVersion` with the pin above. When they differ, follow
+   the live help for this run.
+3. Before you use a vault command, read its `<command> --help` output.
+4. Build the plugin, then use the live `create` command to seed and register
+   this worktree's dev vault:
 
 ```bash
 pnpm --filter @zotlit/obsidian build:dev
-packages/scripts/scripts/obsidian-vault.ts create
 ```
 
-`create` needs the bundle already in the vault, seeds the fixture notes around
-it, turns Restricted Mode off, and confirms the plugin actually loaded. It
-prints the 16-hex vault id. Obsidian names a vault after its folder, so the distinct folder
-name also makes `vault=zt-vault-<worktree>` resolve unambiguously — `vault=<name>` picks the first
-basename match, which is why every worktree needs its own name. Tear down with
-`packages/scripts/scripts/obsidian-vault.ts remove --purge`; `wt`'s `pre-remove`
-hook already runs that when the worktree goes.
-
-Editing a fixture under `tests/zt-vault/` changes the template, not the vault the app has
-open. Copy the edit across before you go looking for it in Obsidian:
-
-```bash
-packages/scripts/scripts/obsidian-vault.ts sync
-```
-
-`sync` overwrites changed files in place, so the vault keeps its id and its built bundle. It
-errors when the vault does not exist yet — run `create` first. `--purge` deletes the folder
-before copying, so fixtures renamed or removed from the template drop out too; that clears
-the bundle as well, so rebuild after it.
+Editing the Fixture Spec or its committed vault-page assets changes the next
+Fixture build, not the open dev vault. Use the live `sync` command before you
+look for those changes. Use the live `remove` command when you tear the vault
+down.
 
 ## Commands
 
@@ -60,8 +49,8 @@ The CLI always exits 0. Read the output text: `=> ` prefixes a result, and failu
 
 ## Loop
 
-1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` (copies the bundle into this worktree's
-   `tests/zt-vault-<worktree>/.obsidian/plugins/zotlit`).
+1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` copies the bundle into
+   this worktree's dev vault.
 2. **Reload** — `obsidian-cli vault=<id> plugin:reload id=zotlit`.
 3. **Open** — `obsidian-cli command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
 4. **Probe** — `obsidian-cli eval code='…'` with `getComputedStyle(el)` /
@@ -110,8 +99,8 @@ wins. Re-shoot. A DevTools window open over Obsidian can also steal the capture 
 
 An untargeted command goes to the focused window, which may belong to another worktree. Pass
 `vault=<id>`, and confirm with `eval code='app.vault.adapter.basePath'` — it must print the
-`tests/zt-vault-<worktree>` of the worktree you build from. `data.json` edits target that same
-path, not the `tests/zt-vault` template.
+dev-vault path reported by `obsidian-vault.ts --help` for the worktree you build
+from. `data.json` edits target that same path.
 
 ### Occluded window
 

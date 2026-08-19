@@ -11,12 +11,12 @@
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
-    "#test-vault": "./lib/test-vault.ts"
+    "#dev-vault": "./lib/dev-vault.ts"
   },
   "exports": {
     "./obsidian-manifest": "./lib/obsidian-manifest.ts",
     "./package-roots": "./lib/package-roots.ts",
-    "./test-vault": "./lib/test-vault.ts"
+    "./dev-vault": "./lib/dev-vault.ts"
   },
   "scripts": {
     "release": "node scripts/release.ts",

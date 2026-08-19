@@ -155,7 +155,6 @@ for (const { app, next } of bumps) {
 s.stop("Versions bumped");
 
 await syncObsidian(bumps, stagedPaths);
-await syncTestVaultPrevVersion(bumps, stagedPaths);
 await syncDocsAvailability(bumps, stagedPaths);
 
 s.start("Refreshing lockfile");
@@ -402,39 +401,6 @@ async function syncObsidian(
 }
 
 /**
- * Test-vault fixture sync: bumps `release.previous-version` in the manual test
- * vault's plugin data so a fresh launch there exercises the update-notice path
- * against the version being released from. Skipped when the fixture is absent
- * (e.g. a fresh checkout without the test vault populated) — the read itself
- * is the existence check, not a preceding stat.
- */
-async function syncTestVaultPrevVersion(
-  releases: Bump[],
-  staged: Set<string>,
-): Promise<void> {
-  const obsidian = releases.find((b) => b.app.name === "obsidian");
-  if (!obsidian) return;
-
-  const dataPath = join(
-    workspaceRoot,
-    "tests/zt-vault/.obsidian/plugins/zotlit/data.json",
-  );
-
-  let raw: string;
-  try {
-    raw = await readFile(dataPath, "utf-8");
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) return;
-    throw error;
-  }
-
-  const data = JSON.parse(raw) as Record<string, unknown>;
-  data["release.previous-version"] = obsidian.next;
-  await writeFile(dataPath, JSON.stringify(data, null, 2));
-  staged.add(dataPath);
-}
-
-/**
  * Docs-availability phase — ADR 0002. Diffs `content/docs/**\/*.mdx` against
  * the previous Stable Release Line tag, auto-accepts brand-new pages, and
  * interactively reviews every changed or moved page (with its diff shown
@@ -511,14 +477,6 @@ async function editFrontmatter(
   const fullPath = join(workspaceRoot, relativePath);
   const content = await readFile(fullPath, "utf-8");
   await writeFile(fullPath, transform(content));
-}
-
-function isErrno(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === code
-  );
 }
 
 async function readPackageJson(

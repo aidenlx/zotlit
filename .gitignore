@@ -31,9 +31,8 @@ tmp/
 !.env.example
 
 .primary-worktree
-# Per-worktree debug vaults, seeded from the tracked tests/zt-vault template
-# by packages/scripts/scripts/obsidian-vault.ts
-tests/zt-vault-*/
+# Per-worktree dev vaults, seeded from the generated Fixture Vault.
+tests/fixture-vault-*/
 
 # Inlang regenerates a self-managed .gitignore inside project.inlang/,
 # but it only appears after the first build. Pre-ignore generated files

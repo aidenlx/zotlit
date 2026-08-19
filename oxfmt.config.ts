@@ -9,8 +9,8 @@ export default defineConfig({
   ignorePatterns: [
     ...baseConfig.ignorePatterns,
     ".scratch/**",
-    "tests/zt-vault/**",
-    "tests/zt-vault-*/**",
+    "tests/fixture-vault-*/**",
+    "packages/scripts/lib/fixture/vault-plugins/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
     "packages/zotero-types/zotero-schema/**",

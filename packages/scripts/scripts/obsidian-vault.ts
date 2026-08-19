@@ -26,27 +26,23 @@ import { connect } from "node:net";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 import { $ } from "zx";
 
+import { getDevVaultDir, getFixtureVaultDir } from "#dev-vault";
+import { buildFixture, getFixtureLayout, getFixtureRoot } from "#fixture";
 import { getWorkspaceRoot } from "#package-roots";
-import { getTestVaultDir, getTestVaultTemplateDir } from "#test-vault";
-
-const usage = `Usage:
-  obsidian-vault.ts create [vault-path]           register this worktree's debug vault
-  obsidian-vault.ts sync [vault-path] [--purge]   re-copy the template fixture over an existing vault; --purge deletes it first
-  obsidian-vault.ts remove [vault-path] [--purge] unregister it; --purge also deletes the folder
-  obsidian-vault.ts list                          list known vaults
-  obsidian-vault.ts id [vault-path]               print the vault id for a path
-
-Environment:
-  OBSIDIAN_CLI   path to the obsidian-cli binary
-  ZT_HOST_VAULT  vault name or id whose window hosts the eval calls`;
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
-const defaultVault = getTestVaultDir(workspaceRoot);
-const templateVault = getTestVaultTemplateDir(workspaceRoot);
+const defaultVault = getDevVaultDir(workspaceRoot);
+const fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
+const fixtureVault = getFixtureVaultDir(workspaceRoot);
 const pluginId = "zotlit";
+const CONTRACT_VERSION = 1;
+const OBSIDIAN_CLI_ENV = "OBSIDIAN_CLI";
+const HOST_VAULT_ENV = "ZT_HOST_VAULT";
 
 const cliCandidates = [
   "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli",
@@ -64,7 +60,8 @@ let cliPath: string | undefined;
 
 async function getCli(): Promise<string> {
   if (cliPath) return cliPath;
-  if (process.env.OBSIDIAN_CLI) return (cliPath = process.env.OBSIDIAN_CLI);
+  const override = process.env[OBSIDIAN_CLI_ENV];
+  if (override) return (cliPath = override);
 
   const found = await $({ nothrow: true })`which obsidian-cli`;
   if (found.exitCode === 0) return (cliPath = found.stdout.trim());
@@ -77,7 +74,9 @@ async function getCli(): Promise<string> {
       continue;
     }
   }
-  throw new Error("obsidian-cli not found. Set OBSIDIAN_CLI to its path.");
+  throw new Error(
+    `obsidian-cli not found. Set ${OBSIDIAN_CLI_ENV} to its path.`,
+  );
 }
 
 /** Where Obsidian keeps `obsidian.json`, the per-vault state, and Partitions. */
@@ -176,18 +175,18 @@ async function waitFor(
  * the window of a vault under removal must never host its own removal.
  */
 async function resolveHost(exclude?: string): Promise<string> {
-  const preferred = process.env.ZT_HOST_VAULT;
+  const preferred = process.env[HOST_VAULT_ENV];
   if (preferred) {
     const id = await obEval("app.appId", preferred);
     if (id === exclude) {
-      throw new Error("ZT_HOST_VAULT points at the vault being removed");
+      throw new Error(`${HOST_VAULT_ENV} points at the vault being removed`);
     }
     return id;
   }
 
   const focused = await obEval("app.appId").catch(() => {
     throw new Error(
-      "no Obsidian window answered. Open a vault, or set ZT_HOST_VAULT.",
+      `no Obsidian window answered. Open a vault, or set ${HOST_VAULT_ENV}.`,
     );
   });
   if (focused !== exclude) return focused;
@@ -198,7 +197,7 @@ async function resolveHost(exclude?: string): Promise<string> {
   );
   if (!other) {
     throw new Error(
-      "no other open vault can host the removal. Open one, or set ZT_HOST_VAULT.",
+      `no other open vault can host the removal. Open one, or set ${HOST_VAULT_ENV}.`,
     );
   }
   return other;
@@ -224,11 +223,14 @@ async function create(vaultPath: string): Promise<void> {
     );
   }
 
-  // Seed from the tracked template so the fixture notes and the plugin
-  // `data.json` come along. `force: false` keeps whatever is already there, so
-  // this works whether the folder came from `build:dev` or does not exist yet.
+  await rebuildFixtureVault(abs);
+
+  // `force: false` preserves the bundle that `build:dev` copied into the dev
+  // vault before this script generated its seed.
   await mkdir(join(abs, ".obsidian", "plugins"), { recursive: true });
-  await cp(templateVault, abs, { recursive: true, force: false });
+  if (abs !== resolve(fixtureVault)) {
+    await cp(fixtureVault, abs, { recursive: true, force: false });
+  }
 
   // Obsidian loads the plugin from the vault, so the bundle has to be in place
   // before the window opens; registering first would only show an empty vault.
@@ -303,9 +305,8 @@ async function create(vaultPath: string): Promise<void> {
 }
 
 /**
- * Re-copy the template fixture over an already-created vault, so edits to
- * `tests/zt-vault` land without the remove/create round trip. The vault
- * folder path stays the same, so Obsidian's registry needs no update.
+ * Rebuild and re-copy the Fixture Vault over an already-created dev vault.
+ * The vault folder path stays the same, so Obsidian's registry needs no update.
  */
 async function sync(vaultPath: string, purge: boolean): Promise<void> {
   const abs = resolve(vaultPath);
@@ -314,19 +315,39 @@ async function sync(vaultPath: string, purge: boolean): Promise<void> {
     throw new Error(`no vault at ${abs}. Run 'create' first.`);
   });
 
-  // `--purge` deletes the folder first, so fixture files renamed or removed
-  // from the template drop out too, not just the ones the template still has.
-  // This also clears the built plugin bundle — rebuild before debugging again.
+  // Build before a purge so the generated seed captures the current dev bundle.
+  await rebuildFixtureVault(abs);
+
+  // `--purge` deletes the folder first, so renamed or removed Fixture files
+  // drop out too, not just the ones the Fixture Vault still has.
   if (purge) {
     await purgeVault(abs);
     await mkdir(abs, { recursive: true });
   }
 
-  // `force: true` overwrites existing files with the template's, so fixture
-  // updates actually land instead of being skipped like a fresh `create`.
-  await cp(templateVault, abs, { recursive: true, force: true });
+  if (abs !== resolve(fixtureVault)) {
+    await cp(fixtureVault, abs, { recursive: true, force: true });
+  }
 
-  console.error(`synced ${templateVault} -> ${abs}`);
+  console.error(`synced ${fixtureVault} -> ${abs}`);
+}
+
+async function rebuildFixtureVault(target: string): Promise<void> {
+  if (resolve(target) === resolve(fixtureVault)) return;
+
+  const pluginBundleDir = join(
+    resolve(target),
+    ".obsidian",
+    "plugins",
+    pluginId,
+  );
+  const hasBundle = await access(join(pluginBundleDir, "main.js")).then(
+    () => true,
+    () => false,
+  );
+  await buildFixture(fixtureLayout, {
+    pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
+  });
 }
 
 /**
@@ -419,7 +440,6 @@ async function purgeVault(abs: string): Promise<void> {
     throw new Error(`refusing to purge a folder with no .obsidian: ${abs}`);
   });
 
-  // `tests/zt-vault` is a tracked fixture, so keep --purge on throwaway vaults.
   // A folder outside any repo has nothing tracked, but any other git failure
   // means the guard never ran — refuse rather than delete on an unproven check.
   const tracked = await $({
@@ -468,49 +488,101 @@ async function remove(vaultPath: string, purge: boolean): Promise<void> {
   if (failure) throw failure;
 }
 
-async function main(): Promise<void> {
-  const [command, ...rest] = process.argv.slice(2);
+const vaultPathPosition = {
+  describe: `vault path (default: ${defaultVault})`,
+  type: "string",
+} as const;
 
-  const unknownFlag = rest.find(
-    (arg) => arg.startsWith("-") && arg !== "--purge",
-  );
-  if (unknownFlag) throw new Error(`unknown option: ${unknownFlag}`);
+const syncPurgeOption = {
+  describe:
+    "delete the dev-vault folder before restoring the complete generated seed",
+  type: "boolean",
+  default: false,
+} as const;
 
-  const positional = rest.filter((arg) => !arg.startsWith("-"));
-  if (positional.length > 1) {
-    throw new Error(`unexpected argument: ${positional[1]}`);
-  }
-  const target = positional[0] ?? defaultVault;
+const removePurgeOption = {
+  describe: "delete the dev-vault folder after unregistering it",
+  type: "boolean",
+  default: false,
+} as const;
 
-  switch (command) {
-    case "create":
-      await create(target);
-      break;
-    case "sync":
-      await sync(target, rest.includes("--purge"));
-      break;
-    case "remove":
-      await remove(target, rest.includes("--purge"));
-      break;
-    case "list":
+const reference = `contractVersion: ${CONTRACT_VERSION}
+
+The create and sync commands rebuild the Fixture Vault first. Run the Obsidian
+dev build before create so its bundle is available to copy into the generated
+seed. Sync keeps extra dev-vault files unless --purge is set. Remove keeps the
+folder unless --purge is set.
+
+Environment:
+  ${OBSIDIAN_CLI_ENV}   path to the obsidian-cli binary
+  ${HOST_VAULT_ENV}  vault name or id whose window hosts eval calls`;
+
+const vaultCli = yargs(hideBin(process.argv))
+  .scriptName("obsidian-vault.ts")
+  .command(
+    "create [vault-path]",
+    "seed and register this worktree's dev vault",
+    (y) => y.positional("vault-path", vaultPathPosition),
+    async (argv) => {
+      await create(argv["vault-path"] ?? defaultVault);
+    },
+  )
+  .command(
+    "sync [vault-path]",
+    "rebuild and copy the Fixture Vault over an existing dev vault",
+    (y) =>
+      y
+        .positional("vault-path", vaultPathPosition)
+        .option("purge", syncPurgeOption),
+    async (argv) => {
+      await sync(argv["vault-path"] ?? defaultVault, argv.purge);
+    },
+  )
+  .command(
+    "remove [vault-path]",
+    "unregister this worktree's dev vault",
+    (y) =>
+      y
+        .positional("vault-path", vaultPathPosition)
+        .option("purge", removePurgeOption),
+    async (argv) => {
+      await remove(argv["vault-path"] ?? defaultVault, argv.purge);
+    },
+  )
+  .command(
+    "list",
+    "list known vaults",
+    () => {},
+    async () => {
       console.log(
         await cli([`vault=${await resolveHost()}`, "vaults", "verbose"]),
       );
-      break;
-    case "id": {
+    },
+  )
+  .command(
+    "id [vault-path]",
+    "print the registered id for a vault path",
+    (y) => y.positional("vault-path", vaultPathPosition),
+    async (argv) => {
       const host = await resolveHost();
+      const target = argv["vault-path"] ?? defaultVault;
       console.log(findVaultId(await vaultList(host), resolve(target)) ?? "");
-      break;
-    }
-    default:
-      console.error(usage);
-      process.exitCode = 1;
-  }
-}
+    },
+  )
+  .epilogue(reference)
+  .demandCommand(1, 1)
+  .strict()
+  .version(false)
+  .fail((message, error) => {
+    console.error(
+      `obsidian-vault: ${error instanceof Error ? error.message : (message ?? String(error))}`,
+    );
+    process.exitCode = 1;
+    throw error instanceof Error ? error : new Error(String(message));
+  });
 
-await main().catch((error: unknown) => {
-  console.error(
-    `obsidian-vault: ${error instanceof Error ? error.message : String(error)}`,
-  );
-  process.exitCode = 1;
-});
+try {
+  await vaultCli.parseAsync();
+} catch {
+  // The fail handler reported the error and set the exit code.
+}

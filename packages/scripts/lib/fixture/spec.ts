@@ -109,6 +109,8 @@ export interface FixtureItem {
   itemType: "journalArticle" | "bookSection";
   /** `null` leaves the item without a native Zotero Citation Key. */
   citationKey: string | null;
+  /** Fixture Vault filename stem when a prose page needs a stable target. */
+  literatureNoteName?: string;
   title: string;
   /** Container title, stored under the type-specific field of {@link itemType}. */
   containerTitle: string;
@@ -346,6 +348,95 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2025-02-13 12:00:00",
     collectionIDs: [1],
   },
+  {
+    itemID: 40,
+    libraryID: 1,
+    key: "HENSHR22",
+    itemType: "journalArticle",
+    citationKey: "Hensher2011",
+    literatureNoteName: "Hensher2011",
+    title:
+      "Interrogation of Responses to Stated Choice Experiments: Is there sense in what respondents tell us?",
+    containerTitle: "Journal of Choice Modelling",
+    date: "2011",
+    creators: [author("David A.", "Hensher")],
+    dateModified: "2025-02-11 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 41,
+    libraryID: 1,
+    key: "WALLGR27",
+    itemType: "journalArticle",
+    citationKey: "wallgren-petterssonDistalMyopathyCaused2007",
+    literatureNoteName: "wallgren-petterssonDistalMyopathyCaused2007",
+    title:
+      "Distal myopathy caused by homozygous missense mutations in the nebulin gene",
+    containerTitle: "Brain",
+    date: "2007",
+    creators: [author("Carina", "Wallgren-Pettersson")],
+    dateModified: "2025-02-10 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 42,
+    libraryID: 1,
+    key: "WANGMT22",
+    itemType: "journalArticle",
+    citationKey: "wangMutationalClinicalSpectrum2020a",
+    literatureNoteName: "wangMutationalClinicalSpectrum2020a",
+    title:
+      "Mutational and clinical spectrum in a cohort of Chinese patients with hereditary nemaline myopathy",
+    containerTitle: "Clinical Genetics",
+    date: "2020",
+    creators: [author("Zheng", "Wang")],
+    dateModified: "2025-02-09 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 43,
+    libraryID: 1,
+    key: "WTTTNB26",
+    itemType: "journalArticle",
+    citationKey: "wittNebulinRegulatesThin2006",
+    literatureNoteName: "wittNebulinRegulatesThin2006",
+    title:
+      "Nebulin regulates thin filament length, contractility, and Z-disk structure in vivo",
+    containerTitle: "The EMBO Journal",
+    date: "2006",
+    creators: [author("Christopher C.", "Witt")],
+    dateModified: "2025-02-08 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 44,
+    libraryID: 1,
+    key: "XUNPKEY9",
+    itemType: "journalArticle",
+    citationKey: null,
+    literatureNoteName: "xuNoCitationKeyProperty2019",
+    title: "A Literature Note whose Zotero item carries no native citation key",
+    containerTitle: "Fixture Journal",
+    date: "2019",
+    creators: [author("Xiu", "Xu")],
+    dateModified: "2025-02-07 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 45,
+    libraryID: 1,
+    key: "YXNCLN22",
+    itemType: "journalArticle",
+    citationKey: "yinClinicopathologicalFeaturesMutational2021",
+    literatureNoteName: "yinClinicopathologicalFeaturesMutational2021",
+    title:
+      "Clinico-pathological features and mutational spectrum of 16 nemaline myopathy patients from a Chinese neuromuscular center",
+    containerTitle: "Neuromuscular Disorders",
+    date: "2021",
+    creators: [author("Huan", "Yin")],
+    dateModified: "2025-02-06 12:00:00",
+    collectionIDs: [1],
+  },
 ];
 
 function author(firstName: string, lastName: string): FixtureCreator {
@@ -365,6 +456,8 @@ export interface FixtureNote {
   title: string;
   /** Note body, in the HTML shape Zotero stores. */
   note: string;
+  /** Markdown body for a generated Imported Note; `null` for other Notes. */
+  importedNoteBody: string | null;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
   dateModified: string;
   trashed?: boolean;
@@ -389,6 +482,8 @@ export const NOTES: readonly FixtureNote[] = [
     parentItemID: 1,
     title: "Reading notes on the personal alpha",
     note: '<div data-schema-version="9"><h1>Reading notes on the personal alpha</h1><p>A child note of an item filed in two collections.</p></div>',
+    importedNoteBody:
+      "# Reading notes on the personal alpha\n\nA child note of an item filed in two collections.\n",
     dateModified: "2025-02-28 12:00:00",
     collectionIDs: [],
   },
@@ -399,6 +494,8 @@ export const NOTES: readonly FixtureNote[] = [
     parentItemID: 5,
     title: "Reading notes on the unkeyed personal item",
     note: '<div data-schema-version="9"><h1>Reading notes on the unkeyed personal item</h1><p>A child note of an item that no collection holds.</p></div>',
+    importedNoteBody:
+      "# Reading notes on the unkeyed personal item\n\nA child note of an item that no collection holds.\n",
     dateModified: "2025-02-27 12:00:00",
     collectionIDs: [],
   },
@@ -409,6 +506,7 @@ export const NOTES: readonly FixtureNote[] = [
     parentItemID: null,
     title: "Standalone personal note",
     note: '<div data-schema-version="9"><h1>Standalone personal note</h1><p>Filed in a collection on its own, with no parent item.</p></div>',
+    importedNoteBody: null,
     dateModified: "2025-02-26 12:00:00",
     collectionIDs: [4],
   },
@@ -419,6 +517,8 @@ export const NOTES: readonly FixtureNote[] = [
     parentItemID: 6,
     title: "Reading notes on the shared alpha",
     note: '<div data-schema-version="9"><h1>Reading notes on the shared alpha</h1><p>Repeats the bare note key of the My Library child note.</p></div>',
+    importedNoteBody:
+      "# Reading notes on the shared alpha\n\nRepeats the bare note key of the My Library child note.\n",
     dateModified: "2025-02-25 12:00:00",
     collectionIDs: [],
   },
@@ -429,6 +529,8 @@ export const NOTES: readonly FixtureNote[] = [
     parentItemID: 9,
     title: "Reading notes on the lab archive alpha",
     note: '<div data-schema-version="9"><h1>Reading notes on the lab archive alpha</h1><p>A child note in a group Library.</p></div>',
+    importedNoteBody:
+      "# Reading notes on the lab archive alpha\n\nA child note in a group Library.\n",
     dateModified: "2025-02-24 12:00:00",
     collectionIDs: [],
   },
@@ -439,6 +541,8 @@ export const NOTES: readonly FixtureNote[] = [
     parentItemID: 10,
     title: "Reading notes on the consortium alpha",
     note: '<div data-schema-version="9"><h1>Reading notes on the consortium alpha</h1><p>A child note in a read-only group Library.</p></div>',
+    importedNoteBody:
+      "# Reading notes on the consortium alpha\n\nA child note in a read-only group Library.\n",
     dateModified: "2025-02-23 12:00:00",
     collectionIDs: [],
   },
@@ -449,6 +553,7 @@ export const NOTES: readonly FixtureNote[] = [
     parentItemID: null,
     title: "A deliberately trashed Note",
     note: '<div data-schema-version="9"><h1>A deliberately trashed Note</h1><p>Present in the Fixture database and hidden from ordinary Note queries.</p></div>',
+    importedNoteBody: null,
     dateModified: "2025-02-22 12:00:00",
     trashed: true,
     collectionIDs: [],

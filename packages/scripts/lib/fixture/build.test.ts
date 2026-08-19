@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -609,6 +610,171 @@ describe("the generated Zotero database", () => {
 });
 
 describe("the generated Obsidian vault", () => {
+  it("carries the prose test pages verbatim from committed assets", async () => {
+    for (const name of [
+      "citekey-smoke-test.md",
+      "pandoc-citation-test.md",
+      "wikilink-display-test.md",
+      "wikilink-parity-test.md",
+    ]) {
+      const asset = await readFile(
+        join(import.meta.dirname, "vault-pages", name),
+        "utf-8",
+      );
+
+      expect(await readFile(join(layout.vaultDir, name), "utf-8")).toBe(asset);
+    }
+  });
+
+  it("resolves every generated Literature Note through the database", async () => {
+    const items = ITEMS.filter(({ libraryID }) => libraryID === 1);
+    expect(await readdir(join(layout.vaultDir, "literatures"))).toEqual(
+      items
+        .map(({ key, literatureNoteName }) => `${literatureNoteName ?? key}.md`)
+        .sort(),
+    );
+
+    using db = openClient();
+    const indexedKeys = new Set(indexedItems(db, 1).map(({ key }) => key));
+    const citationKeys = new Map(
+      getCitekeysByLibrary(db, 1).map(({ itemID, citekey }) => [
+        itemID,
+        citekey,
+      ]),
+    );
+
+    for (const item of items) {
+      const note = await readFile(
+        join(
+          layout.vaultDir,
+          "literatures",
+          `${item.literatureNoteName ?? item.key}.md`,
+        ),
+        "utf-8",
+      );
+
+      expect(indexedKeys.has(item.key)).toBe(true);
+      expect(note).toContain(`zotero-key: ${item.key}`);
+      expect(citationKeys.get(item.itemID) ?? null).toBe(item.citationKey);
+      expect(note.includes("\ncitekey:")).toBe(item.citationKey !== null);
+    }
+  });
+
+  it("resolves every positive prose-page target to a generated Item", async () => {
+    const targets = [
+      {
+        name: "Hensher2011",
+        key: "HENSHR22",
+        citationKey: "Hensher2011",
+      },
+      {
+        name: "wallgren-petterssonDistalMyopathyCaused2007",
+        key: "WALLGR27",
+        citationKey: "wallgren-petterssonDistalMyopathyCaused2007",
+      },
+      {
+        name: "wangMutationalClinicalSpectrum2020a",
+        key: "WANGMT22",
+        citationKey: "wangMutationalClinicalSpectrum2020a",
+      },
+      {
+        name: "wittNebulinRegulatesThin2006",
+        key: "WTTTNB26",
+        citationKey: "wittNebulinRegulatesThin2006",
+      },
+      {
+        name: "xuNoCitationKeyProperty2019",
+        key: "XUNPKEY9",
+        citationKey: null,
+      },
+      {
+        name: "yinClinicopathologicalFeaturesMutational2021",
+        key: "YXNCLN22",
+        citationKey: "yinClinicopathologicalFeaturesMutational2021",
+      },
+    ] as const;
+    using db = openClient();
+    const citationKeys = getCitekeysByLibrary(db, 1);
+
+    for (const target of targets) {
+      const note = await readFile(
+        join(layout.vaultDir, "literatures", `${target.name}.md`),
+        "utf-8",
+      );
+
+      expect(note).toContain(`zotero-key: ${target.key}`);
+      expect(note.includes("citekey:")).toBe(target.citationKey !== null);
+      expect(
+        citationKeys.some(
+          ({ citekey }) => citekey === (target.citationKey ?? target.name),
+        ),
+      ).toBe(target.citationKey !== null);
+    }
+  });
+
+  it("mirrors every Child Note under its resolvable Indexed Key", async () => {
+    using db = openClient();
+    const childNotes = NOTES.filter((note) => note.parentItemID !== null);
+    const refs = getNoteRefsByItemIDs(
+      db,
+      childNotes.map(({ itemID }) => itemID),
+    );
+
+    expect(await readdir(join(layout.vaultDir, "zotero_notes"))).toEqual(
+      refs.map(({ indexedKey }) => `${indexedKey}.md`).sort(),
+    );
+    for (const ref of refs) {
+      const mirror = await readFile(
+        join(layout.vaultDir, "zotero_notes", `${ref.indexedKey}.md`),
+        "utf-8",
+      );
+
+      expect(mirror).toContain(`zotero-note-key: ${ref.indexedKey}`);
+      expect(mirror).toContain("zotero-lastmod:");
+      expect(mirror).toContain(`# ${ref.title}`);
+      expect(mirror).not.toContain("<div data-schema-version");
+    }
+  });
+
+  it("links every present Attachment from its generated Literature Note", async () => {
+    using db = openClient();
+    const attachments = getAttachmentsByParents(db, ATTACHMENT_PARENT_IDS);
+
+    for (const attachment of attachments) {
+      const parent = ITEMS.find(
+        ({ itemID }) => itemID === attachment.parentItemID,
+      )!;
+      const note = await readFile(
+        join(
+          layout.vaultDir,
+          "literatures",
+          `${parent.literatureNoteName ?? parent.key}.md`,
+        ),
+        "utf-8",
+      );
+      const path = attachmentAbsPath(attachment, {
+        dataDir: layout.dataDir,
+        baseAttachmentPath: null,
+      });
+
+      if (path === null || attachment.key === "MISSNG22") continue;
+      expect(note).toContain(pathToFileURL(path).href);
+    }
+  });
+
+  it("enables the committed Hot Reload plugin for dev builds", async () => {
+    const configDir = join(layout.vaultDir, ".obsidian");
+
+    expect(
+      JSON.parse(
+        await readFile(join(configDir, "community-plugins.json"), "utf-8"),
+      ),
+    ).toEqual(["hot-reload"]);
+    await expect(
+      stat(join(configDir, "plugins", "hot-reload", "main.js")),
+    ).resolves.toBeDefined();
+  });
+
   it("points at the fixture data directory through the fixture profile", async () => {
     const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
 

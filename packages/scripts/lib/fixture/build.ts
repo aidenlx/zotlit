@@ -4,9 +4,12 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { SQLInputValue } from "node:sqlite";
+import { pathToFileURL } from "node:url";
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
+import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 
+import { FIXTURE_PLUGIN_ID } from "./layout.ts";
+import type { FixtureLayout } from "./layout.ts";
 import { QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { assertSchemaVersions, writePristineDatabase } from "./pristine.ts";
 import {
@@ -25,6 +28,7 @@ import type {
   FixtureAttachment,
   FixtureCreator,
   FixtureItem,
+  FixtureNote,
   PersistedLibraryScope,
 } from "./spec.ts";
 
@@ -58,45 +62,8 @@ export type {
   LibrarySelector,
   PersistedLibraryScope,
 } from "./spec.ts";
-
-/** Every path a maintainer or a test needs from a built Fixture. */
-export interface FixtureLayout {
-  /** The whole disposable tree — `discardFixture` removes exactly this. */
-  root: string;
-  /** Stands in for a Zotero data directory; holds `zotero.sqlite`. */
-  dataDir: string;
-  databasePath: string;
-  /** Host-native files referenced by `linked_file` Attachment rows. */
-  linkedFilesDir: string;
-  /** Stands in for a Zotero profile directory; its `prefs.js` names `dataDir`. */
-  profileDir: string;
-  vaultDir: string;
-  pluginDir: string;
-  pluginDataPath: string;
-}
-
-const PLUGIN_ID = "zotlit";
-
-/** Where the Fixture lives, under the workspace scratch area (git-ignored). */
-export function getFixtureRoot(workspaceRoot: string): string {
-  return join(workspaceRoot, "tmp", "acceptance-fixture");
-}
-
-export function getFixtureLayout(root: string): FixtureLayout {
-  const dataDir = join(root, "zotero-data");
-  const vaultDir = join(root, "zt-fixture-vault");
-  const pluginDir = join(vaultDir, ".obsidian", "plugins", PLUGIN_ID);
-  return {
-    root,
-    dataDir,
-    databasePath: join(dataDir, "zotero.sqlite"),
-    linkedFilesDir: join(root, "linked-files"),
-    profileDir: join(root, "zotero-profile"),
-    vaultDir,
-    pluginDir,
-    pluginDataPath: join(pluginDir, "data.json"),
-  };
-}
+export { getFixtureLayout, getFixtureRoot } from "./layout.ts";
+export type { FixtureLayout } from "./layout.ts";
 
 export interface BuildOptions {
   /** Scope case the fresh vault starts on. */
@@ -156,6 +123,8 @@ const ATTACHMENT_LINK_MODES = {
 } as const;
 
 const ASSET_DIR = join(import.meta.dirname, "assets");
+const VAULT_PAGES_DIR = join(import.meta.dirname, "vault-pages");
+const VAULT_PLUGINS_DIR = join(import.meta.dirname, "vault-plugins");
 
 function attachmentDatabasePath(
   attachment: FixtureAttachment,
@@ -590,15 +559,16 @@ async function writeVault(
   const configDir = join(layout.vaultDir, ".obsidian");
   await mkdir(layout.pluginDir, { recursive: true });
   await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
+  await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
 
   await writeJson(join(configDir, "app.json"), {});
   await writeJson(join(configDir, "appearance.json"), {});
   // Obsidian errors on an enabled plugin whose folder holds no bundle, so the
   // enabled list names ZotLit only when the copy below installs it.
-  await writeJson(
-    join(configDir, "community-plugins.json"),
-    options.pluginBundleDir ? [PLUGIN_ID] : [],
-  );
+  await writeJson(join(configDir, "community-plugins.json"), [
+    "hot-reload",
+    ...(options.pluginBundleDir ? [FIXTURE_PLUGIN_ID] : []),
+  ]);
   await writeJson(join(configDir, "core-plugins.json"), {
     "file-explorer": true,
     "global-search": true,
@@ -611,6 +581,12 @@ async function writeVault(
     "editor-status": true,
     outline: true,
   });
+  await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
+  await cp(
+    join(VAULT_PLUGINS_DIR, "hot-reload"),
+    join(configDir, "plugins", "hot-reload"),
+    { recursive: true },
+  );
 
   const scope: PersistedLibraryScope = findScopeCase(
     options.scopeCase ?? DEFAULT_SCOPE_CASE,
@@ -629,8 +605,25 @@ async function writeVault(
     (candidate) => candidate.libraryID === USER_LIBRARY_ID,
   )) {
     await writeFile(
-      join(layout.vaultDir, "literatures", `${item.key}.md`),
-      literatureNote(item),
+      join(
+        layout.vaultDir,
+        "literatures",
+        `${item.literatureNoteName ?? item.key}.md`,
+      ),
+      literatureNote(item, layout),
+    );
+  }
+
+  for (const note of NOTES.filter(
+    (candidate) => candidate.parentItemID !== null && !candidate.trashed,
+  )) {
+    if (note.importedNoteBody === null) {
+      throw new Error(`Child Note ${note.key} needs an Imported Note body`);
+    }
+    const indexedKey = fixtureIndexedKey(note);
+    await writeFile(
+      join(layout.vaultDir, "zotero_notes", `${indexedKey}.md`),
+      importedNote(note, indexedKey, note.importedNoteBody),
     );
   }
 
@@ -639,7 +632,15 @@ async function writeVault(
   }
 }
 
-function literatureNote(item: FixtureItem): string {
+function literatureNote(item: FixtureItem, layout: FixtureLayout): string {
+  const attachments = ATTACHMENTS.filter(
+    (attachment) =>
+      attachment.parentItemID === item.itemID &&
+      attachment.sourceAsset !== null,
+  ).map((attachment) => {
+    const path = attachmentFilePath(attachment, layout)!;
+    return `[${attachment.path}](${pathToFileURL(path).href})`;
+  });
   return [
     "---",
     `title: ${JSON.stringify(item.title)}`,
@@ -648,6 +649,32 @@ function literatureNote(item: FixtureItem): string {
     ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
     "---",
     `# ${item.title}`,
+    "",
+    ...attachments,
+    ...(attachments.length === 0 ? [] : [""]),
+  ].join("\n");
+}
+
+function fixtureIndexedKey(note: FixtureNote): string {
+  const groupID = LIBRARIES.find(
+    (library) => library.libraryID === note.libraryID,
+  )!.groupID;
+  return formatIndexedKey(note.key, groupID);
+}
+
+function importedNote(
+  note: FixtureNote,
+  indexedKey: string,
+  body: string,
+): string {
+  const instant = `${note.dateModified.replace(" ", "T")}Z`;
+  return [
+    "---",
+    `date: ${instant}`,
+    `zotero-note-key: ${indexedKey}`,
+    `zotero-lastmod: ${instant}`,
+    "---",
+    body,
     "",
   ].join("\n");
 }

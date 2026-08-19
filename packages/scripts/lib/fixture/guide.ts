@@ -164,7 +164,7 @@ CLI sets it directly:
 
 const CANCEL_TESTING_SECTION = `CANCEL TESTING
 
-A batch update writes 32 items at once and the Fixture holds 12, so every item
+A batch update writes 32 items at once and the Fixture holds ${ITEMS.length}, so every item
 starts immediately and no item ever waits in a queue. A cancel that arrives one
 macrotask after the confirm click therefore finds the whole plan in flight, and
 the run reports "Done.". Click Cancel in the same JavaScript turn as the
