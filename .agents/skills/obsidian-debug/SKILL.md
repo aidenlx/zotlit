@@ -9,67 +9,60 @@ description: |
 
 # Debug Loop
 
-Drive the running Obsidian app through `obsidian-cli` to verify plugin changes against real
+Drive the running Obsidian app through `obsidian` to verify plugin changes against real
 rendered state. The DOM is the source of truth.
 
 ## Vault setup, once per worktree
 
-Each worktree debugs against its own vault at `tests/zt-vault-<worktree>`, seeded from the tracked
-`tests/zt-vault` template and gitignored. `build:dev` copies the bundle into the vault of the
-worktree you build from. Build once, then register:
+CLI Contract: `obsidian-vault 2`.
+
+1. Run `obsidian version`. If the command is missing, follow the official
+   [Obsidian CLI installation guide](https://obsidian.md/help/cli#Install%20Obsidian%20CLI),
+   then restart the terminal. Use the registered `obsidian` command on every
+   platform.
+2. Run `packages/scripts/scripts/obsidian-vault.ts --help`.
+3. Compare its `contractVersion` with the pin above. When they differ, follow
+   the live help for this run.
+4. Before you use a vault command, read its `<command> --help` output.
+5. Build the plugin, then use the live `open` command to prepare this
+   worktree's Development Vault:
 
 ```bash
 pnpm --filter @zotlit/obsidian build:dev
-packages/scripts/scripts/obsidian-vault.ts create
 ```
 
-`create` needs the bundle already in the vault, seeds the fixture notes around
-it, turns Restricted Mode off, and confirms the plugin actually loaded. It
-prints the 16-hex vault id. Obsidian names a vault after its folder, so the distinct folder
-name also makes `vault=zt-vault-<worktree>` resolve unambiguously — `vault=<name>` picks the first
-basename match, which is why every worktree needs its own name. Tear down with
-`packages/scripts/scripts/obsidian-vault.ts remove --purge`; `wt`'s `pre-remove`
-hook already runs that when the worktree goes.
-
-Editing a fixture under `tests/zt-vault/` changes the template, not the vault the app has
-open. Copy the edit across before you go looking for it in Obsidian:
-
-```bash
-packages/scripts/scripts/obsidian-vault.ts sync
-```
-
-`sync` overwrites changed files in place, so the vault keeps its id and its built bundle. It
-errors when the vault does not exist yet — run `create` first. `--purge` deletes the folder
-before copying, so fixtures renamed or removed from the template drop out too; that clears
-the bundle as well, so rebuild after it.
+Editing the Fixture Spec or its committed vault-page assets changes the next
+Fixture build, not the open Development Vault. Use the live `open` command
+before you look for those changes. Use the live `remove` command when you tear
+the vault down.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `obsidian-cli vault=<id> plugin:reload id=zotlit` | Reload the plugin after a build |
-| `obsidian-cli vault=<id> commands filter=zotlit` | List available plugin commands |
-| `obsidian-cli vault=<id> command id=zotlit:<cmd>` | Run a command |
-| `obsidian-cli vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
-| `obsidian-cli vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
-| `obsidian-cli vault=<id> dev:errors` | Captured errors |
-| `obsidian-cli vault=<id> dev:console` | Console output |
+| `obsidian vault=<id> plugin:reload id=zotlit` | Reload the plugin after a build |
+| `obsidian vault=<id> commands filter=zotlit` | List available plugin commands |
+| `obsidian vault=<id> command id=zotlit:<cmd>` | Run a command |
+| `obsidian vault=<id> eval code='<js>'` | Run JS in the app, returns the value |
+| `obsidian vault=<id> dev:screenshot path=<abs>` | Capture the window (absolute path required) |
+| `obsidian vault=<id> dev:errors` | Captured errors |
+| `obsidian vault=<id> dev:console` | Console output |
 
 The CLI always exits 0. Read the output text: `=> ` prefixes a result, and failures come back as
 `Error: …` or `Vault not found.`
 
 ## Loop
 
-1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` (copies the bundle into this worktree's
-   `tests/zt-vault-<worktree>/.obsidian/plugins/zotlit`).
-2. **Reload** — `obsidian-cli vault=<id> plugin:reload id=zotlit`.
-3. **Open** — `obsidian-cli command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
-4. **Probe** — `obsidian-cli eval code='…'` with `getComputedStyle(el)` /
+1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` copies the bundle into
+   this worktree's Development Vault.
+2. **Reload** — `obsidian vault=<id> plugin:reload id=zotlit`.
+3. **Open** — `obsidian command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
+4. **Probe** — `obsidian eval code='…'` with `getComputedStyle(el)` /
    `el.getBoundingClientRect()` to assert what actually rendered. A computed-style assertion is
    worth more than eyeballing a screenshot, and it is the only way to catch a state that expires
    on its own — a flash class is gone by the time the capture lands.
-5. **Screenshot** — `obsidian-cli dev:screenshot path=<absolute-path>`. Save inside the workspace.
-6. **Errors** — `obsidian-cli dev:errors` / `obsidian-cli dev:console`.
+5. **Screenshot** — `obsidian dev:screenshot path=<absolute-path>`. Save inside the workspace.
+6. **Errors** — `obsidian dev:errors` / `obsidian dev:console`.
 
 ## Driving state
 
@@ -110,8 +103,8 @@ wins. Re-shoot. A DevTools window open over Obsidian can also steal the capture 
 
 An untargeted command goes to the focused window, which may belong to another worktree. Pass
 `vault=<id>`, and confirm with `eval code='app.vault.adapter.basePath'` — it must print the
-`tests/zt-vault-<worktree>` of the worktree you build from. `data.json` edits target that same
-path, not the `tests/zt-vault` template.
+Development Vault path reported by `obsidian-vault.ts --help` for the worktree you build
+from. `data.json` edits target that same path.
 
 ### Occluded window
 
@@ -120,8 +113,22 @@ stops repainting — scroll-driven UI (e.g. TanStack Virtual) looks frozen and s
 stale frames. Drive scrolling with `el.scrollTop = x; el.dispatchEvent(new Event("scroll"))` and
 assert via DOM queries.
 
-### Live-data escape hatch
+### Full-scale Fixture data
 
-Plugin setting `zotero.data-dir` points the live plugin at any data directory. Symlinking the
-canonical 24k sqlite as `zotero.sqlite` in a scratch dir gives a full-scale live test. Restore
-`data.json` + `plugin:reload` afterwards.
+Build a Stress Build with `pnpm fixture stress`. Read the current Device Override before you
+change it:
+
+```bash
+obsidian vault=<id> eval \
+  code='app.plugins.plugins.zotlit.services.zoteroPref.dataDirOverride'
+```
+
+Point the live plugin at the absolute `tmp/acceptance-fixture/zotero-data` path:
+
+```bash
+obsidian vault=<id> eval \
+  code='app.plugins.plugins.zotlit.services.zoteroPref.setDataDir("<absolute path>")'
+```
+
+Afterwards, call `setDataDir` again with the previous value, or `null` when it was empty. This
+restores the vault-scoped Device Override and reconnects the database service.

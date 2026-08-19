@@ -5,6 +5,9 @@
   "description": "Zotero companion plugin for ZotLit",
   "author": "AidenLx",
   "type": "module",
+  "imports": {
+    "#constant": "./src/constant.ts"
+  },
   "scripts": {
     "build": "vite build && pnpm typecheck",
     "build:dev": "vite build --mode development",

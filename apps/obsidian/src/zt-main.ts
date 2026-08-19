@@ -24,6 +24,7 @@ import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
+import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
@@ -313,6 +314,14 @@ export default class ZotLitPlugin extends Plugin {
       db: services.db,
       zoteroPref: services.zoteroPref,
     });
+
+    // e2e-only: lets packages/e2e read the resolved Library Scope after a
+    // Scope Case switch, through the plugin's own CLI Contract surface
+    // rather than an internal eval. A dev-build diagnostic port, not a
+    // feature for end users — never registered in a production build.
+    if (__DEV__) {
+      registerLibraryScopeCli(this, { libraryScope: services.libraryScope });
+    }
 
     registerTemplateWorkbench(this, {
       app: this.app,

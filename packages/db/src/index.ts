@@ -74,6 +74,7 @@ export {
   type LibraryCitekey,
 } from "./queries/citekey";
 export { resolveItemTags, type TagMemo } from "./queries/tags";
+export { getRelatedKeysByItemID } from "./queries/item-relations";
 export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
 export {
   getAnnotViewAnnotations,

@@ -9,9 +9,9 @@ description: "Answer citation questions about an Obsidian vault through ZotLit: 
 
 Complete these steps in order before you answer a citation question.
 
-1. `obsidian-cli help zotlit` — use only the commands and parameters it reports; commands reject what they do not declare.
-2. `obsidian-cli zotlit:citations-guide` — the installed version's field semantics and workflow.
-3. `obsidian-cli zotlit:template-status` — read `identity.source.id` from its answer, then pass `expect-source=<source-id>` on every later call.
+1. `obsidian help zotlit` — use only the commands and parameters it reports; commands reject what they do not declare.
+2. `obsidian zotlit:citations-guide` — the installed version's field semantics and workflow.
+3. `obsidian zotlit:template-status` — read `identity.source.id` from its answer, then pass `expect-source=<source-id>` on every later call.
 
 Read the guide again after a ZotLit update.
 
@@ -22,10 +22,10 @@ This skill is written against citations CLI Contract version 2 — the `contract
 Put `vault=<vault-name>` first when the working directory does not select the vault unambiguously:
 
 ```sh
-obsidian-cli vault=MyVault zotlit:citations-guide
+obsidian vault=MyVault zotlit:citations-guide
 ```
 
-`obsidian-cli vault` shows the active vault, `obsidian-cli vaults` lists all known vaults. Confirm `identity.vault` once, then keep the same prefix.
+`obsidian vault` shows the active vault, `obsidian vaults` lists all known vaults. Confirm `identity.vault` once, then keep the same prefix.
 
 Keep `expect-source=` on every call rather than trusting the library to stay connected. A user with more than one Zotero profile gets a wrong answer, not an error, when it is left off.
 

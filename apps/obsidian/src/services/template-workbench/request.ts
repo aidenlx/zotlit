@@ -500,7 +500,7 @@ function rejectAccepted(
 }
 
 const VAULT_AFTER_COMMAND_MESSAGE =
-  "vault must come before the command name (obsidian-cli vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
+  "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
 
 /** `template-source` reads a `root=` swap meant for the data-root command. */
 function slotCommandRootHint(): string {

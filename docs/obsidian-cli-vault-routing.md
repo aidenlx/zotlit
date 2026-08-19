@@ -1,12 +1,19 @@
 # Obsidian CLI: transport, vault routing, and vault identity
 
 Findings from a reverse-engineering pass over Obsidian 1.13.4 (`main.js` — Electron main
-process, `app.js` — renderer, and the native `obsidian-cli` shim). Line numbers refer to the
+process, `app.js` — renderer, and the native CLI shim). Line numbers refer to the
 formatted extraction produced by `/obsidian-asar-extract` (`node_modules/.ob-rev-1.13.4/`).
 These facts drive the ZotLit CLI design: single-target routing, `expect-source`-only
 assertions, and the absence of a vault field in the Workbench identity.
 
+Invoke the CLI as `obsidian` on every platform. The registered Windows command resolves
+to `Obsidian.com`; macOS and Linux register an `obsidian` command. See the official
+[Obsidian CLI installation guide](https://obsidian.md/help/cli#Install%20Obsidian%20CLI).
+
 ## Transport
+
+ZotLit calls the registered `obsidian` command and uses the command response as
+the liveness result. The transport addresses below belong to Obsidian.
 
 The CLI reaches the running app through a Unix domain socket / Windows named pipe — not
 `second-instance`, not `obsidian://`.

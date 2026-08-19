@@ -84,7 +84,7 @@ FILES
 RETRIEVE OR REFRESH
     Run:
 
-        obsidian-cli ${PANDOC_FILES_COMMAND}
+        obsidian ${PANDOC_FILES_COMMAND}
 
     The JSON response contains contractVersion, command, pluginVersion, and
     both exact files under files. Stage both files, compare both destination
@@ -105,7 +105,7 @@ CITATION STYLE
 
     The CLI filter resolves that property before citeproc runs, through:
 
-        obsidian-cli zotlit:csl style="http://www.zotero.org/styles/nature"
+        obsidian zotlit:csl style="http://www.zotero.org/styles/nature"
 
     Success returns contractVersion, command, the requested "styleId",
     "parentId" for a dependent style, and "path": the absolute CSL file citeproc
@@ -131,7 +131,7 @@ CITATION STYLE
 RESOLVE
     The CLI filter calls this command during a normal Pandoc run:
 
-        obsidian-cli zotlit:resolve file="/absolute/path/to/input.md"
+        obsidian zotlit:resolve file="/absolute/path/to/input.md"
 
     Success returns { "citations": { "linkpath": "citationKey" } }. Failure
     returns { "errors": [...] }; any error stops all citation conversion.

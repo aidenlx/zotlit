@@ -94,10 +94,10 @@ NAME
   zotlit-citations - read the vault's citation facts from the command line
 
 SYNOPSIS
-  obsidian-cli zotlit:cited-by (key=<zotero-key> | citekey=<citation-key>) \\
+  obsidian zotlit:cited-by (key=<zotero-key> | citekey=<citation-key>) \\
     [expect-source=<source-id>]
-  obsidian-cli zotlit:references file=<vault-path> [expect-source=<source-id>]
-  obsidian-cli zotlit:citations-guide
+  obsidian zotlit:references file=<vault-path> [expect-source=<source-id>]
+  obsidian zotlit:citations-guide
 
 DESCRIPTION
   The Citation Index answers two questions: which notes cite one Zotero item
@@ -108,9 +108,9 @@ DESCRIPTION
   call zotlit:template-data with the Zotero key an answer reports.
 
 WORKFLOW
-  1. Run obsidian-cli help zotlit and use only the commands it reports.
-  2. Run obsidian-cli zotlit:citations-guide.
-  3. Run obsidian-cli zotlit:template-status and record identity.source.id,
+  1. Run obsidian help zotlit and use only the commands it reports.
+  2. Run obsidian zotlit:citations-guide.
+  3. Run obsidian zotlit:template-status and record identity.source.id,
      then pass expect-source=<source-id> to every later call.
   4. Query with cited-by or references.
   5. Open each reported path and read it at the reported position.

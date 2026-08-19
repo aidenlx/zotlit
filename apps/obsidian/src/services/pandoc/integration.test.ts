@@ -37,11 +37,11 @@ describe("Pandoc integration CLI", () => {
     const guide = handlers[PANDOC_GUIDE_COMMAND]({});
 
     expect(guide).toContain(`ZotLit ${PLUGIN_VERSION}`);
-    expect(guide).toContain(`obsidian-cli ${PANDOC_FILES_COMMAND}`);
+    expect(guide).toContain(`obsidian ${PANDOC_FILES_COMMAND}`);
     expect(guide).toContain(PANDOC_FILTER_FILENAME);
     expect(guide).toContain(PANDOC_DEFAULTS_FILENAME);
     expect(guide).toContain("keep both files together");
-    expect(guide).toContain("obsidian-cli zotlit:resolve file=");
+    expect(guide).toContain("obsidian zotlit:resolve file=");
     expect(guide).toContain('"citations"');
     expect(guide).toContain('"errors"');
     expect(guide).toContain("file-not-found");
@@ -51,7 +51,7 @@ describe("Pandoc integration CLI", () => {
     expect(guide).toContain("duplicate-citation-key");
     expect(guide).toContain("unresolved-citation-intent");
     expect(guide).toContain("zotlit-csl:");
-    expect(guide).toContain("obsidian-cli zotlit:csl style=");
+    expect(guide).toContain("obsidian zotlit:csl style=");
     expect(guide).toContain('"path"');
     expect(guide).toContain("style-missing");
     expect(guide).toContain("parent-missing");

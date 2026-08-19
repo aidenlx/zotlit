@@ -8,12 +8,12 @@ import type { Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
 
 import { obsidianI18n } from "@zotlit/obsidian-i18n/vite";
+import { getDevVaultDir } from "@zotlit/scripts/dev-vault";
 import {
   parseManifest,
   parseMinElectronVersion,
 } from "@zotlit/scripts/obsidian-manifest";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
-import { getTestVaultDir } from "@zotlit/scripts/test-vault";
 
 import packageJson from "./package.json" with { type: "json" };
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
@@ -37,8 +37,8 @@ const pandocEngine = await resolvePandocEnginePin();
 console.log(`Pinning Pandoc ${pandocEngine.version}: ${pandocEngine.url}`);
 
 /** `obsidian-vault.ts create` seeds and registers this folder with Obsidian. */
-function getTestVaultPluginDir(pluginId: string) {
-  return join(getTestVaultDir(workspaceRoot), ".obsidian", "plugins", pluginId);
+function getDevVaultPluginDir(pluginId: string) {
+  return join(getDevVaultDir(workspaceRoot), ".obsidian", "plugins", pluginId);
 }
 
 export default defineConfig(({ mode }) => {
@@ -156,24 +156,24 @@ function obsidianBuildPlugin(): Plugin {
 
       await writeFile(join(outDir, ".hotreload"), "");
 
-      const testVaultPluginDir = getTestVaultPluginDir(manifestJson.id);
+      const devVaultPluginDir = getDevVaultPluginDir(manifestJson.id);
       try {
-        await mkdir(testVaultPluginDir, { recursive: true });
+        await mkdir(devVaultPluginDir, { recursive: true });
         const assets = ["main.js", "manifest.json", ".hotreload"];
         await Promise.all(
           assets.map((name) =>
-            cp(join(outDir, name), join(testVaultPluginDir, name)),
+            cp(join(outDir, name), join(devVaultPluginDir, name)),
           ),
         );
         await cp(
           join(outDir, "styles.css"),
-          join(testVaultPluginDir, "styles.css"),
+          join(devVaultPluginDir, "styles.css"),
         ).catch((err) => {
           if (err.code !== "ENOENT") throw err;
         });
-        console.log(`Copied to test vault: ${testVaultPluginDir}`);
+        console.log(`Copied to dev vault: ${devVaultPluginDir}`);
       } catch (err) {
-        console.warn("Failed to copy to test vault:", err);
+        console.warn("Failed to copy to dev vault:", err);
       }
     },
   };

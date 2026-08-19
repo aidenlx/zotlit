@@ -175,7 +175,7 @@ const SELECTOR_EXCLUSIVITY_MESSAGE =
   "cited-by takes exactly one of key=<zotero-key> or citekey=<citation-key>.";
 
 const VAULT_AFTER_COMMAND_MESSAGE =
-  "vault must come before the command name (obsidian-cli vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
+  "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
 
 function malformedKeyMessage(key: string): string {
   return (

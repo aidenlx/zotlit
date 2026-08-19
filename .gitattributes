@@ -1,3 +1,6 @@
+* text=auto eol=lf
+
 apps/docs/public/img/**/*.webp filter=lfs diff=lfs merge=lfs -text
 apps/docs/public/img/**/*.png filter=lfs diff=lfs merge=lfs -text
 apps/docs/public/img/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+packages/scripts/lib/fixture/*.sqlite.gz binary

@@ -34,7 +34,8 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
 | `pnpm review` / `pnpm review:fix`  | Obsidian guideline scan of `apps/obsidian` (ESLint). Release-time only — `release.ts` gates on it and CI re-runs it on `release/**` PRs. Blocks on errors; warnings are reported. |
 | `pnpm quality[:fix]`              | Runs lint, then format.                                                                                                     |
-| `pnpm fixture`                    | Builds the disposable multi-Library acceptance fixture under `tmp/acceptance-fixture/`. See [docs/acceptance-fixture.md](docs/acceptance-fixture.md) for selecting a saved scope and discarding it. |
+| `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `tmp/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
+| `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 
@@ -76,6 +77,8 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [temporal-dates](policies/temporal-dates.md) — Temporal API, not Date/date-fns/dayjs
 - [vocabulary](policies/vocabulary.md) — canonical terms for Zotero keys, citation keys, and `citekey`
 - [CLI + skill pair](policies/cli-skill-pair.md) — tooling facts in the CLI; process, policy, and tone in the skill
+- [CLI help](policies/cli-help.md) — help and reference generated from handler code; yargs for Node.js, guide commands for Obsidian
+- [grouping](policies/grouping.md) — `Map.groupBy` / `Object.groupBy` for keyed grouping
 
 ### i18n
 

@@ -13,6 +13,7 @@
     "deploy:docs": "mise exec node@24 -- vercel deploy apps/docs",
     "dev": "turbo run dev",
     "fixture": "turbo run fixture --output-logs=full --",
+    "e2e": "turbo run e2e --output-logs=full --",
     "test": "turbo run test",
     "lint": "turbo run //#lint:repo",
     "lint:fix": "turbo run //#lint:repo -- --fix",
@@ -24,7 +25,7 @@
     "format:fix": "oxfmt",
     "quality": "pnpm lint && pnpm format",
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
-    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true"
+    "prepare": "lefthook install || exit 0"
   },
   "dependencies": {
     "agent-browser": "^0.33.1"

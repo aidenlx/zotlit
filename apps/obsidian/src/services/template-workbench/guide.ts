@@ -41,26 +41,26 @@ function manList(names: readonly string[]): string {
 const ANNOTATION_REQUIRED: DiagnosticCode = "ANNOTATION_REQUIRED";
 const ETA_OPT_IN_REQUIRED: DiagnosticCode = "ETA_OPT_IN_REQUIRED";
 
-const TEMPLATE_DATA_SYNOPSIS = `obsidian-cli zotlit:template-data key=<zotero-key> \\
+const TEMPLATE_DATA_SYNOPSIS = `obsidian zotlit:template-data key=<zotero-key> \\
     root=<${CONTRACT_ROOT_NAMES.join("|")}> expect-source=<source-id>`;
 
-const TEMPLATE_RENDER_SYNOPSIS = `obsidian-cli zotlit:template-render key=<zotero-key> \\
+const TEMPLATE_RENDER_SYNOPSIS = `obsidian zotlit:template-render key=<zotero-key> \\
     template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
     [format=<json|markdown>]`;
 
-const FRONTMATTER_EVAL_SYNOPSIS = `obsidian-cli zotlit:frontmatter-eval key=<zotero-key> \\
+const FRONTMATTER_EVAL_SYNOPSIS = `obsidian zotlit:frontmatter-eval key=<zotero-key> \\
     [expr=<expression> [language=<${FRONTMATTER_LANGUAGE_NAMES.join("|")}>]] \\
     [expect-source=<source-id>]`;
 
-const FRONTMATTER_SET_SYNOPSIS = `obsidian-cli zotlit:frontmatter-set field=<key> \\
+const FRONTMATTER_SET_SYNOPSIS = `obsidian zotlit:frontmatter-set field=<key> \\
     [expr=<expression>] [language=<${FRONTMATTER_LANGUAGE_NAMES.join("|")}>] \\
     [merge=<${FRONTMATTER_MERGE_NAMES.join("|")}>]`;
 
-const FRONTMATTER_SYNOPSIS = `obsidian-cli zotlit:frontmatter-status
+const FRONTMATTER_SYNOPSIS = `obsidian zotlit:frontmatter-status
   ${FRONTMATTER_EVAL_SYNOPSIS}
   ${FRONTMATTER_SET_SYNOPSIS}
-  obsidian-cli zotlit:frontmatter-remove field=<key>
-  obsidian-cli zotlit:frontmatter-reorder order=<k1,k2,...>`;
+  obsidian zotlit:frontmatter-remove field=<key>
+  obsidian zotlit:frontmatter-reorder order=<k1,k2,...>`;
 
 const SIZE_SECTION = `SIZE
   template-data output and the downloaded schema can be very large. Pipe JSON
@@ -70,7 +70,7 @@ const SIZE_SECTION = `SIZE
 const DATA_SECTION = `TEMPLATE DATA
 
 SYNOPSIS
-  obsidian-cli zotlit:template-schema
+  obsidian zotlit:template-schema
   ${TEMPLATE_DATA_SYNOPSIS}
 
 DESCRIPTION
@@ -360,13 +360,13 @@ NAME
                               and managed frontmatter
 
 SYNOPSIS
-  obsidian-cli zotlit:template-status
-  obsidian-cli zotlit:template-schema
+  obsidian zotlit:template-status
+  obsidian zotlit:template-schema
   ${TEMPLATE_DATA_SYNOPSIS}
-  obsidian-cli zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
+  obsidian zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
   ${TEMPLATE_RENDER_SYNOPSIS}
   ${FRONTMATTER_SYNOPSIS}
-  obsidian-cli zotlit:template-guide [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
+  obsidian zotlit:template-guide [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DESCRIPTION
   The Template Workbench inspects template state and data, reads active source,
@@ -424,10 +424,10 @@ TOPICS
 ${TOPIC_INDEX}
 
   Read one topic with:
-    obsidian-cli zotlit:template-guide topic=<name>
+    obsidian zotlit:template-guide topic=<name>
 
 SEE ALSO
-  obsidian-cli help zotlit
+  obsidian help zotlit
   ${DOCS_SITE_URL}/docs/reference/templates`;
 
 export function renderGuide(topic: GuideTopic | null): string {
