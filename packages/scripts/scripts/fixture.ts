@@ -5,6 +5,7 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import yargs from "yargs";
+import type { Argv } from "yargs";
 import { hideBin } from "yargs/helpers";
 
 import {
@@ -22,6 +23,8 @@ import {
   UNAVAILABLE_GROUP_IDS,
 } from "#fixture";
 import { renderGuide } from "#fixture/guide";
+import { runPairedRun } from "#fixture/paired-run";
+import { createNodePairedRunPorts } from "#fixture/paired-run-node";
 import {
   harvestPristineTemplate,
   PRISTINE_TEMPLATE_PATH,
@@ -38,6 +41,21 @@ const scopeCaseIds = SCOPE_CASES.map((c) => c.id).join(", ");
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const layout = getFixtureLayout(getFixtureRoot(workspaceRoot));
 const companionDir = join(workspaceRoot, "apps", "zotero", "dist-dev", "addon");
+const pairedRunPorts = createNodePairedRunPorts({ workspaceRoot, layout });
+
+function pairedRunBuilder(y: Argv) {
+  return y
+    .positional("scope-case", {
+      describe: `Scope Case to build (${scopeCaseIds})`,
+      type: "string",
+      default: DEFAULT_SCOPE_CASE,
+    })
+    .option("purge", {
+      describe: "restore the exact generated Development Vault seed",
+      type: "boolean",
+      default: false,
+    });
+}
 
 /**
  * The dev build of the plugin. `pnpm fixture` builds it first, so it is missing
@@ -101,15 +119,45 @@ const cli = yargs(hideBin(process.argv))
   .scriptName("fixture.ts")
   .command(
     ["build [scope-case]", "$0"],
-    "rebuild the fixture from the spec",
+    "rebuild the Fixture from the Fixture Spec",
     (y) =>
       y.positional("scope-case", {
-        describe: `scope case to build (${scopeCaseIds})`,
+        describe: `Scope Case to build (${scopeCaseIds})`,
         type: "string",
         default: DEFAULT_SCOPE_CASE,
       }),
     async (argv) => {
       await build({ scopeCase: argv["scope-case"] });
+    },
+  )
+  .command(
+    "open [scope-case]",
+    "prepare and open a finite Paired Run",
+    pairedRunBuilder,
+    async (argv) => {
+      await runPairedRun(
+        {
+          mode: "open",
+          scopeCase: argv["scope-case"],
+          purge: argv.purge,
+        },
+        pairedRunPorts,
+      );
+    },
+  )
+  .command(
+    "dev [scope-case]",
+    "prepare and supervise a live Paired Run",
+    pairedRunBuilder,
+    async (argv) => {
+      await runPairedRun(
+        {
+          mode: "dev",
+          scopeCase: argv["scope-case"],
+          purge: argv.purge,
+        },
+        pairedRunPorts,
+      );
     },
   )
   .command(
@@ -133,7 +181,7 @@ const cli = yargs(hideBin(process.argv))
     "re-scope the built vault",
     (y) =>
       y.positional("scope-case", {
-        describe: `scope case to select (${scopeCaseIds})`,
+        describe: `Scope Case to select (${scopeCaseIds})`,
         type: "string",
         demandOption: true,
       }),
@@ -144,7 +192,7 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     "paths",
-    "print the fixture paths",
+    "print the Fixture paths",
     () => {},
     () => {
       printPaths();
@@ -152,7 +200,7 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     "zotero",
-    `launch the Paired Zotero on the fixture (set ${ZOTERO_APP_ENV} to run a bundle instead of the managed Zotero ${PINNED_ZOTERO_VERSION})`,
+    `launch the Paired Zotero on the Fixture (set ${ZOTERO_APP_ENV} to run a bundle instead of the managed Zotero ${PINNED_ZOTERO_VERSION})`,
     () => {},
     async () => {
       const { appBundle, pid } = await launchPairedZotero(layout, companionDir);
@@ -180,7 +228,7 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     "discard",
-    "delete the whole fixture",
+    "delete the whole Fixture",
     () => {},
     async () => {
       await discardFixture(layout);

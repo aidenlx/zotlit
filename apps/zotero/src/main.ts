@@ -1,3 +1,4 @@
+import { DEV_READY_FILE_NAME } from "./constant";
 import { BOOTSTRAP_REASONS } from "./lib/bootstrap-reasons";
 import type { BootstrapReason } from "./lib/bootstrap-reasons";
 import { attachFluentToWindow } from "./lib/l10n";
@@ -51,6 +52,13 @@ export class ZotLitZotero {
       id: this.#data.id,
       reason: BOOTSTRAP_REASONS[reason],
     });
+    if (__DEV__) {
+      const readyPath = PathUtils.join(Zotero.Profile.dir, DEV_READY_FILE_NAME);
+      await Zotero.File.putContentsAsync(readyPath, this.#data.version);
+      stack.defer(async () => {
+        await Zotero.File.removeIfExists(readyPath);
+      });
+    }
   }
 
   async shutdown(reason: BootstrapReason): Promise<void> {

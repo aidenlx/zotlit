@@ -13,8 +13,6 @@ import { $ } from "zx";
 
 import {
   findScopeCase,
-  getFixtureLayout,
-  getFixtureRoot,
   ITEMS,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
@@ -42,14 +40,6 @@ const e2eVaultPath = join(workspaceRoot, "tmp", "e2e-fixture-vault");
 // needing to filter on libraryID too (key "AAAAAAAA" repeats in library 2).
 const targetItem = ITEMS.find((item) => item.itemID === 1)!;
 
-// `create` seeds the vault from the Fixture, but ZotLit itself still defaults
-// to auto-detecting a real, locally installed Zotero's data directory (a
-// per-vault Device Override in localStorage, not a vault setting) — so the
-// e2e vault must be pointed at the Fixture's own Zotero data directory
-// explicitly, or every assertion below would run against whatever Zotero
-// library happens to be installed on the host instead of the Fixture.
-const fixtureDataDir = getFixtureLayout(getFixtureRoot(workspaceRoot)).dataDir;
-
 async function isObsidianReachable(): Promise<boolean> {
   const result = await $({ nothrow: true })`node ${vaultScriptPath} status`;
   return result.stdout.trim() === "running";
@@ -72,46 +62,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await cp(pluginBundleDir, e2ePluginDir, { recursive: true });
 
     // Rebuilds the Fixture (default Scope Case "all"), copies the Fixture
-    // Vault to e2eVaultPath, registers + opens it, and confirms the plugin
-    // loaded — throws (non-zero exit) if any step fails.
+    // Vault to e2eVaultPath, registers + opens it, links its Device Overrides
+    // to the Fixture profile and database, and confirms the plugin loaded.
     const created = await $`node ${vaultScriptPath} create ${e2eVaultPath}`;
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
-
-    // Point the freshly opened vault at the Fixture's own Zotero data
-    // directory — see the comment on `fixtureDataDir` above.
-    const pointed = await obEvalUntil(
-      vaultId,
-      `app.plugins.plugins.zotlit.services.zoteroPref.setDataDir(${JSON.stringify(fixtureDataDir)}); "ok"`,
-      { expected: "ok", tries: 20 },
-    );
-    if (!pointed) {
-      throw new Error(
-        `could not point vault ${vaultId} at the Fixture's Zotero data directory`,
-      );
-    }
-
-    // `setDataDir` returns before the plugin's own database connection has
-    // finished reopening against the new directory (an internal async
-    // refresh the CLI reply doesn't wait on) — poll until a live query
-    // reports every Fixture Library, proving the reopen against the
-    // Fixture's own data is complete rather than still pointed at whatever
-    // real Zotero install the host happens to have.
-    const dbReady = await waitFor(async () => {
-      try {
-        const response = await cliCommand(vaultId, "zotlit:library-scope");
-        const status = JSON.parse(response) as {
-          available?: unknown[];
-        };
-        return (status.available?.length ?? 0) === LIBRARIES.length;
-      } catch {
-        return false;
-      }
-    }, 40);
-    if (!dbReady) {
-      throw new Error(
-        `vault ${vaultId} never reconnected to the Fixture's Zotero data`,
-      );
-    }
   }, 180000);
 
   afterAll(async () => {

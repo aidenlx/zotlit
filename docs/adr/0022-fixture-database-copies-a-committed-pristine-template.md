@@ -30,10 +30,11 @@ serves both the template harvest and the Paired Zotero.
 - The committed template is a small binary — `pnpm fixture harvest` stores it
   gzipped, because Zotero's 32 KB page layout makes a first-run database 5 MB
   of mostly empty pages. Regeneration is that one command, needed only when
-  Zotero bumps its schema; `pnpm fixture --help` carries the procedure.
+  Zotero bumps its schema; the [Fixture guide](../fixture.md#regenerate-the-pristine-zotero-template)
+  carries the procedure.
 - The template already holds Zotero's global schema, so the build reads item
   type, field, and creator type ids back by name instead of declaring them,
   and Zotero's own foreign keys and triggers check every inserted row.
-- After a Paired Zotero session the database drifts from the Spec; rebuilding
+- After a Paired Zotero session the database drifts from the Fixture Spec; rebuilding
   the Fixture is the reset. The Fixture is disposable by design, so this is
   accepted.

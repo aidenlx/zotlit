@@ -49,7 +49,7 @@ function getManagedZoteroDir(): string {
   );
 }
 
-function getZoteroBinary(appBundle: string): string {
+export function getZoteroBinary(appBundle: string): string {
   return join(appBundle, BINARY_SUBPATH);
 }
 

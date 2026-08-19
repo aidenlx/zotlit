@@ -1,13 +1,18 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
-import { connectWithRetry, findFreePort } from "./rdp-client.js";
-import type { RdpClient } from "./rdp-client.js";
+import { connectWithRetry, findFreePort } from "./rdp-client.ts";
+import type { RdpClient } from "./rdp-client.ts";
+
+import { DEV_READY_FILE_NAME } from "#constant";
 
 const DEV_DIR_NAME = ".zotero-dev";
+const READY_POLL_ATTEMPTS = 120;
+const READY_POLL_INTERVAL_MS = 250;
 const RDP_PREFS = [
   ["devtools.chrome.enabled", true],
   ["devtools.debugger.remote-enabled", true],
@@ -21,6 +26,8 @@ export interface SpawnZoteroOptions {
   profilePath?: string;
   dataDir?: string;
   devtools: boolean;
+  detached?: boolean;
+  stdio?: "inherit" | "ignore";
   signal: AbortSignal;
   onExit?: (error: Error) => void;
 }
@@ -30,6 +37,7 @@ export interface ZoteroDevSession {
   client: RdpClient;
   port: number;
   profilePath: string;
+  readyPath: string;
   dataDir?: string;
 }
 
@@ -39,6 +47,8 @@ export async function spawnZotero({
   profilePath: rawProfilePath,
   dataDir: rawDataDir,
   devtools,
+  detached = false,
+  stdio = "inherit",
   signal,
   onExit,
 }: SpawnZoteroOptions): Promise<ZoteroDevSession> {
@@ -50,10 +60,13 @@ export async function spawnZotero({
     dataDir: rawDataDir,
   });
   const port = await findFreePort();
+  const readyPath = join(profilePath, DEV_READY_FILE_NAME);
+  await rm(readyPath, { force: true });
   const args = zoteroArgs({ profilePath, dataDir, port, devtools });
   const childStopped = Promise.withResolvers<never>();
   const child = spawn(binaryPath, args, {
-    stdio: "inherit",
+    detached,
+    stdio,
     env: {
       ...process.env,
       XPCOM_DEBUG_BREAK: "stack",
@@ -96,12 +109,35 @@ export async function spawnZotero({
       client,
       port,
       profilePath,
+      readyPath,
       ...(dataDir === undefined ? {} : { dataDir }),
     };
   } catch (error) {
     stopChild();
     throw error;
   }
+}
+
+export function resetCompanionReady(session: ZoteroDevSession): Promise<void> {
+  return rm(session.readyPath, { force: true });
+}
+
+export async function waitForCompanionReady(
+  session: ZoteroDevSession,
+  signal: AbortSignal,
+): Promise<void> {
+  for (let attempt = 0; attempt < READY_POLL_ATTEMPTS; attempt++) {
+    signal.throwIfAborted();
+    const ready = await access(session.readyPath).then(
+      () => true,
+      () => false,
+    );
+    if (ready) return;
+    await delay(READY_POLL_INTERVAL_MS, undefined, { signal });
+  }
+  throw new Error(
+    `ZotLit companion did not finish startup in ${session.profilePath}`,
+  );
 }
 
 interface PrepareDevProfileOptions {

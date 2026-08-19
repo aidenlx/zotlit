@@ -14,23 +14,23 @@ rendered state. The DOM is the source of truth.
 
 ## Vault setup, once per worktree
 
-CLI Contract: `obsidian-vault 1`.
+CLI Contract: `obsidian-vault 2`.
 
 1. Run `packages/scripts/scripts/obsidian-vault.ts --help`.
 2. Compare its `contractVersion` with the pin above. When they differ, follow
    the live help for this run.
 3. Before you use a vault command, read its `<command> --help` output.
-4. Build the plugin, then use the live `create` command to seed and register
-   this worktree's dev vault:
+4. Build the plugin, then use the live `open` command to prepare this
+   worktree's Development Vault:
 
 ```bash
 pnpm --filter @zotlit/obsidian build:dev
 ```
 
 Editing the Fixture Spec or its committed vault-page assets changes the next
-Fixture build, not the open dev vault. Use the live `sync` command before you
-look for those changes. Use the live `remove` command when you tear the vault
-down.
+Fixture build, not the open Development Vault. Use the live `open` command
+before you look for those changes. Use the live `remove` command when you tear
+the vault down.
 
 ## Commands
 
@@ -50,7 +50,7 @@ The CLI always exits 0. Read the output text: `=> ` prefixes a result, and failu
 ## Loop
 
 1. **Build** — `pnpm --filter @zotlit/obsidian build:dev` copies the bundle into
-   this worktree's dev vault.
+   this worktree's Development Vault.
 2. **Reload** — `obsidian-cli vault=<id> plugin:reload id=zotlit`.
 3. **Open** — `obsidian-cli command id=zotlit:<cmd>`, or `eval` to mount a view in a specific split.
 4. **Probe** — `obsidian-cli eval code='…'` with `getComputedStyle(el)` /
@@ -99,7 +99,7 @@ wins. Re-shoot. A DevTools window open over Obsidian can also steal the capture 
 
 An untargeted command goes to the focused window, which may belong to another worktree. Pass
 `vault=<id>`, and confirm with `eval code='app.vault.adapter.basePath'` — it must print the
-dev-vault path reported by `obsidian-vault.ts --help` for the worktree you build
+Development Vault path reported by `obsidian-vault.ts --help` for the worktree you build
 from. `data.json` edits target that same path.
 
 ### Occluded window
@@ -109,8 +109,22 @@ stops repainting — scroll-driven UI (e.g. TanStack Virtual) looks frozen and s
 stale frames. Drive scrolling with `el.scrollTop = x; el.dispatchEvent(new Event("scroll"))` and
 assert via DOM queries.
 
-### Live-data escape hatch
+### Full-scale Fixture data
 
-Plugin setting `zotero.data-dir` points the live plugin at any data directory. Symlinking the
-canonical 24k sqlite as `zotero.sqlite` in a scratch dir gives a full-scale live test. Restore
-`data.json` + `plugin:reload` afterwards.
+Build a Stress Build with `pnpm fixture stress`. Read the current Device Override before you
+change it:
+
+```bash
+obsidian-cli vault=<id> eval \
+  code='app.plugins.plugins.zotlit.services.zoteroPref.dataDirOverride'
+```
+
+Point the live plugin at the absolute `tmp/acceptance-fixture/zotero-data` path:
+
+```bash
+obsidian-cli vault=<id> eval \
+  code='app.plugins.plugins.zotlit.services.zoteroPref.setDataDir("<absolute path>")'
+```
+
+Afterwards, call `setDataDir` again with the previous value, or `null` when it was empty. This
+restores the vault-scoped Device Override and reconnects the database service.

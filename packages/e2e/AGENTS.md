@@ -11,10 +11,10 @@ Deliberately no `test` script: this suite drives a real Electron app and stays o
 
 ## Requirements
 
-Needs desktop Obsidian 1.12.7+ running locally with the CLI enabled (Settings → General → Advanced → "Command line interface"). Without a reachable Obsidian, `pnpm e2e` skips its tests cleanly and exits 0 — it does not fail.
+Needs desktop Obsidian 1.13.4+ running locally with the CLI enabled (Settings → General → Advanced → "Command line interface"). Without a reachable Obsidian, `pnpm e2e` skips its tests cleanly and exits 0 — it does not fail.
 
 The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:dev`), never the production build: the Scope Case assertion reads `zotlit:library-scope`, a CLI command registered only under `__DEV__` and absent from production plugin bundles.
 
 ## Scope
 
-One suite, `src/end-to-end.e2e.ts`: builds and registers a dedicated e2e vault under `tmp/e2e-fixture-vault`, drives it over the Obsidian CLI, and tears the vault down afterward. Documentation for the wider Fixture effort is tracked separately (#804).
+One suite, `src/end-to-end.e2e.ts`: builds and registers a dedicated vault for the End-to-end Run under `tmp/e2e-fixture-vault`, drives it over the Obsidian CLI, and tears the vault down afterward. See the [Fixture guide](../../docs/fixture.md) for the complete workflow.

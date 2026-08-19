@@ -9,7 +9,7 @@
 // command reaches from inside a vault window. This drives whichever route
 // applies, so cleanup never has to wake a shut app.
 //
-// Creating needs Obsidian 1.12.7+ with "Command line interface" enabled
+// Creating needs Obsidian 1.13.4+ with "Command line interface" enabled
 // (Settings → General) and one open vault window to host the eval calls.
 
 import {
@@ -31,7 +31,13 @@ import { hideBin } from "yargs/helpers";
 import { $ } from "zx";
 
 import { getDevVaultDir, getFixtureVaultDir } from "#dev-vault";
-import { buildFixture, getFixtureLayout, getFixtureRoot } from "#fixture";
+import {
+  buildFixture,
+  DEFAULT_SCOPE_CASE,
+  getFixtureLayout,
+  getFixtureRoot,
+  SCOPE_CASES,
+} from "#fixture";
 import { getWorkspaceRoot } from "#package-roots";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
@@ -40,7 +46,7 @@ const defaultVault = getDevVaultDir(workspaceRoot);
 const fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
 const fixtureVault = getFixtureVaultDir(workspaceRoot);
 const pluginId = "zotlit";
-const CONTRACT_VERSION = 1;
+const CONTRACT_VERSION = 2;
 const OBSIDIAN_CLI_ENV = "OBSIDIAN_CLI";
 const HOST_VAULT_ENV = "ZT_HOST_VAULT";
 
@@ -203,7 +209,15 @@ async function resolveHost(exclude?: string): Promise<string> {
   return other;
 }
 
-async function create(vaultPath: string): Promise<void> {
+interface SeedOptions {
+  purge?: boolean;
+  scopeCase?: string;
+}
+
+async function create(
+  vaultPath: string,
+  { purge = false, scopeCase = DEFAULT_SCOPE_CASE }: SeedOptions = {},
+): Promise<void> {
   const abs = resolve(vaultPath);
   const host = await resolveHost();
   const vaults = await vaultList(host);
@@ -223,7 +237,14 @@ async function create(vaultPath: string): Promise<void> {
     );
   }
 
-  await rebuildFixtureVault(abs);
+  await rebuildFixtureVault(abs, scopeCase);
+  if (purge) {
+    const exists = await access(abs).then(
+      () => true,
+      () => false,
+    );
+    if (exists) await purgeVault(abs);
+  }
 
   // `force: false` preserves the bundle that `build:dev` copied into the dev
   // vault before this script generated its seed.
@@ -302,13 +323,17 @@ async function create(vaultPath: string): Promise<void> {
       `${pluginId} did not load in ${id}. Run 'pnpm --filter @zotlit/obsidian build:dev' and create again.`,
     );
   }
+  await linkFixture(id);
 }
 
 /**
- * Rebuild and re-copy the Fixture Vault over an already-created dev vault.
+ * Rebuild and re-copy the Fixture Vault over an existing Development Vault.
  * The vault folder path stays the same, so Obsidian's registry needs no update.
  */
-async function sync(vaultPath: string, purge: boolean): Promise<void> {
+async function sync(
+  vaultPath: string,
+  { purge = false, scopeCase = DEFAULT_SCOPE_CASE }: SeedOptions = {},
+): Promise<void> {
   const abs = resolve(vaultPath);
 
   await access(abs).catch(() => {
@@ -316,7 +341,7 @@ async function sync(vaultPath: string, purge: boolean): Promise<void> {
   });
 
   // Build before a purge so the generated seed captures the current dev bundle.
-  await rebuildFixtureVault(abs);
+  await rebuildFixtureVault(abs, scopeCase);
 
   // `--purge` deletes the folder first, so renamed or removed Fixture files
   // drop out too, not just the ones the Fixture Vault still has.
@@ -332,7 +357,10 @@ async function sync(vaultPath: string, purge: boolean): Promise<void> {
   console.error(`synced ${fixtureVault} -> ${abs}`);
 }
 
-async function rebuildFixtureVault(target: string): Promise<void> {
+async function rebuildFixtureVault(
+  target: string,
+  scopeCase = DEFAULT_SCOPE_CASE,
+): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
 
   const pluginBundleDir = join(
@@ -346,8 +374,126 @@ async function rebuildFixtureVault(target: string): Promise<void> {
     () => false,
   );
   await buildFixture(fixtureLayout, {
+    scopeCase,
     pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
   });
+}
+
+/** Rebuild, synchronize, and ensure the Development Vault window is open. */
+async function open(
+  vaultPath: string,
+  { purge = false, scopeCase = DEFAULT_SCOPE_CASE }: SeedOptions = {},
+): Promise<void> {
+  const abs = resolve(vaultPath);
+  const host = await resolveHost();
+  const registered = findVaultId(await vaultList(host), abs);
+
+  if (!registered) {
+    await create(abs, { purge, scopeCase });
+    return;
+  }
+
+  await sync(abs, { purge, scopeCase });
+  if ((await vaultList(host))[registered]?.open !== true) {
+    const opened = await obEval(
+      `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
+      host,
+    );
+    if (opened !== "true") {
+      throw new Error(`vault-open refused: ${opened || "unknown error"}`);
+    }
+    const windowOpen = await waitFor(
+      async () => (await vaultList(host))[registered]?.open === true,
+    );
+    if (!windowOpen) {
+      throw new Error(
+        `vault ${registered} registered but its window never opened`,
+      );
+    }
+  }
+
+  const reloaded = await cli([
+    `vault=${registered}`,
+    "plugin:reload",
+    `id=${pluginId}`,
+  ]);
+  if (!reloaded.toLowerCase().startsWith("reloaded:")) {
+    throw new Error(`could not reload ZotLit in ${registered}: ${reloaded}`);
+  }
+
+  const loaded = await waitFor(async () => {
+    const answer = await obEval(
+      `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
+      registered,
+    ).catch(() => "");
+    return answer === "true";
+  });
+  if (!loaded) {
+    throw new Error(`ZotLit did not load in ${registered}`);
+  }
+  await linkFixture(registered);
+
+  console.log(registered);
+  console.error(`opened vault ${registered} at ${abs}`);
+}
+
+interface FixtureLinkReport {
+  databasePath?: unknown;
+  dbState?: unknown;
+  profileDir?: unknown;
+}
+
+async function linkFixture(vaultId: string): Promise<void> {
+  const profileDir = fixtureLayout.profileDir;
+  const databasePath = fixtureLayout.databasePath;
+  const dataDir = fixtureLayout.dataDir;
+  const configured = await waitFor(async () => {
+    const answer = await obEval(
+      `{const pref=app.plugins.plugins.${pluginId}.services.zoteroPref;pref.setProfileDir(${JSON.stringify(profileDir)});pref.setDataDir(${JSON.stringify(dataDir)});"configured"}`,
+      vaultId,
+    ).catch(() => "");
+    return answer === "configured";
+  });
+  if (!configured) {
+    throw new Error(`could not configure Fixture paths in ${vaultId}`);
+  }
+
+  const resolved = await waitFor(async () => {
+    const report = await readFixtureLink(vaultId).catch(() => undefined);
+    return (
+      report?.profileDir === profileDir && report.databasePath === databasePath
+    );
+  });
+  if (!resolved) {
+    throw new Error(
+      `ZotLit in ${vaultId} did not resolve the Fixture profile and database`,
+    );
+  }
+
+  const refreshed = await waitFor(async () => {
+    const raw = await obEval(
+      `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.db.refresh();return JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.db.state})})()`,
+      vaultId,
+    ).catch(() => "");
+    if (!raw) return false;
+    const report = JSON.parse(raw) as FixtureLinkReport;
+    return (
+      report.profileDir === profileDir &&
+      report.databasePath === databasePath &&
+      report.dbState === "ready"
+    );
+  });
+  if (!refreshed) {
+    throw new Error(`ZotLit in ${vaultId} did not open the Fixture database`);
+  }
+}
+
+async function readFixtureLink(vaultId: string): Promise<FixtureLinkReport> {
+  const raw = await obEval(
+    `{const services=app.plugins.plugins.${pluginId}.services;JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.db.state})}`,
+    vaultId,
+  );
+  return JSON.parse(raw) as FixtureLinkReport;
 }
 
 /**
@@ -495,23 +641,30 @@ const vaultPathPosition = {
 
 const syncPurgeOption = {
   describe:
-    "delete the dev-vault folder before restoring the complete generated seed",
+    "delete the Development Vault folder before restoring the complete generated seed",
   type: "boolean",
   default: false,
 } as const;
 
 const removePurgeOption = {
-  describe: "delete the dev-vault folder after unregistering it",
+  describe: "delete the Development Vault folder after unregistering it",
   type: "boolean",
   default: false,
 } as const;
 
+const scopeCaseOption = {
+  describe: "Scope Case to build",
+  type: "string",
+  choices: SCOPE_CASES.map(({ id }) => id),
+  default: DEFAULT_SCOPE_CASE,
+} as const;
+
 const reference = `contractVersion: ${CONTRACT_VERSION}
 
-The create and sync commands rebuild the Fixture Vault first. Run the Obsidian
-dev build before create so its bundle is available to copy into the generated
-seed. Sync keeps extra dev-vault files unless --purge is set. Remove keeps the
-folder unless --purge is set.
+The open, create, and sync commands rebuild the Fixture Vault first. Run the
+Obsidian dev build before them so its bundle is available to copy into the
+generated seed. Open and sync keep extra Development Vault files unless
+--purge is set. Remove keeps the folder unless --purge is set.
 
 Environment:
   ${OBSIDIAN_CLI_ENV}   path to the obsidian-cli binary
@@ -520,8 +673,31 @@ Environment:
 const vaultCli = yargs(hideBin(process.argv))
   .scriptName("obsidian-vault.ts")
   .command(
+    "check",
+    "verify that a live Obsidian vault can host CLI calls",
+    () => {},
+    async () => {
+      console.log(await resolveHost());
+    },
+  )
+  .command(
+    "open [vault-path]",
+    "rebuild, synchronize, and open this worktree's Development Vault",
+    (y) =>
+      y
+        .positional("vault-path", vaultPathPosition)
+        .option("purge", syncPurgeOption)
+        .option("scope-case", scopeCaseOption),
+    async (argv) => {
+      await open(argv["vault-path"] ?? defaultVault, {
+        purge: argv.purge,
+        scopeCase: argv["scope-case"],
+      });
+    },
+  )
+  .command(
     "create [vault-path]",
-    "seed and register this worktree's dev vault",
+    "seed and register this worktree's Development Vault",
     (y) => y.positional("vault-path", vaultPathPosition),
     async (argv) => {
       await create(argv["vault-path"] ?? defaultVault);
@@ -529,18 +705,18 @@ const vaultCli = yargs(hideBin(process.argv))
   )
   .command(
     "sync [vault-path]",
-    "rebuild and copy the Fixture Vault over an existing dev vault",
+    "rebuild and copy the Fixture Vault over an existing Development Vault",
     (y) =>
       y
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption),
     async (argv) => {
-      await sync(argv["vault-path"] ?? defaultVault, argv.purge);
+      await sync(argv["vault-path"] ?? defaultVault, { purge: argv.purge });
     },
   )
   .command(
     "remove [vault-path]",
-    "unregister this worktree's dev vault",
+    "unregister this worktree's Development Vault",
     (y) =>
       y
         .positional("vault-path", vaultPathPosition)
