@@ -8,6 +8,7 @@
     "#fixture": "./lib/fixture/build.ts",
     "#mdx-frontmatter": "./lib/mdx-frontmatter.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
+    "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
     "#test-vault": "./lib/test-vault.ts"
   },

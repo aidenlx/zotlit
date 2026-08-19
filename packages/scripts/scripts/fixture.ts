@@ -19,16 +19,25 @@ import {
   UNAVAILABLE_GROUP_IDS,
 } from "#fixture";
 import { getWorkspaceRoot } from "#package-roots";
+import {
+  launchPairedZotero,
+  PINNED_ZOTERO_VERSION,
+  ZOTERO_APP_ENV,
+} from "#paired-zotero";
 
 const usage = `Usage:
   fixture.ts                      build with the default scope case
   fixture.ts build [scope-case]   rebuild the fixture from the spec
   fixture.ts select <scope-case>  re-scope the built vault
   fixture.ts paths                print the fixture paths
+  fixture.ts zotero               launch the Paired Zotero on the fixture
   fixture.ts discard              delete the whole fixture
 
 Scope cases:
-${SCOPE_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}`;
+${SCOPE_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}
+
+Environment:
+  ${ZOTERO_APP_ENV}   Zotero app bundle the launcher runs instead of the managed Zotero ${PINNED_ZOTERO_VERSION}`;
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const layout = getFixtureLayout(getFixtureRoot(workspaceRoot));
@@ -92,6 +101,12 @@ async function main(): Promise<void> {
     case "paths":
       printPaths();
       break;
+    case "zotero": {
+      const { appBundle, pid } = await launchPairedZotero(layout);
+      console.log(`Launched the Paired Zotero from ${appBundle} (pid ${pid})`);
+      printPaths();
+      break;
+    }
     case "discard":
       await discardFixture(layout);
       console.log(`Deleted ${layout.root}`);

@@ -127,13 +127,41 @@ Delete one literature note before the run to prove the abort wrote nothing: the
 aborted run leaves the note absent, and the same run without the cancel creates
 it.
 
+## Pair a Zotero with it
+
+```sh
+pnpm fixture zotero
+```
+
+Starts a real Zotero on the Fixture's profile and data directory, detached, so
+the command returns and the instance keeps running. macOS today. Your personal Zotero stays
+untouched: this is a separate app bundle, a separate profile, and a separate
+data directory, launched with `MOZ_NO_REMOTE=1` so Gecko starts a second
+instance instead of raising a window on the one already open.
+
+The app bundle it runs resolves in this order:
+
+1. `ZOTERO_APP`, when set — any Zotero app bundle, including your own source
+   build.
+2. The managed Zotero: the pinned official build, downloaded once into
+   `~/Library/Caches/zotlit/zotero/<version>/` and reused from there on every
+   later run. The first run downloads around 190 MB and reports progress.
+
+The pinned version is `PINNED_ZOTERO_VERSION` in
+`packages/scripts/lib/fixture/paired-zotero.ts`. Bump it deliberately; the next
+run downloads the new build beside the old one.
+
+A Paired Zotero session writes to the Fixture's database, so it drifts from the
+spec. `pnpm fixture` is the reset.
+
 ## Discard
 
 ```sh
 pnpm fixture discard
 ```
 
-Deletes `tmp/acceptance-fixture/` entirely. Unregister the vault first when you
+Deletes `tmp/acceptance-fixture/` entirely, and leaves the managed Zotero in its
+per-user cache for the next build. Unregister the vault first when you
 registered it:
 
 ```sh
