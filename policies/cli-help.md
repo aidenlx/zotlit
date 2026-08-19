@@ -4,12 +4,12 @@ Help text and reference live in code, generated from the same registries the han
 
 ## Node.js scripts
 
-Use yargs (or a hand-built `usage` string from exported constants) for `--help`. Use `marked-man` to produce roff man pages from the same source when the script is distributed globally.
+Use yargs for argument parsing. The epilogue carries the detailed reference, built from the same constants the handlers run — agents read `--help` for the full contract.
 
 ## Obsidian CLI
 
-Obsidian's CLI API cannot shell out to yargs or serve man pages. Expose a guide subcommand that renders man-page-style sections from the handler's own constants and vocabularies — the Template Workbench `guide.ts` is the pattern.
+Expose a guide subcommand that renders reference sections from the handler's own constants and vocabularies — the Template Workbench `guide.ts` is the pattern.
 
-## Where docs live
+## Placement
 
-CLI guide text and usage strings live next to the implementation, in the same package. They are hardcoded English, never sourced from i18n. A usage string built from exported constants stays current when the constants change; a separate Markdown file restating the same facts is a cache that drifts silently.
+CLI help text and reference live next to the implementation, in the same package, as hardcoded English. A help string built from exported constants stays current when the constants change.

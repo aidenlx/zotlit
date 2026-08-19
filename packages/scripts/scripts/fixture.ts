@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
-// Builds, re-scopes, and discards the Fixture. Run 'fixture.ts guide' for reference.
+// Builds, re-scopes, and discards the Fixture.
 
 import { access } from "node:fs/promises";
 import { join } from "node:path";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 
 import {
   buildFixture,
@@ -25,20 +27,7 @@ import {
   ZOTERO_APP_ENV,
 } from "#paired-zotero";
 
-const usage = `Usage:
-  fixture.ts                      build with the default scope case
-  fixture.ts build [scope-case]   rebuild the fixture from the spec
-  fixture.ts select <scope-case>  re-scope the built vault
-  fixture.ts paths                print the fixture paths
-  fixture.ts zotero               launch the Paired Zotero on the fixture
-  fixture.ts discard              delete the whole fixture
-  fixture.ts guide                print the fixture reference
-
-Scope cases:
-${SCOPE_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}
-
-Environment:
-  ${ZOTERO_APP_ENV}   Zotero app bundle the launcher runs instead of the managed Zotero ${PINNED_ZOTERO_VERSION}`;
+const scopeCaseIds = SCOPE_CASES.map((c) => c.id).join(", ");
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const layout = getFixtureLayout(getFixtureRoot(workspaceRoot));
@@ -72,58 +61,95 @@ function printLibraries(): void {
   console.log(`  unavailable selectors: ${UNAVAILABLE_GROUP_IDS.join(", ")}`);
 }
 
-async function main(): Promise<void> {
-  // A bare run builds, so one command produces the fixture from a clean checkout.
-  const [command = "build", argument] = process.argv.slice(2);
+async function build(scopeCase: string): Promise<void> {
+  const pluginBundleDir = await findPluginBundle();
+  await buildFixture(layout, { scopeCase, pluginBundleDir });
+  console.log(`Built the Fixture at ${layout.root}`);
+  printPaths();
+  console.log("Libraries:");
+  printLibraries();
+  console.log(`Saved Library Scope: ${scopeCase}`);
+  console.log(
+    pluginBundleDir
+      ? "Installed ZotLit in the vault and enabled it."
+      : "No plugin bundle found, so the vault has ZotLit neither installed nor enabled. Run 'pnpm fixture' from the workspace root to build it first.",
+  );
+}
 
-  switch (command) {
-    case "build": {
-      const scopeCase = argument ?? DEFAULT_SCOPE_CASE;
-      const pluginBundleDir = await findPluginBundle();
-      await buildFixture(layout, { scopeCase, pluginBundleDir });
-      console.log(`Built the Fixture at ${layout.root}`);
+const cli = yargs(hideBin(process.argv))
+  .scriptName("fixture.ts")
+  .command(
+    ["build [scope-case]", "$0"],
+    "rebuild the fixture from the spec",
+    (y) =>
+      y.positional("scope-case", {
+        describe: `scope case to build (${scopeCaseIds})`,
+        type: "string",
+        default: DEFAULT_SCOPE_CASE,
+      }),
+    async (argv) => {
+      await build(argv["scope-case"]);
+    },
+  )
+  .command(
+    "select <scope-case>",
+    "re-scope the built vault",
+    (y) =>
+      y.positional("scope-case", {
+        describe: `scope case to select (${scopeCaseIds})`,
+        type: "string",
+        demandOption: true,
+      }),
+    async (argv) => {
+      await selectScopeCase(layout, argv["scope-case"]);
+      console.log(`Saved Library Scope: ${argv["scope-case"]}`);
+    },
+  )
+  .command(
+    "paths",
+    "print the fixture paths",
+    () => {},
+    () => {
       printPaths();
-      console.log("Libraries:");
-      printLibraries();
-      console.log(`Saved Library Scope: ${scopeCase}`);
-      console.log(
-        pluginBundleDir
-          ? "Installed ZotLit in the vault and enabled it."
-          : "No plugin bundle found, so the vault has ZotLit neither installed nor enabled. Run 'pnpm fixture' from the workspace root to build it first.",
-      );
-      break;
-    }
-    case "select": {
-      if (!argument) throw new Error("select needs a scope case");
-      await selectScopeCase(layout, argument);
-      console.log(`Saved Library Scope: ${argument}`);
-      break;
-    }
-    case "paths":
-      printPaths();
-      break;
-    case "zotero": {
+    },
+  )
+  .command(
+    "zotero",
+    `launch the Paired Zotero on the fixture (set ${ZOTERO_APP_ENV} to run a bundle instead of the managed Zotero ${PINNED_ZOTERO_VERSION})`,
+    () => {},
+    async () => {
       const { appBundle, pid } = await launchPairedZotero(layout);
       console.log(`Launched the Paired Zotero from ${appBundle} (pid ${pid})`);
       printPaths();
-      break;
-    }
-    case "discard":
+    },
+  )
+  .command(
+    "discard",
+    "delete the whole fixture",
+    () => {},
+    async () => {
       await discardFixture(layout);
       console.log(`Deleted ${layout.root}`);
-      break;
-    case "guide":
-      console.log(renderGuide());
-      break;
-    default:
-      console.error(usage);
-      process.exitCode = 1;
-  }
-}
+    },
+  )
+  .epilogue(renderGuide())
+  .demandCommand(0, 1)
+  .strict()
+  .version(false)
+  .fail((message, error) => {
+    console.error(
+      `fixture: ${error instanceof Error ? error.message : (message ?? String(error))}`,
+    );
+    process.exitCode = 1;
+    // Throwing stops yargs from invoking the command handler after a
+    // validation failure (unknown argument, missing positional, and so on).
+    throw error instanceof Error ? error : new Error(String(message));
+  });
 
-await main().catch((error: unknown) => {
-  console.error(
-    `fixture: ${error instanceof Error ? error.message : String(error)}`,
-  );
-  process.exitCode = 1;
-});
+try {
+  await cli.parseAsync();
+} catch {
+  // The fail handler above already reported the error and set the exit
+  // code; this only stops the throw (sync or async) from surfacing as an
+  // unhandled/uncaught error.
+}
