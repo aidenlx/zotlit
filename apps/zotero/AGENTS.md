@@ -18,7 +18,7 @@ Default transport is `fetch`. Switch to `Zotero.HTTP.request` only when need COR
 
 ### Zotero 9 / 10 API shapes
 
-Both majors are supported, so code that touches an API they shape differently tests for the Zotero 10 shape and falls through to the Zotero 9 one. Test for **presence of the Zotero 10 name** — reading a name Zotero 10 removed can throw rather than return `undefined`, as `collectionTreeRow` does. `src/menus/collection-scope.ts` holds the pattern; [docs/zotero10_dev.md](../../docs/zotero10_dev.md) records the full 9 → 10 diff. Type gaps that `zotero-types` has yet to cover go in `src/types/zotero.d.ts`.
+Both majors are supported, so code that touches an API they shape differently tests for the Zotero 10 shape and falls through to the Zotero 9 one. Test for **presence of the Zotero 10 name** — reading a name Zotero 10 removed can throw rather than return `undefined`, as `collectionTreeRow` does. `src/menus/collection-scope.ts` holds the pattern; `zotero10_dev.md` on the `research/zotero10-wal-stale-reads` branch records the full 9 → 10 diff. Type gaps that `zotero-types` has yet to cover go in `src/types/zotero.d.ts`.
 
 ### Patching reader internals
 
