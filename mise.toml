@@ -4,11 +4,8 @@ min_version = "2024.9.5"
 node = "26"
 "npm:zx" = "8"
 
-[hooks]
-postinstall = 'npx corepack enable'
-
 [settings]
-experimental = true
+idiomatic_version_file_enable_tools = ["pnpm"]
 
 [env]
 _.path = ['{{config_root}}/node_modules/.bin']
