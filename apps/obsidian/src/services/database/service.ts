@@ -39,9 +39,11 @@ const DB_OPTIONS: DatabaseOptions = {
   jit: true,
 };
 const WATCH_DEBOUNCE_MS = 1200;
-// Must stay above the Companion's 500 ms trailing Checkpoint delay so an
-// immutable read sees the checkpointed main database file on its first try.
-const IMMUTABLE_WATCH_DEBOUNCE_MS = 800;
+// Immutable mode never clones, so there is no self-echo to outwait: an fs
+// tick fires when the main file itself changed, and the companion sends its
+// Freshness Signal only after its Checkpoint attempt settles. Nothing here
+// waits on another application; the debounce only coalesces event bursts.
+const IMMUTABLE_WATCH_DEBOUNCE_MS = 300;
 // `persistent: false` so no watcher keeps Node's event loop alive on its own —
 // Obsidian (Electron) owns the loop, and a leaked watcher must not block
 // process exit if plugin disposal fails.

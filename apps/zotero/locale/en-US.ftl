@@ -5,6 +5,7 @@ zotlit-prefs-pane-label = ZotLit
 zotlit-prefs-notify-section = Obsidian Notifications
 zotlit-prefs-notify-enable =
     .label = Enable
+zotlit-prefs-notify-description = Notifies ZotLit in Obsidian as you read and annotate, and when the database file has new changes.
 zotlit-prefs-notify-url = Notify URL
 
 zotlit-prefs-database-section = Database

@@ -62,6 +62,7 @@ export type FluentMessageId =
   | "zotlit-prefs-log-level-warning"
   | "zotlit-prefs-logging-level"
   | "zotlit-prefs-logging-section"
+  | "zotlit-prefs-notify-description"
   | "zotlit-prefs-notify-enable"
   | "zotlit-prefs-notify-section"
   | "zotlit-prefs-notify-url"

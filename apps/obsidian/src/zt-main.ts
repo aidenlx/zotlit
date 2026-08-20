@@ -388,10 +388,11 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
-    // A Zotero item add/modify/trash push means the database changed; feed it
-    // into the same coalesced refresh lane as the filesystem watchers.
+    // The companion's Freshness Signal means the database changed and its
+    // Checkpoint attempt has settled; feed it into the same coalesced refresh
+    // lane as the filesystem watchers.
     stack.defer(
-      services.liveUpdate.on("item/update", () => {
+      services.liveUpdate.on("db/updated", () => {
         services.db.notifyExternalChange();
       }),
     );

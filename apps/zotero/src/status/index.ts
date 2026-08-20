@@ -3,8 +3,7 @@
 import { getLogger } from "@logtape/logtape";
 
 import { requireMessage } from "@/lib/l10n";
-import { notifyEnabled } from "@/notify/shared";
-import type { WalCheckpoint } from "@/notify/wal-checkpoint";
+import type { WalCheckpoint } from "@/notify/freshness";
 import { prefs } from "@/prefs";
 import type { FluentMessageId } from "@/types/fluent";
 
@@ -134,15 +133,15 @@ function paintControl(checkpoint: WalCheckpoint, window: Window): void {
   const wrapper = document.getElementById(CONTROL_ID);
   const button = wrapper?.firstElementChild;
   if (!wrapper || !button) return;
-  // Show the control only while the companion talks to Obsidian. This reads
-  // the `notify` master switch rather than `wal-checkpoint`: **Write Changes
-  // to Database File Now** lives only in this menu, so hiding on
-  // `wal-checkpoint` would take the manual recovery action away in exactly the
-  // case that needs it. With `notify` off the companion sends Obsidian nothing
-  // at all, and database freshness stops meaning anything to the user.
-  const hidden = !notifyEnabled();
+  // Visibility follows the Checkpoint itself, not the notify switch: the
+  // Checkpoint serves every companion user — the default install has no live
+  // updates and leans on it hardest. Only the expected no-WAL state hides
+  // the control (nothing to report or write); a failed probe is an error the
+  // model paints red, so it must stay visible.
+  const status = checkpoint.status();
+  const hidden = !status.active && status.reason === "not-wal";
   wrapper.toggleAttribute("hidden", hidden);
-  const state = databaseIconState(checkpoint.status());
+  const state = databaseIconState(status);
   paintIcon(button, state);
   void document.l10n?.translateFragment(wrapper);
   logger.trace("painted database status control", {
@@ -220,9 +219,8 @@ export function registerDatabaseStatus(
     for (const window of Zotero.getMainWindows()) detachWindow(window);
   });
   for (const window of Zotero.getMainWindows()) attachWindow(window);
-  // Checkpoint runs move the state; the two prefs move visibility and tint.
+  // Checkpoint runs move the state; the automatic-writes pref moves the tint.
   stack.defer(checkpoint.onChange(repaintAll));
-  stack.defer(prefs.onChange("extensions.zotlit.notify", repaintAll));
   stack.defer(prefs.onChange("extensions.zotlit.wal-checkpoint", repaintAll));
   const disposable = stack.move();
   logger.info("database status registered");

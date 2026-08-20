@@ -2,6 +2,7 @@ zotlit-prefs-pane-label = ZotLit
 zotlit-prefs-notify-section = Obsidian 通知
 zotlit-prefs-notify-enable =
     .label = 启用
+zotlit-prefs-notify-description = 在您阅读和标注时，以及数据库文件有新更改时，通知 Obsidian 中的 ZotLit。
 zotlit-prefs-notify-url = 通知 URL
 
 zotlit-prefs-database-section = 数据库

@@ -24,6 +24,10 @@ _Avoid_: command, route, endpoint
 The wire vocabulary for item identity across libraries: an 8-char base-32 Zotero item key, optionally suffixed `g<groupID>` for group-library items (`ABCD2345`, `ABCD2345g17`). The key space of Literature Note frontmatter and the Obsidian Note Index; the note-status response carries a set of them, validated against this pattern. The Zotero side formats one per row from the item key plus the library's group id; parsing back to a library lives in `@zotlit/db`, not here.
 _Avoid_: item key (drops the library disambiguation), frontmatter key
 
+**Freshness Signal**:
+The payload-free `db/updated` notify event: the companion's statement that the Zotero database changed and the main file is as current as the companion can make it. Carries no item identity — the receiver treats it as a refresh trigger, never as data.
+_Avoid_: item update, database event
+
 **Source Id**:
 The 8-char hex install fingerprint carried by every action (`source-id` query param on URLs, `X-Zotlit-Source-Id` header on HTTP). The sole targeting gate — an action is discarded when it does not match the configured install. Independent of versioning.
 _Avoid_: install id, client id

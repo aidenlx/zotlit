@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { WalCheckpointStatus } from "@/notify/wal-checkpoint";
+import type { WalCheckpointStatus } from "@/notify/freshness";
 
 import {
   databaseIconState,

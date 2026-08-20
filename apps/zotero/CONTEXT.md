@@ -23,3 +23,7 @@ _Avoid_: lag, delay (both read as performance, not correctness)
 **Database Status**:
 The Companion's user-facing report of whether the main database file holds the user's recent work, together with the on-demand control that writes it there.
 _Avoid_: note status (that names the Literature Note column), sync status (that is Zotero's own remote sync), database health
+
+**Freshness Signal**:
+The Companion's payload-free push telling the Obsidian plugin that write activity has settled and the main database file is as current as the Companion can make it. Follows a Checkpoint where one applies.
+_Avoid_: item update (the retired per-item push), change notification, ping

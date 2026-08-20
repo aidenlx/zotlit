@@ -1,4 +1,5 @@
-// Debounced PASSIVE WAL checkpoint after Zotero write activity.
+// The freshness pipeline: after Zotero write activity settles, checkpoint the
+// WAL where one exists, then send the Freshness Signal to the Obsidian side.
 
 import { debounce } from "@std/async";
 
@@ -6,13 +7,15 @@ import { registerApplicationBlur } from "@/lib/application-blur";
 import { logger as appLogger } from "@/lib/logger";
 import { prefs } from "@/prefs";
 
-const logger = appLogger.getChild(["notify", "wal-checkpoint"]);
+import type { Send } from "./send";
 
-/** Must stay below Obsidian's 800 ms immutable-watch debounce. */
+const logger = appLogger.getChild(["notify", "freshness"]);
+
+/** Trailing debounce: one pipeline run per quiet period. */
 const DEBOUNCE_MS = 500;
 /**
- * Cap on how long a burst may push the trailing timer forward, so checkpoints
- * keep flowing through a sustained write storm such as a batch import.
+ * Cap on how long a burst may push the trailing timer forward, so runs keep
+ * flowing through a sustained write storm such as a batch import.
  */
 const MAX_WAIT_MS = 10_000;
 
@@ -55,7 +58,7 @@ export interface WalCheckpoint extends Disposable {
   /**
    * Subscribe to {@link status} changes, so a reader repaints instead of
    * polling. Fires after a checkpoint attempt settles. A run the preference
-   * skipped moves nothing, and an inactive handle never runs at all, so
+   * skipped moves nothing, and an inactive checkpoint never runs at all, so
    * neither reports.
    *
    * @returns Teardown that unsubscribes.
@@ -63,53 +66,50 @@ export interface WalCheckpoint extends Disposable {
   onChange(listener: () => void): () => void;
 }
 
-function inactiveHandle(reason: "not-wal" | "probe-failed"): WalCheckpoint {
-  return {
-    status: () => ({ active: false, reason, lastRun: null }),
-    writeNow: () => Promise.resolve("unavailable"),
-    // An inactive handle never runs, so its status never changes.
-    onChange: () => () => {},
-    [Symbol.dispose]() {},
-  };
-}
-
 /**
- * Move recent writes out of the WAL sidecar and into `zotero.sqlite` itself.
+ * Register the freshness pipeline over Zotero write activity: a debounced run
+ * that moves recent writes out of the WAL sidecar into `zotero.sqlite` itself
+ * (the Checkpoint), then tells the Obsidian side the file is as current as
+ * this pipeline can make it (the Freshness Signal, `db/updated`).
  *
  * On a WAL database Zotero appends changes to `zotero.sqlite-wal` and may leave
  * them there for a long time, so the main file the Obsidian watcher fingerprints
  * stays stale and ZotLit reads old data. A `PASSIVE` checkpoint copies the
  * committed WAL frames into the main file, which makes that fingerprint move and
- * the next read return current rows.
+ * the next read return current rows. `PASSIVE` never blocks: it copies whatever
+ * frames no reader or writer is holding and returns, never invoking SQLite's
+ * busy handler. It is the same operation Zotero 10 runs on itself at idle and at
+ * shutdown.
  *
- * `PASSIVE` never blocks: it copies whatever frames no reader or writer is
- * holding and returns, never invoking SQLite's busy handler. It is the same
- * operation Zotero 10 runs on itself at idle and at shutdown.
- *
- * Activation is probe-gated on `PRAGMA journal_mode`, so this arms on Zotero 10
- * and on an inherited-WAL Zotero 9 alike, and stays inactive on a
- * rollback-journal database.
+ * The checkpoint step is probe-gated on `PRAGMA journal_mode`, so it arms on
+ * Zotero 10 and on an inherited-WAL Zotero 9 alike, and stays inactive on a
+ * rollback-journal database — where commits land in the main file directly. The
+ * signal is not gated: it follows every settled run, because the main file is
+ * then as current as this pipeline can make it — also when the preference
+ * skipped the checkpoint or the checkpoint failed, where a clone-mode reader
+ * still sees the change (fail open).
  *
  * @see https://www.sqlite.org/pragma.html#pragma_wal_checkpoint
  */
-export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
-  let mode: unknown;
+export async function registerFreshness(send: Send): Promise<WalCheckpoint> {
+  let inactiveReason: "not-wal" | "probe-failed" | undefined;
   try {
     const rows = await Zotero.DB.queryAsync("PRAGMA journal_mode");
-    mode = rows?.[0]?.journal_mode;
+    const mode: unknown = rows?.[0]?.journal_mode;
+    if (mode !== "wal") {
+      inactiveReason = "not-wal";
+      logger.debug("journal mode is not wal, checkpoints inactive", {
+        journalMode: mode,
+      });
+    }
   } catch (error) {
-    logger.warning("journal mode probe failed, wal checkpoint inactive", {
+    inactiveReason = "probe-failed";
+    logger.warning("journal mode probe failed, checkpoints inactive", {
       error,
     });
-    return inactiveHandle("probe-failed");
-  }
-  if (mode !== "wal") {
-    logger.debug("journal mode is not wal, wal checkpoint inactive", {
-      journalMode: mode,
-    });
-    return inactiveHandle("not-wal");
   }
 
+  let disposed = false;
   let lastRun: { at: Date; result: "done" | "failed" } | null = null;
   const listeners = new Set<() => void>();
   const emitChange = () => {
@@ -122,6 +122,11 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
       }
     }
   };
+
+  const signal = () => {
+    void send({ event: "db/updated" });
+  };
+
   const checkpoint = async () => {
     if (prefs.get<boolean>("extensions.zotlit.wal-checkpoint") === false) {
       logger.debug("wal checkpoint skipped, preference is off", {
@@ -148,6 +153,7 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
   };
 
   const writeNow = async (): Promise<ManualCheckpointOutcome> => {
+    if (inactiveReason !== undefined) return "unavailable";
     let outcome: ManualCheckpointOutcome;
     try {
       const rows = await Zotero.DB.queryAsync(
@@ -164,7 +170,18 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
       logger.warning("manual wal checkpoint failed", { error });
     }
     emitChange();
+    // An `in-use` truncation may still have moved frames, so signal for it
+    // too; a failed one moved nothing, so a refresh would find nothing new.
+    if (outcome !== "failed") signal();
     return outcome;
+  };
+
+  const runPipeline = async () => {
+    if (inactiveReason === undefined) await checkpoint();
+    // A run whose checkpoint was in flight while the pipeline was disposed
+    // must not signal from beyond teardown.
+    if (disposed) return;
+    signal();
   };
 
   type Timer = ReturnType<typeof setTimeout>;
@@ -175,25 +192,22 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
     maxWaitTimer = undefined;
   };
 
-  const checkpointDebounced = debounce(() => {
+  const pipelineDebounced = debounce(() => {
     clearMaxWait();
-    void checkpoint();
+    void runPipeline();
   }, DEBOUNCE_MS);
 
   const cancel = () => {
-    checkpointDebounced.clear();
+    pipelineDebounced.clear();
     clearMaxWait();
   };
 
   const observer: { notify: _ZoteroTypes.Notifier.Notify } = {
     notify() {
-      checkpointDebounced();
+      pipelineDebounced();
       const maxWaitArmed = maxWaitTimer === undefined;
-      maxWaitTimer ??= setTimeout(
-        () => checkpointDebounced.flush(),
-        MAX_WAIT_MS,
-      );
-      logger.trace("wal checkpoint debounce timer {action}", {
+      maxWaitTimer ??= setTimeout(() => pipelineDebounced.flush(), MAX_WAIT_MS);
+      logger.trace("freshness debounce timer {action}", {
         action: maxWaitArmed ? "started" : "reset",
         debounceMs: DEBOUNCE_MS,
         maxWaitArmed,
@@ -203,14 +217,14 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
   };
 
   using stack = new DisposableStack();
-  stack.defer(() => logger.debug("unregistered wal checkpoint notifier"));
+  stack.defer(() => logger.debug("unregistered freshness pipeline"));
   stack.defer(cancel);
   stack.use(
     registerApplicationBlur(() => {
-      const accelerated = checkpointDebounced.pending;
-      checkpointDebounced.flush();
+      const accelerated = pipelineDebounced.pending;
+      pipelineDebounced.flush();
       if (accelerated) {
-        logger.debug("accelerated wal checkpoint on application blur");
+        logger.debug("accelerated freshness pipeline on application blur");
       }
     }),
   );
@@ -218,27 +232,31 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
   const id = Zotero.Notifier.registerObserver(
     observer,
     TRIGGER_TYPES,
-    "zotlit-notify-wal-checkpoint",
+    "zotlit-notify-freshness",
   );
   stack.defer(() => Zotero.Notifier.unregisterObserver(id));
-  logger.debug("registered wal checkpoint notifier", { id });
+  logger.debug("registered freshness pipeline", { id });
   const disposable = stack.move();
   return {
-    status: () => ({
-      active: true,
-      automaticEnabled:
-        prefs.get<boolean>("extensions.zotlit.wal-checkpoint") !== false,
-      lastRun:
-        lastRun === null
-          ? null
-          : { at: new Date(lastRun.at), result: lastRun.result },
-    }),
+    status: () =>
+      inactiveReason !== undefined
+        ? { active: false, reason: inactiveReason, lastRun: null }
+        : {
+            active: true,
+            automaticEnabled:
+              prefs.get<boolean>("extensions.zotlit.wal-checkpoint") !== false,
+            lastRun:
+              lastRun === null
+                ? null
+                : { at: new Date(lastRun.at), result: lastRun.result },
+          },
     writeNow,
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     [Symbol.dispose]() {
+      disposed = true;
       listeners.clear();
       disposable[Symbol.dispose]();
     },

@@ -59,9 +59,9 @@ Protocol links work out of the box with no additional configuration beyond insta
 
 ### Live updates (server required)
 
-Live updates are a push channel. The companion sends HTTP notifications to Obsidian when items change, annotations are added, or you navigate in the Zotero PDF reader. These notifications power the annotation view's reader-following mode and tell ZotLit to refresh its database connection.
+Live updates are a push channel. The companion sends HTTP notifications to Obsidian as you read and annotate in the Zotero PDF reader, powering the annotation view's reader-following mode. After the companion finishes its work on the main database file, it also sends a payload-free signal telling ZotLit to refresh, so changes appear right away.
 
-Live updates do not write recent changes into the main Zotero database file. The companion's database checkpoint handles that work independently.
+The database checkpoint that writes those changes into the main file works independently of live updates. Live updates only add the signal that tells ZotLit when to refresh.
 
 Live updates require two things enabled:
 

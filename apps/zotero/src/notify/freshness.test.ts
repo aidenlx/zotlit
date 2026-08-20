@@ -32,11 +32,13 @@ vi.mock("@/lib/application-blur", () => ({
 
 import { prefs } from "@/prefs";
 
-import { registerWalCheckpoint } from "./wal-checkpoint.js";
+import { registerFreshness } from "./freshness.js";
+import type { NotifyEventInput } from "./send";
 
 const PROBE_SQL = "PRAGMA journal_mode";
 const CHECKPOINT_SQL = "PRAGMA wal_checkpoint(PASSIVE)";
 const MANUAL_CHECKPOINT_SQL = "PRAGMA wal_checkpoint(TRUNCATE)";
+const SIGNAL = "send db/updated";
 
 const WAL_CHECKPOINT_PREF = "extensions.zotlit.wal-checkpoint";
 
@@ -46,9 +48,19 @@ let registeredTypes: _ZoteroTypes.Notifier.Type[] | undefined;
 let unregistered: number[];
 let checkpointFails: boolean;
 let checkpointBusy: boolean;
+/** When set, the PASSIVE checkpoint query stays pending until it resolves. */
+let checkpointGate: PromiseWithResolvers<void> | undefined;
 let prefStore: Map<string, boolean | string | number>;
+let sent: NotifyEventInput[];
 
 const OBSERVER_ID = 42;
+
+/** Records each dispatch into `statements` too, so ordering is observable. */
+function send(event: NotifyEventInput): Promise<void> {
+  sent.push(event);
+  statements.push(`send ${event.event}`);
+  return Promise.resolve();
+}
 
 function stubZotero(journalMode: string | undefined): void {
   statements = [];
@@ -57,7 +69,9 @@ function stubZotero(journalMode: string | undefined): void {
   unregistered = [];
   checkpointFails = false;
   checkpointBusy = false;
+  checkpointGate = undefined;
   prefStore = new Map();
+  sent = [];
 
   (globalThis as { Zotero?: unknown }).Zotero = {
     debug() {},
@@ -77,7 +91,9 @@ function stubZotero(journalMode: string | undefined): void {
             { busy: checkpointBusy ? 1 : 0, log: 0, checkpointed: 0 },
           ]);
         }
-        return Promise.resolve([{ busy: 0, log: 12, checkpointed: 12 }]);
+        const row = [{ busy: 0, log: 12, checkpointed: 12 }];
+        if (checkpointGate) return checkpointGate.promise.then(() => row);
+        return Promise.resolve(row);
       },
     },
     Notifier: {
@@ -144,10 +160,10 @@ afterEach(async () => {
   await reset();
 });
 
-describe("registerWalCheckpoint", () => {
-  describe("probe-gated activation", () => {
+describe("registerFreshness", () => {
+  describe("probe-gated checkpoint activation", () => {
     it("registers an observer on a wal database", async () => {
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       expect(statements).toEqual([PROBE_SQL]);
       expect(observer).toBeDefined();
       expect(handle.status()).toEqual({
@@ -157,11 +173,11 @@ describe("registerWalCheckpoint", () => {
       });
     });
 
-    it("stays inactive on a rollback-journal database", async () => {
+    it("keeps checkpoints inactive on a rollback-journal database", async () => {
       stubZotero("delete");
-      using handle = await registerWalCheckpoint();
-      expect(observer).toBeUndefined();
-      expect(applicationBlur.registered).toBe(false);
+      using handle = await registerFreshness(send);
+      expect(observer).toBeDefined();
+      expect(applicationBlur.registered).toBe(true);
       expect(handle.status()).toEqual({
         active: false,
         reason: "not-wal",
@@ -176,22 +192,22 @@ describe("registerWalCheckpoint", () => {
       );
     });
 
-    it("stays inactive when the probe rejects", async () => {
+    it("keeps checkpoints inactive when the probe rejects", async () => {
       stubZotero(undefined);
-      using handle = await registerWalCheckpoint();
-      expect(observer).toBeUndefined();
-      expect(applicationBlur.registered).toBe(false);
+      using handle = await registerFreshness(send);
+      expect(observer).toBeDefined();
       expect(handle.status()).toEqual({
         active: false,
         reason: "probe-failed",
         lastRun: null,
       });
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(checkpoints()).toHaveLength(0);
     });
   });
 
   it("triggers on every write-bearing notifier type", async () => {
-    using _handle = await registerWalCheckpoint();
+    using _handle = await registerFreshness(send);
     expect(registeredTypes).toEqual([
       "item",
       "item-tag",
@@ -203,8 +219,77 @@ describe("registerWalCheckpoint", () => {
     ]);
   });
 
-  it("accelerates a pending checkpoint on Application Blur", async () => {
-    using _handle = await registerWalCheckpoint();
+  describe("freshness signal", () => {
+    it("sends db/updated only after the checkpoint completes", async () => {
+      using _handle = await registerFreshness(send);
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(statements).toEqual([PROBE_SQL, CHECKPOINT_SQL, SIGNAL]);
+      expect(sent).toEqual([{ event: "db/updated" }]);
+    });
+
+    it("holds the signal while the checkpoint is still running", async () => {
+      using _handle = await registerFreshness(send);
+      checkpointGate = Promise.withResolvers<void>();
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(checkpoints()).toHaveLength(1);
+      expect(sent).toHaveLength(0);
+
+      checkpointGate.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sent).toEqual([{ event: "db/updated" }]);
+    });
+
+    it("suppresses the signal when disposed mid-checkpoint", async () => {
+      const handle = await registerFreshness(send);
+      checkpointGate = Promise.withResolvers<void>();
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(checkpoints()).toHaveLength(1);
+
+      handle[Symbol.dispose]();
+      checkpointGate.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(sent).toHaveLength(0);
+    });
+
+    it("sends db/updated when the preference skips the checkpoint", async () => {
+      using _handle = await registerFreshness(send);
+      prefs.set(WAL_CHECKPOINT_PREF, false);
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(checkpoints()).toHaveLength(0);
+      expect(sent).toEqual([{ event: "db/updated" }]);
+    });
+
+    it("sends db/updated after a failed checkpoint", async () => {
+      using _handle = await registerFreshness(send);
+      checkpointFails = true;
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(checkpoints()).toHaveLength(1);
+      expect(sent).toEqual([{ event: "db/updated" }]);
+    });
+
+    it("sends db/updated on a rollback-journal database", async () => {
+      stubZotero("delete");
+      using _handle = await registerFreshness(send);
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(checkpoints()).toHaveLength(0);
+      expect(sent).toEqual([{ event: "db/updated" }]);
+    });
+  });
+
+  it("accelerates a pending pipeline run on Application Blur", async () => {
+    using _handle = await registerFreshness(send);
     emitNotifierEvent();
     await vi.advanceTimersByTimeAsync(200);
 
@@ -212,29 +297,32 @@ describe("registerWalCheckpoint", () => {
     applicationBlur.callback?.();
     await vi.advanceTimersByTimeAsync(0);
     expect(checkpoints()).toHaveLength(1);
+    expect(sent).toEqual([{ event: "db/updated" }]);
     expect(
       recordsAt("debug").some(
         (record) =>
           String(record.message) ===
-          "accelerated wal checkpoint on application blur",
+          "accelerated freshness pipeline on application blur",
       ),
     ).toBe(true);
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(checkpoints()).toHaveLength(1);
+    expect(sent).toHaveLength(1);
   });
 
-  it("does nothing on Application Blur when no checkpoint is pending", async () => {
-    using _handle = await registerWalCheckpoint();
+  it("does nothing on Application Blur when no run is pending", async () => {
+    using _handle = await registerFreshness(send);
 
     applicationBlur.callback?.();
     await vi.runAllTimersAsync();
 
     expect(checkpoints()).toHaveLength(0);
+    expect(sent).toHaveLength(0);
   });
 
   it("honors the checkpoint preference during Application Blur", async () => {
-    using _handle = await registerWalCheckpoint();
+    using _handle = await registerFreshness(send);
     prefs.set(WAL_CHECKPOINT_PREF, false);
     emitNotifierEvent();
 
@@ -242,11 +330,12 @@ describe("registerWalCheckpoint", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(checkpoints()).toHaveLength(0);
+    expect(sent).toEqual([{ event: "db/updated" }]);
   });
 
-  it("coalesces a burst into one checkpoint 500 ms after the last event", async () => {
+  it("coalesces a burst into one run 500 ms after the last event", async () => {
     vi.setSystemTime("2026-08-20T08:00:00Z");
-    using handle = await registerWalCheckpoint();
+    using handle = await registerFreshness(send);
     for (let i = 0; i < 5; i++) {
       emitNotifierEvent();
       await vi.advanceTimersByTimeAsync(200);
@@ -254,8 +343,10 @@ describe("registerWalCheckpoint", () => {
     // 200 ms of the trailing delay already ran off after the last event.
     await vi.advanceTimersByTimeAsync(299);
     expect(checkpoints()).toHaveLength(0);
+    expect(sent).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(checkpoints()).toHaveLength(1);
+    expect(sent).toHaveLength(1);
     expect(recordsAt("debug")).toContainEqual(
       expect.objectContaining({
         properties: expect.objectContaining({
@@ -275,8 +366,8 @@ describe("registerWalCheckpoint", () => {
     });
   });
 
-  it("checkpoints at the ten second max wait during sustained write activity", async () => {
-    using _handle = await registerWalCheckpoint();
+  it("runs at the ten second max wait during sustained write activity", async () => {
+    using _handle = await registerFreshness(send);
     // A 250 ms cadence keeps resetting the 500 ms trailing timer, so only the max
     // wait can fire.
     for (let elapsed = 0; elapsed < 9_750; elapsed += 250) {
@@ -288,8 +379,9 @@ describe("registerWalCheckpoint", () => {
     expect(checkpoints()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(checkpoints()).toHaveLength(1);
+    expect(sent).toHaveLength(1);
 
-    // The burst runs on past the boundary, so the one checkpoint above is
+    // The burst runs on past the boundary, so the one run above is
     // unambiguously the max wait rather than a trailing expiry.
     for (let i = 0; i < 4; i++) {
       emitNotifierEvent();
@@ -299,7 +391,7 @@ describe("registerWalCheckpoint", () => {
   });
 
   it("reads the pref at checkpoint time", async () => {
-    using _handle = await registerWalCheckpoint();
+    using _handle = await registerFreshness(send);
     prefs.set(WAL_CHECKPOINT_PREF, false);
     emitNotifierEvent();
     await vi.advanceTimersByTimeAsync(500);
@@ -319,12 +411,13 @@ describe("registerWalCheckpoint", () => {
   describe("writeNow", () => {
     it("truncates the wal when the automatic preference is off", async () => {
       vi.setSystemTime("2026-08-20T08:00:00Z");
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       prefs.set(WAL_CHECKPOINT_PREF, false);
 
       await expect(handle.writeNow()).resolves.toBe("done");
 
       expect(manualCheckpoints()).toHaveLength(1);
+      expect(sent).toEqual([{ event: "db/updated" }]);
       expect(handle.status()).toEqual({
         active: true,
         automaticEnabled: false,
@@ -336,17 +429,19 @@ describe("registerWalCheckpoint", () => {
     });
 
     it("reports when another database user prevents truncation", async () => {
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       checkpointBusy = true;
 
       await expect(handle.writeNow()).resolves.toBe("in-use");
       expect(manualCheckpoints()).toHaveLength(1);
+      // A partial truncation may still have moved frames, so signal anyway.
+      expect(sent).toEqual([{ event: "db/updated" }]);
       // Nothing was written and nothing failed, so no run is recorded.
       expect(handle.status().lastRun).toBeNull();
     });
 
     it("leaves an earlier failure standing when the database is busy", async () => {
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       checkpointFails = true;
       await handle.writeNow();
       expect(handle.status().lastRun).toEqual({
@@ -364,12 +459,13 @@ describe("registerWalCheckpoint", () => {
       });
     });
 
-    it("records and reports a failed manual write", async () => {
-      using handle = await registerWalCheckpoint();
+    it("records and reports a failed manual write without a signal", async () => {
+      using handle = await registerFreshness(send);
       checkpointFails = true;
 
       await expect(handle.writeNow()).resolves.toBe("failed");
 
+      expect(sent).toHaveLength(0);
       expect(handle.status()).toEqual({
         active: true,
         automaticEnabled: true,
@@ -385,16 +481,17 @@ describe("registerWalCheckpoint", () => {
 
     it("is unavailable when the database has no wal", async () => {
       stubZotero("delete");
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
 
       await expect(handle.writeNow()).resolves.toBe("unavailable");
       expect(manualCheckpoints()).toHaveLength(0);
+      expect(sent).toHaveLength(0);
     });
   });
 
   describe("onChange", () => {
     it("reports every checkpoint attempt, automatic and manual", async () => {
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       const listener = vi.fn();
       handle.onChange(listener);
 
@@ -411,7 +508,7 @@ describe("registerWalCheckpoint", () => {
     });
 
     it("stays quiet when the preference skips the checkpoint", async () => {
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       const listener = vi.fn();
       handle.onChange(listener);
       prefs.set(WAL_CHECKPOINT_PREF, false);
@@ -423,7 +520,7 @@ describe("registerWalCheckpoint", () => {
     });
 
     it("stops reporting once the subscription is torn down", async () => {
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       const listener = vi.fn();
       handle.onChange(listener)();
 
@@ -433,7 +530,7 @@ describe("registerWalCheckpoint", () => {
     });
 
     it("keeps a throwing listener out of the checkpoint outcome", async () => {
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       handle.onChange(() => {
         throw new Error("repaint failed");
       });
@@ -452,7 +549,7 @@ describe("registerWalCheckpoint", () => {
 
     it("never reports on a database with no wal", async () => {
       stubZotero("delete");
-      using handle = await registerWalCheckpoint();
+      using handle = await registerFreshness(send);
       const listener = vi.fn();
       const unsubscribe = handle.onChange(listener);
 
@@ -465,7 +562,7 @@ describe("registerWalCheckpoint", () => {
 
   it("stays armed after a failed checkpoint", async () => {
     vi.setSystemTime("2026-08-20T08:00:00Z");
-    using handle = await registerWalCheckpoint();
+    using handle = await registerFreshness(send);
     checkpointFails = true;
     emitNotifierEvent();
     await vi.advanceTimersByTimeAsync(500);
@@ -492,12 +589,13 @@ describe("registerWalCheckpoint", () => {
   });
 
   it("unregisters and drops pending work on dispose", async () => {
-    const handle = await registerWalCheckpoint();
+    const handle = await registerFreshness(send);
     emitNotifierEvent();
     handle[Symbol.dispose]();
     expect(unregistered).toEqual([OBSERVER_ID]);
     expect(applicationBlur.disposed).toBe(true);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(checkpoints()).toHaveLength(0);
+    expect(sent).toHaveLength(0);
   });
 });
