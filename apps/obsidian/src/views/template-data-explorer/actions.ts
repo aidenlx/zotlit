@@ -47,6 +47,7 @@ export interface ExplorerActions {
   onFilter(query: string): void;
   onRefresh(): void;
   addCopyKeyMenuItem(menu: Menu): boolean;
+  addExportMenuItem(menu: Menu): void;
 }
 
 export function createExplorerActions(deps: {
@@ -61,6 +62,8 @@ export function createExplorerActions(deps: {
   /** Whether Eta is permitted on this device; read live per menu-open so it tracks the JavaScript Templates gate. */
   isEtaEnabled(this: void): boolean;
   copyTarget(this: void): IndexedKeyCopyTarget | null;
+  canExport(this: void): boolean;
+  onExport(this: void): void;
 }): ExplorerActions {
   const copyToClipboard = (
     text: string,
@@ -162,6 +165,18 @@ export function createExplorerActions(deps: {
         section: "zotlit",
       });
     },
+    addExportMenuItem(menu) {
+      // The pane's other states already show their own call to action, so the
+      // entry stays absent rather than present-and-dead.
+      if (!deps.canExport()) return;
+      menu.addItem((item) => {
+        item
+          .setSection("zotlit")
+          .setTitle(m.template_data_explorer_menu_export_json())
+          .setIcon("file-json")
+          .onClick(() => deps.onExport());
+      });
+    },
   };
 }
 
@@ -174,6 +189,7 @@ const NOOP_ACTIONS: ExplorerActions = {
   onFilter: () => {},
   onRefresh: () => {},
   addCopyKeyMenuItem: () => false,
+  addExportMenuItem: () => {},
 };
 
 export const ExplorerActionsContext =

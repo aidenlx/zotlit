@@ -721,6 +721,8 @@
   "template_data_explorer_refresh_failed": "Failed to refresh database",
   "template_data_explorer_item_vanished": "Item no longer in library",
   "template_data_explorer_menu_explore": "Explore template data",
+  "template_data_explorer_menu_export_json": "Save template data as JSON",
+  "template_data_explorer_export_failed": "Failed to save template data",
   "welcome_view_name": "Welcome to ZotLit",
   "command_open_welcome_name": "Open welcome view",
   "welcome_badge": "Let's get started",

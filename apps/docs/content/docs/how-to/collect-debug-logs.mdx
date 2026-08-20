@@ -79,6 +79,53 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   you no longer need ongoing logging.
 </Callout>
 
+## Template data [#template-data]
+
+Collect this when a template rendered the wrong thing. The saved file holds the exact data your templates received for one item.
+
+<Steps>
+  <Step>
+    ### Open the explorer on the item
+
+    [Open the Template Data Explorer](/docs/how-to/explore-template-data) on the item that reproduces the problem.
+
+  </Step>
+  <Step>
+    ### Anchor at the annotation
+
+    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select **Explore as annotation template data**. For any other template, skip this step and stay at the note root.
+
+  </Step>
+  <Step>
+    ### Save the template data
+
+    Open the more-options menu on the explorer's tab and select **Save template data as JSON**. This downloads a file named like `zotlit-template-data-ABCD2345-20260512-143000.json`.
+
+    The file always holds the whole current root: the full note template data at the note root, or the annotation's data when the explorer is anchored at an annotation. A filter in the explorer does not narrow it.
+
+  </Step>
+  <Step>
+    ### Upload the file
+
+    Attach the saved file to your bug report.
+
+  </Step>
+</Steps>
+
+<Callout type="warn" title="Read the file before you share it">
+  The file contains Zotero library metadata for the item, absolute paths to
+  attachments inside your Zotero data folder, and your Zotero account username.
+  Review it before you attach it to a public bug report.
+</Callout>
+
+<Callout type="info" title="Placeholder markers are expected">
+  The explorer never writes files into your vault, so helpers that normally
+  create them, such as annotation excerpt images and imported child notes,
+  produce placeholder markers instead of real links. These appear as `$inert`
+  entries in the file, and helpers appear as `$helper` entries. Both are
+  expected in the saved data.
+</Callout>
+
 ## Zotero debug output
 
 <Steps>

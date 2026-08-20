@@ -683,6 +683,8 @@
   "template_data_explorer_refresh_failed": "刷新数据库失败",
   "template_data_explorer_item_vanished": "条目已不在文库中",
   "template_data_explorer_menu_explore": "探索模板数据",
+  "template_data_explorer_menu_export_json": "将模板数据保存为 JSON",
+  "template_data_explorer_export_failed": "保存模板数据失败",
   "welcome_view_name": "欢迎来到 ZotLit",
   "command_open_welcome_name": "打开欢迎视图",
   "welcome_badge": "让我们开始吧",

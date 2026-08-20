@@ -4,7 +4,7 @@ import { FileSystemAdapter } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
-import { saveFile } from "@/lib/file-save";
+import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -176,11 +176,4 @@ async function exportLogArchive(plugin: ZotLitPlugin): Promise<void> {
     logger.error("Failed to export log archive", { logPath, error });
     new BaseNotice(m.notice_export_log_file_failed());
   }
-}
-
-/** Compact timestamp suffix for download filenames, e.g. `20260512-143000`. */
-function exportTimestamp(): string {
-  const now = Temporal.Now.plainDateTimeISO();
-  const pad = (n: number): string => n.toString().padStart(2, "0");
-  return `${now.year}${pad(now.month)}${pad(now.day)}-${pad(now.hour)}${pad(now.minute)}${pad(now.second)}`;
 }

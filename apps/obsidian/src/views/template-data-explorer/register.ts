@@ -15,7 +15,7 @@ import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
 type ExplorerPlugin = Pick<
   Plugin,
-  "registerView" | "addCommand" | "registerEvent" | "app"
+  "registerView" | "addCommand" | "registerEvent" | "app" | "manifest"
 >;
 
 export interface ExplorerRegistrationDeps {
@@ -34,7 +34,11 @@ export function registerTemplateDataExplorer(
 ): void {
   plugin.registerView(
     EXPLORER_VIEW_TYPE,
-    (leaf) => new TemplateDataExplorerView(leaf, deps),
+    (leaf) =>
+      new TemplateDataExplorerView(leaf, {
+        ...deps,
+        pluginVersion: plugin.manifest.version,
+      }),
   );
 
   plugin.addCommand({
