@@ -8,17 +8,19 @@ updated: "2.0.0"
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-ZotLit reads your Zotero data through three channels: a direct database read, protocol links triggered by the companion, and an optional HTTP connection for live pushes. ZotLit supports one configuration: Zotero 9 or later with the ZotLit companion installed.
+ZotLit reads your Zotero data through three channels: a direct database read, companion protocol links, and an optional HTTP connection for live updates. ZotLit supports Zotero 9 or later with the ZotLit companion installed.
 
 ## Reading the Zotero database
 
 While Zotero is running, it holds the database file open exclusively. ZotLit uses a read mode to access it without interfering.
 
-The default **Auto** setting picks the best available mode. It attempts a **Reflink clone** on macOS and Linux, and uses it wherever the filesystem supports copy-on-write cloning: APFS on macOS, Btrfs or reflink-enabled XFS on Linux. Where cloning is unavailable — Windows, and Linux filesystems such as ext4 — Auto falls back to **Immutable source**. You can override this in Settings.
+The default **Auto** setting picks the best available mode. It attempts a **Reflink clone** on macOS and Linux. Auto uses the clone on APFS, Btrfs, and reflink-enabled XFS filesystems. On Windows and other filesystems, such as ext4, Auto falls back to **Immutable source**. You can override this in Settings.
 
 **Reflink clone** creates a fast, lightweight snapshot of the database. It sees recent edits, and it is what Auto uses on any macOS or Linux filesystem that supports cloning.
 
-**Immutable source** reads the database file directly without creating a copy. It is what Auto falls back to when cloning is unavailable. It reads only the main database file, so recent edits in Zotero (annotations you just made, notes you just typed) may not appear until Zotero folds them into that file. From Zotero 10 this gap is wider, because Zotero keeps recent writes in a separate write-ahead log until it checkpoints. Enabling [live updates](/docs/how-to/set-up-live-updates) lets the companion trigger a database refresh when Zotero saves changes, which reduces this delay.
+**Immutable source** reads the database file directly without creating a copy. It is what Auto uses when cloning is unavailable. This mode reads only the main database file. Recent edits may stay in Zotero's write-ahead log and remain hidden from ZotLit.
+
+The companion keeps the main database file current by copying recent writes into it. Its **Keep the database file up to date for Obsidian** setting is enabled by default. This database checkpoint works without [live updates](/docs/how-to/set-up-live-updates).
 
 **Full copy** works on any filesystem and sees recent edits. It copies the entire database each time, so it is slower and uses more disk space, especially with large Zotero libraries. Auto never selects this mode; choose it manually if other modes are unavailable.
 
@@ -32,7 +34,9 @@ For step-by-step instructions, see [Use ZotLit on multiple devices](/docs/how-to
 
 ## The companion
 
-The ZotLit companion is a Zotero add-on that adds context-menu actions inside Zotero (open a note in Obsidian, update notes, import notes) and optionally pushes live events to Obsidian. It requires Zotero 9 or later.
+The ZotLit companion is a Zotero add-on that adds context-menu actions inside Zotero. These actions open, update, and import notes. The companion can also push live events to Obsidian. It requires Zotero 9 or later.
+
+The companion keeps the main Zotero database file current for ZotLit. It copies recent changes from the write-ahead log into the main file after Zotero writes data. This behavior is enabled by default and works without a server.
 
 The companion does not run a background server. Its context-menu actions construct `obsidian://zotlit/...` protocol links and hand them to the operating system, which routes them to Obsidian. This works without any server or network listener enabled in Obsidian.
 
@@ -55,7 +59,9 @@ Protocol links work out of the box with no additional configuration beyond insta
 
 ### Live updates (server required)
 
-Live updates are a push channel: the companion sends HTTP notifications to Obsidian whenever items change, annotations are added, or you navigate in the Zotero PDF reader. This powers the annotation view's reader-following mode and automatic database refreshes.
+Live updates are a push channel. The companion sends HTTP notifications to Obsidian when items change, annotations are added, or you navigate in the Zotero PDF reader. These notifications power the annotation view's reader-following mode and tell ZotLit to refresh its database connection.
+
+Live updates do not write recent changes into the main Zotero database file. The companion's database checkpoint handles that work independently.
 
 Live updates require two things enabled:
 
@@ -72,7 +78,7 @@ Both sides carry a source identifier and a protocol version. The server discards
 
 ## How the pieces fit together
 
-The direct database read operates independently: it needs only the Zotero data directory and does not require Zotero to be running or the companion to be installed. Protocol links and live updates both depend on the companion. The full feature set requires all three channels working together: Zotero 9 or later with the ZotLit companion installed.
+The direct database read needs only the Zotero data directory. It does not require Zotero or the companion to be running. The companion keeps this data current for Immutable source reads. Protocol links and live updates also depend on the companion.
 
 ## See also
 

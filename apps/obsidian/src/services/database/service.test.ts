@@ -71,7 +71,7 @@ describe("read-source", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("leaves a deliberately configured immutable read unflagged", async () => {
+  it("warns when a deliberately configured immutable read skips a WAL", async () => {
     const source = join(dir, "zotero.sqlite");
     await writeFile(source, "main");
     await writeFile(`${source}-wal`, "wal");
@@ -79,7 +79,7 @@ describe("read-source", () => {
     await using prepared = await prepareRead("immutable", source);
 
     expect(prepared.effectiveMode).toBe("immutable");
-    expect(prepared.fallbackNotice).toBeUndefined();
+    expect(prepared.fallbackNotice).toBe("wal-not-replayed");
   });
 
   it("copies the main database and WAL into an owned temp dir", async () => {
@@ -198,6 +198,28 @@ describe("DatabaseService", () => {
 
     expect(client.$client.close).toHaveBeenCalledOnce();
     expect(read[Symbol.asyncDispose]).toHaveBeenCalledOnce();
+  });
+
+  it("emits each read fallback notice once per service lifecycle", async () => {
+    prepareMock
+      .mockResolvedValueOnce(
+        prepared("/zotero/zotero.sqlite", "immutable", "wal-not-replayed"),
+      )
+      .mockResolvedValueOnce(
+        prepared("/zotero/zotero.sqlite", "immutable", "wal-not-replayed"),
+      );
+    createClientMock
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient());
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    const notices: string[] = [];
+    service.on("read-fallback", (notice) => notices.push(notice));
+
+    await service.ready;
+    await service.refresh();
+
+    expect(notices).toEqual(["wal-not-replayed"]);
   });
 
   it("settles ready as degraded when startup open fails", async () => {

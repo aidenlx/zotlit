@@ -97,9 +97,8 @@ export function buildSqliteUri(
  * `auto` and `reflink` both attempt the native reflink clone and, on a clone
  * *capability* failure, both degrade to `immutable`. Each then reports the one
  * notice that explains its own outcome: `reflink` was an explicit request, so it
- * names the unsupported clone; `auto` chose the mode on the user's behalf, so it
- * names the freshness cost instead, which is how a Zotero 10 user learns to pick
- * `copy`. A configured `immutable` is a deliberate choice and stays silent.
+ * names the unsupported clone unless the resulting immutable read would skip a
+ * non-empty WAL. Detected stale data takes priority for every configured mode.
  * Neither falls back to full `copy` on its own — avoiding an automatic
  * full-database duplication is preferred over forcing WAL freshness on a volume
  * that cannot reflink.
@@ -111,7 +110,11 @@ export async function prepareRead(
   configuredMode: ConfiguredReadMode,
   sourcePath: string,
 ): Promise<PreparedRead> {
-  if (configuredMode === "immutable") return immutableRead(sourcePath);
+  if (configuredMode === "immutable") {
+    const read = immutableRead(sourcePath);
+    const fallbackNotice = await staleWalNotice(sourcePath);
+    return fallbackNotice ? { ...read, fallbackNotice } : read;
+  }
   if (configuredMode === "copy") return prepareTempRead("copy", sourcePath);
 
   try {
@@ -119,10 +122,11 @@ export async function prepareRead(
   } catch (error) {
     if (!(error instanceof ReflinkUnsupportedError)) throw error;
     const read = immutableRead(sourcePath);
+    const fallbackNotice = await staleWalNotice(sourcePath);
+    if (fallbackNotice) return { ...read, fallbackNotice };
     if (configuredMode === "reflink")
       return { ...read, fallbackNotice: "reflink-unsupported" };
-    const fallbackNotice = await staleWalNotice(sourcePath);
-    return fallbackNotice ? { ...read, fallbackNotice } : read;
+    return read;
   }
 }
 

@@ -7,47 +7,71 @@ updated: "2.0.0"
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Command } from "@/components/command";
 
-Use this guide when you edit something in Zotero but ZotLit still shows the old data.
+Use this guide when Zotero changes do not appear after you update a literature note in Obsidian.
 
-## Refresh the database manually
+## Restore current Zotero data
 
-Open the command palette and run <Command inline>Refresh Zotero database</Command>. This forces ZotLit to re-read the database file on disk.
+<Steps>
+  <Step>
+    ### Install or update the companion
 
-If the data updates after a manual refresh, the issue is a stale read. The fixes below prevent it from recurring.
+    [Install the latest ZotLit companion](/docs/install-companion), or update your existing installation in Zotero.
 
-## Set up live updates
+    The companion keeps Zotero's main database file current so ZotLit can read recent changes.
 
-If you find yourself refreshing manually after every edit, enable live updates. The Zotero companion triggers an automatic database refresh each time Zotero saves changes, so ZotLit stays current without intervention.
+  </Step>
+  <Step>
+    ### Confirm the database setting
 
-See [Set up live updates](/docs/how-to/set-up-live-updates).
+    In Zotero, open **Edit > Settings** on Windows or Linux. On macOS, open **Zotero > Settings**. Select the **ZotLit** pane.
 
-## Check your read mode [#read-mode]
+    Under **Database**, enable **Keep the database file up to date for Obsidian**. New companion installations enable this setting by default.
 
-Open **Settings > ZotLit > Zotero database** and check the **Read mode** setting.
+  </Step>
+  <Step>
+    ### Check the literature note
 
-**Auto** falls back to Immutable source wherever the filesystem cannot make a reflink clone — always on Windows, and on Linux filesystems such as ext4. Immutable source reads only the main database file, so recent edits (annotations you just made, notes you just typed) may not be visible yet. From Zotero 10 this affects more edits, because Zotero holds recent writes in a separate write-ahead log until it checkpoints.
+    Make a small edit to an item in Zotero, then switch to Obsidian. Run <Command inline>ZotLit: Update literature note</Command> for that item.
 
-<Callout type="warn" title="Full copy is expensive">
-  Switching to **Full copy** captures the most recent state, but it copies the
-  entire database on every refresh. With large Zotero libraries this is
-  noticeably slower and uses more disk space. Try live updates first.
-</Callout>
+    The updated value should now appear in the literature note.
 
-For background on how each read mode works, see [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero#reading-the-zotero-database).
+  </Step>
+  <Step>
+    ### Refresh the database manually
 
-## If the problem persists
+    If the note still shows old data, run <Command inline>ZotLit: Refresh Zotero database</Command>. Then update the literature note again.
 
-If none of the above resolves it, [collect debug logs](/docs/how-to/collect-debug-logs) and [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, OS, and the steps that trigger the stale read.
+  </Step>
+  <Step>
+    ### Use Full copy as a last resort [#read-mode]
+
+    If the problem continues, open **Settings > ZotLit > Zotero database**. Set **Read mode** to **Full copy**, refresh the database, and update the literature note again.
+
+    <Callout type="warn" title="Full copy is expensive">
+      **Full copy** captures the current database state, but it copies the
+      entire database on every refresh. Large Zotero libraries take longer to
+      refresh and use more disk space.
+    </Callout>
+
+  </Step>
+  <Step>
+    ### Report a remaining problem
+
+    If Full copy also fails, [collect debug logs](/docs/how-to/collect-debug-logs). Then [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, operating system, and reproduction steps.
+
+  </Step>
+</Steps>
 
 ## See also
 
 <Cards>
   <Card
-    title="Set up live updates"
-    description="Push changes from Zotero to Obsidian automatically."
-    href="/docs/how-to/set-up-live-updates"
+    title="Install the companion"
+    description="Install or update the ZotLit companion in Zotero."
+    href="/docs/install-companion"
   />
   <Card
     title="How ZotLit connects to Zotero"
