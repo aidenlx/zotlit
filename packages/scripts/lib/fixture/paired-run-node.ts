@@ -1,4 +1,5 @@
 import type { FixtureLayout } from "#fixture";
+import getPort from "get-port";
 import { spawn } from "node:child_process";
 import type { ChildProcessByStdio } from "node:child_process";
 import { access } from "node:fs/promises";
@@ -12,6 +13,7 @@ import type {
 } from "./paired-run.ts";
 
 import { getDevVaultDir } from "#dev-vault";
+import { LIVE_UPDATE_HOSTNAME } from "#fixture";
 import { getZoteroBinary, resolveZoteroApp } from "#paired-zotero";
 
 type ManagedProcess = ChildProcessByStdio<null, Readable, Readable>;
@@ -85,13 +87,18 @@ export function createNodePairedRunPorts({
       }
     },
 
-    async prepareDevelopmentVault({ scopeCase, purge }) {
+    allocateLiveUpdatePort() {
+      return allocateLiveUpdatePort();
+    },
+
+    async prepareDevelopmentVault({ scopeCase, purge, liveUpdatePort }) {
       const result = await runCaptured(
         process.execPath,
         [
           vaultScript,
           "open",
           `--scope-case=${scopeCase}`,
+          `--live-update-port=${liveUpdatePort}`,
           ...(purge ? ["--purge"] : []),
         ],
         { cwd: workspaceRoot, forwardStderr: true },
@@ -125,6 +132,15 @@ export function createNodePairedRunPorts({
       printReady(result);
     },
   };
+}
+
+/**
+ * A free port on the loopback host ZotLit's server binds. The result stays free
+ * only until something claims it, so the Paired Run passes it straight to the
+ * seed and lets the Development Vault bind it.
+ */
+function allocateLiveUpdatePort(): Promise<number> {
+  return getPort({ host: LIVE_UPDATE_HOSTNAME });
 }
 
 async function findWindowsFixtureZoteroProcesses(
@@ -320,12 +336,18 @@ export function findPairedZoteroProcesses(output: string): string[] {
   return processes;
 }
 
-function printReady({ mode, vault, zotero }: PairedRunReady): void {
+function printReady({
+  mode,
+  vault,
+  zotero,
+  liveUpdatePort,
+}: PairedRunReady): void {
   console.log(`Paired Run ready (${mode})`);
   console.log(`Development Vault  ${vault.path} (${vault.id})`);
   console.log(
     `Paired Zotero      ${zotero.applicationDir} (pid ${zotero.pid})`,
   );
+  console.log(`Live Updates port  ${liveUpdatePort}`);
   if (mode === "dev") console.log("Press Ctrl-C to stop the live Paired Run.");
 }
 

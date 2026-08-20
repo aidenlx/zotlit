@@ -36,6 +36,7 @@
     "@zotlit/config": "workspace:*",
     "@zotlit/db": "workspace:*",
     "arkregex": "catalog:",
+    "get-port": "^7.2.0",
     "semver": "^7.8.0",
     "typescript": "catalog:",
     "valibot": "catalog:",

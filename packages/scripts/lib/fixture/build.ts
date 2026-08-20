@@ -82,7 +82,17 @@ export interface BuildOptions {
    * nor enabled, so it opens but verifies no tracer.
    */
   pluginBundleDir?: string;
+  /**
+   * TCP port for this build's Live Updates channel, on
+   * {@link LIVE_UPDATE_HOSTNAME}. The vault binds it and the profile points the
+   * Companion at it, so the two sides always agree. Absent, both keep their
+   * shipped defaults, which the first ZotLit vault on the machine holds.
+   */
+  liveUpdatePort?: number;
 }
+
+/** Loopback host the vault's `server.hostname` default binds. */
+export const LIVE_UPDATE_HOSTNAME = "127.0.0.1";
 
 /**
  * Write the throwaway Zotero data directory, the profile that points at it,
@@ -104,7 +114,7 @@ export async function buildFixture(
   await mkdir(layout.profileDir, { recursive: true });
   await writeDatabase(layout, items);
   await writeAttachmentFiles(layout);
-  await writePrefs(layout);
+  await writePrefs(layout, options);
   await writeVault(layout, options);
 }
 
@@ -564,13 +574,22 @@ function seedItemData(
  * A Zotero profile whose prefs point at the Fixture's data directory, so one
  * profile-directory override in ZotLit switches the whole install over. The
  * same profile carries {@link QUIET_FIRST_RUN_PREFS}, because a Paired Zotero
- * launches on it.
+ * launches on it. With a {@link BuildOptions.liveUpdatePort}, it also carries
+ * the Companion's notify URL for that port.
  */
-function writePrefs(layout: FixtureLayout): Promise<void> {
+function writePrefs(
+  layout: FixtureLayout,
+  options: BuildOptions,
+): Promise<void> {
   const lines = [
     'user_pref("extensions.zotero.useDataDir", true);',
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
+    ...(options.liveUpdatePort === undefined
+      ? []
+      : [
+          `user_pref("extensions.zotlit.notify-url", "http://${LIVE_UPDATE_HOSTNAME}:${options.liveUpdatePort}");`,
+        ]),
     "",
   ];
   return writeFile(join(layout.profileDir, "prefs.js"), lines.join("\n"));
@@ -618,13 +637,6 @@ async function writeVault(
   const scope: PersistedLibraryScope = findScopeCase(
     options.scopeCase ?? DEFAULT_SCOPE_CASE,
   ).scope;
-  await writeJson(layout.pluginDataPath, {
-    __VERSION__: SETTINGS_VERSION,
-    "note.literature-folder": "literatures",
-    "note.import-folder": "zotero_notes",
-    "server.enabled": true,
-    [LIBRARY_SCOPE_SETTING_KEY]: scope,
-  });
 
   // Literature Notes for the My Library items give an update batch existing
   // notes to act on and leave every other Fixture item as create work.
@@ -657,6 +669,20 @@ async function writeVault(
   if (options.pluginBundleDir) {
     await cp(options.pluginBundleDir, layout.pluginDir, { recursive: true });
   }
+
+  // After the bundle copy: a Paired Run passes a Development Vault's plugin
+  // folder as the bundle, and that folder carries the settings ZotLit last
+  // saved there. The generated settings are the ones this build promises.
+  await writeJson(layout.pluginDataPath, {
+    __VERSION__: SETTINGS_VERSION,
+    "note.literature-folder": "literatures",
+    "note.import-folder": "zotero_notes",
+    "server.enabled": true,
+    ...(options.liveUpdatePort === undefined
+      ? {}
+      : { "server.port": options.liveUpdatePort }),
+    [LIBRARY_SCOPE_SETTING_KEY]: scope,
+  });
 }
 
 function literatureNote(item: FixtureItem, layout: FixtureLayout): string {

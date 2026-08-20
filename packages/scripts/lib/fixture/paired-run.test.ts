@@ -12,6 +12,7 @@ function testPorts(overrides: Partial<PairedRunPorts> = {}): PairedRunPorts {
   return {
     assertObsidianHost: async () => {},
     assertFixtureIdle: async () => {},
+    allocateLiveUpdatePort: async () => 51_234,
     prepareDevelopmentVault: async () => ({
       id: "fixture-vault-test-fixture",
       path: "/workspace/tests/fixture-vault-test-fixture",
@@ -82,7 +83,11 @@ describe("Paired Run", () => {
     let ready: PairedRunReady | undefined;
     const ports = testPorts({
       prepareDevelopmentVault: async (options) => {
-        expect(options).toEqual({ scopeCase: "partial", purge: true });
+        expect(options).toEqual({
+          scopeCase: "partial",
+          purge: true,
+          liveUpdatePort: 51_234,
+        });
         prepared = true;
         return {
           id: "fixture-vault-test-fixture",
@@ -110,7 +115,36 @@ describe("Paired Run", () => {
         path: "/workspace/tests/fixture-vault-test-fixture",
       },
       zotero: { applicationDir: "/Applications/Zotero.app", pid: 804 },
+      liveUpdatePort: 51_234,
     });
+  });
+
+  it("gives every Paired Run a port of its own", async () => {
+    const allocated: number[] = [];
+    const seeded: number[] = [];
+    let next = 51_234;
+    const ports = testPorts({
+      allocateLiveUpdatePort: async () => {
+        next += 1;
+        allocated.push(next);
+        return next;
+      },
+      prepareDevelopmentVault: async ({ liveUpdatePort }) => {
+        seeded.push(liveUpdatePort);
+        return {
+          id: "fixture-vault-test-fixture",
+          path: "/workspace/tests/fixture-vault-test-fixture",
+        };
+      },
+    });
+    const run = () =>
+      runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports);
+
+    await run();
+    await run();
+
+    expect(allocated).toEqual([51_235, 51_236]);
+    expect(seeded).toEqual(allocated);
   });
 
   it("reports a live Paired Run only after the supervised session is ready", async () => {

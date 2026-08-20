@@ -97,6 +97,8 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 
    This command keeps the Obsidian and Zotero watchers running after readiness. Press `Ctrl-C` to stop both watchers and Paired Zotero. The Development Vault stays open in Obsidian. If a watcher or Paired Zotero stops unexpectedly, the command stops the remaining processes and exits with an error.
 
+Each Paired Run takes one free TCP port for Live Updates. It writes that port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. The ready report names the port. A Development Vault therefore serves Live Updates while other ZotLit vaults hold the default port `9091`.
+
 The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed.
 
 Both commands check for an existing Paired Zotero before they rebuild the Fixture. Close that instance if the command refuses to start. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).

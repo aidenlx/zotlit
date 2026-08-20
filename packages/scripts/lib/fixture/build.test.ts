@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
@@ -975,6 +983,72 @@ describe("the generated Obsidian vault", () => {
     const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
 
     expect(prefs).toContain('user_pref("extensions.autoDisableScopes", 0);');
+  });
+
+  it("keeps both Live Updates defaults without a port", async () => {
+    const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
+    const data = JSON.parse(
+      await readFile(layout.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(prefs).not.toContain("extensions.zotlit.notify-url");
+    expect(data).not.toHaveProperty("server.port");
+  });
+
+  it("points the vault and the Companion at one given Live Updates port", async () => {
+    const portedLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-test-port-")),
+    );
+    fixture.defer(() =>
+      rm(portedLayout.root, { recursive: true, force: true }),
+    );
+    await buildFixture(portedLayout, { liveUpdatePort: 54_321 });
+
+    const prefs = await readFile(
+      join(portedLayout.profileDir, "prefs.js"),
+      "utf-8",
+    );
+    const data = JSON.parse(
+      await readFile(portedLayout.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data["server.port"]).toBe(54_321);
+    expect(data["server.enabled"]).toBe(true);
+    expect(prefs).toContain(
+      'user_pref("extensions.zotlit.notify-url", "http://127.0.0.1:54321");',
+    );
+  });
+
+  it("keeps the generated settings over a bundle folder's own data.json", async () => {
+    // A Paired Run passes the Development Vault's plugin folder as the bundle,
+    // and ZotLit saves its settings there while the vault runs.
+    const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
+    fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
+    await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
+    await writeFile(
+      join(bundleDir, "data.json"),
+      JSON.stringify({ __VERSION__: 9, "server.port": 9091, stale: true }),
+    );
+    const bundledLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-test-bundle-")),
+    );
+    fixture.defer(() =>
+      rm(bundledLayout.root, { recursive: true, force: true }),
+    );
+
+    await buildFixture(bundledLayout, {
+      pluginBundleDir: bundleDir,
+      liveUpdatePort: 54_322,
+    });
+
+    const data = JSON.parse(
+      await readFile(bundledLayout.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+    expect(data["server.port"]).toBe(54_322);
+    expect(data).not.toHaveProperty("stale");
+    await expect(
+      readFile(join(bundledLayout.pluginDir, "main.js"), "utf-8"),
+    ).resolves.toBe("// stale bundle\n");
   });
 
   it("saves a Library Scope the plugin can load", async () => {

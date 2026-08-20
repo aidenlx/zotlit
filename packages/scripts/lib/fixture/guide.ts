@@ -174,7 +174,13 @@ Paired Zotero and leaves the Development Vault window open:
   pnpm fixture dev
 
 The host-vault check must succeed before either command starts.
-Close an existing Paired Zotero before either command rebuilds the Fixture.`;
+Close an existing Paired Zotero before either command rebuilds the Fixture.
+
+Each Paired Run takes a free TCP port and writes it into both sides of the
+Live Updates channel: server.port in the Development Vault settings, and
+extensions.zotlit.notify-url in the Fixture profile. The ready report names the
+port. This keeps the run clear of the default port, which belongs to whichever
+ZotLit vault claimed it first.`;
 
 const CANCEL_TESTING_SECTION = `CANCEL TESTING
 

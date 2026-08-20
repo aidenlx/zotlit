@@ -201,11 +201,20 @@ async function resolveRemovalHost(exclude?: string): Promise<string> {
 interface SeedOptions {
   purge?: boolean;
   scopeCase?: string;
+  /**
+   * Live Updates port the generated seed binds, in the vault settings and in
+   * the Companion's notify URL alike. Absent, both keep their shipped defaults.
+   */
+  liveUpdatePort?: number;
 }
 
 async function create(
   vaultPath: string,
-  { purge = false, scopeCase = DEFAULT_SCOPE_CASE }: SeedOptions = {},
+  {
+    purge = false,
+    scopeCase = DEFAULT_SCOPE_CASE,
+    liveUpdatePort,
+  }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
   const host = await resolveHost();
@@ -226,7 +235,7 @@ async function create(
     );
   }
 
-  await rebuildFixtureVault(abs, scopeCase);
+  await rebuildFixtureVault(abs, scopeCase, liveUpdatePort);
   if (purge) {
     const exists = await access(abs).then(
       () => true,
@@ -360,7 +369,11 @@ async function suspendLoadedPlugin(abs: string): Promise<AsyncDisposableStack> {
  */
 async function sync(
   vaultPath: string,
-  { purge = false, scopeCase = DEFAULT_SCOPE_CASE }: SeedOptions = {},
+  {
+    purge = false,
+    scopeCase = DEFAULT_SCOPE_CASE,
+    liveUpdatePort,
+  }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
   await resolveHost();
@@ -372,7 +385,7 @@ async function sync(
   {
     await using _pluginSuspension = await suspendLoadedPlugin(abs);
     // Build before a purge so the generated seed captures the current dev bundle.
-    await rebuildFixtureVault(abs, scopeCase);
+    await rebuildFixtureVault(abs, scopeCase, liveUpdatePort);
 
     // `--purge` deletes the folder first, so renamed or removed Fixture files
     // drop out too, not just the ones the Fixture Vault still has.
@@ -392,6 +405,7 @@ async function sync(
 async function rebuildFixtureVault(
   target: string,
   scopeCase = DEFAULT_SCOPE_CASE,
+  liveUpdatePort?: number,
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
 
@@ -407,6 +421,7 @@ async function rebuildFixtureVault(
   );
   await buildFixture(fixtureLayout, {
     scopeCase,
+    liveUpdatePort,
     pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
   });
 }
@@ -414,18 +429,22 @@ async function rebuildFixtureVault(
 /** Rebuild, synchronize, and ensure the Development Vault window is open. */
 async function open(
   vaultPath: string,
-  { purge = false, scopeCase = DEFAULT_SCOPE_CASE }: SeedOptions = {},
+  {
+    purge = false,
+    scopeCase = DEFAULT_SCOPE_CASE,
+    liveUpdatePort,
+  }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
   const host = await resolveHost();
   const registered = findVaultId(await vaultList(host), abs);
 
   if (!registered) {
-    await create(abs, { purge, scopeCase });
+    await create(abs, { purge, scopeCase, liveUpdatePort });
     return;
   }
 
-  await sync(abs, { purge, scopeCase });
+  await sync(abs, { purge, scopeCase, liveUpdatePort });
   if ((await vaultList(host))[registered]?.open !== true) {
     const opened = await obEval(
       `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
@@ -688,6 +707,12 @@ const removePurgeOption = {
   default: false,
 } as const;
 
+const liveUpdatePortOption = {
+  describe:
+    "TCP port for the generated seed's Live Updates channel, shared by the vault and the Companion",
+  type: "number",
+} as const;
+
 const scopeCaseOption = {
   describe: "Scope Case to build",
   type: "string",
@@ -730,11 +755,13 @@ const vaultCli = yargs(hideBin(process.argv))
       y
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
-        .option("scope-case", scopeCaseOption),
+        .option("scope-case", scopeCaseOption)
+        .option("live-update-port", liveUpdatePortOption),
     async (argv) => {
       await open(argv["vault-path"] ?? defaultVault, {
         purge: argv.purge,
         scopeCase: argv["scope-case"],
+        liveUpdatePort: argv["live-update-port"],
       });
     },
   )
@@ -752,9 +779,13 @@ const vaultCli = yargs(hideBin(process.argv))
     (y) =>
       y
         .positional("vault-path", vaultPathPosition)
-        .option("purge", syncPurgeOption),
+        .option("purge", syncPurgeOption)
+        .option("live-update-port", liveUpdatePortOption),
     async (argv) => {
-      await sync(argv["vault-path"] ?? defaultVault, { purge: argv.purge });
+      await sync(argv["vault-path"] ?? defaultVault, {
+        purge: argv.purge,
+        liveUpdatePort: argv["live-update-port"],
+      });
     },
   )
   .command(
