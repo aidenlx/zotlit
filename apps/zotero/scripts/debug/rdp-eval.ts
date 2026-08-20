@@ -8,12 +8,14 @@
 // `Zotero`, `Services`, etc. are in scope. Return a JSON-serializable value
 // (wrap multi-statement logic in an IIFE) to read it back here.
 
+import { randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
 import type { Socket } from "node:net";
+import { pathToFileURL } from "node:url";
 
 const BYTE_COLON = 0x3a;
 
-interface Packet {
+export interface Packet {
   from?: string;
   type?: string;
   [key: string]: unknown;
@@ -114,34 +116,53 @@ function evalJS(rdp: Rdp, consoleActor: string, text: string): Promise<Packet> {
 const sleep = (ms: number): Promise<void> =>
   new Promise((r) => setTimeout(r, ms));
 
+type Evaluate = (text: string) => Promise<Packet>;
+
+interface AsyncEvalOptions {
+  pause?: (ms: number) => Promise<void>;
+  pollAttempts?: number;
+  pollMs?: number;
+  resultTtlMs?: number;
+}
+
 /**
  * Evaluate an `async` expression. The webconsole actor here won't transform
  * top-level `await`, so the body is run inside an async function that stashes
  * its JSON result on a global; we then poll that global synchronously.
  */
-async function evalAsync(
-  rdp: Rdp,
-  consoleActor: string,
+export async function evalAsync(
+  evaluate: Evaluate,
   body: string,
+  options: AsyncEvalOptions = {},
 ): Promise<Packet> {
-  const slot = "__zlEvalResult";
-  await evalJS(
-    rdp,
-    consoleActor,
-    `globalThis.${slot} = undefined;
+  const pause = options.pause ?? sleep;
+  const pollAttempts = options.pollAttempts ?? 100;
+  const pollMs = options.pollMs ?? 100;
+  const resultTtlMs = options.resultTtlMs ?? 60_000;
+  const resultKey = `__zlEvalResult_${randomUUID()}`;
+  const resultRef = `globalThis[${JSON.stringify(resultKey)}]`;
+  const started = await evaluate(
+    `${resultRef} = undefined;
      (async () => {
-       try { globalThis.${slot} = JSON.stringify(await (async () => (${body}))()); }
-       catch (e) { globalThis.${slot} = "ERR:" + (e && e.stack || e); }
+       try { ${resultRef} = JSON.stringify(await (async () => (${body}))()); }
+       catch (e) { ${resultRef} = "ERR:" + (e && e.stack || e); }
+       finally { setTimeout(() => { delete ${resultRef}; }, ${resultTtlMs}); }
      })();
      "started"`,
   );
-  for (let i = 0; i < 100; i++) {
-    await sleep(100);
-    const res = await evalJS(rdp, consoleActor, `globalThis.${slot}`);
-    const value = res.result as unknown;
-    if (typeof value === "string") return { ...res, result: value };
+  if (started.exception || started.exceptionMessage) return started;
+
+  try {
+    for (let i = 0; i < pollAttempts; i++) {
+      await pause(pollMs);
+      const res = await evaluate(resultRef);
+      const value = res.result as unknown;
+      if (typeof value === "string") return { ...res, result: value };
+    }
+    throw new Error("async eval timed out");
+  } finally {
+    await evaluate(`delete ${resultRef}`).catch(() => undefined);
   }
-  throw new Error("async eval timed out");
 }
 
 async function main(): Promise<void> {
@@ -159,7 +180,10 @@ async function main(): Promise<void> {
   try {
     const consoleActor = await getParentConsoleActor(rdp);
     const res = isAsync
-      ? await evalAsync(rdp, consoleActor, expr.slice("await ".length))
+      ? await evalAsync(
+          (text) => evalJS(rdp, consoleActor, text),
+          expr.slice("await ".length),
+        )
       : await evalJS(rdp, consoleActor, expr);
     if (res.exception || res.exceptionMessage) {
       console.error(
@@ -177,7 +201,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+const entrypoint = process.argv[1];
+if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
+  main().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
