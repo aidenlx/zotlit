@@ -341,6 +341,27 @@ describe("registerWalCheckpoint", () => {
 
       await expect(handle.writeNow()).resolves.toBe("in-use");
       expect(manualCheckpoints()).toHaveLength(1);
+      // Nothing was written and nothing failed, so no run is recorded.
+      expect(handle.status().lastRun).toBeNull();
+    });
+
+    it("leaves an earlier failure standing when the database is busy", async () => {
+      using handle = await registerWalCheckpoint();
+      checkpointFails = true;
+      await handle.writeNow();
+      expect(handle.status().lastRun).toEqual({
+        at: expect.any(Date),
+        result: "failed",
+      });
+
+      checkpointFails = false;
+      checkpointBusy = true;
+      await expect(handle.writeNow()).resolves.toBe("in-use");
+
+      expect(handle.status().lastRun).toEqual({
+        at: expect.any(Date),
+        result: "failed",
+      });
     });
 
     it("records and reports a failed manual write", async () => {
@@ -368,6 +389,77 @@ describe("registerWalCheckpoint", () => {
 
       await expect(handle.writeNow()).resolves.toBe("unavailable");
       expect(manualCheckpoints()).toHaveLength(0);
+    });
+  });
+
+  describe("onChange", () => {
+    it("reports every checkpoint attempt, automatic and manual", async () => {
+      using handle = await registerWalCheckpoint();
+      const listener = vi.fn();
+      handle.onChange(listener);
+
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      await handle.writeNow();
+      expect(listener).toHaveBeenCalledTimes(2);
+
+      checkpointFails = true;
+      await handle.writeNow();
+      expect(listener).toHaveBeenCalledTimes(3);
+    });
+
+    it("stays quiet when the preference skips the checkpoint", async () => {
+      using handle = await registerWalCheckpoint();
+      const listener = vi.fn();
+      handle.onChange(listener);
+      prefs.set(WAL_CHECKPOINT_PREF, false);
+
+      emitNotifierEvent();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("stops reporting once the subscription is torn down", async () => {
+      using handle = await registerWalCheckpoint();
+      const listener = vi.fn();
+      handle.onChange(listener)();
+
+      await handle.writeNow();
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("keeps a throwing listener out of the checkpoint outcome", async () => {
+      using handle = await registerWalCheckpoint();
+      handle.onChange(() => {
+        throw new Error("repaint failed");
+      });
+
+      await expect(handle.writeNow()).resolves.toBe("done");
+      expect(handle.status().lastRun).toEqual({
+        at: expect.any(Date),
+        result: "done",
+      });
+      expect(recordsAt("warning")).toContainEqual(
+        expect.objectContaining({
+          message: ["wal checkpoint status listener failed"],
+        }),
+      );
+    });
+
+    it("never reports on a database with no wal", async () => {
+      stubZotero("delete");
+      using handle = await registerWalCheckpoint();
+      const listener = vi.fn();
+      const unsubscribe = handle.onChange(listener);
+
+      await handle.writeNow();
+
+      expect(listener).not.toHaveBeenCalled();
+      expect(() => unsubscribe()).not.toThrow();
     });
   });
 

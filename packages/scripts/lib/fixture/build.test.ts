@@ -992,6 +992,7 @@ describe("the generated Obsidian vault", () => {
     ) as Record<string, unknown>;
 
     expect(prefs).not.toContain("extensions.zotlit.notify-url");
+    expect(prefs).not.toContain('extensions.zotlit.notify"');
     expect(data).not.toHaveProperty("server.port");
   });
 
@@ -1014,6 +1015,7 @@ describe("the generated Obsidian vault", () => {
 
     expect(data["server.port"]).toBe(54_321);
     expect(data["server.enabled"]).toBe(true);
+    expect(prefs).toContain('user_pref("extensions.zotlit.notify", true);');
     expect(prefs).toContain(
       'user_pref("extensions.zotlit.notify-url", "http://127.0.0.1:54321");',
     );

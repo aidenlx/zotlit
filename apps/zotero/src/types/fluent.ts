@@ -19,6 +19,8 @@ export type FluentMessageId =
   | "zotlit-database-status-automatic-off"
   | "zotlit-database-status-failed"
   | "zotlit-database-status-guide"
+  | "zotlit-database-status-icon-failed"
+  | "zotlit-database-status-icon-off"
   | "zotlit-database-status-last-attempt"
   | "zotlit-database-status-last-written"
   | "zotlit-database-status-never-written"

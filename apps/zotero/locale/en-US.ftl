@@ -111,6 +111,10 @@ zotlit-note-status-refresh-failed-message = Make sure Obsidian is running with t
 
 zotlit-database-status =
     .tooltiptext = Database Status
+zotlit-database-status-icon-off =
+    .tooltiptext = Database Status — automatic writes off
+zotlit-database-status-icon-failed =
+    .tooltiptext = Database Status — last write failed
 zotlit-database-status-working = Changes are being written to the database file for Obsidian.
 zotlit-database-status-automatic-off = Automatic writes to the database file are off. You can still write changes manually.
 zotlit-database-status-no-wal = This database does not use a write-ahead log. Changes are already in the database file.

@@ -3,10 +3,18 @@
 import { getLogger } from "@logtape/logtape";
 
 import { requireMessage } from "@/lib/l10n";
+import { notifyEnabled } from "@/notify/shared";
 import type { WalCheckpoint } from "@/notify/wal-checkpoint";
+import { prefs } from "@/prefs";
+import type { FluentMessageId } from "@/types/fluent";
 
 import databaseIcon from "./database.svg?inline";
-import { databaseStatusMenuModel, manualOutcomeMessages } from "./model";
+import {
+  databaseIconState,
+  databaseStatusMenuModel,
+  manualOutcomeMessages,
+} from "./model";
+import type { DatabaseIconState } from "./model";
 
 const logger = getLogger(["zotlit", "zotero", "database-status"]);
 
@@ -15,6 +23,28 @@ const SIDENAV_ID = "zotero-view-item-sidenav";
 const GUIDE_URL = "https://zotlit.aidenlx.site/docs/how-to/fix-stale-data";
 const DEBUG_LOGS_URL =
   "https://zotlit.aidenlx.site/docs/how-to/collect-debug-logs";
+
+/**
+ * How each state appears. The tooltip carries the state too, so the tint is
+ * never the only channel. Zotero defines both accent tokens per color scheme,
+ * so neither needs light/dark handling here; an empty `stroke` drops the
+ * inline declaration and lets Zotero's own `--fill-secondary` show through
+ * (its `.btn[custom]` rule sets `fill` and `stroke` from that one token).
+ */
+const ICON_APPEARANCE = {
+  neutral: { stroke: "", tooltip: "zotlit-database-status" },
+  off: {
+    stroke: "var(--accent-gold)",
+    tooltip: "zotlit-database-status-icon-off",
+  },
+  failed: {
+    stroke: "var(--accent-red)",
+    tooltip: "zotlit-database-status-icon-failed",
+  },
+} as const satisfies Record<
+  DatabaseIconState,
+  { stroke: string; tooltip: FluentMessageId }
+>;
 
 export interface DatabaseStatus extends Disposable {
   attachWindow(window: Window): void;
@@ -93,6 +123,35 @@ async function buildMenu(
   );
 }
 
+function paintIcon(button: Element, state: DatabaseIconState): void {
+  const { stroke, tooltip } = ICON_APPEARANCE[state];
+  (button as HTMLElement).style.setProperty("stroke", stroke);
+  button.setAttribute("data-l10n-id", tooltip);
+}
+
+function paintControl(checkpoint: WalCheckpoint, window: Window): void {
+  const document = window.document;
+  const wrapper = document.getElementById(CONTROL_ID);
+  const button = wrapper?.firstElementChild;
+  if (!wrapper || !button) return;
+  // Show the control only while the companion talks to Obsidian. This reads
+  // the `notify` master switch rather than `wal-checkpoint`: **Write Changes
+  // to Database File Now** lives only in this menu, so hiding on
+  // `wal-checkpoint` would take the manual recovery action away in exactly the
+  // case that needs it. With `notify` off the companion sends Obsidian nothing
+  // at all, and database freshness stops meaning anything to the user.
+  const hidden = !notifyEnabled();
+  wrapper.toggleAttribute("hidden", hidden);
+  const state = databaseIconState(checkpoint.status());
+  paintIcon(button, state);
+  void document.l10n?.translateFragment(wrapper);
+  logger.trace("painted database status control", {
+    state,
+    hidden,
+    href: window.location.href,
+  });
+}
+
 function injectControl(checkpoint: WalCheckpoint, window: Window): void {
   const document = window.document;
   if (document.getElementById(CONTROL_ID)) return;
@@ -116,7 +175,6 @@ function injectControl(checkpoint: WalCheckpoint, window: Window): void {
   button.setAttribute("data-action", CONTROL_ID);
   button.setAttribute("tabindex", "0");
   button.setAttribute("custom", "true");
-  button.setAttribute("data-l10n-id", "zotlit-database-status");
   button.setAttribute(
     "style",
     `--custom-sidenav-icon-light: url("${databaseIcon}"); --custom-sidenav-icon-dark: url("${databaseIcon}");`,
@@ -125,7 +183,7 @@ function injectControl(checkpoint: WalCheckpoint, window: Window): void {
   button.append(popup);
   wrapper.append(button);
   sidenav.insertBefore(wrapper, popupset);
-  void document.l10n?.translateFragment(wrapper);
+  paintControl(checkpoint, window);
 
   button.addEventListener("mousedown", async (event) => {
     const mouseEvent = event as MouseEvent;
@@ -151,13 +209,28 @@ export function registerDatabaseStatus(
     window.document.getElementById(CONTROL_ID)?.remove();
   }
 
+  function repaintAll(): void {
+    for (const window of Zotero.getMainWindows()) {
+      paintControl(checkpoint, window);
+    }
+  }
+
+  using stack = new DisposableStack();
+  stack.defer(() => {
+    for (const window of Zotero.getMainWindows()) detachWindow(window);
+  });
   for (const window of Zotero.getMainWindows()) attachWindow(window);
+  // Checkpoint runs move the state; the two prefs move visibility and tint.
+  stack.defer(checkpoint.onChange(repaintAll));
+  stack.defer(prefs.onChange("extensions.zotlit.notify", repaintAll));
+  stack.defer(prefs.onChange("extensions.zotlit.wal-checkpoint", repaintAll));
+  const disposable = stack.move();
   logger.info("database status registered");
   return {
     attachWindow,
     detachWindow,
     [Symbol.dispose]() {
-      for (const window of Zotero.getMainWindows()) detachWindow(window);
+      disposable[Symbol.dispose]();
       logger.info("database status torn down");
     },
   };

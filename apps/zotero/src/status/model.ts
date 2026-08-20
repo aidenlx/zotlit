@@ -7,12 +7,19 @@ import type {
 
 type VisibleManualOutcome = Exclude<ManualCheckpointOutcome, "unavailable">;
 
+/**
+ * How the sidenav icon is tinted. `neutral` covers both a healthy WAL database
+ * and one with no write-ahead log: neither asks anything of the user.
+ */
+export type DatabaseIconState = "neutral" | "off" | "failed";
+
 export interface DatabaseStatusMenuModel {
   stateMessage:
     | "zotlit-database-status-working"
     | "zotlit-database-status-automatic-off"
     | "zotlit-database-status-no-wal"
     | "zotlit-database-status-failed";
+  iconState: DatabaseIconState;
   timestampMessage:
     | "zotlit-database-status-never-written"
     | "zotlit-database-status-last-written"
@@ -42,21 +49,49 @@ function relativeTime(at: Date, now: Date): string {
   );
 }
 
+const ICON_STATES = {
+  "zotlit-database-status-working": "neutral",
+  "zotlit-database-status-no-wal": "neutral",
+  "zotlit-database-status-automatic-off": "off",
+  "zotlit-database-status-failed": "failed",
+} as const satisfies Record<
+  DatabaseStatusMenuModel["stateMessage"],
+  DatabaseIconState
+>;
+
+function stateMessage(
+  status: WalCheckpointStatus,
+): DatabaseStatusMenuModel["stateMessage"] {
+  if (!status.active && status.reason === "not-wal") {
+    return "zotlit-database-status-no-wal";
+  }
+  if (!status.active || status.lastRun?.result === "failed") {
+    return "zotlit-database-status-failed";
+  }
+  if (!status.automaticEnabled) return "zotlit-database-status-automatic-off";
+  return "zotlit-database-status-working";
+}
+
+/**
+ * The icon alone, off the same precedence the menu uses. Separate from
+ * {@link databaseStatusMenuModel} because a repaint runs on every checkpoint
+ * and has no use for the formatted timestamp.
+ */
+export function databaseIconState(
+  status: WalCheckpointStatus,
+): DatabaseIconState {
+  return ICON_STATES[stateMessage(status)];
+}
+
 export function databaseStatusMenuModel(
   status: WalCheckpointStatus,
   now: Date,
 ): DatabaseStatusMenuModel {
-  const stateMessage =
-    !status.active && status.reason === "not-wal"
-      ? "zotlit-database-status-no-wal"
-      : !status.active || status.lastRun?.result === "failed"
-        ? "zotlit-database-status-failed"
-        : !status.automaticEnabled
-          ? "zotlit-database-status-automatic-off"
-          : "zotlit-database-status-working";
+  const message = stateMessage(status);
   const lastRun = status.lastRun;
   return {
-    stateMessage,
+    stateMessage: message,
+    iconState: ICON_STATES[message],
     timestampMessage:
       lastRun === null
         ? "zotlit-database-status-never-written"

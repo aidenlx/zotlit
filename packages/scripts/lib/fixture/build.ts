@@ -575,7 +575,7 @@ function seedItemData(
  * profile-directory override in ZotLit switches the whole install over. The
  * same profile carries {@link QUIET_FIRST_RUN_PREFS}, because a Paired Zotero
  * launches on it. With a {@link BuildOptions.liveUpdatePort}, it also carries
- * the Companion's notify URL for that port.
+ * the Companion's notify master switch and notify URL for that port.
  */
 function writePrefs(
   layout: FixtureLayout,
@@ -588,6 +588,10 @@ function writePrefs(
     ...(options.liveUpdatePort === undefined
       ? []
       : [
+          // The master switch is the Companion's counterpart to the vault's
+          // `server.enabled`: it gates every outbound notification at emit
+          // time, so a Paired Run needs it on to exercise Live Updates.
+          'user_pref("extensions.zotlit.notify", true);',
           `user_pref("extensions.zotlit.notify-url", "http://${LIVE_UPDATE_HOSTNAME}:${options.liveUpdatePort}");`,
         ]),
     "",

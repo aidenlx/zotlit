@@ -52,12 +52,23 @@ export type ManualCheckpointOutcome =
 export interface WalCheckpoint extends Disposable {
   status(): WalCheckpointStatus;
   writeNow(): Promise<ManualCheckpointOutcome>;
+  /**
+   * Subscribe to {@link status} changes, so a reader repaints instead of
+   * polling. Fires after a checkpoint attempt settles. A run the preference
+   * skipped moves nothing, and an inactive handle never runs at all, so
+   * neither reports.
+   *
+   * @returns Teardown that unsubscribes.
+   */
+  onChange(listener: () => void): () => void;
 }
 
 function inactiveHandle(reason: "not-wal" | "probe-failed"): WalCheckpoint {
   return {
     status: () => ({ active: false, reason, lastRun: null }),
     writeNow: () => Promise.resolve("unavailable"),
+    // An inactive handle never runs, so its status never changes.
+    onChange: () => () => {},
     [Symbol.dispose]() {},
   };
 }
@@ -100,6 +111,17 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
   }
 
   let lastRun: { at: Date; result: "done" | "failed" } | null = null;
+  const listeners = new Set<() => void>();
+  const emitChange = () => {
+    for (const listener of listeners) {
+      // A repaint is a notification, never part of the checkpoint outcome.
+      try {
+        listener();
+      } catch (error) {
+        logger.warning("wal checkpoint status listener failed", { error });
+      }
+    }
+  };
   const checkpoint = async () => {
     if (prefs.get<boolean>("extensions.zotlit.wal-checkpoint") === false) {
       logger.debug("wal checkpoint skipped, preference is off", {
@@ -122,25 +144,27 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
       logger.warning("wal checkpoint failed", { error });
       lastRun = { at: new Date(), result: "failed" };
     }
+    emitChange();
   };
 
   const writeNow = async (): Promise<ManualCheckpointOutcome> => {
+    let outcome: ManualCheckpointOutcome;
     try {
       const rows = await Zotero.DB.queryAsync(
         "PRAGMA wal_checkpoint(TRUNCATE)",
       );
-      const outcome = rows?.[0]?.busy ? "in-use" : "done";
-      lastRun = {
-        at: new Date(),
-        result: outcome === "done" ? "done" : "failed",
-      };
+      outcome = rows?.[0]?.busy ? "in-use" : "done";
+      // A busy database neither wrote nor failed, so the last run stands: a
+      // retry that finds the WAL held must not clear an earlier failure.
+      if (outcome === "done") lastRun = { at: new Date(), result: "done" };
       logger.debug("manual wal checkpoint finished", { outcome });
-      return outcome;
     } catch (error) {
+      outcome = "failed";
       lastRun = { at: new Date(), result: "failed" };
       logger.warning("manual wal checkpoint failed", { error });
-      return "failed";
     }
+    emitChange();
+    return outcome;
   };
 
   type Timer = ReturnType<typeof setTimeout>;
@@ -210,7 +234,12 @@ export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
           : { at: new Date(lastRun.at), result: lastRun.result },
     }),
     writeNow,
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     [Symbol.dispose]() {
+      listeners.clear();
       disposable[Symbol.dispose]();
     },
   };

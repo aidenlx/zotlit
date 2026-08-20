@@ -82,6 +82,10 @@ zotlit-note-status-refresh-failed-message = 请确认 Obsidian 正在运行且�
 
 zotlit-database-status =
     .tooltiptext = 数据库状态
+zotlit-database-status-icon-off =
+    .tooltiptext = 数据库状态 — 自动写入已关闭
+zotlit-database-status-icon-failed =
+    .tooltiptext = 数据库状态 — 上次写入失败
 zotlit-database-status-working = 正在为 Obsidian 将更改写入数据库文件。
 zotlit-database-status-automatic-off = 已关闭自动写入数据库文件。您仍可手动写入更改。
 zotlit-database-status-no-wal = 此数据库未使用预写日志。更改已直接写入数据库文件。
