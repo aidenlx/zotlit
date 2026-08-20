@@ -4,3 +4,4 @@
 pref("extensions.zotlit.notify", false);
 pref("extensions.zotlit.notify-url", "http://localhost:9091");
 pref("extensions.zotlit.log.console-level", "warning");
+pref("extensions.zotlit.wal-checkpoint", true);

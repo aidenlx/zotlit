@@ -4,6 +4,11 @@ zotlit-prefs-notify-enable =
     .label = 启用
 zotlit-prefs-notify-url = 通知 URL
 
+zotlit-prefs-database-section = 数据库
+zotlit-prefs-wal-checkpoint =
+    .label = 为 Obsidian 保持数据库文件最新
+zotlit-prefs-wal-checkpoint-description = 将预写日志中的最新更改写入主数据库文件，使 ZotLit 读取到最新数据。
+
 zotlit-prefs-logging-section = 日志
 zotlit-prefs-logging-level = 控制台日志级别
 zotlit-prefs-log-level-trace =

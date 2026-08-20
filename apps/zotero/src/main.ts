@@ -45,7 +45,7 @@ export class ZotLitZotero {
     }
     await registerPrefPane(this.#data.id);
     stack.use(await registerMenus(this.#data.id));
-    stack.use(registerNotify());
+    stack.use(await registerNotify());
     this.#noteStatus = stack.use(await registerNoteStatus(this.#data.id));
     logger.info("startup", {
       version: this.#data.version,

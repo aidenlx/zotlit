@@ -34,6 +34,7 @@ export type FluentMessageId =
   | "zotlit-note-status-refreshed-message"
   | "zotlit-note-status-refreshed-title"
   | "zotlit-note-status-refreshing-title"
+  | "zotlit-prefs-database-section"
   | "zotlit-prefs-log-level-debug"
   | "zotlit-prefs-log-level-error"
   | "zotlit-prefs-log-level-fatal"
@@ -46,5 +47,7 @@ export type FluentMessageId =
   | "zotlit-prefs-notify-section"
   | "zotlit-prefs-notify-url"
   | "zotlit-prefs-pane-label"
+  | "zotlit-prefs-wal-checkpoint"
+  | "zotlit-prefs-wal-checkpoint-description"
   | "zotlit-protocol-incompatible-message"
   | "zotlit-protocol-incompatible-title";

@@ -7,6 +7,11 @@ zotlit-prefs-notify-enable =
     .label = Enable
 zotlit-prefs-notify-url = Notify URL
 
+zotlit-prefs-database-section = Database
+zotlit-prefs-wal-checkpoint =
+    .label = Keep the database file up to date for Obsidian
+zotlit-prefs-wal-checkpoint-description = Writes recent changes from the write-ahead log to the main database file so ZotLit reads current data.
+
 zotlit-prefs-logging-section = Logging
 zotlit-prefs-logging-level = Console log level
 zotlit-prefs-log-level-trace =
