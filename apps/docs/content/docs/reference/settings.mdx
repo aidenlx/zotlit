@@ -88,7 +88,7 @@ Open this page from **Settings > ZotLit > Citations**.
 
 **Wikilink citations:** Include unaliased links to literature notes in the references sidebar and ZotLit’s in-text features. Heading links, block links, and invalid citation fragments stay as links. This setting does not change export.
 
-Both settings can be off. ZotLit's internal Citation Index remains active, and **Reset citation index** remains available under Diagnostics.
+Both settings can be off. ZotLit's internal Citation Index remains active, and **Reset citation index** remains available under Maintenance.
 
 ### In-text citations
 
@@ -326,12 +326,15 @@ Actions: **Add folder** (opens a folder picker), and delete on each row. Approva
 | ------------ | ----------------- | ------- | ----------- |
 | **Hostname** | `server.hostname` | Text    | `127.0.0.1` |
 
-## Diagnostics
+## Maintenance
 
-| Label                  | Key           | Control  | Default |
-| ---------------------- | ------------- | -------- | ------- |
-| **Log level**          | `log.level`   | Dropdown | info    |
-| **Write logs to file** | `log.to-file` | Toggle   | Off     |
+| Label                  | Key                       | Control  | Default |
+| ---------------------- | ------------------------- | -------- | ------- |
+| **Update notices**     | `release.notices-enabled` | Toggle   | On      |
+| **Log level**          | `log.level`               | Dropdown | info    |
+| **Write logs to file** | `log.to-file`             | Toggle   | Off     |
+
+**Update notices** shows a notice linking to the release notes after ZotLit updates.
 
 **Log level** options: Off, trace, debug, info, warning, error, fatal.
 

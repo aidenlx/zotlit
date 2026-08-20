@@ -24,14 +24,14 @@ import type {
   SettingTabContext,
 } from "./context";
 import { databasePageItems } from "./database";
-import {
-  decodeLogLevel,
-  diagnosticsPageItems,
-  encodeLogLevel,
-  LOG_LEVEL_KEY,
-} from "./diagnostics";
 import { libraryPage } from "./library-scope";
 import { liveUpdatesPageItems } from "./live-updates";
+import {
+  decodeLogLevel,
+  encodeLogLevel,
+  LOG_LEVEL_KEY,
+  maintenancePageItems,
+} from "./maintenance";
 import { noteImportPageItems } from "./note-import";
 import { defaultPlaceholder } from "./placeholder";
 import { resourcesGroup } from "./resources";
@@ -181,12 +181,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
           placeholder: defaultPlaceholder("note.literature-folder"),
         },
       },
-      {
-        name: m.settings_update_notices_name(),
-        desc: m.settings_update_notices_desc(),
-        control: { type: "toggle", key: "release.notices-enabled" },
-      },
-
       // Self-contained domains live on navigable sub-pages, grouped apart
       // from the hub items above so the page rows read as their own section.
       {
@@ -231,9 +225,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
           },
           {
             type: "page",
-            name: m.settings_page_diagnostics(),
-            desc: m.settings_page_diagnostics_desc(),
-            items: diagnosticsPageItems(ctx),
+            name: m.settings_page_maintenance(),
+            desc: m.settings_page_maintenance_desc(),
+            items: maintenancePageItems(ctx),
           },
         ],
       },

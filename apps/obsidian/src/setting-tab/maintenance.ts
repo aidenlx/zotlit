@@ -15,7 +15,7 @@ import type ZotLitPlugin from "@/zt-main";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 
-const logger = getLogger(["setting-tab", "diagnostics"]);
+const logger = getLogger(["setting-tab", "maintenance"]);
 
 const LOG_LEVEL_OFF_KEY = "off";
 
@@ -51,12 +51,17 @@ const LOG_LEVEL_OPTIONS: Record<string, string> = (() => {
   return opts;
 })();
 
-/** Items for the "Diagnostics" sub-page. */
-export function diagnosticsPageItems(
+/** Items for the "Maintenance" sub-page. */
+export function maintenancePageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   const fileDisabled = (): boolean => !ctx.settings.current?.["log.to-file"];
   return [
+    {
+      name: m.settings_update_notices_name(),
+      desc: m.settings_update_notices_desc(),
+      control: { type: "toggle", key: "release.notices-enabled" },
+    },
     {
       name: m.settings_log_level_name(),
       desc: m.settings_log_level_desc(),

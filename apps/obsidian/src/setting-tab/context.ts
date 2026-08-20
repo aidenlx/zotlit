@@ -52,7 +52,7 @@ export interface SettingTabContext {
   zoteroPref: ZoteroPrefService;
   /** The approved-folder store the Attachments page lists and mutates. */
   attachmentImport: AttachmentImportActions;
-  /** The vault-wide Citation Index, reset from the Diagnostics page. */
+  /** The vault-wide Citation Index, reset from the Maintenance page. */
   citationIndex: CitationIndexActions;
   release: ReleaseTabActions;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
