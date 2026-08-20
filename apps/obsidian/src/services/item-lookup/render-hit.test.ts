@@ -20,22 +20,22 @@ describe("renderSuggestion library label", () => {
     expect(libraryText(null)).toBeNull();
   });
 
-  it("falls back to My Library for the unnamed personal library", () => {
+  it("omits the label for My Library, the implicit source", () => {
     expect(
       libraryText({
         selector: { type: "personal" },
         libraryID: 1,
         name: null,
       }),
-    ).toBe("My Library");
+    ).toBeNull();
   });
 });
 
-/** The rendered library row's text, or `null` when no such row was rendered. */
+/** The aux-slot library label's text, or `null` when no label was rendered. */
 function libraryText(library: AvailableLibrary | null): string | null {
   const el = document.createElement("div");
   renderSuggestion(settings, hit(library), el);
-  return el.querySelector(".library")?.textContent ?? null;
+  return el.querySelector(".suggestion-aux .library")?.textContent ?? null;
 }
 
 function hit(library: AvailableLibrary | null): SearchHit {

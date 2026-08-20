@@ -26,7 +26,7 @@ export function renderSuggestion(
   el.empty();
   if (isChildItemFields(hit.item.fields)) return;
 
-  el.addClass("zt-citations");
+  el.addClasses(["zt-citations", "mod-complex"]);
 
   const contentEl = el.createDiv("suggestion-content");
   const titleEl = contentEl.createDiv("suggestion-title");
@@ -39,13 +39,18 @@ export function renderSuggestion(
     contentEl.createDiv({ cls: "citekey", text: citationKey });
   }
 
-  // Present only while several Libraries can contribute; see ItemLookup.
-  if (hit.library) {
-    contentEl.createDiv({ cls: "library", text: libraryLabel(hit.library) });
-  }
-
   if (hit.item.fields.itemType === "journalArticle") {
     appendJournalMeta(contentEl, summary.subtitle, hit.item.fields);
+  }
+
+  // Present only while several Libraries can contribute; see ItemLookup.
+  // My Library is the implicit source, so only a group earns a label. The aux
+  // slot keeps that label on the trailing edge, clear of the title.
+  if (hit.library && hit.library.selector.type !== "personal") {
+    el.createDiv("suggestion-aux").createSpan({
+      cls: "suggestion-flair library",
+      text: libraryLabel(hit.library),
+    });
   }
 }
 
