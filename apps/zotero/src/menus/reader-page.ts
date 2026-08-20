@@ -1,4 +1,4 @@
-import { requireLabel } from "@/lib/l10n";
+import { requireMessage } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
 import { openInObsidian, readerTopLevelItem } from "./obsidian.js";
@@ -11,7 +11,7 @@ export async function registerReaderPageMenu(
   pluginID: string,
 ): Promise<Disposable> {
   logger.debug("registering reader-page menu", { pluginID });
-  const label = await requireLabel("zotlit-menu-reader-page-open");
+  const label = await requireMessage("zotlit-menu-reader-page-open");
   logger.debug("loaded reader-page label", { label });
 
   const handler = ({ reader, append }: ViewEvent): void => {

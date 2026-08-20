@@ -32,6 +32,14 @@ Use this guide when Zotero changes do not appear after you update a literature n
 
   </Step>
   <Step>
+    ### Check Database Status in Zotero
+
+    In Zotero's item-pane sidenav, select **Database Status** beside **Locate**. If **Write Changes to Database File Now** is available, select it to make recent changes available immediately. If the menu says the database does not use a write-ahead log, continue to the next step.
+
+    The menu also reports the last write. If it reports a failure, [collect Zotero debug logs](/docs/how-to/collect-debug-logs) before you continue.
+
+  </Step>
+  <Step>
     ### Check the literature note
 
     Make a small edit to an item in Zotero, then switch to Obsidian. Run <Command inline>ZotLit: Update literature note</Command> for that item.

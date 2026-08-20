@@ -28,7 +28,7 @@ export function staleReadNotice(): StaleReadNoticeCopy {
   };
 }
 
-export function showStaleReadNotice(copy: StaleReadNoticeCopy): BaseNotice {
+function showStaleReadNotice(copy: StaleReadNoticeCopy): BaseNotice {
   const notice = new BaseNotice(
     BaseNotice.render((renderer) => {
       renderer.setTitle(copy.title);

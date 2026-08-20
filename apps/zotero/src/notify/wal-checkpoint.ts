@@ -31,7 +31,36 @@ const TRIGGER_TYPES: _ZoteroTypes.Notifier.Type[] = [
   "group",
 ];
 
-const NOOP: Disposable = { [Symbol.dispose]() {} };
+export type WalCheckpointStatus =
+  | {
+      active: true;
+      automaticEnabled: boolean;
+      lastRun: { at: Date; result: "done" | "failed" } | null;
+    }
+  | {
+      active: false;
+      reason: "not-wal" | "probe-failed";
+      lastRun: null;
+    };
+
+export type ManualCheckpointOutcome =
+  | "done"
+  | "in-use"
+  | "failed"
+  | "unavailable";
+
+export interface WalCheckpoint extends Disposable {
+  status(): WalCheckpointStatus;
+  writeNow(): Promise<ManualCheckpointOutcome>;
+}
+
+function inactiveHandle(reason: "not-wal" | "probe-failed"): WalCheckpoint {
+  return {
+    status: () => ({ active: false, reason, lastRun: null }),
+    writeNow: () => Promise.resolve("unavailable"),
+    [Symbol.dispose]() {},
+  };
+}
 
 /**
  * Move recent writes out of the WAL sidecar and into `zotero.sqlite` itself.
@@ -52,7 +81,7 @@ const NOOP: Disposable = { [Symbol.dispose]() {} };
  *
  * @see https://www.sqlite.org/pragma.html#pragma_wal_checkpoint
  */
-export async function registerWalCheckpoint(): Promise<Disposable> {
+export async function registerWalCheckpoint(): Promise<WalCheckpoint> {
   let mode: unknown;
   try {
     const rows = await Zotero.DB.queryAsync("PRAGMA journal_mode");
@@ -61,15 +90,16 @@ export async function registerWalCheckpoint(): Promise<Disposable> {
     logger.warning("journal mode probe failed, wal checkpoint inactive", {
       error,
     });
-    return NOOP;
+    return inactiveHandle("probe-failed");
   }
   if (mode !== "wal") {
     logger.debug("journal mode is not wal, wal checkpoint inactive", {
       journalMode: mode,
     });
-    return NOOP;
+    return inactiveHandle("not-wal");
   }
 
+  let lastRun: { at: Date; result: "done" | "failed" } | null = null;
   const checkpoint = async () => {
     if (prefs.get<boolean>("extensions.zotlit.wal-checkpoint") === false) {
       logger.debug("wal checkpoint skipped, preference is off", {
@@ -85,10 +115,31 @@ export async function registerWalCheckpoint(): Promise<Disposable> {
         log: row?.log,
         checkpointed: row?.checkpointed,
       });
+      lastRun = { at: new Date(), result: "done" };
     } catch (error) {
       // Stay armed: the next notifier event schedules another attempt, and the
       // debounce already caps how often that can happen.
       logger.warning("wal checkpoint failed", { error });
+      lastRun = { at: new Date(), result: "failed" };
+    }
+  };
+
+  const writeNow = async (): Promise<ManualCheckpointOutcome> => {
+    try {
+      const rows = await Zotero.DB.queryAsync(
+        "PRAGMA wal_checkpoint(TRUNCATE)",
+      );
+      const outcome = rows?.[0]?.busy ? "in-use" : "done";
+      lastRun = {
+        at: new Date(),
+        result: outcome === "done" ? "done" : "failed",
+      };
+      logger.debug("manual wal checkpoint finished", { outcome });
+      return outcome;
+    } catch (error) {
+      lastRun = { at: new Date(), result: "failed" };
+      logger.warning("manual wal checkpoint failed", { error });
+      return "failed";
     }
   };
 
@@ -147,5 +198,20 @@ export async function registerWalCheckpoint(): Promise<Disposable> {
   );
   stack.defer(() => Zotero.Notifier.unregisterObserver(id));
   logger.debug("registered wal checkpoint notifier", { id });
-  return stack.move();
+  const disposable = stack.move();
+  return {
+    status: () => ({
+      active: true,
+      automaticEnabled:
+        prefs.get<boolean>("extensions.zotlit.wal-checkpoint") !== false,
+      lastRun:
+        lastRun === null
+          ? null
+          : { at: new Date(lastRun.at), result: lastRun.result },
+    }),
+    writeNow,
+    [Symbol.dispose]() {
+      disposable[Symbol.dispose]();
+    },
+  };
 }

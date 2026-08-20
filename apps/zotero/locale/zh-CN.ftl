@@ -79,3 +79,22 @@ zotlit-note-status-refreshed-title = 文献笔记状态已刷新
 zotlit-note-status-refreshed-message = { $count } 个条目在 Obsidian 中有文献笔记。
 zotlit-note-status-refresh-failed-title = 无法刷新文献笔记状态
 zotlit-note-status-refresh-failed-message = 请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。
+
+zotlit-database-status =
+    .tooltiptext = 数据库状态
+zotlit-database-status-working = 正在为 Obsidian 将更改写入数据库文件。
+zotlit-database-status-automatic-off = 已关闭自动写入数据库文件。您仍可手动写入更改。
+zotlit-database-status-no-wal = 此数据库未使用预写日志。更改已直接写入数据库文件。
+zotlit-database-status-failed = 上次尝试将更改写入数据库文件时失败。
+zotlit-database-status-never-written = 尚未写入任何更改。
+zotlit-database-status-last-written = 上次写入时间：{ $time }。
+zotlit-database-status-last-attempt = 上次尝试时间：{ $time }。
+zotlit-database-status-write-now = 立即将更改写入数据库文件
+zotlit-database-status-guide = 修复陈旧数据…
+zotlit-database-write-running-title = 正在将更改写入数据库文件…
+zotlit-database-write-done-title = 数据库文件已更新
+zotlit-database-write-done-message = Obsidian 现在可以读取最新更改。
+zotlit-database-write-in-use-title = 数据库文件正在使用中
+zotlit-database-write-in-use-message = 请稍候片刻，然后重试。
+zotlit-database-write-failed-title = 无法将更改写入数据库文件
+zotlit-database-write-failed-message = 请收集 <a href="{ $debugLogsUrl }" tooltiptext="{ $debugLogsUrl }">Zotero 调试日志</a>，然后报告此问题。

@@ -5,6 +5,7 @@ import { registerAnnotSelectNotify } from "./annot-select";
 import { registerItemUpdateNotify } from "./item-update";
 import { createSender } from "./send";
 import { registerWalCheckpoint } from "./wal-checkpoint";
+import type { WalCheckpoint } from "./wal-checkpoint";
 
 const logger = appLogger.getChild("notify");
 
@@ -19,17 +20,27 @@ const logger = appLogger.getChild("notify");
  * Observers are always registered; the `notify` master switch is read at emit
  * time (see {@link notifyEnabled}), so toggling it needs no re-registration.
  */
-export async function registerNotify(): Promise<Disposable> {
+export interface Notify extends Disposable {
+  checkpoint: WalCheckpoint;
+}
+
+export async function registerNotify(): Promise<Notify> {
   logger.info("registering notify");
   using stack = new DisposableStack();
   const send = createSender();
   stack.use(registerItemUpdateNotify(send));
   stack.use(registerActiveReaderNotify(send));
   stack.use(registerAnnotSelectNotify(send));
-  stack.use(await registerWalCheckpoint());
+  const checkpoint = stack.use(await registerWalCheckpoint());
   stack.defer(() => {
     logger.info("notify torn down");
   });
   logger.info("notify registered");
-  return stack.move();
+  const disposable = stack.move();
+  return {
+    checkpoint,
+    [Symbol.dispose]() {
+      disposable[Symbol.dispose]();
+    },
+  };
 }

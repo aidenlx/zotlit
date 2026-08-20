@@ -1,4 +1,4 @@
-import { requireLabel } from "@/lib/l10n";
+import { requireMessage } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
 import { copyObjectKeys } from "./copy-key.js";
@@ -14,8 +14,8 @@ export async function registerReaderAnnotationMenu(
 ): Promise<Disposable> {
   logger.debug("registering reader-annot menu", { pluginID });
 
-  const exploreLabel = await requireLabel("zotlit-menu-reader-annot-explore");
-  const copyLabel = await requireLabel("zotlit-menu-reader-annot-copy-key");
+  const exploreLabel = await requireMessage("zotlit-menu-reader-annot-explore");
+  const copyLabel = await requireMessage("zotlit-menu-reader-annot-copy-key");
 
   const handler = ({ reader, params, append }: AnnotationEvent): void => {
     append({
