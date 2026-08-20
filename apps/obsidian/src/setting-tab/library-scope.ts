@@ -1,5 +1,9 @@
 import { Menu } from "obsidian";
-import type { Setting, SettingDefinitionItem } from "obsidian";
+import type {
+  Setting,
+  SettingDefinitionItem,
+  SettingDefinitionPage,
+} from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { libraryLabel, selectorLabel } from "@/services/library-scope/label";
@@ -25,9 +29,21 @@ interface SelectedEntry {
   unavailable: boolean;
 }
 
+/** The Library sub-page: the library-scope rows, on their own navigable page. */
+export function libraryPage(
+  ctx: SettingTabContext,
+): SettingDefinitionPage<SettingsKey> {
+  return {
+    type: "page",
+    name: m.settings_page_library(),
+    desc: m.settings_page_library_desc(),
+    items: libraryScopeItems(ctx),
+  };
+}
+
 /**
- * Library scope rows, surfaced on the main tab: the All / Selected choice and,
- * under Selected, the editable list of stable selectors.
+ * Library scope rows: the All / Selected choice and, under Selected, the
+ * editable list of stable selectors.
  *
  * Every control here reads the *effective* scope — the runtime My Library
  * fallback while the saved value is broken — so what the user edits is what
@@ -38,7 +54,7 @@ interface SelectedEntry {
  * controls disable and the saved value is left alone. That is distinct from a
  * resolvable scope with no available Library, which stays editable.
  */
-export function libraryScopeItems(
+function libraryScopeItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   const scope = ctx.libraryScope.effective;

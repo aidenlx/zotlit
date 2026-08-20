@@ -255,6 +255,8 @@
   "settings_page_frontmatter_desc": "映射添加到每篇文献笔记的 YAML 属性。",
   "settings_page_database": "Zotero 数据库",
   "settings_page_database_desc": "将 ZotLit 连接到您的 Zotero 文库。",
+  "settings_page_library": "文库",
+  "settings_page_library_desc": "选择 ZotLit 用于搜索、文献引用标识（citation key）解析和全库命令的 Zotero 文库。",
   "settings_page_citations": "引文",
   "settings_page_citations_desc": "配置引文建议、引文索引和编辑器中的文献引用标识。",
   "settings_page_templates": "模板",

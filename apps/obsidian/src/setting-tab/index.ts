@@ -30,7 +30,7 @@ import {
   encodeLogLevel,
   LOG_LEVEL_KEY,
 } from "./diagnostics";
-import { libraryScopeItems } from "./library-scope";
+import { libraryPage } from "./library-scope";
 import { liveUpdatesPageItems } from "./live-updates";
 import { noteImportPageItems } from "./note-import";
 import { defaultPlaceholder } from "./placeholder";
@@ -172,7 +172,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
       resourcesGroup(ctx),
 
       // Hub — the most-used settings, no top-level heading (per Obsidian style).
-      ...libraryScopeItems(ctx),
       {
         name: m.settings_note_folder_name(),
         desc: m.settings_note_folder_desc(),
@@ -205,6 +204,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
             desc: m.settings_page_database_desc(),
             items: databasePageItems(ctx),
           },
+          libraryPage(ctx),
           {
             type: "page",
             name: m.settings_page_templates(),

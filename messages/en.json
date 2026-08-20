@@ -291,6 +291,8 @@
   "settings_page_frontmatter_desc": "Map YAML properties added to every literature note.",
   "settings_page_database": "Zotero database",
   "settings_page_database_desc": "Connect ZotLit to your Zotero library.",
+  "settings_page_library": "Library",
+  "settings_page_library_desc": "Choose which Zotero libraries ZotLit uses for search, citation keys, and library-wide commands.",
   "settings_page_citations": "Citations",
   "settings_page_citations_desc": "Configure citation suggestions, the citation index, and citation keys in the editor.",
   "settings_page_templates": "Templates",
