@@ -1,0 +1,144 @@
+---
+title: "How to review, copy, and troubleshoot references"
+description: "Use the References Sidebar, change one note's citation presentation, copy entries, and resolve reference errors."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+Use this guide to inspect an active note's references and correct entries that ZotLit cannot resolve or format.
+
+## Review the references
+
+<Steps>
+  <Step>
+    ### Open the References Sidebar
+
+    Open the Markdown note you want to review. Run:
+
+    <Command>ZotLit: Open references</Command>
+
+    The sidebar follows the active note. A formatted list uses the selected CSL style and bibliography order.
+
+  </Step>
+  <Step>
+    ### Find each citation occurrence
+
+    Select the chevron at the right of an entry. ZotLit moves the editor to that entry's next occurrence.
+
+    Select it again to cycle through later occurrences. The action returns to the first occurrence after the last one.
+
+  </Step>
+  <Step>
+    ### Open the related item
+
+    Hover the entry or focus it with the keyboard to reveal its row actions.
+
+    - **Open literature note** opens the note. ZotLit creates it first when the Zotero item has no Literature Note.
+    - **Open in Zotero** selects the item in Zotero.
+    - **Open attachment in Zotero** opens its attachment. When several attachments exist, ZotLit opens a selection menu.
+
+    An attachment action appears only when the item has an attachment to open.
+
+  </Step>
+  <Step>
+    ### Inspect a citation from the editor
+
+    Under **Settings > ZotLit > Citations > Hover**, set **Hover action** to **Citation popover**.
+
+    Hover a formatted citation. The popover shows each cited item's complete bibliography entry and the same Literature Note, Zotero, and attachment actions.
+
+    Use **Require modifier key** to control hover separately for Source mode, Live Preview, and reading view.
+
+  </Step>
+</Steps>
+
+## Change one note's presentation
+
+Open the note, then run:
+
+<Command>ZotLit: Set citation presentation</Command>
+
+You can also select **Set citation presentation** from the active note's **More options** menu.
+
+1. Select a **Citation and references style** installed in Zotero, or keep the vault style.
+2. Enter a **Document language**, such as `en-US`, `de`, or `zh-CN`.
+3. Select **Save**.
+
+The style applies to this note's in-text citations, References Sidebar, Citation Popover, copied bibliography, and built-in export. **Document language** sets Pandoc `lang` for the complete exported document, not only its citations.
+
+Select the reset button beside **Document language**. Its tooltip is **Use vault citation locale and remove document language**. This removes `lang` from the note, so citation formatting uses the vault **Citation locale**.
+
+## Copy references [#copy-references]
+
+### Copy the complete bibliography
+
+Select **Copy bibliography** in the References Sidebar toolbar. ZotLit copies the formatted entries in bibliography order, without a heading.
+
+The clipboard contains rich text and plain text. Plain-text entries have a blank line between them.
+
+### Copy one entry
+
+Select the text of one entry in the sidebar. Use your operating system's normal copy shortcut.
+
+Selecting the row's chevron navigates to citation occurrences. It does not copy the entry.
+
+## Fix a disabled Copy bibliography action
+
+Hover the disabled action to see its current reason.
+
+| Tooltip                                               | What to do                                                                   |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Open a note to copy its bibliography**              | Open the Markdown note whose bibliography you need.                          |
+| **The active note cites nothing to copy**             | Add a recognized citation to the active note.                                |
+| **Wait for the references to finish formatting**      | Wait for the current formatting pass to finish.                              |
+| **Bibliography formatting is unavailable**            | Install or restore the Pandoc engine and an available style.                 |
+| **Bibliography formatting failed**                    | Check the engine and selected style, then retry after the sidebar refreshes. |
+| **Fix the reference errors to copy the bibliography** | Correct every Reference Error listed in the sidebar.                         |
+
+The action also becomes temporarily unavailable when the active note, style, locale, or Zotero data changes. Wait for the new bibliography to finish formatting.
+
+## Fix Reference Errors
+
+Each Reference Error stays tied to its exact source occurrence. Use the row's chevron to open that occurrence.
+
+| Sidebar state                                                            | Cause                                                             | Recovery                                                                                        |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `@key matches no item in your Zotero library.`                           | No item in **Library scope** has that citation key.               | Correct the key, add the matching library to the scope, or assign the key to the intended item. |
+| `@key matches multiple items in your Zotero library.`                    | Several in-scope items have the same citation key.                | Give each item a distinct key, or narrow **Library scope** until the key is unique.             |
+| `This link has an invalid citation fragment.`                            | A Literature Note link has a malformed `#cite:` fragment.         | Correct the fragment. For a page locator, use `#cite:locator=33`.                               |
+| `{linkpath} points to an item that is no longer in your Zotero library.` | The Literature Note's `zotero-key` no longer resolves to an item. | Restore the Zotero item or correct the Literature Note identity.                                |
+
+An ambiguous row lists every matching item with its library and item key. **Open literature note** stays unavailable until the citation key identifies one item.
+
+## Fix presentation errors
+
+| Banner                                                       | Recovery                                                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **This note's citation and references style is unavailable** | Correct the note's `zotlit-csl`, install that style in Zotero, or use the vault style.           |
+| **This note's document language is invalid**                 | Set `lang` to a language tag such as `de-DE`, or remove the property.                            |
+| **ZotLit could not format these references**                 | Check the selected style and Pandoc engine under **Settings > ZotLit > Citations > Formatting**. |
+| **The Pandoc engine is unavailable**                         | Open the same settings page and repair or reinstall the engine.                                  |
+
+The sidebar shows a minimal list when formatted output is unavailable. Copy remains disabled until ZotLit produces a complete bibliography without Reference Errors.
+
+## See also
+
+<Cards>
+  <Card
+    title="How in-text citations work"
+    description="Understand source membership, ordering, resolution, and navigation behavior."
+    href="/docs/concepts/how-citekey-links-work"
+  />
+  <Card
+    title="Insert citations"
+    description="Insert literal Pandoc citations or Literature Note citations."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="Export a note with citations"
+    description="Export the active note with ZotLit's built-in DOCX or HTML workflow."
+    href="/docs/how-to/export-note-with-citations"
+  />
+</Cards>

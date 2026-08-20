@@ -85,6 +85,51 @@ If the selected item has no citation key, nothing is inserted and a notice appea
   </Step>
 </Steps>
 
+## Cite with a Literature Note link
+
+Use this form when the citation must also remain an Obsidian link to its Literature Note.
+
+<Steps>
+  <Step>
+    ### Enable the citation source
+
+    Open **Settings > ZotLit > Citations** and turn on **Wikilink citations**.
+
+  </Step>
+  <Step>
+    ### Insert an unaliased Literature Note link
+
+    In the citing note, type `[[` and select the Literature Note for the item. Keep the link unaliased.
+
+    For example:
+
+    ```md
+    This finding follows the earlier analysis [[Doe 2020]].
+    ```
+
+  </Step>
+  <Step>
+    ### Add citation details when needed
+
+    Add a Citation Fragment to the link target. This example adds page locator `33`:
+
+    ```md
+    This finding follows the earlier analysis [[Doe 2020#cite:locator=33]].
+    ```
+
+    Replace `Doe 2020` with the exact target of your Literature Note.
+
+  </Step>
+</Steps>
+
+The link must resolve to a ZotLit Literature Note. Aliases, embeds, heading fragments, block fragments, unresolved targets, and malformed Citation Fragments stay outside the Document Citation Set.
+
+<Callout type="info">
+  A link such as `[[@doe2024]]` does not name a Literature Note unless a note
+  with that exact name is the Literature Note for the item. Use `[@doe2024]` for
+  a literal citation key.
+</Callout>
+
 ## When a citation key matches several items [#ambiguous-key]
 
 A citation key can belong to more than one Zotero item, whether the twins sit in one library or in two libraries you have in scope. Inserted text carries the key alone, so it would no longer name the item you picked.

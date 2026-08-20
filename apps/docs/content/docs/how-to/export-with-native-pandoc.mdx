@@ -1,0 +1,149 @@
+---
+title: "How to export with native Pandoc"
+description: "Use ZotLit's integration pair with your installed Pandoc CLI, a Better CSL JSON bibliography, and Literature Note citations."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+Use this guide when you need your own Pandoc installation, bibliography file, CSL options, or command-line workflow.
+
+## Requirements
+
+You need:
+
+- Pandoc 3.1.1 or newer.
+- Obsidian 1.13.4 or newer.
+- Obsidian installer 1.12.7 or newer, with **Command line interface** enabled.
+- Zotero 7.0.31 or newer for native citation keys.
+- Obsidian running with the input vault open and ZotLit loaded.
+- The `obsidian` launcher available to Pandoc.
+
+This workflow uses your installed Pandoc CLI. It is separate from ZotLit's managed Pandoc engine and built-in export command.
+
+## Set up the workflow
+
+<Steps>
+  <Step>
+    ### Save the ZotLit integration pair
+
+    Open **Settings > ZotLit > Citations > Formatting**. Under **Native Pandoc workflow**, find **Pandoc integration pair** and select **Save integration files**.
+
+    Choose a user-owned workflow folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there.
+
+    Keep both files together under these names. Save a fresh pair after every ZotLit update.
+
+  </Step>
+  <Step>
+    ### Create a Better CSL JSON bibliography
+
+    [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) is recommended for citation key management and automatic bibliography updates.
+
+    In Zotero, right-click the library, group library, or collection that contains your cited items. Select **Export** and choose **Better CSL JSON**. Enable **Keep updated**, then save `references.json`.
+
+    The export updates after its source library or collection changes. See the [Better BibTeX automatic export guide](https://retorque.re/zotero-better-bibtex/exporting/auto/) for its update controls.
+
+    BibLaTeX and BibTeX are supported alternatives. The command below uses Better CSL JSON.
+
+  </Step>
+  <Step>
+    ### Prepare a Literature Note citation
+
+    Confirm that the cited Zotero item has a citation key and a ZotLit Literature Note. In your input note, add an unaliased link to that Literature Note with a Citation Fragment:
+
+    ```md
+    This result follows the earlier analysis [[Doe 2020#cite:locator=33]].
+    ```
+
+    Replace `Doe 2020` with the exact link target of your Literature Note. The locator fragment becomes a page locator in the Pandoc citation.
+
+  </Step>
+  <Step>
+    ### Set the document style and language
+
+    Open the input note and run:
+
+    <Command>ZotLit: Set citation presentation</Command>
+
+    Select a CSL style installed in Zotero. Enter the complete document's language, then select **Save**.
+
+    The note frontmatter now contains a Zotero style ID and a Pandoc language tag:
+
+    ```yaml
+    ---
+    zotlit-csl: http://www.zotero.org/styles/nature
+    lang: en-US
+    ---
+    ```
+
+    The note must not also contain `csl` or `citation-style` for this path.
+
+    <Callout type="info" title="Use a Pandoc-owned style instead">
+      A document can keep a sole standard `csl` or `citation-style` input, and
+      you can pass `--csl` on the command line. Remove `zotlit-csl` for that
+      path. The ZotLit filter reports `csl-ambiguous` when a document contains
+      both `csl` and `zotlit-csl`.
+    </Callout>
+
+  </Step>
+  <Step>
+    ### Run Pandoc with absolute paths
+
+    Keep Obsidian open with the input vault and ZotLit loaded. Run the canonical command with absolute paths:
+
+    ```sh
+    pandoc "/absolute/path/to/input.md" --defaults "/absolute/path/to/workflow/zotlit.yaml" --bibliography "/absolute/path/to/references.json" --fail-if-warnings --output "/absolute/path/to/output.docx"
+    ```
+
+    Replace each example path. Keep `--fail-if-warnings` so a warning stops the run instead of producing an unchecked document.
+
+  </Step>
+  <Step>
+    ### Verify the result
+
+    Confirm that the output `.docx` exists and opens.
+
+    Check that `[[Doe 2020#cite:locator=33]]` became a formatted citation with locator `33`. Confirm that the document contains the corresponding formatted bibliography entry.
+
+  </Step>
+</Steps>
+
+## Fix a failed run
+
+Open **Pandoc CLI guide** under **Settings > ZotLit > Citations > Formatting** for the full error reference.
+
+| Error code                   | Recovery                                                                    |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `file-not-found`             | Use the absolute path of a Markdown file inside the open vault.             |
+| `database-unavailable`       | Repair the Zotero database connection in ZotLit.                            |
+| `item-not-found`             | Correct the Literature Note's `zotero-key`, or restore the item.            |
+| `citation-key-missing`       | Assign a citation key to the resolved Zotero item.                          |
+| `duplicate-citation-key`     | Give the cited items distinct citation keys.                                |
+| `unresolved-citation-intent` | Point the `#cite:` link to a valid Literature Note.                         |
+| `style-missing`              | Install the style named by `zotlit-csl` in Zotero, or correct the style ID. |
+| `parent-missing`             | Install the dependent style's independent parent in Zotero.                 |
+| `csl-ambiguous`              | Keep only standard `csl` or `zotlit-csl`.                                   |
+
+Refresh both integration files when the saved pair came from an earlier ZotLit version. Keep the pair together when you move the workflow folder.
+
+## See also
+
+<Cards>
+  <Card
+    title="Export a note with citations"
+    description="Use ZotLit's built-in DOCX or HTML export without a user-installed Pandoc CLI."
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="Insert citations"
+    description="Insert literal Pandoc citations and Literature Note citations."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="Settings"
+    description="Check the native integration controls and citation presentation fields."
+    href="/docs/reference/settings#native-pandoc"
+  />
+</Cards>

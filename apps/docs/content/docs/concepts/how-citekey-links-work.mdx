@@ -6,7 +6,6 @@ updated: "2.1.0-beta.0"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
-import { Command } from "@/components/command";
 
 ZotLit uses one ordered set of citations to format the active note, number its references, and support citation navigation.
 
@@ -34,8 +33,6 @@ The set keeps source order. This order matters because numeric styles assign num
 The Citation Index is ZotLit's internal, vault-wide record of Citation Occurrences. It stays active and tracks both source types, independent of the two source settings.
 
 The Document Citation Set applies your source settings when a citation feature asks about the active note. Changing either setting recomputes the set without rescanning the vault.
-
-**Reset citation index** remains a recovery action under **Settings > ZotLit > Maintenance**. It rebuilds derived index data and does not change your notes.
 
 Citation insertion and built-in export use their own membership rules. Turning a source off does not disable insertion or remove that source from export.
 
@@ -79,8 +76,6 @@ For example, `[[Doe 2020#cite:locator=33]]` represents the Pandoc source `[@doe2
 
 Wikilinks keep Obsidian's native link target, click behavior, and drag behavior. Source mode always shows the raw wikilink.
 
-Hover on a rendered wikilink citation follows **Hover action**. **Citation popover** shows the same popover a literal Pandoc citation shows. **Page preview** and **Off** keep Obsidian's native hover.
-
 ## Formatted in-text citations
 
 **Show formatted citations** is on by default. It applies the selected **Citation and references style** in Live Preview and reading view. Source mode always shows Markdown.
@@ -89,95 +84,29 @@ ZotLit asks the Pandoc engine to format the complete Document Citation Set. A co
 
 In Live Preview, the Markdown source returns only for the citation touched by your cursor or selection. Other citations remain formatted.
 
-ZotLit leaves the native source visible in these cases:
-
-- The Pandoc engine is absent or fails.
-- The selected style is not installed.
-- Conversion fails.
-- Citation resolution fails or the citation is unresolved.
+ZotLit leaves the native source visible when it cannot produce one complete formatted result.
 
 A Citation Cluster with any unresolved item stays completely unchanged. Its resolved items still affect later numeric numbering and the References Sidebar.
 
 Turning **Show formatted citations** off leaves every source in Obsidian's native presentation. It does not change set membership, Citekey Navigation, insertion, or export.
 
-## The References Sidebar
+## References and errors
 
-Run <Command inline>ZotLit: Open references</Command> to open the References Sidebar for the active note.
+The References Sidebar presents one entry for each resolved item in the Document Citation Set. A formatted list follows the selected style's bibliography order and Entry Markers.
 
-When formatting succeeds, the sidebar follows the selected style's bibliography order and Entry Markers. A numeric style can produce markers such as `[1]` or `1.`.
+Without formatted output, the sidebar uses a minimal list in first-occurrence order. A Reference Error keeps its exact source occurrence and contributes no bibliography entry.
 
-The sidebar stays available without formatted output. It shows a minimal list in first-occurrence order when the engine or selected style is unavailable. A render failure clears stale formatted entries, shows the error, and displays the minimal list.
-
-A Reference Error points to its exact source occurrence so you can correct the note.
-
-A citation key that matches several Zotero items is a Reference Error too. Its row lists every item the key matches with that item's library and item key, and its **Open literature note** action stays disabled, since no one of them is the item the key names.
-
-### Sidebar actions
-
-The sidebar toolbar holds two actions:
-
-- **Copy bibliography** copies the complete bibliography of the active note.
-- **Change citation and references style** opens **Settings > ZotLit > Citations** and highlights the **Citation and references style** row.
-
-The style action stays available in every state.
-
-**Copy bibliography** is available only when the active note cites at least one item, its bibliography has finished formatting, and no Reference Error remains. In any other state the action is disabled and its tooltip names what to fix. A refresh disables it until the new bibliography finishes, even while the previous entries stay on screen.
-
-### What a copy contains [#copied-bibliography]
-
-A copy holds the formatted entries only, in the style's bibliography order and with its Entry Markers. It carries no heading, so you can add the heading your destination needs.
-
-One copy writes two representations:
-
-- **Rich text** for an application that keeps formatting, such as Word or Google Docs. Emphasis, strikethrough, superscript, subscript, and small caps survive the paste.
-- **Plain text** for an application that accepts text alone, with a blank line between entries.
-
-The destination takes the representation it supports. On a platform without rich clipboard support, ZotLit copies plain text and reports "Bibliography copied as plain text."
-
-### A copy does not update
-
-A copy is a point-in-time snapshot. Pasted entries keep the style, item data, and locale of the moment you copied them, and ZotLit never rewrites them. Copy again after any of those change.
-
-ZotLit also leaves your Markdown unchanged. Your notes store citations, and each export generates its own bibliography from them. See [Export a note with citations](/docs/how-to/export-note-with-citations).
+The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers navigation, item actions, bibliography copy, and error recovery.
 
 ## Citekey Navigation
 
-**Open citations as links** is off by default. It controls navigation for citations ZotLit shows, both literal Pandoc citations and Literature Note wikilinks shown as citations, and works independently of formatted display.
+**Open citations as links** controls navigation for both literal Pandoc citations and Literature Note wikilinks shown as citations. It works independently of formatted display and hover behavior.
 
-With **Pandoc citations** and **Open citations as links** on, ZotLit supports:
+A single-item citation can open or create its Literature Note. A multi-item citation requires an item choice. An [ambiguous key](#ambiguous-key) requires a candidate choice because the key itself names no unique item.
 
-- Click and selection behavior in the editor and reading view.
-- A selection menu for citations with multiple items.
-- Four open-under-cursor commands.
+The Citation Popover presents every cited item's full bibliography entry in citation order. An unresolved or ambiguous key remains visible as its own state instead of adopting an item.
 
-A single-item citation opens its Literature Note. ZotLit creates the note first when necessary. A multi-item citation opens a menu so you can choose an item.
-
-An [ambiguous key](#ambiguous-key) opens a picker instead, listing every item the key matches with its summary, library, and item key. The item you choose opens by its own identity, so the choice cannot land back on the same question. A click and the four open-under-cursor commands behave the same way.
-
-Source mode keeps the text editable. Ctrl-click opens a citation on Windows and Linux. Cmd-click opens it on macOS. Modifier clicks follow Obsidian's pane behavior.
-
-While **Open citations as links** is off, a plain click on a citation ZotLit shows puts the cursor in its Markdown source in Live Preview, so the text expands for editing, the same as a click on bold text. A plain click in reading view does nothing. Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
-
-**Hover action** decides what hover shows, and one hover shows one result. It ships as **Citation popover**. It owns hover on its own: **Open citations as links** never gates it, so a citation ZotLit shows still answers hover with the popover while that setting is off.
-
-The citation popover shows the full bibliography entry of every cited item, in citation order, each with buttons to open its Literature Note, select it in Zotero, and open its attachment. An unresolved citation key says so in place of an entry. A citation key that matches several Zotero items says so too, and lists every item it matches with that item's library and item key.
-
-A style that writes its citations as footnotes shows the footnote text instead, with the same buttons in one row per cited item. Each row carries the item's number from the References Sidebar, the same number the citation shows in the text.
-
-A toggle on the **Require modifier key** sub-page under **Hover action** gates the popover in each editing mode. Source mode ships on, so the popover waits until you hold Ctrl (Windows and Linux) or Cmd (macOS) and plain-text editing stays uninterrupted. Live Preview and reading view ship off and show the popover on bare hover.
-
-**Page preview** keeps Obsidian's own page preview instead: a single-item citation previews its Literature Note under the Page preview plugin's settings, and a multi-item citation previews nothing. A citation key that matches several Zotero items previews nothing either, since no one of them is the item the key names. **Off** adds no ZotLit hover result, and Literature Note wikilinks keep Obsidian's native hover.
-
-The four commands have no default hotkeys:
-
-- <Command inline>ZotLit: Open citation key under cursor</Command>
-- <Command inline>ZotLit: Open citation key under cursor in new tab</Command>
-- <Command inline>ZotLit: Open citation key under cursor to the right</Command>
-- <Command inline>ZotLit: Open citation key under cursor in new window</Command>
-
-The cursor must be on a recognized Pandoc citation. The commands require **Pandoc citations** and **Open citations as links**.
-
-**Open citations as links** covers Literature Note wikilinks shown as citations as well. While it is off, a plain click on such a citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Ctrl-click (Windows and Linux) or Cmd-click (macOS) opens the Literature Note.
+The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers citation hover and the available navigation actions. The [commands reference](/docs/reference/commands) lists the open-under-cursor commands.
 
 ## Theme hooks [#theme-hooks]
 
@@ -197,6 +126,11 @@ See [Theme hooks](/docs/reference/theme-hooks) for class names, state meanings, 
     title="Create and open literature notes"
     description="Open or create a Literature Note from a citation or the quick switcher."
     href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="Review, copy, and troubleshoot references"
+    description="Navigate occurrences, inspect citation popovers, copy entries, and fix errors."
+    href="/docs/how-to/review-copy-troubleshoot-references"
   />
   <Card
     title="Export a note with citations"
