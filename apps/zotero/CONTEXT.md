@@ -19,3 +19,7 @@ _Avoid_: flush (already names reader-state flushing in the notify layer), sync (
 **Staleness Window**:
 The interval between a change committing in Zotero and that change becoming visible to the Obsidian plugin. Checkpoints shrink this interval; they do not close it to zero.
 _Avoid_: lag, delay (both read as performance, not correctness)
+
+**Database Status**:
+The Companion's user-facing report of whether the main database file holds the user's recent work, together with the on-demand control that writes it there.
+_Avoid_: note status (that names the Literature Note column), sync status (that is Zotero's own remote sync), database health
