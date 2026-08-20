@@ -29,7 +29,7 @@
  */
 
 import { delay } from "@std/async";
-import { copyFile, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, open, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -46,6 +46,8 @@ import type { ReadParentPlan } from "./read-parent";
 const logger = getLogger(["database", "read-source"]);
 const CLONE_ATTEMPTS = 3;
 const RETRY_BACKOFF_MS = 25;
+const SQLITE_HEADER_BYTES = 100;
+const WAL_HEADER_BYTES = 32;
 
 export type ConfiguredReadMode = ZoteroReadMode;
 export type EffectiveReadMode = "reflink" | "copy" | "immutable";
@@ -63,22 +65,30 @@ export interface PreparedRead extends AsyncDisposable {
   fallbackNotice?: ReadFallbackNotice;
 }
 
-type FileFingerprint =
+export type MainIdentity =
   | { exists: false }
   | {
       exists: true;
       dev: bigint;
       ino: bigint;
       size: bigint;
-      mtimeNs: bigint;
-      ctimeNs: bigint;
+      header: Buffer;
     };
 
+export type WalGeneration =
+  | { state: "absent" }
+  | { state: "empty" }
+  | { state: "unstable" }
+  | { state: "present"; header: Buffer; size: bigint };
+
 /** Identity of the live source pair at one instant. See {@link snapshotSource}. */
-export interface SourceFingerprint {
+interface SourcePair {
+  main: MainIdentity;
+  wal: WalGeneration;
+}
+
+export interface SourceFingerprint extends SourcePair {
   path: string;
-  main: FileFingerprint;
-  wal: FileFingerprint;
 }
 
 type TempReadMode = "reflink" | "copy";
@@ -144,8 +154,10 @@ export async function prepareRead(
 export async function staleWalNotice(
   sourcePath: string,
 ): Promise<ReadFallbackNotice | undefined> {
-  const wal = await fingerprint(`${sourcePath}-wal`);
-  return wal.exists && wal.size > 0n ? "wal-not-replayed" : undefined;
+  const wal = await walGeneration(`${sourcePath}-wal`);
+  return wal.state === "present" || wal.state === "unstable"
+    ? "wal-not-replayed"
+    : undefined;
 }
 
 function immutableRead(sourcePath: string): PreparedRead {
@@ -257,16 +269,21 @@ async function cloneInto(
 
       await Promise.all([
         copySource(mode, sourcePath, path),
-        before.wal.exists
+        before.wal.state !== "absent"
           ? copySource(mode, walPath, `${path}-wal`)
           : undefined,
       ]);
 
       const after = await snapshotPair(sourcePath, walPath);
-      if (
-        fingerprintsEqual(before.main, after.main) &&
-        fingerprintsEqual(before.wal, after.wal)
-      ) {
+      const matches = sourcePairsEqual(before, after);
+      logger.debug("Database read snapshot fingerprint checked", {
+        verdict: matches ? "unchanged" : "changed",
+        beforeWalState: before.wal.state,
+        beforeWalSize: walGenerationSize(before.wal),
+        afterWalState: after.wal.state,
+        afterWalSize: walGenerationSize(after.wal),
+      });
+      if (matches) {
         return {
           path,
           uriOptions: { mode: "ro" },
@@ -351,9 +368,10 @@ async function copySource(
 }
 
 /**
- * Fingerprint the live source pair. A clone read leaves every field untouched,
- * so two equal fingerprints mean the database we would read is byte-identical to
- * the one we already hold.
+ * Fingerprint the live source pair. Equal fingerprints identify the same main
+ * file state and WAL generation, so clone modes would read the same SQLite
+ * view. A checkpoint may change main-file pages while leaving the WAL generation
+ * intact; those pages remain represented in that WAL and preserve the view.
  *
  * @see DatabaseService's `#sourceMoved` for the gate this feeds.
  */
@@ -368,34 +386,41 @@ export function sourceFingerprintsEqual(
   a: SourceFingerprint,
   b: SourceFingerprint,
 ): boolean {
-  return (
-    a.path === b.path &&
-    fingerprintsEqual(a.main, b.main) &&
-    fingerprintsEqual(a.wal, b.wal)
-  );
+  return a.path === b.path && sourcePairsEqual(a, b);
 }
 
 async function snapshotPair(
   sourcePath: string,
   walPath: string,
-): Promise<{ main: FileFingerprint; wal: FileFingerprint }> {
+): Promise<SourcePair> {
   const [main, wal] = await Promise.all([
-    fingerprint(sourcePath),
-    fingerprint(walPath),
+    mainIdentity(sourcePath),
+    walGeneration(walPath),
   ]);
   return { main, wal };
 }
 
-async function fingerprint(path: string): Promise<FileFingerprint> {
+function sourcePairsEqual(a: SourcePair, b: SourcePair): boolean {
+  return (
+    mainIdentitiesEqual(a.main, b.main) && walGenerationsEqual(a.wal, b.wal)
+  );
+}
+
+async function mainIdentity(path: string): Promise<MainIdentity> {
   try {
-    const s = await stat(path, { bigint: true });
+    await using file = await open(path, "r");
+    const header = Buffer.alloc(SQLITE_HEADER_BYTES);
+    const { bytesRead } = await file.read(header, 0, SQLITE_HEADER_BYTES, 0);
+    if (bytesRead !== SQLITE_HEADER_BYTES) {
+      throw new Error(`SQLite header is ${bytesRead} bytes, expected 100`);
+    }
+    const stats = await file.stat({ bigint: true });
     return {
       exists: true,
-      dev: s.dev,
-      ino: s.ino,
-      size: s.size,
-      mtimeNs: s.mtimeNs,
-      ctimeNs: s.ctimeNs,
+      dev: stats.dev,
+      ino: stats.ino,
+      size: stats.size,
+      header,
     };
   } catch (error) {
     if (isErrno(error, "ENOENT")) return { exists: false };
@@ -403,15 +428,64 @@ async function fingerprint(path: string): Promise<FileFingerprint> {
   }
 }
 
-function fingerprintsEqual(a: FileFingerprint, b: FileFingerprint): boolean {
+function mainIdentitiesEqual(a: MainIdentity, b: MainIdentity): boolean {
   if (!a.exists || !b.exists) return a.exists === b.exists;
   return (
     a.dev === b.dev &&
     a.ino === b.ino &&
     a.size === b.size &&
-    a.mtimeNs === b.mtimeNs &&
-    a.ctimeNs === b.ctimeNs
+    a.header.equals(b.header)
   );
+}
+
+/**
+ * SQLite's checkpoint sequence, salts, and checksums occupy the 32-byte WAL
+ * header. Within one generation the WAL only appends, so a stable header and
+ * size identify its bytes. Any in-motion or unreadable observation is unstable
+ * and therefore fails open at the caller's comparison.
+ *
+ * @see https://github.com/sqlite/sqlite/blob/version-3.50.4/src/wal.c#L34-L45
+ */
+async function walGeneration(path: string): Promise<WalGeneration> {
+  try {
+    await using file = await open(path, "r");
+    const before = await file.stat({ bigint: true });
+    if (before.size === 0n) {
+      const after = await file.stat({ bigint: true });
+      return after.size === 0n ? { state: "empty" } : { state: "unstable" };
+    }
+
+    const header = Buffer.alloc(WAL_HEADER_BYTES);
+    const verification = Buffer.alloc(WAL_HEADER_BYTES);
+    const firstRead = await file.read(header, 0, WAL_HEADER_BYTES, 0);
+    const secondRead = await file.read(verification, 0, WAL_HEADER_BYTES, 0);
+    const after = await file.stat({ bigint: true });
+    if (
+      firstRead.bytesRead === WAL_HEADER_BYTES &&
+      secondRead.bytesRead === WAL_HEADER_BYTES &&
+      before.size === after.size &&
+      header.equals(verification)
+    ) {
+      return { state: "present", header, size: after.size };
+    }
+    return { state: "unstable" };
+  } catch (error) {
+    return isErrno(error, "ENOENT")
+      ? { state: "absent" }
+      : { state: "unstable" };
+  }
+}
+
+function walGenerationsEqual(a: WalGeneration, b: WalGeneration): boolean {
+  if (a.state !== b.state || a.state === "unstable") return false;
+  if (a.state !== "present" || b.state !== "present") return true;
+  return a.size === b.size && a.header.equals(b.header);
+}
+
+export function walGenerationSize(
+  wal: WalGeneration | undefined,
+): string | undefined {
+  return wal?.state === "present" ? wal.size.toString() : undefined;
 }
 
 /**

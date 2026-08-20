@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
@@ -43,7 +44,7 @@ beforeEach(async () => {
   copyFile = real;
   dir = await mkdtemp(join(tmpdir(), "zotlit-read-parent-place-"));
   source = join(dir, "zotero.sqlite");
-  await writeFile(source, "main");
+  await writeFile(source, Buffer.alloc(100));
 });
 
 afterEach(async () => {
@@ -104,5 +105,66 @@ describe("prepareRead placement", () => {
     await using prepared = await prepareRead("copy", source);
 
     expect(dirname(dirname(prepared.path))).toBe(tmpdir());
+  });
+});
+
+describe("prepareRead consistency guard", () => {
+  it("retries when a rollback-journal commit lands during the main copy", async () => {
+    await rm(source);
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA journal_mode = DELETE;
+      CREATE TABLE entries (value TEXT NOT NULL);
+      INSERT INTO entries VALUES ('one');
+    `);
+    plan(tmpdir());
+    const real = copyFile;
+    let commitInjected = false;
+    copyFile = async (from, to, mode) => {
+      await real(from, to, mode);
+      if (from === source && !commitInjected) {
+        commitInjected = true;
+        sqlite.exec("UPDATE entries SET value = 'two'");
+      }
+    };
+
+    await using prepared = await prepareRead("copy", source);
+    using clone = new DatabaseSync(prepared.path, { readOnly: true });
+
+    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+      value: "two",
+    });
+  });
+
+  it("retries when the WAL generation resets during its copy", async () => {
+    await rm(source);
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA wal_autocheckpoint = 0;
+      CREATE TABLE entries (value TEXT NOT NULL);
+      PRAGMA wal_checkpoint(TRUNCATE);
+      INSERT INTO entries VALUES ('one');
+    `);
+    plan(tmpdir());
+    const real = copyFile;
+    let resetInjected = false;
+    copyFile = async (from, to, mode) => {
+      await real(from, to, mode);
+      if (from === `${source}-wal` && !resetInjected) {
+        resetInjected = true;
+        sqlite.exec(`
+          PRAGMA wal_checkpoint(TRUNCATE);
+          UPDATE entries SET value = 'two';
+        `);
+      }
+    };
+
+    await using prepared = await prepareRead("copy", source);
+    using clone = new DatabaseSync(prepared.path, { readOnly: true });
+
+    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+      value: "two",
+    });
   });
 });

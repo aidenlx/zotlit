@@ -84,8 +84,10 @@ describe("read-source", () => {
 
   it("copies the main database and WAL into an owned temp dir", async () => {
     const source = join(dir, "zotero.sqlite");
-    await writeFile(source, "main");
-    await writeFile(`${source}-wal`, "wal");
+    const main = Buffer.alloc(100, 1);
+    const wal = Buffer.alloc(32, 2);
+    await writeFile(source, main);
+    await writeFile(`${source}-wal`, wal);
 
     const preparedPath = await (async () => {
       await using prepared = await prepareRead("copy", source);
@@ -95,10 +97,8 @@ describe("read-source", () => {
       expect(prepared.path).not.toBe(source);
       // Source and temp folder share a volume here, so placement stays put.
       expect(dirname(dirname(prepared.path))).toBe(tmpdir());
-      await expect(readFile(prepared.path, "utf8")).resolves.toBe("main");
-      await expect(readFile(`${prepared.path}-wal`, "utf8")).resolves.toBe(
-        "wal",
-      );
+      await expect(readFile(prepared.path)).resolves.toEqual(main);
+      await expect(readFile(`${prepared.path}-wal`)).resolves.toEqual(wal);
       return prepared.path;
     })();
 
@@ -532,6 +532,42 @@ describe("DatabaseService", () => {
       expect(prepareMock).toHaveBeenCalledTimes(1);
     });
 
+    it("refreshes an immutable read when the source fingerprint is unchanged", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"))
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      emitDirEvent("zotero.sqlite");
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 2);
+
+      expect(prepareMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps an immutable watcher tick cancelled when auto-refresh is off", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"))
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      emitDirEvent("zotero.sqlite");
+      settings.set({ "zotero.auto-refresh": false });
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(prepareMock).toHaveBeenCalledTimes(1);
+    });
+
     it("refreshes when the watcher tick follows a real Zotero write", async () => {
       prepareMock
         .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
@@ -924,10 +960,9 @@ function fingerprint(
       dev: 1n,
       ino: 2n,
       size: main.size ?? 1n,
-      mtimeNs: 3n,
-      ctimeNs: 4n,
+      header: Buffer.alloc(100),
     },
-    wal: { exists: false },
+    wal: { state: "absent" },
   };
 }
 

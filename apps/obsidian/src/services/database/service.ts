@@ -23,6 +23,7 @@ import {
   prepareRead,
   snapshotSource,
   sourceFingerprintsEqual,
+  walGenerationSize,
 } from "./read-source";
 import type {
   ConfiguredReadMode,
@@ -660,9 +661,14 @@ export class DatabaseService extends Service<void> {
   }
 
   async #refreshIfSourceMoved({ trusted }: WatchSignal): Promise<void> {
-    if (!trusted && !(await this.#sourceMoved())) {
-      logger.debug("Watcher tick ignored, database unchanged since last read");
-      return;
+    if (!trusted) {
+      const sourceMoved = await this.#sourceMoved();
+      if (this.#readMode !== "immutable" && !sourceMoved) {
+        logger.debug(
+          "Watcher tick ignored, database unchanged since last read",
+        );
+        return;
+      }
     }
     // Both rechecked after the gate's await. The timer clears itself before that
     // await, so `#cancelWatchTimer` can no longer stop a tick inside it, and the
@@ -688,11 +694,20 @@ export class DatabaseService extends Service<void> {
    */
   async #sourceMoved(): Promise<boolean> {
     const previous = this.#sourceFingerprint;
-    if (!previous) return true;
     const current = await this.#trySnapshotSource(
       this.#zoteroPref.databasePath,
     );
-    return !current || !sourceFingerprintsEqual(previous, current);
+    const moved =
+      !previous || !current || !sourceFingerprintsEqual(previous, current);
+    logger.debug("Watcher source fingerprint checked", {
+      verdict: moved ? "changed" : "unchanged",
+      readMode: this.#readMode,
+      previousWalState: previous?.wal.state ?? "unavailable",
+      previousWalSize: walGenerationSize(previous?.wal),
+      currentWalState: current?.wal.state ?? "unavailable",
+      currentWalSize: walGenerationSize(current?.wal),
+    });
+    return moved;
   }
 
   /** Fail-soft {@link snapshotSource}: `null` where that function would throw. */

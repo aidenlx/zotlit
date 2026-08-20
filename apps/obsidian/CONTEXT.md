@@ -313,6 +313,12 @@ _Avoid_: allowed folder, trusted directory (implies a broader grant than one Att
 **Read Mode**:
 The strategy ZotLit uses to open `zotero.sqlite` while Zotero is running and holds the file exclusively. Configured per vault (synced) as one of four values: Auto, Reflink clone, Full copy, Immutable source. Auto resolves to one of the three concrete modes at runtime.
 
+**Main Identity**:
+The identity of one observed state of the main Zotero database file. It combines the file identity and size with the complete SQLite page-1 header, including the change counter that advances on rollback-journal commits.
+
+**WAL Generation**:
+The identity of one observed write-ahead log generation. It distinguishes an absent, empty, unstable, or present WAL; a present generation is identified by its WAL header and size. Two source fingerprints match when their path, Main Identity, and WAL Generation match; an unstable generation never matches.
+
 **Reflink Clone** _(Read Mode)_:
 Creates a lightweight snapshot of the database files into a temporary directory and opens the snapshot read-only. Sees committed and recent uncommitted edits. Default on macOS (via `clonefile`); unavailable on filesystems that do not support reflinking.
 _Avoid_: copy-on-write clone (user-facing docs avoid this term)

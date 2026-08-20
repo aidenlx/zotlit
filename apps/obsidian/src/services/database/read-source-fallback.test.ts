@@ -25,7 +25,7 @@ describe("reflink fallback notices", () => {
     dir = join(tmpdir(), `zotlit-read-fallback-test-${crypto.randomUUID()}`);
     source = join(dir, "zotero.sqlite");
     await mkdir(dir, { recursive: true });
-    await writeFile(source, "main");
+    await writeFile(source, Buffer.alloc(100));
   });
 
   afterEach(async () => {
