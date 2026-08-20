@@ -1,21 +1,15 @@
 import { regex } from "arkregex";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { gte, major, minor, patch, prerelease, rcompare, valid } from "semver";
+import { prerelease, rcompare, valid } from "semver";
 import { $ } from "zx";
 
 import {
-  getFrontmatterField,
+  hasTargetNewPageAvailability,
+  hasAvailabilityDeclaration,
+  isReviewedForTarget,
   stripAvailabilityLines,
 } from "./mdx-frontmatter.ts";
-
-/**
- * The release-time half of ADR 0002: diffs `content/docs/**\/*.mdx` against
- * the previous Stable Release Line tag, with rename detection, and
- * classifies each touched page into a review candidate. Human review (the
- * accept/reject prompting, and the actual frontmatter writes) happens in the
- * caller — `release.ts`'s docs-availability phase, or a read-only preview.
- */
 
 const DOCS_CONTENT_DIR = "apps/docs/content/docs";
 const MAX_DIFF_LINES = 60;
@@ -42,18 +36,21 @@ export interface DocsAvailabilityCandidate {
   diff: string;
 }
 
+export interface DocsAvailabilityScan {
+  candidates: readonly DocsAvailabilityCandidate[];
+  sectionIndexes: readonly string[];
+  skipped: number;
+}
+
 const STATUS_LINE = regex("^(?<status>[AMD])\t(?<path>.+)$");
 const RENAME_LINE = regex(
   "^R(?<similarity>\\d+)\t(?<oldPath>[^\t]+)\t(?<newPath>.+)$",
 );
 
-function stableReleaseLine(version: string): string {
-  return `${major(version)}.${minor(version)}.${patch(version)}`;
-}
-
 function isDocsPage(path: string): boolean {
   return (
     path.endsWith(".mdx") &&
+    basename(path) !== "index.mdx" &&
     !basename(path).startsWith("_") &&
     !GENERATED_DOCS_PAGES.has(path)
   );
@@ -82,17 +79,8 @@ async function readBlobAtTag(
 }
 
 /**
- * Whether a touched page is worth surfacing for review: its content must
- * differ from the baseline once `introduced`/`updated` are ignored (those
- * two lines are `release.ts`'s own output — their mere presence/absence
- * must never count as a change, or this would flag every page the moment
- * this feature first ships, since none of them carried these fields at the
- * previous stable tag), and it must not already have been reviewed earlier
- * in this same release cycle (`updated`'s Stable Release Line already at or
- * ahead of `targetLine` — the baseline tag stays fixed at the previous
- * *stable* tag across an entire beta series per ADR 0002, so re-diffing
- * against it would otherwise re-surface an already-handled page on every
- * subsequent beta bump).
+ * Availability fields do not count as content, and a page already assigned
+ * to the target line does not return to review on a repeat run.
  */
 async function shouldReview(
   cwd: string,
@@ -100,12 +88,12 @@ async function shouldReview(
     baselineTag,
     baselinePath,
     currentPath,
-    targetLine,
+    targetVersion,
   }: {
     baselineTag: string;
     baselinePath: string;
     currentPath: string;
-    targetLine: string;
+    targetVersion: string;
   },
 ): Promise<boolean> {
   const [before, after] = await Promise.all([
@@ -115,22 +103,29 @@ async function shouldReview(
   if (stripAvailabilityLines(before) === stripAvailabilityLines(after)) {
     return false;
   }
-  const updated = getFrontmatterField(after, "updated");
-  return updated === undefined || !gte(stableReleaseLine(updated), targetLine);
+  return !isReviewedForTarget(after, targetVersion);
 }
 
 async function diffPage(
   cwd: string,
   baselineTag: string,
-  path: string,
+  {
+    path,
+    previousPath,
+  }: {
+    path: string;
+    previousPath?: string;
+  },
 ): Promise<string> {
+  const paths = previousPath === undefined ? [path] : [previousPath, path];
   const { stdout } = await $({
     cwd,
-  })`git diff -M ${baselineTag} HEAD -- ${path}`;
+  })`git diff -M ${baselineTag} HEAD -- ${paths}`;
   const lines = stdout.split("\n");
   if (lines.length <= MAX_DIFF_LINES) return stdout;
   const hidden = lines.length - MAX_DIFF_LINES;
-  return `${lines.slice(0, MAX_DIFF_LINES).join("\n")}\n… ${hidden} more lines — see \`git diff ${baselineTag} HEAD -- ${path}\``;
+  const command = `git diff -M ${shellQuote(baselineTag)} HEAD -- ${paths.map(shellQuote).join(" ")}`;
+  return `${lines.slice(0, MAX_DIFF_LINES).join("\n")}\n… ${hidden} more lines — see \`${command}\``;
 }
 
 /**
@@ -146,34 +141,46 @@ export async function scanDocsAvailability({
   cwd: string;
   baselineTag: string;
   targetVersion: string;
-}): Promise<DocsAvailabilityCandidate[]> {
+}): Promise<DocsAvailabilityScan> {
   const { stdout } = await $({
     cwd,
   })`git diff -M --name-status ${baselineTag} HEAD -- ${DOCS_CONTENT_DIR}`;
 
-  const targetLine = stableReleaseLine(targetVersion);
   const candidates: DocsAvailabilityCandidate[] = [];
+  let skipped = 0;
 
   for (const line of stdout.split("\n").filter(Boolean)) {
     const rename = RENAME_LINE.exec(line);
     if (rename) {
       const { similarity, oldPath, newPath } = rename.groups;
-      if (!isDocsPage(newPath)) continue;
+      if (!isDocsPage(newPath)) {
+        skipped += 1;
+        continue;
+      }
       // 100% similarity: a pure move, content unchanged. `introduced`/
       // `updated` moved with the file's frontmatter — nothing to review.
-      if (Number(similarity) >= 100) continue;
+      if (Number(similarity) >= 100) {
+        skipped += 1;
+        continue;
+      }
       const review = await shouldReview(cwd, {
         baselineTag,
         baselinePath: oldPath,
         currentPath: newPath,
-        targetLine,
+        targetVersion,
       });
-      if (!review) continue;
+      if (!review) {
+        skipped += 1;
+        continue;
+      }
       candidates.push({
         kind: "moved",
         path: newPath,
         previousPath: oldPath,
-        diff: await diffPage(cwd, baselineTag, newPath),
+        diff: await diffPage(cwd, baselineTag, {
+          path: newPath,
+          previousPath: oldPath,
+        }),
       });
       continue;
     }
@@ -181,26 +188,54 @@ export async function scanDocsAvailability({
     const status = STATUS_LINE.exec(line);
     if (!status) continue;
     const { path } = status.groups;
-    if (!isDocsPage(path)) continue;
+    if (!isDocsPage(path)) {
+      skipped += 1;
+      continue;
+    }
 
     if (status.groups.status === "A") {
-      candidates.push({ kind: "new", path, diff: "" });
+      const current = await readFile(join(cwd, path), "utf-8");
+      if (hasTargetNewPageAvailability(current, targetVersion)) {
+        skipped += 1;
+      } else {
+        candidates.push({ kind: "new", path, diff: "" });
+      }
     } else if (status.groups.status === "M") {
       const review = await shouldReview(cwd, {
         baselineTag,
         baselinePath: path,
         currentPath: path,
-        targetLine,
+        targetVersion,
       });
-      if (!review) continue;
+      if (!review) {
+        skipped += 1;
+        continue;
+      }
       candidates.push({
         kind: "changed",
         path,
-        diff: await diffPage(cwd, baselineTag, path),
+        diff: await diffPage(cwd, baselineTag, { path }),
       });
+    } else {
+      skipped += 1;
     }
-    // "D" (a removed page) carries no frontmatter to assign — out of scope.
   }
 
-  return candidates;
+  const { stdout: trackedFiles } = await $({
+    cwd,
+  })`git ls-files -- ${DOCS_CONTENT_DIR}`;
+  const sectionIndexes: string[] = [];
+  for (const path of trackedFiles.split("\n").filter(Boolean)) {
+    if (!path.endsWith(".mdx") || basename(path) !== "index.mdx") continue;
+    const content = await readFile(join(cwd, path), "utf-8");
+    if (hasAvailabilityDeclaration(content)) sectionIndexes.push(path);
+  }
+
+  candidates.sort((left, right) => left.path.localeCompare(right.path));
+  sectionIndexes.sort();
+  return { candidates, sectionIndexes, skipped };
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }

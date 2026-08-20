@@ -36,9 +36,15 @@ Read `/docs-writing` to scope content decisions, then delegate prose to the `doc
 
 ### Release availability
 
-Don't hand-write `introduced`/`updated` — leave both unset when creating or editing a page. They're optional; an unset page renders with no badge and no "Available since" line, which is normal for a page that hasn't shipped yet.
+Leave `introduced` and `updated` unset when you create or edit a page. The fields are optional. An unset page has no badge or "Available since" line until it ships.
 
-`release.ts`'s docs-availability phase assigns them at release time: it diffs `content/docs/**/*.mdx` against the previous Stable Release Line git tag, auto-accepts brand-new pages (`introduced = updated` = the release being cut), and interactively reviews every changed or moved page — with its diff shown inline — before writing `updated`. That review step is where "wording-only edits preserve `updated`" actually gets decided; a mechanical diff can't tell wording from a material change on its own. Run `pnpm --filter @zotlit/scripts preview-docs-availability` for a read-only dry run of the same scan. See [ADR 0002](docs/adr/0002-release-availability-is-git-diff-assisted-not-hand-authored.md) and `lib/docs-availability.ts` for the release-line classifier. The site derives `NEW`/`UPDATED` from `apps/docs/zotlit-release.json`, written by the same phase.
+`pnpm docs:availability <stable-version>` is the sole writer of page-level `introduced` and `updated` metadata. It requires a clean working tree. It uses the net committed diff from the previous stable tag to `HEAD`. It assigns both fields to new pages automatically. It presents changed and moved pages in batches of at most five. Each batch starts with no page selected, so each `updated` value records an explicit material-change decision.
+
+The command validates the complete write plan before it changes files. It shows the plan and asks for final confirmation once. Use `pnpm docs:availability <stable-version> --check` to run the same scan without prompts or writes. A successful write run tells you to review and commit its changes, then run `pnpm release` again.
+
+For a stable Obsidian release, `release.ts` offers this command as a handoff before it changes any file. The release continues when you decline the handoff. Pre-release and Zotero-only releases continue without this prompt. The only docs data that `release.ts` writes is the Docs Release Line in `apps/docs/zotlit-release.json`.
+
+Section Index pages have the basename `index.mdx`. They have no availability metadata and stay outside the scan. Generated pages and underscore-prefixed content partials also stay outside the scan. See [ADR 0002](docs/adr/0002-release-availability-is-git-diff-assisted-not-hand-authored.md) and the docs-availability implementation in the scripts workspace. The site derives `NEW` and `UPDATED` from the Docs Release Line.
 
 Image attachments (screenshots, etc.) go under `public/img/<collection>/` as `.webp`, not `.png`/`.jpg` — convert with `cwebp` before committing.
 

@@ -9,6 +9,7 @@
   "type": "module",
   "scripts": {
     "release": "pnpm --filter @zotlit/scripts release",
+    "docs:availability": "pnpm --filter @zotlit/scripts docs:availability",
     "build:plugin": "turbo run build --filter=@zotlit/obsidian --output-logs=full",
     "deploy:docs": "mise exec node@24 -- vercel deploy apps/docs",
     "dev": "turbo run dev",
