@@ -1,0 +1,10 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .zl-ink { fill: #D8E2F0 }
+      .zl-accent { fill: #F0793F }
+    }
+  </style>
+  <path class="zl-ink" fill="#1E3A5F" d="M4.82 3.5 H17 V7 L9.81 16.5 H20.5 V20 H4.92 A0.92 0.92 0 0 1 4 19.08 V17.14 A1.9 1.9 0 0 1 4.38 15.99 L11.19 7 H4.25 A0.25 0.25 0 0 1 4 6.75 V4.32 A0.82 0.82 0 0 1 4.82 3.5 Z"/>
+  <path class="zl-accent" fill="#E8622C" d="M17 3.5 H20.5 V16.5 L18.75 14.75 L17 16.5 Z"/>
+</svg>
