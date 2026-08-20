@@ -37,7 +37,11 @@ const logger = getLogger("database");
 const DB_OPTIONS: DatabaseOptions = {
   jit: true,
 };
-const WATCH_DEBOUNCE_MS = 2000;
+const WATCH_DEBOUNCE_MS = 1200;
+// Immutable reads carry no WAL replay to settle, and skip the clone step's own
+// echo entirely, so a shorter debounce still avoids spurious refresh bursts
+// while catching a checkpoint sooner than the clone-mode debounce would.
+const IMMUTABLE_WATCH_DEBOUNCE_MS = 800;
 // `persistent: false` so no watcher keeps Node's event loop alive on its own —
 // Obsidian (Electron) owns the loop, and a leaked watcher must not block
 // process exit if plugin disposal fails.
@@ -640,15 +644,19 @@ export class DatabaseService extends Service<void> {
     const rescheduled = !!this.#watchTimer;
     if (this.#watchTimer) window.clearTimeout(this.#watchTimer);
     this.#watchTrusted ||= trusted;
+    const debounceMs =
+      this.#readMode === "immutable"
+        ? IMMUTABLE_WATCH_DEBOUNCE_MS
+        : WATCH_DEBOUNCE_MS;
     this.#watchTimer = window.setTimeout(() => {
       this.#watchTimer = null;
       const wasTrusted = this.#watchTrusted;
       this.#watchTrusted = false;
       void this.#refreshIfSourceMoved({ trusted: wasTrusted });
-    }, WATCH_DEBOUNCE_MS);
+    }, debounceMs);
     logger.trace("Watch debounce timer {action}", {
       action: rescheduled ? "reset" : "started",
-      debounceMs: WATCH_DEBOUNCE_MS,
+      debounceMs,
     });
   }
 
