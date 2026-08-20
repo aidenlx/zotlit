@@ -8,15 +8,15 @@ description: "Zotero 10 support, library scope, ambiguous citation keys"
 
 ### Zotero 10 support
 
-ZotLit now runs on Zotero 10 as well as Zotero 9. The **ZotLit** submenu on a right-clicked Zotero library or collection works again on Zotero 10, where it used to fail on every open.
+> This release requires updating the Zotero companion to the matching version. The companion and the Obsidian plugin must match.
 
-Zotero 10 also holds recent changes in a separate write-ahead log until it folds them into the main database file. The **Immutable source** read mode reads that file alone, so those changes stay invisible to it.
+ZotLit now supports Zotero 10 as well as Zotero 9.
 
-ZotLit now warns once per launch while **Auto** falls back to Immutable source, which it does on Windows and on Linux filesystems such as ext4. Set **Read mode** to **Full copy** to include those changes. See [Fix stale data from Zotero](/docs/how-to/fix-stale-data).
+Zotero 10 changed how it stores recent edits, so changes made while Zotero was open could stay invisible to ZotLit. The companion now keeps the database current for ZotLit automatically. When you switch from Zotero to Obsidian, your changes are already there, whether or not live updates are enabled. A new **Database Status** panel on the Zotero sidebar confirms that recent changes have reached the database and lets you trigger a manual update if something went wrong. See [Fix stale data from Zotero](/docs/how-to/fix-stale-data) for details.
 
 ### Library scope
 
-ZotLit now works across several Zotero libraries at once. **Library scope**, the first setting in **Settings › ZotLit**, decides which libraries item search, citation key resolution, and the library-wide commands cover. It replaces the old **Default library** setting.
+ZotLit now works across several Zotero libraries at once. **Library scope** in **Settings › ZotLit**, decides which libraries item search, citation key resolution, and the library-wide commands cover. It replaces the old **Default library** setting.
 
 Two modes:
 
@@ -62,4 +62,5 @@ Leaving it empty keeps the language the selected style declares. See [Settings �
 
 ## Bug Fixes
 
+- Fixed slow or broken database refreshes when the Zotero data directory sits on a different drive than the system temp folder, such as an external drive on macOS.
 - Fixed dragging an annotation from the annotation view inserting the raw highlight text, or the annotation key for a sticky note, instead of the rendered annotation template. The insert only recovered after pressing **Link to Zotero item** again.
