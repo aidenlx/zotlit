@@ -16,17 +16,20 @@ export function formatValue(
 const fluentLogger = appLogger.getChild("l10n");
 
 /**
- * {@link formatValue} for a label the caller cannot render without. A missing
+ * {@link formatValue} for a message the caller cannot render without. A missing
  * message means the FTL file and the code disagree, so it fails loudly instead
- * of appending a blank menu entry.
+ * of rendering blank UI.
  */
-export async function requireLabel(id: FluentMessageId): Promise<string> {
-  const label = await formatValue(id);
-  if (label === null) {
+export async function requireMessage(
+  id: FluentMessageId,
+  args?: L10nArgs,
+): Promise<string> {
+  const message = await formatValue(id, args);
+  if (message === null) {
     fluentLogger.error("missing FTL message", { id });
     throw new Error(`missing FTL message: ${id}`);
   }
-  return label;
+  return message;
 }
 
 /**

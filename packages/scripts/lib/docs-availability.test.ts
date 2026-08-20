@@ -45,14 +45,17 @@ interface GitRepository extends AsyncDisposable {
 }
 
 async function createGitRepository(): Promise<GitRepository> {
+  await using stack = new AsyncDisposableStack();
   const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
   const scratch = join(workspaceRoot, "tmp");
   await mkdir(scratch, { recursive: true });
   const root = await mkdtemp(join(scratch, "docs-availability-test-"));
+  stack.defer(() => rm(root, { recursive: true, force: true }));
 
   await git(root, "init", "--initial-branch=main");
   await git(root, "config", "user.email", "tests@zotlit.invalid");
   await git(root, "config", "user.name", "ZotLit tests");
+  const cleanup = stack.move();
 
   return {
     root,
@@ -66,8 +69,8 @@ async function createGitRepository(): Promise<GitRepository> {
       await mkdir(dirname(fullPath), { recursive: true });
       await writeFile(fullPath, content);
     },
-    [Symbol.asyncDispose]() {
-      return rm(root, { recursive: true, force: true });
+    async [Symbol.asyncDispose]() {
+      await cleanup[Symbol.asyncDispose]();
     },
   };
 }
