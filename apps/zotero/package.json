@@ -1,6 +1,6 @@
 {
   "name": "@zotlit/zotero",
-  "version": "2.0.1",
+  "version": "2.1.0-beta.0",
   "private": true,
   "description": "Zotero companion plugin for ZotLit",
   "author": "AidenLx",
