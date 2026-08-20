@@ -188,7 +188,7 @@ describe("DatabaseService", () => {
 
       expect(prepareMock).toHaveBeenCalledWith("auto", "/zotero/zotero.sqlite");
       expect(createClientMock).toHaveBeenCalledWith(
-        "file:///clone/zotero.sqlite?mode=ro",
+        buildSqliteUri(read.path, read.uriOptions),
         { jit: true },
       );
       expect(service.state).toBe("ready");

@@ -1,11 +1,4 @@
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -18,14 +11,19 @@ import type { ReadParentPlan } from "./read-parent";
 import { prepareRead } from "./read-source";
 
 vi.mock("./read-parent", () => ({ planReadParents: vi.fn() }));
-// Only `copyFile` is overridable, and every caller of it sees the override —
-// `reflink.ts` imports it from this module too.
+const mkdirFault = vi.hoisted(() => ({ path: "" }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
     copyFile: (...args: Parameters<typeof actual.copyFile>) =>
       copyFile(...args),
+    async mkdir(...args: Parameters<typeof actual.mkdir>) {
+      if (String(args[0]) === mkdirFault.path) {
+        throw Object.assign(new Error("EACCES"), { code: "EACCES" });
+      }
+      await actual.mkdir(...args);
+    },
   };
 });
 
@@ -37,18 +35,19 @@ let dir: string;
 let source: string;
 
 beforeEach(async () => {
-  const { copyFile: real } =
+  const { copyFile: realCopyFile } =
     await vi.importActual<typeof import("node:fs/promises")>(
       "node:fs/promises",
     );
-  copyFile = real;
+  copyFile = realCopyFile;
+  mkdirFault.path = "";
   dir = await mkdtemp(join(tmpdir(), "zotlit-read-parent-place-"));
   source = join(dir, "zotero.sqlite");
   await writeFile(source, Buffer.alloc(100));
 });
 
 afterEach(async () => {
-  await chmod(join(dir, "read-only"), 0o700).catch(() => undefined);
+  mkdirFault.path = "";
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -97,10 +96,9 @@ describe("prepareRead placement", () => {
   });
 
   it("falls back to the next parent when the preferred one refuses writes", async () => {
-    const readOnly = join(dir, "read-only");
-    await mkdir(readOnly);
-    await chmod(readOnly, 0o500);
-    plan(join(readOnly, ZOTERO_DB_READ_PARENT_DIRNAME), tmpdir());
+    const preferred = join(dir, ZOTERO_DB_READ_PARENT_DIRNAME);
+    plan(preferred, tmpdir());
+    mkdirFault.path = preferred;
 
     await using prepared = await prepareRead("copy", source);
 
