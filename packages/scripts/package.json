@@ -8,6 +8,7 @@
     "#fixture": "./lib/fixture/build.ts",
     "#fixture/*": "./lib/fixture/*.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
+    "#obsidian-host-readiness": "./lib/obsidian-host-readiness.ts",
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
     "#release-docs-handoff": "./lib/release-docs-handoff.ts",

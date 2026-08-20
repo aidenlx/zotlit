@@ -67,11 +67,19 @@ obsidian version
 
 Use the registered `obsidian` command on Windows, macOS, and Linux. If the command is missing, follow the official [Obsidian CLI installation guide](https://obsidian.md/help/cli#Install%20Obsidian%20CLI), then restart the terminal. ZotLit calls this command directly.
 
+Check the host vault before you create, open, or synchronize a Development Vault:
+
+```sh
+packages/scripts/scripts/obsidian-vault.ts check
+```
+
+A successful check confirms host readiness. When it fails, open the host vault that you select and follow the exact recovery instructions in the error.
+
 ## Run a Paired Run
 
 A Paired Run opens Paired Zotero and a Development Vault on the same Fixture. Use it to prepare both applications for a manual smoke test on macOS or Windows.
 
-Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Settings → General → Advanced → Command line interface**, and keep one vault window open as the host.
+Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Settings → General → Advanced → Command line interface**, and complete the host-vault check above.
 
 1. Open a finite Paired Run:
 

@@ -16,6 +16,8 @@ import {
 } from "./spec.ts";
 import type { FixtureItem, FixtureNote } from "./spec.ts";
 
+import { OBSIDIAN_HOST_VAULT_ENV } from "#obsidian-host-readiness";
+
 function libraryName(libraryID: number): string {
   const library = LIBRARIES.find((l) => l.libraryID === libraryID);
   return library ? (library.name ?? "My Library") : `libraryID ${libraryID}`;
@@ -149,6 +151,14 @@ are the one place to update when the Library Scope setting changes shape.`;
 
 const PAIRED_RUN_SECTION = `PAIRED RUN
 
+Confirm that a live host vault answers before changing the Fixture:
+
+  packages/scripts/scripts/obsidian-vault.ts check
+
+A successful check confirms host readiness. On failure, follow its recovery
+command after you open the selected host vault. Set ${OBSIDIAN_HOST_VAULT_ENV}
+to an open vault ID or folder name to select that host explicitly.
+
 Prepare the Fixture, open its per-worktree Development Vault, launch Paired
 Zotero, and verify that both extensions loaded:
 
@@ -163,7 +173,7 @@ Paired Zotero and leaves the Development Vault window open:
 
   pnpm fixture dev
 
-Obsidian must already be running with its CLI enabled and one host vault open.
+The host-vault check must succeed before either command starts.
 Close an existing Paired Zotero before either command rebuilds the Fixture.`;
 
 const CANCEL_TESTING_SECTION = `CANCEL TESTING

@@ -37,6 +37,11 @@ import {
   getFixtureRoot,
   SCOPE_CASES,
 } from "#fixture";
+import {
+  createObsidianHostReadiness,
+  OBSIDIAN_HOST_TIMEOUT_MS,
+  OBSIDIAN_HOST_VAULT_ENV,
+} from "#obsidian-host-readiness";
 import { getWorkspaceRoot } from "#package-roots";
 
 const execFileAsync = promisify(execFile);
@@ -47,8 +52,6 @@ const defaultVault = getDevVaultDir(workspaceRoot);
 const fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
 const fixtureVault = getFixtureVaultDir(workspaceRoot);
 const pluginId = "zotlit";
-const CONTRACT_VERSION = 2;
-const HOST_VAULT_ENV = "ZT_HOST_VAULT";
 
 interface VaultEntry {
   path: string;
@@ -79,10 +82,37 @@ function obsidianUserData(): string {
 }
 
 /** The Obsidian CLI always exits 0 — failures come back only as output text. */
-async function cli(args: string[]): Promise<string> {
-  const result = await execFileAsync("obsidian", args, { windowsHide: true });
+async function cli(args: string[], signal?: AbortSignal): Promise<string> {
+  const result = await execFileAsync("obsidian", args, {
+    signal,
+    windowsHide: true,
+  });
   return `${result.stdout}${result.stderr}`.trim();
 }
+
+async function readVaultRegistry(): Promise<Record<string, VaultEntry>> {
+  const configPath = join(obsidianUserData(), "obsidian.json");
+  const raw = await readFile(configPath, "utf-8").catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    },
+  );
+  if (raw === undefined) return {};
+
+  const config = JSON.parse(raw) as { vaults?: Record<string, VaultEntry> };
+  return config.vaults ?? {};
+}
+
+const checkObsidianHost = createObsidianHostReadiness({
+  pathExists: (path) =>
+    access(path).then(
+      () => true,
+      () => false,
+    ),
+  readRegistry: readVaultRegistry,
+  runObsidian: (args, signal) => cli(args, signal),
+});
 
 /** Run JavaScript in a vault window. Without `target`, the focused one answers. */
 async function obEval(code: string, target?: string): Promise<string> {
@@ -131,17 +161,19 @@ async function waitFor(
   return false;
 }
 
-/**
- * Pick a window to run the eval calls in. `exclude` is a vault id to keep away
- * from: a `vault=<id>` request re-opens a closed vault instead of failing, so
- * the window of a vault under removal must never host its own removal.
- */
-async function resolveHost(exclude?: string): Promise<string> {
-  const preferred = process.env[HOST_VAULT_ENV];
+async function resolveHost(): Promise<string> {
+  return (await checkObsidianHost()).id;
+}
+
+/** Pick a live window other than the vault that an online removal targets. */
+async function resolveRemovalHost(exclude?: string): Promise<string> {
+  const preferred = process.env[OBSIDIAN_HOST_VAULT_ENV];
   if (preferred) {
     const id = await obEval("app.appId", preferred);
     if (id === exclude) {
-      throw new Error(`${HOST_VAULT_ENV} points at the vault being removed`);
+      throw new Error(
+        `${OBSIDIAN_HOST_VAULT_ENV} points at the vault being removed`,
+      );
     }
     return id;
   }
@@ -149,7 +181,7 @@ async function resolveHost(exclude?: string): Promise<string> {
   const focused = await obEval("app.appId").catch(() => "");
   if (!focused) {
     throw new Error(
-      `no Obsidian window answered. Open a vault, or set ${HOST_VAULT_ENV}.`,
+      `no Obsidian window answered. Open a vault, or set ${OBSIDIAN_HOST_VAULT_ENV}.`,
     );
   }
   if (focused !== exclude) return focused;
@@ -160,7 +192,7 @@ async function resolveHost(exclude?: string): Promise<string> {
   );
   if (!other) {
     throw new Error(
-      `no other open vault can host the removal. Open one, or set ${HOST_VAULT_ENV}.`,
+      `no other open vault can host the removal. Open one, or set ${OBSIDIAN_HOST_VAULT_ENV}.`,
     );
   }
   return other;
@@ -331,6 +363,7 @@ async function sync(
   { purge = false, scopeCase = DEFAULT_SCOPE_CASE }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
+  await resolveHost();
 
   await access(abs).catch(() => {
     throw new Error(`no vault at ${abs}. Run 'create' first.`);
@@ -545,11 +578,11 @@ async function removeOffline(abs: string): Promise<string | undefined> {
 }
 
 async function removeOnline(abs: string): Promise<string | undefined> {
-  let host = await resolveHost();
+  let host = await resolveRemovalHost();
   const id = findVaultId(await vaultList(host), abs);
 
   if (id) {
-    if (id === host) host = await resolveHost(id);
+    if (id === host) host = await resolveRemovalHost(id);
 
     // `vault-remove` refuses while the vault window is open. Close it only when
     // it is open, because targeting a closed vault would re-open it.
@@ -662,24 +695,32 @@ const scopeCaseOption = {
   default: DEFAULT_SCOPE_CASE,
 } as const;
 
-const reference = `contractVersion: ${CONTRACT_VERSION}
+const hostReadinessReference = `Host readiness:
+  Host-dependent commands require a vault window that answers within
+  ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. Run 'obsidian-vault.ts check' before changing the Fixture.
+  On failure, check lists existing registered paths and missing stale paths.
+  Open the selected host vault yourself, then rerun the reported command.`;
 
-The open, create, and sync commands rebuild the Fixture Vault first. Run the
+const reference = `The open, create, and sync commands rebuild the Fixture Vault first. Run the
 Obsidian dev build before them so its bundle is available to copy into the
 generated seed. Open and sync keep extra Development Vault files unless
 --purge is set. Remove keeps the folder unless --purge is set.
 
 Environment:
-  ${HOST_VAULT_ENV}  vault name or id whose window hosts eval calls`;
+  ${OBSIDIAN_HOST_VAULT_ENV}  verified open vault name or id whose window hosts eval calls
+
+${hostReadinessReference}`;
 
 const vaultCli = yargs(hideBin(process.argv))
   .scriptName("obsidian-vault.ts")
   .command(
     "check",
     "verify that a live Obsidian vault can host CLI calls",
-    () => {},
+    (y) => y.epilogue(hostReadinessReference),
     async () => {
-      console.log(await resolveHost());
+      const host = await checkObsidianHost();
+      console.log(host.id);
+      console.error(`host vault ready at ${host.path}`);
     },
   )
   .command(
@@ -739,10 +780,11 @@ const vaultCli = yargs(hideBin(process.argv))
   )
   .command(
     "status",
-    "print whether a live Obsidian answers the registered CLI command",
+    "print the live Obsidian host vault ID and base path",
     () => {},
     async () => {
-      console.log((await isObsidianRunning()) ? "running" : "stopped");
+      const host = await checkObsidianHost();
+      console.log(`ready ${host.id} ${host.path}`);
     },
   )
   .command(

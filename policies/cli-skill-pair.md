@@ -9,6 +9,8 @@ The skill carries what the CLI cannot: **process** (steps and order), **policy**
 - Diagnostic hints travel inside the error envelope — corrective guidance at failure time, zero standing context cost.
 - If a line in the skill restates something the CLI reports, delete the line and point to the command.
 
-One value stays in the skill: the **CLI Contract version** of the namespace it was written against. The pin is what makes drift visible — an agent compares it with the `contractVersion` in the first answer and, on a difference, reads the live guide again and follows the guide over the skill. A change that bumps a namespace's version moves the pin of every skill written against it, in the same change.
+Installed CLI pairs carry one value in the skill: the **CLI Contract version** of the namespace it was written against. The pin makes independent plugin and skill updates visible — an agent compares it with the `contractVersion` in the first answer and, on a difference, reads the live guide again and follows the guide over the skill. A change that bumps a namespace's version moves the pin of every skill written against it, in the same change.
+
+Git-managed internal tooling uses the repository revision as its compatibility marker. Keep its CLI, skill, and human documentation current in the same change, and omit the namespace version and skill pin.
 
 See [ADR 0016](../docs/adr/0016-workbench-guidance-lives-in-the-cli-skill-stays-thin.md) and, for the pin, [ADR 0026](../apps/obsidian/docs/adr/0026-each-zotlit-namespace-versions-its-own-cli-contract.md).

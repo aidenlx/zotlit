@@ -14,16 +14,15 @@ rendered state. The DOM is the source of truth.
 
 ## Vault setup, once per worktree
 
-CLI Contract: `obsidian-vault 2`.
-
 1. Run `obsidian version`. If the command is missing, follow the official
    [Obsidian CLI installation guide](https://obsidian.md/help/cli#Install%20Obsidian%20CLI),
    then restart the terminal. Use the registered `obsidian` command on every
    platform.
 2. Run `packages/scripts/scripts/obsidian-vault.ts --help`.
-3. Compare its `contractVersion` with the pin above. When they differ, follow
-   the live help for this run.
-4. Before you use a vault command, read its `<command> --help` output.
+3. Before you use a vault command, read its `<command> --help` output.
+4. Run `packages/scripts/scripts/obsidian-vault.ts check`. Vault setup is
+   complete when the command succeeds. Follow its recovery instructions when
+   it fails.
 5. Build the plugin, then use the live `open` command to prepare this
    worktree's Development Vault:
 

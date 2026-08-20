@@ -59,6 +59,24 @@ describe("Paired Run", () => {
     expect(changedFixture).toBe(false);
   });
 
+  it("requires a live Obsidian host before changing the Fixture", async () => {
+    let changedFixture = false;
+    const ports = testPorts({
+      assertObsidianHost: async () => {
+        throw new Error("No live Obsidian vault answered within 5 seconds");
+      },
+      prepareDevelopmentVault: async () => {
+        changedFixture = true;
+        throw new Error("unsafe rebuild");
+      },
+    });
+
+    await expect(
+      runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports),
+    ).rejects.toThrow("No live Obsidian vault answered within 5 seconds");
+    expect(changedFixture).toBe(false);
+  });
+
   it("opens both loaded extensions after preparing the selected Scope Case", async () => {
     let prepared = false;
     let ready: PairedRunReady | undefined;
