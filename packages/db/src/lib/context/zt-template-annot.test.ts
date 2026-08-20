@@ -1,7 +1,5 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import type { Annotation, ResolvedAnnotationTypeName } from "@/lib/zt-annot";
 

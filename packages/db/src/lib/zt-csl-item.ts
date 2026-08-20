@@ -1,5 +1,4 @@
 // Forward mapper: a live-database Item -> the CSL-JSON a CSL processor renders.
-import { Temporal } from "@zotlit/shared/temporal";
 import { FIELD_ALIASES } from "@zotlit/zotero-types";
 import {
   CREATOR_TYPE_TO_CSL_NAME,

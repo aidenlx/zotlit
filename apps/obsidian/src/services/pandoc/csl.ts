@@ -6,8 +6,6 @@ import { link, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 

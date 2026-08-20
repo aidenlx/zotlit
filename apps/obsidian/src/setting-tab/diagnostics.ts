@@ -3,8 +3,6 @@ import { strToU8, zipSync } from "fflate";
 import { FileSystemAdapter } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { confirm } from "@/lib/confirm";
 import { saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";

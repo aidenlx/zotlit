@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 

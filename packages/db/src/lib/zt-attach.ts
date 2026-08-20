@@ -1,7 +1,5 @@
 import { getLogger } from "@logtape/logtape";
 
-import type { Temporal } from "@zotlit/shared/temporal";
-
 import { isItemKey } from "./zt-item-key";
 
 const logger = getLogger(["zotlit", "db", "attachments"]);

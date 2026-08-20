@@ -10,8 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { CSL_STAGING_EXT, cslStoreDirectory } from "./csl";
 import { reapCslStore } from "./reap-temps";
 

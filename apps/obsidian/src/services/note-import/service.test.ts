@@ -8,7 +8,6 @@ import {
   getNoteByKey,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import { AttachmentImportService } from "@/services/attachment-import/service";

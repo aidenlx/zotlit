@@ -16,7 +16,6 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
 import { FIELD_ALIASES, ZOTERO_DATE_FIELDS } from "@zotlit/zotero-types";
 import fixture from "@zotlit/zotero-types/fixtures/item-to-csl.json" with { type: "json" };
 import zoteroSchema from "@zotlit/zotero-types/schema.json" with { type: "json" };

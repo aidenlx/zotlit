@@ -1,4 +1,3 @@
-import type { Temporal } from "@zotlit/shared/temporal";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import type { NodeDatabaseClient } from "@/client/node";

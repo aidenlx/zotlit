@@ -1,7 +1,5 @@
 import type { LogLevel, LogRecord } from "@logtape/logtape";
 
-import { Temporal } from "./temporal";
-
 const LEVEL_STYLES: Record<LogLevel, string> = {
   trace: "background:#9CA3AF;color:white;padding:1px 4px;border-radius:2px;",
   debug: "background:#5A7FFF;color:white;padding:1px 4px;border-radius:2px;",

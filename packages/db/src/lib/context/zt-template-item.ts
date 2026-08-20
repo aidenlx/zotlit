@@ -1,4 +1,3 @@
-import type { Temporal } from "@zotlit/shared/temporal";
 import { FIELD_ALIASES } from "@zotlit/zotero-types";
 
 import { ZT_FIELD_ALIASES } from "@/lib/context/zt-field-aliases";

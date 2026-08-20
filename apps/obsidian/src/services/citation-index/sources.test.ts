@@ -5,7 +5,6 @@ import type { Attachment, Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
 import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
-import { Temporal } from "@zotlit/shared/temporal";
 
 import type { DatabaseService } from "@/services/database/service";
 

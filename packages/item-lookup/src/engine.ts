@@ -3,7 +3,6 @@ import MiniSearch from "minisearch";
 
 import { parseItemDate, parseItemLanguage } from "@zotlit/db";
 import type { IndexedItem, LanguageNameLookup } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
 
 import { formatCreator } from "./format-creator";
 import { normalize, normalizeWithIndexMap, tokenize } from "./tokenizer";

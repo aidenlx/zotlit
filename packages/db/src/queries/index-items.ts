@@ -1,8 +1,6 @@
 import { deletedItems, items, itemTypes } from "@drizzle/schema";
 import { and, count, eq, isNull, notInArray, sql } from "drizzle-orm";
 
-import type { Temporal } from "@zotlit/shared/temporal";
-
 import type { NodeDatabaseClient } from "@/client/node";
 import type { CreatorFieldMode } from "@/lib/zt-creator";
 import { formatIndexedKey } from "@/lib/zt-key";

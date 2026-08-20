@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { IndexedItem } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
 
 import { buildIndex, cleanQuery, searchIndex } from "./engine";
 import { makeCreator as creator, makeIndexedItem as item } from "./fixtures";

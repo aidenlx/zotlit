@@ -18,7 +18,6 @@ import type {
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { Temporal } from "@zotlit/shared/temporal";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import { creatorSummary } from "@/lib/item-summary";

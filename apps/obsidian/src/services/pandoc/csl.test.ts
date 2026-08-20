@@ -12,8 +12,6 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { CONTRACT_VERSION } from "./contract";
 import { CSL_COMMAND, materializeCslStyle, resolveCslStyle } from "./csl";
 import type { CslResponse } from "./csl";

@@ -3,8 +3,6 @@
 import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import { sweepTempDirectory } from "@/lib/temp-sweep";

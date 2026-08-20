@@ -11,8 +11,6 @@ import type {
   ValueToken,
 } from "liquidjs";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { formatBlockquote } from "./blockquote";
 import { coerceOutput } from "./coerce";
 import { filenameSuffix } from "./filename-suffix";

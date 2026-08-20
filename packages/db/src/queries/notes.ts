@@ -1,5 +1,4 @@
 // Zotero note (`itemNotes`) lookups: child-note listing and single-note fetch.
-import type { Temporal } from "@zotlit/shared/temporal";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";

@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { formatItemDate, parseItemDate } from "./zt-date";
 import type { ItemDate } from "./zt-date";
 

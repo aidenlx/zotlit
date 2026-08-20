@@ -19,7 +19,6 @@ import type {
 import { act } from "preact/test-utils";
 import { vi } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
 
 import {
   createCitationIndexHarness,

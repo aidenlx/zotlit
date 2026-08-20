@@ -1,5 +1,4 @@
 import type { BaseItem, Creator, IndexedItem, Item } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
 import type { ItemFields, JournalArticleFields } from "@zotlit/zotero-types";
 
 export interface ItemFixtureOptions {

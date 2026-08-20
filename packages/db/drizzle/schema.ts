@@ -10,8 +10,6 @@ import {
 } from "drizzle-orm/sqlite-core";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import type { AnnotationType } from "@/lib/zt-annot";
 import type { LinkMode } from "@/lib/zt-attach";
 import type { CreatorFieldMode } from "@/lib/zt-creator";

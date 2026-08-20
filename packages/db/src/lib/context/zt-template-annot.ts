@@ -1,5 +1,3 @@
-import type { Temporal } from "@zotlit/shared/temporal";
-
 import { defineToString } from "@/lib/to-string";
 import { annotationTypeToName } from "@/lib/zt-annot";
 import type { Annotation, ResolvedAnnotationTypeName } from "@/lib/zt-annot";

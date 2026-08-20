@@ -3,8 +3,6 @@ import content from "@defaults/content.eta?raw";
 import note from "@defaults/note.eta?raw";
 import { describe, expect, it } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { basename, formatBlockquote, TemplateEngine } from "./index";
 import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
 

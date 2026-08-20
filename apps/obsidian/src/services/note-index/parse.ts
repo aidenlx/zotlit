@@ -1,7 +1,6 @@
 import type { CachedMetadata } from "obsidian";
 
 import { isIndexedKey } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
 
 import {
   FIELD_ZOTERO_KEY,
