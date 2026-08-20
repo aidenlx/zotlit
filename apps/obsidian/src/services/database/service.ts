@@ -38,9 +38,8 @@ const DB_OPTIONS: DatabaseOptions = {
   jit: true,
 };
 const WATCH_DEBOUNCE_MS = 1200;
-// Immutable reads carry no WAL replay to settle, and skip the clone step's own
-// echo entirely, so a shorter debounce still avoids spurious refresh bursts
-// while catching a checkpoint sooner than the clone-mode debounce would.
+// Must stay above the Companion's 500 ms trailing Checkpoint delay so an
+// immutable read sees the checkpointed main database file on its first try.
 const IMMUTABLE_WATCH_DEBOUNCE_MS = 800;
 // `persistent: false` so no watcher keeps Node's event loop alive on its own —
 // Obsidian (Electron) owns the loop, and a leaked watcher must not block

@@ -12,6 +12,24 @@ vi.hoisted(() => {
   };
 });
 
+const applicationBlur = vi.hoisted(() => ({
+  callback: undefined as (() => void) | undefined,
+  disposed: false,
+  registered: false,
+}));
+
+vi.mock("@/lib/application-blur", () => ({
+  registerApplicationBlur(callback: () => void): Disposable {
+    applicationBlur.callback = callback;
+    applicationBlur.registered = true;
+    return {
+      [Symbol.dispose]() {
+        applicationBlur.disposed = true;
+      },
+    };
+  },
+}));
+
 import { prefs } from "@/prefs";
 
 import { registerWalCheckpoint } from "./wal-checkpoint.js";
@@ -91,6 +109,9 @@ const recordsAt = (level: LogRecord["level"]) =>
   records.filter((record) => record.level === level);
 
 beforeEach(async () => {
+  applicationBlur.callback = undefined;
+  applicationBlur.disposed = false;
+  applicationBlur.registered = false;
   records = [];
   await configure({
     sinks: {
@@ -125,6 +146,7 @@ describe("registerWalCheckpoint", () => {
       stubZotero("delete");
       using _handle = await registerWalCheckpoint();
       expect(observer).toBeUndefined();
+      expect(applicationBlur.registered).toBe(false);
       await vi.advanceTimersByTimeAsync(60_000);
       expect(checkpoints()).toHaveLength(0);
       expect(recordsAt("debug")).toContainEqual(
@@ -138,6 +160,7 @@ describe("registerWalCheckpoint", () => {
       stubZotero(undefined);
       using _handle = await registerWalCheckpoint();
       expect(observer).toBeUndefined();
+      expect(applicationBlur.registered).toBe(false);
       expect(checkpoints()).toHaveLength(0);
     });
   });
@@ -155,14 +178,55 @@ describe("registerWalCheckpoint", () => {
     ]);
   });
 
-  it("coalesces a burst into one checkpoint exactly one second after the last event", async () => {
+  it("accelerates a pending checkpoint on Application Blur", async () => {
+    using _handle = await registerWalCheckpoint();
+    emitNotifierEvent();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(applicationBlur.callback).toBeDefined();
+    applicationBlur.callback?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(checkpoints()).toHaveLength(1);
+    expect(
+      recordsAt("debug").some(
+        (record) =>
+          String(record.message) ===
+          "accelerated wal checkpoint on application blur",
+      ),
+    ).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(checkpoints()).toHaveLength(1);
+  });
+
+  it("does nothing on Application Blur when no checkpoint is pending", async () => {
+    using _handle = await registerWalCheckpoint();
+
+    applicationBlur.callback?.();
+    await vi.runAllTimersAsync();
+
+    expect(checkpoints()).toHaveLength(0);
+  });
+
+  it("honors the checkpoint preference during Application Blur", async () => {
+    using _handle = await registerWalCheckpoint();
+    prefs.set(WAL_CHECKPOINT_PREF, false);
+    emitNotifierEvent();
+
+    applicationBlur.callback?.();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(checkpoints()).toHaveLength(0);
+  });
+
+  it("coalesces a burst into one checkpoint 500 ms after the last event", async () => {
     using _handle = await registerWalCheckpoint();
     for (let i = 0; i < 5; i++) {
       emitNotifierEvent();
       await vi.advanceTimersByTimeAsync(200);
     }
-    // 200 ms of the trailing second already ran off after the last event.
-    await vi.advanceTimersByTimeAsync(799);
+    // 200 ms of the trailing delay already ran off after the last event.
+    await vi.advanceTimersByTimeAsync(299);
     expect(checkpoints()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(checkpoints()).toHaveLength(1);
@@ -179,14 +243,14 @@ describe("registerWalCheckpoint", () => {
 
   it("checkpoints at the ten second max wait during sustained write activity", async () => {
     using _handle = await registerWalCheckpoint();
-    // A 500 ms cadence keeps resetting the 1 s trailing timer, so only the max
+    // A 250 ms cadence keeps resetting the 500 ms trailing timer, so only the max
     // wait can fire.
-    for (let elapsed = 0; elapsed < 9_500; elapsed += 500) {
+    for (let elapsed = 0; elapsed < 9_750; elapsed += 250) {
       emitNotifierEvent();
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(250);
     }
     emitNotifierEvent();
-    await vi.advanceTimersByTimeAsync(499);
+    await vi.advanceTimersByTimeAsync(249);
     expect(checkpoints()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(checkpoints()).toHaveLength(1);
@@ -195,7 +259,7 @@ describe("registerWalCheckpoint", () => {
     // unambiguously the max wait rather than a trailing expiry.
     for (let i = 0; i < 4; i++) {
       emitNotifierEvent();
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(250);
     }
     expect(checkpoints()).toHaveLength(1);
   });
@@ -204,7 +268,7 @@ describe("registerWalCheckpoint", () => {
     using _handle = await registerWalCheckpoint();
     prefs.set(WAL_CHECKPOINT_PREF, false);
     emitNotifierEvent();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(500);
     expect(checkpoints()).toHaveLength(0);
     expect(recordsAt("debug")).toContainEqual(
       expect.objectContaining({
@@ -214,7 +278,7 @@ describe("registerWalCheckpoint", () => {
 
     prefs.set(WAL_CHECKPOINT_PREF, true);
     emitNotifierEvent();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(500);
     expect(checkpoints()).toHaveLength(1);
   });
 
@@ -222,7 +286,7 @@ describe("registerWalCheckpoint", () => {
     using _handle = await registerWalCheckpoint();
     checkpointFails = true;
     emitNotifierEvent();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(500);
     expect(checkpoints()).toHaveLength(1);
     const [warning] = recordsAt("warning");
     expect(warning?.properties.error).toBeInstanceOf(Error);
@@ -233,7 +297,7 @@ describe("registerWalCheckpoint", () => {
 
     checkpointFails = false;
     emitNotifierEvent();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(500);
     expect(checkpoints()).toHaveLength(2);
   });
 
@@ -242,6 +306,7 @@ describe("registerWalCheckpoint", () => {
     emitNotifierEvent();
     handle[Symbol.dispose]();
     expect(unregistered).toEqual([OBSERVER_ID]);
+    expect(applicationBlur.disposed).toBe(true);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(checkpoints()).toHaveLength(0);
   });

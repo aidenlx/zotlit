@@ -56,6 +56,7 @@ declare global {
   // check in zoteroPane.js).
   // https://searchfox.org/mozilla-esr140/source/xpcom/ds/nsIWindowMediator.idl
   interface nsIWindowMediator {
+    getEnumerator(aWindowType: null): nsISimpleEnumerator;
     getMostRecentWindow(aWindowType: null): mozIDOMWindowProxy;
   }
 

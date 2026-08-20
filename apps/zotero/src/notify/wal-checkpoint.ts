@@ -1,12 +1,15 @@
 // Debounced PASSIVE WAL checkpoint after Zotero write activity.
 
+import { debounce } from "@std/async";
+
+import { registerApplicationBlur } from "@/lib/application-blur";
 import { logger as appLogger } from "@/lib/logger";
 import { prefs } from "@/prefs";
 
 const logger = appLogger.getChild(["notify", "wal-checkpoint"]);
 
-/** Trailing debounce: one checkpoint per quiet period. */
-const DEBOUNCE_MS = 1_000;
+/** Must stay below Obsidian's 800 ms immutable-watch debounce. */
+const DEBOUNCE_MS = 500;
 /**
  * Cap on how long a burst may push the trailing timer forward, so checkpoints
  * keep flowing through a sustained write storm such as a batch import.
@@ -89,31 +92,32 @@ export async function registerWalCheckpoint(): Promise<Disposable> {
     }
   };
 
-  // Trailing timer resets on every event; the max-wait timer is armed on the
-  // first event of a burst and never reset. Whichever fires first clears both
-  // and runs one checkpoint — no clock reads involved.
   type Timer = ReturnType<typeof setTimeout>;
-  let trailingTimer: Timer | undefined;
   let maxWaitTimer: Timer | undefined;
 
-  const cancel = () => {
-    if (trailingTimer !== undefined) clearTimeout(trailingTimer);
+  const clearMaxWait = () => {
     if (maxWaitTimer !== undefined) clearTimeout(maxWaitTimer);
-    trailingTimer = undefined;
     maxWaitTimer = undefined;
   };
 
-  const fire = () => {
-    cancel();
+  const checkpointDebounced = debounce(() => {
+    clearMaxWait();
     void checkpoint();
+  }, DEBOUNCE_MS);
+
+  const cancel = () => {
+    checkpointDebounced.clear();
+    clearMaxWait();
   };
 
   const observer: { notify: _ZoteroTypes.Notifier.Notify } = {
     notify() {
-      if (trailingTimer !== undefined) clearTimeout(trailingTimer);
-      trailingTimer = setTimeout(fire, DEBOUNCE_MS);
+      checkpointDebounced();
       const maxWaitArmed = maxWaitTimer === undefined;
-      maxWaitTimer ??= setTimeout(fire, MAX_WAIT_MS);
+      maxWaitTimer ??= setTimeout(
+        () => checkpointDebounced.flush(),
+        MAX_WAIT_MS,
+      );
       logger.trace("wal checkpoint debounce timer {action}", {
         action: maxWaitArmed ? "started" : "reset",
         debounceMs: DEBOUNCE_MS,
@@ -123,18 +127,25 @@ export async function registerWalCheckpoint(): Promise<Disposable> {
     },
   };
 
+  using stack = new DisposableStack();
+  stack.defer(() => logger.debug("unregistered wal checkpoint notifier"));
+  stack.defer(cancel);
+  stack.use(
+    registerApplicationBlur(() => {
+      const accelerated = checkpointDebounced.pending;
+      checkpointDebounced.flush();
+      if (accelerated) {
+        logger.debug("accelerated wal checkpoint on application blur");
+      }
+    }),
+  );
+
   const id = Zotero.Notifier.registerObserver(
     observer,
     TRIGGER_TYPES,
     "zotlit-notify-wal-checkpoint",
   );
+  stack.defer(() => Zotero.Notifier.unregisterObserver(id));
   logger.debug("registered wal checkpoint notifier", { id });
-
-  return {
-    [Symbol.dispose]() {
-      Zotero.Notifier.unregisterObserver(id);
-      cancel();
-      logger.debug("unregistered wal checkpoint notifier");
-    },
-  };
+  return stack.move();
 }
