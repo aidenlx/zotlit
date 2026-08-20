@@ -612,7 +612,9 @@ async function writeVault(
   await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
 
   await writeJson(join(configDir, "app.json"), {});
-  await writeJson(join(configDir, "appearance.json"), {});
+  // Native menus interfere with automated Paired Run / E2E flows on
+  // Windows, so the seed disables them.
+  await writeJson(join(configDir, "appearance.json"), { nativeMenus: false });
   // Obsidian errors on an enabled plugin whose folder holds no bundle, so the
   // enabled list names ZotLit only when the copy below installs it.
   await writeJson(join(configDir, "community-plugins.json"), [
