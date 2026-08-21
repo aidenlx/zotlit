@@ -1,6 +1,6 @@
 // Per-worktree dev-vault paths, shared by the Vite build and the vault script.
 
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { getFixtureLayout, getFixtureRoot } from "./fixture/layout.ts";
 
@@ -10,11 +10,17 @@ import { getFixtureLayout, getFixtureRoot } from "./fixture/layout.ts";
  * carries the worktree name to keep every worktree's vault distinct.
  */
 export function getDevVaultDir(workspaceRoot: string): string {
-  return join(
-    workspaceRoot,
-    "tests",
-    `fixture-vault-${basename(workspaceRoot)}`,
-  );
+  const worktreeName = basename(workspaceRoot);
+  const worktreeParent = dirname(workspaceRoot);
+  const worktreesDir = dirname(worktreeParent);
+  const codexWorktree =
+    basename(worktreesDir) === "worktrees" &&
+    basename(dirname(worktreesDir)) === ".codex";
+  const uniqueName = codexWorktree
+    ? `${worktreeName}-${basename(worktreeParent)}`
+    : worktreeName;
+
+  return join(workspaceRoot, "tests", `fixture-vault-${uniqueName}`);
 }
 
 /** The generated Fixture Vault that seeds a fresh per-worktree dev vault. */
