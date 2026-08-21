@@ -41,10 +41,56 @@ export interface PairedRunPorts {
   reportReady(result: PairedRunReady): void;
 }
 
+type Attempt<T> =
+  | { status: "fulfilled"; value: T }
+  | { status: "rejected"; reason: unknown };
+
+async function attempt<T>(operation: () => Promise<T>): Promise<Attempt<T>> {
+  try {
+    return { status: "fulfilled", value: await operation() };
+  } catch (reason) {
+    return { status: "rejected", reason };
+  }
+}
+
 export async function runPairedRun(
   options: PairedRunOptions,
   ports: PairedRunPorts,
 ): Promise<void> {
+  if (options.mode === "open") {
+    await ports.assertFixtureIdle();
+    const liveUpdatePort = await ports.allocateLiveUpdatePort();
+    const [vault, zotero] = await Promise.all([
+      attempt(async () => {
+        await ports.assertObsidianHost();
+        return ports.prepareDevelopmentVault({
+          scopeCase: options.scopeCase,
+          purge: options.purge,
+          liveUpdatePort,
+        });
+      }),
+      attempt(() => ports.openPairedZotero()),
+    ]);
+
+    if (vault.status === "fulfilled" && zotero.status === "fulfilled") {
+      ports.reportReady({
+        mode: options.mode,
+        vault: vault.value,
+        zotero: zotero.value,
+        liveUpdatePort,
+      });
+      return;
+    }
+    if (vault.status === "rejected" && zotero.status === "rejected") {
+      throw new AggregateError(
+        [vault.reason, zotero.reason],
+        "Obsidian and Paired Zotero failed to open",
+      );
+    }
+    if (vault.status === "rejected") throw vault.reason;
+    if (zotero.status === "rejected") throw zotero.reason;
+  }
+
   await ports.assertObsidianHost();
   await ports.assertFixtureIdle();
   // One fresh port per Paired Run: the default port belongs to whichever ZotLit
@@ -56,12 +102,6 @@ export async function runPairedRun(
     purge: options.purge,
     liveUpdatePort,
   });
-
-  if (options.mode === "open") {
-    const zotero = await ports.openPairedZotero();
-    ports.reportReady({ mode: options.mode, vault, zotero, liveUpdatePort });
-    return;
-  }
 
   const session = await ports.startDevelopmentSession();
   const zotero = await session.ready;

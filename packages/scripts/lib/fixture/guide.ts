@@ -167,6 +167,10 @@ Zotero, and verify that both extensions loaded:
 
   pnpm fixture open
 
+The open command builds both extensions in parallel, then starts both open
+attempts in parallel. If either attempt fails, it completes the other attempt
+before it exits with an error.
+
 Add a Scope Case or restore the exact generated vault seed when needed:
 
   pnpm fixture open partial --purge
@@ -176,7 +180,7 @@ Paired Zotero and leaves the Development Vault window open:
 
   pnpm fixture dev
 
-The host-vault check must succeed before either command starts.
+The host-vault check must succeed before the dev command starts.
 Close an existing Paired Zotero before either command rebuilds the Fixture.
 
 Fixture builds and Paired Zotero launches install Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from its

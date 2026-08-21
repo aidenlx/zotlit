@@ -87,7 +87,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
    pnpm fixture open [scope-case] [--purge]
    ```
 
-   The command rebuilds the Fixture, synchronizes and opens the Development Vault, and starts Paired Zotero. For an existing Development Vault, it copies the generated `data.json` and reloads ZotLit. It stores the Fixture profile and data-directory Device Overrides in vault-scoped local storage, then verifies that ZotLit opened the Fixture database. It also verifies that the companion loaded in Zotero before it reports readiness. The command then exits and leaves both applications open.
+   The command builds the Obsidian and Zotero extensions in parallel. It then rebuilds the Fixture, synchronizes and opens the Development Vault, and starts Paired Zotero in parallel. For an existing Development Vault, it copies the generated `data.json` and reloads ZotLit. It stores the Fixture profile and data-directory Device Overrides in vault-scoped local storage, then verifies that ZotLit opened the Fixture database. It also verifies that the companion loaded in Zotero before it reports readiness. If either attempt fails, the command completes the other attempt before it exits with an error. A successful command then exits and leaves both applications open.
 
 2. For a live development session, start a supervised Paired Run:
 

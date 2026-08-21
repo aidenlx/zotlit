@@ -60,8 +60,9 @@ describe("Paired Run", () => {
     expect(changedFixture).toBe(false);
   });
 
-  it("requires a live Obsidian host before changing the Fixture", async () => {
+  it("opens Paired Zotero when the Obsidian host check fails", async () => {
     let changedFixture = false;
+    let openedZotero = false;
     const ports = testPorts({
       assertObsidianHost: async () => {
         throw new Error("No live Obsidian vault answered within 5 seconds");
@@ -70,15 +71,88 @@ describe("Paired Run", () => {
         changedFixture = true;
         throw new Error("unsafe rebuild");
       },
+      openPairedZotero: async () => {
+        openedZotero = true;
+        return { applicationDir: "/Applications/Zotero.app", pid: 804 };
+      },
     });
 
     await expect(
       runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports),
     ).rejects.toThrow("No live Obsidian vault answered within 5 seconds");
     expect(changedFixture).toBe(false);
+    expect(openedZotero).toBe(true);
   });
 
-  it("opens both loaded extensions after preparing the selected Scope Case", async () => {
+  it("opens Paired Zotero when the Development Vault fails to open", async () => {
+    let openedZotero = false;
+    const ports = testPorts({
+      prepareDevelopmentVault: async () => {
+        throw new Error("Development Vault failed to open");
+      },
+      openPairedZotero: async () => {
+        openedZotero = true;
+        return { applicationDir: "/Applications/Zotero.app", pid: 804 };
+      },
+    });
+
+    await expect(
+      runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports),
+    ).rejects.toThrow("Development Vault failed to open");
+    expect(openedZotero).toBe(true);
+  });
+
+  it("opens the Development Vault when Paired Zotero fails to open", async () => {
+    let openedVault = false;
+    const ports = testPorts({
+      prepareDevelopmentVault: async () => {
+        openedVault = true;
+        return {
+          id: "fixture-vault-test-fixture",
+          path: "/workspace/tests/fixture-vault-test-fixture",
+        };
+      },
+      openPairedZotero: async () => {
+        throw new Error("Paired Zotero failed to open");
+      },
+    });
+
+    await expect(
+      runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports),
+    ).rejects.toThrow("Paired Zotero failed to open");
+    expect(openedVault).toBe(true);
+  });
+
+  it("prepares the Development Vault and opens Paired Zotero in parallel", async () => {
+    const vaultCanFinish = Promise.withResolvers<void>();
+    let openedZotero = false;
+    const ports = testPorts({
+      prepareDevelopmentVault: async () => {
+        await vaultCanFinish.promise;
+        return {
+          id: "fixture-vault-test-fixture",
+          path: "/workspace/tests/fixture-vault-test-fixture",
+        };
+      },
+      openPairedZotero: async () => {
+        openedZotero = true;
+        return { applicationDir: "/Applications/Zotero.app", pid: 804 };
+      },
+    });
+
+    const running = runPairedRun(
+      { mode: "open", scopeCase: "all", purge: false },
+      ports,
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const openedBeforeVaultFinished = openedZotero;
+    vaultCanFinish.resolve();
+    await running;
+
+    expect(openedBeforeVaultFinished).toBe(true);
+  });
+
+  it("opens both loaded extensions for the selected Scope Case", async () => {
     let prepared = false;
     let ready: PairedRunReady | undefined;
     const ports = testPorts({
@@ -95,7 +169,6 @@ describe("Paired Run", () => {
         };
       },
       openPairedZotero: async () => {
-        if (!prepared) throw new Error("Fixture was not prepared");
         return { applicationDir: "/Applications/Zotero.app", pid: 804 };
       },
       reportReady: (result) => {
@@ -108,6 +181,7 @@ describe("Paired Run", () => {
       ports,
     );
 
+    expect(prepared).toBe(true);
     expect(ready).toEqual({
       mode: "open",
       vault: {
