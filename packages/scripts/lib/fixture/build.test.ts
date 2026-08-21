@@ -889,6 +889,9 @@ describe("the generated Obsidian vault", () => {
     for (const name of [
       "citekey-smoke-test.md",
       "pandoc-citation-test.md",
+      "pandoc-export-error-intent.md",
+      "pandoc-export-missing-bibliography.md",
+      "pandoc-export-success.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
     ]) {
