@@ -49,7 +49,7 @@ For plugin development, use the per-worktree Development Vault:
 pnpm --filter @zotlit/obsidian dev:vault
 ```
 
-This command builds the development plugin, creates or synchronizes the vault, and starts the watch build. The vault path is `tests/fixture-vault-<worktree-folder-name>`. The worktree name keeps vault names distinct across worktrees.
+This command builds the development plugin, creates or synchronizes the vault, and starts the watch build. An ordinary worktree uses `tests/fixture-vault-<worktree-folder-name>`. A Codex worktree under `.codex/worktrees/<id>/<repo>` uses `tests/fixture-vault-<repo>-<id>`. These names keep Development Vaults distinct across worktrees.
 
 The open and sync operations rebuild the Fixture Vault before they copy it. A normal sync keeps files that exist only in the Development Vault. Use a purge sync to restore the complete generated seed:
 
@@ -104,6 +104,30 @@ The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavai
 Both commands check for an existing Paired Zotero before they rebuild the Fixture. Close that instance if the command refuses to start. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately.
+
+### Trial the Pandoc export cases
+
+Use these cases to compare the built-in and native export workflows in one Paired Run:
+
+1. Start a clean Paired Run with `pnpm fixture open --purge`.
+2. In Obsidian, open **Settings → ZotLit → Citations → Formatting**. Under **Native Pandoc workflow**, select **Save integration files**. Save `zotlit-cite.lua` and `zotlit.yaml` in one workflow folder.
+3. In Paired Zotero, export the Items cited by `pandoc-export-success.md` as Better CSL JSON. Save the bibliography as `references.json`. Leave the Item cited by `pandoc-export-missing-bibliography.md` out of this file.
+4. Open each note in Obsidian and run **ZotLit: Export note with citations**. Record the output file or the complete failure message.
+5. Run native Pandoc for the same note. Use absolute paths and a separate output path for each case:
+
+   ```sh
+   pandoc "/absolute/path/to/input.md" --defaults "/absolute/path/to/workflow/zotlit.yaml" --bibliography "/absolute/path/to/references.json" --fail-if-warnings --output "/absolute/path/to/output.docx"
+   ```
+
+6. Compare the results with this checklist:
+
+   | Fixture Vault note | Built-in result | Native result |
+   | --- | --- | --- |
+   | `pandoc-export-success.md` | The export succeeds. Check its citations, locators, bibliography entries, and ordinary vault link. | The export succeeds. Check the same content against the built-in output. |
+   | `pandoc-export-error-intent.md` | The export stops because the `#cite:` target is not a Literature Note. | The export stops with `unresolved-citation-intent`. |
+   | `pandoc-export-missing-bibliography.md` | The export succeeds because ZotLit fetches the bibliography item. Check for the Xu citation and bibliography entry. | The export stops on the citeproc warning that `xuLiteratureNoteWhose2019` is missing. Add that Item to `references.json`, then check that the next run succeeds. |
+
+Keep Obsidian and Paired Zotero open during this trial. Save the outputs and failure text with the trial result.
 
 ## Scope Cases
 
