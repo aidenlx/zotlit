@@ -14,7 +14,11 @@ import type {
 
 import { getDevVaultDir } from "#dev-vault";
 import { LIVE_UPDATE_HOSTNAME } from "#fixture";
-import { getZoteroBinary, resolveZoteroApp } from "#paired-zotero";
+import {
+  getZoteroBinary,
+  installBetterBibtex,
+  resolveZoteroApp,
+} from "#paired-zotero";
 
 type ManagedProcess = ChildProcessByStdio<null, Readable, Readable>;
 
@@ -41,6 +45,7 @@ export function createNodePairedRunPorts({
     applicationDir: string;
     env: NodeJS.ProcessEnv;
   }> => {
+    await installBetterBibtex(layout.profileDir);
     const applicationDir = await resolveZoteroApp();
     return {
       applicationDir,

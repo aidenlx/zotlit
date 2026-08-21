@@ -18,7 +18,7 @@ Run the build from the workspace root:
 pnpm fixture
 ```
 
-This command builds the required workspace packages and development plugin bundles. It then builds the default `all` Scope Case. The command installs and enables the ZotLit development bundle in the Fixture Vault.
+This command builds the required workspace packages and development plugin bundles. It then builds the default `all` Scope Case. The command installs and enables the ZotLit development bundle in the Fixture Vault. It also installs the pinned Better BibTeX add-on in the Fixture profile.
 
 The generated tree is under `tmp/acceptance-fixture`:
 
@@ -155,6 +155,8 @@ The launcher uses the pinned Zotero version in `packages/scripts/lib/fixture/pai
 All worktrees reuse the cache. Windows selects the `win-arm64`, `win-x64`, or `win32` target from the Node.js host architecture. The Fixture profile disables automatic application updates, first-run prompts, sync, and backups so the managed application stays on the pinned version.
 
 Before launch, the command writes a Gecko extension proxy into the Fixture profile. The proxy maps the ZotLit companion add-on ID to the absolute `apps/zotero/dist-dev/addon` path in the current worktree.
+
+The build and launcher install pinned Better BibTeX 9.0.55 from an official release XPI. They verify the XPI checksum and reuse the verified download from the per-user ZotLit cache. The Fixture Spec supplies native Citation Keys. The profile disables Better BibTeX key generation and regeneration, so these keys stay stable and intentionally unkeyed Items stay unkeyed.
 
 Set `ZOTERO_APP` to run a different application through the same profile and companion setup.
 

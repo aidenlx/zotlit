@@ -31,6 +31,7 @@ import {
 } from "#fixture/pristine";
 import { getWorkspaceRoot } from "#package-roots";
 import {
+  installBetterBibtex,
   launchPairedZotero,
   PINNED_ZOTERO_VERSION,
   ZOTERO_APP_ENV,
@@ -99,6 +100,7 @@ async function build({
 }): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
   await buildFixture(layout, { scopeCase, stressItemCount, pluginBundleDir });
+  await installBetterBibtex(layout.profileDir);
   console.log(
     stressItemCount === undefined
       ? `Built the Fixture at ${layout.root}`
@@ -108,6 +110,7 @@ async function build({
   console.log("Libraries:");
   printLibraries();
   console.log(`Saved Library Scope: ${scopeCase}`);
+  console.log("Installed pinned Better BibTeX in the Zotero profile.");
   console.log(
     pluginBundleDir
       ? "Installed ZotLit in the vault and enabled it."

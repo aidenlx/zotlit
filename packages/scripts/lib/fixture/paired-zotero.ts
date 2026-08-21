@@ -6,9 +6,11 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { execFile } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
   access,
+  copyFile,
   constants,
   mkdir,
   mkdtemp,
@@ -32,16 +34,65 @@ const execFileAsync = promisify(execFile);
  * fixes both the managed install and the schema era the Fixture targets.
  */
 export const PINNED_ZOTERO_VERSION = "10.0";
+export const PINNED_BETTER_BIBTEX_VERSION = "9.0.55";
 
 export const ZOTERO_APP_ENV = "ZOTERO_APP";
 
 const DOWNLOAD_ROOT = `https://download.zotero.org/client/release/${PINNED_ZOTERO_VERSION}`;
+const BETTER_BIBTEX_ADDON_ID = "better-bibtex@iris-advies.com";
+const BETTER_BIBTEX_SHA256 =
+  "2d914ebb174c2c590ecff741a6903f1979065b42740f301d938ec2cb6c03e4d6";
+const BETTER_BIBTEX_ARCHIVE = `zotero-better-bibtex-${PINNED_BETTER_BIBTEX_VERSION}.xpi`;
+const BETTER_BIBTEX_DOWNLOAD_URL = `https://github.com/retorquere/zotero-better-bibtex/releases/download/v${PINNED_BETTER_BIBTEX_VERSION}/${BETTER_BIBTEX_ARCHIVE}`;
+
+/** Preferences that preserve the Fixture Spec's native Citation Keys. */
+export const BETTER_BIBTEX_PREFS = [
+  'user_pref("extensions.update.enabled", false);',
+  'user_pref("extensions.zotero.translators.better-bibtex.fillKeyAfter", 0);',
+  'user_pref("extensions.zotero.translators.better-bibtex.resetKeyOnChange", false);',
+] as const;
 
 export interface ManagedZoteroLayout {
   applicationDir: string;
   archiveName: string;
   cacheDir: string;
   downloadUrl: string;
+}
+
+export interface ManagedBetterBibtexLayout {
+  addonId: string;
+  archivePath: string;
+  downloadUrl: string;
+  sha256: string;
+}
+
+export function getManagedBetterBibtexLayout({
+  env = process.env,
+  home = homedir(),
+  platform = process.platform,
+}: {
+  env?: NodeJS.ProcessEnv;
+  home?: string;
+  platform?: NodeJS.Platform;
+} = {}): ManagedBetterBibtexLayout {
+  const cacheRoot =
+    platform === "win32"
+      ? (env.LOCALAPPDATA ?? join(home, "AppData", "Local"))
+      : platform === "darwin"
+        ? join(home, "Library", "Caches")
+        : (env.XDG_CACHE_HOME ?? join(home, ".cache"));
+  return {
+    addonId: BETTER_BIBTEX_ADDON_ID,
+    archivePath: join(
+      cacheRoot,
+      "zotlit",
+      "better-bibtex",
+      PINNED_BETTER_BIBTEX_VERSION,
+      BETTER_BIBTEX_ARCHIVE,
+    ),
+    downloadUrl: BETTER_BIBTEX_DOWNLOAD_URL,
+    sha256: BETTER_BIBTEX_SHA256,
+  };
 }
 
 export function getManagedZoteroLayout({
@@ -193,7 +244,56 @@ async function download(url: string, destination: string): Promise<void> {
   await pipeline(reportProgress(body, total), createWriteStream(destination));
 }
 
-/** Coarse progress, because the download is around 190 MB. */
+async function sha256(path: string): Promise<string | undefined> {
+  const hash = createHash("sha256");
+  const source = createReadStream(path);
+  try {
+    for await (const chunk of source) hash.update(chunk);
+    return hash.digest("hex");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Download and verify the pinned Better BibTeX XPI, then install it in a profile. */
+export async function installBetterBibtex(
+  profileDir: string,
+  layout = getManagedBetterBibtexLayout(),
+): Promise<void> {
+  if ((await sha256(layout.archivePath)) !== layout.sha256) {
+    const staging = `${layout.archivePath}.incomplete`;
+    await rm(staging, { force: true });
+    await mkdir(dirname(layout.archivePath), { recursive: true });
+    try {
+      console.log(
+        `Downloading Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from ${layout.downloadUrl}`,
+      );
+      await download(layout.downloadUrl, staging);
+      const actual = await sha256(staging);
+      if (actual !== layout.sha256) {
+        throw new Error(
+          `expected SHA-256 ${layout.sha256}, received ${actual}`,
+        );
+      }
+      await rename(staging, layout.archivePath);
+    } catch (error) {
+      await rm(staging, { force: true });
+      throw new Error(
+        `could not install Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from ${layout.downloadUrl}: ${error instanceof Error ? error.message : String(error)}.`,
+        { cause: error },
+      );
+    }
+  }
+
+  const extensionsDir = join(profileDir, "extensions");
+  await mkdir(extensionsDir, { recursive: true });
+  await copyFile(
+    layout.archivePath,
+    join(extensionsDir, `${layout.addonId}.xpi`),
+  );
+}
+
+/** Coarse progress for managed downloads. */
 async function* reportProgress(
   source: AsyncIterable<Uint8Array>,
   total: number,
@@ -358,6 +458,7 @@ export async function launchPairedZotero(
   }
 
   await installCompanionProxy(target.profileDir, companionDir);
+  await installBetterBibtex(target.profileDir);
   const applicationDir = await resolveZoteroApp();
   const child = spawnZotero(applicationDir, target, { detached: true });
   child.unref();

@@ -1,6 +1,9 @@
 // Man-page-style reference for the Fixture, built from the Fixture Spec.
 
-import { PINNED_ZOTERO_VERSION } from "./paired-zotero.ts";
+import {
+  PINNED_BETTER_BIBTEX_VERSION,
+  PINNED_ZOTERO_VERSION,
+} from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 import {
   COLLECTIONS,
@@ -175,6 +178,11 @@ Paired Zotero and leaves the Development Vault window open:
 
 The host-vault check must succeed before either command starts.
 Close an existing Paired Zotero before either command rebuilds the Fixture.
+
+Fixture builds and Paired Zotero launches install Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from its
+verified, cached XPI.
+The Fixture Spec supplies native Citation Keys. Better BibTeX keeps those keys
+unchanged and leaves the Spec's intentionally unkeyed Items without a key.
 
 Each Paired Run takes a free TCP port and writes it into both sides of the
 Live Updates channel: server.port in the Development Vault settings, and

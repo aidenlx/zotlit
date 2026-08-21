@@ -51,7 +51,7 @@ import {
   selectScopeCase,
 } from "./build.ts";
 import type { FixtureLayout } from "./build.ts";
-import { QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
+import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 
 import { getWorkspaceRoot } from "#package-roots";
@@ -1069,6 +1069,12 @@ describe("the generated Obsidian vault", () => {
     const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
 
     expect(prefs).toContain('user_pref("extensions.autoDisableScopes", 0);');
+  });
+
+  it("preserves the Fixture Spec's native Citation Keys", async () => {
+    const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
+
+    for (const line of BETTER_BIBTEX_PREFS) expect(prefs).toContain(line);
   });
 
   it("keeps both Live Updates defaults without a port", async () => {

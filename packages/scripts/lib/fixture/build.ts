@@ -10,7 +10,7 @@ import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 
 import { FIXTURE_PLUGIN_ID } from "./layout.ts";
 import type { FixtureLayout } from "./layout.ts";
-import { QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
+import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { assertSchemaVersions, writePristineDatabase } from "./pristine.ts";
 import {
   ANNOTATIONS,
@@ -638,6 +638,7 @@ function writePrefs(
     'user_pref("extensions.zotero.useDataDir", true);',
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
+    ...BETTER_BIBTEX_PREFS,
     ...(options.liveUpdatePort === undefined
       ? []
       : [
