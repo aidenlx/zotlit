@@ -29,7 +29,7 @@ import type {
   ConfiguredReadMode,
   EffectiveReadMode,
   PreparedRead,
-  ReadFallbackNotice,
+  ReadFallbackReason,
   SourceFingerprint,
 } from "./read-source";
 import { reapReadClones } from "./reap-temps";
@@ -76,11 +76,6 @@ export interface DatabaseEvents {
    * gate in {@link DatabaseService}). A UI subscriber renders the notice.
    */
   "db-file-missing": () => void;
-  /**
-   * The configured read mode fell back to another mode. Raised at most once
-   * per fallback kind per launch. A UI subscriber renders the notice.
-   */
-  "read-fallback": (notice: ReadFallbackNotice) => void;
 }
 
 export interface DatabaseServiceDeps {
@@ -133,7 +128,7 @@ export class DatabaseService extends Service<void> {
   #sweptReadParent: string | null = null;
   #lastConfiguredMode: ConfiguredReadMode | null = null;
   #lastAutoRefresh: boolean | null = null;
-  readonly #shownFallbackNotices = new Set<string>();
+  readonly #loggedReadFallbacks = new Set<ReadFallbackReason>();
   /** Gate so the fresh-device signal raises at most once per launch. */
   #missingDbSignalled = false;
 
@@ -407,7 +402,7 @@ export class DatabaseService extends Service<void> {
       const uri = buildSqliteUri(prepared.path, prepared.uriOptions);
       const client = createClient(uri, DB_OPTIONS);
       refreshStack.use(client.$client);
-      this.#signalReadFallback(prepared);
+      this.#logReadFallback(prepared);
       this.#reportSchemaVersions(client);
 
       const previousReadStack = this.#activeReadStack;
@@ -542,15 +537,14 @@ export class DatabaseService extends Service<void> {
       );
   }
 
-  #signalReadFallback(prepared: PreparedRead): void {
-    if (!prepared.fallbackNotice) return;
-    if (this.#shownFallbackNotices.has(prepared.fallbackNotice)) return;
-    this.#shownFallbackNotices.add(prepared.fallbackNotice);
+  #logReadFallback(prepared: PreparedRead): void {
+    if (!prepared.fallbackReason) return;
+    if (this.#loggedReadFallbacks.has(prepared.fallbackReason)) return;
+    this.#loggedReadFallbacks.add(prepared.fallbackReason);
     logger.warn("Database read mode fell back", {
-      fallbackNotice: prepared.fallbackNotice,
+      fallbackReason: prepared.fallbackReason,
       effectiveMode: prepared.effectiveMode,
     });
-    this.#emitter.emit("read-fallback", prepared.fallbackNotice);
   }
 
   /**

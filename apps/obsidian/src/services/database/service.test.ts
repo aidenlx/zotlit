@@ -9,7 +9,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { buildSqliteUri, prepareRead, staleWalNotice } from "./read-source";
+import { buildSqliteUri, prepareRead, staleWalReason } from "./read-source";
 import type {
   EffectiveReadMode,
   PreparedRead,
@@ -51,23 +51,23 @@ describe("read-source", () => {
     });
   });
 
-  it("raises the stale-WAL notice for a non-empty WAL", async () => {
+  it("reports a stale-WAL reason for a non-empty WAL", async () => {
     const source = join(dir, "zotero.sqlite");
     await writeFile(`${source}-wal`, "wal");
 
-    await expect(staleWalNotice(source)).resolves.toBe("wal-not-replayed");
+    await expect(staleWalReason(source)).resolves.toBe("wal-not-replayed");
   });
 
-  it("raises no stale-WAL notice when the WAL is empty", async () => {
+  it("reports no stale-WAL reason when the WAL is empty", async () => {
     const source = join(dir, "zotero.sqlite");
     await writeFile(`${source}-wal`, "");
 
-    await expect(staleWalNotice(source)).resolves.toBeUndefined();
+    await expect(staleWalReason(source)).resolves.toBeUndefined();
   });
 
-  it("raises no stale-WAL notice when there is no WAL at all", async () => {
+  it("reports no stale-WAL reason when there is no WAL at all", async () => {
     await expect(
-      staleWalNotice(join(dir, "zotero.sqlite")),
+      staleWalReason(join(dir, "zotero.sqlite")),
     ).resolves.toBeUndefined();
   });
 
@@ -79,7 +79,7 @@ describe("read-source", () => {
     await using prepared = await prepareRead("immutable", source);
 
     expect(prepared.effectiveMode).toBe("immutable");
-    expect(prepared.fallbackNotice).toBe("wal-not-replayed");
+    expect(prepared.fallbackReason).toBe("wal-not-replayed");
   });
 
   it("copies the main database and WAL into an owned temp dir", async () => {
@@ -198,28 +198,6 @@ describe("DatabaseService", () => {
 
     expect(client.$client.close).toHaveBeenCalledOnce();
     expect(read[Symbol.asyncDispose]).toHaveBeenCalledOnce();
-  });
-
-  it("emits each read fallback notice once per service lifecycle", async () => {
-    prepareMock
-      .mockResolvedValueOnce(
-        prepared("/zotero/zotero.sqlite", "immutable", "wal-not-replayed"),
-      )
-      .mockResolvedValueOnce(
-        prepared("/zotero/zotero.sqlite", "immutable", "wal-not-replayed"),
-      );
-    createClientMock
-      .mockReturnValueOnce(fakeClient())
-      .mockReturnValueOnce(fakeClient());
-
-    await using service = new DatabaseService(deps(settings, zoteroPref));
-    const notices: string[] = [];
-    service.on("read-fallback", (notice) => notices.push(notice));
-
-    await service.ready;
-    await service.refresh();
-
-    expect(notices).toEqual(["wal-not-replayed"]);
   });
 
   it("settles ready as degraded when startup open fails", async () => {
@@ -938,13 +916,13 @@ function deps(settings: FakeSettings, zoteroPref: FakeZoteroPref): Deps {
 function prepared(
   path: string,
   effectiveMode: EffectiveReadMode,
-  fallbackNotice?: PreparedRead["fallbackNotice"],
+  fallbackReason?: PreparedRead["fallbackReason"],
 ): PreparedRead {
   return {
     path,
     uriOptions: { mode: "ro" },
     effectiveMode,
-    fallbackNotice,
+    fallbackReason,
     [Symbol.asyncDispose]: vi.fn(async () => undefined),
   };
 }

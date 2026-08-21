@@ -1,5 +1,6 @@
 /** @see https://zotlit.aidenlx.site — the v2 documentation site. */
 export const DOCS_SITE_URL = "https://zotlit.aidenlx.site";
+export const DOCS_COMPANION = `${DOCS_SITE_URL}/docs/install-companion`;
 
 /**
  * Host and repository ZotLit's releases are served from, as shown to the user

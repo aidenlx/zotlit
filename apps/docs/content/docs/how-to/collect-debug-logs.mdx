@@ -10,12 +10,12 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 
-Bug reports often need logs from ZotLit, from the ZotLit companion, or from Obsidian itself. Each section below is self-contained. Follow only the one you were asked for.
+Bug reports often need ZotLit logs, Obsidian logs, or Zotero debug output from ZotLit Companion, the Zotero add-on. Each section below is self-contained. Follow only the one you were asked for.
 
 Once you have the logs, file the report in the [Bug reports discussion](https://github.com/aidenlx/zotlit/discussions/categories/bug-reports).
 
 <Callout type="warn" title="Cross-component bugs need both sides">
-  If the bug spans ZotLit and the companion (e.g. syncing, live update,
+  If the bug spans ZotLit and the Companion (e.g. syncing, live update,
   importing, or any action that rely on Zotero running), complete the setup
   steps in **both** [ZotLit logs](#zotlit-logs) and [Zotero debug
   output](#zotero-debug-output) before you reproduce the problem. Reproduce
@@ -130,7 +130,7 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
 
 <Steps>
   <Step>
-    ### Set the companion's log level
+    ### Set the Companion's log level
 
     In Zotero, open **Edit > Settings** (Windows/Linux) or **Zotero > Settings** (macOS), then select the **ZotLit** pane. Set **Log level** to **Debug**.
 
@@ -141,7 +141,7 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
     Go to **Help > Debug Output Logging** and click **Restart with Logging Enabled…**.
 
     <Callout type="warn" title="Do not use troubleshooting mode">
-      A confirmation dialog appears. Do not select **Restart in Troubleshooting Mode**: that mode disables all add-ons, including the companion, so no debug output would be captured.
+      A confirmation dialog appears. Do not select **Restart in Troubleshooting Mode**: that mode disables all add-ons, including the Companion, so no debug output would be captured.
     </Callout>
 
   </Step>
@@ -174,7 +174,7 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
 </Steps>
 
 <Callout type="info" title="Reset the log level">
-  Set the companion's **Log level** back to its previous value after collecting
+  Set the Companion's **Log level** back to its previous value after collecting
   the output.
 </Callout>
 

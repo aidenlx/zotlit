@@ -75,7 +75,7 @@ _Avoid_: template export (suggests rendered note output), data dump (the file fo
 
 **CLI Contract**:
 The wire format of one `zotlit:*` command namespace — its envelope, payload fields, and diagnostic codes. Each namespace versions its own, so a bump in one says nothing about another. Distinct from the Template Contract, which is a promise about `zt` data rather than about an answer's shape.
-_Avoid_: contract version (names the number, not the thing); protocol (that is the Zotero companion's wire format)
+_Avoid_: contract version (names the number, not the thing); protocol (that is the wire format for ZotLit Companion, the Zotero add-on)
 
 ### Annotation view
 
@@ -260,7 +260,7 @@ _Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 The set of Libraries used for discovery and unqualified batch operations. It is either All Libraries or a non-empty set of Selected Libraries; unavailable selections remain part of the scope while available Libraries continue to serve discovery.
 
 **Note Index**:
-A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
+A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the Companion's `GET /literature-notes` note-status query after the first full scan settles.
 
 **Citation Index**:
 The plugin-owned, internal vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citations and Literature Note wikilinks. It tracks derived source facts independently of which citation sources the user includes; the Document Citation Set applies those choices for citation-aware consumers. Reset Citation Index remains a Diagnostics recovery action that rebuilds this derived data without changing vault files.
@@ -324,7 +324,7 @@ The identity of one observed state of the main Zotero database file. It combines
 The identity of one observed write-ahead log generation. It distinguishes an absent, empty, unstable, or present WAL; a present generation is identified by its WAL header and size. Two source fingerprints match when their path, Main Identity, and WAL Generation match; an unstable generation never matches.
 
 **Reflink Clone** _(Read Mode)_:
-Creates a lightweight snapshot of the database files into a temporary directory and opens the snapshot read-only. Sees committed and recent uncommitted edits. Default on macOS (via `clonefile`); unavailable on filesystems that do not support reflinking.
+Creates a lightweight snapshot of the database files into a temporary directory and opens the snapshot read-only. Sees committed changes that Zotero has not yet written to the main database file. Default on macOS (via `clonefile`); unavailable on filesystems that do not support reflinking.
 _Avoid_: copy-on-write clone (user-facing docs avoid this term)
 
 **Full Copy** _(Read Mode)_:
@@ -378,4 +378,4 @@ release locations, consent copy, notices, and settings UI.
 ### Protocol
 
 **Protocol Action**:
-A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Zotero companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the companion's `GET /literature-notes` note-status query from the Note Index.
+A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the Companion's `GET /literature-notes` note-status query from the Note Index.

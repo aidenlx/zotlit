@@ -1,6 +1,6 @@
 import type { SettingDefinitionItem } from "obsidian";
 
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -58,7 +58,7 @@ function enabledDescription(): DocumentFragment {
     m.settings_live_updates_companion_desc(),
     " ",
     createEl("a", {
-      href: `${DOCS_SITE_URL}/docs/install-companion`,
+      href: DOCS_COMPANION,
       text: m.settings_live_updates_companion_install(),
       attr: { target: "_blank", rel: "noopener" },
     }),

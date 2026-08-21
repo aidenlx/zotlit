@@ -5,11 +5,11 @@ The wire format for ZotLit ↔ Zotero communication. Two transports carry the sa
 ## Language
 
 **Public URI Link**:
-An `obsidian://zotlit/<action>?…` link built by the Zotero companion for `Zotero.launchURL`. A permanent, embeddable artifact — it may be pasted into a note, a webpage, or a bookmark and opened long after it was created. Never version-gated: the Obsidian receiver honors any structurally valid link regardless of the plugin version that opens it. Evolves additive-only.
+An `obsidian://zotlit/<action>?…` link built by ZotLit Companion, the Zotero add-on, for `Zotero.launchURL`. A permanent, embeddable artifact — it may be pasted into a note, a webpage, or a bookmark and opened long after it was created. Never version-gated: the Obsidian receiver honors any structurally valid link regardless of the plugin version that opens it. Evolves additive-only.
 _Avoid_: protocol URL (ambiguous with the HTTP endpoints), deep link, ephemeral link
 
 **Ephemeral HTTP Request**:
-An HTTP request between the running Zotero companion and the Obsidian listener: `POST /notify` event pushes and `PUT` batch commands the companion sends, plus the `GET /literature-notes` note-status query it fetches — the protocol's first query-style action, where the Obsidian plugin serves and the companion consumes the response (`noteStatusResponseSchema`). Generated live and in lockstep with the companion, so every request carries the `X-Zotlit-Protocol-Version` header and is strictly version-matched — a mismatch is rejected with `426`. The opposite of a Public URI Link in permanence and in gating.
+An HTTP request between the running Companion and the Obsidian listener: `POST /notify` event pushes and `PUT` batch commands the Companion sends, plus the `GET /literature-notes` note-status query it fetches — the protocol's first query-style action, where the Obsidian plugin serves and the Companion consumes the response (`noteStatusResponseSchema`). Generated live and in lockstep with the Companion, so every request carries the `X-Zotlit-Protocol-Version` header and is strictly version-matched — a mismatch is rejected with `426`. The opposite of a Public URI Link in permanence and in gating.
 _Avoid_: notify call, live link
 
 **Protocol Version**:
@@ -25,7 +25,7 @@ The wire vocabulary for item identity across libraries: an 8-char base-32 Zotero
 _Avoid_: item key (drops the library disambiguation), frontmatter key
 
 **Freshness Signal**:
-The payload-free `db/updated` notify event: the companion's statement that the Zotero database changed and the main file is as current as the companion can make it. Carries no item identity — the receiver treats it as a refresh trigger, never as data.
+The payload-free `db/updated` notify event from the Companion. It tells ZotLit to refresh after Zotero write activity settles. It carries no item identity and does not prove that the main file contains every recent change.
 _Avoid_: item update, database event
 
 **Source Id**:

@@ -32,7 +32,7 @@ async function createFixture(): Promise<AsyncDisposable & { source: string }> {
   };
 }
 
-describe("reflink fallback notices", () => {
+describe("reflink fallback reasons", () => {
   it("prioritizes a skipped WAL over the unsupported reflink", async () => {
     await using fixture = await createFixture();
     const { source } = fixture;
@@ -40,7 +40,7 @@ describe("reflink fallback notices", () => {
 
     await using prepared = await prepareRead("reflink", source);
 
-    expect(prepared.fallbackNotice).toBe("wal-not-replayed");
+    expect(prepared.fallbackReason).toBe("wal-not-replayed");
   });
 
   it("warns when Auto falls back to an immutable read that skips a WAL", async () => {
@@ -50,7 +50,7 @@ describe("reflink fallback notices", () => {
 
     await using prepared = await prepareRead("auto", source);
 
-    expect(prepared.fallbackNotice).toBe("wal-not-replayed");
+    expect(prepared.fallbackReason).toBe("wal-not-replayed");
   });
 
   it("reports the unsupported reflink when no WAL is skipped", async () => {
@@ -58,6 +58,6 @@ describe("reflink fallback notices", () => {
     const { source } = fixture;
     await using prepared = await prepareRead("reflink", source);
 
-    expect(prepared.fallbackNotice).toBe("reflink-unsupported");
+    expect(prepared.fallbackReason).toBe("reflink-unsupported");
   });
 });

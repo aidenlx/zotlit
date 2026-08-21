@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
+import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
@@ -175,6 +176,25 @@ function StepFolder() {
   );
 }
 
+function StepCompanion() {
+  const actions = useWelcomeActions();
+  return (
+    <TimelineNode state="todo" icon="puzzle">
+      <StepHeading>{m.welcome_step_companion_title()}</StepHeading>
+      <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
+        {m.welcome_step_companion_body()}
+      </p>
+      <Button
+        icon="external-link"
+        className="zt:mt-3"
+        onClick={() => actions.openExternal(DOCS_COMPANION)}
+      >
+        {m.welcome_action_install_companion()}
+      </Button>
+    </TimelineNode>
+  );
+}
+
 function StepNote() {
   const actions = useWelcomeActions();
   return (
@@ -335,6 +355,7 @@ export function Welcome() {
       {mode === "upgraded" ? <MigrationBanner /> : null}
       <div className="zt:mt-9">
         <StepConnect />
+        {mode === "fresh" ? <StepCompanion /> : null}
         <StepFolder />
         <StepNote />
         <KeepGoing />

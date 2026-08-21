@@ -17,7 +17,7 @@
  *   assumes the file cannot change, skips locking, and reads the committed main
  *   DB only (it does not replay the live WAL). This is the safe fallback when
  *   cloning is unavailable. On Zotero 10 that costs freshness, so a non-empty
- *   WAL raises {@link ReadFallbackNotice} `wal-not-replayed`.
+ *   WAL records {@link ReadFallbackReason} `wal-not-replayed`.
  *
  * A Zotero 10 data dir holds no `-shm` file to clone: Zotero sets
  * `locking_mode=EXCLUSIVE` before `journal_mode=WAL`, which keeps the WAL index
@@ -51,7 +51,7 @@ const WAL_HEADER_BYTES = 32;
 
 export type ConfiguredReadMode = ZoteroReadMode;
 export type EffectiveReadMode = "reflink" | "copy" | "immutable";
-export type ReadFallbackNotice = "reflink-unsupported" | "wal-not-replayed";
+export type ReadFallbackReason = "reflink-unsupported" | "wal-not-replayed";
 
 export interface SqliteUriOptions {
   mode?: "ro";
@@ -62,7 +62,7 @@ export interface PreparedRead extends AsyncDisposable {
   path: string;
   uriOptions: SqliteUriOptions;
   effectiveMode: EffectiveReadMode;
-  fallbackNotice?: ReadFallbackNotice;
+  fallbackReason?: ReadFallbackReason;
 }
 
 export type MainIdentity =
@@ -106,8 +106,8 @@ export function buildSqliteUri(
 /**
  * `auto` and `reflink` both attempt the native reflink clone and, on a clone
  * *capability* failure, both degrade to `immutable`. Each then reports the one
- * notice that explains its own outcome: `reflink` was an explicit request, so it
- * names the unsupported clone unless the resulting immutable read would skip a
+ * reason that explains its own outcome: `reflink` was an explicit request, so it
+ * records the unsupported clone unless the resulting immutable read would skip a
  * non-empty WAL. Detected stale data takes priority for every configured mode.
  * Neither falls back to full `copy` on its own — avoiding an automatic
  * full-database duplication is preferred over forcing WAL freshness on a volume
@@ -122,8 +122,8 @@ export async function prepareRead(
 ): Promise<PreparedRead> {
   if (configuredMode === "immutable") {
     const read = immutableRead(sourcePath);
-    const fallbackNotice = await staleWalNotice(sourcePath);
-    return fallbackNotice ? { ...read, fallbackNotice } : read;
+    const fallbackReason = await staleWalReason(sourcePath);
+    return fallbackReason ? { ...read, fallbackReason } : read;
   }
   if (configuredMode === "copy") return prepareTempRead("copy", sourcePath);
 
@@ -132,10 +132,10 @@ export async function prepareRead(
   } catch (error) {
     if (!(error instanceof ReflinkUnsupportedError)) throw error;
     const read = immutableRead(sourcePath);
-    const fallbackNotice = await staleWalNotice(sourcePath);
-    if (fallbackNotice) return { ...read, fallbackNotice };
+    const fallbackReason = await staleWalReason(sourcePath);
+    if (fallbackReason) return { ...read, fallbackReason };
     if (configuredMode === "reflink")
-      return { ...read, fallbackNotice: "reflink-unsupported" };
+      return { ...read, fallbackReason: "reflink-unsupported" };
     return read;
   }
 }
@@ -151,9 +151,9 @@ export async function prepareRead(
  * Zotero read back as five rows from a main+WAL clone and as zero rows from an
  * `immutable` read of the same source.
  */
-export async function staleWalNotice(
+export async function staleWalReason(
   sourcePath: string,
-): Promise<ReadFallbackNotice | undefined> {
+): Promise<ReadFallbackReason | undefined> {
   const wal = await walGeneration(`${sourcePath}-wal`);
   return wal.state === "present" || wal.state === "unstable"
     ? "wal-not-replayed"

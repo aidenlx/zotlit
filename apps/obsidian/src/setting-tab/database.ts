@@ -6,6 +6,7 @@ import type {
   Setting,
 } from "obsidian";
 
+import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
 import type {
@@ -34,6 +35,30 @@ export function databasePageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   return [
+    {
+      name: m.settings_db_companion_name(),
+      desc: m.settings_db_companion_desc(),
+      render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_db_companion_install())
+            .onClick(() => window.open(DOCS_COMPANION)),
+        );
+      },
+    },
+    {
+      name: m.settings_db_stale_help_name(),
+      desc: m.settings_db_stale_help_desc(),
+      render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_db_stale_help_action())
+            .onClick(() =>
+              window.open(`${DOCS_SITE_URL}/docs/how-to/fix-stale-data`),
+            ),
+        );
+      },
+    },
     {
       name: m.settings_db_profile_dir_name(),
       desc: m.settings_db_profile_dir_desc(),

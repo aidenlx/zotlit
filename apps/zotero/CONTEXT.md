@@ -1,6 +1,6 @@
-# Zotero Companion
+# ZotLit Companion
 
-The Zotero-side add-on. It observes what the user does in Zotero, pushes events to the Obsidian plugin, and keeps Zotero's database readable by that plugin.
+ZotLit Companion, the Zotero add-on, observes what the user does in Zotero, pushes events to the Obsidian plugin, and keeps Zotero's database readable by that plugin.
 
 ## Language
 
@@ -25,5 +25,5 @@ The Companion's user-facing report of whether the main database file holds the u
 _Avoid_: note status (that names the Literature Note column), sync status (that is Zotero's own remote sync), database health
 
 **Freshness Signal**:
-The Companion's payload-free push telling the Obsidian plugin that write activity has settled and the main database file is as current as the Companion can make it. Follows a Checkpoint where one applies.
+The Companion's payload-free push telling the Obsidian plugin to refresh after write activity settles. It can follow a Checkpoint, but it does not prove that the main database file contains every recent change.
 _Avoid_: item update (the retired per-item push), change notification, ping
