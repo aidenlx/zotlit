@@ -454,7 +454,7 @@ export interface FixtureNote {
   /** `null` for a standalone note; otherwise the parent item it hangs off. */
   parentItemID: number | null;
   title: string;
-  /** Note body, in the HTML shape Zotero stores. */
+  /** Complete HTML derived from Zotero-created Note output. */
   note: string;
   /** Markdown body for a generated Imported Note; `null` for other Notes. */
   importedNoteBody: string | null;
@@ -481,7 +481,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNAAAA",
     parentItemID: 1,
     title: "Reading notes on the personal alpha",
-    note: '<div data-schema-version="9"><h1>Reading notes on the personal alpha</h1><p>A child note of an item filed in two collections.</p></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the personal alpha</h1>\n<p>A child note of an item filed in two collections.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the personal alpha\n\nA child note of an item filed in two collections.\n",
     dateModified: "2025-02-28 12:00:00",
@@ -493,7 +493,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNBBBB",
     parentItemID: 5,
     title: "Reading notes on the unkeyed personal item",
-    note: '<div data-schema-version="9"><h1>Reading notes on the unkeyed personal item</h1><p>A child note of an item that no collection holds.</p></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the unkeyed personal item</h1>\n<p>A child note of an item that no collection holds.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the unkeyed personal item\n\nA child note of an item that no collection holds.\n",
     dateModified: "2025-02-27 12:00:00",
@@ -505,7 +505,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNCCCC",
     parentItemID: null,
     title: "Standalone personal note",
-    note: '<div data-schema-version="9"><h1>Standalone personal note</h1><p>Filed in a collection on its own, with no parent item.</p></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Standalone personal note</h1>\n<p>Filed in a collection on its own, with no parent item.</p>\n</div></div>',
     importedNoteBody: null,
     dateModified: "2025-02-26 12:00:00",
     collectionIDs: [4],
@@ -516,7 +516,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNAAAA",
     parentItemID: 6,
     title: "Reading notes on the shared alpha",
-    note: '<div data-schema-version="9"><h1>Reading notes on the shared alpha</h1><p>Repeats the bare note key of the My Library child note.</p></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the shared alpha</h1>\n<p>Repeats the bare note key of the My Library child note.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the shared alpha\n\nRepeats the bare note key of the My Library child note.\n",
     dateModified: "2025-02-25 12:00:00",
@@ -528,7 +528,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNDDDD",
     parentItemID: 9,
     title: "Reading notes on the lab archive alpha",
-    note: '<div data-schema-version="9"><h1>Reading notes on the lab archive alpha</h1><p>A child note in a group Library.</p></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the lab archive alpha</h1>\n<p>A child note in a group Library.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the lab archive alpha\n\nA child note in a group Library.\n",
     dateModified: "2025-02-24 12:00:00",
@@ -540,7 +540,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNEEEE",
     parentItemID: 10,
     title: "Reading notes on the consortium alpha",
-    note: '<div data-schema-version="9"><h1>Reading notes on the consortium alpha</h1><p>A child note in a read-only group Library.</p></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the consortium alpha</h1>\n<p>A child note in a read-only group Library.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the consortium alpha\n\nA child note in a read-only group Library.\n",
     dateModified: "2025-02-23 12:00:00",
@@ -552,7 +552,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "TRASHED2",
     parentItemID: null,
     title: "A deliberately trashed Note",
-    note: '<div data-schema-version="9"><h1>A deliberately trashed Note</h1><p>Present in the Fixture database and hidden from ordinary Note queries.</p></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>A deliberately trashed Note</h1>\n<p>Present in the Fixture database and hidden from ordinary Note queries.</p>\n</div></div>',
     importedNoteBody: null,
     dateModified: "2025-02-22 12:00:00",
     trashed: true,
@@ -565,21 +565,39 @@ export type FixtureAsset =
   | "sakimas-song/sakimas-song.html"
   | "sakimas-song/sakimas-song.pdf";
 
-export interface FixtureAttachment {
+interface FixtureAttachmentBase {
   itemID: number;
   libraryID: number;
   /** Bare Zotero key for the Attachment row. */
   key: string;
   parentItemID: number;
-  linkMode: "imported_file" | "imported_url" | "linked_file" | "linked_url";
   contentType: "application/pdf" | "text/html";
-  /** Storage filename, linked filename, or URL, according to {@link linkMode}. */
-  path: string;
+  title: string;
   /** Committed source to copy; `null` makes a URL row or deliberate miss. */
   sourceAsset: FixtureAsset | null;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
   dateModified: string;
 }
+
+export type FixtureAttachment = FixtureAttachmentBase &
+  (
+    | {
+        linkMode: "imported_file" | "linked_file";
+        path: string;
+        url: null;
+      }
+    | {
+        linkMode: "imported_url";
+        path: string;
+        url: string;
+      }
+    | {
+        linkMode: "linked_url";
+        path: null;
+        url: string;
+        sourceAsset: null;
+      }
+  );
 
 /**
  * File-backed rows cover every storage and linked-file branch. `LINKURL2`
@@ -594,7 +612,9 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     parentItemID: 20,
     linkMode: "imported_file",
     contentType: "application/pdf",
+    title: "Sakima's Song PDF",
     path: "sakimas-song.pdf",
+    url: null,
     sourceAsset: "sakimas-song/sakimas-song.pdf",
     dateModified: "2025-02-20 12:00:00",
   },
@@ -605,7 +625,9 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     parentItemID: 20,
     linkMode: "imported_url",
     contentType: "text/html",
+    title: "Sakima's Song Snapshot",
     path: "sakimas-song.html",
+    url: "https://www.storybookscanada.ca/stories/en/0315/",
     sourceAsset: "sakimas-song/sakimas-song.html",
     dateModified: "2025-02-19 12:00:00",
   },
@@ -616,7 +638,9 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     parentItemID: 20,
     linkMode: "linked_file",
     contentType: "application/pdf",
+    title: "Sakima's Song Linked PDF",
     path: "sakimas-song.pdf",
+    url: null,
     sourceAsset: "sakimas-song/sakimas-song.pdf",
     dateModified: "2025-02-18 12:00:00",
   },
@@ -627,7 +651,9 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     parentItemID: 20,
     linkMode: "linked_url",
     contentType: "text/html",
-    path: "https://www.storybookscanada.ca/stories/en/0315/",
+    title: "Sakima's Song Web Page",
+    path: null,
+    url: "https://www.storybookscanada.ca/stories/en/0315/",
     sourceAsset: null,
     dateModified: "2025-02-17 12:00:00",
   },
@@ -638,7 +664,9 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     parentItemID: 20,
     linkMode: "imported_file",
     contentType: "application/pdf",
+    title: "Deliberately Missing PDF",
     path: "deliberately-missing.pdf",
+    url: null,
     sourceAsset: null,
     dateModified: "2025-02-16 12:00:00",
   },
@@ -649,7 +677,9 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     parentItemID: 28,
     linkMode: "imported_file",
     contentType: "application/pdf",
+    title: "Ioannidis 2005 PDF",
     path: "ioannidis-2005.pdf",
+    url: null,
     sourceAsset: "ioannidis-2005/ioannidis-2005.pdf",
     dateModified: "2025-02-12 12:00:00",
   },

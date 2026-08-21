@@ -61,6 +61,14 @@ describe("getAttachmentsByParents", () => {
     expect(typeof first?.dateModified.epochMilliseconds).toBe("number");
   });
 
+  it("reads a linked URL from the Attachment's url field", () => {
+    expect(getAttachmentsByParents(db, [400])[0]).toMatchObject({
+      key: "URLATTCH",
+      linkMode: 3,
+      path: "https://example.com/article",
+    });
+  });
+
   it("reuses the prepared statement across different parent IDs", () => {
     const r1 = getAttachmentsByParents(db, [100]).map((a) => a.key);
     const r2 = getAttachmentsByParents(db, [200]).map((a) => a.key);
@@ -102,7 +110,9 @@ function seed(sqlite: DatabaseSync): void {
         (103, 2, '2024-01-05 00:00:00', '2024-01-05 00:00:00', 1, 'TRASHED'),
         (201, 2, '2024-01-06 00:00:00', '2024-01-06 00:00:00', 1, 'ATTB1'),
         (300, 1, '2024-01-07 00:00:00', '2024-01-07 00:00:00', 2, 'PAROTHER'),
-        (301, 2, '2024-01-08 00:00:00', '2024-01-08 00:00:00', 2, 'ATTOTHER');
+        (301, 2, '2024-01-08 00:00:00', '2024-01-08 00:00:00', 2, 'ATTOTHER'),
+        (400, 1, '2024-01-09 00:00:00', '2024-01-09 00:00:00', 1, 'PARURL'),
+        (401, 2, '2024-01-10 00:00:00', '2024-01-10 00:00:00', 1, 'URLATTCH');
 
     insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
       values
@@ -110,7 +120,17 @@ function seed(sqlite: DatabaseSync): void {
         (102, 100, 2, 'application/epub+zip', '/abs/path/book.epub'),
         (103, 100, 0, 'application/pdf', 'storage:trashed.pdf'),
         (201, 200, 1, 'text/html', null),
-        (301, 300, 0, 'application/pdf', 'storage:other-lib.pdf');
+        (301, 300, 0, 'application/pdf', 'storage:other-lib.pdf'),
+        (401, 400, 3, 'text/html', null);
+
+    insert into fieldsCombined (fieldID, fieldName)
+      values (1, 'url');
+
+    insert into itemDataValues (valueID, value)
+      values (1, 'https://example.com/article');
+
+    insert into itemData (itemID, fieldID, valueID)
+      values (401, 1, 1);
 
     insert into deletedItems (itemID, dateDeleted)
       values (103, '2024-01-05 00:00:01');

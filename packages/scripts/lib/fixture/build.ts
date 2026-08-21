@@ -151,7 +151,7 @@ const VAULT_PLUGINS_DIR = join(import.meta.dirname, "vault-plugins");
 function attachmentDatabasePath(
   attachment: FixtureAttachment,
   layout: FixtureLayout,
-): string {
+): string | null {
   switch (attachment.linkMode) {
     case "imported_file":
     case "imported_url":
@@ -159,7 +159,7 @@ function attachmentDatabasePath(
     case "linked_file":
       return join(layout.linkedFilesDir, attachment.path);
     case "linked_url":
-      return attachment.path;
+      return null;
   }
 }
 
@@ -226,9 +226,16 @@ interface SchemaIDs {
     number
   >;
   fields: Record<
-    "title" | "citationKey" | "date" | "publicationTitle" | "bookTitle",
+    | "title"
+    | "citationKey"
+    | "date"
+    | "publicationTitle"
+    | "bookTitle"
+    | "url"
+    | "accessDate",
     number
   >;
+  charsets: Record<"utf-8", number>;
   creatorTypes: Record<FixtureCreator["creatorType"], number>;
 }
 
@@ -262,7 +269,20 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
     fields: lookup(
       "select fieldID from fieldsCombined where fieldName = ?",
       "fieldID",
-      ["title", "citationKey", "date", "publicationTitle", "bookTitle"],
+      [
+        "title",
+        "citationKey",
+        "date",
+        "publicationTitle",
+        "bookTitle",
+        "url",
+        "accessDate",
+      ],
+    ),
+    charsets: lookup(
+      "select charsetID from charsets where charset = ?",
+      "charsetID",
+      ["utf-8"],
     ),
     creatorTypes: lookup(
       "select creatorTypeID from creatorTypes where creatorType = ?",
@@ -364,12 +384,16 @@ function seedDatabase(
     ]),
   );
   insert(
-    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values (?, ?, ?, ?, ?)",
+    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, charsetID, path) values (?, ?, ?, ?, ?, ?)",
     ATTACHMENTS.map((attachment) => [
       attachment.itemID,
       attachment.parentItemID,
       ATTACHMENT_LINK_MODES[attachment.linkMode],
       attachment.contentType,
+      attachment.linkMode === "imported_url" &&
+      attachment.contentType === "text/html"
+        ? ids.charsets["utf-8"]
+        : null,
       attachmentDatabasePath(attachment, layout),
     ]),
   );
@@ -389,7 +413,7 @@ function seedDatabase(
     ]),
   );
 
-  seedItemData(insert, ids, items);
+  seedItemData(insert, ids, { items, attachments: ATTACHMENTS });
 
   // `creators` is keyed by name across the whole database, so two items by the
   // same person would share one row. Ids follow first use, which the Spec's own
@@ -531,26 +555,55 @@ function relatedItemUri(
 function seedItemData(
   insert: (sql: string, rows: readonly Row[]) => void,
   ids: SchemaIDs,
-  items: readonly FixtureItem[],
+  {
+    items,
+    attachments,
+  }: {
+    items: readonly FixtureItem[];
+    attachments: readonly FixtureAttachment[];
+  },
 ): void {
-  const fieldValues = items.flatMap((item) => [
-    { itemID: item.itemID, fieldID: ids.fields.title, value: item.title },
-    { itemID: item.itemID, fieldID: ids.fields.date, value: item.date },
-    {
-      itemID: item.itemID,
-      fieldID: containerFieldID(ids, item.itemType),
-      value: item.containerTitle,
-    },
-    ...(item.citationKey === null
-      ? []
-      : [
-          {
-            itemID: item.itemID,
-            fieldID: ids.fields.citationKey,
-            value: item.citationKey,
-          },
-        ]),
-  ]);
+  const fieldValues = [
+    ...items.flatMap((item) => [
+      { itemID: item.itemID, fieldID: ids.fields.title, value: item.title },
+      { itemID: item.itemID, fieldID: ids.fields.date, value: item.date },
+      {
+        itemID: item.itemID,
+        fieldID: containerFieldID(ids, item.itemType),
+        value: item.containerTitle,
+      },
+      ...(item.citationKey === null
+        ? []
+        : [
+            {
+              itemID: item.itemID,
+              fieldID: ids.fields.citationKey,
+              value: item.citationKey,
+            },
+          ]),
+    ]),
+    ...attachments.flatMap((attachment) => [
+      {
+        itemID: attachment.itemID,
+        fieldID: ids.fields.title,
+        value: attachment.title,
+      },
+      ...(attachment.url === null
+        ? []
+        : [
+            {
+              itemID: attachment.itemID,
+              fieldID: ids.fields.url,
+              value: attachment.url,
+            },
+            {
+              itemID: attachment.itemID,
+              fieldID: ids.fields.accessDate,
+              value: attachment.dateModified,
+            },
+          ]),
+    ]),
+  ];
 
   const valueIDs = new Map<string, number>();
   for (const { value } of fieldValues) {

@@ -256,6 +256,92 @@ describe("the generated Zotero database", () => {
     expect(sqlite.prepare("pragma foreign_key_check").all()).toEqual([]);
   });
 
+  it("stores Notes in the HTML envelope written by Zotero 10", () => {
+    using sqlite = new DatabaseSync(layout.databasePath, { readOnly: true });
+    const notes = sqlite
+      .prepare("select note from itemNotes order by itemID")
+      .all() as { note: string }[];
+
+    expect(notes).toHaveLength(NOTES.length);
+    for (const { note } of notes) {
+      expect(
+        note.startsWith(
+          '<div class="zotero-note znv1"><div data-schema-version="9">',
+        ),
+      ).toBe(true);
+      expect(note.endsWith("\n</div></div>")).toBe(true);
+    }
+  });
+
+  it("stores Attachment fields where Zotero reads them", () => {
+    using sqlite = new DatabaseSync(layout.databasePath, { readOnly: true });
+    const attachments = sqlite
+      .prepare(
+        `select i.key,
+                a.path,
+                a.charsetID,
+                (select v.value
+                   from itemData d
+                   join itemDataValues v using (valueID)
+                  where d.itemID = i.itemID
+                    and d.fieldID = (select fieldID from fieldsCombined where fieldName = 'title')) as title,
+                (select v.value
+                   from itemData d
+                   join itemDataValues v using (valueID)
+                  where d.itemID = i.itemID
+                    and d.fieldID = (select fieldID from fieldsCombined where fieldName = 'url')) as url
+           from itemAttachments a
+           join items i using (itemID)
+          order by i.itemID`,
+      )
+      .all();
+
+    expect(attachments).toEqual([
+      {
+        key: "PDFSTR22",
+        path: "storage:sakimas-song.pdf",
+        charsetID: null,
+        title: "Sakima's Song PDF",
+        url: null,
+      },
+      {
+        key: "HTMLSNAP",
+        path: "storage:sakimas-song.html",
+        charsetID: 1,
+        title: "Sakima's Song Snapshot",
+        url: "https://www.storybookscanada.ca/stories/en/0315/",
+      },
+      {
+        key: "PDFLINKD",
+        path: join(layout.linkedFilesDir, "sakimas-song.pdf"),
+        charsetID: null,
+        title: "Sakima's Song Linked PDF",
+        url: null,
+      },
+      {
+        key: "LINKURL2",
+        path: null,
+        charsetID: null,
+        title: "Sakima's Song Web Page",
+        url: "https://www.storybookscanada.ca/stories/en/0315/",
+      },
+      {
+        key: "MISSNG22",
+        path: "storage:deliberately-missing.pdf",
+        charsetID: null,
+        title: "Deliberately Missing PDF",
+        url: null,
+      },
+      {
+        key: "IANPDF25",
+        path: "storage:ioannidis-2005.pdf",
+        charsetID: null,
+        title: "Ioannidis 2005 PDF",
+        url: null,
+      },
+    ]);
+  });
+
   it("carries Zotero's own item types and base-field mappings", () => {
     using db = openClient();
 
