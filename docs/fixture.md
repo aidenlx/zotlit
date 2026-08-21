@@ -87,7 +87,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
    pnpm fixture open [scope-case] [--purge]
    ```
 
-   The command builds the Obsidian and Zotero extensions in parallel. It then rebuilds the Fixture, synchronizes and opens the Development Vault, and starts Paired Zotero in parallel. For an existing Development Vault, it copies the generated `data.json` and reloads ZotLit. It stores the Fixture profile and data-directory Device Overrides in vault-scoped local storage, then verifies that ZotLit opened the Fixture database. It also verifies that the companion loaded in Zotero before it reports readiness. If either attempt fails, the command completes the other attempt before it exits with an error. A successful command then exits and leaves both applications open.
+   The command builds the Obsidian and Zotero extensions in parallel. It then rebuilds the Fixture, synchronizes and opens the Development Vault, and starts Paired Zotero. This order puts the selected HTTP port in the profile before Zotero starts. For an existing Development Vault, it copies the generated `data.json` and reloads ZotLit. It stores the Fixture profile and data-directory Device Overrides in vault-scoped local storage, then verifies that ZotLit opened the Fixture database. It also verifies that the companion loaded in Zotero before it reports readiness. A successful command then exits and leaves both applications open.
 
 2. For a live development session, start a supervised Paired Run:
 
@@ -97,7 +97,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 
    This command keeps the Obsidian and Zotero watchers running after readiness. Press `Ctrl-C` to stop both watchers and Paired Zotero. The Development Vault stays open in Obsidian. If a watcher or Paired Zotero stops unexpectedly, the command stops the remaining processes and exits with an error.
 
-Each Paired Run takes one free TCP port for Live Updates. It writes that port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. The ready report names the port. A Development Vault therefore serves Live Updates while other ZotLit vaults hold the default port `9091`.
+Each Paired Run takes two free TCP ports. It writes the Live Updates port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. It writes the Zotero HTTP port into the Fixture profile as `extensions.zotero.httpServer.port`. Zotero uses that HTTP server for Better BibTeX and the local API. The ready report names both ports. A Paired Run therefore stays clear of the default Live Updates port `9091` and Zotero HTTP port `23119` used by other profiles.
 
 The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed.
 

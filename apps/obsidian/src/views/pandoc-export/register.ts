@@ -44,7 +44,7 @@ export interface PandocExportDeps {
   app: App;
   db: Pick<DatabaseService, "acquireRead">;
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "get">;
+  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
   settings: Pick<SettingsService, "current">;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
@@ -232,6 +232,7 @@ function exportPorts(
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {
         request: zoteroRequest,
+        httpPort: zoteroPref.httpPort,
         localApiEnabled: zoteroPref.get(LOCAL_API_PREF) === true,
       }),
   };

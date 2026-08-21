@@ -67,9 +67,16 @@ export function showExportFailure(failure: ExportProblem): void {
             failure.linkpaths,
           );
           break;
-        case "zotero-not-running":
+        case "zotero-unreachable":
           renderer.addText(
-            m.pandoc_export_error_zotero_closed({ port: failure.port }),
+            m.pandoc_export_error_zotero_unreachable({ port: failure.port }),
+          );
+          break;
+        case "zotero-port-automatic":
+          renderer.addText(
+            m.pandoc_export_error_zotero_port_automatic({
+              pref: failure.pref,
+            }),
           );
           break;
         case "local-api-disabled":

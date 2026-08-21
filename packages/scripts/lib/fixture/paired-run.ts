@@ -24,6 +24,8 @@ export interface PairedRunReady {
   zotero: PairedZotero;
   /** The port this run gave the Development Vault and Paired Zotero. */
   liveUpdatePort: number;
+  /** The HTTP server port this run gave the active Zotero profile. */
+  zoteroHttpPort: number;
 }
 
 export interface PairedRunPorts {
@@ -31,26 +33,17 @@ export interface PairedRunPorts {
   assertFixtureIdle(): Promise<void>;
   /** A port that is free right now, for this run's Live Updates channel. */
   allocateLiveUpdatePort(): Promise<number>;
+  /** A port that is free right now, for this run's Zotero HTTP server. */
+  allocateZoteroHttpPort(): Promise<number>;
   prepareDevelopmentVault(options: {
     scopeCase: string;
     purge: boolean;
     liveUpdatePort: number;
+    zoteroHttpPort: number;
   }): Promise<DevelopmentVault>;
   openPairedZotero(): Promise<PairedZotero>;
   startDevelopmentSession(): Promise<DevelopmentSession>;
   reportReady(result: PairedRunReady): void;
-}
-
-type Attempt<T> =
-  | { status: "fulfilled"; value: T }
-  | { status: "rejected"; reason: unknown };
-
-async function attempt<T>(operation: () => Promise<T>): Promise<Attempt<T>> {
-  try {
-    return { status: "fulfilled", value: await operation() };
-  } catch (reason) {
-    return { status: "rejected", reason };
-  }
 }
 
 export async function runPairedRun(
@@ -60,51 +53,48 @@ export async function runPairedRun(
   if (options.mode === "open") {
     await ports.assertFixtureIdle();
     const liveUpdatePort = await ports.allocateLiveUpdatePort();
-    const [vault, zotero] = await Promise.all([
-      attempt(async () => {
-        await ports.assertObsidianHost();
-        return ports.prepareDevelopmentVault({
-          scopeCase: options.scopeCase,
-          purge: options.purge,
-          liveUpdatePort,
-        });
-      }),
-      attempt(() => ports.openPairedZotero()),
-    ]);
-
-    if (vault.status === "fulfilled" && zotero.status === "fulfilled") {
-      ports.reportReady({
-        mode: options.mode,
-        vault: vault.value,
-        zotero: zotero.value,
-        liveUpdatePort,
-      });
-      return;
-    }
-    if (vault.status === "rejected" && zotero.status === "rejected") {
-      throw new AggregateError(
-        [vault.reason, zotero.reason],
-        "Obsidian and Paired Zotero failed to open",
-      );
-    }
-    if (vault.status === "rejected") throw vault.reason;
-    if (zotero.status === "rejected") throw zotero.reason;
+    const zoteroHttpPort = await ports.allocateZoteroHttpPort();
+    await ports.assertObsidianHost();
+    const vault = await ports.prepareDevelopmentVault({
+      scopeCase: options.scopeCase,
+      purge: options.purge,
+      liveUpdatePort,
+      zoteroHttpPort,
+    });
+    // Zotero reads `httpServer.port` during startup, after the generated
+    // profile has been written above.
+    const zotero = await ports.openPairedZotero();
+    ports.reportReady({
+      mode: options.mode,
+      vault,
+      zotero,
+      liveUpdatePort,
+      zoteroHttpPort,
+    });
+    return;
   }
 
   await ports.assertObsidianHost();
   await ports.assertFixtureIdle();
-  // One fresh port per Paired Run: the default port belongs to whichever ZotLit
-  // vault claimed it first, and a Development Vault that loses the race serves
-  // no Live Updates at all.
+  // Two fresh ports per Paired Run keep both loopback servers independent of
+  // other ZotLit and Zotero profiles on the machine.
   const liveUpdatePort = await ports.allocateLiveUpdatePort();
+  const zoteroHttpPort = await ports.allocateZoteroHttpPort();
   const vault = await ports.prepareDevelopmentVault({
     scopeCase: options.scopeCase,
     purge: options.purge,
     liveUpdatePort,
+    zoteroHttpPort,
   });
 
   const session = await ports.startDevelopmentSession();
   const zotero = await session.ready;
-  ports.reportReady({ mode: options.mode, vault, zotero, liveUpdatePort });
+  ports.reportReady({
+    mode: options.mode,
+    vault,
+    zotero,
+    liveUpdatePort,
+    zoteroHttpPort,
+  });
   await session.closed;
 }

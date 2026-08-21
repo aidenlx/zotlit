@@ -167,9 +167,9 @@ Zotero, and verify that both extensions loaded:
 
   pnpm fixture open
 
-The open command builds both extensions in parallel, then starts both open
-attempts in parallel. If either attempt fails, it completes the other attempt
-before it exits with an error.
+The open command builds both extensions in parallel. It prepares the generated
+profile and Development Vault before it starts Paired Zotero, so Zotero reads
+this run's HTTP port during startup.
 
 Add a Scope Case or restore the exact generated vault seed when needed:
 
@@ -188,11 +188,12 @@ verified, cached XPI.
 The Fixture Spec supplies native Citation Keys. Better BibTeX keeps those keys
 unchanged and leaves the Spec's intentionally unkeyed Items without a key.
 
-Each Paired Run takes a free TCP port and writes it into both sides of the
-Live Updates channel: server.port in the Development Vault settings, and
-extensions.zotlit.notify-url in the Fixture profile. The ready report names the
-port. This keeps the run clear of the default port, which belongs to whichever
-ZotLit vault claimed it first.`;
+Each Paired Run takes two free TCP ports. It writes the Live Updates port into
+server.port in the Development Vault settings and extensions.zotlit.notify-url
+in the Fixture profile. It writes the Zotero HTTP port into
+extensions.zotero.httpServer.port in that profile. The ready report names both
+ports. This keeps the run clear of the default ports used by other ZotLit vaults
+and Zotero profiles.`;
 
 const CANCEL_TESTING_SECTION = `CANCEL TESTING
 

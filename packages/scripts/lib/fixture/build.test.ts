@@ -1080,7 +1080,7 @@ describe("the generated Obsidian vault", () => {
     for (const line of BETTER_BIBTEX_PREFS) expect(prefs).toContain(line);
   });
 
-  it("keeps both Live Updates defaults without a port", async () => {
+  it("keeps the shipped network-port defaults without port overrides", async () => {
     const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
     const data = JSON.parse(
       await readFile(layout.pluginDataPath, "utf-8"),
@@ -1088,6 +1088,7 @@ describe("the generated Obsidian vault", () => {
 
     expect(prefs).not.toContain("extensions.zotlit.notify-url");
     expect(prefs).not.toContain('extensions.zotlit.notify"');
+    expect(prefs).not.toContain("extensions.zotero.httpServer.port");
     expect(data).not.toHaveProperty("server.port");
   });
 
@@ -1098,7 +1099,10 @@ describe("the generated Obsidian vault", () => {
     fixture.defer(() =>
       rm(portedLayout.root, { recursive: true, force: true }),
     );
-    await buildFixture(portedLayout, { liveUpdatePort: 54_321 });
+    await buildFixture(portedLayout, {
+      liveUpdatePort: 54_321,
+      zoteroHttpPort: 54_322,
+    });
 
     const prefs = await readFile(
       join(portedLayout.profileDir, "prefs.js"),
@@ -1113,6 +1117,9 @@ describe("the generated Obsidian vault", () => {
     expect(prefs).toContain('user_pref("extensions.zotlit.notify", true);');
     expect(prefs).toContain(
       'user_pref("extensions.zotlit.notify-url", "http://127.0.0.1:54321");',
+    );
+    expect(prefs).toContain(
+      'user_pref("extensions.zotero.httpServer.port", 54322);',
     );
   });
 

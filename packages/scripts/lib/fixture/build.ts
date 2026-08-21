@@ -89,6 +89,8 @@ export interface BuildOptions {
    * shipped defaults, which the first ZotLit vault on the machine holds.
    */
   liveUpdatePort?: number;
+  /** TCP port written to the generated Zotero profile's HTTP server pref. */
+  zoteroHttpPort?: number;
 }
 
 /** Loopback host the vault's `server.hostname` default binds. */
@@ -627,8 +629,8 @@ function seedItemData(
  * A Zotero profile whose prefs point at the Fixture's data directory, so one
  * profile-directory override in ZotLit switches the whole install over. The
  * same profile carries {@link QUIET_FIRST_RUN_PREFS}, because a Paired Zotero
- * launches on it. With a {@link BuildOptions.liveUpdatePort}, it also carries
- * the Companion's notify master switch and notify URL for that port.
+ * launches on it. Port overrides also configure the Companion's notify URL and
+ * Zotero's HTTP server for a Paired Run.
  */
 function writePrefs(
   layout: FixtureLayout,
@@ -639,6 +641,11 @@ function writePrefs(
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
     ...BETTER_BIBTEX_PREFS,
+    ...(options.zoteroHttpPort === undefined
+      ? []
+      : [
+          `user_pref("extensions.zotero.httpServer.port", ${options.zoteroHttpPort});`,
+        ]),
     ...(options.liveUpdatePort === undefined
       ? []
       : [

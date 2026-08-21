@@ -206,6 +206,8 @@ interface SeedOptions {
    * the Companion's notify URL alike. Absent, both keep their shipped defaults.
    */
   liveUpdatePort?: number;
+  /** HTTP server port written into the generated Zotero profile. */
+  zoteroHttpPort?: number;
 }
 
 async function create(
@@ -214,6 +216,7 @@ async function create(
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
     liveUpdatePort,
+    zoteroHttpPort,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -235,7 +238,11 @@ async function create(
     );
   }
 
-  await rebuildFixtureVault(abs, scopeCase, liveUpdatePort);
+  await rebuildFixtureVault(abs, {
+    scopeCase,
+    liveUpdatePort,
+    zoteroHttpPort,
+  });
   if (purge) {
     const exists = await access(abs).then(
       () => true,
@@ -373,6 +380,7 @@ async function sync(
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
     liveUpdatePort,
+    zoteroHttpPort,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -385,7 +393,11 @@ async function sync(
   {
     await using _pluginSuspension = await suspendLoadedPlugin(abs);
     // Build before a purge so the generated seed captures the current dev bundle.
-    await rebuildFixtureVault(abs, scopeCase, liveUpdatePort);
+    await rebuildFixtureVault(abs, {
+      scopeCase,
+      liveUpdatePort,
+      zoteroHttpPort,
+    });
 
     // `--purge` deletes the folder first, so renamed or removed Fixture files
     // drop out too, not just the ones the Fixture Vault still has.
@@ -404,8 +416,11 @@ async function sync(
 
 async function rebuildFixtureVault(
   target: string,
-  scopeCase = DEFAULT_SCOPE_CASE,
-  liveUpdatePort?: number,
+  {
+    scopeCase = DEFAULT_SCOPE_CASE,
+    liveUpdatePort,
+    zoteroHttpPort,
+  }: SeedOptions = {},
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
 
@@ -422,6 +437,7 @@ async function rebuildFixtureVault(
   await buildFixture(fixtureLayout, {
     scopeCase,
     liveUpdatePort,
+    zoteroHttpPort,
     pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
   });
 }
@@ -433,6 +449,7 @@ async function open(
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
     liveUpdatePort,
+    zoteroHttpPort,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -440,11 +457,11 @@ async function open(
   const registered = findVaultId(await vaultList(host), abs);
 
   if (!registered) {
-    await create(abs, { purge, scopeCase, liveUpdatePort });
+    await create(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
     return;
   }
 
-  await sync(abs, { purge, scopeCase, liveUpdatePort });
+  await sync(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
   if ((await vaultList(host))[registered]?.open !== true) {
     const opened = await obEval(
       `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
@@ -713,6 +730,11 @@ const liveUpdatePortOption = {
   type: "number",
 } as const;
 
+const zoteroHttpPortOption = {
+  describe: "TCP port for the generated Zotero profile's HTTP server",
+  type: "number",
+} as const;
+
 const scopeCaseOption = {
   describe: "Scope Case to build",
   type: "string",
@@ -756,12 +778,14 @@ const vaultCli = yargs(hideBin(process.argv))
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
         .option("scope-case", scopeCaseOption)
-        .option("live-update-port", liveUpdatePortOption),
+        .option("live-update-port", liveUpdatePortOption)
+        .option("zotero-http-port", zoteroHttpPortOption),
     async (argv) => {
       await open(argv["vault-path"] ?? defaultVault, {
         purge: argv.purge,
         scopeCase: argv["scope-case"],
         liveUpdatePort: argv["live-update-port"],
+        zoteroHttpPort: argv["zotero-http-port"],
       });
     },
   )
@@ -780,11 +804,13 @@ const vaultCli = yargs(hideBin(process.argv))
       y
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
-        .option("live-update-port", liveUpdatePortOption),
+        .option("live-update-port", liveUpdatePortOption)
+        .option("zotero-http-port", zoteroHttpPortOption),
     async (argv) => {
       await sync(argv["vault-path"] ?? defaultVault, {
         purge: argv.purge,
         liveUpdatePort: argv["live-update-port"],
+        zoteroHttpPort: argv["zotero-http-port"],
       });
     },
   )

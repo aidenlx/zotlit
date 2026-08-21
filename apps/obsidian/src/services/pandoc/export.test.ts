@@ -262,10 +262,10 @@ describe("exportCitedDocument", () => {
       failure(
         await run({
           ...CITED,
-          bibliographyFailure: { code: "zotero-not-running", port: 23119 },
+          bibliographyFailure: { code: "zotero-unreachable", port: 23119 },
         }),
       ),
-    ).toEqual({ kind: "zotero-not-running", port: 23119 });
+    ).toEqual({ kind: "zotero-unreachable", port: 23119 });
 
     expect(
       failure(
@@ -281,6 +281,20 @@ describe("exportCitedDocument", () => {
       kind: "local-api-disabled",
       pref: "httpServer.localAPI.enabled",
     });
+  });
+
+  it("reports an automatic Zotero HTTP port as undiscoverable", async () => {
+    expect(
+      failure(
+        await run({
+          ...CITED,
+          bibliographyFailure: {
+            code: "zotero-port-automatic",
+            pref: "httpServer.port",
+          },
+        }),
+      ),
+    ).toEqual({ kind: "zotero-port-automatic", pref: "httpServer.port" });
   });
 
   it("reports a source that answered and refused", async () => {

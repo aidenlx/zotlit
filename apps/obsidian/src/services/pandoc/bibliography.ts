@@ -2,22 +2,16 @@
 // endpoint answers, else Zotero's local HTTP API, else a guided error.
 //
 // Both sources speak to the same Zotero HTTP server, so a connection failure
-// means Zotero is closed rather than that one source is unavailable. Failure
-// codes name the situation; the export UI owns the wording that guides the user
-// out of it.
+// stops the export rather than selecting another source. Failure codes name the
+// situation; the export UI owns the wording that guides the user out of it.
 
 import { formatIndexedKey } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
+import { ZOTERO_HTTP_PORT_PREF } from "@/services/zotero-pref/prefs-file";
 
 const logger = getLogger(["pandoc", "bibliography"]);
-
-/** Zotero's `httpServer.port` default — ascii "ZO". */
-export const ZOTERO_HTTP_PORT = 23119;
-
-/** Where Zotero's HTTP server listens. */
-const ZOTERO_ORIGIN = `http://127.0.0.1:${ZOTERO_HTTP_PORT}`;
 
 /** Pref that opens Zotero's local HTTP API; Zotero ships it off. */
 export const LOCAL_API_PREF = "httpServer.localAPI.enabled";
@@ -72,6 +66,8 @@ export type BibliographyTransport = (
 
 export interface BibliographyPorts {
   request: BibliographyTransport;
+  /** HTTP port read from the active Zotero profile. */
+  httpPort: number | null;
   /**
    * Zotero's {@link LOCAL_API_PREF} pref, read from `prefs.js` before any
    * request, so a disabled local API is reported as such instead of as a
@@ -81,8 +77,10 @@ export interface BibliographyPorts {
 }
 
 export type BibliographyFailure =
-  /** Nothing answered on Zotero's port. Guidance: start Zotero. */
-  | { code: "zotero-not-running"; port: number }
+  /** Zotero selects a transient port that its profile cannot disclose. */
+  | { code: "zotero-port-automatic"; pref: string }
+  /** Nothing answered on the active profile's Zotero HTTP port. */
+  | { code: "zotero-unreachable"; port: number }
   /** Zotero runs with its local API off. Guidance: turn {@link pref} on. */
   | { code: "local-api-disabled"; pref: string }
   /** The chosen source answered, and refused. */
@@ -119,13 +117,24 @@ export async function fetchBibliography(
   ports: BibliographyPorts,
 ): Promise<BibliographyResult> {
   if (refs.length === 0) return { source: null, items: new Map() };
+  if (ports.httpPort === null) {
+    return {
+      error: { code: "zotero-port-automatic", pref: ZOTERO_HTTP_PORT_PREF },
+    };
+  }
 
-  const probe = await callJsonRpc(ports, "api.ready", []);
-  if (probe.ok) return fromBetterBibtex(refs, ports);
-  if (probe.reason === "unreachable") return { error: notRunning() };
+  const resolvedPorts = { ...ports, httpPort: ports.httpPort };
+
+  const probe = await callJsonRpc(resolvedPorts, "api.ready", []);
+  if (probe.ok) return fromBetterBibtex(refs, resolvedPorts);
+  if (probe.reason === "unreachable") {
+    return { error: zoteroUnreachable(ports.httpPort) };
+  }
   logger.debug("Better BibTeX did not answer; falling back to the local API");
-  return fromLocalApi(refs, ports);
+  return fromLocalApi(refs, resolvedPorts);
 }
+
+type ResolvedBibliographyPorts = BibliographyPorts & { httpPort: number };
 
 /**
  * `item.citationkey` maps the item keys to citation keys, then one
@@ -135,12 +144,12 @@ export async function fetchBibliography(
  */
 async function fromBetterBibtex(
   refs: readonly BibliographyItemRef[],
-  ports: BibliographyPorts,
+  ports: ResolvedBibliographyPorts,
 ): Promise<BibliographyResult> {
   const lookup = await callJsonRpc(ports, "item.citationkey", [
     refs.map(rpcItemKey),
   ]);
-  if (!lookup.ok) return { error: rpcFailure(lookup) };
+  if (!lookup.ok) return { error: rpcFailure(lookup, ports.httpPort) };
 
   const table = asRecord(lookup.result);
   const cited: { ref: BibliographyItemRef; citationKey: string }[] = [];
@@ -164,7 +173,9 @@ async function fromBetterBibtex(
       BETTER_CSL_JSON,
       libraryID,
     ]);
-    if (!exported.ok) return { error: rpcFailure(exported) };
+    if (!exported.ok) {
+      return { error: rpcFailure(exported, ports.httpPort) };
+    }
     for (const item of asCslItems(exported.result)) {
       entries.set(citationAddress(libraryID, item.id), item);
     }
@@ -185,7 +196,7 @@ async function fromBetterBibtex(
  */
 async function fromLocalApi(
   refs: readonly BibliographyItemRef[],
-  ports: BibliographyPorts,
+  ports: ResolvedBibliographyPorts,
 ): Promise<BibliographyResult> {
   if (!ports.localApiEnabled) return { error: localApiDisabled() };
 
@@ -197,11 +208,11 @@ async function fromLocalApi(
     });
     const library = groupID === null ? "users/0" : `groups/${groupID}`;
     const response = await send(ports, {
-      url: `${ZOTERO_ORIGIN}/api/${library}/items?${query.toString()}`,
+      url: `${zoteroOrigin(ports.httpPort)}/api/${library}/items?${query.toString()}`,
       method: "GET",
       headers: { ...ALLOWED_REQUEST },
     });
-    if (!response) return { error: notRunning() };
+    if (!response) return { error: zoteroUnreachable(ports.httpPort) };
     if (response.status === 403) return { error: localApiDisabled() };
     if (response.status !== 200) {
       return {
@@ -261,12 +272,12 @@ type RpcOutcome =
  * so the reply shape — not the status — tells the two apart.
  */
 async function callJsonRpc(
-  ports: BibliographyPorts,
+  ports: ResolvedBibliographyPorts,
   method: string,
   params: readonly unknown[],
 ): Promise<RpcOutcome> {
   const response = await send(ports, {
-    url: `${ZOTERO_ORIGIN}${JSON_RPC_PATH}`,
+    url: `${zoteroOrigin(ports.httpPort)}${JSON_RPC_PATH}`,
     method: "POST",
     headers: { ...ALLOWED_REQUEST, "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
@@ -287,8 +298,9 @@ async function callJsonRpc(
 
 function rpcFailure(
   outcome: Extract<RpcOutcome, { ok: false }>,
+  httpPort: number,
 ): BibliographyFailure {
-  if (outcome.reason === "unreachable") return notRunning();
+  if (outcome.reason === "unreachable") return zoteroUnreachable(httpPort);
   return {
     code: "source-failed",
     source: "better-bibtex",
@@ -299,7 +311,7 @@ function rpcFailure(
   };
 }
 
-/** `null` when the connection failed, which is a closed Zotero. */
+/** `null` when the configured Zotero HTTP server cannot be reached. */
 async function send(
   ports: BibliographyPorts,
   request: BibliographyHttpRequest,
@@ -315,8 +327,12 @@ async function send(
   }
 }
 
-function notRunning(): BibliographyFailure {
-  return { code: "zotero-not-running", port: ZOTERO_HTTP_PORT };
+function zoteroUnreachable(port: number): BibliographyFailure {
+  return { code: "zotero-unreachable", port };
+}
+
+function zoteroOrigin(port: number): string {
+  return `http://127.0.0.1:${port}`;
 }
 
 function localApiDisabled(): BibliographyFailure {

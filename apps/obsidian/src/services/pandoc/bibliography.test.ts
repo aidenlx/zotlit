@@ -3,11 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
-import {
-  fetchBibliography,
-  LOCAL_API_PREF,
-  ZOTERO_HTTP_PORT,
-} from "./bibliography";
+import { fetchBibliography, LOCAL_API_PREF } from "./bibliography";
 import type {
   BibliographyHttpRequest,
   BibliographyItemRef,
@@ -15,7 +11,8 @@ import type {
   BibliographyResult,
 } from "./bibliography";
 
-const ORIGIN = `http://127.0.0.1:${ZOTERO_HTTP_PORT}`;
+const DEFAULT_HTTP_PORT = 23_119;
+const ORIGIN = `http://127.0.0.1:${DEFAULT_HTTP_PORT}`;
 const RPC_URL = `${ORIGIN}/better-bibtex/json-rpc`;
 
 /** The library route a local API read addresses: `users/0` or `groups/<id>`. */
@@ -55,11 +52,15 @@ interface Fixture {
 
 type Call = BibliographyHttpRequest & { rpcMethod?: string };
 
-function ports(fixture: Fixture): BibliographyPorts & { calls: Call[] } {
+function ports(
+  fixture: Fixture,
+  httpPort: number | null = DEFAULT_HTTP_PORT,
+): BibliographyPorts & { calls: Call[] } {
   const calls: Call[] = [];
+  const rpcUrl = `http://127.0.0.1:${httpPort}/better-bibtex/json-rpc`;
   const request = vi.fn(async (req: BibliographyHttpRequest) => {
     if (fixture.zoteroClosed) throw new Error("ECONNREFUSED");
-    if (req.url === RPC_URL) {
+    if (req.url === rpcUrl) {
       const { method, params } = JSON.parse(req.body ?? "{}") as {
         method: string;
         params: unknown[];
@@ -103,7 +104,12 @@ function ports(fixture: Fixture): BibliographyPorts & { calls: Call[] } {
       ),
     };
   });
-  return { calls, request, localApiEnabled: fixture.localApiEnabled ?? true };
+  return {
+    calls,
+    request,
+    httpPort,
+    localApiEnabled: fixture.localApiEnabled ?? true,
+  };
 }
 
 function rpcBody(payload: object) {
@@ -150,6 +156,29 @@ describe("fetchBibliography", () => {
     expect(entries(result)).toEqual([["AAAA1111", "doe2020"]]);
     expect("source" in result && result.source).toBe("better-bibtex");
     expect(deps.calls.every((call) => call.url === RPC_URL)).toBe(true);
+  });
+
+  it("uses the Zotero HTTP port supplied by the selected profile", async () => {
+    const httpPort = 45_678;
+    const deps = ports(
+      {
+        rpc: {
+          "api.ready": {},
+          "item.citationkey": { "1:AAAA1111": "doe2020" },
+          "item.export": JSON.stringify([csl("doe2020", "On Things")]),
+        },
+      },
+      httpPort,
+    );
+
+    await fetchBibliography([DOE], deps);
+
+    expect(deps.calls).not.toHaveLength(0);
+    expect(
+      deps.calls.every((call) =>
+        call.url.startsWith(`http://127.0.0.1:${httpPort}/`),
+      ),
+    ).toBe(true);
   });
 
   it("asks Better BibTeX for the Better CSL JSON translator, one library at a time", async () => {
@@ -286,13 +315,24 @@ describe("fetchBibliography", () => {
     });
   });
 
-  it("reports a closed Zotero rather than an unavailable source", async () => {
-    const deps = ports({ zoteroClosed: true });
+  it("reports the selected profile port when Zotero is unreachable", async () => {
+    const httpPort = 45_678;
+    const deps = ports({ zoteroClosed: true }, httpPort);
 
     expect(failure(await fetchBibliography([DOE], deps))).toEqual({
-      code: "zotero-not-running",
-      port: ZOTERO_HTTP_PORT,
+      code: "zotero-unreachable",
+      port: httpPort,
     });
+  });
+
+  it("fails before requesting an undiscoverable automatic Zotero port", async () => {
+    const deps = ports({}, null);
+
+    expect(failure(await fetchBibliography([DOE], deps))).toEqual({
+      code: "zotero-port-automatic",
+      pref: "httpServer.port",
+    });
+    expect(deps.calls).toHaveLength(0);
   });
 
   it("reports a local API that answers with an error status", async () => {

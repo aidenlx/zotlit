@@ -37,8 +37,10 @@ import {
   PREF_BRANCH,
   PREFS_FILENAME,
   PROFILES_INI_FILENAME,
+  resolveZoteroHttpPort,
   resolveProfileDir,
   selectDefaultProfile,
+  ZOTERO_HTTP_PORT_PREF,
 } from "./prefs-file";
 import type { PrefValue, ZoteroProfile } from "./prefs-file";
 
@@ -140,6 +142,10 @@ export class ZoteroPrefService extends Service<void> {
    */
   get(name: string): PrefValue | undefined {
     return this.#prefs.get(PREF_BRANCH + name);
+  }
+
+  get httpPort(): number | null {
+    return resolveZoteroHttpPort(this.get(ZOTERO_HTTP_PORT_PREF));
   }
 
   /**

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { findPairedZoteroProcesses } from "./paired-run-node.ts";
+import { getFixtureLayout } from "./layout.ts";
+import {
+  createNodePairedRunPorts,
+  findPairedZoteroProcesses,
+} from "./paired-run-node.ts";
 import type {
   DevelopmentSession,
   PairedRunPorts,
@@ -13,6 +17,7 @@ function testPorts(overrides: Partial<PairedRunPorts> = {}): PairedRunPorts {
     assertObsidianHost: async () => {},
     assertFixtureIdle: async () => {},
     allocateLiveUpdatePort: async () => 51_234,
+    allocateZoteroHttpPort: async () => 52_234,
     prepareDevelopmentVault: async () => ({
       id: "fixture-vault-test-fixture",
       path: "/workspace/tests/fixture-vault-test-fixture",
@@ -34,6 +39,20 @@ function testPorts(overrides: Partial<PairedRunPorts> = {}): PairedRunPorts {
 }
 
 describe("Paired Run", () => {
+  it("allocates distinct free ports for Live Updates and Zotero HTTP", async () => {
+    const ports = createNodePairedRunPorts({
+      workspaceRoot: "/workspace",
+      layout: getFixtureLayout("/workspace/tmp/fixture"),
+    });
+
+    const liveUpdatePort = await ports.allocateLiveUpdatePort();
+    const zoteroHttpPort = await ports.allocateZoteroHttpPort();
+
+    expect(liveUpdatePort).toBeGreaterThan(0);
+    expect(zoteroHttpPort).toBeGreaterThan(0);
+    expect(zoteroHttpPort).not.toBe(liveUpdatePort);
+  });
+
   it("distinguishes Paired Zotero from the linked Obsidian database reader", () => {
     expect(
       findPairedZoteroProcesses(
@@ -60,7 +79,7 @@ describe("Paired Run", () => {
     expect(changedFixture).toBe(false);
   });
 
-  it("opens Paired Zotero when the Obsidian host check fails", async () => {
+  it("does not start Paired Zotero when the Obsidian host check fails", async () => {
     let changedFixture = false;
     let openedZotero = false;
     const ports = testPorts({
@@ -81,10 +100,10 @@ describe("Paired Run", () => {
       runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports),
     ).rejects.toThrow("No live Obsidian vault answered within 5 seconds");
     expect(changedFixture).toBe(false);
-    expect(openedZotero).toBe(true);
+    expect(openedZotero).toBe(false);
   });
 
-  it("opens Paired Zotero when the Development Vault fails to open", async () => {
+  it("does not start Paired Zotero when profile preparation fails", async () => {
     let openedZotero = false;
     const ports = testPorts({
       prepareDevelopmentVault: async () => {
@@ -99,7 +118,7 @@ describe("Paired Run", () => {
     await expect(
       runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports),
     ).rejects.toThrow("Development Vault failed to open");
-    expect(openedZotero).toBe(true);
+    expect(openedZotero).toBe(false);
   });
 
   it("opens the Development Vault when Paired Zotero fails to open", async () => {
@@ -123,7 +142,7 @@ describe("Paired Run", () => {
     expect(openedVault).toBe(true);
   });
 
-  it("prepares the Development Vault and opens Paired Zotero in parallel", async () => {
+  it("starts Paired Zotero after the generated profile is ready", async () => {
     const vaultCanFinish = Promise.withResolvers<void>();
     let openedZotero = false;
     const ports = testPorts({
@@ -145,11 +164,11 @@ describe("Paired Run", () => {
       ports,
     );
     await new Promise<void>((resolve) => setImmediate(resolve));
-    const openedBeforeVaultFinished = openedZotero;
+    expect(openedZotero).toBe(false);
     vaultCanFinish.resolve();
     await running;
 
-    expect(openedBeforeVaultFinished).toBe(true);
+    expect(openedZotero).toBe(true);
   });
 
   it("opens both loaded extensions for the selected Scope Case", async () => {
@@ -161,6 +180,7 @@ describe("Paired Run", () => {
           scopeCase: "partial",
           purge: true,
           liveUpdatePort: 51_234,
+          zoteroHttpPort: 52_234,
         });
         prepared = true;
         return {
@@ -190,21 +210,28 @@ describe("Paired Run", () => {
       },
       zotero: { applicationDir: "/Applications/Zotero.app", pid: 804 },
       liveUpdatePort: 51_234,
+      zoteroHttpPort: 52_234,
     });
   });
 
-  it("gives every Paired Run a port of its own", async () => {
-    const allocated: number[] = [];
-    const seeded: number[] = [];
+  it("gives every Paired Run two distinct ports of its own", async () => {
+    const allocatedLiveUpdates: number[] = [];
+    const allocatedZoteroHttp: number[] = [];
+    const seeded: { liveUpdatePort: number; zoteroHttpPort: number }[] = [];
     let next = 51_234;
     const ports = testPorts({
       allocateLiveUpdatePort: async () => {
         next += 1;
-        allocated.push(next);
+        allocatedLiveUpdates.push(next);
         return next;
       },
-      prepareDevelopmentVault: async ({ liveUpdatePort }) => {
-        seeded.push(liveUpdatePort);
+      allocateZoteroHttpPort: async () => {
+        next += 1;
+        allocatedZoteroHttp.push(next);
+        return next;
+      },
+      prepareDevelopmentVault: async ({ liveUpdatePort, zoteroHttpPort }) => {
+        seeded.push({ liveUpdatePort, zoteroHttpPort });
         return {
           id: "fixture-vault-test-fixture",
           path: "/workspace/tests/fixture-vault-test-fixture",
@@ -217,8 +244,12 @@ describe("Paired Run", () => {
     await run();
     await run();
 
-    expect(allocated).toEqual([51_235, 51_236]);
-    expect(seeded).toEqual(allocated);
+    expect(allocatedLiveUpdates).toEqual([51_235, 51_237]);
+    expect(allocatedZoteroHttp).toEqual([51_236, 51_238]);
+    expect(seeded).toEqual([
+      { liveUpdatePort: 51_235, zoteroHttpPort: 51_236 },
+      { liveUpdatePort: 51_237, zoteroHttpPort: 51_238 },
+    ]);
   });
 
   it("reports a live Paired Run only after the supervised session is ready", async () => {

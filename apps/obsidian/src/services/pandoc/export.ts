@@ -72,8 +72,10 @@ export type ExportFailure =
   | { kind: "items-missing"; linkpaths: string[] }
   /** Cited Literature Notes Better BibTeX holds no citation key for. */
   | { kind: "citation-keys-missing"; linkpaths: string[] }
-  /** Nothing answered on Zotero's HTTP port. */
-  | { kind: "zotero-not-running"; port: number }
+  /** Zotero's profile requests an undiscoverable automatic HTTP port. */
+  | { kind: "zotero-port-automatic"; pref: string }
+  /** Nothing answered on the active profile's Zotero HTTP port. */
+  | { kind: "zotero-unreachable"; port: number }
   /** Zotero runs with its local API pref off. */
   | { kind: "local-api-disabled"; pref: string }
   /** The bibliography source answered, and refused. */
@@ -191,8 +193,10 @@ function toExportFailure(
         kind: "citation-keys-missing",
         linkpaths: named(failure.indexedKeys, links),
       };
-    case "zotero-not-running":
-      return { kind: "zotero-not-running", port: failure.port };
+    case "zotero-port-automatic":
+      return { kind: "zotero-port-automatic", pref: failure.pref };
+    case "zotero-unreachable":
+      return { kind: "zotero-unreachable", port: failure.port };
     case "local-api-disabled":
       return { kind: "local-api-disabled", pref: failure.pref };
     case "source-failed":

@@ -93,10 +93,19 @@ export function createNodePairedRunPorts({
     },
 
     allocateLiveUpdatePort() {
-      return allocateLiveUpdatePort();
+      return allocatePort();
     },
 
-    async prepareDevelopmentVault({ scopeCase, purge, liveUpdatePort }) {
+    allocateZoteroHttpPort() {
+      return allocatePort();
+    },
+
+    async prepareDevelopmentVault({
+      scopeCase,
+      purge,
+      liveUpdatePort,
+      zoteroHttpPort,
+    }) {
       const result = await runCaptured(
         process.execPath,
         [
@@ -104,6 +113,7 @@ export function createNodePairedRunPorts({
           "open",
           `--scope-case=${scopeCase}`,
           `--live-update-port=${liveUpdatePort}`,
+          `--zotero-http-port=${zoteroHttpPort}`,
           ...(purge ? ["--purge"] : []),
         ],
         { cwd: workspaceRoot, forwardStderr: true },
@@ -140,11 +150,11 @@ export function createNodePairedRunPorts({
 }
 
 /**
- * A free port on the loopback host ZotLit's server binds. The result stays free
- * only until something claims it, so the Paired Run passes it straight to the
- * seed and lets the Development Vault bind it.
+ * A free port on the loopback host used by both servers. The result stays free
+ * only until something claims it, so the Paired Run writes it to the generated
+ * configuration before it starts the corresponding server.
  */
-function allocateLiveUpdatePort(): Promise<number> {
+function allocatePort(): Promise<number> {
   return getPort({ host: LIVE_UPDATE_HOSTNAME });
 }
 
@@ -346,6 +356,7 @@ function printReady({
   vault,
   zotero,
   liveUpdatePort,
+  zoteroHttpPort,
 }: PairedRunReady): void {
   console.log(`Paired Run ready (${mode})`);
   console.log(`Development Vault  ${vault.path} (${vault.id})`);
@@ -353,6 +364,7 @@ function printReady({
     `Paired Zotero      ${zotero.applicationDir} (pid ${zotero.pid})`,
   );
   console.log(`Live Updates port  ${liveUpdatePort}`);
+  console.log(`Zotero HTTP port   ${zoteroHttpPort}`);
   if (mode === "dev") console.log("Press Ctrl-C to stop the live Paired Run.");
 }
 
