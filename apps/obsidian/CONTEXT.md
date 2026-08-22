@@ -97,6 +97,10 @@ _Avoid_: annotation (that's the live Zotero entity), mark
 A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt (optionally followed by a citation). Detected structurally by the note parser; when the `note.import-annotations-as-template` setting is on, the paragraph is subsumed and re-rendered through the `annotation` template from live DB data instead of the frozen excerpt.
 _Avoid_: annotation block, callout
 
+**Colored Highlight Syntax**:
+The opt-in Markdown representation for red, orange, yellow, green, blue, and purple highlights in an Imported Note. A colored-circle emoji at the start of `==...==` selects the color; highlights outside that set retain their HTML representation.
+_Avoid_: Bear highlight, emoji highlight
+
 ### Integration processes
 
 **Note Import**:

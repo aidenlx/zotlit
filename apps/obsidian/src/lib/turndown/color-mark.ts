@@ -1,5 +1,5 @@
-// Inline color-mark HTML (class + data-color + CSS-var style) shared by Zotero
-// annotation excerpts and note-editor color spans.
+// Inline color marks shared by Zotero annotation excerpts and note-editor color
+// spans, rendered as HTML or opt-in Colored Highlight Syntax.
 
 export type ColorMarkKind = "highlight" | "underline" | "text";
 
@@ -8,6 +8,11 @@ interface ColorMarkSpec {
   className: string;
   cssProp: string;
   cssVar: string;
+}
+
+interface ColorMarkColor {
+  raw: string;
+  name: string | null;
 }
 
 const COLOR_MARK_SPEC: Record<ColorMarkKind, ColorMarkSpec> = {
@@ -31,6 +36,27 @@ const COLOR_MARK_SPEC: Record<ColorMarkKind, ColorMarkSpec> = {
   },
 };
 
+const HIGHLIGHT_EMOJI: ReadonlyMap<string, string> = new Map([
+  ["red", "🔴"],
+  ["orange", "🟠"],
+  ["yellow", "🟡"],
+  ["green", "🟢"],
+  ["blue", "🔵"],
+  ["purple", "🟣"],
+]);
+
+export function renderHighlight(
+  text: string,
+  color: ColorMarkColor | null,
+  useColoredHighlightSyntax: boolean,
+): string {
+  const emoji = color?.name ? HIGHLIGHT_EMOJI.get(color.name) : undefined;
+  if (useColoredHighlightSyntax && emoji && !text.includes("==")) {
+    return `==${emoji}${text}==`;
+  }
+  return renderColorMark("highlight", text, color);
+}
+
 /**
  * Render an inline color mark as
  * `<tag class="…" [data-color="…" style="prop: var(--zotlit-…-{name}, {raw})"]>text</tag>`.
@@ -48,7 +74,7 @@ const COLOR_MARK_SPEC: Record<ColorMarkKind, ColorMarkSpec> = {
 export function renderColorMark(
   kind: ColorMarkKind,
   text: string,
-  color: { raw: string; name: string | null } | null,
+  color: ColorMarkColor | null,
 ): string {
   const { tag, className, cssProp, cssVar } = COLOR_MARK_SPEC[kind];
   let attrs = ` class="${className}"`;

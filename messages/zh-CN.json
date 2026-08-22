@@ -272,6 +272,8 @@
   "settings_note_folder_desc": "新文献笔记的创建位置。",
   "settings_note_import_folder_name": "导入的笔记文件夹",
   "settings_note_import_folder_desc": "从 Zotero 导入的笔记的保存位置。",
+  "settings_note_import_colored_highlights_name": "使用彩色高亮语法",
+  "settings_note_import_colored_highlights_desc": "将红色、橙色、黄色、绿色、蓝色和紫色高亮转换为基于表情符号的彩色高亮语法。其他颜色的高亮保留原始 HTML。",
   "settings_note_import_annotations_template_name": "使用模板渲染标注",
   "settings_note_import_annotations_template_desc": "使用标注模板渲染导入笔记中的 Zotero 标注段落。在 Zotero 中对这些段落的原地编辑将被丢弃。",
   "settings_citation_suggester_name": "引文建议器",

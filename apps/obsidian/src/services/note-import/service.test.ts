@@ -478,6 +478,20 @@ describe("createNoteImporter", () => {
     expect(renderAnnotations).not.toHaveBeenCalled();
   });
 
+  it("passes the colored highlight setting to the note parser", async () => {
+    const { app } = makeApp();
+    const batch = await makeService(app).prepare(
+      makePrepare({ settings: { "note.import-colored-highlights": true } }),
+    );
+
+    batch.resolveChildNote(makeNote()).noteLink();
+    await batch.flush();
+
+    expect(
+      vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
+    ).toBe(true);
+  });
+
   it("still writes a note whose embedded images are all blocked, as file:// embeds", async () => {
     const { app, create } = makeApp();
     const attachmentImport = makeBlockingAttachmentImport();

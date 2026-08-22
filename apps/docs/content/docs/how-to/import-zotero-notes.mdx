@@ -178,6 +178,26 @@ Each cited reference resolves its citation key in this order:
 
 If every cited reference within a single citation is unresolvable (no citation key from any source), ZotLit keeps that citation's original HTML verbatim. Nothing is lost.
 
+## Use colored highlight syntax
+
+Turn on **Settings > Note import > Use colored highlight syntax** before you import or re-import a note.
+
+ZotLit converts six colors to Colored Highlight Syntax: red, orange, yellow, green, blue, and purple. A circle emoji at the start of a highlight sets its color:
+
+```markdown
+==🔵Highlighted text==
+```
+
+The setting applies to highlights created in Zotero's note editor and inline Annotation Excerpts. Annotation Excerpts keep their Zotero backlinks:
+
+```markdown
+[==🔵Highlighted text==](zotero://...)
+```
+
+Highlights with unsupported, missing, or custom colors remain HTML. ZotLit also keeps HTML when the text contains `==` because it conflicts with the Markdown delimiter.
+
+The setting affects later imports and re-imports. It does not rewrite imported notes immediately. When **Render annotations from template** is on, annotation-template output stays unchanged.
+
 ## Render annotations from template
 
 By default, annotation paragraphs in imported notes keep the HTML that Zotero inserted: highlighted or underlined excerpts with a citation link.

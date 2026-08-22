@@ -21,6 +21,14 @@ export function noteImportPageItems(
       },
     },
     {
+      name: m.settings_note_import_colored_highlights_name(),
+      desc: m.settings_note_import_colored_highlights_desc(),
+      control: {
+        type: "toggle",
+        key: "note.import-colored-highlights",
+      },
+    },
+    {
       name: m.settings_note_import_annotations_template_name(),
       desc: m.settings_note_import_annotations_template_desc(),
       control: {
