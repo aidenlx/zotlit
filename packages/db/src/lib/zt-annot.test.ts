@@ -19,6 +19,24 @@ describe("parseAnnotationPosition", () => {
     });
   });
 
+  it("preserves continuation rectangles for PDF rect positions", () => {
+    expect(
+      parseAnnotationPosition(
+        {
+          pageIndex: 2,
+          rects: [[1, 2, 3, 4]],
+          nextPageRects: [[5, 6, 7, 8]],
+        },
+        "application/pdf",
+      ),
+    ).toEqual<AnnotationPosition>({
+      kind: "pdf-rects",
+      pageIndex: 2,
+      rects: [[1, 2, 3, 4]],
+      nextPageRects: [[5, 6, 7, 8]],
+    });
+  });
+
   it("parses PDF ink positions", () => {
     expect(
       parseAnnotationPosition(
