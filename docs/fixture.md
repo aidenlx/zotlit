@@ -123,7 +123,7 @@ Use these cases to compare the built-in and native export workflows in one Paire
 
    | Fixture Vault note | Built-in result | Native result |
    | --- | --- | --- |
-   | `pandoc-export-success.md` | The export succeeds. Check its citations, locators, bibliography entries, and ordinary vault link. | The export succeeds. Check the same content against the built-in output. |
+   | `pandoc-export-success.md` | The export succeeds. Check the repeated source, Citation Fragments, Citation Run, literal citation, bibliography entries, and ordinary vault link. | The export succeeds. Check the same content against the built-in output. |
    | `pandoc-export-error-intent.md` | The export stops because the `#cite:` target is not a Literature Note. | The export stops with `unresolved-citation-intent`. |
    | `pandoc-export-missing-bibliography.md` | The export succeeds because ZotLit fetches the bibliography item. Check for the Xu citation and bibliography entry. | The export stops on the citeproc warning that `xuLiteratureNoteWhose2019` is missing. Add that Item to `references.json`, then check that the next run succeeds. |
 

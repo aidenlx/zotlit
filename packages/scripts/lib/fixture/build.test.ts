@@ -904,6 +904,23 @@ describe("the generated Obsidian vault", () => {
     }
   });
 
+  it("carries every tutorial citation form in the Pandoc success case", async () => {
+    const note = await readFile(
+      join(layout.vaultDir, "pandoc-export-success.md"),
+      "utf-8",
+    );
+
+    expect(note).toContain("[[literatures/wittNebulinRegulatesThin2006]]");
+    expect(note).toContain("#cite:label=chapter&locator=2");
+    expect(note).toContain("#cite:mode=author-in-text&locator=62");
+    expect(note).toContain("#cite:mode=suppress-author&locator=3");
+    expect(note).toContain(
+      "[[literatures/wallgren-petterssonDistalMyopathyCaused2007]]; [[literatures/yinClinicopathologicalFeaturesMutational2021#cite:locator=3]]",
+    );
+    expect(note).toContain("[@wittNebulinRegulatesThin2006, p. 4]");
+    expect(note).toContain("[[pandoc-citation-test]]");
+  });
+
   it("resolves every generated Literature Note through the database", async () => {
     const items = ITEMS.filter(({ libraryID }) => libraryID === 1);
     expect(await readdir(join(layout.vaultDir, "literatures"))).toEqual(

@@ -14,6 +14,8 @@ Nebulin regulates thin filament length ([[literatures/wittNebulinRegulatesThin20
 
 Mutation details appear in [[literatures/wangMutationalClinicalSpectrum2020a#cite:label=chapter&locator=2]].
 
+The work of Yin ([[literatures/yinClinicopathologicalFeaturesMutational2021#cite:mode=suppress-author&locator=3]]) describes the mutational spectrum.
+
 Several studies support the finding ([[literatures/wallgren-petterssonDistalMyopathyCaused2007]]; [[literatures/yinClinicopathologicalFeaturesMutational2021#cite:locator=3]]).
 
 ## Literal Pandoc Citation

@@ -1,8 +1,9 @@
-// Local Pandoc CLI Guide and pair-save action for the Citations settings page.
+// Tutorial, integration-pair save action, and local CLI Guide for native Pandoc settings.
 
 import type { Setting, SettingDefinitionGroup } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
+import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -25,13 +26,27 @@ export function pandocIntegrationDefinition(
     heading: m.settings_citation_native_pandoc_heading(),
     items: [
       {
-        name: m.settings_citation_pandoc_guide_name(),
-        desc: guideDescription(ctx.plugin.manifest.version),
+        name: m.settings_citation_pandoc_tutorial_name(),
+        desc: m.settings_citation_pandoc_tutorial_desc(),
+        render: (setting) =>
+          setting.addButton((button) =>
+            button
+              .setButtonText(m.settings_citation_pandoc_tutorial_open())
+              .onClick(() =>
+                window.open(
+                  `${DOCS_SITE_URL}/docs/tutorial/pandoc-citation-workflow`,
+                ),
+              ),
+          ),
       },
       {
         name: m.settings_citation_pandoc_files_name(),
         desc: m.settings_citation_pandoc_files_desc(),
         render: (setting) => renderSaveAction(setting, ctx),
+      },
+      {
+        name: m.settings_citation_pandoc_guide_name(),
+        desc: guideDescription(ctx.plugin.manifest.version),
       },
     ],
   };

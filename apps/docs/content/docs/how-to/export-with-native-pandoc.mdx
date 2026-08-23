@@ -10,7 +10,9 @@ import { Command } from "@/components/command";
 
 Use this guide when you need your own Pandoc installation, bibliography file, CSL options, or command-line workflow.
 
-## Requirements
+To learn both export routes with one worked note, follow [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow).
+
+## Requirements [#requirements]
 
 You need:
 
@@ -37,7 +39,7 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
 
   </Step>
   <Step>
-    ### Create a Better CSL JSON bibliography
+    ### Create a bibliography
 
     [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) is recommended for citation key management and automatic bibliography updates.
 
@@ -45,7 +47,9 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
 
     The export updates after its source library or collection changes. See the [Better BibTeX automatic export guide](https://retorque.re/zotero-better-bibtex/exporting/auto/) for its update controls.
 
-    BibLaTeX and BibTeX are supported alternatives. The command below uses Better CSL JSON.
+    Without Better BibTeX, right-click the library or collection, select **Export**, choose **CSL JSON**, and save `references.json`. Export it again after the cited Zotero data changes.
+
+    BibLaTeX and BibTeX are also supported. The command below uses CSL JSON.
 
   </Step>
   <Step>

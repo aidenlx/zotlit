@@ -178,14 +178,17 @@ Before installation, its status is: "Not installed. References stay a plain list
 
 These rows support conversion with a user-installed Pandoc CLI. They are separate from ZotLit's built-in export command.
 
-| Label                       | Key  | Control                           | Default | Dependency               | Storage                    |
-| --------------------------- | ---- | --------------------------------- | ------- | ------------------------ | -------------------------- |
-| **Pandoc CLI guide**        | None | Read-only guide action            | None    | None                     | Per plugin installation    |
-| **Pandoc integration pair** | None | **Save integration files** action | None    | A selected output folder | Writes the selected folder |
+| Label                        | Key  | Control                           | Default | Dependency               | Storage                    |
+| ---------------------------- | ---- | --------------------------------- | ------- | ------------------------ | -------------------------- |
+| **Pandoc citation tutorial** | None | **Open tutorial** action          | None    | Network to open          | None                       |
+| **Pandoc integration pair**  | None | **Save integration files** action | None    | A selected output folder | Writes the selected folder |
+| **Pandoc CLI guide**         | None | Read-only guide action            | None    | None                     | Per plugin installation    |
 
-**Pandoc CLI guide:** ZotLit reference for the native Pandoc workflow.
+**Pandoc citation tutorial:** Opens [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow) at its stable URL.
 
 **Pandoc integration pair:** Save the version-matched filter and defaults file to one folder. Keep both files together.
+
+**Pandoc CLI guide:** ZotLit reference for the native Pandoc workflow.
 
 **Save integration files** writes the pair to the folder you select. See [Export a note with citations](/docs/how-to/export-note-with-citations) for ZotLit's built-in workflow.
 
