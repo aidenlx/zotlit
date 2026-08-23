@@ -437,6 +437,24 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2025-02-06 12:00:00",
     collectionIDs: [1],
   },
+  {
+    itemID: 46,
+    libraryID: 1,
+    key: "RUGIER24",
+    itemType: "journalArticle",
+    citationKey: "rougierTenSimpleRules2014",
+    literatureNoteName: "rougierTenSimpleRules2014",
+    title: "Ten Simple Rules for Better Figures",
+    containerTitle: "PLOS Computational Biology",
+    date: "2014",
+    creators: [
+      author("Nicolas P.", "Rougier"),
+      author("Michael", "Droettboom"),
+      author("Philip E.", "Bourne"),
+    ],
+    dateModified: "2025-02-05 12:00:00",
+    collectionIDs: [1],
+  },
 ];
 
 function author(firstName: string, lastName: string): FixtureCreator {
@@ -560,8 +578,15 @@ export const NOTES: readonly FixtureNote[] = [
   },
 ];
 
+export type FixtureAnnotationAsset =
+  | "rougier-2014/annotations/4PE492KU.png"
+  | "rougier-2014/annotations/FDRFQ7C2.png"
+  | "rougier-2014/annotations/TYY6Z6ZF.png";
+
 export type FixtureAsset =
+  | FixtureAnnotationAsset
   | "ioannidis-2005/ioannidis-2005.pdf"
+  | "rougier-2014/rougier-2014.pdf"
   | "sakimas-song/sakimas-song.html"
   | "sakimas-song/sakimas-song.pdf";
 
@@ -582,9 +607,16 @@ interface FixtureAttachmentBase {
 export type FixtureAttachment = FixtureAttachmentBase &
   (
     | {
-        linkMode: "imported_file" | "linked_file";
+        linkMode: "imported_file";
         path: string;
         url: null;
+      }
+    | {
+        linkMode: "linked_file";
+        path: string;
+        url: null;
+        /** Root that holds the generated file and backs its absolute database path. */
+        fileRoot: "linked-files" | "vault";
       }
     | {
         linkMode: "imported_url";
@@ -637,6 +669,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     key: "PDFLINKD",
     parentItemID: 20,
     linkMode: "linked_file",
+    fileRoot: "linked-files",
     contentType: "application/pdf",
     title: "Sakima's Song Linked PDF",
     path: "sakimas-song.pdf",
@@ -683,29 +716,81 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     sourceAsset: "ioannidis-2005/ioannidis-2005.pdf",
     dateModified: "2025-02-12 12:00:00",
   },
+  {
+    itemID: 47,
+    libraryID: 1,
+    key: "RGRPDF24",
+    parentItemID: 46,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Rougier et al. 2014 PDF",
+    path: "attachments/rougier-2014.pdf",
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2025-02-04 12:00:00",
+  },
 ];
 
-export interface FixtureAnnotation {
+interface FixtureAnnotationBase {
   itemID: number;
   libraryID: number;
   /** Bare Zotero key for the Annotation row. */
   key: string;
   parentItemID: number;
-  type: 1 | 2;
   text: string | null;
   comment: string | null;
   color: string;
   pageLabel: string;
   sortIndex: string;
-  position: {
-    pageIndex: number;
-    rects: readonly (readonly [number, number, number, number])[];
-  };
+  /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
+  dateAdded: string;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
   dateModified: string;
 }
 
-/** Real page-2 anchors in the 792 × 612 point PDF page box. */
+type FixturePdfRect = readonly [number, number, number, number];
+type FixturePdfRectsPosition = {
+  pageIndex: number;
+  rects: readonly FixturePdfRect[];
+};
+type FixturePdfTextPosition = FixturePdfRectsPosition & {
+  fontSize: number;
+  rotation: number;
+};
+type FixturePdfInkPosition = {
+  pageIndex: number;
+  width: number;
+  paths: readonly (readonly number[])[];
+};
+
+export type FixtureAnnotation = FixtureAnnotationBase &
+  (
+    | {
+        type: 1 | 2 | 5;
+        position: FixturePdfRectsPosition;
+        cacheImageAsset: null;
+      }
+    | {
+        type: 3;
+        position: FixturePdfRectsPosition;
+        /** Generated Zotero annotation-cache PNG. */
+        cacheImageAsset: FixtureAnnotationAsset;
+      }
+    | {
+        type: 4;
+        position: FixturePdfInkPosition;
+        /** Generated Zotero annotation-cache PNG. */
+        cacheImageAsset: FixtureAnnotationAsset;
+      }
+    | {
+        type: 6;
+        position: FixturePdfTextPosition;
+        cacheImageAsset: null;
+      }
+  );
+
+/** Real anchors captured from pages in the committed PDFs. */
 export const ANNOTATIONS: readonly FixtureAnnotation[] = [
   {
     itemID: 26,
@@ -725,6 +810,8 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
         [389, 505, 688, 527],
       ],
     },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-15 12:00:00",
     dateModified: "2025-02-15 12:00:00",
   },
   {
@@ -739,7 +826,177 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     pageLabel: "2",
     sortIndex: "00001|000001|00730",
     position: { pageIndex: 1, rects: [[730, 537, 748, 555]] },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-14 12:00:00",
     dateModified: "2025-02-14 12:00:00",
+  },
+  {
+    itemID: 48,
+    libraryID: 1,
+    key: "PUPR5FG5",
+    parentItemID: 47,
+    type: 1,
+    text: "Identify Your Message",
+    comment: null,
+    color: "#2ea8e5",
+    pageLabel: "1",
+    sortIndex: "00000|002041|00170",
+    position: {
+      pageIndex: 0,
+      rects: [[265.833, 611.202, 374.503, 620.019]],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-08-23 16:17:50",
+    dateModified: "2026-08-23 16:17:50",
+  },
+  {
+    itemID: 49,
+    libraryID: 1,
+    key: "FDRFQ7C2",
+    parentItemID: 47,
+    type: 3,
+    text: null,
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "2",
+    sortIndex: "00001|001860|00047",
+    position: {
+      pageIndex: 1,
+      rects: [[48.75, 395.509, 570, 743.723]],
+    },
+    cacheImageAsset: "rougier-2014/annotations/FDRFQ7C2.png",
+    dateAdded: "2026-08-23 16:18:01",
+    dateModified: "2026-08-23 16:18:01",
+  },
+  {
+    itemID: 50,
+    libraryID: 1,
+    key: "K3JRFLFQ",
+    parentItemID: 47,
+    type: 5,
+    text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+    comment: null,
+    color: "#ff6666",
+    pageLabel: "1",
+    sortIndex: "00000|000434|00180",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [67.011, 612.638, 211.485, 620.77],
+        [58.054, 601.98, 211.489, 610.112],
+        [58.054, 591.321, 153.781, 599.454],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-08-23 16:18:11",
+    dateModified: "2026-08-23 16:18:11",
+  },
+  {
+    itemID: 51,
+    libraryID: 1,
+    key: "HRK7BG32",
+    parentItemID: 47,
+    type: 6,
+    text: null,
+    comment: "Making figures is hard :(",
+    color: "#a28ae5",
+    pageLabel: "1",
+    sortIndex: "00000|000191|00088",
+    position: {
+      pageIndex: 0,
+      fontSize: 14,
+      rotation: 0,
+      rects: [[398.804, 685.107, 560.804, 702.107]],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-08-23 16:18:18",
+    dateModified: "2026-08-23 16:19:07",
+  },
+  {
+    itemID: 52,
+    libraryID: 1,
+    key: "C94NJNYG",
+    parentItemID: 47,
+    type: 2,
+    text: null,
+    comment: "some text comment",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|003354|00170",
+    position: {
+      pageIndex: 0,
+      rects: [[566.901, 598.393, 588.901, 620.393]],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-08-23 16:19:19",
+    dateModified: "2026-08-23 16:19:30",
+  },
+  {
+    itemID: 55,
+    libraryID: 1,
+    key: "TYY6Z6ZF",
+    parentItemID: 47,
+    type: 4,
+    text: null,
+    comment: null,
+    color: "#5fb236",
+    pageLabel: "1",
+    sortIndex: "00000|000040|00100",
+    position: {
+      pageIndex: 0,
+      width: 2,
+      paths: [
+        [
+          66.964, 674.348, 66.629, 673.26, 66.629, 672.214, 66.964, 671.209,
+          67.299, 670.205, 67.906, 669.389, 68.617, 668.614, 69.099, 667.61,
+          69.308, 666.564, 69.915, 665.664, 70.333, 664.701, 71.003, 663.948,
+          72.028, 664.011, 72.531, 664.931, 73.284, 665.936, 74.289, 666.94,
+          75.126, 667.798, 75.963, 668.74, 76.821, 669.765, 77.762, 670.874,
+          78.767, 672.004, 79.771, 672.967, 80.755, 673.825, 81.655, 674.767,
+          82.513, 675.771, 83.454, 676.776, 84.438, 677.78, 85.338, 678.785,
+          86.175, 679.768, 87.012, 680.668, 87.807, 681.484, 88.686, 682.551,
+          89.314, 683.43, 90.109, 684.309, 90.862, 684.979, 91.49, 685.816,
+          92.201, 686.653, 92.85, 687.511, 93.541, 688.327, 94.21, 689.206,
+          94.964, 689.959,
+        ],
+      ],
+    },
+    cacheImageAsset: "rougier-2014/annotations/TYY6Z6ZF.png",
+    dateAdded: "2026-08-23 16:20:09",
+    dateModified: "2026-08-23 16:20:21",
+  },
+  {
+    itemID: 56,
+    libraryID: 1,
+    key: "4PE492KU",
+    parentItemID: 47,
+    type: 4,
+    text: null,
+    comment: null,
+    color: "#f19837",
+    pageLabel: "1",
+    sortIndex: "00000|000067|00104",
+    position: {
+      pageIndex: 0,
+      width: 2,
+      paths: [
+        [
+          203.571, 673.009, 204.45, 672.256, 205.266, 671.628, 205.915, 670.791,
+          206.124, 669.786, 206.71, 668.865, 207.464, 668.112, 208.28, 667.296,
+          208.803, 666.438, 209.598, 665.768, 210.247, 664.994, 210.917,
+          664.241, 211.691, 665.057, 212.57, 665.936, 213.574, 666.689, 214.432,
+          667.233, 215.374, 667.945, 216.42, 668.782, 217.634, 669.619, 218.973,
+          670.519, 220.313, 671.67, 221.694, 672.988, 223.242, 674.223, 224.079,
+          674.809, 225.565, 675.918, 226.8, 676.943, 227.846, 677.822, 228.725,
+          678.533, 229.625, 679.266, 230.608, 680.082, 231.613, 680.919,
+          232.617, 681.756, 233.559, 682.593, 234.417, 683.43, 235.191, 684.079,
+          236.175, 684.644, 236.97, 685.314, 237.744, 686.088, 238.518, 686.737,
+        ],
+      ],
+    },
+    cacheImageAsset: "rougier-2014/annotations/4PE492KU.png",
+    dateAdded: "2026-08-23 16:20:12",
+    dateModified: "2026-08-23 16:20:18",
   },
 ];
 

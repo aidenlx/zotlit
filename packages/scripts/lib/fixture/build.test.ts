@@ -35,7 +35,7 @@ import {
 import type { IndexedItem } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { attachmentAbsPath } from "@zotlit/db/path";
+import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 
 import {
   ANNOTATIONS,
@@ -61,6 +61,15 @@ const fixture = new AsyncDisposableStack();
 const ATTACHMENT_PARENT_IDS = [
   ...new Set(ATTACHMENTS.map(({ parentItemID }) => parentItemID)),
 ];
+const ROUGIER_ANNOTATION_KEYS = [
+  "TYY6Z6ZF",
+  "4PE492KU",
+  "HRK7BG32",
+  "K3JRFLFQ",
+  "PUPR5FG5",
+  "C94NJNYG",
+  "FDRFQ7C2",
+] as const;
 
 beforeAll(async () => {
   // Workspace scratch, not the system temp dir — see policies/scratch-artifacts.md.
@@ -339,6 +348,13 @@ describe("the generated Zotero database", () => {
         title: "Ioannidis 2005 PDF",
         url: null,
       },
+      {
+        key: "RGRPDF24",
+        path: join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
+        charsetID: null,
+        title: "Rougier et al. 2014 PDF",
+        url: null,
+      },
     ]);
   });
 
@@ -493,6 +509,82 @@ describe("the generated Zotero database", () => {
     );
   });
 
+  it("places a linked literature PDF inside the Fixture Vault", async () => {
+    using db = openClient();
+    const article = indexedItems(db, 1).find(({ key }) => key === "RUGIER24");
+
+    expect(article).toMatchObject({
+      itemType: "journalArticle",
+      title: "Ten Simple Rules for Better Figures",
+      publicationTitle: "PLOS Computational Biology",
+      date: "2014",
+      creators: [
+        { firstName: "Nicolas P.", lastName: "Rougier", fieldMode: 0 },
+        { firstName: "Michael", lastName: "Droettboom", fieldMode: 0 },
+        { firstName: "Philip E.", lastName: "Bourne", fieldMode: 0 },
+      ],
+    });
+
+    const attachment = getAttachmentsByParents(db, [46]).find(
+      ({ key }) => key === "RGRPDF24",
+    )!;
+    const path = attachmentAbsPath(attachment, {
+      dataDir: layout.dataDir,
+      baseAttachmentPath: null,
+    })!;
+    const pdf = await readFile(path);
+
+    expect(attachment).toMatchObject({
+      linkMode: 2,
+      contentType: "application/pdf",
+      path: join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
+    });
+    expect(createHash("sha256").update(pdf).digest("hex")).toBe(
+      "95b6714aa1ce1e058475c9a807fa85e058bdaa5c3261e792dc5e8dfd9ae83ad6",
+    );
+  });
+
+  it("targets the Development Vault during Paired Run preparation", async () => {
+    const pairedLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "paired-vault-test-")),
+    );
+    fixture.defer(() =>
+      rm(pairedLayout.root, { recursive: true, force: true }),
+    );
+    const developmentVault = join(
+      dirname(pairedLayout.root),
+      "development-vault",
+    );
+
+    await buildFixture(pairedLayout, {
+      linkedAttachmentVaultDir: developmentVault,
+    });
+
+    using db = openClientAt(pairedLayout.databasePath);
+    const attachment = getAttachmentsByParents(db, [46]).find(
+      ({ key }) => key === "RGRPDF24",
+    )!;
+    const expectedPath = join(
+      developmentVault,
+      "attachments",
+      "rougier-2014.pdf",
+    );
+    const note = await readFile(
+      join(
+        pairedLayout.vaultDir,
+        "literatures",
+        "rougierTenSimpleRules2014.md",
+      ),
+      "utf-8",
+    );
+
+    expect(attachment.path).toBe(expectedPath);
+    expect(note).toContain(pathToFileURL(expectedPath).href);
+    await expect(
+      stat(join(pairedLayout.vaultDir, "attachments", "rougier-2014.pdf")),
+    ).resolves.toBeDefined();
+  });
+
   it("reads PDF Annotations whose anchors fit the source page", async () => {
     using db = openClient();
     const annotations = getAnnotationsByKey(db, ["HIGHLGHT", "NTMARK22"], 1);
@@ -534,6 +626,137 @@ describe("the generated Zotero database", () => {
         expect(minX! <= left && left < right && right <= maxX!).toBe(true);
         expect(minY! <= bottom && bottom < top && top <= maxY!).toBe(true);
       }
+    }
+  });
+
+  it("reproduces every Zotero PDF annotation type from one real session", async () => {
+    using db = openClient();
+    const annotations = getAnnotationsByKey(db, ROUGIER_ANNOTATION_KEYS, 1);
+
+    expect(
+      annotations.map(({ key, type, text, comment, pageLabel }) => ({
+        key,
+        type,
+        text,
+        comment,
+        pageLabel,
+      })),
+    ).toEqual([
+      {
+        key: "TYY6Z6ZF",
+        type: 4,
+        text: null,
+        comment: null,
+        pageLabel: "1",
+      },
+      {
+        key: "4PE492KU",
+        type: 4,
+        text: null,
+        comment: null,
+        pageLabel: "1",
+      },
+      {
+        key: "HRK7BG32",
+        type: 6,
+        text: null,
+        comment: "Making figures is hard :(",
+        pageLabel: "1",
+      },
+      {
+        key: "K3JRFLFQ",
+        type: 5,
+        text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+        comment: null,
+        pageLabel: "1",
+      },
+      {
+        key: "PUPR5FG5",
+        type: 1,
+        text: "Identify Your Message",
+        comment: null,
+        pageLabel: "1",
+      },
+      {
+        key: "C94NJNYG",
+        type: 2,
+        text: null,
+        comment: "some text comment",
+        pageLabel: "1",
+      },
+      {
+        key: "FDRFQ7C2",
+        type: 3,
+        text: null,
+        comment: null,
+        pageLabel: "2",
+      },
+    ]);
+
+    expect(
+      Object.fromEntries(
+        annotations.map(({ key, position }) => [
+          key,
+          "paths" in position
+            ? "ink"
+            : "fontSize" in position
+              ? "text"
+              : "rects",
+        ]),
+      ),
+    ).toEqual({
+      TYY6Z6ZF: "ink",
+      "4PE492KU": "ink",
+      HRK7BG32: "text",
+      K3JRFLFQ: "rects",
+      PUPR5FG5: "rects",
+      C94NJNYG: "rects",
+      FDRFQ7C2: "rects",
+    });
+    expect(
+      annotations.find(({ key }) => key === "HRK7BG32")?.dateAdded.toString(),
+    ).toBe("2026-08-23T16:18:18Z");
+    expect(
+      annotations
+        .find(({ key }) => key === "HRK7BG32")
+        ?.dateModified.toString(),
+    ).toBe("2026-08-23T16:19:07Z");
+  });
+
+  it("materializes Zotero's image and ink annotation cache", async () => {
+    using db = openClient();
+    const expectedHashes = new Map([
+      [
+        "FDRFQ7C2",
+        "4e11544da1bbcea78a5e7fb52e64ef8cc9bf8b02bc8894f6e2d20caa6fb543d0",
+      ],
+      [
+        "TYY6Z6ZF",
+        "cec43cbc703d3e5f92ee58e44ea9b4f67fc0019cf16cd5ae1566ea70b14a6143",
+      ],
+      [
+        "4PE492KU",
+        "a49d8077da0ad4081d0a830d2bc334a7d33acb6f8d2cc7d05d03b4d11ea36a5f",
+      ],
+    ]);
+    const annotations = getAnnotationsByKey(
+      db,
+      ROUGIER_ANNOTATION_KEYS,
+      1,
+    ).filter(({ key }) => expectedHashes.has(key));
+
+    expect(annotations).toHaveLength(3);
+    for (const annotation of annotations) {
+      const path = resolveAnnotCachePath(annotation, {
+        dataDir: layout.dataDir,
+        groupID: annotation.groupID,
+      })!;
+      const png = await readFile(path);
+
+      expect(png.subarray(1, 4).toString()).toBe("PNG");
+      expect(createHash("sha256").update(png).digest("hex")).toBe(
+        expectedHashes.get(annotation.key),
+      );
     }
   });
 
@@ -720,6 +943,7 @@ describe("the generated Zotero database", () => {
       ...ITEMS.map((item) => item.dateModified),
       ...NOTES.map((note) => note.dateModified),
       ...ATTACHMENTS.map((attachment) => attachment.dateModified),
+      ...ANNOTATIONS.map((annotation) => annotation.dateAdded),
       ...ANNOTATIONS.map((annotation) => annotation.dateModified),
     ]);
     const offenders = stamps

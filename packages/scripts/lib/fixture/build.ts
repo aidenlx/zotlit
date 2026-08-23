@@ -57,6 +57,7 @@ export {
 } from "./spec.ts";
 export type {
   FixtureAnnotation,
+  FixtureAnnotationAsset,
   FixtureAsset,
   FixtureAttachment,
   FixtureCollection,
@@ -91,6 +92,8 @@ export interface BuildOptions {
   liveUpdatePort?: number;
   /** TCP port written to the generated Zotero profile's HTTP server pref. */
   zoteroHttpPort?: number;
+  /** Development Vault root used by vault-backed linked Attachment rows. */
+  linkedAttachmentVaultDir?: string;
 }
 
 /** Loopback host the vault's `server.hostname` default binds. */
@@ -114,8 +117,9 @@ export async function buildFixture(
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
-  await writeDatabase(layout, items);
+  await writeDatabase(layout, items, options.linkedAttachmentVaultDir);
   await writeAttachmentFiles(layout);
+  await writeAnnotationCacheFiles(layout);
   await writePrefs(layout, options);
   await writeVault(layout, options);
 }
@@ -153,13 +157,19 @@ const VAULT_PLUGINS_DIR = join(import.meta.dirname, "vault-plugins");
 function attachmentDatabasePath(
   attachment: FixtureAttachment,
   layout: FixtureLayout,
+  linkedAttachmentVaultDir = layout.vaultDir,
 ): string | null {
   switch (attachment.linkMode) {
     case "imported_file":
     case "imported_url":
       return `storage:${attachment.path}`;
     case "linked_file":
-      return join(layout.linkedFilesDir, attachment.path);
+      return join(
+        attachment.fileRoot === "vault"
+          ? linkedAttachmentVaultDir
+          : layout.linkedFilesDir,
+        attachment.path,
+      );
     case "linked_url":
       return null;
   }
@@ -168,13 +178,19 @@ function attachmentDatabasePath(
 function attachmentFilePath(
   attachment: FixtureAttachment,
   layout: FixtureLayout,
+  linkedAttachmentVaultDir = layout.vaultDir,
 ): string | null {
   switch (attachment.linkMode) {
     case "imported_file":
     case "imported_url":
       return join(layout.dataDir, "storage", attachment.key, attachment.path);
     case "linked_file":
-      return join(layout.linkedFilesDir, attachment.path);
+      return join(
+        attachment.fileRoot === "vault"
+          ? linkedAttachmentVaultDir
+          : layout.linkedFilesDir,
+        attachment.path,
+      );
     case "linked_url":
       return null;
   }
@@ -189,6 +205,25 @@ async function writeAttachmentFiles(layout: FixtureLayout): Promise<void> {
   }
 }
 
+async function writeAnnotationCacheFiles(layout: FixtureLayout): Promise<void> {
+  for (const annotation of ANNOTATIONS) {
+    if (annotation.cacheImageAsset === null) continue;
+    const groupID = LIBRARIES.find(
+      (library) => library.libraryID === annotation.libraryID,
+    )!.groupID;
+    const libraryPath =
+      groupID === null ? "library" : join("groups", String(groupID));
+    const destination = join(
+      layout.dataDir,
+      "cache",
+      libraryPath,
+      `${annotation.key}.png`,
+    );
+    await mkdir(dirname(destination), { recursive: true });
+    await cp(join(ASSET_DIR, annotation.cacheImageAsset), destination);
+  }
+}
+
 /**
  * Lay the pristine template down and insert the Spec's rows into the copy.
  * The template carries Zotero's own schema — tables, triggers, foreign keys,
@@ -198,6 +233,7 @@ async function writeAttachmentFiles(layout: FixtureLayout): Promise<void> {
 async function writeDatabase(
   layout: FixtureLayout,
   items: readonly FixtureItem[],
+  linkedAttachmentVaultDir?: string,
 ): Promise<void> {
   await writePristineDatabase(layout.databasePath);
   using db = new DatabaseSync(layout.databasePath);
@@ -213,7 +249,11 @@ async function writeDatabase(
   assertSchemaVersions(db);
   db.exec("begin");
   try {
-    seedDatabase(db, readSchemaIDs(db), { layout, items });
+    seedDatabase(db, readSchemaIDs(db), {
+      layout,
+      items,
+      linkedAttachmentVaultDir,
+    });
     db.exec("commit");
   } catch (error) {
     db.exec("rollback");
@@ -306,7 +346,15 @@ function containerFieldID(
 function seedDatabase(
   db: DatabaseSync,
   ids: SchemaIDs,
-  { layout, items }: { layout: FixtureLayout; items: readonly FixtureItem[] },
+  {
+    layout,
+    items,
+    linkedAttachmentVaultDir,
+  }: {
+    layout: FixtureLayout;
+    items: readonly FixtureItem[];
+    linkedAttachmentVaultDir?: string;
+  },
 ): void {
   const insert = (sql: string, rows: readonly Row[]): void => {
     const statement = db.prepare(sql);
@@ -350,13 +398,14 @@ function seedDatabase(
       itemID: number;
       libraryID: number;
       key: string;
+      dateAdded?: string;
       dateModified: string;
     },
     itemTypeID: number,
   ): Row => [
     item.itemID,
     itemTypeID,
-    item.dateModified,
+    item.dateAdded ?? item.dateModified,
     item.dateModified,
     item.dateModified,
     item.libraryID,
@@ -396,7 +445,7 @@ function seedDatabase(
       attachment.contentType === "text/html"
         ? ids.charsets["utf-8"]
         : null,
-      attachmentDatabasePath(attachment, layout),
+      attachmentDatabasePath(attachment, layout, linkedAttachmentVaultDir),
     ]),
   );
   insert(
@@ -716,7 +765,7 @@ async function writeVault(
         "literatures",
         `${item.literatureNoteName ?? item.key}.md`,
       ),
-      literatureNote(item, layout),
+      literatureNote(item, layout, options.linkedAttachmentVaultDir),
     );
   }
 
@@ -752,13 +801,21 @@ async function writeVault(
   });
 }
 
-function literatureNote(item: FixtureItem, layout: FixtureLayout): string {
+function literatureNote(
+  item: FixtureItem,
+  layout: FixtureLayout,
+  linkedAttachmentVaultDir?: string,
+): string {
   const attachments = ATTACHMENTS.filter(
     (attachment) =>
       attachment.parentItemID === item.itemID &&
       attachment.sourceAsset !== null,
   ).map((attachment) => {
-    const path = attachmentFilePath(attachment, layout)!;
+    const path = attachmentFilePath(
+      attachment,
+      layout,
+      linkedAttachmentVaultDir,
+    )!;
     return `[${attachment.path}](${pathToFileURL(path).href})`;
   });
   return [

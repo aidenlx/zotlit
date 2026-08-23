@@ -438,6 +438,7 @@ async function rebuildFixtureVault(
     scopeCase,
     liveUpdatePort,
     zoteroHttpPort,
+    linkedAttachmentVaultDir: resolve(target),
     pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
   });
 }
