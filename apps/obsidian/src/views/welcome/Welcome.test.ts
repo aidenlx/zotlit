@@ -36,12 +36,18 @@ describe("Welcome Companion setup", () => {
     expect(actions.openExternal).toHaveBeenCalledWith(DOCS_COMPANION);
   });
 
-  it("does not show the installation step in upgraded onboarding", async () => {
-    const { container } = await render("upgraded");
-
-    expect(container.textContent).not.toContain(
-      m.welcome_step_companion_title(),
+  it("shows Zotero 10 Companion guidance and link in upgraded onboarding", async () => {
+    const { actions, container } = await render("upgraded");
+    const button = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "Open installation guide",
     );
+
+    expect(container.textContent).toContain("Keep Zotero 10 changes available");
+    expect(container.textContent).toContain(
+      "Install or update ZotLit Companion, the Zotero add-on, so ZotLit reads recent changes from Zotero 10.",
+    );
+    await act(() => button?.click());
+    expect(actions.openExternal).toHaveBeenCalledWith(DOCS_COMPANION);
   });
 });
 

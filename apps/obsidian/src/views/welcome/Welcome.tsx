@@ -177,12 +177,19 @@ function StepFolder() {
 }
 
 function StepCompanion() {
+  const mode = useWelcomeStore((s) => s.mode);
   const actions = useWelcomeActions();
   return (
     <TimelineNode state="todo" icon="puzzle">
-      <StepHeading>{m.welcome_step_companion_title()}</StepHeading>
+      <StepHeading>
+        {mode === "upgraded"
+          ? m.welcome_step_companion_upgrade_title()
+          : m.welcome_step_companion_title()}
+      </StepHeading>
       <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-        {m.welcome_step_companion_body()}
+        {mode === "upgraded"
+          ? m.companion_zotero_10_guidance()
+          : m.welcome_step_companion_body()}
       </p>
       <Button
         icon="external-link"
@@ -355,7 +362,7 @@ export function Welcome() {
       {mode === "upgraded" ? <MigrationBanner /> : null}
       <div className="zt:mt-9">
         <StepConnect />
-        {mode === "fresh" ? <StepCompanion /> : null}
+        <StepCompanion />
         <StepFolder />
         <StepNote />
         <KeepGoing />
