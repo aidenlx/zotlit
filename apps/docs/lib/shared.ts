@@ -17,6 +17,12 @@ export const gitConfig = {
 };
 
 export const zotlitLegacyUrl = "https://zotlit-v1.aidenlx.site";
+export const zotlitBetaUrl = "https://zotlit-beta.aidenlx.site";
+
+// Vercel sets `VERCEL_ENV` to "production" only for the deployment bound to
+// the production domain (zotlit.aidenlx.site) — preview deployments and
+// local dev do not get it.
+export const isProductionDeployment = process.env.VERCEL_ENV === "production";
 
 // The OG card each `[type, …]` slug selects; kept here so both the `/og`
 // route and page-level metadata (`ogImageUrl`/`pageMetadata`) share one

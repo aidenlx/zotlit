@@ -5,6 +5,7 @@ import { assertNever } from "@std/assert/unstable-never";
 import { notFound } from "next/navigation";
 
 import { ogImage } from "@/app/og/_render";
+import { notFoundOrBetaRedirect } from "@/lib/beta-redirect";
 import { baseURL, formatReleaseDate, ogTypes } from "@/lib/shared";
 import type { OgType } from "@/lib/shared";
 import { blog, changelog, source } from "@/lib/source";
@@ -81,7 +82,8 @@ export async function GET(
           meta: `${baseURL}/changelog`,
         });
       const page = changelog.getPage(ids);
-      if (!page) notFound();
+      if (!page)
+        notFoundOrBetaRedirect(`/og/changelog/${ids.join("/")}/image.webp`);
       return ogImage({
         kind: "Changelog",
         title: page.data.title ?? `v${page.data.version}`,

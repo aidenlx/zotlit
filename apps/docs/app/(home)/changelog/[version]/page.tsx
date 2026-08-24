@@ -1,11 +1,11 @@
 import { ArrowUpRight } from "lucide-react";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 
 import { BackCrumb } from "@/components/back-crumb";
 import { CompanionNote } from "@/components/companion-note";
 import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
+import { notFoundOrBetaRedirect } from "@/lib/beta-redirect";
 import { cn } from "@/lib/cn";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageMetadata } from "@/lib/seo";
@@ -21,7 +21,10 @@ import {
   changelogArticleSchema,
 } from "@/lib/structured-data";
 
-export const dynamicParams = false;
+// Versions this site never published (pre-release/beta builds) still live on
+// the beta site; render them on demand so the lookup below can redirect
+// there on the production deployment instead of 404ing.
+export const dynamicParams = true;
 
 function isLatest(version: string): boolean {
   const [latest] = getChangelogPages();
@@ -33,7 +36,7 @@ export default async function ChangelogVersionPage(
 ) {
   const params = await props.params;
   const page = changelog.getPage([params.version]);
-  if (!page) notFound();
+  if (!page) notFoundOrBetaRedirect(`${changelogRoute}/${params.version}`);
 
   const { version, date, description, companion, body: MDX } = page.data;
 
@@ -108,7 +111,7 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const params = await props.params;
   const page = changelog.getPage([params.version]);
-  if (!page) notFound();
+  if (!page) notFoundOrBetaRedirect(`${changelogRoute}/${params.version}`);
 
   const { version, description, date } = page.data;
 
