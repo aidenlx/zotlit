@@ -139,7 +139,7 @@ async function installStyles(): Promise<StyleLibrary> {
   await writeFile(join(styles, "journal-german.csl"), DEPENDENT_STYLE);
 
   const engine = stack.use(
-    await createCitationEngine(await readFile(WASM_PATH)),
+    await createCitationEngine(new Blob([await readFile(WASM_PATH)])),
   );
   const held = stack.move();
   return {

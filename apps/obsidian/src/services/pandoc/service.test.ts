@@ -37,7 +37,10 @@ function memoryStore(initial: BinaryFiles = {}): MemoryStore {
   return {
     files,
     list: () => Promise.resolve([...files.keys()]),
-    read: (name) => Promise.resolve(files.get(name)),
+    read: (name) => {
+      const bytes = files.get(name);
+      return Promise.resolve(bytes && new Blob([bytes]));
+    },
     write: (name, bytes) => {
       files.set(name, bytes);
       return Promise.resolve();
@@ -94,7 +97,7 @@ interface HarnessOptions {
     url: string,
     store: MemoryStore,
   ) => Promise<Uint8Array<ArrayBuffer>>;
-  createEngine?: (binary: Uint8Array<ArrayBuffer>) => Promise<CitationEngine>;
+  createEngine?: (binary: Blob) => Promise<CitationEngine>;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -326,7 +329,7 @@ describe("PandocEngineService", () => {
 
   it("reports a binary that will not start, and starts over on a re-install", async () => {
     const createEngine = vi
-      .fn<(binary: Uint8Array<ArrayBuffer>) => Promise<CitationEngine>>()
+      .fn<(binary: Blob) => Promise<CitationEngine>>()
       .mockRejectedValueOnce(new Error("CompileError: bad magic"))
       .mockResolvedValue(fakeEngine());
     const { service } = harness({ createEngine });
@@ -346,6 +349,31 @@ describe("PandocEngineService", () => {
     await service[Symbol.asyncDispose]();
   });
 
+  it("clears a corrupt cached binary and offers the install again", async () => {
+    const corrupt = bytes(new TextEncoder().encode("not the pinned bytes"));
+    const createEngine = vi
+      .fn<(binary: Blob) => Promise<CitationEngine>>()
+      .mockRejectedValueOnce(new Error("CompileError: bad magic"))
+      .mockResolvedValue(fakeEngine());
+    const { service, store } = harness({
+      files: { [CACHED_NAME]: corrupt },
+      createEngine,
+    });
+    await service.ready;
+    const listener = vi.fn();
+    service.subscribe(listener);
+
+    await expect(service.getEngine()).rejects.toThrow(/bad magic/);
+
+    expect(store.files.has(CACHED_NAME)).toBe(false);
+    expect(service.getStatus()).toEqual({ kind: "absent" });
+    expect(listener).toHaveBeenCalled();
+
+    await service.install();
+    await expect(service.getEngine()).resolves.toBeDefined();
+    await service[Symbol.asyncDispose]();
+  });
+
   it("hands out one engine and disposes it with the service", async () => {
     const dispose = vi.fn();
     const { service, createEngine } = harness({
@@ -357,7 +385,9 @@ describe("PandocEngineService", () => {
     const engine = await service.getEngine();
     expect(await service.getEngine()).toBe(engine);
     expect(createEngine).toHaveBeenCalledTimes(1);
-    expect(createEngine).toHaveBeenCalledWith(BINARY);
+    const [passed] = createEngine.mock.calls[0]!;
+    expect(passed).toBeInstanceOf(Blob);
+    expect(new Uint8Array(await passed.arrayBuffer())).toEqual(BINARY);
 
     await service[Symbol.asyncDispose]();
     expect(dispose).toHaveBeenCalledOnce();

@@ -368,7 +368,7 @@ describe(
   () => {
     it("cites the demo note through the bundled sandbox filter", async () => {
       await using engine = await createCitationEngine(
-        await readFile(WASM_PATH),
+        new Blob([await readFile(WASM_PATH)]),
       );
       const result = await exportCitedDocument(
         {
@@ -395,7 +395,7 @@ describe(
 
     it("cites the same note in the docx it writes", async () => {
       await using engine = await createCitationEngine(
-        await readFile(WASM_PATH),
+        new Blob([await readFile(WASM_PATH)]),
       );
       const result = await exportCitedDocument(
         {

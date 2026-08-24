@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+// Runs in the happy-dom-native-response vitest project (vitest.config.ts).
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -446,7 +446,7 @@ function openText(
 }
 
 async function openEngine(): Promise<CitationEngine> {
-  return createCitationEngine(await readFile(WASM_PATH));
+  return createCitationEngine(new Blob([await readFile(WASM_PATH)]));
 }
 
 async function sidebarEntries(

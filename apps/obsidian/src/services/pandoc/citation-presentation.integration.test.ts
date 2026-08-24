@@ -1,5 +1,5 @@
-// @vitest-environment happy-dom
 // One note's own `zotlit-csl`, as every Citation Presentation surface renders it.
+// Runs in the happy-dom-native-response vitest project (vitest.config.ts).
 
 import { describe, expect, it } from "vitest";
 

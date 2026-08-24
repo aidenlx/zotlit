@@ -21,8 +21,11 @@ declare global {
  */
 export interface EngineBinaryStore {
   list(): Promise<string[]>;
-  /** `undefined` when nothing is stored under `name`. */
-  read(name: string): Promise<Uint8Array<ArrayBuffer> | undefined>;
+  /**
+   * The entry's backing blob, unread. `undefined` when nothing is stored under
+   * `name`.
+   */
+  read(name: string): Promise<Blob | undefined>;
   write(name: string, bytes: Uint8Array<ArrayBuffer>): Promise<void>;
   /** Replaces an entry already named `to`. */
   rename(from: string, to: string): Promise<void>;
@@ -48,7 +51,7 @@ export function createOpfsBinaryStore(): EngineBinaryStore {
       const dir = await cacheDir();
       try {
         const handle = await dir.getFileHandle(name);
-        return new Uint8Array(await (await handle.getFile()).arrayBuffer());
+        return await handle.getFile();
       } catch (error) {
         if (isNotFound(error)) return undefined;
         throw error;

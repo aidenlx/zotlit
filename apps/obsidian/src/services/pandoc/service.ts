@@ -55,7 +55,7 @@ export interface PandocEnginePorts {
   /** @default PINNED_PANDOC_ENGINE */
   pin?: PinnedPandocEngine;
   /** @default createCitationEngine */
-  createEngine?: (binary: Uint8Array<ArrayBuffer>) => Promise<CitationEngine>;
+  createEngine?: (binary: Blob) => Promise<CitationEngine>;
 }
 
 /**
@@ -71,9 +71,7 @@ export class PandocEngineService extends Service<void> {
   readonly #download: (url: string) => Promise<Uint8Array<ArrayBuffer>>;
   readonly #consent: Pick<App, "loadLocalStorage" | "saveLocalStorage">;
   readonly #pin: PinnedPandocEngine;
-  readonly #createEngine: (
-    binary: Uint8Array<ArrayBuffer>,
-  ) => Promise<CitationEngine>;
+  readonly #createEngine: (binary: Blob) => Promise<CitationEngine>;
 
   readonly #listeners = new Set<() => void>();
   #status: PandocEngineStatus;
@@ -211,19 +209,46 @@ export class PandocEngineService extends Service<void> {
     if (this.#status.kind !== "installed") {
       throw new Error("The Pandoc engine is not installed");
     }
+    let binary: Blob;
     try {
-      const binary = await this.#store.read(this.#binaryName);
-      if (!binary) throw new Error("The cached Pandoc engine binary is gone");
-      return await this.#createEngine(binary);
+      const read = await this.#store.read(this.#binaryName);
+      if (!read) throw new Error("The cached Pandoc engine binary is gone");
+      binary = read;
     } catch (error) {
-      const failure: PandocEngineFailure = {
-        code: "init-failed",
-        detail: describe(error),
-      };
-      logger.error("The Pandoc engine did not start", { failure, error });
-      this.#setStatus({ kind: "failed", failure });
+      this.#failInit(error);
       throw error;
     }
+    try {
+      return await this.#createEngine(binary);
+    } catch (error) {
+      // The binary that failed to start may simply be corrupt on disk; a
+      // pinned-hash mismatch means the cache is bad, not Pandoc itself, so
+      // clearing it lets the normal install offer reappear instead of
+      // stranding the user on a dead cache. This path is rare, so
+      // materializing the whole binary to hash it is fine here.
+      const actual = await sha256Hex(await binary.arrayBuffer());
+      if (actual !== this.#pin.sha256) {
+        logger.warn("The cached Pandoc engine binary is corrupt", {
+          name: this.#binaryName,
+          actual,
+          error,
+        });
+        await this.#store.remove(this.#binaryName).catch(() => undefined);
+        this.#setStatus({ kind: "absent" });
+        throw error;
+      }
+      this.#failInit(error);
+      throw error;
+    }
+  }
+
+  #failInit(error: unknown): void {
+    const failure: PandocEngineFailure = {
+      code: "init-failed",
+      detail: describe(error),
+    };
+    logger.error("The Pandoc engine did not start", { failure, error });
+    this.#setStatus({ kind: "failed", failure });
   }
 
   async #runInstall(): Promise<void> {
@@ -333,7 +358,7 @@ function extractBinary(
   return binary;
 }
 
-async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+async function sha256Hex(bytes: BufferSource): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))

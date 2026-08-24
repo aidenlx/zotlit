@@ -182,7 +182,7 @@ const RESOLVE_MAP = JSON.stringify({ citations: { "Zeta 2020": ZETA.id } });
 const DOCUMENT = "Cited here [[Zeta 2020]].\n\n# References\n";
 
 async function openEngine(): Promise<CitationEngine> {
-  return createCitationEngine(await readFile(WASM_PATH));
+  return createCitationEngine(new Blob([await readFile(WASM_PATH)]));
 }
 
 /** What an inline flow reads as, which is the text a surface would show. */

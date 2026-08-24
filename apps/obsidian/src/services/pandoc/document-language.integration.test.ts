@@ -1,5 +1,5 @@
-// @vitest-environment happy-dom
 // One note's own `lang`, as every Citation Presentation surface and the built-in export read it.
+// Runs in the happy-dom-native-response vitest project (vitest.config.ts).
 
 import { describe, expect, it } from "vitest";
 

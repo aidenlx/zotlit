@@ -170,10 +170,11 @@ const BIBLIOGRAPHY_FILE = "bibliography.json";
 /**
  * Instantiate one engine over the Pandoc WASM binary.
  *
- * @param wasmBinary the verified `pandoc.wasm` bytes.
+ * @param wasmBinary the verified `pandoc.wasm` binary, streamed rather than
+ *   materialized.
  */
 export async function createCitationEngine(
-  wasmBinary: BufferSource,
+  wasmBinary: Blob,
 ): Promise<CitationEngine> {
   return new PandocCitationEngine(await createPandocRuntime(wasmBinary));
 }

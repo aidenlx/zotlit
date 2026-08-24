@@ -314,7 +314,7 @@ export async function openCitationVault({
   writeProperties();
 
   const engine = stack.use(
-    await createCitationEngine(await readFile(WASM_PATH)),
+    await createCitationEngine(new Blob([await readFile(WASM_PATH)])),
   );
   const cache = stack.use(
     new BibliographyRenderCache({
