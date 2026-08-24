@@ -26,10 +26,10 @@ import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
 import {
-  type DeviceStorage,
   loadZoteroPathOverrides,
   saveZoteroPathOverrides,
 } from "./device-paths";
+import type { DeviceStorage } from "./device-paths";
 import {
   getZoteroProfilesRoot,
   parsePrefsJs,
@@ -37,11 +37,12 @@ import {
   PREF_BRANCH,
   PREFS_FILENAME,
   PROFILES_INI_FILENAME,
+  resolveZoteroHttpPort,
   resolveProfileDir,
   selectDefaultProfile,
-  type PrefValue,
-  type ZoteroProfile,
+  ZOTERO_HTTP_PORT_PREF,
 } from "./prefs-file";
+import type { PrefValue, ZoteroProfile } from "./prefs-file";
 
 const logger = getLogger("zotero-pref");
 
@@ -141,6 +142,10 @@ export class ZoteroPrefService extends Service<void> {
    */
   get(name: string): PrefValue | undefined {
     return this.#prefs.get(PREF_BRANCH + name);
+  }
+
+  get httpPort(): number | null {
+    return resolveZoteroHttpPort(this.get(ZOTERO_HTTP_PORT_PREF));
   }
 
   /**

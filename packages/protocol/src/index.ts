@@ -1,9 +1,9 @@
 export {
+  type DbUpdated,
   type NotifyEvent,
   notifyEventSchema,
   type ReaderActive,
   type ReaderAnnotSelect,
-  type ItemUpdate,
 } from "./notify";
 export {
   type NoteStatusResponse,

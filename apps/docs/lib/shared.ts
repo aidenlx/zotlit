@@ -13,7 +13,7 @@ export const blogContentRoute = "/llms.mdx/blog";
 export const gitConfig = {
   user: "aidenlx",
   repo: "zotlit",
-  branch: "main",
+  branch: process.env.VERCEL_GIT_COMMIT_REF || "main",
 };
 
 export const zotlitLegacyUrl = "https://zotlit-v1.aidenlx.site";

@@ -1,12 +1,12 @@
 // Items for the "Attachments" sub-page: whether an attachment is imported,
 // where in the vault it lands, and which external source folders are approved.
 
-import { type SettingDefinitionItem } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
 import { approvedFoldersPage } from "./approved-folders";
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 
 export function attachmentPageItems(
   ctx: SettingTabContext,

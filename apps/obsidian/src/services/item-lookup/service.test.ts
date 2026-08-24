@@ -1,21 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { type IndexedItem, type IndexSignature, type Item } from "@zotlit/db";
+import type { IndexedItem, IndexSignature, Item } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import {
   makeCreator as creator,
   makeIndexedItem as indexedItem,
   makeItem as item,
-  type ItemFixtureOptions,
 } from "@zotlit/item-lookup/fixtures";
+import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
 
-import {
-  DatabaseError,
-  type DatabaseService,
-} from "@/services/database/service";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import { DatabaseError } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
+import type {
+  AvailableLibrary,
+  ResolvedLibraryScope,
+} from "@/services/library-scope/scope";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 
 import { ItemLookup } from "./service";
 
@@ -118,32 +119,104 @@ describe("ItemLookup", () => {
     expect(deps.loadItems).toHaveBeenCalledOnce();
   });
 
-  it("invalidates when the citation library changes", async () => {
-    const settings = new FakeSettings();
-    const libraryKey = (libraryID: number): string =>
-      libraryID === USER_LIBRARY_ID ? "A" : "B";
-    const itemLibrary = (itemID: number): number =>
-      itemID === "B".charCodeAt(0) ? 2 : USER_LIBRARY_ID;
-    const deps = createDeps({
-      settings,
-      loadItemIDs: vi.fn((_client, libraryID) => [
-        libraryKey(libraryID).charCodeAt(0),
-      ]),
-      loadItems: vi.fn((_client, itemIDs) => {
-        const libraryID = itemLibrary(itemIDs[0]!);
-        return [indexedItem({ key: libraryKey(libraryID), libraryID })];
-      }),
-      hydrateItems: vi.fn((_client, itemIDs) => {
-        const libraryID = itemLibrary(itemIDs[0]!);
-        return [item({ key: libraryKey(libraryID), libraryID })];
-      }),
-    });
+  it("hard-invalidates when the library scope changes", async () => {
+    const libraryScope = new FakeLibraryScope();
+    const deps = createDeps({ libraryScope, ...perLibraryData() });
     const lookup = new ItemLookup(deps);
 
     expect((await lookup.search(""))[0]?.item.libraryID).toBe(USER_LIBRARY_ID);
-    settings.setLibrary(2);
+    libraryScope.setLibraries([library(2)]);
     expect((await lookup.search(""))[0]?.item.libraryID).toBe(2);
     expect(deps.loadItems).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes labels without rebuilding when a refresh only renames a group", async () => {
+    const libraryScope = new FakeLibraryScope([
+      library(USER_LIBRARY_ID),
+      library(2),
+    ]);
+    const deps = createDeps({ libraryScope, ...perLibraryData() });
+    const lookup = new ItemLookup(deps);
+
+    await lookup.search("");
+    const builds = deps.loadItems.mock.calls.length;
+    libraryScope.setLibraries([
+      library(USER_LIBRARY_ID),
+      { ...library(2), name: "Renamed" },
+    ]);
+    const hits = await lookup.search("");
+
+    expect(hits.map((hit) => hit.library?.name)).toEqual([null, "Renamed"]);
+    expect(deps.loadItems).toHaveBeenCalledTimes(builds);
+  });
+
+  it("indexes every library in scope in canonical order", async () => {
+    const libraryScope = new FakeLibraryScope([
+      library(USER_LIBRARY_ID),
+      library(2),
+    ]);
+    const deps = createDeps({ libraryScope, ...perLibraryData() });
+    const lookup = new ItemLookup(deps);
+
+    const hits = await lookup.search("");
+
+    expect(hits.map((hit) => hit.item.libraryID)).toEqual([USER_LIBRARY_ID, 2]);
+    expect(deps.loadItemIDs.mock.calls.map((call) => call[1])).toEqual([
+      USER_LIBRARY_ID,
+      2,
+    ]);
+  });
+
+  it("labels results only when several libraries can contribute", async () => {
+    const libraryScope = new FakeLibraryScope();
+    const deps = createDeps({ libraryScope, ...perLibraryData() });
+    const lookup = new ItemLookup(deps);
+
+    expect((await lookup.search("")).map((hit) => hit.library)).toEqual([null]);
+
+    libraryScope.setLibraries([library(USER_LIBRARY_ID), library(2)]);
+
+    expect(
+      (await lookup.search("")).map((hit) => hit.library?.libraryID),
+    ).toEqual([USER_LIBRARY_ID, 2]);
+  });
+
+  it("rebuilds when any covered library's signature moves", async () => {
+    const db = new FakeDb();
+    const libraryScope = new FakeLibraryScope([
+      library(USER_LIBRARY_ID),
+      library(2),
+    ]);
+    let groupCount = 1;
+    const deps = createDeps({
+      db,
+      libraryScope,
+      ...perLibraryData(),
+      loadSignature: vi.fn((_client, libraryID) => ({
+        count: libraryID === USER_LIBRARY_ID ? 1 : groupCount,
+        checksum: 0,
+      })),
+    });
+    const lookup = new ItemLookup(deps);
+
+    await lookup.search("");
+    const builds = deps.loadItems.mock.calls.length;
+    groupCount = 2;
+    db.emitChanged();
+    await waitForCallCount(deps.loadItems, builds * 2);
+
+    expect(deps.loadItems.mock.calls.length).toBeGreaterThan(builds);
+  });
+
+  it("serves an empty result for a scope with no available library", async () => {
+    const deps = createDeps({
+      libraryScope: new FakeLibraryScope([]),
+      ...perLibraryData(),
+    });
+    const lookup = new ItemLookup(deps);
+
+    await expect(lookup.search("")).resolves.toEqual([]);
+    expect(deps.loadItemIDs).not.toHaveBeenCalled();
   });
 
   it("returns an empty list while the database is degraded", async () => {
@@ -198,7 +271,7 @@ describe("ItemLookup", () => {
     );
 
     await expect(lookup.search(" ", { limit: 1 })).resolves.toEqual([
-      { item: alpha.full, score: 0, matches: [] },
+      { item: alpha.full, score: 0, matches: [], library: null },
     ]);
   });
 
@@ -271,14 +344,14 @@ describe("ItemLookup", () => {
     });
   });
 
-  it("drops search results when the library switches mid-hydration", async () => {
+  it("drops search results when the scope changes mid-hydration", async () => {
     const db = new FakeDb();
-    const settings = new FakeSettings();
+    const libraryScope = new FakeLibraryScope();
     const alpha = itemPair({ key: "A", title: "Alpha" });
     let resolveHydration: (items: Item[]) => void = () => undefined;
     const deps = createDeps({
       db,
-      settings,
+      libraryScope,
       indexItems: [alpha.indexed],
       hydratedItems: [alpha.full],
       hydrateItems: vi.fn(
@@ -294,7 +367,7 @@ describe("ItemLookup", () => {
 
     const search = lookup.search("Alpha");
     await waitForCallCount(deps.hydrateItems, 1);
-    settings.setLibrary(2);
+    libraryScope.setLibraries([library(2)]);
     resolveHydration([alpha.full]);
 
     await expect(search).resolves.toEqual([]);
@@ -328,7 +401,7 @@ async function waitForCallCount(
 function createDeps(
   options: {
     db?: FakeDb;
-    settings?: FakeSettings;
+    libraryScope?: FakeLibraryScope;
     indexItems?: IndexedItem[];
     hydratedItems?: Item[];
     loadItemIDs?: (
@@ -353,8 +426,8 @@ function createDeps(
   const hydratedItems = options.hydratedItems ?? [];
   return {
     db: (options.db ?? new FakeDb()) as unknown as DatabaseService,
-    settings: (options.settings ??
-      new FakeSettings()) as unknown as SettingsService,
+    libraryScope: (options.libraryScope ??
+      new FakeLibraryScope()) as unknown as LibraryScopeService,
     loadItemIDs: vi.fn(
       options.loadItemIDs ?? (() => indexItems.map((item) => item.itemID)),
     ),
@@ -427,37 +500,65 @@ class FakeDb {
   }
 }
 
-class FakeSettings {
-  #value = {
-    "zotero.citation-library": USER_LIBRARY_ID,
-    "citation.editor-suggester": true,
-    "citation.show-citekey-in-suggester": false,
-  } as Settings;
+/** An available Library named by its local id; group ids mirror it for brevity. */
+function library(libraryID: number): AvailableLibrary {
+  return libraryID === USER_LIBRARY_ID
+    ? { selector: { type: "personal" }, libraryID, name: null }
+    : {
+        selector: { type: "group", groupID: libraryID },
+        libraryID,
+        name: `Group ${libraryID}`,
+      };
+}
 
-  readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
+class FakeLibraryScope {
+  #libraries: readonly AvailableLibrary[];
+  readonly #subscribers = new Set<
+    (scope: ResolvedLibraryScope | null) => void
+  >();
 
-  get current(): Readonly<Settings> {
-    return this.#value;
+  readonly ready = Promise.resolve();
+
+  constructor(
+    libraries: readonly AvailableLibrary[] = [library(USER_LIBRARY_ID)],
+  ) {
+    this.#libraries = libraries;
   }
 
-  get loaded(): Promise<Readonly<Settings>> {
-    return Promise.resolve(this.#value);
+  get current(): ResolvedLibraryScope {
+    return this.#resolved();
   }
 
-  subscribe(cb: (value: Readonly<Settings> | null) => void): () => void {
+  get invalid(): boolean {
+    return false;
+  }
+
+  resolveWith(): ResolvedLibraryScope {
+    return this.#resolved();
+  }
+
+  on(
+    _event: "changed",
+    cb: (scope: ResolvedLibraryScope | null) => void,
+  ): () => void {
     this.#subscribers.add(cb);
-    cb(this.#value);
     return () => {
       this.#subscribers.delete(cb);
     };
   }
 
-  setLibrary(libraryID: number): void {
-    this.#value = {
-      ...this.#value,
-      "zotero.citation-library": libraryID,
+  setLibraries(libraries: readonly AvailableLibrary[]): void {
+    this.#libraries = libraries;
+    for (const cb of this.#subscribers) cb(this.#resolved());
+  }
+
+  #resolved(): ResolvedLibraryScope {
+    return {
+      mode: "all",
+      invalid: false,
+      available: this.#libraries,
+      unavailable: [],
     };
-    for (const cb of this.#subscribers) cb(this.#value);
   }
 }
 
@@ -468,5 +569,31 @@ function itemPair(options: ItemFixtureOptions): {
   return {
     indexed: indexedItem(options),
     full: item(options),
+  };
+}
+
+/**
+ * Loaders serving exactly one item per Library, with the item id derived from
+ * the Library id, so a hit traces back to the Library that produced it.
+ */
+function perLibraryData() {
+  const itemIDOf = (libraryID: number): number => libraryID * 100;
+  const optionsOf = (itemID: number): ItemFixtureOptions => ({
+    key: `L${itemID / 100}`,
+    itemID,
+    libraryID: itemID / 100,
+  });
+  return {
+    loadItemIDs: vi.fn((_client: NodeDatabaseClient, libraryID: number) => [
+      itemIDOf(libraryID),
+    ]),
+    loadItems: vi.fn(
+      (_client: NodeDatabaseClient, itemIDs: readonly number[]) =>
+        itemIDs.map((itemID) => indexedItem(optionsOf(itemID))),
+    ),
+    hydrateItems: vi.fn(
+      (_client: NodeDatabaseClient, itemIDs: readonly number[]) =>
+        itemIDs.map((itemID) => item(optionsOf(itemID))),
+    ),
   };
 }

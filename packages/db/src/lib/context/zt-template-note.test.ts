@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
-import { type ItemFields } from "@zotlit/zotero-types";
+import type { ItemFields } from "@zotlit/zotero-types";
 
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { type Annotation } from "@/lib/zt-annot";
-import { type Attachment } from "@/lib/zt-attach";
-import { type ItemTag, type Tag } from "@/lib/zt-tag";
-import { type BaseItem, type Item } from "@/queries/items";
+import type { Annotation } from "@/lib/zt-annot";
+import type { Attachment } from "@/lib/zt-attach";
+import type { ItemTag, Tag } from "@/lib/zt-tag";
+import type { BaseItem, Item } from "@/queries/items";
 
-import { type TemplateFilenameItemData } from "./zt-template-item";
+import type { TemplateFilenameItemData } from "./zt-template-item";
 import { buildFilenameContext, buildNoteContext } from "./zt-template-note";
 
 function makeItem(
@@ -655,11 +654,36 @@ describe("buildNoteContext", () => {
 });
 
 describe("buildFilenameContext", () => {
+  it("exposes the primary creators and injected author summary", () => {
+    const ctx = buildFilenameContext({
+      item: makeItem(
+        { itemType: "book", title: "Edited Work" },
+        {
+          creators: [
+            {
+              firstName: "Ruth",
+              lastName: "Davis",
+              creatorType: "editor",
+              fieldMode: 0,
+            },
+          ],
+        },
+      ),
+      tags: [],
+      collections: [],
+      authorsShort: () => "Davis",
+    });
+
+    expect(ctx.authors).toMatchObject([{ family: "Davis", role: "editor" }]);
+    expect(ctx.authorsShort).toBe("Davis");
+  });
+
   it("stubs notePath/noteLink to empty strings instead of omitting them", () => {
     const ctx = buildFilenameContext({
       item: makeItem({ itemType: "journalArticle", title: "A Study" }),
       tags: [],
       collections: [],
+      authorsShort: () => "",
     });
 
     // A filename template referencing `zt.noteLink()`/`zt.notePath` (the note

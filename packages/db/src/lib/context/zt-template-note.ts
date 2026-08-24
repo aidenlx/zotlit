@@ -1,30 +1,29 @@
-import {
-  annotationToTemplateData,
-  type TemplateAnnotation,
-} from "@/lib/context/zt-template-annot";
-import {
-  resolveTemplateAttachment,
-  type TemplateAttachment,
-} from "@/lib/context/zt-template-attach";
+import { annotationToTemplateData } from "@/lib/context/zt-template-annot";
+import type { TemplateAnnotation } from "@/lib/context/zt-template-annot";
+import { resolveTemplateAttachment } from "@/lib/context/zt-template-attach";
+import type { TemplateAttachment } from "@/lib/context/zt-template-attach";
 import {
   itemToTemplateBaseData,
   resolveItemCore,
+  resolvePrimaryCreators,
   withItemPreview,
-  type FallibleTemplateLink,
-  type ResolvedItemCore,
-  type TemplateFilenameItemData,
-  type TemplateItemBaseData,
-  type TemplateItemData,
-  type TemplateItemResolvers,
-  type TemplateLink,
+} from "@/lib/context/zt-template-item";
+import type {
+  FallibleTemplateLink,
+  ResolvedItemCore,
+  TemplateFilenameItemData,
+  TemplateItemBaseData,
+  TemplateItemData,
+  TemplateItemResolvers,
+  TemplateLink,
 } from "@/lib/context/zt-template-item";
 import { defineToString } from "@/lib/to-string";
-import { type Annotation } from "@/lib/zt-annot";
-import { type Attachment } from "@/lib/zt-attach";
-import { type TemplateCollection } from "@/lib/zt-collection";
-import { type ItemTag } from "@/lib/zt-tag";
-import { type Item } from "@/queries/items";
-import { type ChildNote } from "@/queries/notes";
+import type { Annotation } from "@/lib/zt-annot";
+import type { Attachment } from "@/lib/zt-attach";
+import type { TemplateCollection } from "@/lib/zt-collection";
+import type { ItemTag } from "@/lib/zt-tag";
+import type { Item } from "@/queries/items";
+import type { ChildNote } from "@/queries/notes";
 
 /**
  * A single entry in {@link NoteTemplateContext.relatedItems}: the related
@@ -167,16 +166,19 @@ export type NoteContextInput = AnnotationResolvers &
  * resolvers, so a filename query stays a single-item read. `notePath` /
  * `noteLink` are empty stubs (a name is resolved before the note exists) —
  * present so a filename template referencing them renders `""` instead of
- * throwing. Pure: the caller passes the item's tags and collections in.
+ * throwing. Pure: the caller passes the item's tags, collections, and
+ * localized Author Summary formatter in.
  */
 export function buildFilenameContext(input: {
   item: Item;
   tags: readonly ItemTag[];
   collections: readonly TemplateCollection[];
+  authorsShort: (item: Item) => string;
 }): TemplateFilenameItemData {
   return toFilenameItemData(
     itemToTemplateBaseData({ item: input.item, tags: input.tags }),
     input.collections,
+    input.authorsShort(input.item),
   );
 }
 
@@ -184,8 +186,16 @@ export function buildFilenameContext(input: {
 function toFilenameItemData(
   baseData: TemplateItemBaseData,
   collections: readonly TemplateCollection[],
+  authorsShort: string,
 ): TemplateFilenameItemData {
-  return { ...baseData, notePath: "", noteLink: () => "", collections };
+  return {
+    ...baseData,
+    authors: resolvePrimaryCreators(baseData),
+    authorsShort,
+    notePath: "",
+    noteLink: () => "",
+    collections,
+  };
 }
 
 /**
@@ -249,7 +259,11 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
 
   const collections = input.collectionsByItemID.get(item.itemID) ?? [];
   // The inert item-own twin the resolvers receive; see TemplateItemResolvers.
-  const filenameData = toFilenameItemData(baseData, collections);
+  const filenameData = toFilenameItemData(
+    baseData,
+    collections,
+    itemResolvers.authorsShort(item),
+  );
 
   result = withItemPreview({
     ...baseData,
@@ -288,7 +302,11 @@ function buildRelatedItem({
   username: string | null;
 }): TemplateRelatedItem {
   const baseData = itemToTemplateBaseData({ item, tags });
-  const filenameData = toFilenameItemData(baseData, collections);
+  const filenameData = toFilenameItemData(
+    baseData,
+    collections,
+    itemResolvers.authorsShort(item),
+  );
   return withItemPreview({
     ...baseData,
     get notePath() {

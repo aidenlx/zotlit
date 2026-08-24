@@ -46,7 +46,7 @@ export function isIndexedKey(value: string): boolean {
   return parseIndexedKey(value) !== null;
 }
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { getLibraryByGroupID } from "@/queries/libraries";
 
 import { USER_LIBRARY_ID } from "./constants";

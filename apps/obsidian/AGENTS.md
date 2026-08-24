@@ -9,6 +9,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/obsidian dev` — Vite watch build.
 - `I18N_DEV_SERVER=true pnpm --filter @zotlit/obsidian dev` — opt-in when testing multi-language i18n: also serves the generated Language Pack JSONs at `http://127.0.0.1:9092` (or pass a port number) and points the dev build's pack download URL there instead of the GitHub release.
 - `pnpm --filter @zotlit/obsidian generate:language-packs` — regenerate the typed message facade and bundled English pack. Only needed when bypassing turbo; turbo `typecheck`/`test` depend on it.
+- `pnpm --filter @zotlit/obsidian test:lua-filter` — drive a native Pandoc (3.1.1 or newer) over fixture Markdown to check both `zotlit-cite.lua` variants. Needs `pandoc` on PATH; set `PANDOC_BIN` to check another Pandoc version. Outside `pnpm test`, since it needs a binary the workspace does not install.
 
 ## Code conventions
 
@@ -18,6 +19,7 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 - [tooltips](policies/tooltips.md) — `aria-label` is the tooltip; spread `tooltipAttrs` in React
 - [file-ops](policies/file-ops.md) — attempt the file op, don't stat-then-fileop; branch on `isErrno`
 - [ui-seams](policies/ui-seams.md) — functional core, imperative shell; notices render at the seam, tests assert data
+- [cli-text](policies/cli-text.md) — `zotlit:*` CLI output is hardcoded English, never sourced from the Language Pack facade
 
 ## UI stack
 
@@ -48,7 +50,7 @@ const logger = getLogger("settings");
 
 ## UI text (JSON Language Packs)
 
-Import as `import * as m from "@/lib/i18n/generated/messages"`. `src/lib/i18n/generated/` is gitignored and regenerated on build; regenerate manually only when bypassing turbo (see Commands).
+Import as `import * as m from "@/lib/i18n/generated/messages"`. `src/lib/i18n/generated/` is gitignored and regenerated on build; regenerate manually only when bypassing turbo (see Commands). Excludes `zotlit:*` CLI output — see [cli-text](policies/cli-text.md).
 
 When extending `__mocks__/obsidian.ts` for code that calls `m.*` indirectly, add a `getLanguage()` stub returning your fixture locale.
 
@@ -58,9 +60,11 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 Run `/obsidian-css` for styling decisions (colors, spacing, components, `zt:` prefix, theme tokens, `.zt-root` scoped preflight).
 
+Public theme hooks follow [theme-hooks](policies/theme-hooks.md): central semantic `zt-` classes, cross-surface contract tests, and documented activation rules.
+
 Mark each plugin UI root (`ItemView.contentEl`, modal `contentEl`, settings pane) with `class="zt-root"` — that scope enables the Tailwind preflight so semantic HTML and border utilities render clean. See the skill's **Scoped preflight** section.
 
-View-specific styles live next to the view (`views/<view>/style.css`). Global styles go in `src/zt-main.css`.
+Feature styles live next to the code that owns them and are imported from it — `views/<view>/style.css`, `services/<service>/style.css`. The Tailwind entry and styles that belong to no single feature go in `src/zt-main.css`.
 
 ## Debugging
 

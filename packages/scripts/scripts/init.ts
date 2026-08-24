@@ -1,13 +1,12 @@
 #!/usr/bin/env zx
 
-import { writeFile } from "node:fs/promises";
 // only for the type checker
 import type {} from "zx/globals";
 
 $.verbose = true;
 
-// path to the primary worktree, recorded for reference; wt itself copies
-// gitignored files matched by .worktreeinclude when creating the worktree
+// path to the primary worktree; wt itself copies gitignored files matched by
+// .worktreeinclude when creating the worktree
 const primary = argv._[0];
 
 // `--no-submodules` skips checkout when the caller already has them — e.g. CI
@@ -22,9 +21,11 @@ if (primary) {
   await $`pnpm install --frozen-lockfile`;
 }
 
-if (primary) {
-  await writeFile(".primary-worktree", primary);
-  echo(`Wrote .primary-worktree → ${primary}`);
-}
-
 await $`turbo run build --filter=./packages/*`;
+
+// App-level codegen. Both outputs are gitignored, so a fresh worktree type-checks
+// only once these run: the Obsidian i18n message facade (`generate:language-packs`)
+// and the Fumadocs source map plus Next.js route types such as `PageProps`
+// (`codegen`). Left unfiltered so any package that later adds either script is
+// picked up.
+await $`turbo run generate:language-packs codegen`;

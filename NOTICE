@@ -30,6 +30,9 @@ projects by the Corporation for Digital Scholarship:
 
 Derived files include (non-exhaustive):
 
+  packages/db/src/lib/zt-csl-item.ts    — itemToCSLJSON algorithm
+  packages/db/src/lib/zt-csl-name.ts    — parseParticles algorithm
+  packages/db/src/lib/zt-extra-to-csl.ts — extraToCSL algorithm
   packages/db/src/lib/zt-lang.ts        — languageToISO6391 algorithm
   packages/db/src/lib/zt-annot-pos.ts   — annotation position schemas
   packages/db/src/lib/zt-color.ts       — annotation color palettes
@@ -49,3 +52,19 @@ This project also contains code derived from Mozilla web-ext:
 
   Licensed under the Mozilla Public License 2.0 (MPL-2.0).
   See SPDX headers in those files for details.
+
+=========================================================================
+
+The Fixture contains third-party copies and adaptations of Sakima's song,
+written by Ursula Nafula and illustrated by Peris Wachuka. These assets are
+licensed under CC BY 4.0 and are outside ZotLit's AGPL-3.0-or-later license
+grant. Full provenance, checksums, and modification records are in:
+
+  packages/scripts/lib/fixture/assets/sakimas-song/NOTICE.md
+
+The Fixture also contains a copy of Why Most Published Research Findings Are
+False, written by John P. A. Ioannidis and published by PLOS. This asset is
+licensed under the Creative Commons Attribution License and is outside ZotLit's
+AGPL-3.0-or-later license grant. Full provenance and its checksum are in:
+
+  packages/scripts/lib/fixture/assets/ioannidis-2005/NOTICE.md

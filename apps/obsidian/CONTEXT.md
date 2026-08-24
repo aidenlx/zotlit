@@ -67,6 +67,16 @@ The Template Data Explorer's default anchor — the full note-template context f
 **Annotation Root**:
 The Template Data Explorer re-anchored at a single Annotation, exactly what the `annotation` template receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
 
+**Template Data Export** _(Obsidian)_:
+The Template Data Explorer's current root, saved as a JSON file for a bug report. Always the whole root the pane is anchored at — the Note Root or the Annotation Root — never the rows an active filter leaves visible. Carries the same data the Agent CLI answers with, under a header naming the plugin version, the contract version, and the Indexed Key and root that reproduce it. Being Explorer data, it records inert placeholders where a real render would write files.
+_Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
+
+### Agent CLI
+
+**CLI Contract**:
+The wire format of one `zotlit:*` command namespace — its envelope, payload fields, and diagnostic codes. Each namespace versions its own, so a bump in one says nothing about another. Distinct from the Template Contract, which is a promise about `zt` data rather than about an answer's shape.
+_Avoid_: contract version (names the number, not the thing); protocol (that is the wire format for ZotLit Companion, the Zotero add-on)
+
 ### Annotation view
 
 **Annotation Card** _(Obsidian)_:
@@ -87,6 +97,10 @@ _Avoid_: annotation (that's the live Zotero entity), mark
 A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt (optionally followed by a citation). Detected structurally by the note parser; when the `note.import-annotations-as-template` setting is on, the paragraph is subsumed and re-rendered through the `annotation` template from live DB data instead of the frozen excerpt.
 _Avoid_: annotation block, callout
 
+**Colored Highlight Syntax**:
+The opt-in Markdown representation for red, orange, yellow, green, blue, and purple highlights in an Imported Note. A colored-circle emoji at the start of `==...==` selects the color; highlights outside that set retain their HTML representation.
+_Avoid_: Bear highlight, emoji highlight
+
 ### Integration processes
 
 **Note Import**:
@@ -101,7 +115,75 @@ The approved-or-blocked verdict on one attachment location, which every copy con
 _Avoid_: approval check (names a step, not the verdict), source validation (validation is the lexical layer's job)
 
 **Citation**:
-An in-text reference to one or more Zotero Items, rendered through the `cite` template. Always a single inline line of text, wherever it renders. In editor text: an `@key` token. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citation key through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
+An in-text reference to one or more Zotero Items, rendered through the `cite` template. Always a single inline line of text, wherever it renders. In editor text: an `@key` token; during Pandoc export, a wikilink to a Literature Note is a normal parenthetical Citation whose current citation key comes from the associated Zotero Item. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citation key through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
+
+**Citation Fragment** _(Pandoc export)_:
+The `#cite:...` fragment of a Literature Note wikilink, carrying Pandoc-specific citation details as named key-value parameters. Parameter values use URI percent encoding so the fragment remains safe inside a Markdown wikilink; other wikilink fragments keep their heading or block-link meaning.
+_Avoid_: hash, citation hash
+
+**Citation Run** _(Pandoc export)_:
+A same-line sequence of two or more Literature Note wikilinks separated only by semicolons and optional whitespace, converted into one grouped Citation. Any other text ends the run.
+_Avoid_: citation group (the group is the resulting Citation, not the source syntax), citation list
+
+**Entry Marker**:
+The marker a numeric CSL style renders ahead of each bibliography entry — the entry's citation number wrapped in the style's own affixes, such as `[1]` or `1.`. It belongs to the Citation and References Style, not to ZotLit: a sorted style can give the same Item a different Entry Marker across renders, and a non-numeric style produces none.
+_Avoid_: serial number, reference index, gutter number, Entry Serial (ZotLit's positional number, not the style's)
+
+**Entry Serial**:
+The 1-based position of a rendered entry in the References Sidebar's bibliography-ordered list — ZotLit-assigned and occurrence-independent, unlike the style-owned Entry Marker and the first-occurrence Reference Number. When a citation's formatted text contains a footnote the inline surfaces cannot render, the Entry Serial of each cited entry appears superscript in place of that footnote and in the sidebar gutter, an entry's own Entry Marker keeping precedence in the gutter.
+_Avoid_: serial number, footnote number (the document format's counter, which never renders here), fallback marker (names the mechanism, not the number)
+
+**Openable Attachment**:
+An Attachment of a cited Item whose path names a file, so Zotero's reader can be sent to it — the stored modes and both linked-file forms. A bare web link carries no file, and neither does a row whose path does not parse, so the References Sidebar offers neither. The file's format does not decide it: a PDF, an EPUB, a web snapshot, and an office document all qualify, and Zotero owns what happens to a format its reader cannot render.
+_Avoid_: PDF attachment (the format is not the rule), openable file
+
+**Reference Number**:
+An active-document identifier assigned to each distinct Literature Note Citation by first occurrence. It appears in editor widgets and in the References Sidebar's minimal reference list when no engine renders; repeated Citations share the same number, and the Markdown source stays unchanged.
+_Avoid_: citation key, reference index, Entry Serial (bibliography-ordered, not first-occurrence)
+
+**Reference Error** _(Obsidian)_:
+A References Sidebar entry for an unresolved or ambiguous Citation Key, a missing Item, a malformed Citation Fragment while Wikilink Citations is on, or a source-backed Item omitted from a completed bibliography rendering.
+_Avoid_: broken reference, missing reference (names only one cause)
+
+**References Sidebar** _(Obsidian)_:
+The active-document view of each distinct Literature Note Citation and its occurrences, cited Item, and Openable Attachments. Its engine-rendered form follows the Citation and References Style's bibliography order and Entry Markers. Its minimal form follows first-occurrence order and Reference Numbers when the Pandoc Engine or selected style is unavailable; a rendering failure also shows its error instead of retaining stale formatted entries.
+_Avoid_: bibliography sidebar, reference list pane
+
+**Copied Bibliography** _(Obsidian)_:
+A complete, error-free point-in-time rendering of the active Markdown file's current Document Citation Set, copied as portable entry-only HTML and plain text for use outside that file. It has no ownership relationship with the Markdown source and does not update after copying; export generates its own bibliography from the Citations in the source.
+_Avoid_: inserted bibliography, managed bibliography, bibliography export
+
+**Cited By Sidebar** _(Obsidian)_:
+The active-Literature-Note view of every Citation Occurrence in the vault that resolves to the same Item, grouped by citing note. Each citing note contributes the occurrences its own Document Citation Set holds, so the Pandoc Citations and Wikilink Citations choices decide membership here as they do on every other citation-aware surface, and a source change refreshes the view immediately.
+_Avoid_: backlinks (Obsidian's view omits literal Pandoc citations), reverse references, incoming citations
+
+**Citation Context** _(Obsidian)_:
+The raw source range shown around one Citation Occurrence in the Cited By Sidebar. Its initial range contains every source line spanned by the occurrence, and the user can extend it independently before or after.
+_Avoid_: matched line, context preview, source preview
+
+**Citation and References Style**:
+The Zotero-installed CSL style used for both Document Citation Text and rendered entries in the References Sidebar. A vault selection supplies the default, and a document's `zotlit-csl` property can select its own installed style by CSL ID. Zotero owns style installation; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
+_Avoid_: citation style (conflicts with the `cite` Template's format), references style (omits in-text Citations), CSL file (names the file, not the selection)
+
+**Resolved CSL Style**:
+The standalone CSL file that ZotLit derives from a Zotero-installed Citation and References Style. For an independent style, it contains that style. For a dependent style, it combines the parent style's formatting with the dependent style's default locale. The app, built-in export, and native Pandoc integration use the same resolver; the `zotlit:csl` command materializes a content-addressed file and returns its absolute path.
+_Avoid_: parent CSL file (loses the dependent style's locale), exported style (suggests a user-owned copy)
+
+**Citation Locale**:
+The locale the CSL processor uses for localized terms, dates, names, and collation in one document. Document Language overrides the vault Citation Locale; Style Default delegates to the selected CSL style, then to the processor fallback. It is independent of Obsidian's interface language and an Item's language.
+_Avoid_: citation language, interface language, item language
+
+**Document Language** _(Pandoc)_:
+The main language declared by a note's standard Pandoc `lang` metadata, which also supplies its explicit Citation Locale. **Set citation presentation** labels this value **Document language**; choosing **Use vault citation locale and remove document language** removes `lang` and restores the vault Citation Locale for citation processing.
+_Avoid_: citation language (names only one effect), ZotLit language
+
+**Citation Presentation**:
+The document-specific combination of Citation and References Style and Citation Locale shared by Document Citation Text, the References Sidebar, the Citation Popover, the Copied Bibliography, and the initial built-in export choices. Vault selections supply defaults that `zotlit-csl` and `lang` can override; an invalid document override leaves citation source visible, shows the minimal References Sidebar with a note-scoped error, and keeps bibliography copy unavailable instead of silently falling back.
+_Avoid_: citation format (omits references and locale), render settings
+
+**Pandoc Engine**:
+The Pandoc WASM binary that formats references and runs the built-in export, pinned per plugin release to one upstream release asset and its SHA-256. A user starts the download from settings; ZotLit verifies the bytes against the pin before they become the cache, stores them uncompressed and content-addressed, and shares them with every vault on the device. Uninstall reaches the whole device. The engine's absence is a normal mode, and its download, checksum, and startup failures each name themselves so one fallback surface guides the user out.
+_Avoid_: Pandoc install (Pandoc CLI is a separate, user-owned install), bundled Pandoc (the plugin never ships the binary)
 
 **Embedded Item Data**:
 A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
@@ -117,7 +199,7 @@ A pinpoint reference within a cited work (CSL locator), e.g. a page number, with
 ### Citation insertion
 
 **Citation Suggester** _(Obsidian)_:
-The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — primary format by default; a trailing `/` in the query or Shift+Enter selects the secondary format. Distinct from the command-palette insert modal.
+The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — primary format by default; a trailing `/` in the query or Shift+Enter selects the secondary format. It remains available independently of the Document Citation Set and In-text Citation Rendering. Distinct from the command-palette insert modal.
 _Avoid_: autocomplete, citation picker, editor suggester (names the mechanism, not the feature)
 
 **Bracket Trigger**:
@@ -128,18 +210,101 @@ _Avoid_: default trigger
 The opt-in Citation Suggester trigger: a bare ASCII `@` typed at a word boundary, never mid-word. Off by default. Having no closing delimiter, its query ends at the first space; an underscore in the query stands for a space in the search.
 _Avoid_: mention trigger, @-suggester
 
-**Citation Key Links** _(Obsidian)_:
-An optional editor feature that makes bracketed citation keys act as Obsidian internal links in Live Preview and Source mode, using the configured Citation Key Property to find Literature Notes. It starts off for new users and stays on when earlier settings migrate.
-_Avoid_: citekey click, citation click
+**Citekey Editor Treatment** _(Obsidian)_:
+The editor surface that In-text Citation Rendering and Citekey Navigation share for literal Pandoc citations. In Live Preview it carries the Citekey Widget while rendering is on; in either editor mode it supplies navigation targets while Citekey Navigation is on. With both choices off, ZotLit adds no visible treatment.
+_Avoid_: citekey click, citation click, Citation Key Links (the retired feature it replaces)
+
+**Citekey Widget** _(Obsidian)_:
+The Live Preview decoration that replaces a whole literal Pandoc Citation — a Citation Cluster or a bare author-in-text key — with its Document Citation Text. The source stays visible while the Pandoc Engine cannot supply formatted text and whenever the selection touches that citation; the document's other citations keep their formatted text. Source mode always shows the source.
+_Avoid_: citation preview, inline render (names the effect, not the decoration)
+
+**Rendered Citation**:
+The element a Citation's formatted text is shown in, on either surface that shows one — the Citekey Widget in Live Preview, and the Citekey Reading Rendering's span in reading mode. Both carry the same class and can become Citekey Navigation targets while Open Citations as Links is on.
+_Avoid_: citation span, formatted citation (names the text, not the element it sits in)
+
+**In-text Citation Rendering** _(Obsidian)_:
+The default-on presentation choice that shows every recognized Citation as a Rendered Citation in Live Preview and reading mode. Turning it off leaves each source in Obsidian's native presentation; Source mode always shows the Markdown source, and the choice does not change citation membership, Citekey Navigation, citation insertion, or built-in Pandoc export. A source excluded from the Document Citation Set, or active under neither rendering nor Citekey Navigation, receives no public ZotLit styling class.
+_Avoid_: citation rendering (ambiguous with reference rendering), citation display (does not say formatted or native), editor rendering (also applies to reading mode)
+
+**Document Citation Text**:
+The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set and a position-dependent style renders each Citation Occurrence by its place in the document, so two occurrences of one source can read differently and each in-text surface shows the text of its own occurrence; a surface that cannot tell which occurrence it shows falls back to the source's first-occurrence text. Every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
+_Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
+
+**Citekey Navigation** _(Obsidian)_:
+The interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, click, and the open-under-cursor palette commands, all routed through one flow; what hovering shows belongs to the Hover Action. Open Citations as Links chooses what a plain click does and gates the palette commands; Mod+click always opens. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; a Literature Note wikilink joins the click surface only while it shows a Rendered Citation, and keeps Obsidian's native navigation otherwise.
+_Avoid_: citekey click (one gesture of the surface, not the concept), citekey links
+
+**Open Citations as Links** _(Obsidian)_:
+The per-vault choice of what a plain click on a Rendered Citation does, for literal Pandoc citations and Wikilink Citations alike: open the Literature Note (on), or — off, the default — place the cursor in the citation's Markdown source in Live Preview and do nothing in reading mode. Mod+click always opens the note; an unrendered citation keeps its surface's native click. Independent of the Hover Action.
+_Avoid_: Open Pandoc Citations as Links (the retired Pandoc-only scope), citation click toggle
+
+**Hover Action** _(Obsidian)_:
+The per-vault choice of what hovering a recognized citation or Literature Note wikilink shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover.
+_Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
+
+**Citation Popover** _(Obsidian)_:
+The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — with the three action buttons per entry in a cursor-proximal row. It is one Hover Action choice; the native page preview is another, and hover never shows both.
+_Avoid_: concise popover (the working name), hover tooltip, hover card
+
+**Citekey Reading Rendering** _(Obsidian)_:
+The reading-mode surface of In-text Citation Rendering for literal Pandoc citations: a Markdown post-processor replaces each complete Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text. When any item in one Citation is unresolved, or the Pandoc Engine cannot supply its formatted text, that whole Citation stays unchanged. Code, math, and links are left alone; a Literature Note wikilink is the Wikilink Reading Rendering's surface, not this one's.
+_Avoid_: reading-mode widget (a widget is the Live Preview decoration), citation preview
+
+**Wikilink Editor Treatment** _(Obsidian)_:
+The Live Preview surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink shows its Rendered Citation, while drag and conceal interaction stay Obsidian's and click follows Open Citations as Links; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. Cursor or selection contact restores the raw text; Source mode always shows raw text.
+_Avoid_: wikilink styling (the retired marks-only scope), wikilink conceal
+
+**Wikilink Reading Rendering** _(Obsidian)_:
+The reading-mode surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink's display text becomes its Rendered Citation while the link's target stays Obsidian's and click follows Open Citations as Links; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. When the Pandoc Engine cannot supply formatted text, the native link stays visible.
+_Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 
 ### Index and identity
 
-**Citation Key Property**:
-The configurable Literature Note frontmatter property whose non-empty string value Citation Key Links use to map a citation key to a Literature Note. It defaults to `citekey` and is an ordinary Managed Frontmatter field.
-_Avoid_: citekey frontmatter (names only the default property), resolver key
+**Library Scope**:
+The set of Libraries used for discovery and unqualified batch operations. It is either All Libraries or a non-empty set of Selected Libraries; unavailable selections remain part of the scope while available Libraries continue to serve discovery.
 
 **Note Index**:
-A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. While Citation Key Links are enabled, it also maps each Literature Note's Citation Key Property value; metadata-cache changes keep the mappings current, and the Literature Note key set answers the companion's `GET /literature-notes` note-status query after the first full scan settles.
+A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the Companion's `GET /literature-notes` note-status query after the first full scan settles.
+
+**Citation Index**:
+The plugin-owned, internal vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citations and Literature Note wikilinks. It tracks derived source facts independently of which citation sources the user includes; the Document Citation Set applies those choices for citation-aware consumers. Reset Citation Index remains a Diagnostics recovery action that rebuilds this derived data without changing vault files.
+_Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
+
+**Citekey Resolution Snapshot**:
+The Citation Index's point-in-time answer for mapping Citation Keys to Items. Citation Key discovery covers the available Libraries in Library Scope; reverse lookup by exact Indexed Key covers every local Library.
+_Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuild)
+
+**Ambiguous Citation Key**:
+A Citation Key that names more than one Item in Library Scope, whether the candidates are in one Library or several Libraries. Distinct from `duplicate-citation-key`, a document-scoped collision among cited works.
+_Avoid_: duplicate citation key, citation key conflict
+
+**Citation Occurrence**:
+One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
+_Avoid_: citation instance, match, hit
+
+**Citation Syntax**:
+One of the two written forms a citation takes in a note body — a literal Pandoc citation key, or a wikilink to a Literature Note. Every Citation Occurrence has exactly one syntax.
+_Avoid_: citation format; citation style (collides with CSL citation styles)
+
+**Omitted Occurrence**:
+A Citation Occurrence that stays outside an answer because the Pandoc Citations or Wikilink Citations choice excludes its Citation Syntax. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
+_Avoid_: skipped citation, filtered occurrence (both name the mechanism, not the fact)
+
+**Document Citation Set**:
+The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, and malformed Citation Fragments stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
+_Avoid_: citation universe, rendered citations (presentation, not membership)
+
+**Citation Cluster**:
+The bracketed literal-citekey syntax `[see @a, p. 3; @b]` — one `;`-separated item per citekey, each carrying an optional prefix and suffix, and `-@` to suppress the author. It is the source text a Citation Index scan and an editor widget both read; the Citation Run is its wikilink counterpart in Pandoc export.
+_Avoid_: citation group (names the result, not the source syntax), bracketed citation
+
+**Pandoc Citations**:
+The default-on choice to include literal Pandoc citation syntax, such as `@doe2024` and `[@doe2024]`, in the Document Citation Set. Turning it off leaves the source visible and excludes those occurrences from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index or changing citation insertion and export.
+_Avoid_: citekey indexing (names an internal mechanism), literal citations (omits the syntax convention)
+
+**Wikilink Citations**:
+The default-off choice to include eligible Literature Note wikilinks in the Document Citation Set. Turning it off leaves them as native Obsidian links and excludes them from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index or changing built-in Pandoc export.
+_Avoid_: wikilink as citekey (the working name), link citations
 
 ### Zotero connection
 
@@ -156,8 +321,14 @@ _Avoid_: allowed folder, trusted directory (implies a broader grant than one Att
 **Read Mode**:
 The strategy ZotLit uses to open `zotero.sqlite` while Zotero is running and holds the file exclusively. Configured per vault (synced) as one of four values: Auto, Reflink clone, Full copy, Immutable source. Auto resolves to one of the three concrete modes at runtime.
 
+**Main Identity**:
+The identity of one observed state of the main Zotero database file. It combines the file identity and size with the complete SQLite page-1 header, including the change counter that advances on rollback-journal commits.
+
+**WAL Generation**:
+The identity of one observed write-ahead log generation. It distinguishes an absent, empty, unstable, or present WAL; a present generation is identified by its WAL header and size. Two source fingerprints match when their path, Main Identity, and WAL Generation match; an unstable generation never matches.
+
 **Reflink Clone** _(Read Mode)_:
-Creates a lightweight snapshot of the database files into a temporary directory and opens the snapshot read-only. Sees committed and recent uncommitted edits. Default on macOS (via `clonefile`); unavailable on filesystems that do not support reflinking.
+Creates a lightweight snapshot of the database files into a temporary directory and opens the snapshot read-only. Sees committed changes that Zotero has not yet written to the main database file. Default on macOS (via `clonefile`); unavailable on filesystems that do not support reflinking.
 _Avoid_: copy-on-write clone (user-facing docs avoid this term)
 
 **Full Copy** _(Read Mode)_:
@@ -171,8 +342,20 @@ _Avoid_: direct read, read-only mode (all modes are read-only)
 ### Releases and onboarding
 
 **Resource Release**:
-The release that carries what an installed build downloads at runtime — the Language Packs of every locale except the bundled base one, and the template data JSON Schemas. One exists per plugin release, named for that version, holding the assets built from the same commit; the plugin's own release carries only the three files the Obsidian community-plugin scanner accepts.
+The version-matched release that carries downloadable resources outside the plugin bundle: Language Packs and template data JSON Schemas. One exists per plugin release, named for that version, holding assets built from the same commit; the plugin downloads Language Packs at runtime, while agents use CLI guides to download schemas when needed. The installed plugin supplies its matching Pandoc integration files through its own agent and UI surfaces.
 _Avoid_: pack release, asset release
+
+**Pandoc Integration Pair**:
+The matching, co-located `zotlit-cite.lua` and `zotlit.yaml` files for one installed ZotLit version. ZotLit supplies and replaces them as one exact pair.
+_Avoid_: Pandoc bundle, filter files
+
+**Native Pandoc Workflow**:
+One local Markdown input converted by a user-installed Pandoc, with the Pandoc Integration Pair resolving Literature Note Citations through a running Obsidian instance.
+_Avoid_: external export, CLI export
+
+**Pandoc CLI Guide**:
+The agent-facing reference for ZotLit's part of native Pandoc export: obtaining the matching integration files and using the resolver contract. It assumes Pandoc knowledge; general Pandoc setup and usage stay outside ZotLit.
+_Avoid_: Pandoc installer, Pandoc setup command
 
 **Welcome View** _(Obsidian)_:
 The onboarding tab opened directly in the active leaf on the plugin's first launch in a vault — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. Combines quick-start steps, live setup actions, a Zotero connection status readout, documentation links, and (in the upgraded state) the Migration Prompt.
@@ -199,4 +382,4 @@ release locations, consent copy, notices, and settings UI.
 ### Protocol
 
 **Protocol Action**:
-A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Zotero companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the companion's `GET /literature-notes` note-status query from the Note Index.
+A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the Companion's `GET /literature-notes` note-status query from the Note Index.

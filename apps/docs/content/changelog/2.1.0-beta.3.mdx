@@ -1,0 +1,65 @@
+---
+version: "2.1.0-beta.3"
+date: "2026-08-18"
+companion: "2.1.0-beta.0"
+description: "Zotero 10 support, library scope, ambiguous citation keys"
+---
+
+## Highlights
+
+### Zotero 10 support
+
+ZotLit now supports Zotero 10 as well as Zotero 9.
+
+Zotero 10 changed how it stores recent edits, so changes made while Zotero was open could stay invisible to ZotLit. The Companion now keeps the database current for ZotLit automatically. When you switch from Zotero to Obsidian, your changes are already there, whether or not live updates are enabled. A new **Database Status** panel on the Zotero sidebar confirms that recent changes have reached the database and lets you trigger a manual update if something went wrong. See [Fix Zotero changes that do not appear](/docs/how-to/fix-stale-data) for details.
+
+### Library scope
+
+ZotLit now works across several Zotero libraries at once. **Library scope** in **Settings › ZotLit**, decides which libraries item search, citation key resolution, and the library-wide commands cover. It replaces the old **Default library** setting.
+
+Two modes:
+
+- **All libraries** follows your Zotero database, so a group library you join later is in scope at once.
+- **Selected libraries** stays exactly as you set it, and a group library you join later stays out until you add it.
+
+One search now spans every library in scope, in a single relevance order. While more than one library can contribute, each result names the library its item comes from.
+
+**ZotLit: Create or update all literature notes** and **ZotLit: Import all child and standalone notes** cover the whole scope too, and their confirmation groups rows by library. Menu entries and links from Zotero still target the exact library they came from, whether or not it is in your scope.
+
+A group you leave keeps its place in **Selected libraries**, marked unavailable, so a temporary absence does not erase your choice. A library-wide run continues over the libraries that are available and states how many it skipped. See [Settings › Library scope](/docs/reference/settings#library-scope).
+
+A scope ZotLit cannot read stays on disk as it is. ZotLit searches **My Library** alone, marks the setting with a warning, and clears it as soon as you set the scope again.
+
+**What the upgrade sets:** upgrading selects **Selected libraries** with **My Library** alone, whatever library you had selected before, so your search scope stays as narrow as it was. Switch to **All libraries**, or add your group libraries, to search wider. A fresh installation starts at **All libraries**.
+
+### Citation keys that match several items
+
+One citation key can sit on two Zotero items. That happens with twins in a single library, and with the same key in two libraries you now have in scope. ZotLit used to take the first match it found. It now reports the ambiguity instead of choosing for you:
+
+- Opening such a citation asks which item you mean, listing every candidate with its library and item key. The item you pick opens by its own identity.
+- Inserting one is refused, with a notice asking you to change the key in Zotero. Inserted text carries the key alone, which would no longer name the item you picked.
+- The References Sidebar reports a Reference Error listing the candidates, with its **Open literature note** action disabled. The citation popover names them too, and hover page preview shows nothing.
+- Themes can style the state through the new `zt-citation-key-ambiguous` class. See [Theme hooks](/docs/reference/theme-hooks).
+
+To resolve one, give one of the items a different citation key in Zotero, or narrow your library scope to the library you meant.
+
+## What's New
+
+### Citation style and language per note
+
+A note can now render its citations under its own style and language instead of the vault-wide selection. **ZotLit: Set citation presentation**, also in the note's **More options** menu, opens a dialog on what the note reads today and writes both choices in one pass.
+
+The choices live in the note's own properties: `zotlit-csl` names a style installed in Zotero, and standard Pandoc `lang` names the document language. Removing a property returns that note to the vault selection.
+
+In-text citations, the References Sidebar, the Citation Popover, the copied bibliography, and the built-in export all follow the note's own presentation.
+
+### Citation locale
+
+A new **Citation locale** setting under **Settings › ZotLit › Citations** sets the language for citation terms, dates, names, and sorting across the vault. It takes a language tag such as `en-US`, `de`, or `zh-CN`.
+
+Leaving it empty keeps the language the selected style declares. See [Settings › Citations](/docs/reference/settings#citations).
+
+## Bug Fixes
+
+- Fixed slow or broken database refreshes when the Zotero data directory sits on a different drive than the system temp folder, such as an external drive on macOS.
+- Fixed dragging an annotation from the annotation view inserting the raw highlight text, or the annotation key for a sticky note, instead of the rendered annotation template. The insert only recovered after pressing **Link to Zotero item** again.

@@ -1,23 +1,21 @@
-import { serve, type ServerType } from "@hono/node-server";
+import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 
-import {
-  type ImportMode,
-  type ItemUpdate,
-  type NotifyEvent,
-  type ReaderActive,
-  type ReaderAnnotSelect,
-  type UpdateScope,
+import type {
+  DbUpdated,
+  ImportMode,
+  NotifyEvent,
+  ReaderActive,
+  ReaderAnnotSelect,
+  UpdateScope,
 } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import { type NoteIndex } from "@/services/note-index/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import {
-  type Settings,
-  type SettingsService,
-} from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { Settings, SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { createLiveUpdateApp } from "./app";
 
@@ -38,7 +36,13 @@ export interface ReaderTarget {
 }
 
 export interface LiveUpdateEvents {
-  "item/update": (event: ItemUpdate) => void;
+  /**
+   * The companion's Freshness Signal: the Zotero database changed and the
+   * main database file is as current as the companion can make it.
+   * Payload-free by design — subscribers treat it as a refresh trigger,
+   * never as data.
+   */
+  "db/updated": (event: DbUpdated) => void;
   /**
    * A batch literature-note update requested over `PUT /literature-notes` —
    * the companion's fallback when the id list is too long for an `obsidian://`
@@ -135,7 +139,7 @@ export class LiveUpdateService extends Service<void> {
   /** Fan a parsed notify event out to its typed channel. */
   #dispatch(event: NotifyEvent): void {
     switch (event.event) {
-      case "item/update":
+      case "db/updated":
         this.#emitter.emit(event.event, event);
         break;
       case "reader/annot-select":

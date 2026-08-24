@@ -1,13 +1,18 @@
 // Pure branch decision for the once-per-launch release check.
 
 import gt from "semver/functions/gt";
+import gte from "semver/functions/gte";
+import lt from "semver/functions/lt";
 import valid from "semver/functions/valid";
 
-import { type HydrationOrigin } from "@/services/settings/classify";
+import type { HydrationOrigin } from "@/services/settings/classify";
 
 import { V1_TEMPLATE_FOLDER } from "./constants";
 
+const ZOTERO_10_COMPANION_RELEASE = "2.1.0";
+
 export type ReleaseBranch =
+  | "companion-notice"
   | "welcome-upgraded"
   | "welcome-fresh"
   | "update-notice"
@@ -111,6 +116,17 @@ export function decideRelease(input: ReleaseCheckInput): ReleaseDecision {
   // reinstall — never notify.
   if (recordedVersion === null || valid(recordedVersion) === null) {
     return { branch: "none", recordVersion, setMigrationPending };
+  }
+
+  if (
+    lt(recordedVersion, ZOTERO_10_COMPANION_RELEASE) &&
+    gte(currentVersion, ZOTERO_10_COMPANION_RELEASE)
+  ) {
+    return {
+      branch: "companion-notice",
+      recordVersion,
+      setMigrationPending,
+    };
   }
 
   // A strict semver increase over the recorded version is the only update

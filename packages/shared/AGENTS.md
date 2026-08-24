@@ -8,10 +8,10 @@ Shared utilities consumed by multiple packages — app-agnostic.
 
 ```ts
 // correct
-import { Temporal } from "./temporal";
+import { createNanoEvents } from "./nanoevents";
 
 // wrong — bundler resolution, not Node ESM
-import { Temporal } from "./temporal.ts";
+import { createNanoEvents } from "./nanoevents.ts";
 ```
 
 ## Logging
@@ -21,7 +21,7 @@ Import `getLogger` directly from `@logtape/logtape` with a category rooted at `[
 ```ts
 import { getLogger } from "@logtape/logtape";
 
-const logger = getLogger(["zotlit", "shared", "temporal"]);
+const logger = getLogger(["zotlit", "shared", "nanoevents"]);
 ```
 
 Never call `configure()` here — that belongs to the consuming app.

@@ -1,5 +1,5 @@
 // Pure filtering and derived data for the annotation view's search & filter surfaces.
-import { type AnnotViewItem } from "@zotlit/db";
+import type { AnnotViewItem } from "@zotlit/db";
 
 export interface AnnotFilter {
   /** Case-insensitive substring query; "" disables the query group. */

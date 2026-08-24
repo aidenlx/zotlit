@@ -1,16 +1,18 @@
 ---
 title: "Set up live updates"
-description: "Enable the ZotLit server and the companion's notify preference so Zotero pushes changes to Obsidian automatically."
+description: "Enable optional live updates so Zotero pushes changes to Obsidian automatically."
+introduced: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-Live updates let the companion push changes to Obsidian as you read and annotate in Zotero. The annotation view's reader-following mode and automatic database refreshes (keeping ZotLit's item data current without a manual refresh) both depend on this connection.
+ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read and annotate in Zotero. The annotation view's reader-following mode and automatic database refreshes both depend on this optional connection.
 
 <Callout type="info" title="When you do not need this">
-  Basic companion actions (opening items, updating notes, importing notes from
+  Basic Companion actions (opening items, updating notes, importing notes from
   the Zotero context menu) work through protocol links with no server. You only
   need live updates for real-time push (reader-following, instant database
   refresh when Zotero data changes).
@@ -28,14 +30,14 @@ Live updates let the companion push changes to Obsidian as you read and annotate
   <Step>
     ### Turn on the listener
 
-    Enable **Receive updates from Zotero**. This starts the ZotLit server (a local HTTP listener) that the companion connects to.
+    Enable **Receive updates from Zotero**. This starts the ZotLit server (a local HTTP listener) that the Companion connects to.
 
     The default port is **9091** and the default hostname is **127.0.0.1**. You can change the port in the same settings page. The hostname setting is under the **Advanced** group: keep it on 127.0.0.1 unless you need network access from another machine.
 
   </Step>
 </Steps>
 
-## Enable the companion's notify preference
+## Enable the Companion's notify preference
 
 <Steps>
   <Step>
@@ -62,7 +64,7 @@ Live updates let the companion push changes to Obsidian as you read and annotate
 
 ## Verify the connection
 
-After enabling both sides, open an item in the Zotero PDF reader with the annotation view open in Obsidian. If reader-following is active, the annotation view updates to show that item's annotations. If it does not update, check that both the port and hostname match between the ZotLit server settings and the companion's Notify URL.
+After enabling both sides, open an item in the Zotero PDF reader with the annotation view open in Obsidian. If reader-following is active, the annotation view updates to show that item's annotations. If it does not update, check that both the port and hostname match between the ZotLit server settings and the Companion's Notify URL.
 
 ## Source ID filtering
 
@@ -72,8 +74,8 @@ The ZotLit server accepts requests only from the Zotero install whose profile an
 
 <Cards>
   <Card
-    title="Install the companion"
-    description="Install the ZotLit companion add-on in Zotero."
+    title="Install ZotLit Companion"
+    description="Install the required Zotero add-on."
     href="/docs/install-companion"
   />
   <Card

@@ -1,15 +1,11 @@
-import {
-  Eta,
-  EtaError,
-  EtaParseError,
-  type EtaConfig,
-  type TemplateFunction,
-} from "eta/core";
+import { Eta, EtaError, EtaParseError } from "eta/core";
+import type { EtaConfig, TemplateFunction } from "eta/core";
 
 import { basename } from "./basename";
 import { formatBlockquote } from "./blockquote";
 import { coerceOutput } from "./coerce";
-import { DEFAULT_AUTO_TRIM, type AutoTrim } from "./constants";
+import { DEFAULT_AUTO_TRIM } from "./constants";
+import type { AutoTrim } from "./constants";
 import { embed } from "./embed";
 import { filenameSuffix } from "./filename-suffix";
 import { replaceHelper } from "./replace-helper";

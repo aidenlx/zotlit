@@ -1,6 +1,8 @@
 ---
 title: "Collect debug logs"
 description: "Gather ZotLit logs, Zotero debug output, and Obsidian debug info to include when reporting a bug."
+introduced: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -8,12 +10,12 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 
-Bug reports often need logs from ZotLit, from the ZotLit companion, or from Obsidian itself. Each section below is self-contained. Follow only the one you were asked for.
+Bug reports often need ZotLit logs, Obsidian logs, or Zotero debug output from ZotLit Companion, the Zotero add-on. Each section below is self-contained. Follow only the one you were asked for.
 
 Once you have the logs, file the report in the [Bug reports discussion](https://github.com/aidenlx/zotlit/discussions/categories/bug-reports).
 
 <Callout type="warn" title="Cross-component bugs need both sides">
-  If the bug spans ZotLit and the companion (e.g. syncing, live update,
+  If the bug spans ZotLit and the Companion (e.g. syncing, live update,
   importing, or any action that rely on Zotero running), complete the setup
   steps in **both** [ZotLit logs](#zotlit-logs) and [Zotero debug
   output](#zotero-debug-output) before you reproduce the problem. Reproduce
@@ -41,9 +43,9 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
 
 <Steps>
   <Step>
-    ### Open the Diagnostics settings
+    ### Open the Maintenance settings
 
-    In Obsidian, open **Settings > ZotLit > Diagnostics**.
+    In Obsidian, open **Settings > ZotLit > Maintenance**.
 
   </Step>
   <Step>
@@ -61,7 +63,7 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   <Step>
     ### Save the log archive
 
-    Back in **Settings > ZotLit > Diagnostics**, click **Save log archive**. This exports the log file for sharing.
+    Back in **Settings > ZotLit > Maintenance**, click **Save log archive**. This exports the log file for sharing.
 
   </Step>
   <Step>
@@ -77,11 +79,58 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   you no longer need ongoing logging.
 </Callout>
 
+## Template data [#template-data]
+
+Collect this when a template rendered the wrong thing. The saved file holds the exact data your templates received for one item.
+
+<Steps>
+  <Step>
+    ### Open the explorer on the item
+
+    [Open the Template Data Explorer](/docs/how-to/explore-template-data) on the item that reproduces the problem.
+
+  </Step>
+  <Step>
+    ### Anchor at the annotation
+
+    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select **Explore as annotation template data**. For any other template, skip this step and stay at the note root.
+
+  </Step>
+  <Step>
+    ### Save the template data
+
+    Open the more-options menu on the explorer's tab and select **Save template data as JSON**. This downloads a file named like `zotlit-template-data-ABCD2345-20260512-143000.json`.
+
+    The file always holds the whole current root: the full note template data at the note root, or the annotation's data when the explorer is anchored at an annotation. A filter in the explorer does not narrow it.
+
+  </Step>
+  <Step>
+    ### Upload the file
+
+    Attach the saved file to your bug report.
+
+  </Step>
+</Steps>
+
+<Callout type="warn" title="Read the file before you share it">
+  The file contains Zotero library metadata for the item, absolute paths to
+  attachments inside your Zotero data folder, and your Zotero account username.
+  Review it before you attach it to a public bug report.
+</Callout>
+
+<Callout type="info" title="Placeholder markers are expected">
+  The explorer never writes files into your vault, so helpers that normally
+  create them, such as annotation excerpt images and imported child notes,
+  produce placeholder markers instead of real links. These appear as `$inert`
+  entries in the file, and helpers appear as `$helper` entries. Both are
+  expected in the saved data.
+</Callout>
+
 ## Zotero debug output
 
 <Steps>
   <Step>
-    ### Set the companion's log level
+    ### Set the Companion's log level
 
     In Zotero, open **Edit > Settings** (Windows/Linux) or **Zotero > Settings** (macOS), then select the **ZotLit** pane. Set **Log level** to **Debug**.
 
@@ -92,7 +141,7 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
     Go to **Help > Debug Output Logging** and click **Restart with Logging Enabled…**.
 
     <Callout type="warn" title="Do not use troubleshooting mode">
-      A confirmation dialog appears. Do not select **Restart in Troubleshooting Mode**: that mode disables all add-ons, including the companion, so no debug output would be captured.
+      A confirmation dialog appears. Do not select **Restart in Troubleshooting Mode**: that mode disables all add-ons, including the Companion, so no debug output would be captured.
     </Callout>
 
   </Step>
@@ -125,7 +174,7 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
 </Steps>
 
 <Callout type="info" title="Reset the log level">
-  Set the companion's **Log level** back to its previous value after collecting
+  Set the Companion's **Log level** back to its previous value after collecting
   the output.
 </Callout>
 
@@ -134,7 +183,7 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
 <Cards>
   <Card
     title="Settings"
-    description="Full reference for every ZotLit setting, including Diagnostics."
+    description="Full reference for every ZotLit setting, including Maintenance."
     href="/docs/reference/settings"
   />
   <Card

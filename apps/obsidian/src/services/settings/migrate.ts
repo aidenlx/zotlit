@@ -1,5 +1,6 @@
 import { isPlainObject } from "./classify";
-import { defaults, type LogLevel, type Settings } from "./schema";
+import { defaults } from "./schema";
+import type { LogLevel, Settings } from "./schema";
 
 const DEFAULT_CITEKEY_FIELD = {
   key: "citekey",
@@ -78,10 +79,6 @@ export interface ZotLitSettingsV0 {
   /** Watch Zotero's SQLite files and auto-refresh the in-memory database when Zotero writes changes. Default: true. */
   autoRefresh: boolean;
 
-  // --- Zotero database connection (v1: services/zotero-db/connector/settings.ts) ---
-  /** Zotero library id used as the citation source (1 = personal "My Library"; >1 = group libraries). Default: 1. */
-  citationLibrary: number;
-
   // --- Image excerpt importer (v1: services/zotero-db/img-import/settings.ts) ---
   /** How PDF image-annotation excerpts are brought into the vault: "symlink" links to Zotero's cache, "copy" duplicates the file, false disables import. */
   imgExcerptImport: false | "symlink" | "copy";
@@ -146,7 +143,6 @@ const V0_KEY_MAP: ReadonlyArray<
   ["serverHostname", "server.hostname"],
   ["autoPairEta", "template.auto-pair-eta"],
   ["autoRefresh", "zotero.auto-refresh"],
-  ["citationLibrary", "zotero.citation-library"],
   ["imgExcerptPath", "attachment.folder-path"],
 ];
 
@@ -275,4 +271,89 @@ export function migrateV2ToV3(raw: unknown): Record<string, unknown> {
     out["note.frontmatter-fields"] = [...fields, DEFAULT_CITEKEY_FIELD];
   }
   return out;
+}
+
+/**
+ * Absorb Citation Key Links into the citekey editor treatment. The stored value
+ * carries over verbatim — an absent key meant the v3 default, off — so an
+ * upgrade never changes whether citekeys are clickable, while the new default
+ * governs fresh installs only.
+ */
+export function migrateV3ToV4(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+
+  const { "citation.key-links": keyLinks, ...rest } = raw;
+  return { ...rest, "citation.citekey-editor": keyLinks === true };
+}
+
+/**
+ * Retire the Citation Key Property. Citekeys resolve against Zotero's native
+ * citation keys, so no frontmatter property participates; the managed
+ * `citekey` field stays as template output and is left untouched.
+ */
+export function migrateV4ToV5(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.key-links-frontmatter-key": _retired, ...rest } = raw;
+  return rest;
+}
+
+/**
+ * Rename Citekey Indexing to the Pandoc citation source control. The stored
+ * value keeps the user's existing literal-citation membership choice.
+ */
+export function migrateV5ToV6(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const {
+    "citation.citekey-indexing": citekeyIndexing,
+    "citation.wikilink-display": _retiredWikilinkDisplay,
+    ...rest
+  } = raw;
+  return typeof citekeyIndexing === "boolean"
+    ? { ...rest, "citation.pandoc-citations": citekeyIndexing }
+    : rest;
+}
+
+/** Rename Citekey Editor Treatment to the Pandoc navigation control. */
+export function migrateV6ToV7(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.citekey-editor": citekeyEditor, ...rest } = raw;
+  return typeof citekeyEditor === "boolean"
+    ? { ...rest, "citation.open-pandoc-links": citekeyEditor }
+    : rest;
+}
+
+/**
+ * Widen the Pandoc navigation control to every citation surface. Storage is
+ * sparse, so an absent key means the v7 default, on — the value is materialized
+ * to keep navigation for existing users, while the new default, off, governs
+ * fresh installs only.
+ */
+export function migrateV7ToV8(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "citation.open-pandoc-links": openPandocLinks, ...rest } = raw;
+  return {
+    ...rest,
+    "citation.open-as-links":
+      typeof openPandocLinks === "boolean" ? openPandocLinks : true,
+  };
+}
+
+/**
+ * Introduce Library Scope and retire the Default Library. Every upgraded
+ * installation lands on Selected Libraries holding My Library, whatever its
+ * Default Library was: an existing user keeps a conservative discovery scope
+ * and widens it deliberately, while the new default, All Libraries, governs
+ * fresh installs only. The Default Library value is dropped, because Library
+ * Scope is the only Library configuration left to read.
+ */
+export function migrateV8ToV9(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const { "zotero.citation-library": _retiredDefaultLibrary, ...rest } = raw;
+  return {
+    ...rest,
+    "zotero.library-scope": {
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    },
+  };
 }

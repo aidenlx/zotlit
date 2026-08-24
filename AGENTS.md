@@ -19,6 +19,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 - `mise` pins to Node 26 version (see `mise.toml`). It also runs `corepack enable` post-install to activate pnpm at the version declared in root `package.json`.
 - `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
+- Resolve tool availability from the current workspace environment. Use `pnpm exec` for workspace binaries; use the Mise-managed toolchain defined by `mise.toml`.
 
 ## Commands
 
@@ -33,6 +34,8 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
 | `pnpm review` / `pnpm review:fix`  | Obsidian guideline scan of `apps/obsidian` (ESLint). Release-time only — `release.ts` gates on it and CI re-runs it on `release/**` PRs. Blocks on errors; warnings are reported. |
 | `pnpm quality[:fix]`              | Runs lint, then format.                                                                                                     |
+| `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `tmp/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
+| `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 
@@ -70,12 +73,16 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [scratch-artifacts](policies/scratch-artifacts.md) — probe scripts and trial output go in workspace `tmp/`, not `/tmp`
 - [package and workspace roots](policies/package-roots.md) — package-root paths and pnpm workspace discovery
 - [logging](policies/logging.md) — LogTape, structured fields
+- [observability](policies/observability.md) — lean `info`; permanent `debug` / `trace` at decision points
 - [temporal-dates](policies/temporal-dates.md) — Temporal API, not Date/date-fns/dayjs
 - [vocabulary](policies/vocabulary.md) — canonical terms for Zotero keys, citation keys, and `citekey`
+- [CLI + skill pair](policies/cli-skill-pair.md) — tooling facts in the CLI; process, policy, and tone in the skill
+- [CLI help](policies/cli-help.md) — help and reference generated from handler code; yargs for Node.js, guide commands for Obsidian
+- [grouping](policies/grouping.md) — `Map.groupBy` / `Object.groupBy` for keyed grouping
 
 ### i18n
 
-User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics.
+User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
 
 User- and agent-facing copy has four sources: MDX under `apps/docs/content/`, i18n messages under `messages/`, Zotero companion locale files under `apps/zotero/locale/`, and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`. Use the canonical terms in [policies/vocabulary.md](policies/vocabulary.md).
 
@@ -101,4 +108,4 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Multi-context layout — `CONTEXT-MAP.md` at the repo root points to per-workspace `CONTEXT.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`.
+Multi-context layout — `CONTEXT-MAP.md` at the repo root points to per-workspace `CONTEXT.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`. Context names there (e.g. "Zotero Data Model") are heading labels for that map; code, comments, and user-facing copy keep the casing their own convention calls for (see i18n above for UI text).

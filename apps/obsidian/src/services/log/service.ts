@@ -21,21 +21,17 @@
  */
 
 import {
-  type LogLevel,
-  type Sink,
   configure,
   getConsoleSink,
   reset as resetLogtape,
 } from "@logtape/logtape";
-import { type Plugin } from "obsidian";
+import type { LogLevel, Sink } from "@logtape/logtape";
+import type { Plugin } from "obsidian";
 
 import { devToolsFormatter } from "@zotlit/shared/log-formatter";
 
 import { Service } from "@/services/service-base";
-import {
-  type Settings,
-  type SettingsService,
-} from "@/services/settings/service";
+import type { Settings, SettingsService } from "@/services/settings/service";
 
 import { createVaultFileSink } from "./vault-sink";
 

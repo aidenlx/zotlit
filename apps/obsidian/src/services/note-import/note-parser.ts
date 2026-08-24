@@ -13,18 +13,17 @@ import {
   getItemsByKey,
   getLibraryByGroupID,
   resolveCitedItem,
-  type Attachment,
-  type CitationItem,
-  type Item,
-  type ResolvedCiteRef,
-  type ZoteroRef,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
-import {
-  attachmentAbsPath,
-  parseAttachmentPath,
-  type AttachmentPathContext,
-} from "@zotlit/db/path";
+import type {
+  Attachment,
+  CitationItem,
+  Item,
+  ResolvedCiteRef,
+  ZoteroRef,
+} from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { attachmentAbsPath, parseAttachmentPath } from "@zotlit/db/path";
+import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -33,10 +32,11 @@ import {
   createNoteTurndown,
   encodeCalloutAttr,
 } from "@/lib/turndown";
-import { renderColorMark, type ColorMarkKind } from "@/lib/turndown/color-mark";
-import {
-  type AttachmentImport,
-  type SourceOrigin,
+import { renderColorMark, renderHighlight } from "@/lib/turndown/color-mark";
+import type { ColorMarkKind } from "@/lib/turndown/color-mark";
+import type {
+  AttachmentImport,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
 
 import {
@@ -46,8 +46,8 @@ import {
   parseEmbeddedCitations,
   parseEmbeddedItemSnapshots,
   parseNoteSchema,
-  type NoteAnnotation,
 } from "./note-marks";
+import type { NoteAnnotation } from "./note-marks";
 
 const logger = getLogger(["note-import", "note-parser"]);
 
@@ -57,6 +57,7 @@ export interface NoteParserDeps {
   client: NodeDatabaseClient;
   /** The note's library, scoping DB citekey and attachment lookups. */
   libraryID: number;
+  useColoredHighlightSyntax: boolean;
   /**
    * The note's embedded `data-citation-items` snapshot, read off the schema
    * container by {@link parseNote} and closed over by the
@@ -123,7 +124,8 @@ export function createNoteParser(
   deps: NoteParserDeps,
 ): TurndownService {
   return createNoteTurndown(Turndown, {
-    annotationExcerpt: resolveAnnotationExcerpt,
+    useColoredHighlightSyntax: deps.useColoredHighlightSyntax,
+    annotationExcerpt: resolveAnnotationExcerpt(deps.useColoredHighlightSyntax),
     citation: resolveCitation(deps),
     embeddedImage: resolveEmbeddedImage(deps),
   });
@@ -387,32 +389,31 @@ function citedLibraryID(
 }
 
 /**
- * Resolve a highlight/underline excerpt span to its linked inline mark
- * (highlight → linked `<mark>`, underline → linked `<u>`). Injected as the
- * converter's `annotationExcerpt` replacement; only spans reach it (image
- * excerpts are owned by the `embeddedImage` rule). A malformed payload keeps the
- * converted text.
+ * Resolve a highlight/underline excerpt span to its linked inline mark.
+ * Supported highlights can use Colored Highlight Syntax; underlines and
+ * fallback highlights use linked HTML. Only spans reach this replacement
+ * (image excerpts are owned by the `embeddedImage` rule). A malformed payload
+ * keeps the converted text.
  */
-const resolveAnnotationExcerpt: TurndownService.ReplacementFunction = (
-  content,
-  node,
-) => {
-  const el = node as Element;
-  const info = parseAnnotation(el);
-  if (!info) {
-    logger.warn("Invalid data-annotation payload", {
-      raw: el.getAttribute("data-annotation")?.slice(0, 100),
+function resolveAnnotationExcerpt(
+  useColoredHighlightSyntax: boolean,
+): TurndownService.ReplacementFunction {
+  return (content, node) => {
+    const el = node as Element;
+    const info = parseAnnotation(el);
+    if (!info) {
+      logger.warn("Invalid data-annotation payload", {
+        raw: el.getAttribute("data-annotation")?.slice(0, 100),
+      });
+      return content;
+    }
+    const kind = el.classList.contains("underline") ? "underline" : "highlight";
+    return renderAnnotationMark(info, content, {
+      kind,
+      useColoredHighlightSyntax,
     });
-    return content;
-  }
-  let kind: ColorMarkKind = "highlight";
-  if (el.classList.contains("underline")) {
-    kind = "underline";
-  } else if (el.classList.contains("highlight")) {
-    kind = "highlight";
-  }
-  return renderAnnotationMark(kind, info, content);
-};
+  };
+}
 
 function resolveEmbeddedImage(
   deps: NoteParserDeps,
@@ -474,23 +475,24 @@ function attachmentPathOrigin(attachment: Attachment): SourceOrigin {
 
 /**
  * Render a highlight/underline excerpt as an inline mark linking back to the
- * Zotero annotation. Delegates the mark HTML to {@link renderColorMark} (color
- * resolved through {@link annotationColorToName}); an unmapped hex (rare
- * Mendeley imports) falls back to the inline hex, and a missing attachment ref
- * drops the link but keeps the mark.
+ * Zotero annotation. Supported highlights can use Colored Highlight Syntax;
+ * underlines and fallback highlights use HTML. An unmapped hex (rare Mendeley
+ * imports) stays inline, and a missing attachment ref drops the link but keeps
+ * the mark.
  */
 function renderAnnotationMark(
-  kind: ColorMarkKind,
   info: NoteAnnotation,
   text: string,
+  options: { kind: ColorMarkKind; useColoredHighlightSyntax: boolean },
 ): string {
-  const mark = renderColorMark(
-    kind,
-    text,
-    info.color
-      ? { raw: info.color, name: annotationColorToName(info.color) }
-      : null,
-  );
+  const { kind, useColoredHighlightSyntax } = options;
+  const color = info.color
+    ? { raw: info.color, name: annotationColorToName(info.color) }
+    : null;
+  const mark =
+    kind === "highlight"
+      ? renderHighlight(text, color, useColoredHighlightSyntax)
+      : renderColorMark(kind, text, color);
   const href = annotationHref(info);
   return href ? `[${mark}](${href})` : mark;
 }

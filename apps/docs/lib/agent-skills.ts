@@ -1,4 +1,4 @@
-// Builds the ZotLit Template Agent Skill archive and discovery index.
+// Builds ZotLit Agent Skill archives and their discovery index.
 
 import { zipSync } from "fflate";
 import { execFileSync } from "node:child_process";
@@ -12,13 +12,21 @@ import { baseURL } from "./shared";
 
 export const AGENT_SKILLS_SCHEMA =
   "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
-export const SKILL_NAME = "zotlit-template";
-export const SKILL_REPOSITORY_PATH = `skills/${SKILL_NAME}/SKILL.md`;
-export const OPENAI_METADATA_REPOSITORY_PATH = `skills/${SKILL_NAME}/agents/openai.yaml`;
+export const SKILL_NAMES = [
+  "zotlit-template",
+  "zotlit-pandoc",
+  "zotlit-citations",
+] as const;
+export type AgentSkillName = (typeof SKILL_NAMES)[number];
+
+const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
 
 interface CreateAgentSkillsIndexOptions {
-  skill: Uint8Array;
-  archive: Uint8Array;
+  skills: readonly {
+    name: AgentSkillName;
+    skill: Uint8Array;
+    archive: Uint8Array;
+  }[];
   commitSha: string;
 }
 
@@ -40,12 +48,36 @@ export function resolvePinnedCommitSha(): string {
  * repository. Both the discovery index and the archive route render from
  * these same bytes at build time, so the digest always matches.
  */
-export async function readAgentSkillFiles(): Promise<AgentSkillFiles> {
+export async function readAgentSkillFiles(
+  name: AgentSkillName,
+): Promise<AgentSkillFiles> {
   const [skill, openAiMetadata] = await Promise.all([
-    readWorkspaceFile(SKILL_REPOSITORY_PATH),
-    readWorkspaceFile(OPENAI_METADATA_REPOSITORY_PATH),
+    readWorkspaceFile(`skills/${name}/SKILL.md`),
+    readWorkspaceFile(`skills/${name}/agents/openai.yaml`),
   ]);
   return { skill, openAiMetadata };
+}
+
+export function agentSkillArchiveStaticParams() {
+  return [{ commitSha: resolvePinnedCommitSha() }];
+}
+
+export async function serveAgentSkillArchive(
+  name: AgentSkillName,
+  params: Promise<{ commitSha: string }>,
+): Promise<Response> {
+  const { commitSha } = await params;
+  if (!isPinnedCommitSha(commitSha)) return new Response(null, { status: 404 });
+
+  return new Response(
+    createAgentSkillArchive(await readAgentSkillFiles(name)),
+    {
+      headers: {
+        "Cache-Control": IMMUTABLE_CACHE,
+        "Content-Type": "application/zip",
+      },
+    },
+  );
 }
 
 export function createAgentSkillArchive({
@@ -62,31 +94,29 @@ export function createAgentSkillArchive({
 }
 
 export function createAgentSkillsIndex({
-  skill,
-  archive,
+  skills,
   commitSha,
 }: CreateAgentSkillsIndexOptions): string {
-  const { name, description } = parseSkillMetadata(
-    new TextDecoder().decode(skill),
-  );
-  if (name !== SKILL_NAME) {
-    throw new Error(
-      `SKILL.md frontmatter name must match its '${SKILL_NAME}' directory.`,
-    );
-  }
-
   return `${JSON.stringify(
     {
       $schema: AGENT_SKILLS_SCHEMA,
-      skills: [
-        {
-          name,
+      skills: skills.map(({ name: directoryName, skill, archive }) => {
+        const { name, description } = parseSkillMetadata(
+          new TextDecoder().decode(skill),
+        );
+        if (name !== directoryName) {
+          throw new Error(
+            `SKILL.md frontmatter name must match its '${directoryName}' directory.`,
+          );
+        }
+        return {
+          name: directoryName,
           type: "archive",
           description,
-          url: `${baseURL}/.well-known/agent-skills/${SKILL_NAME}/${commitSha}/archive.zip`,
+          url: `${baseURL}/.well-known/agent-skills/${directoryName}/${commitSha}/archive.zip`,
           digest: digest(archive),
-        },
-      ],
+        };
+      }),
     },
     null,
     2,
@@ -103,6 +133,14 @@ async function readWorkspaceFile(repositoryPath: string): Promise<Buffer> {
 
 function digest(content: Uint8Array): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+function isPinnedCommitSha(value: string): boolean {
+  try {
+    return value === resolvePinnedCommitSha();
+  } catch {
+    return false;
+  }
 }
 
 function parseSkillMetadata(content: string): {

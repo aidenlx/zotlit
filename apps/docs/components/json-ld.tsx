@@ -1,4 +1,4 @@
-import { type Thing, type WithContext } from "schema-dts";
+import type { Thing, WithContext } from "schema-dts";
 
 import { serializeJsonLd } from "@/lib/structured-data";
 

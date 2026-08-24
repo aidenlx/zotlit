@@ -5,37 +5,16 @@
 // the immutable URL to one deployment.
 
 import {
-  createAgentSkillArchive,
-  readAgentSkillFiles,
-  resolvePinnedCommitSha,
+  agentSkillArchiveStaticParams,
+  serveAgentSkillArchive,
 } from "@/lib/agent-skills";
 
-const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
-
 // Prerender the archive for the commit the discovery index links to.
-export function generateStaticParams() {
-  return [{ commitSha: resolvePinnedCommitSha() }];
-}
+export { agentSkillArchiveStaticParams as generateStaticParams };
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ commitSha: string }> },
 ) {
-  const { commitSha } = await params;
-  if (!isPinnedCommitSha(commitSha)) return new Response(null, { status: 404 });
-
-  return new Response(createAgentSkillArchive(await readAgentSkillFiles()), {
-    headers: {
-      "Cache-Control": IMMUTABLE_CACHE,
-      "Content-Type": "application/zip",
-    },
-  });
-}
-
-function isPinnedCommitSha(value: string): boolean {
-  try {
-    return value === resolvePinnedCommitSha();
-  } catch {
-    return false;
-  }
+  return serveAgentSkillArchive("zotlit-template", params);
 }

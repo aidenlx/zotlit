@@ -1,6 +1,7 @@
 // Where each contract JSON Schema is published, and the contract-root vocabulary it names.
 
-import { CONTRACT_ROOTS, type ContractRoot } from "@zotlit/db";
+import { CONTRACT_ROOTS } from "@zotlit/db";
+import type { ContractRoot } from "@zotlit/db";
 
 import { resourceReleaseUrl } from "@/lib/constants";
 

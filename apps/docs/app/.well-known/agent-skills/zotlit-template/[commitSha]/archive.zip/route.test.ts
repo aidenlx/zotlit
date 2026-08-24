@@ -29,7 +29,8 @@ it("serves the deploy commit's archive from the checked-out files", async () => 
 
   const response = await getArchive(COMMIT_SHA);
   const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
-  const { skill, openAiMetadata } = await readAgentSkillFiles();
+  const { skill, openAiMetadata } =
+    await readAgentSkillFiles("zotlit-template");
 
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toBe("application/zip");

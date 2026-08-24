@@ -1,0 +1,40 @@
+{
+  "skill_name": "zotlit-pandoc",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Set up ZotLit's native Pandoc workflow for /Users/me/research/paper/Paper.md and export it to Paper.docx. I already have /Users/me/research/paper/references.json from Better BibTeX, and I want the integration files in /Users/me/research/paper/.pandoc.",
+      "expected_output": "Reads Obsidian CLI help and the live Pandoc CLI Guide first, retrieves and saves the complete version-matched pair to the selected folder, reuses the supplied bibliography, and runs the guide's defaults-based Pandoc command with quoted paths and fail-if-warnings.",
+      "files": [],
+      "assertions": [
+        "Reads `obsidian help zotlit` and the live `zotlit:pandoc-guide` before writing files or running Pandoc.",
+        "Retrieves and saves both integration files as one version-matched pair in the user-selected folder.",
+        "Reuses the supplied Better BibTeX CSL-JSON bibliography and lets the Lua filter call the resolver during the normal export.",
+        "Runs the defaults-based native Pandoc invocation with quoted paths and `--fail-if-warnings`."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "ZotLit was updated yesterday. Refresh the native Pandoc files in /Users/me/research/paper/.pandoc before I export again. zotlit-cite.lua looks old, but I customized my own Pandoc options in /Users/me/research/paper/publishing.yaml.",
+      "expected_output": "Reads current CLI help and guide, retrieves the current pair, compares both files, replaces both together because one is stale, and leaves the user-owned defaults file unchanged.",
+      "files": [],
+      "assertions": [
+        "Reads current Obsidian CLI help and the live Pandoc CLI Guide before changing files.",
+        "Compares both integration files byte for byte and replaces both when either differs.",
+        "Limits changes to the authorized integration pair folder and leaves the user-owned publishing.yaml unchanged."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "My native Pandoc export of /Users/me/research/paper/Paper.md failed with a ZotLit resolver message. Diagnose it. The workflow pair is in /Users/me/research/paper/.pandoc and the bibliography is /Users/me/research/paper/references.json.",
+      "expected_output": "Reads CLI help and the live guide, checks the current pair and failed run context, calls zotlit:resolve directly only for diagnosis, interprets its response through the live guide, checks resolved ids in the supplied bibliography, and retries through the normal filter path.",
+      "files": [],
+      "assertions": [
+        "Reads Obsidian CLI help and the live Pandoc CLI Guide before diagnostic actions.",
+        "Checks that the saved pair matches the installed pair before attributing the failure to citation resolution.",
+        "Calls `zotlit:resolve` directly only as a diagnostic step and uses the live guide to interpret its response.",
+        "Checks that each resolved Citation Key exists as an id in the supplied bibliography before retrying the normal Pandoc run."
+      ]
+    }
+  ]
+}

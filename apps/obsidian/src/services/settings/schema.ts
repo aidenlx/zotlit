@@ -1,14 +1,17 @@
 import { getLogLevels } from "@logtape/logtape";
 import * as v from "valibot";
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
 import {
   autoTrimSchema,
   DEFAULT_AUTO_TRIM,
   frontmatterFieldSchema,
-  type AutoTrim,
 } from "@zotlit/templates/constants";
+import type { AutoTrim } from "@zotlit/templates/constants";
 
+import {
+  DEFAULT_LIBRARY_SCOPE,
+  libraryScopeSchema,
+} from "@/services/library-scope/scope";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -51,20 +54,19 @@ export type { AutoTrim };
 const zoteroReadMode = v.picklist(["auto", "reflink", "copy", "immutable"]);
 export type ZoteroReadMode = v.InferOutput<typeof zoteroReadMode>;
 
+/**
+ * What hovering a recognized citation or Literature Note link shows. One hover
+ * result at a time: the Citation Popover and the page preview are never both
+ * reachable, and `off` leaves hover entirely to Obsidian.
+ */
+const hoverAction = v.picklist(["off", "popover", "page-preview"]);
+export type HoverAction = v.InferOutput<typeof hoverAction>;
+
 const serverPort = v.pipe(
   settingsNumber,
   v.integer(),
   v.minValue(0),
   v.maxValue(65535),
-);
-
-export const citationKeyPropertySchema = v.pipe(
-  v.string(),
-  v.nonEmpty("Citation key property is required"),
-  v.check(
-    (value) => value === value.trim(),
-    "Citation key property must not start or end with whitespace",
-  ),
 );
 
 export const schema = v.object({
@@ -74,12 +76,35 @@ export const schema = v.object({
   "citation.editor-suggester": v.boolean(),
   "citation.at-trigger": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
-  "citation.key-links": v.boolean(),
-  "citation.key-links-frontmatter-key": citationKeyPropertySchema,
+  /** Include Pandoc citation syntax in the shared document citation set. */
+  "citation.pandoc-citations": v.boolean(),
+  /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
+  "citation.wikilink-citations": v.boolean(),
+  /** Show recognized Citations with the selected CSL style. */
+  "citation.show-formatted": v.boolean(),
+  /**
+   * Navigate to the Literature Note when a Citation is clicked, on both Pandoc
+   * Citations and Literature Note wikilinks rendered as Citations.
+   */
+  "citation.open-as-links": v.boolean(),
+  /** CSL style ID; `null` renders with the citation engine's embedded style. */
+  "citation.references-style": v.nullable(v.string()),
+  /**
+   * Citation Locale as a BCP 47 tag; `null` or empty leaves the selected CSL
+   * style's own default locale in charge.
+   */
+  "citation.locale": v.nullable(v.string()),
+  /** What hovering a Citation shows, on every surface that carries one. */
+  "citation.hover-action": hoverAction,
+  /** Whether the Citation Popover needs a held Mod, per editing mode. */
+  "citation.hover-require-mod-source": v.boolean(),
+  "citation.hover-require-mod-live-preview": v.boolean(),
+  "citation.hover-require-mod-reading": v.boolean(),
 
   "note.literature-folder": v.string(),
   "note.frontmatter-fields": frontmatterFieldsSchema,
   "note.import-folder": v.string(),
+  "note.import-colored-highlights": v.boolean(),
   "note.import-annotations-as-template": v.boolean(),
 
   "server.enabled": v.boolean(),
@@ -93,7 +118,12 @@ export const schema = v.object({
 
   "zotero.auto-refresh": v.boolean(),
   "zotero.read-mode": zoteroReadMode,
-  "zotero.citation-library": settingsNumber,
+  /**
+   * Libraries used for item search, citation key resolution, and library-wide
+   * commands. Strict by design — an out-of-order or empty selection is broken
+   * input, not something to normalize; see `services/library-scope/scope.ts`.
+   */
+  "zotero.library-scope": libraryScopeSchema,
 
   "attachment.folder-path": v.nullable(v.string()),
   "attachment.import": v.boolean(),
@@ -116,11 +146,22 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.editor-suggester": true,
   "citation.at-trigger": false,
   "citation.show-citekey-in-suggester": false,
-  "citation.key-links": false,
-  "citation.key-links-frontmatter-key": "citekey",
+  "citation.pandoc-citations": true,
+  "citation.wikilink-citations": false,
+  "citation.show-formatted": true,
+  "citation.open-as-links": false,
+  "citation.references-style": null,
+  "citation.locale": null,
+  "citation.hover-action": "popover",
+  // Source mode keeps the modifier so plain-text editing is never interrupted,
+  // while the two rendered modes answer to bare hover.
+  "citation.hover-require-mod-source": true,
+  "citation.hover-require-mod-live-preview": false,
+  "citation.hover-require-mod-reading": false,
   "note.literature-folder": "literatures",
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",
+  "note.import-colored-highlights": false,
   "note.import-annotations-as-template": false,
   "server.enabled": false,
   "server.port": 9091,
@@ -131,7 +172,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,
   "zotero.auto-refresh": true,
   "zotero.read-mode": "auto",
-  "zotero.citation-library": USER_LIBRARY_ID,
+  "zotero.library-scope": DEFAULT_LIBRARY_SCOPE,
   "attachment.folder-path": null,
   "attachment.import": true,
   // Absent until the release check records a launch; see the release service.

@@ -1,22 +1,22 @@
-import { type App, type TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 
-import { getItemsByID, type Item, type ItemRef } from "@zotlit/db";
+import { getItemsByID } from "@zotlit/db";
+import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
-import {
-  type NoteFeature,
-  type UpdateResult,
-  type UpdateScope,
+import type {
+  NoteFeature,
+  UpdateResult,
+  UpdateScope,
 } from "@/services/note-feature/operations";
-import {
-  itemKeyFromFrontmatter,
-  type NoteIndex,
-} from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
+import { itemKeyFromFrontmatter } from "@/services/note-index/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
 
 /**
@@ -30,6 +30,8 @@ export interface SingleUpdateDeps {
   settings: SettingsService;
   noteFeature: NoteFeature;
   noteIndex: NoteIndex;
+  /** Which Libraries an unqualified library-wide update covers. */
+  libraryScope: Pick<LibraryScopeService, "resolveWith">;
 }
 
 /**

@@ -1,14 +1,17 @@
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { inspect } from "node:util";
-import { loadEnv, type Plugin } from "vite";
+import { loadEnv } from "vite";
+import type { Plugin } from "vite";
 
 import { installTemporaryAddon, reloadAddon } from "./remote-firefox.js";
 import {
+  resetCompanionReady,
   resolveDevPath,
   spawnZotero,
-  type ZoteroDevSession,
+  waitForCompanionReady,
 } from "./runner.js";
+import type { ZoteroDevSession } from "./runner.js";
 
 const PREFIX = "[zotero-dev]";
 const ENV_EXAMPLE_PATH = "apps/zotero/.env.example";
@@ -48,6 +51,19 @@ export function zoteroDevServerPlugin({
     session?.client.disconnect();
   };
 
+  const fail = (error: unknown): void => {
+    if (stopping) return;
+    const reason =
+      error instanceof Error ? error : new Error(formatUnknownError(error));
+    errorLog(reason.message);
+    stopping = true;
+    stop(reason);
+    process.exitCode = 1;
+    setTimeout(() => {
+      process.exit(1);
+    }, 100).unref();
+  };
+
   const onProcessSignal = (signal: NodeJS.Signals): void => {
     stopping = true;
     stop(new Error(`Received ${signal}`));
@@ -81,10 +97,18 @@ export function zoteroDevServerPlugin({
     const activeSession = await ensureSession();
 
     if (!installed) {
+      await resetCompanionReady(activeSession);
       info(`Installing ${addonId} from ${addonPath}`);
       await installTemporaryAddon(activeSession.client, addonPath);
       installed = true;
+      await waitForCompanionReady(activeSession, abortController.signal);
       info(`Installed ${addonId}`);
+      info(
+        JSON.stringify({
+          event: "paired-zotero-ready",
+          pid: activeSession.child.pid,
+        }),
+      );
     } else {
       await reload(activeSession);
     }
@@ -96,8 +120,10 @@ export function zoteroDevServerPlugin({
   };
 
   const reload = async (activeSession: ZoteroDevSession): Promise<void> => {
+    await resetCompanionReady(activeSession);
     info(`Reloading ${addonId}`);
     await reloadAddon(activeSession.client, addonId);
+    await waitForCompanionReady(activeSession, abortController.signal);
     info(`Reloaded ${addonId}`);
   };
 
@@ -113,6 +139,9 @@ export function zoteroDevServerPlugin({
     syncPromise = runSync();
     try {
       await syncPromise;
+    } catch (error) {
+      fail(error);
+      throw error;
     } finally {
       syncPromise = undefined;
     }
@@ -129,33 +158,20 @@ export function zoteroDevServerPlugin({
       devtools: env.devtools,
       signal: abortController.signal,
       onExit(error) {
-        if (stopping) return;
-        errorLog(error.message);
-        stopping = true;
-        stop(error);
-        process.exitCode = 1;
-        setTimeout(() => {
-          process.exit(1);
-        }, 100).unref();
+        fail(error);
       },
     }).then((readySession) => {
       session = readySession;
       readySession.client.on("error", (error) => {
-        if (stopping || abortController.signal.aborted) return;
-        errorLog(error.message);
-        stopping = true;
-        stop(error);
-        process.exitCode = 1;
-        setTimeout(() => {
-          process.exit(1);
-        }, 100).unref();
+        if (abortController.signal.aborted) return;
+        fail(error);
       });
       info(`RDP connected on port ${readySession.port}`);
       return readySession;
     });
     sessionPromise.catch((error: unknown) => {
       if (abortController.signal.aborted) return;
-      errorLog(formatUnknownError(error));
+      fail(error);
     });
   };
 
@@ -223,7 +239,7 @@ function assertExistingFile(path: string, envName: string): void {
   } catch (error) {
     if (error instanceof Error && "code" in error) {
       throw new Error(
-        `${PREFIX} ${envName} must point to an existing Zotero 9 binary: ${path}. See ${ENV_EXAMPLE_PATH}.`,
+        `${PREFIX} ${envName} must point to an existing Zotero binary: ${path}. See ${ENV_EXAMPLE_PATH}.`,
         { cause: error },
       );
     }

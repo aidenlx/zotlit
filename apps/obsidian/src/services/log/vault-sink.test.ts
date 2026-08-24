@@ -1,5 +1,5 @@
-import { type LogRecord } from "@logtape/logtape";
-import { type DataAdapter } from "obsidian";
+import type { LogRecord } from "@logtape/logtape";
+import type { DataAdapter } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createVaultFileSink } from "./vault-sink";

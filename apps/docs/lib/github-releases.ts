@@ -10,6 +10,7 @@ export type ReleaseChannel = "pre-release" | "stable";
 
 export interface GhRelease {
   tag_name: string;
+  draft: boolean;
   prerelease: boolean;
   published_at: string;
 }
@@ -90,7 +91,17 @@ export function getReleases() {
 export function newestPreRelease(releases: GhRelease[]): GhRelease | null {
   return (
     releases
-      .filter((r) => r.prerelease && valid(r.tag_name))
+      .filter((r) => !r.draft && r.prerelease && valid(r.tag_name))
+      .sort((a, b) => rcompare(a.tag_name, b.tag_name))
+      .at(0) ?? null
+  );
+}
+
+/** Highest-precedence published full plugin release in the release list. */
+export function newestStableRelease(releases: GhRelease[]): GhRelease | null {
+  return (
+    releases
+      .filter((r) => !r.draft && !r.prerelease && valid(r.tag_name))
       .sort((a, b) => rcompare(a.tag_name, b.tag_name))
       .at(0) ?? null
   );

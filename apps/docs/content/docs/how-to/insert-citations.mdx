@@ -1,6 +1,8 @@
 ---
 title: "Insert citations"
 description: "Insert Markdown citations while typing or from the command palette, using the primary or secondary citation format."
+introduced: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -8,7 +10,11 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 
-ZotLit inserts Markdown citations from your Zotero library in two ways: an inline suggester that appears while you type, and a command-palette picker.
+Use the Citation Suggester or command palette to insert a Markdown citation from your Zotero library.
+
+Both entry points search every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each suggestion names the library its item comes from. With one library in scope, that label is left off.
+
+Citation insertion works independently of the Document Citation Set and In-text Citation Rendering. You can insert citations with both source settings off and with **Show formatted citations** off.
 
 ## Insert while typing
 
@@ -52,9 +58,9 @@ If the selected item has no citation key, nothing is inserted and a notice appea
 
 ### Suggester settings
 
-- **Citation suggester** (default: on): enables or disables the inline suggester. Find it in **Settings → ZotLit → Citations**.
-- **`@` trigger** (default: off): also opens the suggester on a bare `@` at a word boundary. Visible only while **Citation suggester** is on. Find it in **Settings → ZotLit → Citations**.
-- **Show citation key in suggestions** (default: off): shows each item's citation key beside its title in the suggester list. Find it in **Settings → ZotLit → Citations**.
+- **Citation suggester** (default: on): enables or disables the inline suggester. Find it in **Settings > ZotLit > Citations**.
+- **`@` trigger** (default: off): also opens the suggester on a bare `@` at a word boundary. Visible only while **Citation suggester** is on. Find it in **Settings > ZotLit > Citations**.
+- **Show citation key in suggestions** (default: off): shows each item's citation key beside its title in the suggester list. Find it in **Settings > ZotLit > Citations**.
 
 ## Insert from the command palette
 
@@ -79,6 +85,59 @@ If the selected item has no citation key, nothing is inserted and a notice appea
   </Step>
 </Steps>
 
+## Cite with a Literature Note link
+
+Use this form when the citation must also remain an Obsidian link to its Literature Note.
+
+<Steps>
+  <Step>
+    ### Enable the citation source
+
+    Open **Settings > ZotLit > Citations** and turn on **Wikilink citations**.
+
+  </Step>
+  <Step>
+    ### Insert an unaliased Literature Note link
+
+    In the citing note, type `[[` and select the Literature Note for the item. Keep the link unaliased.
+
+    For example:
+
+    ```md
+    This finding follows the earlier analysis [[Doe 2020]].
+    ```
+
+  </Step>
+  <Step>
+    ### Add citation details when needed
+
+    Add a Citation Fragment to the link target. This example adds page locator `33`:
+
+    ```md
+    This finding follows the earlier analysis [[Doe 2020#cite:locator=33]].
+    ```
+
+    Replace `Doe 2020` with the exact target of your Literature Note.
+
+  </Step>
+</Steps>
+
+The link must resolve to a ZotLit Literature Note. Aliases, embeds, heading fragments, block fragments, unresolved targets, and malformed Citation Fragments stay outside the Document Citation Set.
+
+<Callout type="info">
+  A link such as `[[@doe2024]]` does not name a Literature Note unless a note
+  with that exact name is the Literature Note for the item. Use `[@doe2024]` for
+  a literal citation key.
+</Callout>
+
+## When a citation key matches several items [#ambiguous-key]
+
+A citation key can belong to more than one Zotero item, whether the twins sit in one library or in two libraries you have in scope. Inserted text carries the key alone, so it would no longer name the item you picked.
+
+ZotLit therefore refuses the insert, from either entry point, and shows: "Citation key `@{key}` matches multiple Zotero items. Change it in Zotero before inserting a citation." Give one of the items a distinct citation key in Zotero, or narrow your library scope to the library you meant, then insert again.
+
+Keys already written in your notes stay readable. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work) for what such a key does in the editor, the citation popover, and the References Sidebar.
+
 ## Citation formats
 
 ZotLit ships two citation templates:
@@ -90,7 +149,9 @@ ZotLit ships two citation templates:
 
 These are the default outputs. You can change them by editing the **Citation** and **Alternate citation** templates in **Settings > Templates**. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
 
-When [Citation Key Links](/docs/concepts/how-citekey-links-work) is enabled, the bracketed primary form becomes clickable in Live Preview and Source mode. The default secondary form is bare, so it stays plain text.
+With **Pandoc citations** and **Show formatted citations** on, both forms can show formatted text in Live Preview and reading view. Formatting requires the Pandoc engine and selected style.
+
+With **Pandoc citations** and **Open citations as links** on, you can open the cited Literature Note. Use a click in Live Preview or Ctrl-click or Cmd-click in Source mode. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
 
 ## See also
 
@@ -104,5 +165,10 @@ When [Citation Key Links](/docs/concepts/how-citekey-links-work) is enabled, the
     title="Keep notes up to date"
     description="Update literature notes when your Zotero data changes."
     href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="Export a note with citations"
+    description="Export inserted citations to a Word document or web page."
+    href="/docs/how-to/export-note-with-citations"
   />
 </Cards>

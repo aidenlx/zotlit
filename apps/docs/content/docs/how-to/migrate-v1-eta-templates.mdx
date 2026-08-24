@@ -1,6 +1,8 @@
 ---
 title: "Migrate v1 Eta templates"
 description: "Rename, update variables, and rewrite custom v1 Eta templates to the v2 format, or convert them to Liquid."
+introduced: "2.0.0"
+updated: "2.0.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -253,7 +255,7 @@ Two migration paths:
 
     Creator properties: `family`, `given`, `literal` (institutional names), `role`, `fullName`.
 
-    Convenience properties on the item context: `zt.authors` (primary creator type) and `zt.authorsShort` (formatted short string, e.g. "Smith et al.").
+    Convenience properties on the item context: `zt.authors` (the first populated role: primary creator, editor, director, then contributor) and `zt.authorsShort` (formatted short string, e.g. "Smith et al.").
 
   </Step>
   <Step>

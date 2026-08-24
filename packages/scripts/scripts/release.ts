@@ -6,6 +6,7 @@ import { $ } from "zx";
 
 import { parseManifest as parseObsidianManifest } from "#obsidian-manifest";
 import { getWorkspaceRoot } from "#package-roots";
+import { runReleaseWithDocsHandoff } from "#release-docs-handoff";
 
 /**
  * Phase 1 of the release pipeline: local, interactive version bump.
@@ -132,115 +133,132 @@ if (currentBranch === "next") {
   prTarget = currentBranch;
 }
 
-const summary = bumps.map((b) => `${b.app.name}@${b.next}`).join(", ");
-const confirmMsg = isStableGraduation
-  ? `Stable release ${summary} (PR targets main). Proceed?`
-  : `Release ${summary}?`;
-const confirmed = await p.confirm({ message: confirmMsg });
-if (p.isCancel(confirmed) || !confirmed) cancel();
+await runReleaseWithDocsHandoff({
+  targets: bumps.map(({ app, next }) => ({ app: app.name, version: next })),
+  adapter: {
+    async confirm(prompt) {
+      const answer = await p.confirm(prompt);
+      if (p.isCancel(answer)) cancel();
+      return answer;
+    },
+    handoff(command) {
+      p.outro(["Review docs availability first:", command].join("\n"));
+    },
+  },
+  continueRelease: completeRelease,
+});
 
-const stagedPaths = new Set<string>();
-const s = p.spinner();
+async function completeRelease(): Promise<void> {
+  const summary = bumps.map((b) => `${b.app.name}@${b.next}`).join(", ");
+  const confirmMsg = isStableGraduation
+    ? `Stable release ${summary} (PR targets main). Proceed?`
+    : `Release ${summary}?`;
+  const confirmed = await p.confirm({ message: confirmMsg });
+  if (p.isCancel(confirmed) || !confirmed) cancel();
 
-s.start("Bumping versions");
-for (const { app, next } of bumps) {
-  await writePackageVersion(app.pkgPath, next);
-  stagedPaths.add(app.pkgPath);
-}
-s.stop("Versions bumped");
+  const stagedPaths = new Set<string>();
+  const s = p.spinner();
 
-await syncObsidian(bumps, stagedPaths);
-await syncTestVaultPrevVersion(bumps, stagedPaths);
+  s.start("Bumping versions");
+  for (const { app, next } of bumps) {
+    await writePackageVersion(app.pkgPath, next);
+    stagedPaths.add(app.pkgPath);
+  }
+  s.stop("Versions bumped");
 
-s.start("Refreshing lockfile");
-await $({ cwd: workspaceRoot })`pnpm install --lockfile-only`;
-stagedPaths.add(join(workspaceRoot, "pnpm-lock.yaml"));
-s.stop("Lockfile refreshed");
+  await syncObsidian(bumps, stagedPaths);
+  await syncDocsReleaseLine(bumps, stagedPaths);
 
-s.start("Quality check");
-const quality = await $({ cwd: workspaceRoot, nothrow: true })`pnpm quality`;
-if (quality.exitCode !== 0) {
-  s.stop("Quality check failed", 1);
-  p.cancel(
-    `Quality check failed — fix lint/format errors before releasing:\n${quality.stdout}${quality.stderr}`,
-  );
-  process.exit(1);
-}
-s.stop("Quality passed");
+  s.start("Refreshing lockfile");
+  await $({ cwd: workspaceRoot })`pnpm install --lockfile-only`;
+  stagedPaths.add(join(workspaceRoot, "pnpm-lock.yaml"));
+  s.stop("Lockfile refreshed");
 
-// Obsidian's community review rejects guideline violations, so the plugin is
-// scanned here rather than after merge — `release.yml` only runs once the
-// version commit has already landed. oxlint (in `pnpm quality` above) owns
-// general hygiene; this is the Obsidian-specific pass. See ADR 0020.
-if (bumps.some((b) => b.app.name === "obsidian")) {
-  s.start("Plugin review");
-  const review = await $({ cwd: workspaceRoot, nothrow: true })`pnpm review`;
-  if (review.exitCode !== 0) {
-    s.stop("Plugin review failed", 1);
+  s.start("Quality check");
+  const quality = await $({ cwd: workspaceRoot, nothrow: true })`pnpm quality`;
+  if (quality.exitCode !== 0) {
+    s.stop("Quality check failed", 1);
     p.cancel(
-      `Obsidian guideline violations — fix these before releasing:\n${review.stdout}${review.stderr}`,
+      `Quality check failed — fix lint/format errors before releasing:\n${quality.stdout}${quality.stderr}`,
     );
     process.exit(1);
   }
-  s.stop("Plugin review passed");
-}
+  s.stop("Quality passed");
 
-const branchName = `release/${prTarget}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
-const commitMsg = `chore: release ${summary}`;
+  // Obsidian's community review rejects guideline violations, so the plugin is
+  // scanned here rather than after merge — `release.yml` only runs once the
+  // version commit has already landed. oxlint (in `pnpm quality` above) owns
+  // general hygiene; this is the Obsidian-specific pass. See ADR 0020.
+  if (bumps.some((b) => b.app.name === "obsidian")) {
+    s.start("Plugin review");
+    const review = await $({ cwd: workspaceRoot, nothrow: true })`pnpm review`;
+    if (review.exitCode !== 0) {
+      s.stop("Plugin review failed", 1);
+      p.cancel(
+        `Obsidian guideline violations — fix these before releasing:\n${review.stdout}${review.stderr}`,
+      );
+      process.exit(1);
+    }
+    s.stop("Plugin review passed");
+  }
 
-const gitConfirm = await p.confirm({
-  message: `Create branch ${branchName}, commit, push to origin, and open a PR?`,
-});
-if (p.isCancel(gitConfirm) || !gitConfirm) {
+  const branchName = `release/${prTarget}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
+  const commitMsg = `chore: release ${summary}`;
+
+  const gitConfirm = await p.confirm({
+    message: `Create branch ${branchName}, commit, push to origin, and open a PR?`,
+  });
+  if (p.isCancel(gitConfirm) || !gitConfirm) {
+    p.outro(
+      [
+        "Version files updated but not committed.",
+        `To finish manually: git checkout -b ${branchName} ${baseRef} && git add -A && git commit -m "${commitMsg}" && git push -u origin ${branchName}`,
+      ].join("\n"),
+    );
+    process.exit(0);
+  }
+
+  s.start(`Creating branch ${branchName}`);
+  await $({ cwd: workspaceRoot })`git checkout -b ${branchName} ${baseRef}`;
+  s.stop(`On branch ${branchName}`);
+
+  s.start("Committing");
+  await $({ cwd: workspaceRoot })`git add ${[...stagedPaths]}`;
+  await $({ cwd: workspaceRoot })`git commit -m ${commitMsg}`;
+  s.stop("Committed");
+
+  s.start("Pushing");
+  await $({ cwd: workspaceRoot })`git push -u origin ${branchName}`;
+  s.stop("Pushed");
+
+  const openPr = await p.confirm({ message: `Open a PR to ${prTarget}?` });
+  if (!p.isCancel(openPr) && openPr) {
+    await openPR(branchName, commitMsg, prTarget);
+  }
+
+  // The release branch now lives on origin (the PR references it); drop the local
+  // copy and return to the working branch. `-D` because its release commit is not
+  // merged into `${currentBranch}` locally.
+  s.start(`Returning to ${currentBranch}`);
+  await $({ cwd: workspaceRoot })`git checkout ${currentBranch}`;
+  await $({ cwd: workspaceRoot })`git branch -D ${branchName}`;
+  s.stop(`Back on ${currentBranch}, removed local ${branchName}`);
+
   p.outro(
     [
-      "Version files updated but not committed.",
-      `To finish manually: git checkout -b ${branchName} ${baseRef} && git add -A && git commit -m "${commitMsg}" && git push -u origin ${branchName}`,
+      `Released ${summary} on branch ${branchName}.`,
+      `On merge to ${prTarget}, release.yml cuts the tag(s) and GitHub release(s).`,
+      ...(isStableGraduation
+        ? [
+            "",
+            "After the PR merges to main, sync back:",
+            "  git checkout next && git pull && git merge main",
+            "  pnpm release  # pick preminor to start the next beta cycle",
+          ]
+        : []),
     ].join("\n"),
   );
-  process.exit(0);
 }
-
-s.start(`Creating branch ${branchName}`);
-await $({ cwd: workspaceRoot })`git checkout -b ${branchName} ${baseRef}`;
-s.stop(`On branch ${branchName}`);
-
-s.start("Committing");
-await $({ cwd: workspaceRoot })`git add ${[...stagedPaths]}`;
-await $({ cwd: workspaceRoot })`git commit -m ${commitMsg}`;
-s.stop("Committed");
-
-s.start("Pushing");
-await $({ cwd: workspaceRoot })`git push -u origin ${branchName}`;
-s.stop("Pushed");
-
-const openPr = await p.confirm({ message: `Open a PR to ${prTarget}?` });
-if (!p.isCancel(openPr) && openPr) {
-  await openPR(branchName, commitMsg, prTarget);
-}
-
-// The release branch now lives on origin (the PR references it); drop the local
-// copy and return to the working branch. `-D` because its release commit is not
-// merged into `${currentBranch}` locally.
-s.start(`Returning to ${currentBranch}`);
-await $({ cwd: workspaceRoot })`git checkout ${currentBranch}`;
-await $({ cwd: workspaceRoot })`git branch -D ${branchName}`;
-s.stop(`Back on ${currentBranch}, removed local ${branchName}`);
-
-p.outro(
-  [
-    `Released ${summary} on branch ${branchName}.`,
-    `On merge to ${prTarget}, release.yml cuts the tag(s) and GitHub release(s).`,
-    ...(isStableGraduation
-      ? [
-          "",
-          "After the PR merges to main, sync back:",
-          "  git checkout next && git pull && git merge main",
-          "  pnpm release  # pick preminor to start the next beta cycle",
-        ]
-      : []),
-  ].join("\n"),
-);
 
 async function openPR(
   branch: string,
@@ -395,45 +413,19 @@ async function syncObsidian(
   staged.add(versionsPath);
 }
 
-/**
- * Test-vault fixture sync: bumps `release.previous-version` in the manual test
- * vault's plugin data so a fresh launch there exercises the update-notice path
- * against the version being released from. Skipped when the fixture is absent
- * (e.g. a fresh checkout without the test vault populated) — the read itself
- * is the existence check, not a preceding stat.
- */
-async function syncTestVaultPrevVersion(
+async function syncDocsReleaseLine(
   releases: Bump[],
   staged: Set<string>,
 ): Promise<void> {
   const obsidian = releases.find((b) => b.app.name === "obsidian");
   if (!obsidian) return;
 
-  const dataPath = join(
-    workspaceRoot,
-    "tests/zt-vault/.obsidian/plugins/zotlit/data.json",
+  const releasePath = join(workspaceRoot, "apps/docs/zotlit-release.json");
+  await writeFile(
+    releasePath,
+    `${JSON.stringify({ version: obsidian.next }, null, 2)}\n`,
   );
-
-  let raw: string;
-  try {
-    raw = await readFile(dataPath, "utf-8");
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) return;
-    throw error;
-  }
-
-  const data = JSON.parse(raw) as Record<string, unknown>;
-  data["release.previous-version"] = obsidian.next;
-  await writeFile(dataPath, JSON.stringify(data, null, 2));
-  staged.add(dataPath);
-}
-
-function isErrno(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === code
-  );
+  staged.add(releasePath);
 }
 
 async function readPackageJson(

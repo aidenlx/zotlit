@@ -1,4 +1,4 @@
-import { type AnnotationPositionRaw } from "@drizzle/schema";
+import type { AnnotationPositionRaw } from "@drizzle/schema";
 import * as v from "valibot";
 
 const RectSchema = v.tuple([v.number(), v.number(), v.number(), v.number()]);
@@ -41,17 +41,17 @@ export type PdfTextPosition = v.InferOutput<typeof PdfTextSchema>;
 /**
  * PDF rect-based annotation position (highlight / underline / note / image).
  * The reader's only PDF-position type — `PDFPosition` in `src/common/types.ts`
- * — is a loose union with optional `rects?`/`paths?`; the concrete
- * `{ pageIndex, rects }` JSON is built inline when a text selection is turned
- * into an annotation, with `rects` produced by `getRectsFromChars`.
+ * — has optional `rects`, `paths`, and `nextPageRects` fields. Continuation
+ * rectangles belong to the page after `pageIndex`.
  *
- * @see https://github.com/zotero/reader/blob/9375b4f2bb89b4187adcb6eca209119a1dedf81a/src/pdf/selection.js#L685-L693
- * @see https://github.com/zotero/reader/blob/9375b4f2bb89b4187adcb6eca209119a1dedf81a/src/common/types.ts#L68-L72
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/common/types.ts#L68-L79
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js#L757-L782
  */
 const PdfRectsSchema = v.pipe(
   v.object({
     pageIndex: v.number(),
     rects: v.array(RectSchema),
+    nextPageRects: v.optional(v.array(RectSchema)),
   }),
   v.transform((o) => ({ kind: "pdf-rects" as const, ...o })),
 );

@@ -2,11 +2,28 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_ZOTERO_HTTP_PORT,
   parsePrefsJs,
   parseZoteroProfiles,
+  resolveZoteroHttpPort,
   resolveProfileDir,
   selectDefaultProfile,
 } from "./prefs-file";
+
+describe("resolveZoteroHttpPort", () => {
+  it("uses the active profile's configured port", () => {
+    expect(resolveZoteroHttpPort(45_678)).toBe(45_678);
+  });
+
+  it("uses Zotero's default when the profile has no valid port", () => {
+    expect(resolveZoteroHttpPort(undefined)).toBe(DEFAULT_ZOTERO_HTTP_PORT);
+    expect(resolveZoteroHttpPort(65_536)).toBe(DEFAULT_ZOTERO_HTTP_PORT);
+  });
+
+  it("reports automatic port selection as undiscoverable", () => {
+    expect(resolveZoteroHttpPort(-1)).toBeNull();
+  });
+});
 
 describe("parseZoteroProfiles", () => {
   it("enumerates every profile section in file order, skipping [General]", () => {

@@ -1,6 +1,8 @@
 ---
 title: "Import Zotero notes"
 description: "Import child notes from Zotero into the vault as standalone Markdown files, with options for batch re-import and annotation rendering."
+introduced: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -112,11 +114,15 @@ For one collection, right-click it in the Zotero sidebar and choose **ZotLit > I
 
 Obsidian opens the **Import notes** modal described below, listing every note it found. Review the list, then confirm to start the batch.
 
-The command uses your **Default library** (set in **Settings > ZotLit**). If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero."
+The Obsidian command covers every library in your [library scope](/docs/reference/settings#library-scope) (set in **Settings > ZotLit**). The Zotero entries cover the library or collection you right-clicked, whatever your library scope is.
+
+If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero." If the library no longer exists, it reports "That Zotero library is not available."
+
+While more than one library contributes notes, the **Import notes** modal names the library beside each heading. If a selected library is missing from your Zotero database, the import continues over the rest and states how many libraries it skipped. If none of your selected libraries is available, no modal opens and a notice reports "No library in the library scope is available."
 
 ## Re-import notes in batch
 
-Batch re-import is started from the ZotLit companion, not from an Obsidian command.
+ZotLit Companion, the Zotero add-on, starts batch re-import from Zotero.
 
 <Steps>
   <Step>
@@ -171,6 +177,26 @@ Each cited reference resolves its citation key in this order:
 3. A visible sentinel: the Zotero item key with `?` appended (e.g. `-@ABC123?` in the default cite template). The trailing `?` makes unresolved citations greppable in your vault.
 
 If every cited reference within a single citation is unresolvable (no citation key from any source), ZotLit keeps that citation's original HTML verbatim. Nothing is lost.
+
+## Use colored highlight syntax
+
+Turn on **Settings > Note import > Use colored highlight syntax** before you import or re-import a note.
+
+ZotLit converts six colors to Colored Highlight Syntax: red, orange, yellow, green, blue, and purple. A circle emoji at the start of a highlight sets its color:
+
+```markdown
+==🔵Highlighted text==
+```
+
+The setting applies to highlights created in Zotero's note editor and inline Annotation Excerpts. Annotation Excerpts keep their Zotero backlinks:
+
+```markdown
+[==🔵Highlighted text==](zotero://...)
+```
+
+Highlights with unsupported, missing, or custom colors remain HTML. ZotLit also keeps HTML when the text contains `==` because it conflicts with the Markdown delimiter.
+
+The setting affects later imports and re-imports. It does not rewrite imported notes immediately. When **Render annotations from template** is on, annotation-template output stays unchanged.
 
 ## Render annotations from template
 

@@ -14,16 +14,15 @@ import {
   formatCompilerWarnings,
   compile,
   compileProject,
-  type CompileResult,
-  type GeneratedArtifacts,
+  INLANG_PLUGINS,
   writeOutput,
 } from "./compiler.js";
+import type { CompileResult, GeneratedArtifacts } from "./compiler.js";
 import {
   LanguagePackSchemaVersionError,
   validateLanguagePack,
-  type LanguagePackRuntime,
-  type TargetLocaleMessages,
 } from "./index.js";
+import type { LanguagePackRuntime, TargetLocaleMessages } from "./index.js";
 import {
   addLocale,
   addSourcePattern,
@@ -456,6 +455,7 @@ describe("generateLanguagePacks", () => {
     const project = await loadProjectFromDirectory({
       path: projectPath,
       fs,
+      providePlugins: INLANG_PLUGINS,
     });
     try {
       await expect(

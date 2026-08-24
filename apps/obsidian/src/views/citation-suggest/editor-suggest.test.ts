@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { type SearchHit } from "@/services/item-lookup/service";
+import type {
+  CitationKeyResolution,
+  CitekeyResolution,
+} from "@/services/citation-index/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
 
 import {
@@ -9,6 +13,7 @@ import {
   resolveCitationInsert,
   resolveCitationTrigger,
 } from "./editor-suggest";
+import type { CitationSuggestDeps } from "./register";
 
 function makeHit(citationKey: string | null): SearchHit {
   return {
@@ -17,6 +22,29 @@ function makeHit(citationKey: string | null): SearchHit {
     matches: [],
   } as unknown as SearchHit;
 }
+
+/** The two decisions an insert runs on: how a citation renders, and whether
+ *  its Citation Key names one Zotero Item or several — the second only once
+ *  the resolution snapshot has an answer at all. */
+function insertDeps(
+  renderCitation: unknown,
+  resolved: CitekeyResolution = { kind: "unique", item: UNIQUE_ITEM },
+  resolution: CitationKeyResolution = "ready",
+): Pick<CitationSuggestDeps, "noteFeature" | "citationIndex"> {
+  return {
+    noteFeature: {
+      renderCitation,
+    } as CitationSuggestDeps["noteFeature"],
+    citationIndex: { resolveCitekey: () => resolved, resolution },
+  };
+}
+
+const UNIQUE_ITEM = {
+  itemID: 1,
+  libraryID: 1,
+  key: "ABC123",
+  indexedKey: "ABC123",
+};
 
 describe("resolveCitationInsert", () => {
   it("resolves to a not-ready notice when the template isn't loaded yet", () => {
@@ -27,7 +55,11 @@ describe("resolveCitationInsert", () => {
     const renderCitation = vi.fn().mockReturnValue(null);
     const hit = makeHit("abc2024");
 
-    const outcome = resolveCitationInsert({ renderCitation }, hit, false);
+    const outcome = resolveCitationInsert(
+      insertDeps(renderCitation),
+      hit,
+      false,
+    );
 
     expect(renderCitation).toHaveBeenCalledWith(
       [{ citationKey: "abc2024", item: hit.item }],
@@ -45,7 +77,7 @@ describe("resolveCitationInsert", () => {
     });
 
     const outcome = resolveCitationInsert(
-      { renderCitation },
+      insertDeps(renderCitation),
       makeHit("abc2024"),
       false,
     );
@@ -62,7 +94,11 @@ describe("resolveCitationInsert", () => {
     });
 
     expect(() =>
-      resolveCitationInsert({ renderCitation }, makeHit("abc2024"), false),
+      resolveCitationInsert(
+        insertDeps(renderCitation),
+        makeHit("abc2024"),
+        false,
+      ),
     ).toThrow("boom");
   });
 
@@ -70,7 +106,7 @@ describe("resolveCitationInsert", () => {
     const renderCitation = vi.fn();
 
     const outcome = resolveCitationInsert(
-      { renderCitation },
+      insertDeps(renderCitation),
       makeHit(null),
       false,
     );
@@ -82,11 +118,69 @@ describe("resolveCitationInsert", () => {
     });
   });
 
+  it("refuses a Citation Key that names several Zotero Items", () => {
+    const renderCitation = vi.fn();
+
+    const outcome = resolveCitationInsert(
+      insertDeps(renderCitation, {
+        kind: "ambiguous",
+        candidates: [
+          UNIQUE_ITEM,
+          { itemID: 2, libraryID: 4, key: "ROE2025", indexedKey: "ROE2025g7" },
+        ],
+      }),
+      makeHit("abc2024"),
+      false,
+    );
+
+    // The inserted text carries the key alone, so inserting it would lose the
+    // Item the user picked here.
+    expect(renderCitation).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      kind: "notice",
+      message: m.notice_citekey_ambiguous_insert({ citekey: "abc2024" }),
+    });
+  });
+
+  it("refuses an insert while the resolution snapshot has no answer yet", () => {
+    const renderCitation = vi.fn();
+
+    // A snapshot still resolving answers every key as missing, so an ambiguous
+    // key would slip through the refusal above and lose its Item identity.
+    const outcome = resolveCitationInsert(
+      insertDeps(renderCitation, { kind: "missing" }, "resolving"),
+      makeHit("abc2024"),
+      false,
+    );
+
+    expect(renderCitation).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      kind: "notice",
+      message: m.notice_citekey_not_ready(),
+    });
+  });
+
+  it("inserts on a degraded snapshot, which is settled data rather than a pending answer", () => {
+    const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
+
+    const outcome = resolveCitationInsert(
+      insertDeps(
+        renderCitation,
+        { kind: "unique", item: UNIQUE_ITEM },
+        "degraded",
+      ),
+      makeHit("abc2024"),
+      false,
+    );
+
+    expect(outcome).toEqual({ kind: "insert", text: "[@abc2024]" });
+  });
+
   it("resolves to the rendered citation for insertion", () => {
     const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
 
     const outcome = resolveCitationInsert(
-      { renderCitation },
+      insertDeps(renderCitation),
       makeHit("abc2024"),
       false,
     );

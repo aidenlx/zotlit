@@ -25,7 +25,7 @@ ZotLit is now licensed under AGPL-3.0-or-later (previously MIT). The change cove
 
 Citation Key Links lets you click a `[@citekey]` reference in the editor to jump to its literature note. This feature is now an optional setting, disabled by default. If you used it during the beta or migrated from v1, it will remain enabled.
 
-The feature reads the citation key from a frontmatter property on each literature note. If that property is not in your managed frontmatter fields, the plugin shows a notice explaining what to add.
+The feature resolves each citation key against Zotero's own native citation key, scoped to the citation library you have configured. If the matching item does not have a literature note yet, clicking the link creates the note and opens it.
 
 ## What's New
 

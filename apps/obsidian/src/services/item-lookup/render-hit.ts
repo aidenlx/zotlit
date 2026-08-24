@@ -1,12 +1,14 @@
-import { renderMatches, type SearchMatches } from "obsidian";
+import { renderMatches } from "obsidian";
+import type { SearchMatches } from "obsidian";
 
 import { isChildItemFields } from "@zotlit/db";
-import { type JournalArticleFields } from "@zotlit/zotero-types";
+import type { JournalArticleFields } from "@zotlit/zotero-types";
 
 import { itemSummary } from "@/lib/item-summary";
-import { type SettingsService } from "@/services/settings/service";
+import { libraryLabel } from "@/services/library-scope/label";
+import type { SettingsService } from "@/services/settings/service";
 
-import { type SearchHit } from "./service";
+import type { SearchHit } from "./service";
 
 /** CSS owns this value; JS reads it so the truncation window matches the
  *  visible column width. Themes override by setting the same variable. */
@@ -24,7 +26,7 @@ export function renderSuggestion(
   el.empty();
   if (isChildItemFields(hit.item.fields)) return;
 
-  el.addClass("zt-citations");
+  el.addClasses(["zt-citations", "mod-complex"]);
 
   const contentEl = el.createDiv("suggestion-content");
   const titleEl = contentEl.createDiv("suggestion-title");
@@ -39,6 +41,16 @@ export function renderSuggestion(
 
   if (hit.item.fields.itemType === "journalArticle") {
     appendJournalMeta(contentEl, summary.subtitle, hit.item.fields);
+  }
+
+  // Present only while several Libraries can contribute; see ItemLookup.
+  // My Library is the implicit source, so only a group earns a label. The aux
+  // slot keeps that label on the trailing edge, clear of the title.
+  if (hit.library && hit.library.selector.type !== "personal") {
+    el.createDiv("suggestion-aux").createSpan({
+      cls: "suggestion-flair library",
+      text: libraryLabel(hit.library),
+    });
   }
 }
 

@@ -1,6 +1,6 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
-import { type App } from "obsidian";
+import type { App } from "obsidian";
 import TurndownService from "turndown";
 
 import {
@@ -10,7 +10,7 @@ import {
   fetchAnnotationsTemplateData,
   getAnnotationsByKey,
   getAttachmentByKey,
-  getCurrentUsername,
+  getZoteroIdentity,
   getItemsByID,
   getItemTypeByKey,
   getItemsByKey,
@@ -18,27 +18,25 @@ import {
   resolveIndexedKeyLibrary,
   resolveItemTags,
   withAnnotationCitation,
-  type Annotation,
-  type ContractRoot,
-  type Item,
-  type NoteResolvers,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type { Annotation, ContractRoot, Item, NoteResolvers } from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { TemplateError } from "@zotlit/templates/facade";
 
 import { annotationCitation } from "@/lib/annotation-render";
-import { type DatabaseService } from "@/services/database/service";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import { creatorSummary } from "@/lib/item-summary";
+import type { DatabaseService } from "@/services/database/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
 import {
   buildInertNoteResolvers,
   findExistingLitNote,
   resolveExcerptImageContext,
 } from "@/services/template/inert-resolvers";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 /** The Template the annotation root's `citation` getter renders. */
 const CITE_TEMPLATE = "cite";
@@ -110,6 +108,7 @@ export async function loadTemplateData(
           collectionCache
             .byItemIDs(lease.client, item.libraryID, [item.itemID])
             .get(item.itemID) ?? [],
+        authorsShort: creatorSummary,
       }),
     };
   }
@@ -121,7 +120,7 @@ export async function loadTemplateData(
     data: fetchNoteContext(lease.client, item, {
       resolvers,
       collectionCache: new CollectionCache(),
-      username: getCurrentUsername(lease.client),
+      username: getZoteroIdentity(lease.client).username,
     }),
   };
 }

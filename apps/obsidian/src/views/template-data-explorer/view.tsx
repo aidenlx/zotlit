@@ -1,50 +1,43 @@
 // ItemView orchestrator for the Template Data Explorer: picks an item, fetches its note-root context through inert resolvers, and drives the display tree.
-import {
-  type App,
-  ItemView,
-  type Menu,
-  type ViewStateResult,
-  type WorkspaceLeaf,
-} from "obsidian";
-import { createRoot, type Root } from "react-dom/client";
+import { ItemView } from "obsidian";
+import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 
 import {
   CollectionCache,
   fetchNoteContext,
-  getCurrentUsername,
+  getZoteroIdentity,
   getItemsByKey,
   getLibraries,
   isChildItemFields,
-  type Item,
-  type Library,
-  type NoteTemplateContext,
   parseIndexedKey,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
+import type { Item, Library, NoteTemplateContext } from "@zotlit/db";
 
+import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import { type DatabaseService } from "@/services/database/service";
+import type { DatabaseService } from "@/services/database/service";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
-import { type ItemLookup } from "@/services/item-lookup/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
+import type { SettingsService } from "@/services/settings/service";
+import { loadTemplateData } from "@/services/template-workbench/data";
+import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import {
   buildInertNoteResolvers,
   findExistingLitNote,
   resolveExcerptImageContext,
 } from "@/services/template/inert-resolvers";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { TemplateService } from "@/services/template/service";
 
-import {
-  createExplorerActions,
-  type ExplorerActions,
-  ExplorerActionsContext,
-} from "./actions";
+import { createExplorerActions, ExplorerActionsContext } from "./actions";
+import type { ExplorerActions } from "./actions";
 import {
   annotationKeyAtPath,
   buildDisplayTree,
@@ -52,32 +45,36 @@ import {
   findAnnotationRoot,
 } from "./display-tree";
 import { Explorer } from "./Explorer";
+import { buildTemplateDataExport } from "./export";
 import { pickItem } from "./item-picker";
-import {
-  createExplorerStore,
-  ExplorerStoreProvider,
-  type ExplorerState,
-} from "./store";
+import { createExplorerStore, ExplorerStoreProvider } from "./store";
+import type { ExplorerState } from "./store";
 import {
   initialTreeState,
   setAnchor,
   setFilter,
   toggleNode,
-  type TreeState,
 } from "./tree-state";
+import type { TreeState } from "./tree-state";
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
 
 const logger = getLogger(["views", "template-data-explorer"]);
 
-export interface ExplorerViewDeps {
-  app: App;
-  db: Pick<DatabaseService, "state" | "client" | "ready" | "on" | "refresh">;
-  noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getImportedNoteByNoteKey">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+/** Extends the Workbench loader's deps: the export rebuilds its data through it. */
+export interface ExplorerViewDeps extends TemplateDataDeps {
+  db: Pick<
+    DatabaseService,
+    "state" | "client" | "ready" | "on" | "refresh" | "acquireRead"
+  >;
   itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
-  templates: Pick<TemplateService, "javascriptTemplatesEnabled">;
+  templates: Pick<
+    TemplateService,
+    "javascriptTemplatesEnabled" | "ready" | "render"
+  >;
+  /** Installed plugin version, stamped into the Template Data Export. */
+  pluginVersion: string;
 }
 
 function resolveLibraryID(
@@ -130,6 +127,7 @@ export class TemplateDataExplorerView extends ItemView {
         .setIcon("refresh-cw")
         .onClick(() => this.#refresh()),
     );
+    this.#actions?.addExportMenuItem(menu);
   }
 
   override getState(): Record<string, unknown> {
@@ -181,19 +179,14 @@ export class TemplateDataExplorerView extends ItemView {
       onBackToNoteRoot: () => this.#setAnchor(null),
       onRefresh: () => this.#refresh(),
       isEtaEnabled: () => this.#deps.templates.javascriptTemplatesEnabled,
+      canExport: () => this.#context !== null && this.#item !== null,
+      onExport: () => void this.#exportTemplateData(),
       copyTarget: () => {
-        const item = this.#item;
-        if (!item) return null;
-        const annotationKey = this.#treeState.anchorKey;
-        if (annotationKey === null) {
-          return { indexedKey: item.indexedKey, kind: "item" };
-        }
+        const target = this.#anchoredTarget();
+        if (!target) return null;
         return {
-          indexedKey: indexedKeyForClipboard({
-            key: annotationKey,
-            groupID: item.groupID,
-          }),
-          kind: "annotation",
+          indexedKey: target.indexedKey,
+          kind: target.isAnnotation ? "annotation" : "item",
         };
       },
     });
@@ -251,6 +244,76 @@ export class TemplateDataExplorerView extends ItemView {
       success: m.template_data_explorer_refreshed(),
       error: m.template_data_explorer_refresh_failed(),
     });
+  }
+
+  /** The object the pane is anchored at: the Item, or the Annotation once re-anchored. */
+  #anchoredTarget(): { indexedKey: string; isAnnotation: boolean } | null {
+    const item = this.#item;
+    if (!item) return null;
+    const anchorKey = this.#treeState.anchorKey;
+    if (anchorKey === null) {
+      return { indexedKey: item.indexedKey, isAnnotation: false };
+    }
+    return {
+      indexedKey: indexedKeyForClipboard({
+        key: anchorKey,
+        groupID: item.groupID,
+      }),
+      isAnnotation: true,
+    };
+  }
+
+  /**
+   * The anchor picks the root, so an anchored Annotation exports exactly what
+   * the `annotation` Template receives; the active filter never narrows it.
+   * The data is rebuilt through the Workbench loader rather than read off the
+   * displayed tree: the tree's anchored annotation is the note context's own
+   * `TemplateAnnotation`, whose `parentItem` back-references the note root,
+   * while the `annotation` contract root carries a resolved parent item and a
+   * `citation`. Rebuilding also makes the file reproducible by
+   * `zotlit:template-data` with the echoed `request`.
+   */
+  async #exportTemplateData(): Promise<void> {
+    const target = this.#anchoredTarget();
+    if (!target) return;
+    const contractRoot = target.isAnnotation ? "annotation" : "note";
+    const { indexedKey } = target;
+
+    try {
+      const result = await loadTemplateData(
+        this.#deps,
+        indexedKey,
+        contractRoot,
+      );
+      if (result.kind !== "data") {
+        logger.error("No template data to export for {indexedKey}: {reason}", {
+          indexedKey,
+          root: contractRoot,
+          reason: result.kind,
+        });
+        new BaseNotice(m.template_data_explorer_export_failed());
+        return;
+      }
+      const { filename, json } = buildTemplateDataExport({
+        root: result.data,
+        contractRoot,
+        indexedKey,
+        pluginVersion: this.#deps.pluginVersion,
+        timestamp: exportTimestamp(),
+      });
+      saveFile(new Blob([json], { type: "application/json" }), filename);
+      logger.debug("Exported template data to {filename}", {
+        filename,
+        root: contractRoot,
+      });
+    } catch (error) {
+      logger.error("Failed to export template data for {indexedKey}", {
+        indexedKey,
+        root: contractRoot,
+        error,
+      });
+      new BaseNotice(m.template_data_explorer_export_failed());
+    }
   }
 
   #reload(): void {
@@ -313,7 +376,7 @@ export class TemplateDataExplorerView extends ItemView {
       this.#context = fetchNoteContext(this.#deps.db.client, item, {
         resolvers,
         collectionCache: new CollectionCache(),
-        username: getCurrentUsername(this.#deps.db.client),
+        username: getZoteroIdentity(this.#deps.db.client).username,
       });
     } catch (err) {
       logger.warn("Failed to build note context for {key}", {

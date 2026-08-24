@@ -1,7 +1,9 @@
 import { join } from "node:path";
 
-import { annotationHasCacheImage, type Annotation } from "./zt-annot";
-import { parseAttachmentPath, type Attachment } from "./zt-attach";
+import { annotationHasCacheImage } from "./zt-annot";
+import type { Annotation } from "./zt-annot";
+import { parseAttachmentPath } from "./zt-attach";
+import type { Attachment } from "./zt-attach";
 
 // Re-exported so a consumer resolving an absolute path can also classify it —
 // the Obsidian plugin's source-decision seam needs both.

@@ -2,7 +2,7 @@
 import { setIcon } from "obsidian";
 
 import { cn } from "@/lib/utils";
-import { type BatchFailure } from "@/services/batch-run";
+import type { BatchFailure } from "@/services/batch-run";
 
 export type RowStatus = "pending" | "done" | "skipped" | "failed";
 

@@ -1,6 +1,8 @@
 ---
 title: "Keep notes up to date"
 description: "Update a single literature note or a batch of notes when your Zotero data changes, without losing your own writing."
+introduced: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -51,7 +53,7 @@ You can also right-click a literature note file in the file explorer. The **ZotL
 
 ## Update notes in batch
 
-You start batch updates from the ZotLit companion, not from an Obsidian command.
+ZotLit Companion, the Zotero add-on, starts batch updates from Zotero.
 
 <Steps>
   <Step>
@@ -76,7 +78,11 @@ You start batch updates from the ZotLit companion, not from an Obsidian command.
   </Step>
 </Steps>
 
-To update every note in your library at once, run <Command inline>ZotLit: Create or update all literature notes</Command> from the Obsidian command palette. This skips the Zotero selection step and processes the entire library.
+To update every note at once, run <Command inline>ZotLit: Create or update all literature notes</Command> from the Obsidian command palette. This skips the Zotero selection step and covers every library in your [library scope](/docs/reference/settings#library-scope).
+
+While more than one library contributes items, the confirmation names the library beside each status heading, so identical statuses stay apart. One contributing library keeps the plain headings.
+
+If a selected library is missing from your Zotero database, the run continues over the rest and the confirmation states how many libraries it skipped. If none of your selected libraries is available, no dialog opens and a notice reports "No library in the library scope is available."
 
 <Callout type="info" title="Large selections">
   A selection too large to fit in a protocol link falls back to an HTTP

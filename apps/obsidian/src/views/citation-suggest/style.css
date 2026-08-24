@@ -4,6 +4,10 @@
    * JS truncation window stays aligned with the visible CSS clip. Override
    * via a theme snippet if the suggester needs a wider/narrower row. */
   --zt-citation-title-max-chars: 60;
+
+  /* Width budget for the group-Library label. A long group name truncates
+   * here instead of pushing the title. Override via a theme snippet. */
+  --zt-citation-library-max-chars: 20;
 }
 
 .zt-citations .suggestion-content {
@@ -27,6 +31,7 @@
 }
 
 .zt-citations .citekey {
+  align-self: flex-start;
   background-color: transparent;
   border: 1px solid var(--background-modifier-border);
   border-radius: 14px;
@@ -37,6 +42,21 @@
   padding: 1px 8px;
   text-align: center;
   vertical-align: middle;
+}
+
+/* Which group Library a result came from. Rendered in the aux slot only while
+ * several Libraries are in scope; `.suggestion-flair` supplies the muted tone,
+ * so this rule sizes and clips the text. */
+.zt-citations .suggestion-aux .library {
+  /* Block layout, since `.suggestion-flair` is a flex container and
+   * text-overflow does not reach the anonymous flex item that holds text. */
+  display: block;
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  max-width: calc(var(--zt-citation-library-max-chars) * 1ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .zt-citations .meta {

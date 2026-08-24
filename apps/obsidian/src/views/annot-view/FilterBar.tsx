@@ -2,7 +2,8 @@
 // cluster; toggles an inline tag-cloud panel rendered directly beneath it.
 import { useMemo } from "react";
 
-import { type AnnotationColorName, annotationColorToName } from "@zotlit/db";
+import { annotationColorToName } from "@zotlit/db";
+import type { AnnotationColorName } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
@@ -13,8 +14,8 @@ import {
   filterAnnotations,
   isFilterActive,
   pickFirstTagChip,
-  type TagChip,
 } from "./filter";
+import type { TagChip } from "./filter";
 import {
   useAnnotFilter,
   useAnnotStore,

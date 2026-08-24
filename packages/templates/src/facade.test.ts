@@ -2,8 +2,6 @@ import annotation from "@defaults/annotation.eta?raw";
 import content from "@defaults/content.eta?raw";
 import { describe, expect, it } from "vitest";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { TemplateError, TemplateFacade } from "./facade";
 import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
 

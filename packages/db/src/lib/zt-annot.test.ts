@@ -1,11 +1,9 @@
-import { type AnnotationPositionRaw } from "@drizzle/schema";
+import type { AnnotationPositionRaw } from "@drizzle/schema";
 import { describe, expect, it } from "vitest";
 
 import { annotationTypeToName } from "./zt-annot";
-import {
-  parseAnnotationPosition,
-  type AnnotationPosition,
-} from "./zt-annot-pos";
+import { parseAnnotationPosition } from "./zt-annot-pos";
+import type { AnnotationPosition } from "./zt-annot-pos";
 
 describe("parseAnnotationPosition", () => {
   it("parses PDF rect positions", () => {
@@ -18,6 +16,24 @@ describe("parseAnnotationPosition", () => {
       kind: "pdf-rects",
       pageIndex: 2,
       rects: [[1, 2, 3, 4]],
+    });
+  });
+
+  it("preserves continuation rectangles for PDF rect positions", () => {
+    expect(
+      parseAnnotationPosition(
+        {
+          pageIndex: 2,
+          rects: [[1, 2, 3, 4]],
+          nextPageRects: [[5, 6, 7, 8]],
+        },
+        "application/pdf",
+      ),
+    ).toEqual<AnnotationPosition>({
+      kind: "pdf-rects",
+      pageIndex: 2,
+      rects: [[1, 2, 3, 4]],
+      nextPageRects: [[5, 6, 7, 8]],
     });
   });
 

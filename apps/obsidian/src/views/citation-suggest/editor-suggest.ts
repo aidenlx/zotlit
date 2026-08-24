@@ -1,21 +1,21 @@
 import { regex } from "arkregex";
-import {
-  EditorSuggest,
-  Keymap,
-  type Editor,
-  type EditorPosition,
-  type EditorSuggestContext,
-  type EditorSuggestTriggerInfo,
-  type TFile,
+import { EditorSuggest, Keymap } from "obsidian";
+import type {
+  Editor,
+  EditorPosition,
+  EditorSuggestContext,
+  EditorSuggestTriggerInfo,
+  TFile,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
+import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
 
-import { type CitationSuggestDeps } from "./register";
+import type { CitationSuggestDeps } from "./register";
 
 const TRIGGER = regex("[\\[【]@([^\\]】]*)$");
 // Bare `@` at a word boundary: line start, or preceded by whitespace or one of
@@ -87,11 +87,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     if (!context) return;
 
     const secondary = this.#secondary || Keymap.isModifier(evt, "Shift");
-    const outcome = resolveCitationInsert(
-      this.#deps.noteFeature,
-      hit,
-      secondary,
-    );
+    const outcome = resolveCitationInsert(this.#deps, hit, secondary);
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
@@ -141,14 +137,22 @@ export type CitationInsertOutcome =
   | { kind: "notice"; message: string };
 
 /**
- * Decide what selecting `hit` inserts. Pure decision core for
- * {@link CitationEditorSuggest.selectSuggestion}: returns the rendered citation
- * to insert, or the notice message to show (item without a citekey, inert cite
- * template, or template not loaded yet). Errors other than
- * {@link InertTemplateError} propagate.
+ * Decide what selecting `hit` inserts — the pure decision core both citation
+ * insertion entry points run: the inline Citation Suggester and the
+ * command-palette insert modal.
+ *
+ * Returns the rendered citation to insert, or the notice message to show:
+ * an item without a citekey, a citekey several Zotero Items answer to, a
+ * resolution snapshot that has not answered yet, an inert cite template, or a
+ * template not loaded yet. An Ambiguous Citation Key is refused rather than
+ * inserted, because the inserted text carries the key alone and would lose the
+ * identity the user picked here. A snapshot still resolving reports every key
+ * as missing, so it is refused too rather than let an ambiguous key through
+ * while the answer is pending. Errors other than {@link InertTemplateError}
+ * propagate.
  */
 export function resolveCitationInsert(
-  noteFeature: CitationSuggestDeps["noteFeature"],
+  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationIndex">,
   hit: SearchHit,
   secondary: boolean,
 ): CitationInsertOutcome {
@@ -161,9 +165,22 @@ export function resolveCitationInsert(
     };
   }
 
+  // `degraded` is settled data, so it inserts on whatever the snapshot holds;
+  // `resolving` has no verdict yet and would read an ambiguous key as missing.
+  if (deps.citationIndex.resolution === "resolving") {
+    return { kind: "notice", message: m.notice_citekey_not_ready() };
+  }
+
+  if (deps.citationIndex.resolveCitekey(citationKey).kind === "ambiguous") {
+    return {
+      kind: "notice",
+      message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),
+    };
+  }
+
   let rendered: string | null;
   try {
-    rendered = noteFeature.renderCitation(
+    rendered = deps.noteFeature.renderCitation(
       [{ citationKey, item: hit.item }],
       secondary,
     );

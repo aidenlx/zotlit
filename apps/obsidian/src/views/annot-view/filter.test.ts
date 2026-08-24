@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { type AnnotationType, type AnnotViewItem } from "@zotlit/db";
+import type { AnnotationType, AnnotViewItem } from "@zotlit/db";
 
 import {
-  type AnnotFilter,
   deriveSwatchColors,
   deriveTagChips,
   filterAnnotations,
@@ -11,6 +10,7 @@ import {
   pickFirstTagChip,
   sanitizeSavedFilter,
 } from "./filter";
+import type { AnnotFilter } from "./filter";
 
 function makeAnnot(overrides: Partial<AnnotViewItem> = {}): AnnotViewItem {
   return {

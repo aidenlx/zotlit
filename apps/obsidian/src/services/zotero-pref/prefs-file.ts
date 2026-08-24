@@ -9,11 +9,32 @@ export type PrefValue = string | number | boolean;
 /** Branch every Zotero pref is stored under in `prefs.js`. */
 export const PREF_BRANCH = "extensions.zotero.";
 
+/** Built-in fallback when the active profile has no valid positive port. */
+export const DEFAULT_ZOTERO_HTTP_PORT = 23119;
+
+export const ZOTERO_HTTP_PORT_PREF = "httpServer.port";
+
 /** File Gecko persists user prefs to, inside the profile directory. */
 export const PREFS_FILENAME = "prefs.js";
 
 /** File that lists profiles, in the directory above `Profiles/`. */
 export const PROFILES_INI_FILENAME = "profiles.ini";
+
+/**
+ * @returns the configured positive port, Zotero's built-in default, or `null`
+ *   for automatic selection whose effective runtime port is not persisted.
+ */
+export function resolveZoteroHttpPort(
+  value: PrefValue | undefined,
+): number | null {
+  if (value === -1) return null;
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= 65_535
+    ? value
+    : DEFAULT_ZOTERO_HTTP_PORT;
+}
 
 /**
  * Platform directory that holds {@link PROFILES_INI_FILENAME} and the

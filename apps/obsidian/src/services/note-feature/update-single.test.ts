@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { type ItemRef } from "@zotlit/db";
+import type { ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { InertTemplateError } from "@/services/template/errors";
 
-import {
-  type SingleUpdateDeps,
-  updateNote,
-  updateNoteToast,
-} from "./update-single";
+import { updateNote, updateNoteToast } from "./update-single";
+import type { SingleUpdateDeps } from "./update-single";
 
 const REF: ItemRef = {
   itemID: 1,
@@ -32,6 +29,11 @@ function noteLessDeps(): SingleUpdateDeps {
       },
     } as unknown as SingleUpdateDeps["db"],
     settings: {} as SingleUpdateDeps["settings"],
+    libraryScope: {
+      resolveWith: () => {
+        throw new Error("create path reached: library scope resolved");
+      },
+    },
     noteFeature: {
       createNote: () => {
         throw new Error("create path reached: createNote called");

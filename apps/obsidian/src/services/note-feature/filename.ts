@@ -24,6 +24,26 @@ const FORBIDDEN_CHARS = /[\\/:*?"<>|#^[\]]/g;
 /** Windows reserved device names; an exact (case-insensitive) match is invalid. */
 const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 
+function isBidirectionalFormattingControl(codePoint: number): boolean {
+  return (
+    codePoint === 0x061c ||
+    codePoint === 0x200e ||
+    codePoint === 0x200f ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069)
+  );
+}
+
+function stripBidirectionalFormattingControls(input: string): string {
+  let result = "";
+  for (const character of input) {
+    if (!isBidirectionalFormattingControl(character.codePointAt(0)!)) {
+      result += character;
+    }
+  }
+  return result;
+}
+
 /**
  * Thrown when the filename slot of a rendered template resolves to an empty or
  * degenerate name. Its message is localized and ready for surfacing.
@@ -93,7 +113,7 @@ const MD_EXT_BYTES = 3;
  * @throws {@link EmptyFilenameError} when the filename slot sanitizes to empty.
  */
 export function resolveNoteRelPath(rendered: string): string {
-  const segments = rendered.split("/");
+  const segments = stripBidirectionalFormattingControls(rendered).split("/");
   const rawName = segments.pop() ?? "";
   const filename = truncateToByteLimit(
     normalizeFilename(rawName),

@@ -2,7 +2,7 @@
 // Derived from Mozilla web-ext src/firefox/remote.js.
 // https://github.com/mozilla/web-ext/blob/master/src/firefox/remote.js
 
-import { type RdpClient } from "./rdp-client.js";
+import type { RdpClient } from "./rdp-client.ts";
 
 type RemoteFirefoxClient = Pick<RdpClient, "request">;
 
@@ -42,7 +42,7 @@ async function getAddonsActor(client: RemoteFirefoxClient): Promise<string> {
   }
 }
 
-async function getInstalledAddon(
+export async function getInstalledAddon(
   client: RemoteFirefoxClient,
   addonId: string,
 ): Promise<FirefoxAddon> {

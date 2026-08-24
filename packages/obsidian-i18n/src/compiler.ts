@@ -1,14 +1,16 @@
 // Compiles an Inlang project into typed wrappers and JSON Language Packs.
 
-import {
-  loadProjectFromDirectory,
-  selectBundleNested,
-  type BundleNested,
-  type Declaration,
-  type Expression,
-  type InlangProject,
-  type Match,
-  type Pattern,
+import mFunctionMatcherPlugin from "@inlang/plugin-m-function-matcher";
+import messageFormatPlugin from "@inlang/plugin-message-format";
+import { loadProjectFromDirectory, selectBundleNested } from "@inlang/sdk";
+import type {
+  BundleNested,
+  Declaration,
+  Expression,
+  InlangPlugin,
+  InlangProject,
+  Match,
+  Pattern,
 } from "@inlang/sdk";
 import fs from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -18,10 +20,12 @@ import {
   isLanguagePackFileName,
   isSupportedLanguagePackFormatter,
   parseNumericLiteral,
-  type Declaration as PackDeclaration,
-  type Expression as PackExpression,
-  type Match as PackMatch,
-  type Message as PackMessage,
+} from "./language-pack.js";
+import type {
+  Declaration as PackDeclaration,
+  Expression as PackExpression,
+  Match as PackMatch,
+  Message as PackMessage,
 } from "./language-pack.js";
 import { validateLanguagePack } from "./validation.js";
 
@@ -216,6 +220,19 @@ const RESERVED_IDENTIFIERS = new Set([
   "yield",
 ]);
 
+/**
+ * The two Inlang plugins a project's `settings.json` normally declares as
+ * `modules` and the SDK fetches from jsdelivr at load time. Supplying them
+ * here keeps every compile hermetic — no network round trip, no dependency on
+ * the CDN being reachable. A project whose `settings.json` still lists them
+ * (e.g. for the Sherlock IDE extension) is unaffected: the SDK loads its own
+ * fetched copies alongside these.
+ */
+export const INLANG_PLUGINS: InlangPlugin[] = [
+  messageFormatPlugin,
+  mFunctionMatcherPlugin,
+];
+
 export async function compile(
   options: CompileOptions = {},
 ): Promise<CompileResult> {
@@ -224,6 +241,7 @@ export async function compile(
   const project = await loadProjectFromDirectory({
     path: projectPath,
     fs,
+    providePlugins: INLANG_PLUGINS,
   }).catch(async (error: unknown) => {
     const sourceCatalogs =
       await readConfiguredSourceCatalogsForDiagnostics(projectPath);

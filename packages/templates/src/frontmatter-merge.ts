@@ -1,4 +1,4 @@
-import { type FrontmatterMergeStrategy } from "./constants";
+import type { FrontmatterMergeStrategy } from "./constants";
 
 export interface FrontmatterFieldMergeSpec {
   key: string;

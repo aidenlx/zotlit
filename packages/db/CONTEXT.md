@@ -91,6 +91,16 @@ _Avoid_: extra field (ambiguous with the whole field), tag
 **Extra Line**:
 One source row of an **Extra** field in document order — either a parsed **Extra Pair** or a non-pair text/blank row. Retains the row's raw text so freeform prose interleaved with pairs is never dropped.
 
+### Creators
+
+**Primary Creators**:
+The creators in the first populated role from an Item's primary creator role, editor, director, then contributor. Template data exposes this group through the established `authors` field.
+_Avoid_: authors (can include non-author roles), all creators
+
+**Author Summary**:
+The localized abbreviated name string derived from an Item's **Primary Creators**, such as `"Smith et al."`. Template data exposes it through `authorsShort`.
+_Avoid_: first creator (a different Zotero display field), creator summary
+
 ### Template contract
 
 **Template Contract**:

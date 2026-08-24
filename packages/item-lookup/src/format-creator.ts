@@ -1,4 +1,4 @@
-import { type IndexedCreator, type ItemLanguage } from "@zotlit/db";
+import type { IndexedCreator, ItemLanguage } from "@zotlit/db";
 
 /**
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/citeproc.js#L705

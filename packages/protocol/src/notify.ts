@@ -1,11 +1,5 @@
 import * as v from "valibot";
 
-/** Reference to a Zotero item by id within its library. */
-const itemRef = v.object({
-  itemID: v.number(),
-  libraryID: v.number(),
-});
-
 /**
  * Optional diagnostic dirs merged into every event. The source identity itself
  * travels in the {@link SOURCE_ID_HEADER} header; these raw paths are present
@@ -19,13 +13,14 @@ const debugDirs = v.object({
   dataPath: v.optional(v.string()),
 });
 
-/** Regular items added / modified / trashed in Zotero. */
-export const itemUpdateSchema = v.object({
+/**
+ * The Freshness Signal: the Zotero database changed and the main database
+ * file is as current as the companion can make it. Carries no item identity —
+ * the receiver treats it as a refresh trigger, never as data.
+ */
+export const dbUpdatedSchema = v.object({
   ...debugDirs.entries,
-  event: v.literal("item/update"),
-  add: v.array(itemRef),
-  modify: v.array(itemRef),
-  trash: v.array(itemRef),
+  event: v.literal("db/updated"),
 });
 
 /** The full set of annotation items currently selected in a reader. */
@@ -47,7 +42,7 @@ export const readerActiveSchema = v.object({
   selected: v.array(v.number()),
 });
 
-export type ItemUpdate = v.InferOutput<typeof itemUpdateSchema>;
+export type DbUpdated = v.InferOutput<typeof dbUpdatedSchema>;
 export type ReaderAnnotSelect = v.InferOutput<typeof readerAnnotSelectSchema>;
 export type ReaderActive = v.InferOutput<typeof readerActiveSchema>;
 
@@ -56,7 +51,7 @@ export type ReaderActive = v.InferOutput<typeof readerActiveSchema>;
  * listener (`POST {host}/notify`, JSON body). Discriminated on `event`.
  */
 export const notifyEventSchema = v.variant("event", [
-  itemUpdateSchema,
+  dbUpdatedSchema,
   readerAnnotSelectSchema,
   readerActiveSchema,
 ]);

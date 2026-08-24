@@ -21,18 +21,20 @@
  *
  * ## Disk format
  *
- * - `data.json` is sparse: `{ __VERSION__: 3, ...overrides }`. Never persist
- *   `{ __VERSION__: 3, ...current }` — defaults-filled output defeats the
+ * - `data.json` is sparse: `{ __VERSION__: 9, ...overrides }`. Never persist
+ *   `{ __VERSION__: 9, ...current }` — defaults-filled output defeats the
  *   format and bloats user files.
  * - Default-equal override values are still explicit overrides and must
  *   persist; do not auto-delete a key because its value equals the default.
- * - V3 load is non-writing: non-schema keys and bad per-key values are dropped
- *   in memory only and may disappear on the next explicit save.
+ * - V9 load is non-writing: non-schema keys are dropped in memory only and may
+ *   disappear on the next explicit save, while a known key whose value fails
+ *   validation keeps its raw value on disk (see Broken overrides).
  * - V1 data migrates to v2 (`migrateV1`): every `note.frontmatter-fields` item
  *   gains a required `language`, stamped `"javascript"` except for the three
  *   byte-exact v1 default exprs, which become their Liquid equivalents.
- * - Legacy, v1→v2, and v2→v3 migration writes are best-effort cleanup; failures
- *   are logged but never tracked in `pendingWrite` and never block load.
+ * - Legacy through v8→v9 migration writes are best-effort
+ *   cleanup; failures are logged but never tracked in `pendingWrite` and never
+ *   block load.
  *
  * ## Validation
  *
@@ -47,6 +49,17 @@
  *   stores the candidate object, while disk recovery stores per-key
  *   `safeParse` output.
  *
+ * ## Broken overrides
+ *
+ * A v9 override on a known key whose value fails per-key validation is a
+ * *broken override*. Its effective value is that key's default in every
+ * snapshot (`current`, `loaded`, subscribers), while the raw value stays in
+ * `#broken` and is written back on every save, so an unrelated mutation cannot
+ * silently discard it. `diagnostics` names each broken key so a consumer can
+ * report it. `update()` and `reset()` of that key clear the entry, which is the
+ * only way the raw value leaves the file. Migration paths do not preserve
+ * broken values: they rewrite the file as best-effort cleanup.
+ *
  * ## Out of scope
  *
  * - Selectors / derived stores / deep-equality / no-op short-circuiting.
@@ -60,7 +73,8 @@
  *   `saveData()`.
  */
 
-import { debounce, type Plugin } from "obsidian";
+import { debounce } from "obsidian";
+import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
 import { Service } from "@/services/service-base";
@@ -70,12 +84,13 @@ import {
   hydrationOriginOf,
   isPlainObject,
   VERSION_KEY,
-  type HydrationOrigin,
 } from "./classify";
-import { defaults, schema, type Settings } from "./schema";
+import type { HydrationOrigin } from "./classify";
+import { defaults, schema } from "./schema";
+import type { Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 9;
 
 type SettingsKey = keyof typeof schema.entries;
 
@@ -100,6 +115,16 @@ export type SettingsPatch = {
   [K in keyof Settings]?: Settings[K] | typeof RESET_SETTING;
 };
 
+/** One known settings key whose persisted override failed validation. */
+export interface SettingsDiagnostic {
+  readonly key: keyof Settings;
+  /** The rejected value as persisted, kept until that key is updated or reset. */
+  readonly value: unknown;
+}
+
+/** Raw values of broken overrides, keyed by the settings key they belong to. */
+type BrokenOverrides = ReadonlyMap<SettingsKey, unknown>;
+
 export interface SettingsServiceOptions {
   plugin: Pick<Plugin, "loadData" | "saveData">;
   /**
@@ -114,6 +139,30 @@ export interface SettingsServiceOptions {
    * Throwing or returning a non-plain value triggers the defaults fallback.
    */
   migrateV2: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV3: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV4: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV5: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV6: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV7: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV8: (raw: unknown) => unknown;
 }
 
 export class SettingsService extends Service<void> {
@@ -121,10 +170,17 @@ export class SettingsService extends Service<void> {
   readonly #migrateLegacy;
   readonly #migrateV1;
   readonly #migrateV2;
+  readonly #migrateV3;
+  readonly #migrateV4;
+  readonly #migrateV5;
+  readonly #migrateV6;
+  readonly #migrateV7;
+  readonly #migrateV8;
   readonly #scheduleSave;
   readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
 
   #overrides: Partial<Settings> = {};
+  #broken: BrokenOverrides = new Map();
   #loaded = false;
   #hydrationOrigin: HydrationOrigin | null = null;
   #pendingWrite: Promise<void> | undefined;
@@ -137,6 +193,12 @@ export class SettingsService extends Service<void> {
     this.#migrateLegacy = options.migrateLegacy;
     this.#migrateV1 = options.migrateV1;
     this.#migrateV2 = options.migrateV2;
+    this.#migrateV3 = options.migrateV3;
+    this.#migrateV4 = options.migrateV4;
+    this.#migrateV5 = options.migrateV5;
+    this.#migrateV6 = options.migrateV6;
+    this.#migrateV7 = options.migrateV7;
+    this.#migrateV8 = options.migrateV8;
     this.#scheduleSave = debounce(
       () => this.#performSave(),
       SAVE_DEBOUNCE_MS,
@@ -164,6 +226,21 @@ export class SettingsService extends Service<void> {
    */
   get loaded(): Promise<Readonly<Settings>> {
     return this.ready.then(() => this.#snapshot());
+  }
+
+  /**
+   * Broken overrides carried by the current state — the keys whose snapshot
+   * value is the schema default because the persisted value failed validation.
+   * Empty before load finishes and whenever the file is clean.
+   * @returns fresh clones of the rejected values, so a consumer that reports
+   * them cannot mutate what stays persisted. Values come from `data.json`, so
+   * they are JSON data and always structured-cloneable.
+   */
+  get diagnostics(): readonly SettingsDiagnostic[] {
+    return [...this.#broken].map(([key, value]) => ({
+      key,
+      value: structuredClone(value),
+    }));
   }
 
   /**
@@ -199,6 +276,7 @@ export class SettingsService extends Service<void> {
    * @param patchOrUpdater a partial patch or an updater function.
    * `RESET_SETTING` as a patch value deletes that key's override; any other
    * value (including one equal to the default) becomes an explicit override.
+   * Either way the key's broken override, if any, leaves the file.
    */
   update(
     patchOrUpdater:
@@ -215,6 +293,7 @@ export class SettingsService extends Service<void> {
     for (const key of Object.keys(patch)) assertWritableKey(key, "update");
 
     const nextOverrides = { ...this.#overrides };
+    const nextBroken = new Map(this.#broken);
     for (const key of Object.keys(patch)) {
       const value = (patch as Record<string, unknown>)[key];
       if (value === RESET_SETTING) {
@@ -222,15 +301,17 @@ export class SettingsService extends Service<void> {
       } else {
         (nextOverrides as Record<string, unknown>)[key] = value;
       }
+      nextBroken.delete(key as SettingsKey);
     }
 
-    return this.#commitMutation(nextOverrides, "update");
+    return this.#commitMutation(nextOverrides, nextBroken, "update");
   }
 
   /**
-   * Delete overrides for the given keys (or every override when `keys` is
-   * omitted). Validates the post-reset effective object through the full
-   * schema, schedules a debounced save, and returns a fresh clone.
+   * Delete overrides — broken ones included — for the given keys (or every
+   * override when `keys` is omitted). Validates the post-reset effective
+   * object through the full schema, schedules a debounced save, and returns a
+   * fresh clone.
    * @throws before load finished or on unknown keys.
    */
   reset(keys?: readonly (keyof Settings)[]): Readonly<Settings> {
@@ -241,15 +322,20 @@ export class SettingsService extends Service<void> {
     }
 
     const nextOverrides = { ...this.#overrides };
+    const nextBroken = new Map(this.#broken);
     if (keys === undefined) {
       for (const key of Object.keys(nextOverrides)) {
         delete nextOverrides[key as keyof Settings];
       }
+      nextBroken.clear();
     } else {
-      for (const key of keys) delete nextOverrides[key];
+      for (const key of keys) {
+        delete nextOverrides[key];
+        nextBroken.delete(key);
+      }
     }
 
-    return this.#commitMutation(nextOverrides, "reset");
+    return this.#commitMutation(nextOverrides, nextBroken, "reset");
   }
 
   /**
@@ -279,6 +365,7 @@ export class SettingsService extends Service<void> {
    */
   #commitMutation(
     nextOverrides: Partial<Settings>,
+    nextBroken: BrokenOverrides,
     op: "update" | "reset",
   ): Readonly<Settings> {
     const candidate: Settings = { ...defaults, ...nextOverrides };
@@ -291,6 +378,7 @@ export class SettingsService extends Service<void> {
       throw error;
     }
     this.#overrides = nextOverrides;
+    this.#broken = nextBroken;
     this.#notify();
     this.#scheduleSave();
     return candidate;
@@ -328,8 +416,32 @@ export class SettingsService extends Service<void> {
         this.#overrides = {};
         return;
       }
+      case "v9": {
+        this.#loadV9(classification.raw);
+        return;
+      }
+      case "v8": {
+        await this.#loadV8Migration(classification.raw);
+        return;
+      }
+      case "v7": {
+        await this.#loadV7Migration(classification.raw);
+        return;
+      }
+      case "v6": {
+        await this.#loadV6Migration(classification.raw);
+        return;
+      }
+      case "v5": {
+        await this.#loadV5Migration(classification.raw);
+        return;
+      }
+      case "v4": {
+        await this.#loadV4Migration(classification.raw);
+        return;
+      }
       case "v3": {
-        this.#loadV3(classification.raw);
+        await this.#loadV3Migration(classification.raw);
         return;
       }
       case "v2": {
@@ -362,15 +474,105 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * Permissive v3 load: drop non-schema keys and bad per-key values, then
-   * full-schema check for cross-field constraints. Whole-object failure →
-   * defaults fallback with no rewrite.
+   * Permissive v9 load: drop non-schema keys, hold bad per-key values as
+   * broken overrides, then full-schema check for cross-field constraints.
+   * Whole-object failure → defaults fallback with no rewrite.
    */
-  #loadV3(raw: Record<string, unknown>): void {
-    this.#overrides = this.#validateOverrides(raw, "v3 data") ?? {};
+  #loadV9(raw: Record<string, unknown>): void {
+    const validated = this.#validateOverrides(raw, "v9 data");
+    this.#overrides = validated?.cleaned ?? {};
+    this.#broken = validated?.broken ?? new Map();
+    if (this.#broken.size > 0) {
+      // `console` rather than LogTape: load runs before `LoggingService`
+      // configures the sinks, so a logger call here reaches nobody.
+      console.warn(
+        `invalid values in v9 data (${[...this.#broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
+      );
+    }
   }
 
-  /** Run the v2→v3 compatibility migration and persist the cleaned result. */
+  /** Run the v8→v9 compatibility migration and persist the cleaned result. */
+  async #loadV8Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV8, raw, "v8 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    const validated = this.#validateOverrides(migrated, "v8 migration result");
+    this.#overrides = validated?.cleaned ?? {};
+    await this.#writeBestEffort({
+      [VERSION_KEY]: CURRENT_VERSION,
+      ...validated?.cleaned,
+    });
+  }
+
+  /** Run the v7→v8 compatibility migration and delegate to v8→v9. */
+  async #loadV7Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV7, raw, "v7 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    await this.#loadV8Migration(migrated);
+  }
+
+  /** Run the v6→v7 compatibility migration and delegate to v7→v8. */
+  async #loadV6Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV6, raw, "v6 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    await this.#loadV7Migration(migrated);
+  }
+
+  /** Run the v5→v6 compatibility migration and delegate to v6→v7. */
+  async #loadV5Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV5, raw, "v5 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    await this.#loadV6Migration(migrated);
+  }
+
+  /** Run the v4→v5 compatibility migration and delegate to v5→v6. */
+  async #loadV4Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV4, raw, "v4 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    await this.#loadV5Migration(migrated);
+  }
+
+  /** Run the v3→v4 compatibility migration and delegate to the v4 migration. */
+  async #loadV3Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV3, raw, "v3 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    await this.#loadV4Migration(migrated);
+  }
+
+  /**
+   * v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 migration. Runs the v2 hook, then delegates to the v3
+   * migration. A thrown error or non-plain result falls back to defaults.
+   * Persistence is best-effort cleanup: write errors never block load.
+   */
   async #loadV2Migration(raw: Record<string, unknown>): Promise<void> {
     const migrated = runMigrationHook(this.#migrateV2, raw, "v2 migration");
     if (migrated === null) {
@@ -379,17 +581,12 @@ export class SettingsService extends Service<void> {
       return;
     }
 
-    const cleaned = this.#validateOverrides(migrated, "v2 migration result");
-    this.#overrides = cleaned ?? {};
-    await this.#writeBestEffort({
-      [VERSION_KEY]: CURRENT_VERSION,
-      ...cleaned,
-    });
+    await this.#loadV3Migration(migrated);
   }
 
   /**
-   * v1 → v2 → v3 migration. Runs the v1 hook, then delegates to the v2
-   * migration. A thrown error or non-plain result falls back to defaults.
+   * v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 migration. Runs the v1 hook, then delegates to the
+   * v2 migration. A thrown error or non-plain result falls back to defaults.
    * Persistence is best-effort cleanup: write errors never block load.
    */
   async #loadV1Migration(raw: Record<string, unknown>): Promise<void> {
@@ -404,12 +601,12 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * v0 → v1 → v2 → v3 migration chain. Runs the legacy hook first (v0 had no
-   * frontmatter fields, so the v1→v2 stamp is a no-op there), then delegates
-   * to {@link #loadV1Migration} so the rest of the chain — running
+   * v0 → v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 migration chain. Runs the legacy hook first
+   * (v0 had no frontmatter fields, so the v1→v2 stamp is a no-op there), then
+   * delegates to {@link #loadV1Migration} so the rest of the chain — running
    * `migrateV1` and the permissive cleanup that follows — lives in one place.
    * The legacy hook's own failure branch (defaults + best-effort
-   * `{ [VERSION_KEY]: 3 }` write) stays here; persistence beyond that point is
+   * `{ [VERSION_KEY]: 9 }` write) stays here; persistence beyond that point is
    * `#loadV1Migration`'s.
    */
   async #loadLegacy(raw: Record<string, unknown>): Promise<void> {
@@ -428,16 +625,16 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * Shared disk-recovery tail: drop non-schema keys and bad per-key values,
-   * then full-schema check for cross-field constraints. Returns the cleaned
-   * overrides, or `null` when full-schema validation fails (callers fall back
-   * to defaults). Failures are logged with `context` as the source prefix.
+   * Shared disk-recovery tail: split known keys into cleaned and broken
+   * overrides, then full-schema check the effective object for cross-field
+   * constraints. Returns `null` when that check fails (callers fall back to
+   * defaults). Failures are logged with `context` as the source prefix.
    */
   #validateOverrides(
     raw: Record<string, unknown>,
     context: string,
-  ): Partial<Settings> | null {
-    const cleaned = cleanKnownOverrides(raw);
+  ): { cleaned: Partial<Settings>; broken: BrokenOverrides } | null {
+    const { cleaned, broken } = cleanKnownOverrides(raw);
     const result = v.safeParse(schema, { ...defaults, ...cleaned });
     if (!result.success) {
       console.warn(
@@ -445,7 +642,7 @@ export class SettingsService extends Service<void> {
       );
       return null;
     }
-    return cleaned;
+    return { cleaned, broken };
   }
 
   /** Errors are logged but never bubble up — load continues with the already-chosen in-memory state. */
@@ -464,7 +661,11 @@ export class SettingsService extends Service<void> {
    * failures observable through `flush()`.
    */
   #performSave(): Promise<void> {
-    const payload = { [VERSION_KEY]: CURRENT_VERSION, ...this.#overrides };
+    const payload = {
+      [VERSION_KEY]: CURRENT_VERSION,
+      ...Object.fromEntries(this.#broken),
+      ...this.#overrides,
+    };
     let promise!: Promise<void>;
     promise = (async () => {
       try {
@@ -493,21 +694,26 @@ export class SettingsService extends Service<void> {
 
 /**
  * Drop non-schema keys (including reserved metadata), then per-key-validate
- * every schema-known override with `schema.entries[key]`. Silently dropping
- * bad values is intentional: they get a chance to disappear on the next
- * explicit settings write.
+ * every schema-known override with `schema.entries[key]`. A rejected value is
+ * returned as a broken override; the caller decides whether it survives.
  */
-function cleanKnownOverrides(raw: Record<string, unknown>): Partial<Settings> {
+function cleanKnownOverrides(raw: Record<string, unknown>): {
+  cleaned: Partial<Settings>;
+  broken: BrokenOverrides;
+} {
   const cleaned: Partial<Settings> = {};
+  const broken = new Map<SettingsKey, unknown>();
   for (const key of Object.keys(raw)) {
     if (!isSettingsKey(key)) continue;
     const entry = schema.entries[key];
     const result = v.safeParse(entry, raw[key]);
     if (result.success) {
       (cleaned as Record<string, unknown>)[key] = result.output;
+    } else {
+      broken.set(key, raw[key]);
     }
   }
-  return cleaned;
+  return { cleaned, broken };
 }
 
 /**

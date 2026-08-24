@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  normalize,
-  tokenize,
-  type ChsSegmenter,
-  type TokenizerOptions,
-} from "./tokenizer";
+import { normalize, tokenize } from "./tokenizer";
+import type { ChsSegmenter, TokenizerOptions } from "./tokenizer";
 
 describe("item lookup tokenizer", () => {
   it("splits ASCII words and hyphenated terms", () => {

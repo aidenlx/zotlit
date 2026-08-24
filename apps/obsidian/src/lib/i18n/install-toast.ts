@@ -1,12 +1,10 @@
 // Shared progress/success/failure toast for Language Pack downloads, used by
 // the startup consent notice, the background refresh, and both setting tabs.
 
-import {
-  LanguagePackSchemaVersionError,
-  type LanguagePackRestartNotice,
-} from "@zotlit/obsidian-i18n";
+import { LanguagePackSchemaVersionError } from "@zotlit/obsidian-i18n";
+import type { LanguagePackRestartNotice } from "@zotlit/obsidian-i18n";
 
-import { type LanguagePackLifecycle } from "@/lib/i18n";
+import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";

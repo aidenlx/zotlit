@@ -15,6 +15,15 @@ function convert(html: string): string {
   return createNoteTurndown(TurndownService).turndown(html).trim();
 }
 
+/** Convert with the opt-in Colored Highlight Syntax enabled. */
+function convertColoredHighlight(html: string): string {
+  return createNoteTurndown(TurndownService, {
+    useColoredHighlightSyntax: true,
+  })
+    .turndown(html)
+    .trim();
+}
+
 /**
  * Formats documented in Obsidian's "Editing and formatting" help pages
  * (Basic / Advanced formatting syntax, Obsidian Flavored Markdown, HTML
@@ -211,6 +220,42 @@ describe("Zotero note formats", () => {
         'style="background-color: var(--zotlit-hl-yellow, rgba(255, 212, 0, 0.5));">' +
         "Highlight</mark>",
     );
+  });
+
+  it.each([
+    ["rgba(255, 102, 102, 0.5)", "🔴"],
+    ["rgba(241, 152, 55, 0.5)", "🟠"],
+    ["rgba(255, 212, 0, 0.5)", "🟡"],
+    ["rgba(95, 178, 54, 0.5)", "🟢"],
+    ["rgba(46, 168, 229, 0.5)", "🔵"],
+    ["rgba(162, 138, 229, 0.5)", "🟣"],
+  ])("uses emoji-based syntax for a supported %s highlight", (color, emoji) => {
+    const md = convertColoredHighlight(
+      `<span style="background-color: ${color};">Highlight</span>`,
+    );
+
+    expect(md).toBe(`==${emoji}Highlight==`);
+  });
+
+  it("keeps HTML for a highlight color outside the supported six", () => {
+    const md = convertColoredHighlight(
+      '<span style="background-color: rgba(229, 110, 238, 0.5);">Highlight</span>',
+    );
+
+    expect(md).toBe(
+      '<mark class="zotlit-hl" data-color="magenta" ' +
+        'style="background-color: var(--zotlit-hl-magenta, rgba(229, 110, 238, 0.5));">' +
+        "Highlight</mark>",
+    );
+  });
+
+  it("keeps HTML when highlight content contains the == delimiter", () => {
+    const md = convertColoredHighlight(
+      '<span style="background-color: rgba(255, 212, 0, 0.5);">value == target</span>',
+    );
+
+    expect(md).toContain('<mark class="zotlit-hl" data-color="yellow"');
+    expect(md).not.toContain("==🟡");
   });
 
   it("embedded attachment image keeps its key for later import", () => {

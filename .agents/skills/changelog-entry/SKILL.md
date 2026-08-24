@@ -66,6 +66,7 @@ Most commits get dropped. That is correct.
 
 - `chore:` — version bumps, dependency updates, CI, release commits, skill/agent updates
 - `refactor:` — unless the user can perceive the difference
+- `fix(...)` for a feature new in this release — the broken state never shipped
 - `test:`, `docs(agents)`, internal logging, dev-only tooling, type-only changes
 - `build:`, `ci:`, `perf:` that only affect build speed or developer experience
 - Commits whose user-facing effect is already covered by a later commit in the same range

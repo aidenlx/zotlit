@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, expectTypeOf, test } from "vitest";
 
-import {
-  createLanguagePackRuntime,
-  noopLogger,
-  type DatetimeInput,
-  type LanguagePack,
-  type LanguagePackRuntime,
-  type TargetLocaleMessages,
+import { createLanguagePackRuntime, noopLogger } from "./index.js";
+import type {
+  DatetimeInput,
+  LanguagePack,
+  LanguagePackRuntime,
+  TargetLocaleMessages,
 } from "./index.js";
 
 /** The floor every Message Input accepts, absent a narrowing base-locale usage. */
@@ -242,6 +241,16 @@ describe("Language Pack runtime", () => {
     expect(m.hello()).toBe("monde");
     expect(m.annot_view_filter_count({ shown: 3, total: 8 })).toBe("3 of 8");
     expect(runtime.translate("missing_message")).toBe("missing_message");
+  });
+
+  test("reports the locale it renders from, before and after an install", () => {
+    expect(runtime.getLocale()).toBe("en");
+    runtime.install(fakePack("fr", { hello: "monde" }));
+
+    expect(runtime.getLocale()).toBe("fr");
+    runtime.reset();
+
+    expect(runtime.getLocale()).toBe("en");
   });
 
   test("keeps active locale state isolated between runtime instances", () => {

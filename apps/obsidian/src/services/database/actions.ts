@@ -1,30 +1,21 @@
-import { type Plugin } from "obsidian";
+import type { Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 
-import { DatabaseError, type DatabaseService } from "./service";
+import { DatabaseError } from "./service";
+import type { DatabaseService } from "./service";
 
 /**
  * Register the manual `zotlit:refresh-zotero-data` command — the escape hatch for
- * silent watcher staleness (system sleep, network-mounted data dirs, etc) —
- * and the UI subscriber that renders the service's read-fallback notice.
+ * silent watcher staleness (system sleep, network-mounted data dirs, etc).
  *
  * `db.ready` never rejects, so the await around it doesn't need a try/catch.
  */
 export function addDatabaseActions(
-  plugin: Pick<Plugin, "addCommand" | "register">,
+  plugin: Pick<Plugin, "addCommand">,
   services: { db: DatabaseService },
 ): void {
-  plugin.register(
-    services.db.on("read-fallback", (notice) => {
-      if (notice === "reflink-unsupported") {
-        new BaseNotice(m.notice_db_reflink_unsupported());
-      }
-    }),
-  );
-
   plugin.addCommand({
     id: "refresh-zotero-data",
     name: m.command_refresh_db_name(),

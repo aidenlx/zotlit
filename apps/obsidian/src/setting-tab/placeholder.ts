@@ -1,4 +1,5 @@
-import { defaults, type Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 /** Settings keys whose stored value is a string or number. */
 type SettingsScalarKey = {

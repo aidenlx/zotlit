@@ -2,29 +2,45 @@ import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
-import { CitekeyClick } from "./citekey-click/service";
+import { CitationIndex } from "./citation-index/service";
+import { createCitationPopover } from "./citation-popover/service";
+import type { CitationPopover } from "./citation-popover/service";
+import { CitationText } from "./citation-text/service";
+import { CitekeyEditor } from "./citekey-editor/service";
+import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
+import { LibraryScopeService } from "./library-scope/service";
 import { LiveUpdateService } from "./live-update/service";
 import { LoggingService } from "./log/service";
-import { createNoteFeature, type NoteFeature } from "./note-feature";
-import {
-  createBatchImport,
-  type BatchImport,
-} from "./note-import/batch-import";
-import { createNoteImporter, type NoteImporter } from "./note-import/service";
+import { createNoteFeature } from "./note-feature";
+import type { NoteFeature } from "./note-feature";
+import { createBatchImport } from "./note-import/batch-import";
+import type { BatchImport } from "./note-import/batch-import";
+import { createNoteImporter } from "./note-import/service";
+import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
+import { BibliographyRenderCache } from "./pandoc/render-cache";
+import { createPandocEngineService } from "./pandoc/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import {
   migrateLegacyV0,
   migrateV1ToV2,
   migrateV2ToV3,
+  migrateV3ToV4,
+  migrateV4ToV5,
+  migrateV5ToV6,
+  migrateV6ToV7,
+  migrateV7ToV8,
+  migrateV8ToV9,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import { TemplateService } from "./template/service";
+import { WikilinkEditor } from "./wikilink-editor/service";
+import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroPrefService } from "./zotero-pref/service";
 
 /**
@@ -53,6 +69,12 @@ export function buildServices(
           migrateLegacy: migrateLegacyV0,
           migrateV1: migrateV1ToV2,
           migrateV2: migrateV2ToV3,
+          migrateV3: migrateV3ToV4,
+          migrateV4: migrateV4ToV5,
+          migrateV5: migrateV5ToV6,
+          migrateV6: migrateV6ToV7,
+          migrateV7: migrateV7ToV8,
+          migrateV8: migrateV8ToV9,
         }),
     })
     .use({
@@ -75,8 +97,7 @@ export function buildServices(
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
-      noteIndex: ({ settings }) =>
-        new NoteIndex({ plugin, app: plugin.app, settings }),
+      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
       liveUpdate: ({ settings, zoteroPref, noteIndex }) =>
@@ -106,10 +127,14 @@ export function buildServices(
         }),
     })
     .use({
-      itemLookup: ({ db, settings }) =>
+      libraryScope: ({ db, settings }) =>
+        new LibraryScopeService({ db, settings }),
+    })
+    .use({
+      itemLookup: ({ db, libraryScope }) =>
         new ItemLookup({
           db,
-          settings,
+          libraryScope,
           getChsSegmenter: () => getChsSegmenter(plugin.app),
         }),
     })
@@ -138,6 +163,7 @@ export function buildServices(
       batchImport: ({
         db,
         settings,
+        libraryScope,
         noteImport,
         noteIndex,
         template,
@@ -146,6 +172,7 @@ export function buildServices(
           view: createNoteImportView(plugin.app),
           db,
           settings,
+          libraryScope,
           noteImport,
           noteIndex,
           metadataCache: plugin.app.metadataCache,
@@ -153,12 +180,133 @@ export function buildServices(
         }),
     })
     .use({
-      citekeyClick: ({ noteIndex, noteFeature, db, settings }) =>
-        new CitekeyClick({
+      citationIndex: ({ noteIndex, settings, db, libraryScope }) =>
+        new CitationIndex({
           app: plugin.app,
+          noteIndex,
+          settings,
+          db,
+          libraryScope,
+        }),
+    })
+    .use({
+      pandocEngine: () => createPandocEngineService(plugin.app),
+    })
+    .use({
+      bibliographyRender: ({ db, pandocEngine, zoteroPref, settings }) =>
+        new BibliographyRenderCache({
+          db,
+          pandocEngine,
+          zoteroPref,
+          settings,
+        }),
+    })
+    .use({
+      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
+        new CitationText({
+          app: plugin.app,
+          db,
+          citationIndex,
+          noteIndex,
+          bibliographyRender,
+        }),
+    })
+    .useValue({
+      citationPopover: ({
+        db,
+        citationIndex,
+        citationText,
+        bibliographyRender,
+        libraryScope,
+      }): CitationPopover =>
+        createCitationPopover({
+          app: plugin.app,
+          db,
+          citationIndex,
+          citationText,
+          bibliographyRender,
+          libraryScope,
+        }),
+    })
+    .use({
+      citekeyEditor: ({
+        noteIndex,
+        noteFeature,
+        db,
+        citationText,
+        citationPopover,
+        settings,
+        citationIndex,
+        libraryScope,
+      }) =>
+        new CitekeyEditor({
+          app: plugin.app,
+          plugin,
           noteIndex,
           noteFeature,
           db,
+          citationText,
+          citationPopover,
+          settings,
+          citationIndex,
+          libraryScope,
+        }),
+    })
+    .use({
+      wikilinkEditor: ({
+        noteIndex,
+        citationText,
+        citekeyEditor,
+        citationPopover,
+        settings,
+        citationIndex,
+      }) =>
+        new WikilinkEditor({
+          app: plugin.app,
+          plugin,
+          noteIndex,
+          citationText,
+          citekeyEditor,
+          citationPopover,
+          settings,
+          citationIndex,
+        }),
+    })
+    .use({
+      wikilinkReading: ({
+        noteIndex,
+        citationText,
+        citekeyEditor,
+        citationPopover,
+        settings,
+        citationIndex,
+      }) =>
+        new WikilinkReading({
+          app: plugin.app,
+          plugin,
+          noteIndex,
+          citationText,
+          citekeyEditor,
+          citationPopover,
+          settings,
+          citationIndex,
+        }),
+    })
+    .use({
+      citekeyReading: ({
+        citationText,
+        citationIndex,
+        citationPopover,
+        citekeyEditor,
+        settings,
+      }) =>
+        new CitekeyReading({
+          app: plugin.app,
+          plugin,
+          citationText,
+          citationIndex,
+          citationPopover,
+          citekeyEditor,
           settings,
         }),
     });

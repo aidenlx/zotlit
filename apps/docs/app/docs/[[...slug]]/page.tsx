@@ -8,17 +8,19 @@ import {
   ViewOptionsPopover,
 } from "fumadocs-ui/layouts/docs/page";
 import { createRelativeLink } from "fumadocs-ui/mdx";
-import { type Metadata } from "next";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { DocsAvailability } from "@/components/docs-availability";
 import { DocsPageFooter } from "@/components/docs-page-footer";
 import { JsonLd } from "@/components/json-ld";
 import { getMDXComponents } from "@/components/mdx";
 import { RedirectNotice } from "@/components/redirect-notice";
+import { resolveDocsAvailability } from "@/lib/docs-availability";
 import { ztProse } from "@/lib/prose";
 import { pageMetadata } from "@/lib/seo";
 import { appName, docsRoute, gitConfig } from "@/lib/shared";
-import { getPageMarkdownUrl, source } from "@/lib/source";
+import { changelog, getPageMarkdownUrl, source } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
 
 export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
@@ -28,6 +30,10 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
 
   const MDX = page.data.body;
   const markdownUrl = getPageMarkdownUrl(page).url;
+  const availability = resolveDocsAvailability(page.data.introduced);
+  const changelogUrl = page.data.introduced
+    ? changelog.getPage([page.data.introduced])?.url
+    : undefined;
 
   const treeCrumbs = getBreadcrumbItems(page.url, source.pageTree, {
     includePage: true,
@@ -60,6 +66,10 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
       <DocsDescription className="mb-0 font-serif text-lg italic">
         {page.data.description}
       </DocsDescription>
+      <DocsAvailability
+        availability={availability}
+        changelogUrl={changelogUrl}
+      />
       <div className="flex flex-row items-center gap-2 border-b pb-6">
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover

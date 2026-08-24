@@ -1,31 +1,26 @@
 import { join } from "node:path";
-import {
-  type DropdownComponent,
-  type ExtraButtonComponent,
-  type SettingDefinitionItem,
-  type Setting,
+import type {
+  DropdownComponent,
+  ExtraButtonComponent,
+  SettingDefinitionItem,
+  Setting,
 } from "obsidian";
 
-import { getLibraries, type Library } from "@zotlit/db";
-
+import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
-import {
-  type ConfiguredReadMode,
-  type EffectiveReadMode,
+import type {
+  ConfiguredReadMode,
+  EffectiveReadMode,
 } from "@/services/database/read-source";
-import { type DatabaseService } from "@/services/database/service";
 import {
   getZoteroProfilesRoot,
   PREFS_FILENAME,
 } from "@/services/zotero-pref/prefs-file";
-import { type ZoteroProfileInfo } from "@/services/zotero-pref/service";
+import type { ZoteroProfileInfo } from "@/services/zotero-pref/service";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { appendDeviceOverrideNote, browseForDir } from "./device-override";
-
-const logger = getLogger(["setting-tab", "database"]);
 
 /** Folder-picker dropdown sentinel for auto-detect — a real dir is never empty. */
 const PICKER_AUTO = "";
@@ -40,6 +35,30 @@ export function databasePageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   return [
+    {
+      name: m.settings_db_companion_name(),
+      desc: m.settings_db_companion_desc(),
+      render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_db_companion_install())
+            .onClick(() => window.open(DOCS_COMPANION)),
+        );
+      },
+    },
+    {
+      name: m.settings_db_stale_help_name(),
+      desc: m.settings_db_stale_help_desc(),
+      render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_db_stale_help_action())
+            .onClick(() =>
+              window.open(`${DOCS_SITE_URL}/docs/how-to/fix-stale-data`),
+            ),
+        );
+      },
+    },
     {
       name: m.settings_db_profile_dir_name(),
       desc: m.settings_db_profile_dir_desc(),
@@ -77,21 +96,6 @@ export function databasePageItems(
       ],
     },
   ];
-}
-
-/**
- * Default-library picker, surfaced on the main tab. Populated from
- * {@link getLibraries} when the DB is ready, repopulated on `changed`/`degraded`,
- * and seeded after the initial `loading→ready` settle (which `changed` skips).
- */
-export function libraryDefinition(
-  ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey> {
-  return {
-    name: m.settings_db_library_name(),
-    desc: m.settings_db_library_desc(),
-    render: (setting) => renderLibraryRow(setting, ctx),
-  };
 }
 
 /**
@@ -395,109 +399,10 @@ function profileLabel(p: ZoteroProfileInfo): string {
   return p.isDefault ? m.settings_db_profile_default({ name }) : name;
 }
 
-function renderLibraryRow(
-  setting: Setting,
-  ctx: SettingTabContext,
-): () => void {
-  const stack = new DisposableStack();
-
-  let dropdown: DropdownComponent | undefined;
-  const repopulate = (): void => {
-    if (!dropdown) return;
-    const current = ctx.settings.current?.["zotero.citation-library"] ?? 1;
-    const libraries = loadLibrariesSafe(ctx.db);
-    fillLibraryDropdown(dropdown, libraries, current);
-  };
-
-  setting
-    .setDesc(
-      ctx.db.state === "ready"
-        ? m.settings_db_library_desc()
-        : m.settings_db_library_unavailable(),
-    )
-    .addDropdown((d) => {
-      dropdown = d;
-      d.onChange((value) => {
-        const id = Number(value);
-        if (!Number.isFinite(id)) return;
-        ctx.settings.update({ "zotero.citation-library": id });
-      });
-      repopulate();
-    });
-
-  if (ctx.db.state === "loading") {
-    void ctx.db.ready.then(() => {
-      if (dropdown?.selectEl.isConnected) repopulate();
-    });
-  }
-
-  stack.defer(
-    ctx.settings.subscribe((value) => {
-      if (value === null || !dropdown) return;
-      const current = String(value["zotero.citation-library"]);
-      if (dropdown.getValue() === current) return;
-      ensureLibraryOption(dropdown, value["zotero.citation-library"]);
-      dropdown.setValue(current);
-    }),
-  );
-  stack.defer(ctx.db.on("changed", repopulate));
-  stack.defer(ctx.db.on("degraded", repopulate));
-
-  return () => stack.dispose();
-}
-
 function extractErrorMessage(err: Error): string {
   const cause = err.cause;
   if (cause instanceof Error) return cause.message;
   return err.message;
-}
-
-function loadLibrariesSafe(db: DatabaseService): Library[] {
-  if (db.state !== "ready") return [];
-  try {
-    return getLibraries(db.client);
-  } catch (error) {
-    logger.warn("Failed to load Zotero libraries", { error });
-    return [];
-  }
-}
-
-function libraryLabel(lib: Library): string {
-  if (lib.type === "user") return m.settings_db_library_user();
-  return (
-    lib.name ?? m.settings_db_library_unknown({ libraryID: lib.libraryID })
-  );
-}
-
-function fillLibraryDropdown(
-  dropdown: DropdownComponent,
-  libraries: readonly Library[],
-  current: number,
-): void {
-  dropdown.selectEl.replaceChildren();
-  for (const lib of libraries) {
-    dropdown.addOption(String(lib.libraryID), libraryLabel(lib));
-  }
-  ensureLibraryOption(dropdown, current);
-  dropdown.setValue(String(current));
-  dropdown.setDisabled(libraries.length === 0);
-}
-
-/**
- * Append the configured library as a fallback option when it isn't in the
- * fetched list — keeps the dropdown valid for stale or pre-load IDs.
- */
-function ensureLibraryOption(
-  dropdown: DropdownComponent,
-  libraryID: number,
-): void {
-  const key = String(libraryID);
-  const exists = Array.from(dropdown.selectEl.options).some(
-    (opt) => opt.value === key,
-  );
-  if (!exists) {
-    dropdown.addOption(key, m.settings_db_library_unknown({ libraryID }));
-  }
 }
 
 /**

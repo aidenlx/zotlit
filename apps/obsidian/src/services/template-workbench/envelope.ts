@@ -5,27 +5,32 @@
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
 
-import {
-  CONTRACT_VERSION,
-  type ContractRoot,
-  type TemplateSlot,
-} from "@zotlit/db";
-import {
-  type FrontmatterLanguage,
-  type FrontmatterMergeStrategy,
+import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
-import { TemplateError, type TemplateLanguage } from "@zotlit/templates/facade";
-import { type FrontmatterField } from "@zotlit/templates/frontmatter";
+import { TemplateError } from "@zotlit/templates/facade";
+import type { TemplateLanguage } from "@zotlit/templates/facade";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { InertTemplateError } from "@/services/template/errors";
-import {
-  errorContext,
-  type CompileError,
-  type TemplateFileStatus,
+import { errorContext } from "@/services/template/service";
+import type {
+  CompileError,
+  TemplateFileStatus,
 } from "@/services/template/service";
 
-import { type TemplateDataLoadResult } from "./data";
-import { type SchemaAsset } from "./schema";
+import type { TemplateDataLoadResult } from "./data";
+import type { SchemaAsset } from "./schema";
+
+/**
+ * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
+ * commands, versioned on its own (ADR 0026). The value has stood since
+ * 2.0.0-beta.4, when `@zotlit/db`'s `CONTRACT_VERSION` still stamped this
+ * envelope as well.
+ */
+export const CONTRACT_VERSION = 2;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
@@ -41,7 +46,7 @@ export interface WorkbenchIdentity {
 }
 
 /**
- * The documented diagnostic codes of contract version 1, each defined with
+ * The documented diagnostic codes of this CLI Contract, each defined with
  * the recovery action its diagnostic carries. This record is the single source
  * of both, so a new code arrives with its own hint.
  */

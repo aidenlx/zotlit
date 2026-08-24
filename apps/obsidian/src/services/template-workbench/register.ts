@@ -1,23 +1,22 @@
 // Registers the Workbench commands with Obsidian's CLI.
 //
-// Flag and command help text is localized: it is UI text a user reads while
-// discovering the commands. Guide output and diagnostic prose inside a response
-// stay literal English, since `code` is the machine surface agent scripts read.
+// Command, flag, guide, and diagnostic text is all hardcoded English: an
+// agent-facing contract surface, not localized UI. See
+// apps/obsidian/policies/cli-text.md.
 
-import {
-  type App,
-  type CliFlag,
-  type CliFlags,
-  type FileSystemAdapter,
-  type Plugin,
+import type {
+  App,
+  CliFlag,
+  CliFlags,
+  FileSystemAdapter,
+  Plugin,
 } from "obsidian";
 
-import * as m from "@/lib/i18n/generated/messages";
-import { type DatabaseService } from "@/services/database/service";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { DatabaseService } from "@/services/database/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import {
   createTemplateWorkbenchHandlers,
@@ -39,14 +38,16 @@ import {
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
   TEMPLATE_SLOT_NAMES,
-  type DATA_PARAMS,
-  type FRONTMATTER_EVAL_PARAMS,
-  type FRONTMATTER_REMOVE_PARAMS,
-  type FRONTMATTER_REORDER_PARAMS,
-  type FRONTMATTER_SET_PARAMS,
-  type GUIDE_PARAMS,
-  type RENDER_PARAMS,
-  type SOURCE_PARAMS,
+} from "./request";
+import type {
+  DATA_PARAMS,
+  FRONTMATTER_EVAL_PARAMS,
+  FRONTMATTER_REMOVE_PARAMS,
+  FRONTMATTER_REORDER_PARAMS,
+  FRONTMATTER_SET_PARAMS,
+  GUIDE_PARAMS,
+  RENDER_PARAMS,
+  SOURCE_PARAMS,
 } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import { choices } from "./vocabulary";
@@ -60,13 +61,11 @@ interface TemplateWorkbenchRegistrationDeps {
   zoteroPref: ZoteroPrefService;
 }
 
-/** The Indexed Key selector both item-backed commands take. Flags are built per
- *  registration, so their help text resolves against the active Language Pack
- *  rather than the one loaded when this module was imported. */
+/** The Indexed Key selector both item-backed commands take. */
 function keyFlag(): CliFlag {
   return {
     value: "<indexed-key>",
-    description: m.cli_flag_key_desc(),
+    description: "Zotero key for an object",
     required: true,
   };
 }
@@ -76,7 +75,7 @@ function expectationFlags(): Record<"expect-source", CliFlag> {
   return {
     "expect-source": {
       value: "<source-id>",
-      description: m.cli_flag_expect_source_desc(),
+      description: "Zotero source ID the call must match",
     },
   };
 }
@@ -84,7 +83,7 @@ function expectationFlags(): Record<"expect-source", CliFlag> {
 function rootFlag(): CliFlag {
   return {
     value: choices(CONTRACT_ROOT_NAMES),
-    description: m.cli_flag_root_desc(),
+    description: "Template data root",
     required: true,
   };
 }
@@ -95,7 +94,7 @@ function rootFlag(): CliFlag {
 function formatFlag(values: readonly string[]): CliFlag {
   return {
     value: values.join("|"),
-    description: m.cli_flag_format_desc(),
+    description: "Output format, default json",
   };
 }
 
@@ -112,7 +111,7 @@ function guideFlags(): CliFlags {
   return {
     topic: {
       value: choices(GUIDE_TOPIC_NAMES),
-      description: m.cli_flag_topic_desc(),
+      description: "Guide topic",
     },
   } satisfies Record<(typeof GUIDE_PARAMS)[number], CliFlag>;
 }
@@ -122,7 +121,7 @@ function renderFlags(): CliFlags {
     key: keyFlag(),
     template: {
       value: choices(TEMPLATE_SLOT_NAMES),
-      description: m.cli_flag_template_desc(),
+      description: "Template to render",
       required: true,
     },
     format: formatFlag(["markdown", "json"]),
@@ -134,7 +133,7 @@ function sourceFlags(): CliFlags {
   return {
     template: {
       value: choices(TEMPLATE_SLOT_NAMES),
-      description: m.cli_flag_template_desc(),
+      description: "Template to render",
       required: true,
     },
   } satisfies Record<(typeof SOURCE_PARAMS)[number], CliFlag>;
@@ -145,11 +144,12 @@ function frontmatterEvalFlags(): CliFlags {
     key: keyFlag(),
     expr: {
       value: "<expression>",
-      description: m.cli_flag_expr_desc(),
+      description:
+        "Ad-hoc frontmatter expression to evaluate instead of the configured fields",
     },
     language: {
       value: choices(FRONTMATTER_LANGUAGE_NAMES),
-      description: m.cli_flag_language_desc(),
+      description: "Language of expr, default liquid",
     },
     format: formatFlag(["json"]),
     ...expectationFlags(),
@@ -160,20 +160,23 @@ function frontmatterSetFlags(): CliFlags {
   return {
     field: {
       value: "<key>",
-      description: m.cli_flag_field_desc(),
+      description: "Managed Frontmatter field key to add or update",
       required: true,
     },
     expr: {
       value: "<expression>",
-      description: m.cli_flag_frontmatter_set_expr_desc(),
+      description:
+        "Field expression; required for a new field, keeps the current expression when omitted on an existing field",
     },
     language: {
       value: choices(FRONTMATTER_LANGUAGE_NAMES),
-      description: m.cli_flag_frontmatter_set_language_desc(),
+      description:
+        "Field language; defaults to liquid on a new field, keeps the current language when omitted on an existing field",
     },
     merge: {
       value: choices(FRONTMATTER_MERGE_NAMES),
-      description: m.cli_flag_frontmatter_set_merge_desc(),
+      description:
+        "Merge strategy; defaults to replace on a new field, keeps the current strategy when omitted on an existing field",
     },
   } satisfies Record<(typeof FRONTMATTER_SET_PARAMS)[number], CliFlag>;
 }
@@ -182,7 +185,7 @@ function frontmatterRemoveFlags(): CliFlags {
   return {
     field: {
       value: "<key>",
-      description: m.cli_flag_frontmatter_remove_field_desc(),
+      description: "Managed Frontmatter field key to delete",
       required: true,
     },
   } satisfies Record<(typeof FRONTMATTER_REMOVE_PARAMS)[number], CliFlag>;
@@ -192,7 +195,8 @@ function frontmatterReorderFlags(): CliFlags {
   return {
     order: {
       value: "<k1,k2,...>",
-      description: m.cli_flag_order_desc(),
+      description:
+        "Complete, comma-separated permutation of the configured field keys, in write order",
       required: true,
     },
   } satisfies Record<(typeof FRONTMATTER_REORDER_PARAMS)[number], CliFlag>;
@@ -241,67 +245,67 @@ export function registerTemplateWorkbench(
 
   plugin.registerCliHandler(
     TEMPLATE_STATUS_COMMAND,
-    m.cli_template_status_desc(),
+    "Report ZotLit Template Workbench state",
     null,
     handlers[TEMPLATE_STATUS_COMMAND],
   );
   plugin.registerCliHandler(
     TEMPLATE_DATA_COMMAND,
-    m.cli_template_data_desc(),
+    "Return serialized ZotLit Template data, payload under 'zt'",
     dataFlags(),
     handlers[TEMPLATE_DATA_COMMAND],
   );
   plugin.registerCliHandler(
     TEMPLATE_SCHEMA_COMMAND,
-    m.cli_template_schema_desc(),
+    "Return download URLs for every ZotLit Template data schema",
     null,
     handlers[TEMPLATE_SCHEMA_COMMAND],
   );
   plugin.registerCliHandler(
     TEMPLATE_RENDER_COMMAND,
-    m.cli_template_render_desc(),
+    "Render an active ZotLit Template in memory, rendered bytes under 'markdown'",
     renderFlags(),
     handlers[TEMPLATE_RENDER_COMMAND],
   );
   plugin.registerCliHandler(
     TEMPLATE_GUIDE_COMMAND,
-    m.cli_template_guide_desc(),
+    "Print the ZotLit Template Workbench guide",
     guideFlags(),
     handlers[TEMPLATE_GUIDE_COMMAND],
   );
   plugin.registerCliHandler(
     TEMPLATE_SOURCE_COMMAND,
-    m.cli_template_source_desc(),
+    "Return the active ZotLit Template body, under 'source'",
     sourceFlags(),
     handlers[TEMPLATE_SOURCE_COMMAND],
   );
   plugin.registerCliHandler(
     FRONTMATTER_STATUS_COMMAND,
-    m.cli_frontmatter_status_desc(),
+    "Report the configured ZotLit Managed Frontmatter fields",
     null,
     handlers[FRONTMATTER_STATUS_COMMAND],
   );
   plugin.registerCliHandler(
     FRONTMATTER_EVAL_COMMAND,
-    m.cli_frontmatter_eval_desc(),
+    "Evaluate ZotLit Managed Frontmatter fields, or one ad-hoc expression, against an item",
     frontmatterEvalFlags(),
     handlers[FRONTMATTER_EVAL_COMMAND],
   );
   plugin.registerCliHandler(
     FRONTMATTER_SET_COMMAND,
-    m.cli_frontmatter_set_desc(),
+    "Add or update one ZotLit Managed Frontmatter field; omitted parameters on an existing field keep their current values",
     frontmatterSetFlags(),
     handlers[FRONTMATTER_SET_COMMAND],
   );
   plugin.registerCliHandler(
     FRONTMATTER_REMOVE_COMMAND,
-    m.cli_frontmatter_remove_desc(),
+    "Delete one ZotLit Managed Frontmatter field",
     frontmatterRemoveFlags(),
     handlers[FRONTMATTER_REMOVE_COMMAND],
   );
   plugin.registerCliHandler(
     FRONTMATTER_REORDER_COMMAND,
-    m.cli_frontmatter_reorder_desc(),
+    "Arrange the configured ZotLit Managed Frontmatter fields into a new order",
     frontmatterReorderFlags(),
     handlers[FRONTMATTER_REORDER_COMMAND],
   );

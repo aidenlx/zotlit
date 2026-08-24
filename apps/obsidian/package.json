@@ -1,6 +1,6 @@
 {
   "name": "@zotlit/obsidian",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "description": "Plugin to integrate with Zotero, create literature notes and insert citations from a Zotero library.",
   "author": "AidenLx",
@@ -10,14 +10,17 @@
     "build:dev": "vite build --mode development",
     "generate:language-packs": "obsidian-i18n compile --project ../../project.inlang --output src/lib/i18n/generated --exclude-prefix docs_ --target-locale-prefix notice_language_pack_ --target-locale-prefix settings_language_pack_",
     "dev": "vite build --watch --mode development",
+    "dev:vault": "npm run build:dev && ../../packages/scripts/scripts/obsidian-vault.ts open && npm run dev",
     "dev:i18n": "I18N_DEV_SERVER=true vite build --watch --mode development",
     "analyze": "ANALYZE=true vite build",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:lua-filter": "node scripts/check-lua-filter.ts"
   },
   "dependencies": {
+    "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@hono/node-server": "^2.0.10",
     "@hono/valibot-validator": "^0.6.1",
     "@std/async": "catalog:",
@@ -35,8 +38,8 @@
     "eta": "catalog:",
     "fflate": "catalog:",
     "hono": "^4.13.0",
-    "monkey-around": "catalog:",
-    "nanoid": "^5.1.14",
+    "idb": "^8.0.3",
+    "nanoid": "^5.1.16",
     "p-limit": "^7.3.0",
     "preact": "^10.29.7",
     "react-textarea-autosize": "^8.5.9",
@@ -47,9 +50,11 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@codemirror/language": "6.12.3",
     "@codemirror/state": "6.5.0",
     "@codemirror/view": "6.38.6",
     "@electron/remote": "^2.1.3",
+    "@lezer/common": "1.5.2",
     "@logtape/logtape": "catalog:",
     "@preact/preset-vite": "^2.10.6",
     "@tailwindcss/node": "^4.3.0",
@@ -67,6 +72,7 @@
     "happy-dom": "^20.9.0",
     "obsidian": "workspace:*",
     "oxlint": "catalog:",
+    "pandoc-wasm": "^1.1.0",
     "tailwindcss": "catalog:",
     "turndown": "7.2.0",
     "typescript": "catalog:",

@@ -55,6 +55,10 @@ stock sizes to compensate for Gelasio's smaller x-height (~0.48em vs Inter's
 ~0.55em). Blockquotes at 1.125em put Gelasio at optical parity with the
 surrounding sans body.
 
+Apparatus marks come from Lucide or from text-presentation glyphs. Emoji-set
+codepoints stay out: Apple platforms serve them from Apple Color Emoji through
+font fallback, so a mark set in accent orange paints as a color emoji in Safari.
+
 ## The label voice
 
 Apparatus **labels** — short text that names a thing rather than saying a
@@ -122,7 +126,8 @@ body):
 List/detail pages in the `(home)` route group styled with Tailwind over fd
 tokens. Each release: right-aligned gutter (mono-uppercase date, mono version
 badge; latest badge orange-bordered), a serif release title, an optional
-companion note, then the release notes at digest density.
+companion note (`components/companion-note.tsx`) — a leading accent `Puzzle`
+mark on a muted italic line — then the release notes at digest density.
 
 Both views render the release notes with a **sans body**. The `##` category
 dividers (Breaking Changes / What's New / Bug Fixes) speak the **mono-uppercase
@@ -175,6 +180,24 @@ type carries:
   on nested items).
 
 The mobile header carries the same double-hairline signature as the home nav.
+
+### Docs release availability
+
+Release badges use the mono-uppercase apparatus voice with `NEW`, then
+`UPDATED` precedence. An Introduced Release whose Stable Release Line matches
+the Docs Release Line becomes the compact orange `NEW` pill. An Updated Release
+whose Stable Release Line matches the Docs Release Line becomes a quieter
+orange-outline `UPDATED` pill for an existing page.
+
+Every page shows a quiet mono metadata row:
+`AVAILABLE SINCE ZotLit <Introduced Release>`. The release links to the
+matching Changelog Entry when one exists.
+
+A page with no Introduced Release yet — it hasn't gone through a release
+cycle (see ADR 0002) — shows neither the sidebar pill nor the metadata row.
+This is a normal, expected state, not an error: Pre-release Docs deploys
+continuously from `next`, so an unreleased page can sit on a live site for a
+while before the next release assigns it.
 
 ### Comments
 

@@ -1,10 +1,7 @@
-import {
-  type App,
-  ItemView,
-  type ViewStateResult,
-  type WorkspaceLeaf,
-} from "obsidian";
-import { createRoot, type Root } from "react-dom/client";
+import { ItemView } from "obsidian";
+import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 
 import {
   getAnnotViewAnnotations,
@@ -14,51 +11,43 @@ import {
   getItemsByKey,
   getLibraries,
   isChildItemFields,
-  type AnnotViewItem,
-  type Item,
-  type ItemRef,
   parseIndexedKey,
-  type Library,
 } from "@zotlit/db";
+import type { AnnotViewItem, Item, ItemRef, Library } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import {
-  type AttachmentImport,
-  type AttachmentImportService,
+import type {
+  AttachmentImport,
+  AttachmentImportService,
 } from "@/services/attachment-import/service";
-import { type DatabaseService } from "@/services/database/service";
-import { type ItemLookup } from "@/services/item-lookup/service";
-import { type LiveUpdateService } from "@/services/live-update/service";
-import { type NoteFeature } from "@/services/note-feature";
+import type { DatabaseService } from "@/services/database/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
+import type { LiveUpdateService } from "@/services/live-update/service";
+import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
-import {
-  AnnotActionsContext,
-  createAnnotActions,
-  type AnnotActions,
-} from "./actions";
+import { AnnotActionsContext, createAnnotActions } from "./actions";
+import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
-import { sanitizeSavedFilter, type SavedFilter } from "./filter";
+import { sanitizeSavedFilter } from "./filter";
+import type { SavedFilter } from "./filter";
 import { pickItem } from "./item-picker";
-import {
-  type LoadTarget,
-  resolveLibraryID,
-  resolveLoadTarget,
-} from "./resolve-target";
+import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
+import type { LoadTarget } from "./resolve-target";
 import {
   AnnotStoreProvider,
   createAnnotStore,
   INITIAL_FILTER_STATE,
-  type FollowMode,
 } from "./store";
+import type { FollowMode } from "./store";
 
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
@@ -72,7 +61,7 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  * touches, so the real services satisfy it as-is and target-resolution logic can
  * be unit-tested against plain stubs. DB reads run synchronously within one tick
  * (no `await` boundary a refresh swap could interleave with), matching the
- * house sync-read pattern (`protocol`, `citekey-click`).
+ * house sync-read pattern (`protocol`, `citekey-editor`).
  */
 export interface AnnotViewDeps {
   app: App;
@@ -177,12 +166,7 @@ export class AnnotationView extends ItemView {
         workspace: this.#deps.app.workspace,
         noteFeature: this.#deps.noteFeature,
         getImportHandle: () => this.#importHandle,
-        onSettled: () => {
-          const activeFile = this.#deps.app.workspace.getActiveFile();
-          if (this.#itemKey !== null && activeFile) {
-            this.#prepareImportHandle(activeFile.path);
-          }
-        },
+        onSettled: () => this.#syncImportHandle(),
       }),
       renderComment: createCommentRenderer({
         app: this.#deps.app,
@@ -222,7 +206,14 @@ export class AnnotationView extends ItemView {
 
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
-        if (this.#followMode === "note") this.#reload();
+        if (this.#followMode === "note") {
+          this.#reload();
+          return;
+        }
+        // Reader- and linked-follow keep the same item across note switches,
+        // so no reload runs to refresh the drag-insert handle. Sync it here so
+        // it tracks the note a drag would land in.
+        this.#syncImportHandle();
       }),
     );
 
@@ -463,9 +454,7 @@ export class AnnotationView extends ItemView {
       itemDisplayLabel: this.#resolveDisplayLabel(),
     });
 
-    const activeFile = this.#deps.app.workspace.getActiveFile();
-    if (activeFile) this.#prepareImportHandle(activeFile.path);
-    else this.#importHandle = null;
+    this.#syncImportHandle();
 
     try {
       const client = db.client;
@@ -604,6 +593,18 @@ export class AnnotationView extends ItemView {
     this.#groupID = null;
     this.#itemKey = null;
     this.#importHandle = null;
+  }
+
+  /**
+   * Point the drag-insert import handle at the active note, in every follow
+   * mode. The handle is the active note's, not the loaded item's, so it tracks
+   * the active file rather than the load target.
+   */
+  #syncImportHandle(): void {
+    if (this.#itemKey === null) return;
+    const activeFile = this.#deps.app.workspace.getActiveFile();
+    if (activeFile) this.#prepareImportHandle(activeFile.path);
+    else this.#importHandle = null;
   }
 
   /**

@@ -1,18 +1,11 @@
-import {
-  TFile,
-  type App,
-  type CachedMetadata,
-  type Plugin,
-  type TAbstractFile,
-} from "obsidian";
+import { TFile } from "obsidian";
+import type { App, CachedMetadata, Plugin, TAbstractFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
 
 import {
   diffContributions,
@@ -20,9 +13,8 @@ import {
   fileContributions,
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
-  type ContribDiff,
-  type FileContributions,
 } from "./parse";
+import type { ContribDiff, FileContributions } from "./parse";
 
 export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 
@@ -36,7 +28,6 @@ interface NoteIndexEvents {
 export interface NoteIndexOptions {
   plugin: Plugin;
   app: App;
-  settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
 }
 
 /** Frontmatter-only check; does not consult the index. */
@@ -48,33 +39,66 @@ export function isLiteratureNote(file: string | TFile, app: App): boolean {
   return itemKeyFromFrontmatter(cache) !== null;
 }
 
+/** The Literature Note a wikilink target points at. */
+export interface ResolvedLiteratureNote {
+  /** The note's vault path. */
+  path: string;
+  /** Its Indexed Key — the frontmatter marker that makes it a Literature Note. */
+  indexedKey: string;
+}
+
+/**
+ * The Literature Note a wikilink target points at, seen from `sourcePath`, or
+ * `null` when the target is missing or is an ordinary note. Frontmatter-only
+ * like {@link isLiteratureNote}, so it answers before the first scan; every
+ * consumer that turns a linkpath into a Citation shares it.
+ */
+export function resolveLiteratureNote(
+  linkpath: string,
+  sourcePath: string,
+  options: { app: App },
+): ResolvedLiteratureNote | null {
+  const { app } = options;
+  const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
+  if (!dest) return null;
+  const cache = app.metadataCache.getFileCache(dest);
+  const indexedKey = itemKeyFromFrontmatter(cache);
+  if (indexedKey === null) return null;
+  return {
+    path: dest.path,
+    indexedKey,
+  };
+}
+
+/** {@link resolveLiteratureNote}, for a consumer that needs the key alone. */
+export function resolveIndexedKey(
+  linkpath: string,
+  sourcePath: string,
+  app: App,
+): string | null {
+  const note = resolveLiteratureNote(linkpath, sourcePath, { app });
+  return note?.indexedKey ?? null;
+}
+
 export class NoteIndex extends Service<void> {
   readonly #app;
-  readonly #settings;
   readonly #emitter = createNanoEvents<NoteIndexEvents>();
 
   readonly #notesByItemKey = new Map<string, Set<TFile>>();
-  readonly #notesByCitationKey = new Map<string, Set<TFile>>();
   readonly #notesByNoteKey = new Map<string, Set<TFile>>();
   readonly #contribByFile = new Map<TFile, FileContributions>();
   #scanned = false;
-  #citationKeyProperty: string | null = null;
 
   ready: Promise<void>;
 
   constructor(options: NoteIndexOptions) {
     super();
     this.#app = options.app;
-    this.#settings = options.settings;
     this.ready = this.#load();
   }
 
   getNotesByItemKey(indexedKey: string): TFile[] {
     return sortNotes(this.#notesByItemKey.get(indexedKey));
-  }
-
-  getNotesByCitationKey(citationKey: string): TFile[] {
-    return sortNotes(this.#notesByCitationKey.get(citationKey));
   }
 
   /** Imported-note files carrying `zotero-note-key`; disjoint from lit notes. */
@@ -117,16 +141,6 @@ export class NoteIndex extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
-    const initialSettings = this.#settings.current;
-    if (initialSettings) {
-      this.#citationKeyProperty = citationKeyProperty(initialSettings);
-    }
-    stack.defer(
-      this.#settings.subscribe((settings) => {
-        if (settings) this.#applySettings(settings);
-      }),
-    );
     const { metadataCache, vault } = this.#app;
 
     stack.use(
@@ -165,9 +179,7 @@ export class NoteIndex extends Service<void> {
 
   #applyFile(file: TFile, cache: CachedMetadata | null): void {
     const prev = this.#contribByFile.get(file) ?? EMPTY_CONTRIBUTIONS;
-    const next = cache
-      ? fileContributions(cache, this.#citationKeyProperty)
-      : EMPTY_CONTRIBUTIONS;
+    const next = cache ? fileContributions(cache) : EMPTY_CONTRIBUTIONS;
     const diff = diffContributions(prev, next);
     if (diff.empty) return;
 
@@ -186,7 +198,7 @@ export class NoteIndex extends Service<void> {
     for (const file of this.#app.vault.getMarkdownFiles()) {
       const cache = this.#app.metadataCache.getFileCache(file);
       if (!cache) continue;
-      const contributions = fileContributions(cache, this.#citationKeyProperty);
+      const contributions = fileContributions(cache);
       this.#insertContributions(file, contributions);
     }
 
@@ -203,17 +215,6 @@ export class NoteIndex extends Service<void> {
       addIndexedFile(this.#notesByItemKey, diff.itemKey.add, file);
     }
 
-    if (diff.citationKey.remove) {
-      removeIndexedFile(
-        this.#notesByCitationKey,
-        diff.citationKey.remove,
-        file,
-      );
-    }
-    if (diff.citationKey.add) {
-      addIndexedFile(this.#notesByCitationKey, diff.citationKey.add, file);
-    }
-
     if (diff.noteKey.remove) {
       removeIndexedFile(this.#notesByNoteKey, diff.noteKey.remove, file);
     }
@@ -228,9 +229,6 @@ export class NoteIndex extends Service<void> {
     if (contributions.itemKey) {
       addIndexedFile(this.#notesByItemKey, contributions.itemKey, file);
     }
-    if (contributions.citationKey) {
-      addIndexedFile(this.#notesByCitationKey, contributions.citationKey, file);
-    }
     if (contributions.noteKey) {
       addIndexedFile(this.#notesByNoteKey, contributions.noteKey, file);
     }
@@ -239,33 +237,8 @@ export class NoteIndex extends Service<void> {
 
   #clear(): void {
     this.#notesByItemKey.clear();
-    this.#notesByCitationKey.clear();
     this.#notesByNoteKey.clear();
     this.#contribByFile.clear();
-  }
-
-  #applySettings(settings: Readonly<Settings>): void {
-    const next = citationKeyProperty(settings);
-    if (next === this.#citationKeyProperty) return;
-    this.#citationKeyProperty = next;
-    if (this.#scanned) {
-      this.#bulkRescan();
-    } else {
-      this.#clearCitationKeyContributions();
-    }
-  }
-
-  #clearCitationKeyContributions(): void {
-    this.#notesByCitationKey.clear();
-    for (const [file, contributions] of this.#contribByFile) {
-      if (contributions.citationKey === null) continue;
-      const next = { ...contributions, citationKey: null };
-      if (hasContributions(next)) {
-        this.#contribByFile.set(file, next);
-      } else {
-        this.#contribByFile.delete(file);
-      }
-    }
   }
 }
 
@@ -306,17 +279,7 @@ function ensureSet<T>(index: Map<string, Set<T>>, key: string): Set<T> {
 }
 
 function hasContributions(contributions: FileContributions): boolean {
-  return (
-    contributions.itemKey !== null ||
-    contributions.citationKey !== null ||
-    contributions.noteKey !== null
-  );
-}
-
-function citationKeyProperty(settings: Readonly<Settings>): string | null {
-  return settings["citation.key-links"]
-    ? settings["citation.key-links-frontmatter-key"]
-    : null;
+  return contributions.itemKey !== null || contributions.noteKey !== null;
 }
 
 function isMarkdownFile(file: TAbstractFile): file is TFile {

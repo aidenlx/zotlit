@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { type IndexedItem, USER_LIBRARY_ID } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
+import { USER_LIBRARY_ID } from "@zotlit/db";
+import type { IndexedItem } from "@zotlit/db";
 
 import { buildIndex, cleanQuery, searchIndex } from "./engine";
 import { makeCreator as creator, makeIndexedItem as item } from "./fixtures";
-import { type TokenizerOptions } from "./tokenizer";
+import type { TokenizerOptions } from "./tokenizer";
 
 describe("item lookup engine", () => {
   it("matches query terms across Zotero quicksearch fields", () => {
@@ -106,7 +106,9 @@ describe("item lookup engine", () => {
       key: "A",
       title: "Senior citizen transit ID cards",
     });
-    const index = buildIndex([target], opts(), { libraryID: USER_LIBRARY_ID });
+    const index = buildIndex([target], opts(), {
+      libraries: [USER_LIBRARY_ID],
+    });
 
     expect(searchIndex(index, "   ", { tokenizer: opts(), limit: 50 })).toEqual(
       [],
@@ -196,10 +198,138 @@ describe("item lookup engine", () => {
   });
 });
 
+/**
+ * One composite corpus over several Libraries. Canonical Library order here is
+ * `[1, 7, 3]` — deliberately against ascending local `libraryID` — so an
+ * ordering assertion cannot pass on database row order.
+ */
+describe("composite index over several libraries", () => {
+  const LIBRARIES = [USER_LIBRARY_ID, 7, 3];
+
+  const composite = (items: readonly IndexedItem[]) =>
+    buildIndex(items, opts(), { libraries: LIBRARIES });
+
+  it("orders an empty search by global recency", () => {
+    const index = composite([
+      item({ key: "A", libraryID: 3, dateModified: "2024-01-01T00:00:00Z" }),
+      item({ key: "B", libraryID: 1, dateModified: "2026-01-01T00:00:00Z" }),
+      item({ key: "C", libraryID: 7, dateModified: "2025-01-01T00:00:00Z" }),
+    ]);
+
+    expect(index.items.map((entry) => entry.key)).toEqual(["B", "C", "A"]);
+  });
+
+  it("breaks equal timestamps by canonical library order, then item id", () => {
+    const sameInstant = "2025-01-01T00:00:00Z";
+    const index = composite([
+      item({
+        key: "A",
+        itemID: 20,
+        libraryID: 3,
+        dateModified: sameInstant,
+      }),
+      item({
+        key: "B",
+        itemID: 30,
+        libraryID: USER_LIBRARY_ID,
+        dateModified: sameInstant,
+      }),
+      item({
+        key: "C",
+        itemID: 10,
+        libraryID: USER_LIBRARY_ID,
+        dateModified: sameInstant,
+      }),
+      item({ key: "D", itemID: 40, libraryID: 7, dateModified: sameInstant }),
+    ]);
+
+    expect(index.items.map((entry) => entry.key)).toEqual(["C", "B", "D", "A"]);
+  });
+
+  it("returns every library holding a repeated bare zotero key", () => {
+    const index = composite([
+      item({ key: "AAAAAAAA", itemID: 1, libraryID: 3 }),
+      item({ key: "AAAAAAAA", itemID: 2, libraryID: USER_LIBRARY_ID }),
+      item({ key: "BBBBBBBB", itemID: 3, libraryID: 7 }),
+    ]);
+
+    const hits = searchIndex(index, "AAAAAAAA", {
+      tokenizer: opts(),
+      limit: 50,
+    });
+
+    expect(hits.map((hit) => hit.item.libraryID)).toEqual([USER_LIBRARY_ID, 3]);
+  });
+
+  it("caps repeated exact key matches at the result limit", () => {
+    const index = composite([
+      item({ key: "AAAAAAAA", itemID: 1, libraryID: USER_LIBRARY_ID }),
+      item({ key: "AAAAAAAA", itemID: 2, libraryID: 7 }),
+    ]);
+
+    expect(
+      searchIndex(index, "AAAAAAAA", { tokenizer: opts(), limit: 1 }),
+    ).toHaveLength(1);
+  });
+
+  it("keeps equivalent items from different libraries separate", () => {
+    const index = composite([
+      item({
+        key: "AAAAAAAA",
+        itemID: 1,
+        libraryID: USER_LIBRARY_ID,
+        title: "Shared study",
+      }),
+      item({ key: "BBBBBBBB", itemID: 2, libraryID: 7, title: "Shared study" }),
+    ]);
+
+    const hits = searchIndex(index, "shared study", {
+      tokenizer: opts(),
+      limit: 50,
+    });
+
+    expect(hits.map((hit) => hit.item.itemID)).toEqual([1, 2]);
+  });
+
+  it("orders tied relevance by recency, then library, then item id", () => {
+    const sameInstant = "2025-01-01T00:00:00Z";
+    const index = composite([
+      item({
+        key: "A",
+        itemID: 5,
+        libraryID: 3,
+        title: "Shared study",
+        dateModified: sameInstant,
+      }),
+      item({
+        key: "B",
+        itemID: 9,
+        libraryID: USER_LIBRARY_ID,
+        title: "Shared study",
+        dateModified: sameInstant,
+      }),
+      item({
+        key: "C",
+        itemID: 1,
+        libraryID: 7,
+        title: "Shared study",
+        dateModified: "2020-01-01T00:00:00Z",
+      }),
+    ]);
+
+    const hits = searchIndex(index, "shared study", {
+      tokenizer: opts(),
+      limit: 50,
+    });
+
+    expect(hits.map((hit) => hit.item.key)).toEqual(["B", "A", "C"]);
+  });
+});
+
 function searchItems(items: readonly IndexedItem[], query: string) {
   const tokenizerOpts = opts();
   const index = buildIndex(items, tokenizerOpts, {
-    libraryID: USER_LIBRARY_ID,
+    libraries: [USER_LIBRARY_ID],
   });
   return searchIndex(index, query, { tokenizer: tokenizerOpts, limit: 50 });
 }

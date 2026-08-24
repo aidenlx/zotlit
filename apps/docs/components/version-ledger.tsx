@@ -1,5 +1,5 @@
 // Server-rendered current-version & compatibility ledger for the install pages.
-import { type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import {
   assetUrl,
@@ -10,8 +10,8 @@ import {
   mainManifestUrl,
   newestPreRelease,
   tagUrl,
-  type ReleaseChannel,
 } from "@/lib/github-releases";
+import type { ReleaseChannel } from "@/lib/github-releases";
 
 interface PluginManifest {
   version: string;

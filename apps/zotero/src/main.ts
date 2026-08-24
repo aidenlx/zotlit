@@ -1,13 +1,15 @@
-import {
-  BOOTSTRAP_REASONS,
-  type BootstrapReason,
-} from "./lib/bootstrap-reasons";
+import { DEV_READY_FILE_NAME } from "./constant";
+import { BOOTSTRAP_REASONS } from "./lib/bootstrap-reasons";
+import type { BootstrapReason } from "./lib/bootstrap-reasons";
 import { attachFluentToWindow } from "./lib/l10n";
 import { logger, setupLogging } from "./lib/logger";
 import { registerMenus } from "./menus";
-import { type NoteStatus, registerNoteStatus } from "./note-status";
+import { registerNoteStatus } from "./note-status";
+import type { NoteStatus } from "./note-status";
 import { registerNotify } from "./notify";
 import { registerPrefPane } from "./prefs";
+import { registerDatabaseStatus } from "./status";
+import type { DatabaseStatus } from "./status";
 
 export interface PluginData {
   id: string;
@@ -18,14 +20,14 @@ export interface PluginData {
 /**
  * Subsystems are registered against `#stack` and torn down LIFO.
  *
- * Per-window state isn't modelled yet — `MenuManager` and
- * `Reader.registerEventListener` are app-global, so no current subsystem
- * needs window-scoped teardown.
+ * The Database Status subsystem owns one hand-injected control per main
+ * window. Other registered UI surfaces remain app-global.
  */
 export class ZotLitZotero {
   readonly #data: PluginData;
   #stack: AsyncDisposableStack | null = null;
   #noteStatus: NoteStatus | null = null;
+  #databaseStatus: DatabaseStatus | null = null;
 
   constructor(data: PluginData) {
     this.#data = data;
@@ -45,13 +47,21 @@ export class ZotLitZotero {
     }
     await registerPrefPane(this.#data.id);
     stack.use(await registerMenus(this.#data.id));
-    stack.use(registerNotify());
+    const notify = stack.use(await registerNotify());
+    this.#databaseStatus = stack.use(registerDatabaseStatus(notify.checkpoint));
     this.#noteStatus = stack.use(await registerNoteStatus(this.#data.id));
     logger.info("startup", {
       version: this.#data.version,
       id: this.#data.id,
       reason: BOOTSTRAP_REASONS[reason],
     });
+    if (__DEV__) {
+      const readyPath = PathUtils.join(Zotero.Profile.dir, DEV_READY_FILE_NAME);
+      await Zotero.File.putContentsAsync(readyPath, this.#data.version);
+      stack.defer(async () => {
+        await Zotero.File.removeIfExists(readyPath);
+      });
+    }
   }
 
   async shutdown(reason: BootstrapReason): Promise<void> {
@@ -59,12 +69,16 @@ export class ZotLitZotero {
     await this.#stack?.[Symbol.asyncDispose]();
     this.#stack = null;
     this.#noteStatus = null;
+    this.#databaseStatus = null;
   }
 
   onMainWindowLoad(window: Window): void {
     attachFluentToWindow(window);
     this.#noteStatus?.attachWindow(window);
+    this.#databaseStatus?.attachWindow(window);
   }
 
-  onMainWindowUnload(_window: Window): void {}
+  onMainWindowUnload(window: Window): void {
+    this.#databaseStatus?.detachWindow(window);
+  }
 }

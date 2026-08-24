@@ -1,7 +1,6 @@
-import { type CachedMetadata } from "obsidian";
+import type { CachedMetadata } from "obsidian";
 
 import { isIndexedKey } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
 
 import {
   FIELD_ZOTERO_KEY,
@@ -11,34 +10,23 @@ import {
 
 export interface FileContributions {
   itemKey: string | null;
-  citationKey: string | null;
   noteKey: string | null;
 }
 
 export interface ContribDiff {
   empty: boolean;
   itemKey: { remove: string | null; add: string | null };
-  citationKey: { remove: string | null; add: string | null };
   noteKey: { remove: string | null; add: string | null };
 }
 
 export const EMPTY_CONTRIBUTIONS: FileContributions = {
   itemKey: null,
-  citationKey: null,
   noteKey: null,
 };
 
-export function fileContributions(
-  cache: CachedMetadata,
-  citationKeyProperty: string | null,
-): FileContributions {
-  const itemKey = itemKeyFromFrontmatter(cache);
+export function fileContributions(cache: CachedMetadata): FileContributions {
   return {
-    itemKey,
-    citationKey:
-      itemKey === null
-        ? null
-        : citationKeyFromFrontmatter(cache, citationKeyProperty),
+    itemKey: itemKeyFromFrontmatter(cache),
     noteKey: noteKeyFromFrontmatter(cache),
   };
 }
@@ -64,33 +52,19 @@ export function diffContributions(
   next: FileContributions,
 ): ContribDiff {
   const itemKeyChanged = prev.itemKey !== next.itemKey;
-  const citationKeyChanged = prev.citationKey !== next.citationKey;
   const noteKeyChanged = prev.noteKey !== next.noteKey;
 
   return {
-    empty: !itemKeyChanged && !citationKeyChanged && !noteKeyChanged,
+    empty: !itemKeyChanged && !noteKeyChanged,
     itemKey: {
       remove: itemKeyChanged ? prev.itemKey : null,
       add: itemKeyChanged ? next.itemKey : null,
-    },
-    citationKey: {
-      remove: citationKeyChanged ? prev.citationKey : null,
-      add: citationKeyChanged ? next.citationKey : null,
     },
     noteKey: {
       remove: noteKeyChanged ? prev.noteKey : null,
       add: noteKeyChanged ? next.noteKey : null,
     },
   };
-}
-
-function citationKeyFromFrontmatter(
-  cache: CachedMetadata,
-  property: string | null,
-): string | null {
-  if (property === null) return null;
-  const value = cache.frontmatter?.[property];
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
 /**

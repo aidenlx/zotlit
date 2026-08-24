@@ -1,74 +1,145 @@
 ---
-title: "How citation key links work"
-description: "How optional citation key links resolve Literature Notes in Live Preview and Source mode."
+title: "How in-text citation rendering and navigation work"
+description: "How ZotLit selects, formats, lists, and opens citations in the active note."
+introduced: "2.0.0"
+updated: "2.1.0"
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 
-Citation Key Links make bracketed `[@key]` citations clickable in Obsidian's editor. The feature is off on new installs and remains on when ZotLit migrates earlier settings.
+ZotLit uses one ordered set of citations to format the active note, number its references, and support citation navigation.
 
-The **Citation key links** setting controls the feature. It relies on an internal Obsidian editor integration, so Obsidian changes can affect its behavior.
+## The Document Citation Set
 
-## What happens in the editor
+The Document Citation Set contains the Citation Occurrences from the active note. Each occurrence keeps its source position and citation details.
 
-When a bracketed citation appears in Live Preview or Source mode, ZotLit reads its citation key. It then checks the frontmatter property selected by **Citation key property**. This setting defaults to `citekey`.
+Two settings under **Settings > ZotLit > Citations** decide which sources join the set:
 
-Only Literature Notes count as matches. A Markdown file must have a valid `zotero-key` property before its Citation Key Property value can resolve a link.
+| Setting                | Default | Included source                                           |
+| ---------------------- | ------- | --------------------------------------------------------- |
+| **Pandoc citations**   | On      | Literal Pandoc syntax such as `@doe2024` and `[@doe2024]` |
+| **Wikilink citations** | Off     | Eligible wikilinks to Literature Notes                    |
 
-When exactly one Literature Note has the matching property value:
+You can turn off both sources. The References Sidebar, formatted in-text citations, numeric numbering, and Citekey Navigation then receive an empty set.
 
-- **Hover preview** uses Obsidian's built-in page preview.
-- **Click navigation** opens that note directly.
+An eligible wikilink is unaliased and points to a Literature Note. It has either no fragment or a valid Citation Fragment such as `#cite:locator=33`.
 
-Zero or multiple direct matches do not provide hover preview. Clicking still starts Zotero resolution.
+Aliases, embeds, unresolved targets, heading fragments, and block fragments stay outside the set. Malformed Citation Fragments also stay outside it. The References Sidebar reports a malformed fragment as a Reference Error while **Wikilink citations** is on.
 
-## What gets recognized
+The set keeps source order. This order matters because numeric styles assign numbers from the complete note, not from one visible section.
 
-A citation key becomes a link only when it sits inside square brackets. The recognized forms are:
+### The Citation Index
 
-- `[@key]` (single cite)
-- `[@key, p. 3]` (cite with a locator)
-- `[@a; @b]` (multi-cite; each citation key is its own link)
+The Citation Index is ZotLit's internal, vault-wide record of Citation Occurrences. It stays active and tracks both source types, independent of the two source settings.
 
-The brackets matter because Obsidian's editor already displays bracketed text as a link, and that display is what ZotLit's hook builds on. A bare `@key` outside brackets is ordinary text to the editor. It gets no hover preview and no click navigation, even though Pandoc accepts the bare form as a citation.
+The Document Citation Set applies your source settings when a citation feature asks about the active note. Changing either setting recomputes the set without rescanning the vault.
 
-## How click resolution works
+Citation insertion and built-in export use their own membership rules. Turning a source off does not disable insertion or remove that source from export.
 
-ZotLit first opens an exact, unique property match. Otherwise, it finds the Zotero item by citation key in the **Default library**.
+## Pandoc citations
 
-After finding the item, ZotLit checks the authoritative `zotero-key` identity again. It opens that Literature Note when one exists. ZotLit creates a note only when no matching `zotero-key` exists.
+Pandoc citations can cite one work or a group of works:
 
-For the full step-by-step details, including error messages and library resolution, see [Open a note from a citation key](/docs/how-to/create-and-open-notes#open-a-note-from-a-citation-key).
+- `@key` is a bare author-in-text citation.
+- `-@key` suppresses the author.
+- `[@key]` and `[@key, p. 3]` are Citation Clusters.
+- `[see @a, p. 3; @b]` cites multiple works in one cluster.
+- `@{https://example.com/paper}` is a braced key for characters that a bare key cannot contain.
 
-## Citation Key Property and Managed Frontmatter
+Trailing punctuation is outside a citation key. Email addresses and URLs containing `@` remain ordinary text.
 
-The default Managed Frontmatter list includes a `citekey` field backed by `zt.citationKey`. You can edit, rename, or remove this ordinary managed field.
+ZotLit also excludes citation-like text in code, math, `%%` comments, frontmatter, and URLs.
 
-Set **Citation key property** to the property that stores citation keys in your Literature Notes. If the selected property is missing from Managed Frontmatter, ZotLit shows a notice. Citation Key Links remain active, and existing unmanaged property values can still resolve notes.
+### Resolution
 
-Only a non-empty string value can match a citation key. The `zotero-key` property remains the system identity for Literature Notes.
+ZotLit resolves Pandoc citation keys against Zotero's native citation key field, across every library in your **Library scope**. It does not use the `citekey` frontmatter field for resolution.
 
-## Reading mode limitation [#reading-mode]
+An item can appear as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. An unresolved key stays in its native source and appears as a Reference Error in the sidebar.
 
-<Callout type="warn" title="Live Preview and Source mode only">
-  Citation key links work only in Live Preview and Source mode. They do not work
-  in Reading (Preview) mode.
-</Callout>
+The resolution data refreshes when the Zotero database changes. A re-keyed item updates after the next refresh.
 
-The integration applies only to Obsidian's live editor. Reading mode uses a separate rendering path, so citation key spans remain plain text there.
+### A key that matches several items [#ambiguous-key]
+
+A citation key resolves to one Zotero item, to none, or to several. Several is an ambiguous key. It happens when two items in one library carry the same citation key, and when two libraries you both have in scope carry it once each.
+
+ZotLit never picks one of the matches. The editor, reading view, citation popover, and References Sidebar all report the same ambiguous state, and the key keeps its own identity: it adopts no candidate's item, and contributes no bibliography entry.
+
+In a Citation Cluster that holds both an ambiguous key and one that matches nothing, the unresolved key is what the cluster reports. It is the stronger failure, so it stays visible.
+
+Two things resolve an ambiguity. Give one of the items a different citation key in Zotero. Or narrow your [library scope](/docs/reference/settings#library-scope) until one candidate is left, which makes the key unique again.
+
+## Wikilink citations
+
+An eligible Literature Note wikilink represents the Zotero item associated with that note. A valid Citation Fragment can add Pandoc details such as a prefix, locator, suffix, or author-suppression mode.
+
+For example, `[[Doe 2020#cite:locator=33]]` represents the Pandoc source `[@doe2020, p. 33]` when the item's citation key is `doe2020`.
+
+Wikilinks keep Obsidian's native link target, click behavior, and drag behavior. Source mode always shows the raw wikilink.
+
+## Formatted in-text citations
+
+**Show formatted citations** is on by default. It applies the selected **Citation and references style** in Live Preview and reading view. Source mode always shows Markdown.
+
+ZotLit asks the Pandoc engine to format the complete Document Citation Set. A complete render keeps numbering and style context consistent across the note. ZotLit swaps the whole document to formatted text only after that render finishes.
+
+In Live Preview, the Markdown source returns only for the citation touched by your cursor or selection. Other citations remain formatted.
+
+ZotLit leaves the native source visible when it cannot produce one complete formatted result.
+
+A Citation Cluster with any unresolved item stays completely unchanged. Its resolved items still affect later numeric numbering and the References Sidebar.
+
+Turning **Show formatted citations** off leaves every source in Obsidian's native presentation. It does not change set membership, Citekey Navigation, insertion, or export.
+
+## References and errors
+
+The References Sidebar presents one entry for each resolved item in the Document Citation Set. A formatted list follows the selected style's bibliography order and Entry Markers.
+
+Without formatted output, the sidebar uses a minimal list in first-occurrence order. A Reference Error keeps its exact source occurrence and contributes no bibliography entry.
+
+The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers navigation, item actions, bibliography copy, and error recovery.
+
+## Citekey Navigation
+
+**Open citations as links** controls navigation for both literal Pandoc citations and Literature Note wikilinks shown as citations. It works independently of formatted display and hover behavior.
+
+A single-item citation can open or create its Literature Note. A multi-item citation requires an item choice. An [ambiguous key](#ambiguous-key) requires a candidate choice because the key itself names no unique item.
+
+The Citation Popover presents every cited item's full bibliography entry in citation order. An unresolved or ambiguous key remains visible as its own state instead of adopting an item.
+
+The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers citation hover and the available navigation actions. The [commands reference](/docs/reference/commands) lists the open-under-cursor commands.
+
+## Theme hooks [#theme-hooks]
+
+ZotLit adds public CSS classes only to sources in the Document Citation Set where it supplies rendering or navigation. Excluded sources and sources with both applicable features inactive receive no public ZotLit class.
+
+See [Theme hooks](/docs/reference/theme-hooks) for class names, state meanings, and activation rules.
 
 ## See also
 
 <Cards>
   <Card
+    title="Insert citations"
+    description="Insert Markdown citations independently of citation source settings."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
     title="Create and open literature notes"
-    description="Open or create a literature note from a citation key click, the quick switcher, or the Zotero context menu."
+    description="Open or create a Literature Note from a citation or the quick switcher."
     href="/docs/how-to/create-and-open-notes"
   />
   <Card
-    title="Insert citations"
-    description="Insert citation markers while typing or from the command palette."
-    href="/docs/how-to/insert-citations"
+    title="Review, copy, and troubleshoot references"
+    description="Navigate occurrences, inspect citation popovers, copy entries, and fix errors."
+    href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+  <Card
+    title="Export a note with citations"
+    description="Export the active note as a Word document or web page."
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="Settings"
+    description="Look up citation controls, defaults, storage, and dependencies."
+    href="/docs/reference/settings"
   />
 </Cards>

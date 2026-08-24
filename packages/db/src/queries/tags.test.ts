@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { tagTypeToName } from "@/lib/zt-tag";
 import { createFixtureSchema } from "@/test-utils";
 
@@ -11,8 +11,8 @@ import {
   getTagsByItemIDs,
   resolveItemTags,
   resolveItemTagsByIDs,
-  type TagMemo,
 } from "./tags";
+import type { TagMemo } from "./tags";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;

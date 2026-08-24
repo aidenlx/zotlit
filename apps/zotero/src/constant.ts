@@ -16,3 +16,6 @@ export const MAIN_BUNDLE_NAME = "main.js";
 
 /** Zotero bootstrap entry declared in `manifest.json` — emitted alongside `MAIN_BUNDLE_NAME`. */
 export const BOOTSTRAP_BUNDLE_NAME = "bootstrap.js";
+
+/** Dev-runner handshake written only after companion startup completes. */
+export const DEV_READY_FILE_NAME = ".zotlit-dev-ready";

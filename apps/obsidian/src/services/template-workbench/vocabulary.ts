@@ -1,10 +1,11 @@
 // Selector vocabulary shared by request.ts and guide.ts: the accepted `template`
 // values, and the phrasing every vocabulary message and value list uses.
 
-import { TEMPLATE_SLOT_ROOTS, type TemplateSlot } from "@zotlit/db";
-import {
-  type FrontmatterLanguage,
-  type FrontmatterMergeStrategy,
+import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import type { TemplateSlot } from "@zotlit/db";
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
 
 /** The accepted `template` values, in the order selector messages list them. */

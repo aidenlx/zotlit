@@ -18,13 +18,14 @@ import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { renderAnnotations } from "@/lib/annotation-render";
-import {
-  type AttachmentSource,
-  type ResolveLinkOptions,
-  type SourceOrigin,
+import type {
+  AttachmentSource,
+  ResolveLinkOptions,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
 
-import { parseNote, type ParseNoteDeps } from "./note-parser";
+import { parseNote } from "./note-parser";
+import type { ParseNoteDeps } from "./note-parser";
 
 const packageRoot = getPackageRoot();
 
@@ -105,6 +106,7 @@ const echoResolveLink = vi.fn(
 const deps: ParseNoteDeps = {
   client: {} as never,
   libraryID: 1,
+  useColoredHighlightSyntax: false,
   renderCite,
   pathContext: { dataDir: "/data", baseAttachmentPath: null },
   attachmentImport: { decide: blockedDecide, resolveLink: echoResolveLink },
@@ -235,6 +237,53 @@ describe("highlight annotation", () => {
         'style="background-color: var(--zotlit-hl-magenta, #e56eee);">' +
         "might aid in our understanding</mark>]" +
         "(zotero://open/library/items/T2P8T29G?annotation=C2DF35H3&page=62)",
+    );
+  });
+
+  it("uses linked emoji-based syntax when enabled", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "highlight",
+          {
+            attachmentURI: ATTACHMENT,
+            annotationKey: "C2DF35H3",
+            color: "#2ea8e5",
+            pageLabel: "62",
+          },
+          "might aid in our understanding",
+        ),
+      ),
+      { ...deps, useColoredHighlightSyntax: true },
+    );
+
+    expect(md).toBe(
+      "[==🔵might aid in our understanding==]" +
+        "(zotero://open/library/items/T2P8T29G?annotation=C2DF35H3&page=62)",
+    );
+  });
+
+  it("keeps linked HTML for an unsupported color when enabled", () => {
+    const md = parseNote(
+      TurndownService,
+      note(
+        annot(
+          "highlight",
+          {
+            attachmentURI: ATTACHMENT,
+            annotationKey: "C2DF35H3",
+            color: "#e56eee",
+          },
+          "might aid in our understanding",
+        ),
+      ),
+      { ...deps, useColoredHighlightSyntax: true },
+    );
+
+    expect(md).toContain('[<mark class="zotlit-hl" data-color="magenta"');
+    expect(md).toContain(
+      "](zotero://open/library/items/T2P8T29G?annotation=C2DF35H3)",
     );
   });
 });

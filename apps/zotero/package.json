@@ -1,10 +1,13 @@
 {
   "name": "@zotlit/zotero",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
-  "description": "Zotero companion plugin for ZotLit — exports literature notes and annotations to Obsidian.",
+  "description": "Zotero companion plugin for ZotLit",
   "author": "AidenLx",
   "type": "module",
+  "imports": {
+    "#constant": "./src/constant.ts"
+  },
   "scripts": {
     "build": "vite build && pnpm typecheck",
     "build:dev": "vite build --mode development",
@@ -45,6 +48,7 @@
   "zotero": {
     "id": "zotlit@aidenlx.site",
     "strict_min_version": "9.0",
-    "strict_max_version": "9.*"
+    "strict_max_version": "10.*",
+    "icon": "../../assets/logo/zotlit-mark-auto.svg"
   }
 }

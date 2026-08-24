@@ -5,7 +5,13 @@ zotlit-prefs-pane-label = ZotLit
 zotlit-prefs-notify-section = Obsidian Notifications
 zotlit-prefs-notify-enable =
     .label = Enable
+zotlit-prefs-notify-description = Notifies ZotLit in Obsidian as you read and annotate, and when the database file has new changes.
 zotlit-prefs-notify-url = Notify URL
+
+zotlit-prefs-database-section = Database
+zotlit-prefs-wal-checkpoint =
+    .label = Keep the database file up to date for Obsidian
+zotlit-prefs-wal-checkpoint-description = Writes recent changes from the write-ahead log to the main database file so ZotLit reads current data.
 
 zotlit-prefs-logging-section = Logging
 zotlit-prefs-logging-level = Console log level
@@ -103,3 +109,26 @@ zotlit-note-status-refreshed-message = { $count ->
     }
 zotlit-note-status-refresh-failed-title = Couldn't refresh literature note status
 zotlit-note-status-refresh-failed-message = Make sure Obsidian is running with the ZotLit server enabled, then try again.
+
+zotlit-database-status =
+    .tooltiptext = Database Status
+zotlit-database-status-icon-off =
+    .tooltiptext = Database Status — automatic writes off
+zotlit-database-status-icon-failed =
+    .tooltiptext = Database Status — last write failed
+zotlit-database-status-working = Changes are being written to the database file for Obsidian.
+zotlit-database-status-automatic-off = Automatic writes to the database file are off. You can still write changes manually.
+zotlit-database-status-no-wal = This database does not use a write-ahead log. Changes are already in the database file.
+zotlit-database-status-failed = The last attempt to write changes to the database file failed.
+zotlit-database-status-never-written = Nothing has been written yet.
+zotlit-database-status-last-written = Last wrote changes { $time }.
+zotlit-database-status-last-attempt = Last attempt was { $time }.
+zotlit-database-status-write-now = Write Changes to Database File Now
+zotlit-database-status-guide = Fix Stale Data…
+zotlit-database-write-running-title = Writing changes to the database file…
+zotlit-database-write-done-title = Database file updated
+zotlit-database-write-done-message = Recent changes are now available to Obsidian.
+zotlit-database-write-in-use-title = Database file is in use
+zotlit-database-write-in-use-message = Wait a moment, then try again.
+zotlit-database-write-failed-title = Couldn't write changes to the database file
+zotlit-database-write-failed-message = Collect <a href="{ $debugLogsUrl }" tooltiptext="{ $debugLogsUrl }">Zotero debug logs</a>, then report the problem.

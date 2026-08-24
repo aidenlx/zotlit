@@ -1,24 +1,21 @@
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
-import {
-  normalizePath,
-  stringifyYaml,
-  type FileManager,
-  type TFile,
-  type Vault,
-} from "obsidian";
+import { normalizePath, stringifyYaml } from "obsidian";
+import type { FileManager, TFile, Vault } from "obsidian";
 import pLimit from "p-limit";
 
 import {
   citekeysToCiteTemplateData,
   getAnnotationsByKey,
   getNoteByKey,
-  type ChildNote,
-  type GroupIDMemo,
-  type Note,
-  type TagMemo,
-  type TemplateNoteLink,
 } from "@zotlit/db";
-import { type NodeDatabaseClient } from "@zotlit/db/client/node";
+import type {
+  ChildNote,
+  GroupIDMemo,
+  Note,
+  TagMemo,
+  TemplateNoteLink,
+} from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import {
@@ -35,9 +32,9 @@ import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
 import { isFileExistsError } from "@/lib/vault-errors";
-import {
-  type AttachmentImport,
-  type AttachmentImportService,
+import type {
+  AttachmentImport,
+  AttachmentImportService,
 } from "@/services/attachment-import/service";
 import {
   MAX_SEGMENT_BYTES,
@@ -45,10 +42,10 @@ import {
   randomFilenameId,
   truncateToByteLimit,
 } from "@/services/note-feature/filename";
-import { type NoteIndex } from "@/services/note-index/service";
-import { type Settings } from "@/services/settings/schema";
-import { type TemplateService } from "@/services/template/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { NoteIndex } from "@/services/note-index/service";
+import type { Settings } from "@/services/settings/schema";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { parseNote } from "./note-parser";
 
@@ -398,6 +395,7 @@ async function writeNote(
         dataDir: ctx.zoteroPref.dataDir,
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
       },
+      useColoredHighlightSyntax: run.settings["note.import-colored-highlights"],
       attachmentImport: batch,
       renderAnnotationParagraph,
     });

@@ -3,11 +3,15 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { createFixtureSchema } from "@/test-utils";
 
-import { getCitekeyByItemKey, getItemIDByCitekey } from "./citekey";
+import {
+  getCitekeyByItemKey,
+  getCitekeysByLibrary,
+  getItemIDByCitekey,
+} from "./citekey";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -77,6 +81,65 @@ describe("getCitekeyByItemKey", () => {
     expect(getCitekeyByItemKey(db, 2, "GRP1")).toBe("shared2024");
     // The same key does not exist in the user library.
     expect(getCitekeyByItemKey(db, USER_LIBRARY_ID, "GRP1")).toBeNull();
+  });
+});
+
+describe("getCitekeysByLibrary", () => {
+  it("returns every live keyed item of the user library", () => {
+    const rows = getCitekeysByLibrary(db, USER_LIBRARY_ID);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          itemID: 1,
+          libraryID: USER_LIBRARY_ID,
+          key: "USER1",
+          indexedKey: "USER1",
+          citekey: "doe2024alpha",
+        },
+        {
+          itemID: 6,
+          libraryID: USER_LIBRARY_ID,
+          key: "USER2",
+          indexedKey: "USER2",
+          citekey: "shared2024",
+        },
+      ]),
+    );
+    expect(rows).toHaveLength(2);
+  });
+
+  it("scopes rows to the requested library and marks group rows with the indexed key", () => {
+    const rows = getCitekeysByLibrary(db, 2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          itemID: 7,
+          libraryID: 2,
+          key: "GRP1",
+          indexedKey: "GRP1g17",
+          citekey: "shared2024",
+        },
+        {
+          itemID: 9,
+          libraryID: 2,
+          key: "GRP2",
+          indexedKey: "GRP2g17",
+          citekey: "groupkey2025",
+        },
+      ]),
+    );
+    expect(rows).toHaveLength(2);
+  });
+
+  it("excludes deleted items", () => {
+    const rows = getCitekeysByLibrary(db, USER_LIBRARY_ID);
+    expect(rows.some((row) => row.itemID === 2)).toBe(false);
+  });
+
+  it("excludes a non-citationKey field holding the same value", () => {
+    // Item 8 (USER3) has only a `title` field, not a citationKey.
+    const rows = getCitekeysByLibrary(db, USER_LIBRARY_ID);
+    expect(rows.some((row) => row.itemID === 8)).toBe(false);
   });
 });
 

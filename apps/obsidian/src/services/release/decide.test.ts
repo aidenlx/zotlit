@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { V1_TEMPLATE_FOLDER } from "./constants";
-import { decideRelease, type ReleaseCheckInput } from "./decide";
+import { decideRelease } from "./decide";
+import type { ReleaseCheckInput } from "./decide";
 
 const CURRENT = "2.0.0-alpha.6";
 
@@ -175,6 +176,27 @@ describe("decideRelease", () => {
     );
     expect(decision.branch).toBe("none");
     expect(decision.recordVersion).toBe(CURRENT);
+  });
+
+  it.each(["2.1.0", "2.1.1"])(
+    "crossing the 2.1 boundary to %s → Companion notice even when update notices are off",
+    (currentVersion) => {
+      const decision = decideRelease(
+        input({
+          recordedVersion: "2.0.1",
+          currentVersion,
+          noticesEnabled: false,
+        }),
+      );
+      expect(decision.branch).toBe("companion-notice");
+    },
+  );
+
+  it("an update after the 2.1 boundary → ordinary update notice", () => {
+    const decision = decideRelease(
+      input({ recordedVersion: "2.1.0", currentVersion: "2.1.1" }),
+    );
+    expect(decision.branch).toBe("update-notice");
   });
 
   it("pre-release increase → update notice", () => {

@@ -1,12 +1,12 @@
 import { regex } from "arkregex";
-import {
-  EditorSuggest,
-  type App,
-  type Editor,
-  type EditorPosition,
-  type EditorSuggestContext,
-  type EditorSuggestTriggerInfo,
-  type TFile,
+import { EditorSuggest } from "obsidian";
+import type {
+  App,
+  Editor,
+  EditorPosition,
+  EditorSuggestContext,
+  EditorSuggestTriggerInfo,
+  TFile,
 } from "obsidian";
 
 import { isEtaTemplatePath } from "@/services/template/path";

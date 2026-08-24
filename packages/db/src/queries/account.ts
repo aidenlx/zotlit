@@ -1,27 +1,66 @@
-// Reads the signed-in Zotero account's username from the `settings` table.
-import { type NodeDatabaseClient } from "@/client/node";
+// Reads the signed-in Zotero account's identity from the `settings` table.
+import { getLogger } from "@logtape/logtape";
+
+import type { NodeDatabaseClient } from "@/client/node";
 
 import { defineQuery } from "./_shared";
 
-const usernameQuery = defineQuery<void>()((db) =>
+const logger = getLogger(["zotlit", "db", "account"]);
+
+/**
+ * How Zotero identifies the signed-in account. It writes `localUserKey` on
+ * first run and `userID` once the account syncs, preferring the latter, so a
+ * database Zotero has opened carries at least one — together they name the
+ * personal library in an `itemUri`.
+ *
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/users.js#L61
+ */
+export interface ZoteroUserIdentity {
+  /** Numeric account id; `null` until the account syncs with zotero.org. */
+  userID: number | null;
+  /** Random 8-character key Zotero writes on first run. */
+  localUserKey: string | null;
+  /**
+   * Account username; `null` when the account never synced. Backs
+   * `zt.weblink`'s personal-library URL (`https://www.zotero.org/{username}/…`).
+   */
+  username: string | null;
+}
+
+const identityQuery = defineQuery<void>()((db) =>
   db.query.settings.findMany({
-    columns: { value: true },
-    where: { setting: "account", key: "username" },
-    limit: 1,
+    columns: { key: true, value: true },
+    where: {
+      setting: "account",
+      key: { in: ["userID", "localUserKey", "username"] },
+    },
   }),
 );
 
 /**
- * The account username backs `zt.weblink`'s personal-library URL
- * (`https://www.zotero.org/{username}/...`). The `settings.value` column is
- * loosely typed, so the raw `(setting='account', key='username')` value is
- * checked before use.
+ * The `settings.value` column is loosely typed, so every raw value is checked
+ * before use; Zotero stores `userID` as a positive integer and may hold it as
+ * text.
  *
- * @returns the username, or `null` when the account never synced (no row) or
- *   the stored value is empty / not a string.
- * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/users.js#L93
+ * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/users.js#L61
  */
-export function getCurrentUsername(db: NodeDatabaseClient): string | null {
-  const value = usernameQuery.prepared(db).all()[0]?.value;
-  return typeof value === "string" && value !== "" ? value : null;
+export function getZoteroIdentity(db: NodeDatabaseClient): ZoteroUserIdentity {
+  const rows = identityQuery.prepared(db).all();
+  const text = (key: string): string | null => {
+    const value = rows.find((row) => row.key === key)?.value;
+    return typeof value === "string" && value !== "" ? value : null;
+  };
+  const rawUserID = rows.find((row) => row.key === "userID")?.value;
+  const userID = typeof rawUserID === "number" ? rawUserID : Number(rawUserID);
+  const resolvedUserID = Number.isInteger(userID) && userID > 0 ? userID : null;
+  const localUserKey = text("localUserKey");
+  if (resolvedUserID == null && localUserKey == null)
+    logger.warn(
+      "Zotero database carries neither userID nor localUserKey; personal-library items have no Item URI to build",
+    );
+  return {
+    userID: resolvedUserID,
+    localUserKey,
+    username: text("username"),
+  };
 }

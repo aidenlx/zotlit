@@ -1,14 +1,16 @@
-import { type Temporal } from "@zotlit/shared/temporal";
 import { FIELD_ALIASES } from "@zotlit/zotero-types";
 
 import { ZT_FIELD_ALIASES } from "@/lib/context/zt-field-aliases";
 import { defineToString } from "@/lib/to-string";
-import { type TemplateCollection } from "@/lib/zt-collection";
-import { parseItemDate, type ItemDate } from "@/lib/zt-date";
-import { parseItemExtra, type ItemExtra } from "@/lib/zt-extra";
-import { toTemplateTag, type ItemTag, type TemplateTag } from "@/lib/zt-tag";
+import type { TemplateCollection } from "@/lib/zt-collection";
+import { parseItemDate } from "@/lib/zt-date";
+import type { ItemDate } from "@/lib/zt-date";
+import { parseItemExtra } from "@/lib/zt-extra";
+import type { ItemExtra } from "@/lib/zt-extra";
+import { toTemplateTag } from "@/lib/zt-tag";
+import type { ItemTag, TemplateTag } from "@/lib/zt-tag";
 import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
-import { type Creator, type Item } from "@/queries/items";
+import type { Creator, Item } from "@/queries/items";
 
 /**
  * One creator of an item, in the template vocabulary. Coerces to
@@ -168,11 +170,11 @@ export interface TemplateItemData extends TemplateItemBaseData {
 
 /**
  * The `zt` root of the `filename` template: an item's own fields, its
- * collections, and inert `notePath` / `noteLink` stubs. The note-body context is absent — no `backlink`,
- * `weblink`, `annotations`, `attachments`, `relatedItems`, `authors`,
- * `authorsShort`, or `notes` — so naming a note stays a single-item read.
+ * collections, Primary Creators, an Author Summary, and inert `notePath` /
+ * `noteLink` stubs. It reads only this item when naming a note.
  */
-export interface TemplateFilenameItemData extends TemplateItemBaseData {
+export interface TemplateFilenameItemData
+  extends TemplateItemBaseData, TemplateAuthorData {
   /**
    * Always `""` — the note does not exist yet when a filename is resolved.
    * Stubbed (rather than omitted) so a filename template reading `notePath`
@@ -331,25 +333,44 @@ function toTemplateCreator(c: Creator): TemplateCreator {
   );
 }
 
-/** Creators filtered to the item's primary creator type; all when none. */
-function selectPrimaryAuthors(data: TemplateItemBaseData): TemplateCreator[] {
-  return data.primaryCreatorType
-    ? data.creators.filter((c) => c.role === data.primaryCreatorType)
-    : [...data.creators];
+/**
+ * The creator roles Zotero uses for its creator display, in fallback order.
+ */
+export function creatorTypePriority(
+  primaryCreatorType: string | null,
+): string[] {
+  return [
+    ...new Set([primaryCreatorType, "editor", "director", "contributor"]),
+  ].filter((role): role is string => role !== null);
 }
 
-/** The app-layer convenience fields shared by every resolved item shape
- *  (note main item, related item, annotation parentItem). Centralized so a new
- *  convenience is a compile error at every projection site until supplied. */
-export interface ResolvedItemCore {
+/** Primary Creators: the first populated priority role on an item. */
+export function resolvePrimaryCreators(
+  data: TemplateItemBaseData,
+): TemplateCreator[] {
+  for (const role of creatorTypePriority(data.primaryCreatorType)) {
+    const creators = data.creators.filter((creator) => creator.role === role);
+    if (creators.length > 0) return creators;
+  }
+  return [];
+}
+
+export interface TemplateAuthorData {
+  /** Primary Creators from the item's role-priority chain. */
+  authors: TemplateCreator[];
+  /** Formatted short author string, e.g. `"Smith et al."`. */
+  authorsShort: string;
+}
+
+/**
+ * App-layer conveniences every resolved item shape shares: navigation links,
+ * Primary Creators, and an Author Summary.
+ */
+export interface ResolvedItemCore extends TemplateAuthorData {
   /** Zotero desktop deep link (`zotero://select/...`). */
   backlink: string;
   /** Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library. */
   weblink: string | null;
-  /** Creators filtered to the item's primary creator type; all when none matches. */
-  authors: TemplateCreator[];
-  /** Formatted short author string, e.g. `"Smith et al."`. */
-  authorsShort: string;
 }
 
 /** Compute the {@link ResolvedItemCore} conveniences for an item. The single
@@ -363,7 +384,7 @@ export function resolveItemCore(input: {
   return {
     backlink: itemSelectUri(input.item.key, input.item.groupID),
     weblink: itemWebUrl(input.item.key, input.item.groupID, input.username),
-    authors: selectPrimaryAuthors(input.baseData),
+    authors: resolvePrimaryCreators(input.baseData),
     authorsShort: input.authorsShort(input.item),
   };
 }

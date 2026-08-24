@@ -1,4 +1,5 @@
-import { createHighlighter, type Highlighter } from "shiki";
+import { createHighlighter } from "shiki";
+import type { Highlighter } from "shiki";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { etaGrammar } from "./eta-grammar";

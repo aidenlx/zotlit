@@ -1,4 +1,5 @@
-import { type InputHTMLAttributes, type Ref, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { InputHTMLAttributes, Ref } from "react";
 
 import { cn } from "@/lib/utils";
 

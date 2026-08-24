@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
-import { type Plugin, type ResolvedConfig, type UserConfig } from "vite";
+import type { Plugin, ResolvedConfig, UserConfig } from "vite";
 import { describe, expect, test } from "vitest";
 
 import {

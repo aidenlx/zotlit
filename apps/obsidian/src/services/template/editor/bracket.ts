@@ -1,5 +1,7 @@
-import { EditorState, type Extension, Prec } from "@codemirror/state";
-import { editorInfoField, type TFile, type Vault } from "obsidian";
+import { EditorState, Prec } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
+import { editorInfoField } from "obsidian";
+import type { TFile, Vault } from "obsidian";
 
 import { isEtaTemplatePath } from "@/services/template/path";
 

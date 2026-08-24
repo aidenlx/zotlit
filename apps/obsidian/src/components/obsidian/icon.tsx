@@ -1,10 +1,7 @@
-import { getIcon, type IconName } from "obsidian";
-import {
-  type CSSProperties,
-  type SVGAttributes,
-  useLayoutEffect,
-  useRef,
-} from "react";
+import { getIcon } from "obsidian";
+import type { IconName } from "obsidian";
+import { useLayoutEffect, useMemo, useRef } from "react";
+import type { CSSProperties, SVGAttributes } from "react";
 
 import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
@@ -63,6 +60,20 @@ export function Icon({
     }
   }, [name]);
 
+  /**
+   * The class Obsidian itself stamps on the icon — `svg-icon lucide-paperclip`
+   * for a Lucide one. Take it verbatim rather than composing `svg-icon` with
+   * the bare `name`: an unprefixed name lands in the class list as its own
+   * selector, and several collide with Obsidian's global classes
+   * (`.external-link` paints a background glyph and adds inline-end padding).
+   * A fresh `getIcon` call, because the effect above moves its clone's
+   * children out and must keep getting an untouched one.
+   */
+  const iconClass = useMemo(
+    () => getIcon(name)?.getAttribute("class") ?? "svg-icon",
+    [name],
+  );
+
   const cssVars: CSSProperties & Record<`--${string}`, string | number> = {};
   if (size !== undefined) {
     cssVars["--icon-size"] = typeof size === "number" ? `${size}px` : size;
@@ -79,7 +90,7 @@ export function Icon({
       ref={ref}
       {...(decorative ? { "aria-hidden": true } : { role: "img" })}
       {...rest}
-      className={cn("svg-icon", name, className)}
+      className={cn(iconClass, className)}
       style={{ ...cssVars, ...style }}
     />
   );

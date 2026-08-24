@@ -1,25 +1,22 @@
 // The Template Workbench commands and their response boundaries.
 
-import { type CliData, type CliHandler } from "obsidian";
+import type { CliData, CliHandler } from "obsidian";
 
-import {
-  TEMPLATE_SLOT_ROOTS,
-  type ContractRoot,
-  type TemplateSlot,
-} from "@zotlit/db";
-import { type FrontmatterLanguage } from "@zotlit/templates/constants";
-import { type RootVariableUse } from "@zotlit/templates/facade";
-import { type FrontmatterField } from "@zotlit/templates/frontmatter";
+import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type { FrontmatterLanguage } from "@zotlit/templates/constants";
+import type { RootVariableUse } from "@zotlit/templates/facade";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
-import {
-  type CompileError,
-  type SettleOutcome,
-  type TemplateFileStatus,
+import type {
+  CompileError,
+  SettleOutcome,
+  TemplateFileStatus,
 } from "@/services/template/service";
 
-import { type TemplateDataLoadResult } from "./data";
+import type { TemplateDataLoadResult } from "./data";
 import {
   dataLoadDiagnostic,
   diagnostic,
@@ -27,11 +24,13 @@ import {
   initFailedDiagnostic,
   notSettledDiagnostic,
   templateFaultDiagnostic,
-  type Diagnostic,
-  type FrontmatterEvalRow,
-  type FrontmatterFieldRow,
-  type WorkbenchCommand,
-  type WorkbenchIdentity,
+} from "./envelope";
+import type {
+  Diagnostic,
+  FrontmatterEvalRow,
+  FrontmatterFieldRow,
+  WorkbenchCommand,
+  WorkbenchIdentity,
 } from "./envelope";
 import { renderGuide } from "./guide";
 import {
@@ -47,8 +46,8 @@ import {
   parseSourceRequest,
   parseStatusRequest,
   targetMismatch,
-  type ParsedRequest,
 } from "./request";
+import type { ParsedRequest } from "./request";
 import { schemaAssets } from "./schema";
 import { ContractMetadataError, serializeTemplateData } from "./serialize";
 

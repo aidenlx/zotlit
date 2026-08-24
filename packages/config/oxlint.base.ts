@@ -45,8 +45,8 @@ export default defineConfig({
     ],
     "typescript/consistent-type-imports": [
       "error",
-      { fixStyle: "inline-type-imports", disallowTypeAnnotations: false },
+      { fixStyle: "separate-type-imports", disallowTypeAnnotations: false },
     ],
-    "import/consistent-type-specifier-style": ["error", "prefer-inline"],
+    "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
   },
 });

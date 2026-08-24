@@ -1,16 +1,22 @@
 import AdmZip from "adm-zip";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { glob } from "tinyglobby";
 import { build } from "vite";
-import { type InlineConfig, type LibraryFormats, type Plugin } from "vite";
+import type { InlineConfig, LibraryFormats, Plugin } from "vite";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { parseManifest } from "./manifest.js";
+import { iconEntryPath, parseManifest } from "./manifest.js";
 import { parseRepository, updateUrl } from "./release-constants.js";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+
+type ZoteroPkg = typeof import("../package.json");
+
+async function readPkg(pkgPath: string): Promise<ZoteroPkg> {
+  return JSON.parse(await readFile(pkgPath, "utf-8")) as ZoteroPkg;
+}
 
 type BuildResult = Awaited<ReturnType<typeof build>>;
 // build() can return a watcher when build.watch is set; we don't set that
@@ -135,6 +141,10 @@ export function zoteroBuildPlugin({
       this.addWatchFile(bootstrapEntryPath);
       await addWatchTree(this.addWatchFile.bind(this), addonSrcDir);
 
+      // The icon lives outside addon/, so watch it off its declared path.
+      const { zotero } = await readPkg(pkgPath);
+      this.addWatchFile(resolve(root, zotero.icon));
+
       const result = (await build(
         zoteroSandboxConfig(root, env, bootstrapBundle),
       )) as BuildOutput;
@@ -147,9 +157,7 @@ export function zoteroBuildPlugin({
       }
     },
     async writeBundle() {
-      const pkg = JSON.parse(
-        await readFile(pkgPath, "utf-8"),
-      ) as typeof import("../package.json");
+      const pkg = await readPkg(pkgPath);
 
       const rootPkg = JSON.parse(await readFile(rootPkgPath, "utf-8")) as {
         repository?: unknown;
@@ -161,6 +169,12 @@ export function zoteroBuildPlugin({
       // bootstrap.js (from the inner build) and main.js (just written) are
       // both in `outDir`. Overlay the static addon assets on top.
       await cp(addonSrcDir, addonDistDir, { recursive: true });
+
+      // The icon is consumed from its canonical location under assets/, so
+      // the XPI never carries a divergent copy of the brand mark.
+      const iconDest = join(addonDistDir, iconEntryPath(pkg.zotero.icon));
+      await mkdir(dirname(iconDest), { recursive: true });
+      await cp(resolve(root, pkg.zotero.icon), iconDest);
 
       await writeFile(
         join(addonDistDir, "manifest.json"),

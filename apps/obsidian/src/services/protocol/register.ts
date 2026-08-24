@@ -1,6 +1,7 @@
-import { type ObsidianProtocolData, type Plugin } from "obsidian";
+import type { ObsidianProtocolData, Plugin } from "obsidian";
 
-import { getItemRefByID, type ItemRef } from "@zotlit/db";
+import { getItemRefByID } from "@zotlit/db";
+import type { ItemRef } from "@zotlit/db";
 import {
   batchProtocolActionId,
   exploreProtocolActionId,
@@ -14,34 +15,34 @@ import {
   parseProtocolBatchQuery,
   parseProtocolQuery,
   parseUpdateAllProtocolQuery,
-  type ProtocolAction,
   protocolActionId,
   protocolActions,
   protocolSourceMatches,
   updateAllProtocolActionId,
 } from "@zotlit/protocol";
+import type { ProtocolAction } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import { type LiveUpdateService } from "@/services/live-update/service";
+import type { LiveUpdateService } from "@/services/live-update/service";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
-  type BatchUpdateResult,
 } from "@/services/note-feature/update-batch";
+import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import {
   createAndOpen,
-  type SingleUpdateDeps,
   updateNote,
 } from "@/services/note-feature/update-single";
-import { type BatchImport } from "@/services/note-import/batch-import";
+import type { SingleUpdateDeps } from "@/services/note-feature/update-single";
+import type { BatchImport } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 const logger = getLogger("protocol");
@@ -99,9 +100,10 @@ export function registerProtocolHandlers(
   // runs the same interactive flow as the `update-many` protocol link.
   stack.defer(
     deps.liveUpdate.on("update-many", (event) => {
-      void toast.promise(runBatchUpdate(deps, event.items, event.scope), {
-        success: batchUpdateNotice,
-      });
+      void toast.promise(
+        runBatchUpdate(deps, event.items, { scope: event.scope }),
+        { success: batchUpdateNotice },
+      );
     }),
   );
 
@@ -161,9 +163,12 @@ async function handleBatchProtocol(
   });
   if (!query) return;
 
-  await toast.promise(runBatchUpdate(deps, query.items, query.scope), {
-    success: batchUpdateNotice,
-  });
+  await toast.promise(
+    runBatchUpdate(deps, query.items, { scope: query.scope }),
+    {
+      success: batchUpdateNotice,
+    },
+  );
 }
 
 /** Open existing literature note, or create one if none exists. */
@@ -260,7 +265,7 @@ async function handleUpdateAllProtocol(
 
   await toast.promise(
     runBatchUpdateAll(deps, {
-      expectedGroupID: query.groupID,
+      groupID: query.groupID,
       collectionKey: query.collectionKey,
     }),
     { success: updateAllNotice },
@@ -280,7 +285,7 @@ async function handleImportAllNotesProtocol(
 
   await toast.promise(
     deps.batchImport.runBatchImportAll({
-      expectedGroupID: query.groupID,
+      groupID: query.groupID,
       collectionKey: query.collectionKey,
     }),
     batchImportAllToast(),
@@ -293,8 +298,10 @@ function updateAllNotice(result: BatchUpdateResult): string | undefined {
       return m.batch_update_db_unavailable();
     case "empty-selection":
       return m.batch_update_all_empty();
-    case "library-mismatch":
-      return m.batch_update_all_library_mismatch();
+    case "no-library-in-scope":
+      return m.batch_all_no_library_in_scope();
+    case "unavailable-target":
+      return m.batch_all_library_unavailable();
     case "collection-not-found":
       return m.notice_collection_not_found();
     default:

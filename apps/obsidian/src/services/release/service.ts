@@ -1,19 +1,22 @@
 // Once-per-launch release check: onboarding branch, update notice, Release Note.
 
-import { type App, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
 
+import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";
-import { type Settings } from "@/services/settings/schema";
-import {
-  type SettingsPatch,
-  type SettingsService,
+import type { Settings } from "@/services/settings/schema";
+import type {
+  SettingsPatch,
+  SettingsService,
 } from "@/services/settings/service";
 
 import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
-import { decideRelease, type ReleaseDecision } from "./decide";
+import { decideRelease } from "./decide";
+import type { ReleaseDecision } from "./decide";
 
 const logger = getLogger("release");
 
@@ -134,6 +137,9 @@ export class ReleaseService extends Service<void> {
       legacyTemplatesPresent,
     });
     switch (decision.branch) {
+      case "companion-notice":
+        this.#showCompanionNotice();
+        break;
       case "update-notice":
         this.#showUpdateNotice();
         break;
@@ -188,6 +194,25 @@ export class ReleaseService extends Service<void> {
           button
             .setButtonText(m.notice_update_see_whats_new())
             .onClick(() => void this.openReleaseNote());
+        });
+      }),
+      0,
+    );
+  }
+
+  #showCompanionNotice(): void {
+    new BaseNotice(
+      BaseNotice.render((renderer) => {
+        renderer.setTitle(m.companion_zotero_10_guidance());
+        renderer.addAction((button) => {
+          button
+            .setButtonText(m.notice_update_see_whats_new())
+            .onClick(() => void this.openReleaseNote());
+        });
+        renderer.addAction((button) => {
+          button
+            .setButtonText(m.notice_companion_install_action())
+            .onClick(() => window.open(DOCS_COMPANION));
         });
       }),
       0,

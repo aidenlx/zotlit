@@ -15,13 +15,14 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileSystemAdapter, TFolder, type App } from "obsidian";
+import { FileSystemAdapter, TFolder } from "obsidian";
+import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { reflink } from "@/lib/reflink";
 
 import { AttachmentImportService } from "./service";
-import { type SourceOrigin } from "./source";
+import type { SourceOrigin } from "./source";
 import { makeDeviceStorage } from "./test-utils";
 
 /** Lets a test act in the window between the confirmation and the copy. */

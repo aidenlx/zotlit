@@ -1,9 +1,8 @@
 // Shared item-fixture builders for @zotlit/db consumers' tests.
-import { Temporal } from "@zotlit/shared/temporal";
-import { type ItemFields } from "@zotlit/zotero-types";
+import type { ItemFields } from "@zotlit/zotero-types";
 
 import { USER_LIBRARY_ID } from "./lib/constants";
-import { type BaseItem, type Item } from "./queries/items";
+import type { BaseItem, Item } from "./queries/items";
 
 /**
  * The one place that owns the Zotero fixture schema. Query tests call this to
@@ -176,6 +175,10 @@ const FIXTURE_DDL = `
     key text,
     value,
     primary key (setting, key)
+  );
+  create table version (
+    schema text primary key,
+    version integer not null
   );
 `;
 

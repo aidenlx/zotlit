@@ -1,5 +1,5 @@
 import { Menu, TFile, TFolder } from "@mock/obsidian";
-import { type TAbstractFile } from "obsidian";
+import type { TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerIndexedKeyFileMenu } from "./menu";

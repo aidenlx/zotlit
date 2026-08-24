@@ -1,11 +1,13 @@
+import { basename } from "node:path";
 import { valid } from "semver";
 import * as v from "valibot";
 
 /**
  * Zotero WebExtension-style plugin manifest.
  *
- * Icons are referenced relative to the XPI root; the actual files must exist
- * at `addon/icons/logo.svg` for the manifest to resolve at runtime.
+ * Icons are referenced relative to the XPI root; `vite-zotero-plugin.ts`
+ * stages the `zotero.icon` source there for the manifest to resolve at
+ * runtime.
  */
 export const ZoteroManifestSchema = v.object({
   manifest_version: v.literal(2),
@@ -30,6 +32,21 @@ export const ZoteroManifestSchema = v.object({
 
 export type ZoteroManifest = v.InferOutput<typeof ZoteroManifestSchema>;
 
+/** `zotero.icon` in package.json — the icon source, relative to the package. */
+const IconSourceSchema = v.pipe(
+  v.string("`zotero.icon` must be a package-relative path to the icon file"),
+  v.nonEmpty(),
+);
+
+/**
+ * Where the build stages the icon inside the XPI. Both the staging step and
+ * the manifest's `icons` map go through this, so the declared path and the
+ * packed file cannot drift apart.
+ */
+export function iconEntryPath(iconSource: string): string {
+  return `icons/${basename(iconSource)}`;
+}
+
 /**
  * `version` is passed through verbatim (no `coerce()`) so prerelease
  * identifiers like `-alpha.1` survive into the manifest — Zotero's Mozilla
@@ -47,8 +64,10 @@ export function parseManifest(data: any, updateUrl: string): ZoteroManifest {
     description,
     author,
     homepage,
-    zotero: { id, strict_min_version, strict_max_version } = {},
+    zotero: { id, strict_min_version, strict_max_version, icon } = {},
   } = data;
+
+  const iconEntry = iconEntryPath(v.parse(IconSourceSchema, icon));
 
   return v.parse(ZoteroManifestSchema, {
     manifest_version: 2,
@@ -58,10 +77,10 @@ export function parseManifest(data: any, updateUrl: string): ZoteroManifest {
     author,
     homepage_url: homepage,
     icons: {
-      32: "icons/logo.svg",
-      48: "icons/logo.svg",
-      64: "icons/logo.svg",
-      96: "icons/logo.svg",
+      32: iconEntry,
+      48: iconEntry,
+      64: iconEntry,
+      96: iconEntry,
     },
     applications: {
       zotero: {

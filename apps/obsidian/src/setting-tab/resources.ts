@@ -1,9 +1,9 @@
 // Headerless resources strip and migration reminder for the declarative (>=1.13) setting tab.
 
-import {
-  type Setting,
-  type SettingDefinition,
-  type SettingDefinitionGroup,
+import type {
+  Setting,
+  SettingDefinition,
+  SettingDefinitionGroup,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -15,7 +15,7 @@ import {
   MIGRATION_GUIDE,
 } from "@/views/welcome/links";
 
-import { type SettingsKey, type SettingTabContext } from "./context";
+import type { SettingsKey, SettingTabContext } from "./context";
 import { languagePackDefinition } from "./language-pack";
 
 /**

@@ -2,7 +2,7 @@ import type TurndownService from "turndown";
 
 import { highlightColorToName, textColorToName } from "@zotlit/db";
 
-import { renderColorMark } from "./color-mark";
+import { renderColorMark, renderHighlight } from "./color-mark";
 import { addObsidianRules, obsidianTurndownOptions } from "./obsidian-base";
 
 /**
@@ -39,9 +39,9 @@ function decodeCalloutAttr(encoded: string): string {
  * - `<sub>` / `<sup>` / `<u>` — kept as HTML; Obsidian renders these inline and
  *   Markdown has no equivalent.
  * - colored / highlighted spans — Zotero's note-editor text-color and highlight
- *   marks carry the color inline; render them through {@link renderColorMark} to
- *   a `<span>` / `<mark>` carrying the palette name (`data-color`) and a
- *   theme-overridable CSS variable, matching the annotation-excerpt marks.
+ *   marks carry the color inline. Text colors and highlight fallbacks become
+ *   HTML color marks; supported highlights can use opt-in Colored Highlight
+ *   Syntax.
  * - `img[data-attachment-key]` — a Zotero embed with no `src`, both the plain
  *   attachment image and the image-excerpt annotation (`data-annotation` set).
  *   Keep the tag (and its key) so the shared Stage 9 import resolves it to a
@@ -114,10 +114,14 @@ function addZoteroRules(
     replacement: (content, node) => {
       const { color, backgroundColor } = (node as HTMLElement).style;
       return backgroundColor
-        ? renderColorMark("highlight", content, {
-            raw: backgroundColor,
-            name: highlightColorToName(backgroundColor),
-          })
+        ? renderHighlight(
+            content,
+            {
+              raw: backgroundColor,
+              name: highlightColorToName(backgroundColor),
+            },
+            options.useColoredHighlightSyntax ?? false,
+          )
         : renderColorMark("text", content, {
             raw: color,
             name: textColorToName(color),
@@ -164,6 +168,7 @@ function addZoteroRules(
 }
 
 interface NoteTurndownOptions {
+  useColoredHighlightSyntax?: boolean;
   /**
    * Replacement for the highlight/underline excerpt span (`span[data-annotation]`).
    * Defaults to raw-HTML passthrough — the standalone converter keeps the payload

@@ -2,12 +2,11 @@
 import { cva } from "class-variance-authority";
 import { usePathname } from "fumadocs-core/framework";
 import Link from "fumadocs-core/link";
+import type * as PageTree from "fumadocs-core/page-tree";
 import * as Base from "fumadocs-ui/components/sidebar/base";
 import { createLinkItemRenderer } from "fumadocs-ui/components/sidebar/link-item";
-import {
-  createPageTreeRenderer,
-  type SidebarPageTreeComponents,
-} from "fumadocs-ui/components/sidebar/page-tree";
+import { createPageTreeRenderer } from "fumadocs-ui/components/sidebar/page-tree";
+import type { SidebarPageTreeComponents } from "fumadocs-ui/components/sidebar/page-tree";
 import { buttonVariants } from "fumadocs-ui/components/ui/button";
 import {
   Popover,
@@ -17,7 +16,8 @@ import {
 import { useTreePath } from "fumadocs-ui/contexts/tree";
 import { useDocsLayout } from "fumadocs-ui/layouts/docs";
 import { LinkItem } from "fumadocs-ui/layouts/shared";
-import { isLayoutTabActive, type LayoutTab } from "fumadocs-ui/layouts/shared";
+import { isLayoutTabActive } from "fumadocs-ui/layouts/shared";
+import type { LayoutTab } from "fumadocs-ui/layouts/shared";
 import { SearchTrigger } from "fumadocs-ui/layouts/shared/slots/search-trigger";
 import {
   Check,
@@ -26,15 +26,14 @@ import {
   Languages,
   SidebarIcon,
 } from "lucide-react";
-import {
-  type ComponentProps,
-  type ReactNode,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
+import type {
+  DocsPageTreeItem,
+  DocsSidebarBadge,
+} from "@/lib/docs-availability";
 import { mergeRefs } from "@/lib/merge-refs";
 
 const itemVariants = cva(
@@ -97,7 +96,7 @@ export function Sidebar({
           .map((item, i) => (
             <SidebarLinkItem key={i} item={item} />
           ))}
-        <SidebarPageTree {...components} />
+        <SidebarPageTree Item={SidebarPageItem} {...components} />
       </div>
     </Base.SidebarViewport>
   );
@@ -379,6 +378,49 @@ function SidebarItem({
       {children}
     </Base.SidebarItem>
   );
+}
+
+function SidebarPageItem({ item }: { item: PageTree.Item }) {
+  const pathname = usePathname();
+  const availability = (item as DocsPageTreeItem).docsAvailability;
+
+  return (
+    <SidebarItem
+      href={item.url}
+      external={item.external}
+      active={normalizePath(item.url) === normalizePath(pathname)}
+      icon={item.icon}
+    >
+      <span className="min-w-0 flex-1">{item.name}</span>
+      {availability && <AvailabilityBadge status={availability} />}
+    </SidebarItem>
+  );
+}
+
+function AvailabilityBadge({ status }: { status: DocsSidebarBadge }) {
+  return (
+    <span
+      aria-label={
+        {
+          new: "New feature",
+          updated: "Updated page",
+        }[status]
+      }
+      data-availability={status}
+      className={cn(
+        "ms-auto inline-flex h-4 shrink-0 items-center rounded-full px-1.5 font-mono text-[0.6rem] leading-none font-semibold tracking-[0.12em] uppercase",
+        status === "new" && "bg-fd-primary text-fd-primary-foreground",
+        status === "updated" &&
+          "bg-fd-primary/8 text-fd-primary ring-1 ring-fd-primary/30 ring-inset",
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+function normalizePath(path: string) {
+  return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
 }
 
 function SidebarLinkEntry({

@@ -34,6 +34,18 @@ Content lives in `content/`; collections and schemas are defined in `source.conf
 
 Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
 
+### Release availability
+
+Leave `introduced` and `updated` unset when you create or edit a page. The fields are optional. An unset page has no badge or "Available since" line until it ships.
+
+`pnpm docs:availability <stable-version>` is the sole writer of page-level `introduced` and `updated` metadata. It requires a clean working tree. It uses the net committed diff from the previous stable tag to `HEAD`. It assigns both fields to new pages automatically. It presents changed and moved pages in batches of at most five. Each batch starts with no page selected, so each `updated` value records an explicit material-change decision.
+
+The command validates the complete write plan before it changes files. It shows the plan and asks for final confirmation once. Use `pnpm docs:availability <stable-version> --check` to run the same scan without prompts or writes. A successful write run tells you to review and commit its changes, then run `pnpm release` again.
+
+For a stable Obsidian release, `release.ts` offers this command as a handoff before it changes any file. The release continues when you decline the handoff. Pre-release and Zotero-only releases continue without this prompt. The only docs data that `release.ts` writes is the Docs Release Line in `apps/docs/zotlit-release.json`.
+
+Section Index pages have the basename `index.mdx`. They have no availability metadata and stay outside the scan. Generated pages and underscore-prefixed content partials also stay outside the scan. See [ADR 0002](docs/adr/0002-release-availability-is-git-diff-assisted-not-hand-authored.md) and the docs-availability implementation in the scripts workspace. The site derives `NEW` and `UPDATED` from the Docs Release Line.
+
 Image attachments (screenshots, etc.) go under `public/img/<collection>/` as `.webp`, not `.png`/`.jpg` — convert with `cwebp` before committing.
 
 # Docs site design

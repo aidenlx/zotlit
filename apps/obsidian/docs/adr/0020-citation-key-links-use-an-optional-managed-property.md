@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0022
+---
+
 # Citation Key Links use an optional Managed Frontmatter property and start disabled
 
 The always-on Citation Key Links feature required ZotLit to own the `citekey` frontmatter field, but the feature works by patching internal Obsidian editor methods. New installations now start with Citation Key Links disabled, while settings migrations keep the feature enabled to preserve existing behavior. `citekey` becomes the default ordinary Managed Frontmatter field, sourced from `zt.citationKey` with Liquid and the Replace strategy; Citation Key Links use a separately configurable Citation Key Property, and `zotero-key` remains the authoritative Literature Note identity.

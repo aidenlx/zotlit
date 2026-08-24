@@ -1,9 +1,11 @@
-import { type NodeDatabaseClient } from "@/client/node";
-import { type Attachment } from "@/lib/zt-attach";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { Attachment } from "@/lib/zt-attach";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
-import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
+import { groupIDForLibrary, resolveGroupID } from "./_groups";
+import type { GroupIDMemo } from "./_groups";
+import { defineQuery } from "./_shared";
+import type { FindManyOptions, QueryRow } from "./_shared";
 
 const attachmentFindOptions = {
   columns: {
@@ -20,6 +22,15 @@ const attachmentFindOptions = {
         libraryID: true,
         dateAdded: true,
         dateModified: true,
+      },
+      with: {
+        itemData: {
+          columns: {},
+          where: { fieldsCombined: { fieldName: "url" } },
+          with: {
+            itemDataValue: { columns: { value: true } },
+          },
+        },
       },
     },
   },
@@ -66,6 +77,10 @@ const attachmentByItemIdQuery = defineQuery<{ itemID: number }>()(
 type AttachmentRow = QueryRow<typeof attachmentsByParentQuery>;
 
 function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
+  const path =
+    row.linkMode === 3
+      ? (row.item_itemID.itemData[0]?.itemDataValue?.value ?? null)
+      : row.path;
   return {
     itemID: row.itemID,
     groupID,
@@ -73,7 +88,7 @@ function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
     key: row.item_itemID.key,
     indexedKey: formatIndexedKey(row.item_itemID.key, groupID),
     parentItemID: row.parentItemID ?? 0,
-    path: row.path,
+    path,
     contentType: row.contentType,
     linkMode: row.linkMode,
     dateAdded: row.item_itemID.dateAdded,

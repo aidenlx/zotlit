@@ -1,6 +1,7 @@
-import { type ClassValue, clsx } from "clsx";
-import { type TooltipOptions } from "obsidian";
-import { type KeyboardEvent, type MouseEvent } from "react";
+import { clsx } from "clsx";
+import type { ClassValue } from "clsx";
+import type { TooltipOptions } from "obsidian";
+import type { KeyboardEvent, MouseEvent } from "react";
 
 import { twMerge } from "@/lib/tw";
 

@@ -1,13 +1,14 @@
-import { Keymap, SuggestModal, type Editor } from "obsidian";
+import { Keymap, SuggestModal } from "obsidian";
+import type { Editor } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT, type SearchHit } from "@/services/item-lookup/service";
-import { InertTemplateError } from "@/services/template/errors";
+import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 
-import { padCitationInsert } from "./editor-suggest";
-import { type CitationSuggestDeps } from "./register";
+import { padCitationInsert, resolveCitationInsert } from "./editor-suggest";
+import type { CitationSuggestDeps } from "./register";
 
 /**
  * Command-driven citation picker: search the library in a popup and insert the
@@ -29,6 +30,13 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
       { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
+    // The suggestion popup registers `Enter` with no modifiers and matches
+    // them exactly, so Shift+Enter reaches no handler unless the modal claims
+    // the chord itself.
+    this.scope.register(["Shift"], "Enter", (evt) => {
+      this.selectActiveSuggestion(evt);
+      return false;
+    });
   }
 
   override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
@@ -43,32 +51,20 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): void {
-    const citationKey =
-      "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
-    if (!citationKey) {
-      new BaseNotice(m.notice_no_citekey({ key: hit.item.key }));
-      return;
-    }
-    let rendered: string | null;
-    try {
-      rendered = this.#deps.noteFeature.renderCitation(
-        [{ citationKey, item: hit.item }],
-        Keymap.isModifier(evt, "Shift"),
-      );
-    } catch (e) {
-      if (!(e instanceof InertTemplateError)) throw e;
-      new BaseNotice(e.message);
-      return;
-    }
-    if (rendered === null) {
-      new BaseNotice(m.notice_template_not_ready());
+    const outcome = resolveCitationInsert(
+      this.#deps,
+      hit,
+      Keymap.isModifier(evt, "Shift"),
+    );
+    if (outcome.kind === "notice") {
+      new BaseNotice(outcome.message);
       return;
     }
     const editor = this.#editor;
     const from = editor.getCursor("from");
     const to = editor.getCursor("to");
     const padded = padCitationInsert(
-      rendered,
+      outcome.text,
       editor.getLine(to.line).charAt(to.ch),
     );
     editor.replaceRange(padded.text, from, to);

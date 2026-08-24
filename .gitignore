@@ -20,6 +20,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Scratch artifacts: probe scripts, experiments, and fixture workspaces all live
+# in a workspace tmp/ (see policies/scratch-artifacts.md).
+tmp/
+
 # Misc
 .DS_Store
 
@@ -27,6 +31,8 @@ yarn-error.log*
 !.env.example
 
 .primary-worktree
+# Per-worktree dev vaults, seeded from the generated Fixture Vault.
+tests/fixture-vault-*/
 
 # Inlang regenerates a self-managed .gitignore inside project.inlang/,
 # but it only appears after the first build. Pre-ignore generated files
@@ -36,3 +42,5 @@ project.inlang/*
 !project.inlang/settings.json
 
 .vercel
+
+.pi

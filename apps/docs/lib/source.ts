@@ -4,6 +4,10 @@ import { lucideIconsPlugin } from "fumadocs-core/source/lucide-icons";
 import { toFumadocsSource } from "fumadocs-mdx/runtime/server";
 import { rcompare } from "semver";
 
+import {
+  renderAvailabilityMarkdown,
+  resolveDocsAvailability,
+} from "./docs-availability";
 import { docsContentRoute, docsRoute } from "./shared";
 
 /** @see https://fumadocs.dev/docs/headless/source-api */
@@ -52,10 +56,15 @@ export function getPageMarkdownUrl(page: (typeof source)["$inferPage"]) {
 
 export async function getLLMText(page: (typeof source)["$inferPage"]) {
   const processed = await page.data.getText("processed");
+  const resolved = resolveDocsAvailability(page.data.introduced);
+  // Unset for a page that hasn't gone through a release cycle yet — see ADR 0002.
+  const availability = resolved
+    ? `${renderAvailabilityMarkdown(resolved, changelog.getPage([resolved.introduced])?.url)}\n\n`
+    : "";
 
   return `# ${page.data.title} (${page.url})
 
-${processed}`;
+${availability}${processed}`;
 }
 
 /** Changelog entries rarely set a `title`, so the version is the fallback heading. */

@@ -1,0 +1,8 @@
+/* Let the Cited By tree use the full pane, as Obsidian's Backlinks tree does.
+   The two view-owned classes match the specificity of Obsidian's content
+   padding rule without coupling this view to workspace DOM internals. */
+.zt-root.zt-cited-by-view {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0;
+}

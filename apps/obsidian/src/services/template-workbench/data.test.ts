@@ -1,5 +1,5 @@
 import Ajv2020 from "ajv/dist/2020";
-import { type DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
@@ -16,7 +16,8 @@ import {
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_RENDER_COMMAND,
 } from "./cli";
-import { loadTemplateData, type TemplateDataDeps } from "./data";
+import { loadTemplateData } from "./data";
+import type { TemplateDataDeps } from "./data";
 
 describe("zotlit:template-data with the real loader", () => {
   it("renders through inert resolvers without invoking a write surface", async () => {
@@ -70,7 +71,7 @@ describe("zotlit:template-data with the real loader", () => {
     );
 
     expect(result).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -114,7 +115,7 @@ describe("zotlit:template-data with the real loader", () => {
       expect(
         await runTemplateData(fixture.deps, "ANNA2345", "annotation"),
       ).toMatchObject({
-        contractVersion: 1,
+        contractVersion: 2,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         request: {
@@ -227,7 +228,7 @@ describe("zotlit:template-data with the real loader", () => {
     const result = await runTemplateData(fixture.deps, "MAIN2345", "filename");
 
     expect(result).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {

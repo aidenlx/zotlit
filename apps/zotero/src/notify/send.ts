@@ -1,9 +1,9 @@
 import {
-  type NotifyEvent,
   PROTOCOL_VERSION,
   PROTOCOL_VERSION_HEADER,
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
+import type { NotifyEvent } from "@zotlit/protocol";
 
 import { logger as appLogger } from "@/lib/logger";
 

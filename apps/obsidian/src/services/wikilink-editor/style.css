@@ -1,0 +1,43 @@
+/* Wikilink Editor Treatment. A decorated Literature Note wikilink shows the
+   citation a style formatted and has to read as the internal link it still is.
+
+   That is where it parts from `.zt-citation`, which a literal Citation Cluster
+   carries: a rendered cluster is body text in the body colour, while a rendered
+   wikilink keeps the link colour, because click, hover, and drag on it are
+   still Obsidian's and the colour is what says so. The two syntaxes read the
+   same words; only the affordance differs.
+
+   Obsidian's own link colour and cursor come from descendant selectors —
+   `.cm-hmd-internal-link .cm-underline` — and the widget carries both classes
+   on one element, so neither matches. These rules supply them, compounded on
+   the plugin's own class so they hold wherever the widget lands in the DOM. */
+:where(
+  .markdown-source-view.mod-cm6
+    span.zt-citation.zt-literature-note-link.cm-underline
+) {
+  color: var(--link-color);
+}
+
+/* The widget states in `data-zt-click` what a plain click on it does and takes
+   its cursor from that; a widget carrying no such state opens on click. */
+:where(
+  .markdown-source-view.mod-cm6
+    span.zt-citation.zt-literature-note-link.cm-underline:not([data-zt-click])
+) {
+  cursor: var(--cursor-link);
+}
+
+/* The link hover colour says the click opens the note, so it is drawn only
+   where it does. */
+@media (hover: hover) {
+  :where(
+    .markdown-source-view.mod-cm6
+      span.zt-citation.zt-literature-note-link.cm-underline:is(
+        :not([data-zt-click]),
+        [data-zt-click="open"]
+      ):hover
+  ) {
+    color: var(--link-color-hover);
+    text-decoration-line: var(--link-decoration-hover);
+  }
+}

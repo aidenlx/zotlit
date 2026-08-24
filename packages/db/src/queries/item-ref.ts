@@ -1,9 +1,10 @@
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary, resolveGroupID, type GroupIDMemo } from "./_groups";
+import { groupIDForLibrary, resolveGroupID } from "./_groups";
+import type { GroupIDMemo } from "./_groups";
 import { defineQuery } from "./_shared";
-import { type Item } from "./items";
+import type { Item } from "./items";
 
 /**
  * A Zotero item resolved to its key + owning library, library-scope-free — the

@@ -36,10 +36,40 @@ describe("classifyDiskData", () => {
     expect(classifyDiskData(raw)).toEqual({ kind: "v3", raw });
   });
 
-  it("classifies integer __VERSION__ > 3 as future", () => {
-    expect(classifyDiskData({ __VERSION__: 4 })).toEqual({
+  it("classifies __VERSION__ === 4 as v4", () => {
+    const raw = { __VERSION__: 4, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v4", raw });
+  });
+
+  it("classifies __VERSION__ === 5 as v5", () => {
+    const raw = { __VERSION__: 5, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v5", raw });
+  });
+
+  it("classifies __VERSION__ === 6 as v6", () => {
+    const raw = { __VERSION__: 6, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v6", raw });
+  });
+
+  it("classifies __VERSION__ === 7 as v7", () => {
+    const raw = { __VERSION__: 7, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v7", raw });
+  });
+
+  it("classifies __VERSION__ === 8 as v8", () => {
+    const raw = { __VERSION__: 8, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v8", raw });
+  });
+
+  it("classifies __VERSION__ === 9 as v9", () => {
+    const raw = { __VERSION__: 9, foo: 1 };
+    expect(classifyDiskData(raw)).toEqual({ kind: "v9", raw });
+  });
+
+  it("classifies integer __VERSION__ > 9 as future", () => {
+    expect(classifyDiskData({ __VERSION__: 10 })).toEqual({
       kind: "future",
-      version: 4,
+      version: 10,
     });
     expect(classifyDiskData({ __VERSION__: 99 })).toEqual({
       kind: "future",

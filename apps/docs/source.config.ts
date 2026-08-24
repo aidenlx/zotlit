@@ -1,8 +1,5 @@
-import {
-  rehypeCodeDefaultOptions,
-  type LLMsOptions,
-} from "fumadocs-core/mdx-plugins";
-import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
+import { rehypeCodeDefaultOptions } from "fumadocs-core/mdx-plugins";
+import type { LLMsOptions } from "fumadocs-core/mdx-plugins";
 import {
   defineCollections,
   defineConfig,
@@ -17,6 +14,30 @@ import { renderContractTableMarkdown } from "./lib/template-contract/gfm.ts";
 import { buildPageModel } from "./lib/template-contract/page-model.ts";
 
 const model = buildPageModel(CONTRACT_IR);
+
+const metaSchema = v.object({
+  title: v.optional(v.string()),
+  pages: v.optional(v.array(v.string())),
+  pagesIndex: v.optional(v.string()),
+  description: v.optional(v.string()),
+  root: v.optional(v.boolean()),
+  defaultOpen: v.optional(v.boolean()),
+  collapsible: v.optional(v.boolean()),
+  icon: v.optional(v.string()),
+});
+
+const pageSchema = v.object({
+  title: v.string(),
+  description: v.optional(v.string()),
+  icon: v.optional(v.string()),
+  full: v.optional(v.boolean()),
+  _openapi: v.optional(v.record(v.string(), v.unknown())),
+});
+
+const semverSchema = v.pipe(
+  v.string(),
+  v.check((val) => isValidSemVer(val) !== null, "Invalid semver version"),
+);
 
 /**
  * The generated reference page carries its tables as `<ContractTable>`, which
@@ -43,7 +64,21 @@ const markdownEdition: LLMsOptions = {
 export const docs = defineDocs({
   dir: "content/docs",
   docs: {
-    schema: pageSchema,
+    schema: v.object({
+      ...pageSchema.entries,
+      /**
+       * First ZotLit release that contained the page's main subject. Unset
+       * until `release.ts`'s docs-availability phase assigns it at release
+       * time — see ADR 0002.
+       */
+      introduced: v.optional(semverSchema),
+      /**
+       * Latest ZotLit release that materially changed the page's main
+       * subject. Unset until `release.ts`'s docs-availability phase assigns
+       * it at release time — see ADR 0002.
+       */
+      updated: v.optional(semverSchema),
+    }),
     files: ["**/*.mdx", "!**/_*.mdx"],
     postprocess: {
       includeProcessedMarkdown: markdownEdition,
@@ -53,11 +88,6 @@ export const docs = defineDocs({
     schema: metaSchema,
   },
 });
-
-const semverSchema = v.pipe(
-  v.string(),
-  v.check((val) => isValidSemVer(val) !== null, "Invalid semver version"),
-);
 
 export const changelogs = defineCollections({
   type: "doc",

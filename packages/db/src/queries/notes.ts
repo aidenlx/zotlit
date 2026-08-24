@@ -1,11 +1,12 @@
 // Zotero note (`itemNotes`) lookups: child-note listing and single-note fetch.
-import { type Temporal } from "@zotlit/shared/temporal";
 
-import { type NodeDatabaseClient } from "@/client/node";
+import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { resolveGroupID, type GroupIDMemo } from "./_groups";
-import { defineQuery, type FindManyOptions, type QueryRow } from "./_shared";
+import { resolveGroupID } from "./_groups";
+import type { GroupIDMemo } from "./_groups";
+import { defineQuery } from "./_shared";
+import type { FindManyOptions, QueryRow } from "./_shared";
 
 /** A note's identity and staleness stamp, without its HTML body. */
 export interface ChildNote {

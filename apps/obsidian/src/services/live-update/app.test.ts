@@ -6,7 +6,8 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
-import { createLiveUpdateApp, type LiveUpdateAppDeps } from "./app";
+import { createLiveUpdateApp } from "./app";
+import type { LiveUpdateAppDeps } from "./app";
 
 const SOURCE_ID = "a1b2c3d4";
 
@@ -118,15 +119,10 @@ describe("GET /literature-notes", () => {
 });
 
 describe("POST /notify", () => {
-  it("dispatches a valid item/update event and acks 204", async () => {
+  it("dispatches a valid db/updated event and acks 204", async () => {
     const onNotify = vi.fn();
     const app = createLiveUpdateApp(makeDeps({ onNotify }));
-    const event = {
-      event: "item/update",
-      add: [{ itemID: 1, libraryID: 1 }],
-      modify: [],
-      trash: [],
-    };
+    const event = { event: "db/updated" };
 
     const res = await app.request("/notify", {
       method: "POST",

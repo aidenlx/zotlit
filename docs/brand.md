@@ -24,6 +24,8 @@ The 16 px cut is a separate drawing, not a scaled master: every edge sits on a w
 
 `zotlit-mark-dark.svg` and `zotlit-mark-16-dark.svg` are the same drawings with the dark-theme inks from the palette below, for UIs that swap image assets per theme (e.g. the docs navbar).
 
+`zotlit-mark-auto.svg` is the master drawing with both inkings in one file: the light inks sit on the paths as `fill` attributes, and an embedded `@media (prefers-color-scheme: dark)` rule swaps them for the dark ones. Use it where the host takes a single icon file for both themes and cannot swap assets itself (e.g. the Zotero plugin manifest, which declares one `icons` path per size). A host that renders the SVG without its stylesheet still gets the light inking.
+
 **Tile padding.** The tile owns its background, so the knockout mark needs breathing room from the tile edge — but how much depends on render size. The master tile keeps ~23% padding (comfortable at app-icon sizes, where OS grids expect an inset glyph); the favicon cut tightens to ~13% so the mark stays legible at 16 px. A favicon is always a tile, never the bare mark: navy on a transparent ground disappears on dark tab bars, while the tile is theme-invariant.
 
 **Single-color contexts** (Obsidian ribbon icons inherit `currentColor`, print, engraving): fill both paths with one ink. The triangular counter keeps the fused glyph legible without the color split.

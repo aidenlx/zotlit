@@ -1,7 +1,5 @@
 import { regex } from "arkregex";
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 import { defineToString } from "./to-string";
 
 /** Full Y/M/D date parsed into a `Temporal.PlainDate`. */

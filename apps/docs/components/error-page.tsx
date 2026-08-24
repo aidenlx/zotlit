@@ -5,7 +5,8 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 import { Logo } from "@/components/logo";
-import { errorPageModel, type ErrorStatus } from "@/lib/error-page-model";
+import { errorPageModel } from "@/lib/error-page-model";
+import type { ErrorStatus } from "@/lib/error-page-model";
 
 const rowClassName =
   "group flex w-full cursor-pointer items-center gap-3 py-2.5 text-left focus-visible:text-fd-primary outline-none";

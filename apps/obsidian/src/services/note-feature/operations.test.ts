@@ -1,4 +1,5 @@
-import { type FileManager, TFile, TFolder } from "obsidian";
+import { TFile, TFolder } from "obsidian";
+import type { FileManager } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -8,46 +9,40 @@ import {
   getAnnotationsByItemId,
   getItemsByKey,
   resolveIndexedKeyLibrary,
-  type BaseItem,
-  type Item,
-  type NoteResolvers,
-  type NoteTemplateContext,
-  type TemplateFilenameItemData,
-  type TemplateItemData,
+} from "@zotlit/db";
+import type {
+  BaseItem,
+  Item,
+  NoteResolvers,
+  NoteTemplateContext,
+  TemplateFilenameItemData,
+  TemplateItemData,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
-import { Temporal } from "@zotlit/shared/temporal";
 import { filenameSuffix } from "@zotlit/templates";
 import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
-import {
-  TemplateFacade,
-  type TemplateLanguage,
-} from "@zotlit/templates/facade";
-import {
-  compileFrontmatterFields,
-  type CompiledFrontmatterField,
-} from "@zotlit/templates/frontmatter";
+import { TemplateFacade } from "@zotlit/templates/facade";
+import type { TemplateLanguage } from "@zotlit/templates/facade";
+import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
+import type { CompiledFrontmatterField } from "@zotlit/templates/frontmatter";
 import { createLiquidEngine } from "@zotlit/templates/liquid";
 import {
   formatManagedRegion,
   MARKER_END,
   MARKER_START,
 } from "@zotlit/templates/obsidian";
-import { type ItemFields } from "@zotlit/zotero-types";
+import type { ItemFields } from "@zotlit/zotero-types";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import {
-  type AttachmentSource,
-  type SourceOrigin,
+import type {
+  AttachmentSource,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 
-import { type NoteFeatureDeps, type SyncRenderDeps } from "./context";
-import {
-  createNoteFeature,
-  type NoteFeature,
-  type UpdateScope,
-} from "./operations";
+import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
+import { createNoteFeature } from "./operations";
+import type { NoteFeature, UpdateScope } from "./operations";
 
 /** Stand-in decision port: every source blocks, so no test copies a file. */
 const blockedDecide = (
@@ -87,9 +82,14 @@ vi.mock("@zotlit/db", async (importOriginal) => {
       }
     },
     resolveItemTags: () => [],
-    // The single-item create / update paths resolve the account username from the
-    // pinned client; stub it so the note-feature flow under test stays DB-free.
-    getCurrentUsername: () => null,
+    // The single-item create / update paths resolve the account identity from
+    // the pinned client; stub it so the note-feature flow under test stays
+    // DB-free.
+    getZoteroIdentity: () => ({
+      userID: null,
+      localUserKey: null,
+      username: null,
+    }),
     // `fetchNoteContext` normally fetches every row from the DB; each test
     // stubs it to apply the caller's resolvers to a small fixture instead, so
     // resolver wiring (notePath / noteLink resolution) is exercised without a

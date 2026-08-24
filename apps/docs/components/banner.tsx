@@ -3,7 +3,8 @@
 import { useTranslations } from "@fuma-translate/react";
 import { buttonVariants } from "fumadocs-ui/components/ui/button";
 import { X } from "lucide-react";
-import { type HTMLAttributes, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { HTMLAttributes } from "react";
 
 import { cn } from "@/lib/cn";
 

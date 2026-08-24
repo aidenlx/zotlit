@@ -1,24 +1,18 @@
 // Selector parsing: the request each command accepts, and the identity it asserts.
 
-import { type CliData } from "obsidian";
+import type { CliData } from "obsidian";
 
-import {
-  parseIndexedKey,
-  TEMPLATE_SLOT_ROOTS,
-  type ContractRoot,
-  type TemplateSlot,
-} from "@zotlit/db";
-import {
-  type FrontmatterLanguage,
-  type FrontmatterMergeStrategy,
+import { parseIndexedKey, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
 
-import {
-  diagnostic,
-  type Diagnostic,
-  type WorkbenchIdentity,
-} from "./envelope";
-import { GUIDE_TOPIC_NAMES, parseGuideTopic, type GuideTopic } from "./guide";
+import { diagnostic } from "./envelope";
+import type { Diagnostic, WorkbenchIdentity } from "./envelope";
+import { GUIDE_TOPIC_NAMES, parseGuideTopic } from "./guide";
+import type { GuideTopic } from "./guide";
 import { CONTRACT_ROOT_NAMES, parseContractRoot } from "./schema";
 import {
   choices,
@@ -506,7 +500,7 @@ function rejectAccepted(
 }
 
 const VAULT_AFTER_COMMAND_MESSAGE =
-  "vault must come before the command name (obsidian-cli vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
+  "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
 
 /** `template-source` reads a `root=` swap meant for the data-root command. */
 function slotCommandRootHint(): string {

@@ -1,6 +1,6 @@
-import { type InputHTMLAttributes, type Ref } from "react";
+import type { InputHTMLAttributes, Ref } from "react";
 
-import { cn } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 export interface SearchInputProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -8,6 +8,7 @@ export interface SearchInputProps extends Omit<
 > {
   value: string;
   onChange: (next: string) => void;
+  clearLabel: string;
   ref?: Ref<HTMLInputElement>;
 }
 
@@ -16,6 +17,7 @@ export function SearchInput({
   onChange,
   className,
   placeholder = "Search…",
+  clearLabel,
   ref,
   ...rest
 }: SearchInputProps) {
@@ -32,7 +34,7 @@ export function SearchInput({
       <div
         className="search-input-clear-button"
         role="button"
-        aria-label="Clear search"
+        {...tooltipAttrs(clearLabel)}
         onClick={() => onChange("")}
       />
     </div>

@@ -108,7 +108,7 @@ export const SECTIONS: readonly SectionSpec[] = [
     level: 2,
     types: ["TemplateCreator"],
     sample: "creator",
-    lead: "`zt.creators` lists every creator on the item; `zt.authors` narrows them to the item's primary creator type, falling back to all creators when none matches. Institutional creators (Zotero `fieldMode=1`) set `literal` and leave `family` and `given` empty.",
+    lead: "`zt.creators` lists every creator on the item. `zt.authors` lists the creators in the first populated role: the item's primary creator role, editor, director, then contributor. Institutional creators (Zotero `fieldMode=1`) set `literal` and leave `family` and `given` empty.",
   },
   {
     id: "tags",

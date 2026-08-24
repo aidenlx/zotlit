@@ -1,11 +1,14 @@
-import { type App, TFile, TFolder } from "obsidian";
+// @vitest-environment happy-dom
+import { ButtonComponent, TFile, TFolder } from "obsidian";
+import type { App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { type HydrationOrigin } from "@/services/settings/classify";
-import { type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
+import { DOCS_COMPANION } from "@/lib/constants";
+import type { HydrationOrigin } from "@/services/settings/classify";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
 
-import { V1_TEMPLATE_FOLDER } from "./constants";
+import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
 import { ReleaseService } from "./service";
 
 function fakeApp(): App {
@@ -73,6 +76,9 @@ async function runCheck(opts: {
   /** Folder the fixture vault places `templateFiles` under. */
   folderPath?: string;
   migrationPending?: boolean;
+  recordedVersion?: string | null;
+  currentVersion?: string;
+  noticesEnabled?: boolean;
 }): Promise<{
   update: ReturnType<typeof vi.fn>;
   openWelcomeView: ReturnType<typeof vi.fn>;
@@ -82,9 +88,9 @@ async function runCheck(opts: {
   let layoutReady: (() => void) | undefined;
   const settings = {
     loaded: Promise.resolve({
-      "release.previous-version": null,
+      "release.previous-version": opts.recordedVersion ?? null,
       "release.migration-pending": opts.migrationPending ?? false,
-      "release.notices-enabled": true,
+      "release.notices-enabled": opts.noticesEnabled ?? true,
       "template.folder": CONFIGURED_TEMPLATE_FOLDER,
     } as Partial<Settings>),
     hydrationOrigin: opts.origin,
@@ -96,12 +102,13 @@ async function runCheck(opts: {
         layoutReady = cb;
       },
     },
+    internalPlugins: { getEnabledPluginById: () => null },
     vault: vaultWith(opts.templateFiles, opts.folderPath),
   } as unknown as App;
 
   await using service = new ReleaseService({
     app,
-    version: "2.0.0",
+    version: opts.currentVersion ?? "2.0.0",
     settings,
     openWelcomeView,
   });
@@ -110,6 +117,39 @@ async function runCheck(opts: {
   await flush();
   return { update, openWelcomeView };
 }
+
+describe("ReleaseService Companion update notice", () => {
+  it("opens both the current release note and Companion installation guide", async () => {
+    const labels = new WeakMap<ButtonComponent, string>();
+    const actions = new Map<string, (event: MouseEvent) => unknown>();
+    vi.spyOn(ButtonComponent.prototype, "setButtonText").mockImplementation(
+      function (this: ButtonComponent, text) {
+        labels.set(this, text);
+        return this;
+      },
+    );
+    vi.spyOn(ButtonComponent.prototype, "onClick").mockImplementation(
+      function (this: ButtonComponent, callback) {
+        actions.set(labels.get(this)!, callback);
+        return this;
+      },
+    );
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    await runCheck({
+      origin: "current",
+      templateFiles: [],
+      recordedVersion: "2.0.1",
+      currentVersion: "2.1.0",
+      noticesEnabled: false,
+    });
+
+    actions.get("See what's new")?.(new MouseEvent("click"));
+    actions.get("Open installation guide")?.(new MouseEvent("click"));
+    expect(open).toHaveBeenCalledWith(releaseNoteUrl("2.1.0"));
+    expect(open).toHaveBeenCalledWith(DOCS_COMPANION);
+  });
+});
 
 describe("ReleaseService templates-only v1 detection", () => {
   it("absent origin + ejected v1 templates opens upgraded, arms the prompt, and reconstructs the folder", async () => {

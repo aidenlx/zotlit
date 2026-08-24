@@ -1,6 +1,8 @@
 ---
 title: "Create and open literature notes"
-description: "Open or create a literature note with the quick switcher, Citation Key Links, or the Zotero menu."
+description: "Open or create a Literature Note with the quick switcher, a Pandoc citation, or the Zotero menu."
+introduced: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -8,11 +10,13 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
 
-ZotLit treats opening and creating a literature note as a single gesture. If a note already exists for a Zotero item, ZotLit opens it. If not, ZotLit creates the note and then opens it.
+Open an existing Literature Note or create one from its Zotero item.
 
 ## Use the quick switcher
 
 The quick switcher searches your Zotero library and opens or creates a literature note for the item you pick.
+
+It searches every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each row names the library its item comes from. An empty search lists your most recently modified items first.
 
 <Steps>
   <Step>
@@ -37,27 +41,50 @@ The quick switcher searches your Zotero library and opens or creates a literatur
   </Step>
 </Steps>
 
-## Open a note from a citation key
+## Open a note from a Pandoc citation
 
-Enable **Citation key links** in **Settings → ZotLit → Citations**. New installs start with this setting off. ZotLit keeps it on when migrating earlier settings.
+Turn on **Pandoc citations** and **Open citations as links** under **Settings > ZotLit > Citations**. **Pandoc citations** is on by default, and **Open citations as links** is off by default.
 
-Type or paste a bracketed citation like `[@key]` in Live Preview or Source mode. Click its citation key to open or create the corresponding Literature Note.
+Type or paste a Pandoc citation such as `@key` or `[@key]` in an editor.
 
-ZotLit recognizes bracketed Pandoc citations: `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`. A bare `@key` outside brackets stays plain text.
+- In Live Preview, click the citation to open or create its Literature Note.
+- In Source mode, Ctrl-click the citation key. Use Cmd-click on macOS. A plain click places the caret.
+- In reading view, click the citation. A single-item citation opens its Literature Note. A multi-item citation opens a menu.
 
-The **Citation key property** setting controls direct lookup and defaults to `citekey`. Exactly one matching Literature Note supports direct opening and hover preview. Files without `zotero-key` do not count as Literature Note matches.
+You can also place the cursor on a recognized citation and run <Command inline>ZotLit: Open citation key under cursor</Command>. This command uses the same two settings.
 
-When the property has no match or multiple matches, a click looks up the Zotero item. ZotLit then checks the item's `zotero-key` before creating a note. This check prevents a duplicate when an existing Literature Note has a missing or different citation key property.
+ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
+
+A click resolves the citation key against Zotero's native citation key field, across every library in your **Library scope** (set at the top of **Settings > ZotLit**). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
 
 If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
 
-Zotero lookup uses the **Default library** setting at the top of **Settings > ZotLit**. If the selected Citation Key Property is absent from Managed Frontmatter, ZotLit shows a notice but keeps the feature active. Existing unmanaged property values can still resolve notes.
+If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
 
-For details on the internal editor integration and the Reading mode limitation, see [How citation key links work](/docs/concepts/how-citekey-links-work).
+The four open-under-cursor commands use **Open citations as links**; what hovering shows follows **Hover action** instead. **Show formatted citations** does not control navigation.
+
+**Open citations as links** covers Literature Note wikilinks shown as citations as well. For recognized syntax and the complete interaction model, see [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
+
+## Find notes that cite a Literature Note
+
+Open the Literature Note whose incoming citations you want to inspect. Run:
+
+<Command>ZotLit: Show cited by</Command>
+
+The Cited By Sidebar follows the active Literature Note. It groups citation occurrences by source note and shows the citation in its surrounding text.
+
+Use the sidebar toolbar to narrow and arrange the results:
+
+- **Show search filter** filters by source-note path or the shown citation context.
+- **Show more context** expands every result from a compact excerpt to its enclosing Markdown block.
+- **Change sort order** sorts source notes by file name, modified time, or created time, in either direction.
+- **Collapse results** collapses or expands the visible source-note groups.
+
+Select a citation excerpt to open its source note at that occurrence. Select **Open source note** on a group to open the note without targeting one occurrence. Hold Ctrl on Windows or Linux, or Command on macOS, to open either action in another pane.
 
 ## Create or update notes in bulk [#bulk]
 
-You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This requires the ZotLit Zotero companion plugin.
+You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This action requires ZotLit Companion, the Zotero add-on.
 
 ### Update the entire library at once [#library-wide]
 
@@ -69,9 +96,9 @@ Open the command palette and run:
 
 Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
 
-You can also trigger this from Zotero: right-click a library — **My Library** or a group library — in the sidebar and choose **ZotLit > Create or Update Literature Notes**.
+In Zotero, right-click **My Library** or a group library in the sidebar. Choose **ZotLit > Create or Update Literature Notes**.
 
-The command uses your **Default library** (set in **Settings > ZotLit**).
+The Obsidian command covers every library in your **Library scope** (set in **Settings > ZotLit**). The Zotero entry covers the library you right-clicked, whatever your library scope is.
 
 ### Update one collection at once [#collection-wide]
 

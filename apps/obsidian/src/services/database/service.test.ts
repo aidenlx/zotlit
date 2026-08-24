@@ -1,17 +1,19 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { defaults, type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
-import { type ZoteroPrefService } from "@/services/zotero-pref/service";
+import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import {
-  buildSqliteUri,
-  type EffectiveReadMode,
-  type PreparedRead,
-  prepareRead,
+import { buildSqliteUri, prepareRead, staleWalReason } from "./read-source";
+import type {
+  EffectiveReadMode,
+  PreparedRead,
+  SourceFingerprint,
 } from "./read-source";
 
 describe("read-source", () => {
@@ -49,10 +51,43 @@ describe("read-source", () => {
     });
   });
 
-  it("copies the main database and WAL into an owned temp dir", async () => {
+  it("reports a stale-WAL reason for a non-empty WAL", async () => {
+    const source = join(dir, "zotero.sqlite");
+    await writeFile(`${source}-wal`, "wal");
+
+    await expect(staleWalReason(source)).resolves.toBe("wal-not-replayed");
+  });
+
+  it("reports no stale-WAL reason when the WAL is empty", async () => {
+    const source = join(dir, "zotero.sqlite");
+    await writeFile(`${source}-wal`, "");
+
+    await expect(staleWalReason(source)).resolves.toBeUndefined();
+  });
+
+  it("reports no stale-WAL reason when there is no WAL at all", async () => {
+    await expect(
+      staleWalReason(join(dir, "zotero.sqlite")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("warns when a deliberately configured immutable read skips a WAL", async () => {
     const source = join(dir, "zotero.sqlite");
     await writeFile(source, "main");
     await writeFile(`${source}-wal`, "wal");
+
+    await using prepared = await prepareRead("immutable", source);
+
+    expect(prepared.effectiveMode).toBe("immutable");
+    expect(prepared.fallbackReason).toBe("wal-not-replayed");
+  });
+
+  it("copies the main database and WAL into an owned temp dir", async () => {
+    const source = join(dir, "zotero.sqlite");
+    const main = Buffer.alloc(100, 1);
+    const wal = Buffer.alloc(32, 2);
+    await writeFile(source, main);
+    await writeFile(`${source}-wal`, wal);
 
     const preparedPath = await (async () => {
       await using prepared = await prepareRead("copy", source);
@@ -60,10 +95,10 @@ describe("read-source", () => {
       expect(prepared.effectiveMode).toBe("copy");
       expect(prepared.uriOptions).toEqual({ mode: "ro" });
       expect(prepared.path).not.toBe(source);
-      await expect(readFile(prepared.path, "utf8")).resolves.toBe("main");
-      await expect(readFile(`${prepared.path}-wal`, "utf8")).resolves.toBe(
-        "wal",
-      );
+      // Source and temp folder share a volume here, so placement stays put.
+      expect(dirname(dirname(prepared.path))).toBe(tmpdir());
+      await expect(readFile(prepared.path)).resolves.toEqual(main);
+      await expect(readFile(`${prepared.path}-wal`)).resolves.toEqual(wal);
       return prepared.path;
     })();
 
@@ -73,10 +108,11 @@ describe("read-source", () => {
 
 describe("DatabaseService", () => {
   let prepareMock: ReturnType<typeof vi.fn>;
-  let reapStaleReadTempsMock: ReturnType<typeof vi.fn>;
+  let snapshotMock: ReturnType<typeof vi.fn>;
   let createClientMock: ReturnType<typeof vi.fn>;
   let watchMock: ReturnType<typeof vi.fn>;
   let existsSyncMock: ReturnType<typeof vi.fn>;
+  let reapMock: ReturnType<typeof vi.fn>;
   let settings: FakeSettings;
   let zoteroPref: FakeZoteroPref;
   let DatabaseService: typeof import("./service").DatabaseService;
@@ -87,22 +123,24 @@ describe("DatabaseService", () => {
     vi.useFakeTimers();
 
     prepareMock = vi.fn();
-    reapStaleReadTempsMock = vi.fn(async () => undefined);
+    snapshotMock = vi.fn(async () => fingerprint("/zotero/zotero.sqlite"));
     createClientMock = vi.fn();
     watchMock = vi.fn(() => ({ close: vi.fn() }));
     existsSyncMock = vi.fn(() => false);
+    reapMock = vi.fn(async () => {});
 
     vi.doMock("./read-source", async (importOriginal) => {
       const actual = await importOriginal<typeof import("./read-source")>();
       return {
         ...actual,
         prepareRead: prepareMock,
-        reapStaleReadTemps: reapStaleReadTempsMock,
+        snapshotSource: snapshotMock,
       };
     });
     vi.doMock("@zotlit/db/client/node", () => ({
       createClient: createClientMock,
     }));
+    vi.doMock("./reap-temps", () => ({ reapReadClones: reapMock }));
     vi.doMock("node:fs", async (importOriginal) => {
       const actual = await importOriginal<typeof import("node:fs")>();
       return {
@@ -122,7 +160,20 @@ describe("DatabaseService", () => {
     vi.doUnmock("./read-source");
     vi.doUnmock("@zotlit/db/client/node");
     vi.doUnmock("node:fs");
+    vi.doUnmock("./reap-temps");
   });
+
+  /** Drives the parent-directory watcher the service bound most recently. */
+  function emitDirEvent(filename: string): void {
+    const bindings = watchMock.mock.calls.filter(
+      (call) => call[0] === "/zotero",
+    );
+    const listener = bindings.at(-1)?.[2] as
+      | ((event: string, filename: string) => void)
+      | undefined;
+    expect(listener).toBeTypeOf("function");
+    listener?.("change", filename);
+  }
 
   it("opens the configured read source during startup", async () => {
     const client = fakeClient();
@@ -137,22 +188,14 @@ describe("DatabaseService", () => {
 
       expect(prepareMock).toHaveBeenCalledWith("auto", "/zotero/zotero.sqlite");
       expect(createClientMock).toHaveBeenCalledWith(
-        "file:///clone/zotero.sqlite?mode=ro",
+        buildSqliteUri(read.path, read.uriOptions),
         { jit: true },
       );
-      expect(reapStaleReadTempsMock).toHaveBeenCalledWith(
-        expect.any(AbortSignal),
-      );
-      const reapSignal = reapStaleReadTempsMock.mock
-        .calls[0]![0] as AbortSignal;
-      expect(reapSignal.aborted).toBe(false);
       expect(service.state).toBe("ready");
       expect(service.activeReadMode).toBe("copy");
       expect(service.client).toBe(client);
     }
 
-    const reapSignal = reapStaleReadTempsMock.mock.calls[0]![0] as AbortSignal;
-    expect(reapSignal.aborted).toBe(true);
     expect(client.$client.close).toHaveBeenCalledOnce();
     expect(read[Symbol.asyncDispose]).toHaveBeenCalledOnce();
   });
@@ -208,6 +251,35 @@ describe("DatabaseService", () => {
       ["immutable", "/zotero/zotero.sqlite"],
       ["immutable", "/next/zotero.sqlite"],
     ]);
+  });
+
+  it("sweeps read snapshots beside each database path it binds, once each", async () => {
+    prepareMock
+      .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"))
+      .mockResolvedValueOnce(prepared("/clone/three.sqlite", "copy"));
+    createClientMock
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient());
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await service.ready;
+
+    expect(reapMock).toHaveBeenCalledExactlyOnceWith({
+      parent: join("/zotero", ZOTERO_DB_READ_PARENT_DIRNAME),
+    });
+
+    await service.refresh();
+    expect(reapMock).toHaveBeenCalledOnce();
+
+    zoteroPref.setDatabasePath("/next/zotero.sqlite");
+    await waitForCallCount(prepareMock, 3);
+    await waitForCallCount(reapMock, 2);
+
+    expect(reapMock).toHaveBeenLastCalledWith({
+      parent: join("/next", ZOTERO_DB_READ_PARENT_DIRNAME),
+    });
   });
 
   it("keeps refreshing active across coalesced trailing reruns", async () => {
@@ -412,6 +484,369 @@ describe("DatabaseService", () => {
     expect(prepareMock).toHaveBeenCalledTimes(2);
   });
 
+  describe("watcher self-echo gate", () => {
+    /**
+     * Regression: every refresh re-armed the watchers that started the next one,
+     * so the plugin refreshed forever on a database nobody had touched.
+     *
+     * @see DatabaseService's `#scheduleWatchedRefresh` for why a tick lies.
+     */
+    it("ignores a watcher tick when the source is unchanged since the last read", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+      expect(prepareMock).toHaveBeenCalledTimes(1);
+
+      emitDirEvent("zotero.sqlite");
+      emitDirEvent("zotero.sqlite-wal");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(prepareMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("refreshes an immutable read when the source fingerprint is unchanged", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"))
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      emitDirEvent("zotero.sqlite");
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 2);
+
+      expect(prepareMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps an immutable watcher tick cancelled when auto-refresh is off", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"))
+        .mockResolvedValueOnce(prepared("/zotero/zotero.sqlite", "immutable"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      emitDirEvent("zotero.sqlite");
+      settings.set({ "zotero.auto-refresh": false });
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(prepareMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("refreshes when the watcher tick follows a real Zotero write", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      snapshotMock.mockResolvedValue(
+        fingerprint("/zotero/zotero.sqlite", { size: 2n }),
+      );
+      emitDirEvent("zotero.sqlite");
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 2);
+
+      expect(prepareMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("refreshes on an external push even when the source is unchanged", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      service.notifyExternalChange();
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 2);
+
+      expect(prepareMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("refreshes when the source fingerprint cannot be read", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      snapshotMock.mockRejectedValueOnce(new Error("EIO"));
+      emitDirEvent("zotero.sqlite");
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 2);
+
+      expect(prepareMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps a watcher tick armed across the rebind that follows a refresh", async () => {
+      const refreshRead = Promise.withResolvers<PreparedRead>();
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockImplementationOnce(() => refreshRead.promise)
+        .mockResolvedValueOnce(prepared("/clone/three.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      // Hold a refresh open past the point where it fingerprints the source, so
+      // the write below is genuinely later than the snapshot this refresh reads.
+      const refreshDone = service.refresh();
+      await waitForCallCount(prepareMock, 2);
+
+      // Zotero writes, and its tick arms the debounce mid-refresh. The rebind
+      // that follows the swap must keep that tick, or the write stays unseen
+      // until some unrelated event happens to wake the watchers again.
+      snapshotMock.mockResolvedValue(
+        fingerprint("/zotero/zotero.sqlite", { size: 2n }),
+      );
+      emitDirEvent("zotero.sqlite");
+      refreshRead.resolve(prepared("/clone/two.sqlite", "copy"));
+      await refreshDone;
+
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 3);
+
+      expect(prepareMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("lifetime guards", () => {
+    it("drops a tick that outlives teardown inside the gate", async () => {
+      const gateCheck = Promise.withResolvers<SourceFingerprint>();
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      const service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      // The timer clears itself before awaiting the gate, so teardown landing
+      // in that window cannot cancel the tick. It must refuse on its own.
+      snapshotMock.mockImplementationOnce(() => gateCheck.promise);
+      emitDirEvent("zotero.sqlite");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      await service[Symbol.asyncDispose]();
+      gateCheck.resolve(fingerprint("/zotero/zotero.sqlite", { size: 2n }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(prepareMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancels an untrusted tick when auto-refresh is switched off", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      snapshotMock.mockResolvedValue(
+        fingerprint("/zotero/zotero.sqlite", { size: 2n }),
+      );
+      emitDirEvent("zotero.sqlite");
+      settings.set({ "zotero.auto-refresh": false });
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(prepareMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops a tick that outlives the auto-refresh switch inside the gate", async () => {
+      const gateCheck = Promise.withResolvers<SourceFingerprint>();
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      // Same window as teardown: once the tick is inside the gate the timer has
+      // already cleared itself, so cancelling the timer cannot reach it.
+      snapshotMock.mockImplementationOnce(() => gateCheck.promise);
+      emitDirEvent("zotero.sqlite");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      settings.set({ "zotero.auto-refresh": false });
+      gateCheck.resolve(fingerprint("/zotero/zotero.sqlite", { size: 2n }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(prepareMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("abandons a refresh whose read outlives teardown", async () => {
+      const refreshRead = Promise.withResolvers<PreparedRead>();
+      const lateRead = prepared("/clone/two.sqlite", "copy");
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockImplementationOnce(() => refreshRead.promise);
+      // A second client is stubbed so the unguarded path runs to completion and
+      // the assertions below fail on the leak itself, not on a missing mock.
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      const service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+      const boundAtStartup = watchMock.mock.calls.length;
+
+      // Teardown takes every handle the service knew about, then the read lands.
+      // Committing it would strand a live client and a temp dir that no disposal
+      // stack still owns, and rebind watchers on a service that is already gone.
+      const refreshDone = service.refresh();
+      await waitForCallCount(prepareMock, 2);
+      await service[Symbol.asyncDispose]();
+
+      refreshRead.resolve(lateRead);
+      await refreshDone;
+
+      expect(lateRead[Symbol.asyncDispose]).toHaveBeenCalledOnce();
+      expect(createClientMock).toHaveBeenCalledTimes(1);
+      expect(watchMock).toHaveBeenCalledTimes(boundAtStartup);
+    });
+
+    it("binds no watchers when teardown lands in the post-commit swap", async () => {
+      const oldReadRelease = Promise.withResolvers<void>();
+      const firstRead = prepared("/clone/one.sqlite", "copy");
+      // Releasing the previous read closes a client and removes its clone: a
+      // real await, and a second window for teardown after the commit.
+      firstRead[Symbol.asyncDispose] = vi.fn(() => oldReadRelease.promise);
+      prepareMock
+        .mockResolvedValueOnce(firstRead)
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      const service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+      const boundAtStartup = watchMock.mock.calls.length;
+      const changed = vi.fn();
+      service.on("changed", changed);
+
+      const refreshDone = service.refresh();
+      await waitForCallCount(prepareMock, 2);
+      await service[Symbol.asyncDispose]();
+
+      oldReadRelease.resolve();
+      await refreshDone;
+
+      expect(watchMock).toHaveBeenCalledTimes(boundAtStartup);
+      expect(changed).not.toHaveBeenCalled();
+    });
+
+    it("reports nothing when a read fails after teardown", async () => {
+      const refreshRead = Promise.withResolvers<PreparedRead>();
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockImplementationOnce(() => refreshRead.promise);
+      createClientMock.mockReturnValueOnce(fakeClient());
+
+      const service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+      const degraded = vi.fn();
+      const refreshFailed = vi.fn();
+      service.on("degraded", degraded);
+      service.on("refresh-failed", refreshFailed);
+
+      const refreshDone = service.refresh();
+      await waitForCallCount(prepareMock, 2);
+      await service[Symbol.asyncDispose]();
+
+      // Teardown nulled the client, so an unguarded catch would call the dead
+      // service degraded and hand `refresh()` a misleading throw.
+      refreshRead.reject(new Error("gone"));
+      await refreshDone;
+
+      expect(degraded).not.toHaveBeenCalled();
+      expect(refreshFailed).not.toHaveBeenCalled();
+      expect(service.state).toBe("ready");
+    });
+
+    it("gates the next tick again once a trusted burst has fired", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/three.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      // The push spends its authority on its own burst. A leaked flag would
+      // wave every later echo through and restore the endless refresh.
+      service.notifyExternalChange();
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 2);
+
+      emitDirEvent("zotero.sqlite");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(prepareMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps a pending push when auto-refresh is switched off", async () => {
+      prepareMock
+        .mockResolvedValueOnce(prepared("/clone/one.sqlite", "copy"))
+        .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+      createClientMock
+        .mockReturnValueOnce(fakeClient())
+        .mockReturnValueOnce(fakeClient());
+
+      await using service = new DatabaseService(deps(settings, zoteroPref));
+      await service.ready;
+
+      // A push is its own change source, so the flag must not silence it.
+      service.notifyExternalChange();
+      settings.set({ "zotero.auto-refresh": false });
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitForCallCount(prepareMock, 2);
+
+      expect(prepareMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("db-file-missing signal", () => {
     it("emits once when the database file is absent", async () => {
       existsSyncMock.mockReturnValue(false);
@@ -481,14 +916,31 @@ function deps(settings: FakeSettings, zoteroPref: FakeZoteroPref): Deps {
 function prepared(
   path: string,
   effectiveMode: EffectiveReadMode,
-  fallbackNotice?: PreparedRead["fallbackNotice"],
+  fallbackReason?: PreparedRead["fallbackReason"],
 ): PreparedRead {
   return {
     path,
     uriOptions: { mode: "ro" },
     effectiveMode,
-    fallbackNotice,
+    fallbackReason,
     [Symbol.asyncDispose]: vi.fn(async () => undefined),
+  };
+}
+
+function fingerprint(
+  path: string,
+  main: { size?: bigint } = {},
+): SourceFingerprint {
+  return {
+    path,
+    main: {
+      exists: true,
+      dev: 1n,
+      ino: 2n,
+      size: main.size ?? 1n,
+      header: Buffer.alloc(100),
+    },
+    wal: { state: "absent" },
   };
 }
 

@@ -1,10 +1,11 @@
 // The Template-slot → contract-root registry shared by the contract generator and the Template Workbench CLI.
 
 /**
- * Stamped in every generated schema's `$id` and in the Workbench's JSON
- * envelopes. Bump when the `zt` contract or the diagnostic codes change.
+ * Stamped in every generated schema's `$id`. Bump when the `zt` contract
+ * changes. Each `zotlit:*` command namespace versions its own CLI Contract
+ * beside its envelope, so a bump here says nothing about an answer's shape.
  */
-export const CONTRACT_VERSION = 1;
+export const CONTRACT_VERSION = 2;
 
 /** Every emitted `zt` data root, in the order the contract documents them. */
 export const CONTRACT_ROOTS = ["note", "annotation", "filename"] as const;

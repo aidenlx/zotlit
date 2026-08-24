@@ -2,7 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
 
-import { migrateV1ToV2, migrateV2ToV3 } from "./migrate";
+import {
+  migrateLegacyV0,
+  migrateV1ToV2,
+  migrateV2ToV3,
+  migrateV3ToV4,
+  migrateV4ToV5,
+  migrateV5ToV6,
+  migrateV6ToV7,
+  migrateV7ToV8,
+  migrateV8ToV9,
+} from "./migrate";
 import { defaults } from "./schema";
 import { RESET_SETTING, SettingsService } from "./service";
 
@@ -28,6 +38,12 @@ class PluginStub {
 const noopMigrate = (raw: unknown): unknown => raw;
 const noopMigrateV1 = (raw: unknown): unknown => raw;
 const noopMigrateV2 = (raw: unknown): unknown => raw;
+const noopMigrateV3 = (raw: unknown): unknown => raw;
+const noopMigrateV4 = (raw: unknown): unknown => raw;
+const noopMigrateV5 = (raw: unknown): unknown => raw;
+const noopMigrateV6 = (raw: unknown): unknown => raw;
+const noopMigrateV7 = (raw: unknown): unknown => raw;
+const noopMigrateV8 = (raw: unknown): unknown => raw;
 
 type MakeServiceOptions = Omit<Partial<SettingsServiceOptions>, "plugin"> & {
   plugin?: PluginStub;
@@ -43,6 +59,12 @@ function makeService(overrides: MakeServiceOptions = {}): {
     migrateLegacy: noopMigrate,
     migrateV1: noopMigrateV1,
     migrateV2: noopMigrateV2,
+    migrateV3: noopMigrateV3,
+    migrateV4: noopMigrateV4,
+    migrateV5: noopMigrateV5,
+    migrateV6: noopMigrateV6,
+    migrateV7: noopMigrateV7,
+    migrateV8: noopMigrateV8,
     ...overrides,
   });
   return { plugin, service };
@@ -157,7 +179,7 @@ describe("SettingsService loading", () => {
     ).not.toThrow();
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/x",
     });
   });
@@ -170,9 +192,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("valid v3 sparse object loads schema-known overrides and does not save", async () => {
+  it("valid v9 sparse object loads schema-known overrides and does not save", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/from-disk",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
@@ -185,9 +207,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v3 non-schema keys are ignored and the file is not rewritten", async () => {
+  it("v9 non-schema keys are ignored and the file is not rewritten", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/ok",
       unknownKey: "noise",
     });
@@ -201,9 +223,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v3 invalid per-key values are dropped and the file is not rewritten", async () => {
+  it("v9 invalid per-key values fall back to their default and the file is not rewritten", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/kept",
       "server.enabled": "not-a-boolean",
     });
@@ -217,9 +239,9 @@ describe("SettingsService loading", () => {
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  it("v3 frontmatter field missing language is dropped and other keys survive", async () => {
+  it("v9 frontmatter field missing language falls back to the default and other keys survive", async () => {
     const plugin = new PluginStub({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.frontmatter-fields": [
         { key: "title", expr: "zt.title", merge: "replace" },
       ],
@@ -268,6 +290,12 @@ describe("SettingsService loading", () => {
           migrateLegacy: noopMigrate,
           migrateV1: noopMigrateV1,
           migrateV2: noopMigrateV2,
+          migrateV3: noopMigrateV3,
+          migrateV4: noopMigrateV4,
+          migrateV5: noopMigrateV5,
+          migrateV6: noopMigrateV6,
+          migrateV7: noopMigrateV7,
+          migrateV8: noopMigrateV8,
         }),
     });
     await expect(registered.services.settings.ready).rejects.toBeInstanceOf(
@@ -305,9 +333,9 @@ describe("SettingsService hydrationOrigin", () => {
     expect(service.hydrationOrigin).toBe("legacy");
   });
 
-  it("reports 'current' for v3 data", async () => {
+  it("reports 'current' for v9 data", async () => {
     const { service } = makeService({
-      plugin: new PluginStub({ __VERSION__: 3, "note.literature-folder": "R" }),
+      plugin: new PluginStub({ __VERSION__: 9, "note.literature-folder": "R" }),
     });
     await service.ready;
     expect(service.hydrationOrigin).toBe("current");
@@ -315,7 +343,7 @@ describe("SettingsService hydrationOrigin", () => {
 });
 
 describe("SettingsService legacy migration", () => {
-  it("migrates schema-known keys, drops non-schema keys, writes v1 best-effort", async () => {
+  it("migrates schema-known keys, drops non-schema keys, writes v9 best-effort", async () => {
     const plugin = new PluginStub({
       "note.literature-folder": "/from-legacy",
       junk: 1,
@@ -331,7 +359,7 @@ describe("SettingsService legacy migration", () => {
       "note.literature-folder": "/from-legacy",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/from-legacy",
     });
   });
@@ -352,12 +380,12 @@ describe("SettingsService legacy migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("falls back to defaults on migration throw and writes empty v3", async () => {
+  it("falls back to defaults on migration throw and writes empty v9", async () => {
     const plugin = new PluginStub({ legacy: "stuff" });
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({
@@ -368,7 +396,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 3 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 9 });
     expect(warnSpy).toHaveBeenCalled();
   });
 
@@ -381,7 +409,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 3 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 9 });
   });
 
   it("treats a Promise return from migrateLegacy as non-plain (no async hooks)", async () => {
@@ -396,7 +424,7 @@ describe("SettingsService legacy migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 3 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 9 });
   });
 
   it("logs but stays loaded when legacy migration write fails", async () => {
@@ -418,8 +446,8 @@ describe("SettingsService legacy migration", () => {
   });
 });
 
-describe("SettingsService v1→v3 migration", () => {
-  it("migrates schema-known keys, drops non-schema keys, writes v3 best-effort", async () => {
+describe("SettingsService v1→v9 migration", () => {
+  it("migrates schema-known keys, drops non-schema keys, writes v9 best-effort", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.literature-folder": "/from-v1",
@@ -433,12 +461,12 @@ describe("SettingsService v1→v3 migration", () => {
       "note.literature-folder": "/from-v1",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/from-v1",
     });
   });
 
-  it("drops invalid schema-known values and writes v3 without them", async () => {
+  it("drops invalid schema-known values and writes v9 without them", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.literature-folder": "/kept",
@@ -452,12 +480,12 @@ describe("SettingsService v1→v3 migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("drops frontmatter fields still missing merge after migration and writes v3 without them", async () => {
+  it("drops frontmatter fields still missing merge after migration and writes v9 without them", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.frontmatter-fields": [{ key: "title", expr: "zt.title" }],
@@ -471,12 +499,12 @@ describe("SettingsService v1→v3 migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("happy path: stamps/rewrites frontmatter field language and writes v3 exactly once", async () => {
+  it("happy path: stamps/rewrites frontmatter field language and writes v9 exactly once", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.frontmatter-fields": [
@@ -490,6 +518,11 @@ describe("SettingsService v1→v3 migration", () => {
       plugin,
       migrateV1: migrateV1ToV2,
       migrateV2: migrateV2ToV3,
+      migrateV3: migrateV3ToV4,
+      migrateV4: migrateV4ToV5,
+      migrateV5: migrateV5ToV6,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
     });
     await service.ready;
 
@@ -512,15 +545,13 @@ describe("SettingsService v1→v3 migration", () => {
       ...defaults,
       "note.frontmatter-fields": migratedFields,
       "note.literature-folder": "/from-v1",
-      "citation.key-links": true,
-      "citation.key-links-frontmatter-key": "citekey",
+      "citation.open-as-links": true,
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.frontmatter-fields": migratedFields,
       "note.literature-folder": "/from-v1",
-      "citation.key-links": true,
-      "citation.key-links-frontmatter-key": "citekey",
+      "citation.open-as-links": true,
     });
   });
 
@@ -541,12 +572,12 @@ describe("SettingsService v1→v3 migration", () => {
       "note.literature-folder": "/kept",
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/kept",
     });
   });
 
-  it("falls back to defaults on migrateV1 throw and writes empty v3", async () => {
+  it("falls back to defaults on migrateV1 throw and writes empty v9", async () => {
     const plugin = new PluginStub({
       __VERSION__: 1,
       "note.literature-folder": "/x",
@@ -560,7 +591,7 @@ describe("SettingsService v1→v3 migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 3 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 9 });
     expect(warnSpy).toHaveBeenCalled();
   });
 
@@ -576,42 +607,505 @@ describe("SettingsService v1→v3 migration", () => {
     });
     await service.ready;
     expect(service.current).toEqual(defaults);
-    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 3 });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 9 });
   });
 
-  it("v2 data runs the compatibility migration and writes v3", async () => {
+  it("v2 data runs all compatibility migrations and writes v9", async () => {
     const plugin = new PluginStub({
       __VERSION__: 2,
       "note.literature-folder": "/from-v2",
     });
     const saveSpy = vi.spyOn(plugin, "saveData");
-    const { service } = makeService({ plugin, migrateV2: migrateV2ToV3 });
+    const { service } = makeService({
+      plugin,
+      migrateV2: migrateV2ToV3,
+      migrateV3: migrateV3ToV4,
+      migrateV4: migrateV4ToV5,
+      migrateV5: migrateV5ToV6,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
+    });
     await service.ready;
     expect(service.current).toEqual({
       ...defaults,
       "note.literature-folder": "/from-v2",
-      "citation.key-links": true,
-      "citation.key-links-frontmatter-key": "citekey",
+      "citation.open-as-links": true,
     });
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
-      "citation.key-links": true,
-      "citation.key-links-frontmatter-key": "citekey",
+      __VERSION__: 9,
+      "citation.open-as-links": true,
       "note.literature-folder": "/from-v2",
     });
   });
 
-  it("version 4 is future and falls back to defaults with a warning", async () => {
+  it("v3 data carries Citation Key Links into Pandoc navigation and writes v9", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 3,
+      "citation.key-links": true,
+      "note.literature-folder": "/from-v3",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({
+      plugin,
+      migrateV3: migrateV3ToV4,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
+    });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v3",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 9,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v3",
+    });
+  });
+
+  it("v3 data without Citation Key Links keeps Pandoc navigation off", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 3,
+      "note.literature-folder": "/from-v3",
+    });
+    const { service } = makeService({
+      plugin,
+      migrateV3: migrateV3ToV4,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
+    });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": false,
+      "note.literature-folder": "/from-v3",
+    });
+  });
+
+  it("v4 data drops the retired Citation Key Property and writes v9", async () => {
     const plugin = new PluginStub({
       __VERSION__: 4,
-      "note.literature-folder": "/ignored",
+      "citation.key-links-frontmatter-key": "bibkey",
+      "note.literature-folder": "/from-v4",
     });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({
+      plugin,
+      migrateV4: migrateV4ToV5,
+      migrateV5: migrateV5ToV6,
+    });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "note.literature-folder": "/from-v4",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 9,
+      "note.literature-folder": "/from-v4",
+    });
+  });
+
+  it("v5 data preserves the Pandoc and wikilink source choices", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 5,
+      "citation.citekey-indexing": false,
+      "citation.wikilink-citations": true,
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin, migrateV5: migrateV5ToV6 });
+    await service.ready;
+
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.pandoc-citations": false,
+      "citation.wikilink-citations": true,
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 9,
+      "citation.pandoc-citations": false,
+      "citation.wikilink-citations": true,
+    });
+  });
+
+  it("v6 data maps Citekey Editor Treatment to Pandoc navigation", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 6,
+      "citation.citekey-editor": true,
+      "note.literature-folder": "/from-v6",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({
+      plugin,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
+    });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v6",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 9,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v6",
+    });
+  });
+
+  it("v7 data materializes the Pandoc navigation default and writes v9", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 7,
+      "note.literature-folder": "/from-v7",
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin, migrateV7: migrateV7ToV8 });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v7",
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 9,
+      "citation.open-as-links": true,
+      "note.literature-folder": "/from-v7",
+    });
+  });
+
+  it("v7 data keeps an explicit navigation opt-out and writes v9", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 7,
+      "citation.open-pandoc-links": false,
+    });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({ plugin, migrateV7: migrateV7ToV8 });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": false,
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 9,
+      "citation.open-as-links": false,
+    });
+  });
+
+  it.each([1, 4] as const)(
+    "v8 data with default library %i selects my library and drops the retired key",
+    async (citationLibrary) => {
+      const plugin = new PluginStub({
+        __VERSION__: 8,
+        "zotero.citation-library": citationLibrary,
+      });
+      const saveSpy = vi.spyOn(plugin, "saveData");
+      const { service } = makeService({ plugin, migrateV8: migrateV8ToV9 });
+      await service.ready;
+      expect(service.current).toEqual({
+        ...defaults,
+        "zotero.library-scope": {
+          mode: "selected",
+          libraries: [{ type: "personal" }],
+        },
+      });
+      expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+        __VERSION__: 9,
+        "zotero.library-scope": {
+          mode: "selected",
+          libraries: [{ type: "personal" }],
+        },
+      });
+    },
+  );
+
+  it("legacy v0 data selects my library and drops the retired key", async () => {
+    const plugin = new PluginStub({ citationLibrary: 4 });
+    const saveSpy = vi.spyOn(plugin, "saveData");
+    const { service } = makeService({
+      plugin,
+      migrateLegacy: migrateLegacyV0,
+      migrateV1: migrateV1ToV2,
+      migrateV2: migrateV2ToV3,
+      migrateV3: migrateV3ToV4,
+      migrateV4: migrateV4ToV5,
+      migrateV5: migrateV5ToV6,
+      migrateV6: migrateV6ToV7,
+      migrateV7: migrateV7ToV8,
+      migrateV8: migrateV8ToV9,
+    });
+    await service.ready;
+    expect(service.current).toEqual({
+      ...defaults,
+      "citation.open-as-links": true,
+      "zotero.library-scope": {
+        mode: "selected",
+        libraries: [{ type: "personal" }],
+      },
+    });
+    expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+      __VERSION__: 9,
+      "citation.open-as-links": true,
+      "zotero.library-scope": {
+        mode: "selected",
+        libraries: [{ type: "personal" }],
+      },
+    });
+  });
+
+  it("a fresh installation persists no override and discovers every library", async () => {
+    const plugin = new PluginStub(null);
     const saveSpy = vi.spyOn(plugin, "saveData");
     const { service } = makeService({ plugin });
     await service.ready;
-    expect(service.current).toEqual(defaults);
+    expect(service.current?.["zotero.library-scope"]).toEqual({ mode: "all" });
     expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["all libraries", { mode: "all" }],
+    [
+      "my library alone",
+      { mode: "selected", libraries: [{ type: "personal" }] },
+    ],
+    [
+      "my library and groups in canonical order",
+      {
+        mode: "selected",
+        libraries: [
+          { type: "personal" },
+          { type: "group", groupID: 118 },
+          { type: "group", groupID: 4200309 },
+        ],
+      },
+    ],
+  ] as const)(
+    "a current v9 library scope naming %s loads unchanged and is not rewritten",
+    async (_label, scope) => {
+      const plugin = new PluginStub({
+        __VERSION__: 9,
+        "zotero.library-scope": scope,
+      });
+      const saveSpy = vi.spyOn(plugin, "saveData");
+      const { service } = makeService({ plugin });
+      await service.ready;
+      expect(service.current?.["zotero.library-scope"]).toEqual(scope);
+      expect(service.diagnostics).toEqual([]);
+      expect(saveSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it("version 10 is future and falls back to defaults with a warning", async () => {
+    const plugin = new PluginStub({ __VERSION__: 10 });
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.current).toEqual(defaults);
     expect(warnSpy).toHaveBeenCalled();
+  });
+});
+
+describe("SettingsService broken overrides", () => {
+  function makeBrokenService(): {
+    plugin: PluginStub;
+    service: SettingsService;
+  } {
+    return makeService({
+      plugin: new PluginStub({
+        __VERSION__: 9,
+        "server.enabled": "not-a-boolean",
+        "note.literature-folder": "/kept",
+      }),
+    });
+  }
+
+  it("has no diagnostics before load finishes", () => {
+    const { service } = makeBrokenService();
+    expect(service.diagnostics).toEqual([]);
+  });
+
+  it("reports the broken key and serves its default in every snapshot", async () => {
+    const { service } = makeBrokenService();
+    const seen: (object | null)[] = [];
+    service.subscribe((v) => seen.push(v));
+    await service.ready;
+
+    const effective = {
+      ...defaults,
+      "note.literature-folder": "/kept",
+    };
+    expect(service.current).toEqual(effective);
+    expect(await service.loaded).toEqual(effective);
+    expect(seen[1]).toEqual(effective);
+    expect(service.diagnostics).toEqual([
+      { key: "server.enabled", value: "not-a-boolean" },
+    ]);
+  });
+
+  it("hands out a clone, so a consumer cannot mutate the persisted value", async () => {
+    const { service, plugin } = makeService({
+      plugin: new PluginStub({
+        __VERSION__: 9,
+        "note.frontmatter-fields": [{ bogus: true }],
+      }),
+    });
+    await service.ready;
+
+    const handedOut = service.diagnostics[0]!.value as { bogus: boolean }[];
+    handedOut[0]!.bogus = false;
+
+    expect(service.diagnostics).toEqual([
+      { key: "note.frontmatter-fields", value: [{ bogus: true }] },
+    ]);
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "note.frontmatter-fields": [{ bogus: true }],
+      "note.literature-folder": "/moved",
+    });
+  });
+
+  it("keeps the broken raw override on disk when another setting changes", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "server.enabled": "not-a-boolean",
+      "note.literature-folder": "/moved",
+    });
+    expect(service.diagnostics).toEqual([
+      { key: "server.enabled", value: "not-a-boolean" },
+    ]);
+  });
+
+  it("keeps a broken library scope on disk until the user repairs it", async () => {
+    const brokenScope = { mode: "selected", libraries: [] };
+    const plugin = new PluginStub({
+      __VERSION__: 9,
+      "zotero.library-scope": brokenScope,
+    });
+    const { service } = makeService({ plugin });
+    await service.ready;
+
+    expect(service.current?.["zotero.library-scope"]).toEqual(
+      defaults["zotero.library-scope"],
+    );
+    expect(service.diagnostics).toEqual([
+      { key: "zotero.library-scope", value: brokenScope },
+    ]);
+
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "zotero.library-scope": brokenScope,
+      "note.literature-folder": "/moved",
+    });
+
+    service.update({ "zotero.library-scope": { mode: "all" } });
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "zotero.library-scope": { mode: "all" },
+      "note.literature-folder": "/moved",
+    });
+  });
+
+  it("replaces the raw override and clears the diagnostic on repair", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.update({ "server.enabled": true });
+    await service.flush();
+    expect(service.current?.["server.enabled"]).toBe(true);
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "server.enabled": true,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("keeps the broken override when a repair fails validation", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    expect(() =>
+      // @ts-expect-error — wrong type for runtime check
+      service.update({ "server.enabled": "still-not-a-boolean" }),
+    ).toThrow(/invalid settings/);
+    service.update({ "note.literature-folder": "/moved" });
+    await service.flush();
+    expect(service.diagnostics).toEqual([
+      { key: "server.enabled", value: "not-a-boolean" },
+    ]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "server.enabled": "not-a-boolean",
+      "note.literature-folder": "/moved",
+    });
+  });
+
+  it("removes the raw override and clears the diagnostic on reset", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.reset(["server.enabled"]);
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("RESET_SETTING removes the raw override too", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.update({ "server.enabled": RESET_SETTING });
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "note.literature-folder": "/kept",
+    });
+  });
+
+  it("reset() with no arguments clears every broken override", async () => {
+    const { service, plugin } = makeBrokenService();
+    await service.ready;
+    service.reset();
+    await service.flush();
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({ __VERSION__: 9 });
+  });
+
+  it("unknown keys stay dropped without a diagnostic", async () => {
+    const { service, plugin } = makeService({
+      plugin: new PluginStub({ __VERSION__: 9, unknownKey: "noise" }),
+    });
+    await service.ready;
+    expect(service.diagnostics).toEqual([]);
+    service.update({ "note.literature-folder": "/x" });
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "note.literature-folder": "/x",
+    });
+  });
+
+  it("migration keeps dropping invalid values instead of preserving them", async () => {
+    const plugin = new PluginStub({
+      __VERSION__: 1,
+      "server.enabled": "not-a-boolean",
+      "note.literature-folder": "/kept",
+    });
+    const { service } = makeService({ plugin });
+    await service.ready;
+    expect(service.diagnostics).toEqual([]);
+    expect(plugin.__data).toEqual({
+      __VERSION__: 9,
+      "note.literature-folder": "/kept",
+    });
   });
 });
 
@@ -674,32 +1168,20 @@ describe("SettingsService mutations", () => {
     );
   });
 
-  it("rejects empty or untrimmed Citation Key Property values while links are disabled", async () => {
-    const { service } = makeService();
-    await service.ready;
-
-    expect(() =>
-      service.update({ "citation.key-links-frontmatter-key": "" }),
-    ).toThrow(/invalid settings/);
-    expect(() =>
-      service.update({ "citation.key-links-frontmatter-key": " citekey " }),
-    ).toThrow(/invalid settings/);
-  });
-
   it("RESET_SETTING deletes an override but other overrides remain", async () => {
     const { service, plugin } = makeService();
     await service.ready;
     service.update({ "note.literature-folder": "/x", "server.enabled": true });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/x",
       "server.enabled": true,
     });
     service.update({ "note.literature-folder": RESET_SETTING });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "server.enabled": true,
     });
   });
@@ -712,7 +1194,7 @@ describe("SettingsService mutations", () => {
     });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": defaults["note.literature-folder"],
     });
   });
@@ -748,7 +1230,7 @@ describe("SettingsService mutations", () => {
     service.update({});
     expect(seen).toHaveLength(2);
     await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 3 });
+    expect(plugin.__data).toEqual({ __VERSION__: 9 });
   });
 
   it("reset() of un-overridden keys still notifies and schedules a save", async () => {
@@ -759,7 +1241,7 @@ describe("SettingsService mutations", () => {
     service.reset(["note.literature-folder"]);
     expect(seen).toHaveLength(2);
     await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 3 });
+    expect(plugin.__data).toEqual({ __VERSION__: 9 });
   });
 });
 
@@ -770,7 +1252,7 @@ describe("SettingsService persistence", () => {
     service.update({ "server.enabled": true });
     await service.flush();
     expect(plugin.__data).toEqual({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "server.enabled": true,
     });
   });
@@ -785,7 +1267,7 @@ describe("SettingsService persistence", () => {
     expect(saveSpy).not.toHaveBeenCalled();
     await service.flush();
     expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/c",
     });
   });
@@ -854,6 +1336,12 @@ describe("SettingsService persistence", () => {
         migrateLegacy: noopMigrate,
         migrateV1: noopMigrateV1,
         migrateV2: noopMigrateV2,
+        migrateV3: noopMigrateV3,
+        migrateV4: noopMigrateV4,
+        migrateV5: noopMigrateV5,
+        migrateV6: noopMigrateV6,
+        migrateV7: noopMigrateV7,
+        migrateV8: noopMigrateV8,
       }),
     );
     await service.ready;
@@ -861,7 +1349,7 @@ describe("SettingsService persistence", () => {
     expect(plugin.__data).toBeNull();
     await stack.disposeAsync();
     expect(plugin.__data).toEqual({
-      __VERSION__: 3,
+      __VERSION__: 9,
       "note.literature-folder": "/on-dispose",
     });
   });

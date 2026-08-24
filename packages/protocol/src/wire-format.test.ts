@@ -210,14 +210,11 @@ describe("wire format", () => {
         },
         "notify": [
           {
-            "event": "item/update",
+            "event": "db/updated",
             "fields": [
-              "add",
               "dataPath",
               "event",
-              "modify",
               "profilePath",
-              "trash",
             ],
           },
           {
@@ -274,7 +271,7 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "version": 5,
+        "version": 6,
         "zoteroNotes": {
           "body": [
             "items",

@@ -1,19 +1,14 @@
 import { dirname } from "node:path/posix";
-import {
-  TFile,
-  TFolder,
-  type App,
-  type EventRef,
-  type Plugin,
-  type TAbstractFile,
-} from "obsidian";
+import { TFile, TFolder } from "obsidian";
+import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { defaults, type Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
 
 import { DEFAULT_TEMPLATES, templatePath } from "./defaults";
@@ -1272,6 +1267,12 @@ async function makeHarness(options?: {
     migrateLegacy: (raw) => raw,
     migrateV1: (raw) => raw,
     migrateV2: (raw) => raw,
+    migrateV3: (raw) => raw,
+    migrateV4: (raw) => raw,
+    migrateV5: (raw) => raw,
+    migrateV6: (raw) => raw,
+    migrateV7: (raw) => raw,
+    migrateV8: (raw) => raw,
   });
   await settings.ready;
 

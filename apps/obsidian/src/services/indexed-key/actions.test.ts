@@ -1,5 +1,5 @@
 import { TFile } from "@mock/obsidian";
-import { type Command } from "obsidian";
+import type { Command } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { addIndexedKeyActions, indexedKeyForClipboard } from "./actions";

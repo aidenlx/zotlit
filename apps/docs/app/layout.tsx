@@ -2,7 +2,7 @@ import { Analytics } from "@vercel/analytics/next";
 
 import "./global.css";
 import { RootProvider } from "fumadocs-ui/provider/next";
-import { type Metadata } from "next";
+import type { Metadata } from "next";
 import { Gelasio, IBM_Plex_Mono, Inter } from "next/font/google";
 import localFont from "next/font/local";
 

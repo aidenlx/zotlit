@@ -9,7 +9,8 @@ import Link from "fumadocs-core/link";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { useFooterItems } from "fumadocs-ui/utils/use-footer-items";
 import { ArrowLeft, ArrowRight } from "lucide-react";
-import { type ComponentProps, useMemo } from "react";
+import { useMemo } from "react";
+import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/cn";
 

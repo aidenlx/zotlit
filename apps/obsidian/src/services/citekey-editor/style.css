@@ -1,0 +1,79 @@
+/* Citekey editor treatment. A literal citation reads like an internal link in
+   every editor state. A raw key can sit in Obsidian's external-link token, so
+   its local external-link variables point to the internal-link appearance. */
+:where(.markdown-source-view.mod-cm6 .zt-citation-key) {
+  --link-external-color: var(--link-color);
+  --link-external-color-hover: var(--link-color-hover);
+  --link-external-decoration: var(--link-decoration);
+  --link-external-decoration-hover: var(--link-decoration-hover);
+}
+
+:where(.markdown-source-view.mod-cm6 span.zt-citation-key) {
+  color: var(--link-color);
+  font-weight: var(--link-weight);
+  text-decoration-line: var(--link-decoration);
+  text-decoration-thickness: var(--link-decoration-thickness);
+}
+
+:where(
+  .markdown-source-view.mod-cm6:not(.is-live-preview) span.zt-citation-key
+) {
+  cursor: text;
+}
+
+/* A rendered Citation states in `data-zt-click` what a plain click on it does
+   and takes its cursor from that; a marked key opens on click and reads as the
+   link it is. */
+:where(
+  .markdown-source-view.mod-cm6.is-live-preview
+    span.zt-citation-key:not([data-zt-click])
+) {
+  cursor: var(--cursor-link);
+}
+
+/* The link hover colour says the click opens something, so it is drawn only
+   where it does. */
+@media (hover: hover) {
+  :where(
+    .markdown-source-view.mod-cm6
+      span.zt-citation-key:is(
+        :not([data-zt-click]),
+        [data-zt-click="open"]
+      ):hover
+  ) {
+    color: var(--link-color-hover);
+    text-decoration-line: var(--link-decoration-hover);
+  }
+}
+
+/* A citekey with no indexed Literature Note: the same broken-reference accent
+   Obsidian gives an unresolved internal link, so a typo'd or deleted citekey
+   reads as broken while writing. Declared after the resolved rules, including
+   their :hover, so its higher-specificity selector still wins on hover. */
+:where(.markdown-source-view.mod-cm6 span.zt-citation-key-unresolved) {
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
+  text-decoration-color: var(--link-unresolved-decoration-color);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+}
+
+@media (hover: hover) {
+  :where(
+    .markdown-source-view.mod-cm6
+      span.zt-citation-key-unresolved:is(
+        :not([data-zt-click]),
+        [data-zt-click="open"]
+      ):hover
+  ) {
+    color: var(--link-unresolved-color);
+    text-decoration-line: var(--link-decoration-hover);
+  }
+}
+
+/* A citekey naming several Zotero Items: it still opens — the candidates are
+   offered — so it keeps the link colour and takes the unresolved decoration,
+   which says the key alone does not reach one Item. */
+:where(.markdown-source-view.mod-cm6 span.zt-citation-key-ambiguous) {
+  text-decoration-color: var(--link-unresolved-decoration-color);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+}

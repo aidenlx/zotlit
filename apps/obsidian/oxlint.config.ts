@@ -11,6 +11,7 @@ export default defineConfig({
     {
       files: [
         "vite.config.ts",
+        "scripts/check-lua-filter.ts",
         "src/zt-main.ts",
         "src/services/build.ts",
         "src/services/service-base.ts",
@@ -19,6 +20,14 @@ export default defineConfig({
       ],
       rules: {
         "no-console": "off",
+      },
+    },
+    {
+      // Node runs these straight from source, where the `@/` alias the rule
+      // points at does not resolve.
+      files: ["scripts/**"],
+      rules: {
+        "no-restricted-imports": "off",
       },
     },
   ],

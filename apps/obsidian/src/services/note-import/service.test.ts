@@ -1,4 +1,5 @@
-import { TFile, TFolder, type App } from "obsidian";
+import { TFile, TFolder } from "obsidian";
+import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,25 +8,24 @@ import {
   getNoteByKey,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
-import { Temporal } from "@zotlit/shared/temporal";
 
 import { renderAnnotations } from "@/lib/annotation-render";
-import {
-  AttachmentImportService,
-  type AttachmentSource,
-  type SourceOrigin,
+import { AttachmentImportService } from "@/services/attachment-import/service";
+import type {
+  AttachmentSource,
+  SourceOrigin,
 } from "@/services/attachment-import/service";
-import { defaults, type Settings } from "@/services/settings/schema";
-import { type SettingsService } from "@/services/settings/service";
-import { type TemplateService } from "@/services/template/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
 
 import { parseNote } from "./note-parser";
-import {
-  createNoteImporter,
-  type ImportVaultApp,
-  NoteImportMintError,
-  type NoteImporter,
-  type PrepareNoteImportOptions,
+import { createNoteImporter, NoteImportMintError } from "./service";
+import type {
+  ImportVaultApp,
+  NoteImporter,
+  PrepareNoteImportOptions,
 } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -476,6 +476,20 @@ describe("createNoteImporter", () => {
       vi.mocked(parseNote).mock.calls[0]![2].renderAnnotationParagraph,
     ).toBeUndefined();
     expect(renderAnnotations).not.toHaveBeenCalled();
+  });
+
+  it("passes the colored highlight setting to the note parser", async () => {
+    const { app } = makeApp();
+    const batch = await makeService(app).prepare(
+      makePrepare({ settings: { "note.import-colored-highlights": true } }),
+    );
+
+    batch.resolveChildNote(makeNote()).noteLink();
+    await batch.flush();
+
+    expect(
+      vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
+    ).toBe(true);
   });
 
   it("still writes a note whose embedded images are all blocked, as file:// embeds", async () => {

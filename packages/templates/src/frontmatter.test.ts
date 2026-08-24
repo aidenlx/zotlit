@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  compileFrontmatterFields,
-  evalFrontmatterFields,
-  type FrontmatterField,
-} from "./frontmatter";
+import { compileFrontmatterFields, evalFrontmatterFields } from "./frontmatter";
+import type { FrontmatterField } from "./frontmatter";
 import { createLiquidEngine } from "./liquid";
 
 function evalFields(

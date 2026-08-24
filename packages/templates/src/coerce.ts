@@ -1,7 +1,5 @@
 // Output-value coercion shared by the Eta and Liquid engines' auto-filter/outputEscape hooks.
 
-import { Temporal } from "@zotlit/shared/temporal";
-
 /**
  * Coerces a rendered value to Markdown-safe text.
  *

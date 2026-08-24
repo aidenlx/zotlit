@@ -1,0 +1,19 @@
+/* Obsidian's popover hides its own overflow and clamps its height where the
+   viewport is cramped, so the content carries the scrolling: a tall stack of
+   entries scrolls whole rather than being cut off. The popover's own width is
+   Obsidian's own — 450px on every direct child — which a row of three actions
+   needs. */
+:where(.zt-citation-popover-content) {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: min(60vh, 420px);
+}
+
+/* The action row sits on the side of its own entry the pointer came from: the
+   popover's placement decides which, and each block reads it off the class the
+   popover stamps. A popover above the target keeps DOM order, which puts the
+   row at the entry's lower edge — nearest the citation below it. */
+:where(.zt-citation-popover-below .zt-citation-popover-block) {
+  flex-direction: column-reverse;
+}

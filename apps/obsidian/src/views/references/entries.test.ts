@@ -1,0 +1,406 @@
+import { describe, expect, it } from "vitest";
+
+import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
+import type {
+  Citation,
+  CitationOccurrence,
+  ReferenceSource,
+} from "@/services/citation-index/service";
+
+import { buildReferenceEntries } from "./entries";
+import type { ReferenceBibliography, RenderedReference } from "./entries";
+
+function citation(
+  indexedKey: string,
+  refNumber: number,
+  lines: readonly number[] = [refNumber],
+): Citation {
+  return {
+    indexedKey,
+    linkpath: `notes/${indexedKey}`,
+    refNumber,
+    occurrences: lines.map((line) => occurrenceAt(line)),
+  };
+}
+
+/** A citekey the index resolved to no live Zotero Item. */
+function unresolved(
+  citekey: string,
+  refNumber: number,
+  lines: readonly number[] = [refNumber],
+): Citation {
+  return {
+    indexedKey: null,
+    linkpath: null,
+    refNumber,
+    occurrences: lines.map((line) => occurrenceAt(line, "citekey", citekey)),
+  };
+}
+
+/** A column-zero occurrence, shaped as the index reports positions. */
+function occurrenceAt(
+  line: number,
+  kind: CitationOccurrence["kind"] = "wikilink",
+  raw = "Doe 2024",
+): CitationOccurrence {
+  return {
+    kind,
+    raw,
+    position: {
+      start: { line, col: 0, offset: 0 },
+      end: { line, col: 0, offset: 0 },
+    },
+  };
+}
+
+/** A rendered entry as the engine hands it over: typed AST, not markup. */
+function rendered(text: string, marker?: string): RenderedReference {
+  return {
+    marker: marker === undefined ? undefined : [{ t: "Str", c: marker }],
+    content: [{ t: "Str", c: text }],
+  };
+}
+
+function completed(
+  entries: ReadonlyMap<string, RenderedReference>,
+): ReferenceBibliography {
+  return { entries, complete: true };
+}
+
+function source(indexedKey: string, id: string): ReferenceSource {
+  return {
+    csl: { id, type: "book", title: `Title of ${indexedKey}` },
+    summary: `Rivers (2020): Title of ${indexedKey}`,
+    itemKey: indexedKey,
+    itemID: 1,
+    groupID: null,
+    citekey: "rivers2020",
+    linkpath: `notes/${indexedKey}`,
+    attachments: [],
+  };
+}
+
+describe("buildReferenceEntries", () => {
+  it("follows the engine's bibliography order, with the style's entry markers", () => {
+    const citations = [citation("ZEBRA001", 1), citation("ALPHA002", 2)];
+    const sources = new Map([
+      ["ZEBRA001", source("ZEBRA001", "ref-zebra")],
+      ["ALPHA002", source("ALPHA002", "ref-alpha")],
+    ]);
+    // Alphabetical, as an author-name bibliography style sorts it.
+    const alpha = rendered("Alpha", "[1]");
+    const zebra = rendered("Zebra", "[2]");
+    const bibliography = completed(
+      new Map([
+        ["ref-alpha", alpha],
+        ["ref-zebra", zebra],
+      ]),
+    );
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }),
+    ).toStrictEqual([
+      {
+        id: "ALPHA002",
+        linkpath: "notes/ALPHA002",
+        refNumber: 2,
+        occurrences: [occurrenceAt(2)],
+        kind: "rendered",
+        source: sources.get("ALPHA002"),
+        serial: 1,
+        marker: [{ t: "Str", c: "[1]" }],
+        content: alpha.content,
+      },
+      {
+        id: "ZEBRA001",
+        linkpath: "notes/ZEBRA001",
+        refNumber: 1,
+        occurrences: [occurrenceAt(1)],
+        kind: "rendered",
+        source: sources.get("ZEBRA001"),
+        serial: 2,
+        marker: [{ t: "Str", c: "[2]" }],
+        content: zebra.content,
+      },
+    ]);
+  });
+
+  it("keeps the marker unset for a style that renders none", () => {
+    const citations = [citation("BOOK0001", 1)];
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+    const bibliography = completed(new Map([["ref-book", rendered("Book")]]));
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }),
+    ).toMatchObject([{ kind: "rendered", marker: undefined }]);
+  });
+
+  it("appends a reference the bibliography holds no place for, in document order", () => {
+    const citations = [
+      citation("GONE0001", 1),
+      citation("BOOK0002", 2),
+      citation("BOOK0003", 3),
+    ];
+    const sources = new Map([
+      ["BOOK0002", source("BOOK0002", "ref-two")],
+      ["BOOK0003", source("BOOK0003", "ref-three")],
+    ]);
+    // The engine rendered the third citation alone; the first cites an Item
+    // the database no longer holds, and the second went unrendered.
+    const bibliography = completed(
+      new Map([["ref-three", rendered("Three", "[1]")]]),
+    );
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (entry) => [entry.id, entry.kind],
+      ),
+    ).toStrictEqual([
+      ["BOOK0003", "rendered"],
+      ["GONE0001", "missing"],
+      ["BOOK0002", "unrendered"],
+    ]);
+  });
+
+  // The Entry Serial names a place in the bibliography, so it counts the
+  // formatted entries alone: a Reference Error takes no number and shifts none.
+  it("numbers the formatted entries by their place in the bibliography", () => {
+    const citations = [
+      citation("GONE0001", 1),
+      citation("BOOK0002", 2),
+      citation("BOOK0003", 3),
+    ];
+    const sources = new Map([
+      ["BOOK0002", source("BOOK0002", "ref-two")],
+      ["BOOK0003", source("BOOK0003", "ref-three")],
+    ]);
+    const bibliography = completed(
+      new Map([
+        ["ref-three", rendered("Three")],
+        ["ref-two", rendered("Two")],
+      ]),
+    );
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (entry) => [entry.id, entry.kind === "rendered" ? entry.serial : null],
+      ),
+    ).toStrictEqual([
+      ["BOOK0003", 1],
+      ["BOOK0002", 2],
+      ["GONE0001", null],
+    ]);
+  });
+
+  it("falls back to the minimal reference list when nothing rendered the entries", () => {
+    const citations = [citation("BOOK0001", 1)];
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+
+    expect(buildReferenceEntries(citations, sources)).toMatchObject([
+      {
+        kind: "summary",
+        source: { summary: "Rivers (2020): Title of BOOK0001" },
+      },
+    ]);
+  });
+
+  it("keeps an omitted source ordinary while the current render is pending", () => {
+    const citations = [citation("BOOK0001", 1), citation("BOOK0002", 2)];
+    const sources = new Map([
+      ["BOOK0001", source("BOOK0001", "ref-one")],
+      ["BOOK0002", source("BOOK0002", "ref-two")],
+    ]);
+    const bibliography: ReferenceBibliography = {
+      entries: new Map([["ref-one", rendered("One")]]),
+      complete: false,
+    };
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (entry) => entry.kind,
+      ),
+    ).toStrictEqual(["rendered", "summary"]);
+  });
+
+  it("keeps an Item omitted by a completed render as a Reference Error", () => {
+    const citations = [citation("BOOK0001", 1), citation("BOOK0002", 2)];
+    const sources = new Map([
+      ["BOOK0001", source("BOOK0001", "ref-one")],
+      ["BOOK0002", source("BOOK0002", "ref-two")],
+    ]);
+    const bibliography = completed(new Map([["ref-one", rendered("One")]]));
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (e) => e.kind,
+      ),
+    ).toStrictEqual(["rendered", "unrendered"]);
+  });
+
+  it("marks every source as unrendered when a completed render is empty", () => {
+    const citations = [citation("BOOK0001", 1)];
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+
+    expect(
+      buildReferenceEntries(citations, sources, {
+        bibliography: completed(new Map()),
+      }),
+    ).toMatchObject([
+      {
+        kind: "unrendered",
+        source: { summary: "Rivers (2020): Title of BOOK0001" },
+      },
+    ]);
+  });
+
+  it("keeps a citation whose Item the database no longer holds, in place", () => {
+    const citations = [
+      citation("GONE0001", 1),
+      citation("BOOK0002", 2, [3, 7]),
+    ];
+    const sources = new Map([["BOOK0002", source("BOOK0002", "ref-two")]]);
+
+    expect(buildReferenceEntries(citations, sources)).toStrictEqual([
+      {
+        id: "GONE0001",
+        linkpath: "notes/GONE0001",
+        refNumber: 1,
+        occurrences: [occurrenceAt(1)],
+        kind: "missing",
+      },
+      {
+        id: "BOOK0002",
+        linkpath: "notes/BOOK0002",
+        refNumber: 2,
+        occurrences: [occurrenceAt(3), occurrenceAt(7)],
+        kind: "summary",
+        source: sources.get("BOOK0002"),
+      },
+    ]);
+  });
+
+  it("keeps both syntaxes of one citation in a single entry", () => {
+    const cited: Citation = {
+      indexedKey: "BOOK0001",
+      linkpath: "notes/BOOK0001",
+      refNumber: 1,
+      occurrences: [
+        occurrenceAt(2, "citekey", "doe2024"),
+        occurrenceAt(5, "wikilink", "Doe 2024"),
+      ],
+    };
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+
+    expect(buildReferenceEntries([cited], sources)).toMatchObject([
+      { kind: "summary", occurrences: cited.occurrences },
+    ]);
+  });
+
+  it("renders an Item with no Literature Note yet as an ordinary entry", () => {
+    const cited: Citation = {
+      indexedKey: "BOOK0001",
+      linkpath: null,
+      refNumber: 1,
+      occurrences: [occurrenceAt(1)],
+    };
+    const sources = new Map([["BOOK0001", source("BOOK0001", "ref-book")]]);
+
+    expect(buildReferenceEntries([cited], sources)).toStrictEqual([
+      {
+        id: "BOOK0001",
+        linkpath: null,
+        refNumber: 1,
+        occurrences: cited.occurrences,
+        kind: "summary",
+        source: sources.get("BOOK0001"),
+      },
+    ]);
+  });
+
+  // Pandoc warns on an undefined citation rather than dropping it, so a typo
+  // stays in the list as an error row showing the key as it was written.
+  it("shows a citekey naming no live Zotero Item as an error row", () => {
+    expect(
+      buildReferenceEntries([unresolved("typo2024", 1, [3, 7])], new Map()),
+    ).toStrictEqual([
+      {
+        id: "@typo2024",
+        refNumber: 1,
+        occurrences: [
+          occurrenceAt(3, "citekey", "typo2024"),
+          occurrenceAt(7, "citekey", "typo2024"),
+        ],
+        kind: "unresolved",
+        citekey: "typo2024",
+      },
+    ]);
+  });
+
+  it("appends an unresolved citekey after the bibliography's own order", () => {
+    const citations = [unresolved("typo2024", 1), citation("BOOK0002", 2)];
+    const sources = new Map([["BOOK0002", source("BOOK0002", "ref-two")]]);
+    const bibliography = completed(
+      new Map([["ref-two", rendered("Two", "[1]")]]),
+    );
+
+    expect(
+      buildReferenceEntries(citations, sources, { bibliography }).map(
+        (entry) => entry.kind,
+      ),
+    ).toStrictEqual(["rendered", "unresolved"]);
+  });
+
+  describe("an Ambiguous Citation Key", () => {
+    it("names its candidates instead of reading as unresolved", () => {
+      expect(
+        buildReferenceEntries([unresolved("doe2024", 1, [3, 7])], new Map(), {
+          ambiguous: () => ambiguousCandidates,
+        }),
+      ).toStrictEqual([
+        {
+          id: "@doe2024",
+          refNumber: 1,
+          occurrences: [
+            occurrenceAt(3, "citekey", "doe2024"),
+            occurrenceAt(7, "citekey", "doe2024"),
+          ],
+          kind: "ambiguous",
+          citekey: "doe2024",
+          candidates: ambiguousCandidates,
+        },
+      ]);
+    });
+
+    it("stays unresolved for a citekey that names no Item at all", () => {
+      expect(
+        buildReferenceEntries([unresolved("typo2024", 1)], new Map(), {
+          ambiguous: () => null,
+        }),
+      ).toMatchObject([{ kind: "unresolved", citekey: "typo2024" }]);
+    });
+
+    // The key adopts no candidate, so the bibliography holds no place for it,
+    // and its Reference Number is the one the index assigned the Citation.
+    it("trails the bibliography's own order, keeping its Reference Number", () => {
+      const citations = [unresolved("doe2024", 1), citation("BOOK0002", 2)];
+      const sources = new Map([["BOOK0002", source("BOOK0002", "ref-two")]]);
+      const bibliography = completed(
+        new Map([["ref-two", rendered("Two", "[1]")]]),
+      );
+
+      expect(
+        buildReferenceEntries(citations, sources, {
+          bibliography,
+          ambiguous: (citekey) =>
+            citekey === "doe2024" ? ambiguousCandidates : null,
+        }).map((entry) => [
+          entry.kind,
+          "refNumber" in entry ? entry.refNumber : null,
+        ]),
+      ).toStrictEqual([
+        ["rendered", 2],
+        ["ambiguous", 1],
+      ]);
+    });
+  });
+});

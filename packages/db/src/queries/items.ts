@@ -1,24 +1,14 @@
-import { type Temporal } from "@zotlit/shared/temporal";
-import { type ItemFields } from "@zotlit/zotero-types";
+import type { ItemFields } from "@zotlit/zotero-types";
 
-import { type NodeDatabaseClient } from "@/client/node";
-import { type SQLocalDatabaseClient } from "@/client/web";
-import { type CreatorFieldMode } from "@/lib/zt-creator";
+import type { NodeDatabaseClient } from "@/client/node";
+import type { SQLocalDatabaseClient } from "@/client/web";
+import type { CreatorFieldMode } from "@/lib/zt-creator";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import {
-  groupIDForLibrary,
-  groupsQuery,
-  resolveGroupID,
-  type GroupIDMemo,
-} from "./_groups";
-import {
-  CHILD_ITEM_TYPES,
-  defineQuery,
-  type ChildItemType,
-  type FindManyOptions,
-  type QueryRow,
-} from "./_shared";
+import { groupIDForLibrary, groupsQuery, resolveGroupID } from "./_groups";
+import type { GroupIDMemo } from "./_groups";
+import { CHILD_ITEM_TYPES, defineQuery } from "./_shared";
+import type { ChildItemType, FindManyOptions, QueryRow } from "./_shared";
 
 export interface Creator {
   firstName: string | null;

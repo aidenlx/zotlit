@@ -1,7 +1,5 @@
 import { getLogger } from "@logtape/logtape";
 
-import { type Temporal } from "@zotlit/shared/temporal";
-
 import { isItemKey } from "./zt-item-key";
 
 const logger = getLogger(["zotlit", "db", "attachments"]);
@@ -41,8 +39,9 @@ export interface Attachment {
   indexedKey: string;
   parentItemID: number;
   /**
-   * Stored verbatim from Zotero; consumers should narrow via
-   * {@link parseAttachmentPath} rather than branching on the raw string.
+   * Zotero's stored file path, or its `url` item field for `linked_url`.
+   * Consumers should narrow via {@link parseAttachmentPath} rather than
+   * branching on the raw string.
    */
   path: string | null;
   contentType: string | null;
