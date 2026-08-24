@@ -11,14 +11,12 @@ v2.1 delivers the citation workflow. It covers the full path from inserting a ci
 <Callout title="TL;DR">
 v2.1 adds in-text citation rendering, the References Sidebar, the Citation Popover, the Cited By Sidebar, note export with formatted bibliographies, and multi-library scope. Zotero 10 is now supported alongside Zotero 9.
 
-<ActionLink
-  href="/docs/install-zotlit"
-  kind="external"
->
+<ActionLink href="/docs/install-zotlit" kind="external">
   Install ZotLit
 </ActionLink>
 
 Requires Obsidian 1.13.4+ desktop and the ZotLit Companion for Zotero.
+
 </Callout>
 
 ## Write with citations
@@ -29,16 +27,10 @@ Literal Pandoc citation clusters (e.g. `[see @wang2020, p. 3; @lee2019]`) render
 
 Citation keys in the editor are styled as links. An unresolved key (one that names no item in Zotero) is visually distinct from a resolved one. Click a citation key to open its Literature Note. Hover to see a preview.
 
-<ActionLink
-  href="/docs/how-to/insert-citations"
-  kind="external"
->
+<ActionLink href="/docs/how-to/insert-citations" kind="external">
   Insert citations
 </ActionLink>
-<ActionLink
-  href="/docs/concepts/how-citekey-links-work"
-  kind="external"
->
+<ActionLink href="/docs/concepts/how-citekey-links-work" kind="external">
   How Citation Key Links work
 </ActionLink>
 
@@ -79,10 +71,7 @@ The toolbar offers a search filter, a context toggle (compact excerpt or full en
 
 The command **ZotLit: Export note with citations** converts the active note to DOCX or HTML with a formatted bibliography. Choose the output format, CSL style, and destination in the export dialog. Citations resolve from the note's own links. No external Pandoc installation is required. The built-in engine handles everything.
 
-<ActionLink
-  href="/docs/how-to/export-note-with-citations"
-  kind="external"
->
+<ActionLink href="/docs/how-to/export-note-with-citations" kind="external">
   Export note with citations
 </ActionLink>
 
@@ -94,22 +83,13 @@ The References Sidebar toolbar offers a **Copy bibliography** action. One click 
 
 If you have Pandoc installed locally, ZotLit generates a Lua filter and a Pandoc defaults file matched to the installed plugin version. This path supports the full Pandoc pipeline: custom templates, multiple output formats, and Literature Note wikilinks that convert to proper citations.
 
-<ActionLink
-  href="/docs/how-to/export-with-native-pandoc"
-  kind="external"
->
+<ActionLink href="/docs/how-to/export-with-native-pandoc" kind="external">
   Export with native Pandoc
 </ActionLink>
-<ActionLink
-  href="/docs/tutorial/write-and-export-cited-note"
-  kind="external"
->
+<ActionLink href="/docs/tutorial/write-and-export-cited-note" kind="external">
   Write and export a cited note
 </ActionLink>
-<ActionLink
-  href="/docs/tutorial/pandoc-citation-workflow"
-  kind="external"
->
+<ActionLink href="/docs/tutorial/pandoc-citation-workflow" kind="external">
   Pandoc citation workflow
 </ActionLink>
 
@@ -121,10 +101,7 @@ ZotLit now works across several Zotero libraries at once. A new **Library scope*
 
 When a citation key matches items in more than one library, ZotLit surfaces the ambiguity instead of silently picking the first match. Opening the citation asks which item you mean. The References Sidebar reports a Reference Error listing the candidates. To resolve it, give one of the items a different citation key in Zotero, or narrow your library scope.
 
-<ActionLink
-  href="/docs/reference/settings#library-scope"
-  kind="external"
->
+<ActionLink href="/docs/reference/settings#library-scope" kind="external">
   Settings: Library scope
 </ActionLink>
 
@@ -132,10 +109,7 @@ When a citation key matches items in more than one library, ZotLit surfaces the 
 
 ZotLit supports Zotero 10 alongside Zotero 9. Zotero 10 changed how it stores recent edits, so the Companion now keeps the database current for ZotLit automatically. When you switch from Zotero to Obsidian, your changes are already there. A new **Database Status** panel on the Zotero sidebar confirms that recent changes have reached the database.
 
-<ActionLink
-  href="/docs/how-to/fix-stale-data"
-  kind="external"
->
+<ActionLink href="/docs/how-to/fix-stale-data" kind="external">
   Fix Zotero changes that do not appear
 </ActionLink>
 
