@@ -23,6 +23,7 @@ catalog:
   "@types/node-24": npm:@types/node@^24.13.3
   "@types/react": ^19.2.0
   "@types/react-dom": ^19.2.0
+  "@types/semver": ^7.7.1
   ajv: ^8.20.0
   arkregex: ^0.0.5
   cross-env: ^10.1.0
@@ -30,11 +31,15 @@ catalog:
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
   fflate: ^0.8.2
+  fumadocs-core: 16.14.0
+  fumadocs-mdx: 15.2.1
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0
   react: ^19.2.0
   react-dom: ^19.2.0
+  semver: ^7.7.2
+  shiki: 4.3.1
   tailwindcss: ^4.3.0
   tsdown: ^0.22.5
   typescript: ^7.0.2

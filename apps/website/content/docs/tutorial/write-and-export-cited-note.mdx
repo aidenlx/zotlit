@@ -1,0 +1,119 @@
+---
+title: "Write and export a cited note"
+description: "Insert a citation, review its reference, and export a Word document with a formatted bibliography."
+introduced: "2.1.0"
+updated: "2.1.0"
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+This tutorial takes you from one Zotero item to a cited Word document.
+
+You will insert a literal Pandoc citation such as `[@doe2024]`. ZotLit will format it without changing your Markdown.
+
+## Before you start
+
+Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit Companion, the Zotero add-on. [Install the Companion](/docs/install-companion), then keep Zotero open during the tutorial.
+
+[Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) is recommended for generating and maintaining stable citation keys. It also supplies bibliography data during export. If you do not use it, open **Zotero Settings > Advanced** and enable **Allow other applications on this computer to communicate with Zotero** so ZotLit can use the Zotero local API instead.
+
+<Steps>
+  <Step>
+    ### Prepare one Zotero item
+
+    Select an item in Zotero and confirm that its **Citation Key** field has a value.
+
+    If you use Better BibTeX, follow its [citation key guide](https://retorque.re/zotero-better-bibtex/citing/) to generate and inspect the key. Keep the generated key as it appears in Zotero.
+
+  </Step>
+  <Step>
+    ### Install the Pandoc engine
+
+    In Obsidian, open **Settings > ZotLit > Citations > Formatting**. Find **Pandoc engine**, then select **Install**.
+
+    Wait until the row says that Pandoc is installed. The engine formats citations, references, and the exported document.
+
+  </Step>
+  <Step>
+    ### Insert the citation
+
+    Open a Markdown note in Live Preview. Type `[@`, then type part of the item's title or citation key.
+
+    Select the item and press `Enter`. ZotLit inserts a citation such as:
+
+    ```md
+    Recent work reaches a similar conclusion [@doe2024].
+    ```
+
+    Move the cursor away from the citation. ZotLit replaces the source with a formatted citation in Live Preview.
+
+  </Step>
+  <Step>
+    ### Review the reference
+
+    Open the command palette and run:
+
+    <Command>ZotLit: Open references</Command>
+
+    The References Sidebar shows the formatted bibliography entry for your citation.
+
+  </Step>
+  <Step>
+    ### Preview the citation
+
+    Hover over the formatted citation in Live Preview. The Citation Popover shows the complete bibliography entry.
+
+    The default hover settings show this popover without a modifier key in Live Preview.
+
+  </Step>
+  <Step>
+    ### Copy the bibliography
+
+    In the References Sidebar toolbar, select **Copy bibliography**. Paste it into a text editor or word processor.
+
+    ZotLit places rich text and plain text on the clipboard. The destination uses the representation it supports.
+
+  </Step>
+  <Step>
+    ### Export a Word document
+
+    Keep the note active. Open the command palette and run:
+
+    <Command>ZotLit: Export note with citations</Command>
+
+    Leave **Format** set to **Word document**. Choose a destination, then select **Export**.
+
+    Open the resulting `.docx` file. It contains your formatted citation and a bibliography.
+
+  </Step>
+</Steps>
+
+You now have one Markdown source that works in Obsidian and produces a cited Word document.
+
+<Callout type="info" title="Your Markdown stays portable">
+  ZotLit leaves `[@doe2024]` in the note. Live Preview formats it for reading,
+  and export creates the bibliography in the output file.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Insert citations"
+    description="Use other Pandoc citation forms and insertion shortcuts."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="Review, copy, and troubleshoot references"
+    description="Navigate occurrences, change one note's presentation, and fix reference errors."
+    href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+  <Card
+    title="Export a note with citations"
+    description="Choose DOCX or HTML and resolve built-in export errors."
+    href="/docs/how-to/export-note-with-citations"
+  />
+</Cards>

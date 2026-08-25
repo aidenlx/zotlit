@@ -9,8 +9,10 @@
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
     "cf-typegen": "wrangler types",
+    "postinstall": "fumadocs-mdx",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tanstack/react-devtools": "^0.10.12",
@@ -18,8 +20,13 @@
     "@tanstack/react-router-devtools": "^1.167.1",
     "@tanstack/react-start": "^1.168.48",
     "@tanstack/router-plugin": "^1.168.34",
+    "arkregex": "catalog:",
+    "fumadocs-core": "catalog:",
+    "fumadocs-mdx": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "semver": "catalog:",
+    "valibot": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.1",
@@ -28,12 +35,16 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@types/semver": "catalog:",
     "@vitejs/plugin-react": "^6.0.1",
     "@zotlit/config": "workspace:*",
+    "@zotlit/db": "workspace:*",
     "oxlint": "catalog:",
+    "shiki": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
+    "vitest": "catalog:",
     "wrangler": "^4.125.0"
   }
 }

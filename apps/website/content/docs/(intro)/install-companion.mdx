@@ -1,0 +1,104 @@
+---
+title: "Install ZotLit Companion"
+description: "Install the required ZotLit Companion add-on in Zotero."
+introduced: "2.0.0"
+updated: "2.0.0"
+---
+
+import { Tabs, Tab } from "@/components/tabs";
+import { VersionLedger } from "@/components/version-ledger";
+import { XpiDownload } from "@/components/xpi-download";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+
+ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit. The Companion is part of every supported ZotLit setup.
+
+## Install the add-on
+
+<Tabs items={["Stable", "Pre-release"]} updateAnchor>
+  <Tab id="stable" value="Stable">
+    <VersionLedger app="zotero" channel="stable" />
+
+    <Steps>
+      <Step>
+        ### Download the `.xpi` file
+
+        Download the latest Companion file directly:
+
+        <XpiDownload channel="stable" />
+
+        If you are using Firefox, you should right click the link and choose `Save Link As...`
+
+        To select a file manually, find the latest Companion release on the [ZotLit releases page](https://github.com/aidenlx/zotlit/releases). Its filename starts with `zt-`.
+
+      </Step>
+      <Step>
+        ### Install in Zotero
+
+        In Zotero, open **Tools > Add-ons**. Click the gear menu and select **Install Add-on From File...**. Choose the `.xpi` file you downloaded, then confirm when prompted.
+
+      </Step>
+      <Step>
+        ### Confirm the installation
+
+        After installing, a **ZotLit** pane should appear in Zotero's settings.
+
+        You do not need to configure anything here right now. The next section explains when this matters.
+
+      </Step>
+    </Steps>
+
+  </Tab>
+  <Tab id="pre-release" value="Pre-release">
+    <VersionLedger app="zotero" channel="pre-release" />
+
+    Pre-release installs auto-update through Zotero as new releases ship on either channel. Use this if you want to test upcoming changes before they reach stable.
+
+    <Steps>
+      <Step>
+        ### Download the `.xpi` file
+
+        Download the latest Companion file on this channel:
+
+        <XpiDownload channel="pre-release" />
+
+        If you are using Firefox, you should right click the link and choose `Save Link As...`
+
+        To select a file manually, find the latest Companion release on the [ZotLit releases page](https://github.com/aidenlx/zotlit/releases). Its filename starts with `zt-`.
+
+      </Step>
+      <Step>
+        ### Install in Zotero
+
+        In Zotero, open **Tools > Add-ons**. Click the gear menu and select **Install Add-on From File...**. Choose the `.xpi` file you downloaded, then confirm when prompted.
+
+      </Step>
+      <Step>
+        ### Confirm the installation
+
+        After installing, a **ZotLit** pane should appear in Zotero's settings.
+
+        You do not need to configure anything here right now. The next section explains when this matters.
+
+      </Step>
+    </Steps>
+
+  </Tab>
+</Tabs>
+
+## Keep the database file current
+
+The Companion enables **Keep the database file up to date for Obsidian** by default. This setting lets ZotLit read recent Zotero changes when you update a literature note. Keep it enabled under the **Database** section of the ZotLit pane.
+
+This database setting works without live updates. Basic context-menu actions also work through protocol links with no extra setup.
+
+## About live updates
+
+Live updates push changes from your Zotero library to Obsidian. They require the Companion's notification setting and the ZotLit server in Obsidian.
+
+Live updates are optional. The Companion keeps the database file current even when live updates are disabled.
+
+The setup for live updates is covered in [Set up live updates](/docs/how-to/set-up-live-updates).
+
+## Next steps
+
+Follow the tutorial to [create your first literature note](/docs/tutorial/first-note).

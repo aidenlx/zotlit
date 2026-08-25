@@ -1,0 +1,42 @@
+---
+version: "2.0.0-beta.4"
+companion: "2.0.0-beta.3"
+date: "2026-08-01"
+description: "Template Workbench, managed frontmatter, safer attachment imports"
+---
+
+## Breaking Changes
+
+### Obsidian version requirement
+
+ZotLit now requires Obsidian 1.13.4 or newer. This release also requires the newer Electron version bundled with the Obsidian installer. Updating Obsidian from inside the app is not enough: download and run the latest installer over your existing installation, then reopen Obsidian before you install or update ZotLit. See [How to update the Obsidian installer](/docs/how-to/update-obsidian-installer) and the [Obsidian 1.13.4 release notes](https://obsidian.md/changelog/2026-07-30-desktop-v1.13.4/).
+
+### Citation template `item.extra`
+
+`item.extra` in citation templates now uses the same parsed `ItemExtra` shape as note templates. If a template reads the raw text, use `item.extra.raw`. See the [template data reference](/docs/reference/templates/data#extra-field).
+
+## What's New
+
+### Template Workbench
+
+The [Template Workbench](/docs/concepts/template-workbench) adds Obsidian CLI commands for agents. An agent can inspect template state, render a template against Zotero data without changing your vault, and manage configured frontmatter fields.
+
+Install the [`zotlit-template` skill](/docs/install-skill) for your agent to use this workflow.
+
+### Managed frontmatter
+
+You can [drag frontmatter fields into a new order](/docs/how-to/configure-frontmatter-properties#reorder-fields). ZotLit uses that order when it creates a new literature note. Existing notes keep their current property order.
+
+### New template filters
+
+The Liquid syntax now includes `arr_prefix`, `arr_suffix`, and `arr_replace` for changing every value in an array. The `obsidian_tag` filter converts text or Zotero tags into valid Obsidian tags. See the [template syntax reference](/docs/reference/templates/syntax#arr-prefix).
+
+### Copy Zotero keys
+
+Zotero context menus can copy the keys of selected items, attachments, notes, and annotations. Reader annotation menus also provide a copy action. In Obsidian, use **ZotLit: Copy item key** from a literature note's command or file menu.
+
+## Bug Fixes
+
+- Fixed inconsistent item summaries between the Annotation View, Template Data Explorer, and Citation Suggester. These views now use the same title, creator, and date formatting.
+- Attachments now copy from approved folders. Only Zotero storage, the annotation cache, and linked-attachment folders are approved by default. Add other folders under **Settings > ZotLit > Attachments > Approved folders**.
+- Language packs now match the installed ZotLit version.

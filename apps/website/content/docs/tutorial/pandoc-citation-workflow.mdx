@@ -1,0 +1,197 @@
+---
+title: "Build a Pandoc citation workflow"
+description: "Create one cited note, export it with ZotLit and native Pandoc, and compare the two Word documents."
+introduced: "2.1.0"
+updated: "2.1.0"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+This tutorial takes one note through ZotLit's built-in export and a native Pandoc export.
+
+You will use the same citations and style for both Word documents. At the end, you can see which parts the two workflows share.
+
+## Before you start
+
+You need:
+
+- Obsidian Desktop with ZotLit installed.
+- Zotero 8 or newer with ZotLit Companion, the Zotero add-on.
+- [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) installed in Zotero.
+- Pandoc 3.1.1 or newer installed on your computer.
+
+Enable Obsidian's **Command line interface** and keep Obsidian open during the native run. The [native Pandoc guide](/docs/how-to/export-with-native-pandoc#requirements) lists the complete compatibility requirements.
+
+<Steps>
+  <Step>
+    ### Prepare the sample items
+
+    In Zotero, select **My Library**, then select **Add Item by Identifier**. Add these two DOIs:
+
+    | DOI                           | Item title                                          | Citation key                    |
+    | ----------------------------- | --------------------------------------------------- | ------------------------------- |
+    | `10.1371/journal.pmed.0020124` | Why Most Published Research Findings Are False      | `zotlitTutorialIoannidis2005`   |
+    | `10.1126/science.aab2374`      | Promoting an open research culture                  | `zotlitTutorialNosek2015`       |
+
+    Open each item and replace its **Citation Key** with the value in the table.
+
+    In Obsidian, run <Command inline>ZotLit: Open literature note quick switcher</Command>. Select each sample item to create its Literature Note.
+
+    Confirm that ZotLit creates `zotlitTutorialIoannidis2005.md` and `zotlitTutorialNosek2015.md`. Create one ordinary Obsidian note named `Reading plan`.
+
+    Create a folder named `ZotLit Pandoc tutorial` inside your Documents directory.
+
+  </Step>
+  <Step>
+    ### Configure both citation sources
+
+    Open **Settings > ZotLit > Citations**. Turn on **Pandoc citations** and **Wikilink citations**.
+
+    Under **Formatting**, install the **Pandoc engine**. This managed engine formats the References Sidebar and powers built-in export.
+
+    Select **APA Style 7th edition** as the **Citation and references style**. Its author-date output makes locators and author modes easy to compare.
+
+  </Step>
+  <Step>
+    ### Create the worked note
+
+    Create a Markdown note named `Citation workflow check`. Run:
+
+    <Command>ZotLit: Set citation presentation</Command>
+
+    Select **APA Style 7th edition** and set **Document language** to `en-US`. Select **Save** so the native workflow uses this note's style too.
+
+    Paste this body into the note:
+
+    ```md
+    # Citation workflow check
+
+    A plain Literature Note link introduces the first source [[zotlitTutorialIoannidis2005]].
+
+    The same source appears with its article locator [[zotlitTutorialIoannidis2005#cite:locator=e124]].
+
+    [[zotlitTutorialIoannidis2005#cite:mode=author-in-text&locator=e124]] examines why published research findings may be false.
+
+    Nosek et al. propose guidelines for open research [[zotlitTutorialNosek2015#cite:mode=suppress-author&locator=1423]].
+
+    Both sources support the comparison [[zotlitTutorialIoannidis2005]]; [[zotlitTutorialNosek2015#cite:locator=1423]].
+
+    A literal Pandoc citation names the second source again [@zotlitTutorialNosek2015].
+
+    The wider reading list remains an ordinary vault link [[Reading plan]].
+    ```
+
+    Keep the semicolon and both Literature Note links on one line. Together they form one Citation Run.
+
+  </Step>
+  <Step>
+    ### Review the note in Obsidian
+
+    Switch to Live Preview, then run:
+
+    <Command>ZotLit: Open references</Command>
+
+    The References Sidebar shows two entries. Each source appears once, even though the note cites it several times.
+
+    Check the rendered note and sidebar:
+
+    - The plain link renders as `(Ioannidis, 2005)`.
+    - The locator link renders as `(Ioannidis, 2005, p. e124)`.
+    - The author-in-text link renders as `Ioannidis (2005, p. e124)`.
+    - The suppress-author sentence ends with `Nosek et al. propose guidelines for open research (2015, p. 1423).`
+    - The Citation Run renders as `(Ioannidis, 2005; Nosek et al., 2015, p. 1423)`.
+    - The literal citation renders as `(Nosek et al., 2015)`.
+    - `Reading plan` remains an ordinary vault link.
+
+  </Step>
+  <Step>
+    ### Export with ZotLit
+
+    Keep Zotero open.
+
+    Run:
+
+    <Command>ZotLit: Export note with citations</Command>
+
+    Keep **Format** set to **Word document**, choose your `ZotLit Pandoc tutorial` folder, and select **Export**. Open the resulting `.docx` file and repeat the checks from the References Sidebar.
+
+    Built-in export uses Better BibTeX to fetch current bibliography data from Zotero.
+
+  </Step>
+  <Step>
+    ### Save the version-matched integration pair
+
+    Open **Settings > ZotLit > Citations > Formatting**. Under **Native Pandoc workflow**, find **Pandoc integration pair** and select **Save integration files**.
+
+    Choose your `ZotLit Pandoc tutorial` folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there. The pair matches your installed ZotLit version; save a fresh pair after each ZotLit update.
+
+  </Step>
+  <Step>
+    ### Create the native bibliography file
+
+    Save `references.json` in your `ZotLit Pandoc tutorial` folder. Include both Zotero items used in the worked note.
+
+    In Zotero, right-click **My Library**. Select **Export**, choose **Better CSL JSON**, and enable **Keep updated**. Save the file as `references.json`.
+
+    Better BibTeX updates the file after the source library or collection changes.
+
+    The citation keys in `references.json` must match the keys used in the worked note.
+
+  </Step>
+  <Step>
+    ### Run native Pandoc
+
+    Keep Obsidian open with this vault active and ZotLit loaded. Replace each path in this command with an absolute path, then run it in a terminal:
+
+    ```sh
+    pandoc "/absolute/path/to/input.md" --defaults "/absolute/path/to/workflow/zotlit.yaml" --bibliography "/absolute/path/to/references.json" --fail-if-warnings --output "/absolute/path/to/output.docx"
+    ```
+
+    Keep `--fail-if-warnings`. It stops the run when Pandoc cannot find a cited item in `references.json`.
+
+  </Step>
+  <Step>
+    ### Compare the Word documents
+
+    Open the native `.docx` beside the built-in export. Both documents should contain the same two formatted bibliography entries.
+
+    Compare the repeated-source formatting, locators, author modes, grouped Citation Run, literal citation, and ordinary vault link. The citation content should agree because both routes start from the same note and style.
+
+    The bibliography source differs. Built-in export asks Better BibTeX for current data, while native Pandoc reads the auto-updated `references.json` file.
+
+  </Step>
+</Steps>
+
+You now have one Markdown note that you can review in Obsidian and export through either Pandoc route.
+
+## Troubleshooting
+
+| Symptom                                                                                                         | What to do                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| A `#cite:` link stops built-in export, and native Pandoc reports `unresolved-citation-intent` for the same link | Point the link to a valid Literature Note. If you meant an ordinary vault link, remove its `#cite:` fragment. |
+| Built-in export succeeds, but native Pandoc warns that a citation is not found in the bibliography              | Add the missing item to the Better BibTeX export source, update `references.json`, and run the command again. |
+| Native output changes after a ZotLit update or the filter reports a contract mismatch                           | Save both integration files again and replace the old pair together.                                          |
+
+For native error-code definitions, open **Pandoc CLI guide** under **Settings > ZotLit > Citations > Formatting**. The [Settings reference](/docs/reference/settings#native-pandoc) identifies the local guide and integration controls.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Export a note with citations"
+    description="Choose built-in DOCX or HTML output and resolve export errors."
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="Export with native Pandoc"
+    description="Adapt the native workflow for your own bibliography files and Pandoc options."
+    href="/docs/how-to/export-with-native-pandoc"
+  />
+  <Card
+    title="Review, copy, and troubleshoot references"
+    description="Inspect citation occurrences and correct Reference Errors."
+    href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+</Cards>

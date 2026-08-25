@@ -1,0 +1,95 @@
+---
+title: "Install the ZotLit skill"
+description: "Install the ZotLit skill in one vault for Claude Code, Codex, or pi."
+introduced: "2.0.0"
+updated: "2.0.0"
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+The ZotLit skill helps an agent edit and test templates and configure managed frontmatter field templates in one vault.
+
+## Before you start
+
+You need:
+
+- Node.js 18 or later.
+- Obsidian desktop 1.13.4 or later.
+- An open vault with ZotLit loaded.
+- The Obsidian CLI activated by following the [Obsidian CLI guide](https://obsidian.md/help/cli).
+
+<Callout type="warn" title="Agent data access">
+  The agent you select can receive Zotero metadata and annotation text returned
+  by the Template Workbench. The agent's own data-handling policies apply.
+</Callout>
+
+## Install the skill
+
+<Steps>
+  <Step>
+    ### Open the vault folder
+
+    Open a terminal in the root of the vault. This is the folder that contains
+    the `.obsidian` folder.
+
+  </Step>
+  <Step>
+    ### Start the installer
+
+    Run:
+
+    ```bash
+    npx skills@latest add https://zotlit.aidenlx.site/
+    ```
+
+  </Step>
+  <Step>
+    ### Select the vault and agents
+
+    Select **Project** scope to install the skill in the current vault. Select
+    each agent that you use there: Claude Code, Codex, or pi.
+
+    Choose the recommended symlink installation method.
+
+  </Step>
+  <Step>
+    ### Decline the extra skill
+
+    If the installer recommends `find-skills`, select **No**. This skill is
+    unrelated to ZotLit.
+
+  </Step>
+</Steps>
+
+## Verify the installation
+
+Start one of the selected agents from the vault folder. Send this request:
+
+> Use the ZotLit skill to check my current template setup. Do not change any files.
+
+The agent should use the Template Workbench and report the active vault and template setup. Your template files remain unchanged.
+
+## Make your first template request
+
+Describe the result you want in plain language. For example:
+
+> Use the ZotLit skill to add Zotero tags below the title in my literature notes. Show me the rendered result before you finish.
+
+The agent inspects the current template and relevant Zotero data. It then edits the vault template and tests the rendered Markdown in memory.
+
+## See also
+
+<Cards>
+  <Card
+    title="Template Workbench"
+    description="How the skill, CLI, and safety boundaries fit together."
+    href="/docs/concepts/template-workbench"
+  />
+  <Card
+    title="Customize a template"
+    description="Edit a ZotLit template yourself in Obsidian."
+    href="/docs/how-to/customize-a-template"
+  />
+</Cards>

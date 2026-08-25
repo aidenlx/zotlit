@@ -1,0 +1,185 @@
+---
+title: "Create and open literature notes"
+description: "Open or create a Literature Note with the quick switcher, a Pandoc citation, or the Zotero menu."
+introduced: "2.0.0"
+updated: "2.1.0"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+Open an existing Literature Note or create one from its Zotero item.
+
+## Use the quick switcher
+
+The quick switcher searches your Zotero library and opens or creates a literature note for the item you pick.
+
+It searches every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each row names the library its item comes from. An empty search lists your most recently modified items first.
+
+<Steps>
+  <Step>
+    ### Open the quick switcher
+
+    Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+
+    <Command>ZotLit: Open literature note quick switcher</Command>
+
+  </Step>
+  <Step>
+    ### Search and select an item
+
+    Type to search your library. Use the arrow keys to navigate the results.
+
+    - Press `Enter` to open the literature note.
+    - Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to open it in a new pane.
+    - Press `Esc` to dismiss the switcher.
+
+    If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief "Creating literature note..." notice, followed by "Literature note created."
+
+  </Step>
+</Steps>
+
+## Open a note from a Pandoc citation
+
+Turn on **Pandoc citations** and **Open citations as links** under **Settings > ZotLit > Citations**. **Pandoc citations** is on by default, and **Open citations as links** is off by default.
+
+Type or paste a Pandoc citation such as `@key` or `[@key]` in an editor.
+
+- In Live Preview, click the citation to open or create its Literature Note.
+- In Source mode, Ctrl-click the citation key. Use Cmd-click on macOS. A plain click places the caret.
+- In reading view, click the citation. A single-item citation opens its Literature Note. A multi-item citation opens a menu.
+
+You can also place the cursor on a recognized citation and run <Command inline>ZotLit: Open citation key under cursor</Command>. This command uses the same two settings.
+
+ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
+
+A click resolves the citation key against Zotero's native citation key field, across every library in your **Library scope** (set at the top of **Settings > ZotLit**). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
+
+If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
+
+If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
+
+The four open-under-cursor commands use **Open citations as links**; what hovering shows follows **Hover action** instead. **Show formatted citations** does not control navigation.
+
+**Open citations as links** covers Literature Note wikilinks shown as citations as well. For recognized syntax and the complete interaction model, see [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
+
+## Find notes that cite a Literature Note
+
+Open the Literature Note whose incoming citations you want to inspect. Run:
+
+<Command>ZotLit: Show cited by</Command>
+
+The Cited By Sidebar follows the active Literature Note. It groups citation occurrences by source note and shows the citation in its surrounding text.
+
+Use the sidebar toolbar to narrow and arrange the results:
+
+- **Show search filter** filters by source-note path or the shown citation context.
+- **Show more context** expands every result from a compact excerpt to its enclosing Markdown block.
+- **Change sort order** sorts source notes by file name, modified time, or created time, in either direction.
+- **Collapse results** collapses or expands the visible source-note groups.
+
+Select a citation excerpt to open its source note at that occurrence. Select **Open source note** on a group to open the note without targeting one occurrence. Hold Ctrl on Windows or Linux, or Command on macOS, to open either action in another pane.
+
+## Create or update notes in bulk [#bulk]
+
+You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This action requires ZotLit Companion, the Zotero add-on.
+
+### Update the entire library at once [#library-wide]
+
+Use this command to create or update literature notes for every item in your library at once.
+
+Open the command palette and run:
+
+<Command>ZotLit: Create or update all literature notes</Command>
+
+Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
+
+In Zotero, right-click **My Library** or a group library in the sidebar. Choose **ZotLit > Create or Update Literature Notes**.
+
+The Obsidian command covers every library in your **Library scope** (set in **Settings > ZotLit**). The Zotero entry covers the library you right-clicked, whatever your library scope is.
+
+### Update one collection at once [#collection-wide]
+
+In Zotero, right-click a collection in the sidebar and choose **ZotLit > Create or Update Literature Notes**. Obsidian opens the same confirmation modal, scoped to that collection.
+
+Items in nested subcollections are included, so you do not need to repeat the action on each child collection.
+
+If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero."
+
+### Open or update a single item from Zotero
+
+When exactly one regular item is selected in the Zotero library, the top-level context menu shows **Open Literature Note in Obsidian**. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
+
+### Update multiple items at once
+
+<Steps>
+  <Step>
+    ### Select items in Zotero
+
+    Select the items you want to update in your Zotero library.
+
+  </Step>
+  <Step>
+    ### Open the ZotLit submenu
+
+    Right-click the selection, then open the **ZotLit** submenu.
+
+  </Step>
+  <Step>
+    ### Choose an update action
+
+    - **Create or Update Literature Notes** creates a note for each item that does not have one yet, and refreshes existing notes with current Zotero data.
+    - **Update Literature Note Metadata** refreshes only the frontmatter of existing notes, leaving the note body unchanged. Items without an existing literature note are skipped.
+
+  </Step>
+  <Step>
+    ### Confirm in Obsidian
+
+    Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
+
+  </Step>
+</Steps>
+
+<Callout type="warn">
+  A large selection may exceed the length limit for an `obsidian://` link. When
+  that happens, ZotLit sends the item list over HTTP to the ZotLit server
+  running inside Obsidian. If the server is not enabled, Zotero shows an alert
+  asking you to enable it or select fewer items. You can enable the ZotLit
+  server in **Settings &gt; ZotLit**.
+</Callout>
+
+## How ZotLit identifies literature notes
+
+ZotLit identifies literature notes by their `zotero-key` frontmatter field. For details on note identity and the managed region, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+
+## See also
+
+<Cards>
+  <Card
+    title="Create your first literature note"
+    description="A step-by-step tutorial for new users."
+    href="/docs/tutorial/first-note"
+  />
+  <Card
+    title="Insert citations"
+    description="Insert citation markers while typing or from the command palette."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="Keep notes up to date"
+    description="Update literature notes when your Zotero data changes."
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="Import Zotero notes"
+    description="Import Zotero's own note items into Obsidian."
+    href="/docs/how-to/import-zotero-notes"
+  />
+  <Card
+    title="Literature notes and the managed region"
+    description="How ZotLit separates your writing from generated content."
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+</Cards>

@@ -1,0 +1,94 @@
+---
+title: "Use the annotation view"
+description: "Open the annotation sidebar, follow the active Zotero reader, and pull highlights into your notes."
+introduced: "2.0.0"
+updated: "2.0.0"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+The annotation view is a sidebar panel that lists a Zotero item's annotations. You can browse highlights, drag them into your notes, and optionally follow the active Zotero reader so the view updates as you read.
+
+## Open the annotation view
+
+Open the command palette and run:
+
+<Command>ZotLit: Open Zotero annotations</Command>
+
+The **Zotero annotations** panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view with a single click.
+
+By default, the view follows the active literature note. When no literature note is open, it shows: "Open a literature note to see annotations."
+
+## Follow the active Zotero reader
+
+The view can track which item is open in Zotero's PDF reader, updating automatically as you switch between reader tabs.
+
+<Steps>
+  <Step>
+    ### Enable the ZotLit server
+
+    Reader-following requires the ZotLit server. If the server is not enabled, the follow-reader button is disabled and its tooltip reads: "Enable the ZotLit server in settings to follow the Zotero reader."
+
+    See [Set up live updates](/docs/how-to/set-up-live-updates) to enable the server.
+
+  </Step>
+  <Step>
+    ### Activate reader-following
+
+    In the annotation view header, click the follow-reader button. Its tooltip changes to "Stop following the Zotero reader" while active.
+
+    When you open or switch items in the Zotero reader, the annotation view updates to show that item's annotations.
+
+  </Step>
+</Steps>
+
+If the ZotLit server becomes unavailable while reader-following is active, the view reverts to following the active literature note.
+
+## Follow modes
+
+The annotation view has three follow modes:
+
+| Mode               | Behavior                                                                    |
+| ------------------ | --------------------------------------------------------------------------- |
+| **Note** (default) | Follows the active literature note in Obsidian.                             |
+| **Reader**         | Follows the item open in the Zotero PDF reader. Requires the ZotLit server. |
+| **Linked**         | Pinned to a manually chosen item.                                           |
+
+To pin the view to a specific item, click the link button (tooltip: "Link to a Zotero item...") and search for an item. Click unlink (tooltip: "Unlink") to return to the default note-following mode.
+
+## Pull annotations into a note
+
+Drag an annotation row from the sidebar and drop it into the editor. ZotLit renders the annotation through your `annotation` template and inserts the result at the drop position. Image excerpts are saved to the vault automatically.
+
+### Context menu actions
+
+Right-click an annotation row for additional options:
+
+- **Copy backlink**: copies a link back to the annotation's location in the PDF.
+- **Copy annotation text**: copies the highlighted or underlined text.
+- **Copy citation**: copies a formatted citation for the annotation's parent item.
+- **Copy annotation key**: copies the annotation's Zotero key.
+- **Explore template data**: opens the Template Data Explorer with the annotation's data.
+
+## See also
+
+<Cards>
+  <Card
+    title="Import Zotero notes"
+    description="Import child notes from Zotero as standalone Markdown files."
+    href="/docs/how-to/import-zotero-notes"
+  />
+  <Card
+    title="Set up live updates"
+    description="Enable automatic push from Zotero to Obsidian."
+    href="/docs/how-to/set-up-live-updates"
+  />
+  <Card
+    title="Keep notes up to date"
+    description="Update literature notes when your Zotero data changes."
+    href="/docs/how-to/keep-notes-updated"
+  />
+</Cards>

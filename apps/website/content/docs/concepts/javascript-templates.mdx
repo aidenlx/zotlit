@@ -1,0 +1,91 @@
+---
+title: "JavaScript templates"
+description: "What the JavaScript Templates gate enables, why it exists, the risks of opting in, and behavior when disabled."
+introduced: "2.0.0"
+updated: "2.0.0"
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+JavaScript Templates is a per-device gate that controls whether Eta templates (`.eta.md` files) compile and execute. It is disabled by default.
+
+## What the gate enables
+
+When JavaScript Templates is on:
+
+- `.eta.md` template files compile and execute using the Eta engine (full JavaScript).
+- Frontmatter fields declared with the `javascript` language evaluate their expressions.
+
+When disabled (the default):
+
+- `.eta.md` files are inert: never compiled, never executed.
+- Only Liquid templates and Liquid frontmatter fields are active.
+
+See [Behavior when disabled](#behavior-when-disabled) for the exact failure mode.
+
+## Why it exists
+
+Liquid templates render text. A Liquid template has no way to open a file it was not given, make a network call, or run a system command. It can only combine the data it receives into output.
+
+Eta templates are full JavaScript. Code in an `.eta.md` file runs with the same access as ZotLit itself: it can read and modify your vault, connect to the internet, and on desktop, access your system. A template copied from a forum post, a shared vault, or another device executes with that full access the moment it runs.
+
+The gate keeps this boundary explicit. Liquid stays safe by default; JavaScript execution requires a deliberate opt-in.
+
+## Risks of opting in
+
+<Callout type="warn" title="Security implications">
+  Only enable this if you trust every `.eta.md` file in your vault. Eta
+  templates are not audited or sandboxed by ZotLit.
+</Callout>
+
+Once enabled:
+
+- All `.eta.md` templates in your template folder execute without further prompts.
+- A template from an untrusted source could read files, make network requests, or modify your vault.
+- The consent is one-time per device. It covers all current and future Eta templates.
+
+## Per-device scope
+
+The consent is stored on the device itself, outside the synced plugin settings. Enabling it on one device does not enable it on another. Each device where you want Eta templates to run requires its own opt-in.
+
+If you sync your vault across devices, only devices where the owner has explicitly enabled the setting will run JavaScript templates.
+
+<Callout type="info" title="No plugin reload required">
+  Toggling the gate takes effect immediately. ZotLit rebuilds the template
+  folder in place, no reload needed.
+</Callout>
+
+## Behavior when disabled
+
+When the gate is off and you have an `.eta.md` file that would otherwise be active (no Liquid file shadows it), ZotLit treats that template as **inert**:
+
+- The operation that needs the template (create note, update note, insert citation) fails with an error naming the cause. There is no silent fallback to the built-in default.
+- **Settings > Templates** shows a warning: "The Eta template at `{path}` is inactive because JavaScript templates are disabled on this device."
+- The `.eta.md` file remains in your vault untouched, never compiled.
+
+The same applies to frontmatter fields declared as `javascript`: any note write that consumes such a field fails with an error naming the inactive fields, and existing notes are not modified.
+
+## Coexistence with Liquid
+
+Both `zotlit-note.liquid.md` and `zotlit-note.eta.md` can exist for the same template name. When both are present, the Liquid file always wins, per the [Liquid-wins shadowing](/docs/concepts/how-templates-work#liquid-wins-shadowing) rule. The effective template never depends on the gate when both files exist.
+
+## See also
+
+<Cards>
+  <Card
+    title="Enable JavaScript templates"
+    description="Step-by-step procedure to turn on the gate."
+    href="/docs/how-to/enable-javascript-templates"
+  />
+  <Card
+    title="How templates work"
+    description="The six template types, languages, and the defaults-plus-eject model."
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="Settings reference"
+    description="Full option list including the JavaScript templates setting."
+    href="/docs/reference/settings"
+  />
+</Cards>

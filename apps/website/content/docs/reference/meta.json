@@ -1,0 +1,10 @@
+{
+  "title": "Reference",
+  "pages": [
+    "settings",
+    "commands",
+    "protocol-links",
+    "theme-hooks",
+    "templates"
+  ]
+}

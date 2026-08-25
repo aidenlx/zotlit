@@ -21,13 +21,12 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/website preview` — serve the built Worker locally through workerd.
 - `pnpm --filter @zotlit/website deploy` — build, then `wrangler deploy` to Cloudflare Workers.
 - `pnpm --filter @zotlit/website cf-typegen` — regenerate `worker-configuration.d.ts` after editing `wrangler.jsonc`.
+- `pnpm --filter @zotlit/website exec fumadocs-mdx` — regenerate the `.source/` collection index; `postinstall` and `vite build` already run it.
 
-## Stack
+## Content pipeline
 
-- **TanStack Start** (SSR React) — `@tanstack/react-start`, `@tanstack/react-router`, file-based routing in `src/routes/`.
-- **React 19.2** via Vite's built-in JSX transform.
-- **Tailwind CSS v4** via `@tailwindcss/vite`; styles live in `src/styles.css`.
-- **Vite 8** as the bundler.
-- **Cloudflare Workers** as the server runtime — `@cloudflare/vite-plugin` wired in `vite.config.ts` with `viteEnvironment: { name: "ssr" }`. Worker config lives in `wrangler.jsonc`; the entry is `@tanstack/react-start/server-entry`.
-- **Build output** in `dist/` — `dist/client` holds static assets, `dist/server` holds the Worker plus the generated `wrangler.json` that `wrangler deploy` reads.
-
+- **Migration:** `@zotlit/docs` is the content source of truth until cutover; the cutover sync copies it into this package's `content/` directory.
+- **Routing cutover:** Add `collections/server` to the production module graph with the routing shell and `fumadocs-ui` components that compile the MDX imports.
+- **Collections:** Read [`source.config.ts`](source.config.ts) before changing frontmatter, partial discovery, Markdown editions, or syntax highlighting. It owns those rules and the three collection schemas.
+- **Dates:** Normalize publication dates to ISO days directly in [`source.config.ts`](source.config.ts); workerd lacks Temporal, so this schema is a package-scoped exception to [the Temporal policy](../../policies/temporal-dates.md).
+- **Verification:** [`source.test.ts`](src/lib/source.test.ts) pins collection discovery, ordering, and normalized dates. [`gfm.test.ts`](src/lib/template-contract/gfm.test.ts) pins generated Markdown tables.

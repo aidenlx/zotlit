@@ -1,0 +1,184 @@
+---
+title: "Frontmatter"
+description: "Field definitions, merge strategies, reserved keys, and update behavior for literature note frontmatter."
+introduced: "2.0.0"
+updated: "2.0.0"
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+
+This page documents how ZotLit manages YAML frontmatter on literature notes: system-managed fields, user-configured fields, merge strategies, and the behavior during note updates.
+
+For step-by-step configuration, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
+
+## System-managed field
+
+ZotLit always writes `zotero-key`. User configuration cannot override it.
+
+| Field        | Source          | Description                                                                         |
+| ------------ | --------------- | ----------------------------------------------------------------------------------- |
+| `zotero-key` | `zt.indexedKey` | Literature Note identity: `KEY` for My Library or `KEYgGROUPID` for group libraries |
+
+## User-configured fields
+
+Configured at **Settings > Templates > Frontmatter**. Each field has four parts:
+
+| Part           | Description                                             |
+| -------------- | ------------------------------------------------------- |
+| Key            | The YAML property name written to frontmatter           |
+| Expression     | Produces the value (evaluated in the declared language) |
+| Language       | `liquid` or `javascript`                                |
+| Merge strategy | How the field behaves when refreshing an existing note  |
+
+### Default fields
+
+Out of the box, ZotLit configures:
+
+| Key           | Expression                           | Language | Merge   |
+| ------------- | ------------------------------------ | -------- | ------- |
+| `title`       | `zt.title`                           | Liquid   | Replace |
+| `related`     | `zt.relatedItems \| note_links`      | Liquid   | Replace |
+| `collections` | `zt.collections \| collection_paths` | Liquid   | Replace |
+| `citekey`     | `zt.citationKey`                     | Liquid   | Replace |
+
+The default `citekey` field has this definition:
+
+```js
+{ key: "citekey", expr: "zt.citationKey", merge: "replace", language: "liquid" }
+```
+
+It writes `citekey: null` when the Zotero item has no citation key. The field is ordinary Managed Frontmatter. You can edit or remove it like any other user-configured field.
+
+### Liquid expressions
+
+Liquid expressions use the same filter vocabulary as templates (see [Template syntax](/docs/reference/templates/syntax)). They return typed values (arrays, numbers, strings), not rendered text.
+
+```
+zt.title                              -> "My Paper Title"
+zt.authors | join: ", "               -> "Jane Smith, Bob Jones"
+zt.tags | map: "name"                 -> ["methodology", "open access"]
+zt.tags | obsidian_tag                -> ["methodology", "open_access"]
+zt.collections | collection_paths     -> ["Project/Reading", "Research"]
+zt.date.year                          -> 2023
+```
+
+### JavaScript expressions
+
+JavaScript expressions require the [JavaScript Templates](/docs/concepts/javascript-templates) gate. Any valid JavaScript expression works, with the full note context available as `zt`:
+
+```
+zt.authors.map(c => c.fullName)   -> ["Jane Smith", "Bob Jones"]
+zt.tags.map(t => t.name)          -> ["methodology", "review"]
+zt.date?.year                     -> 2023
+```
+
+The return value is serialized to YAML automatically.
+
+## Merge strategies
+
+Each user field selects one of three merge strategies that control what happens when the note is updated:
+
+| Strategy  | UI label      | Behavior                                                                                                                                                                                                                                                                                            |
+| --------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replace` | Replace       | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
+| `append`  | Append arrays | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
+| `keep`    | Keep existing | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
+
+### What counts as blank
+
+A value is blank (and treated as absent by `Append arrays` and `Keep existing`) when it is:
+
+- `null` or undefined
+- An empty string (`""`)
+- An empty array (`[]`)
+- An empty plain object (`{}`)
+
+### Undefined expressions
+
+When an expression returns `undefined`, the field is untouched regardless of the merge strategy. Only defined values (including explicit `null`) reach the merge logic.
+
+### Append arrays detail
+
+The `Append arrays` strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
+
+## Reserved keys
+
+The following keys cannot be used in user field configuration:
+
+| Key               | Owner                                     |
+| ----------------- | ----------------------------------------- |
+| `zotero-key`      | System-managed (literature note identity) |
+| `zotero-note-key` | Imported notes                            |
+| `zotero-lastmod`  | Imported notes                            |
+
+Attempting to use a reserved key is rejected in both the settings modal and the CLI.
+
+## Validation
+
+The settings modal and the Template Workbench CLI validate in this order:
+
+1. **Empty key:** "Enter a key."
+2. **Reserved key:** "'\{key\}' is managed by ZotLit and can't be used."
+3. **Duplicate key:** "'\{key\}' is already mapped."
+4. **Empty expression:** "Enter an expression."
+
+Expression syntax errors are detected when saving. Runtime errors (e.g. accessing a property on `null`) are reported per-field at render time. The failing field is skipped and remaining fields still evaluate.
+
+## Merge on update
+
+When you run <Command inline>ZotLit: Update literature note</Command> or <Command inline>ZotLit: Update literature note metadata</Command>, ZotLit refreshes frontmatter:
+
+1. **User-configured fields** are re-evaluated and applied using their merge strategy.
+2. **System identity** (`zotero-key`) is refreshed.
+3. **Unmanaged keys:** any frontmatter key not in the managed set (e.g. `aliases`, `tags`, `cssclasses`) is preserved. ZotLit never touches keys it does not own.
+
+<Command inline>ZotLit: Overwrite literature note</Command> replaces the note
+body but applies the same frontmatter behavior: managed keys are refreshed and
+unmanaged keys are kept.
+
+ZotLit writes frontmatter through Obsidian's `processFrontMatter` API, which preserves key ordering and formatting for unmanaged keys. On a newly created note, user-configured fields are written in the order they appear in the Frontmatter settings list, followed by system fields.
+
+Removing `citekey` or another field from the Managed Frontmatter list does not delete existing values. Those values become unmanaged and remain in the note.
+
+## JavaScript Templates gate
+
+A field's language determines its evaluation engine. The [JavaScript Templates](/docs/concepts/javascript-templates) gate controls whether `javascript` fields run:
+
+- **Gate off:** JavaScript fields are inert. They are not evaluated. Any operation that depends on inert fields surfaces an error naming those fields. Liquid fields are unaffected.
+- **Gate on:** Both Liquid and JavaScript fields evaluate normally.
+
+The gate never reinterprets an expression. A Liquid field always evaluates as Liquid; a JavaScript field always evaluates as JavaScript.
+
+<Callout type="warn" title="Inert fields block note operations">
+  When any frontmatter field is configured with language `javascript` and the
+  gate is off, literature note creation and update fail with an error listing
+  the inert fields. Either enable the gate or switch those fields to Liquid. See
+  [Enable JavaScript templates](/docs/how-to/enable-javascript-templates).
+</Callout>
+
+## See also
+
+<Cards>
+  <Card
+    title="Configure frontmatter properties"
+    description="Add, edit, and reorder frontmatter fields step by step."
+    href="/docs/how-to/configure-frontmatter-properties"
+  />
+  <Card
+    title="Data reference"
+    description="Properties available on zt for each template type."
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="JavaScript templates"
+    description="What the gate enables, risks, and disabled behavior."
+    href="/docs/concepts/javascript-templates"
+  />
+  <Card
+    title="Enable JavaScript templates"
+    description="Steps to turn on the JavaScript Templates gate."
+    href="/docs/how-to/enable-javascript-templates"
+  />
+</Cards>

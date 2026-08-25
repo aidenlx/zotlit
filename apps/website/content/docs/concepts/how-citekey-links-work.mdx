@@ -1,0 +1,145 @@
+---
+title: "How in-text citation rendering and navigation work"
+description: "How ZotLit selects, formats, lists, and opens citations in the active note."
+introduced: "2.0.0"
+updated: "2.1.0"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+ZotLit uses one ordered set of citations to format the active note, number its references, and support citation navigation.
+
+## The Document Citation Set
+
+The Document Citation Set contains the Citation Occurrences from the active note. Each occurrence keeps its source position and citation details.
+
+Two settings under **Settings > ZotLit > Citations** decide which sources join the set:
+
+| Setting                | Default | Included source                                           |
+| ---------------------- | ------- | --------------------------------------------------------- |
+| **Pandoc citations**   | On      | Literal Pandoc syntax such as `@doe2024` and `[@doe2024]` |
+| **Wikilink citations** | Off     | Eligible wikilinks to Literature Notes                    |
+
+You can turn off both sources. The References Sidebar, formatted in-text citations, numeric numbering, and Citekey Navigation then receive an empty set.
+
+An eligible wikilink is unaliased and points to a Literature Note. It has either no fragment or a valid Citation Fragment such as `#cite:locator=33`.
+
+Aliases, embeds, unresolved targets, heading fragments, and block fragments stay outside the set. Malformed Citation Fragments also stay outside it. The References Sidebar reports a malformed fragment as a Reference Error while **Wikilink citations** is on.
+
+The set keeps source order. This order matters because numeric styles assign numbers from the complete note, not from one visible section.
+
+### The Citation Index
+
+The Citation Index is ZotLit's internal, vault-wide record of Citation Occurrences. It stays active and tracks both source types, independent of the two source settings.
+
+The Document Citation Set applies your source settings when a citation feature asks about the active note. Changing either setting recomputes the set without rescanning the vault.
+
+Citation insertion and built-in export use their own membership rules. Turning a source off does not disable insertion or remove that source from export.
+
+## Pandoc citations
+
+Pandoc citations can cite one work or a group of works:
+
+- `@key` is a bare author-in-text citation.
+- `-@key` suppresses the author.
+- `[@key]` and `[@key, p. 3]` are Citation Clusters.
+- `[see @a, p. 3; @b]` cites multiple works in one cluster.
+- `@{https://example.com/paper}` is a braced key for characters that a bare key cannot contain.
+
+Trailing punctuation is outside a citation key. Email addresses and URLs containing `@` remain ordinary text.
+
+ZotLit also excludes citation-like text in code, math, `%%` comments, frontmatter, and URLs.
+
+### Resolution
+
+ZotLit resolves Pandoc citation keys against Zotero's native citation key field, across every library in your **Library scope**. It does not use the `citekey` frontmatter field for resolution.
+
+An item can appear as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. An unresolved key stays in its native source and appears as a Reference Error in the sidebar.
+
+The resolution data refreshes when the Zotero database changes. A re-keyed item updates after the next refresh.
+
+### A key that matches several items [#ambiguous-key]
+
+A citation key resolves to one Zotero item, to none, or to several. Several is an ambiguous key. It happens when two items in one library carry the same citation key, and when two libraries you both have in scope carry it once each.
+
+ZotLit never picks one of the matches. The editor, reading view, citation popover, and References Sidebar all report the same ambiguous state, and the key keeps its own identity: it adopts no candidate's item, and contributes no bibliography entry.
+
+In a Citation Cluster that holds both an ambiguous key and one that matches nothing, the unresolved key is what the cluster reports. It is the stronger failure, so it stays visible.
+
+Two things resolve an ambiguity. Give one of the items a different citation key in Zotero. Or narrow your [library scope](/docs/reference/settings#library-scope) until one candidate is left, which makes the key unique again.
+
+## Wikilink citations
+
+An eligible Literature Note wikilink represents the Zotero item associated with that note. A valid Citation Fragment can add Pandoc details such as a prefix, locator, suffix, or author-suppression mode.
+
+For example, `[[Doe 2020#cite:locator=33]]` represents the Pandoc source `[@doe2020, p. 33]` when the item's citation key is `doe2020`.
+
+Wikilinks keep Obsidian's native link target, click behavior, and drag behavior. Source mode always shows the raw wikilink.
+
+## Formatted in-text citations
+
+**Show formatted citations** is on by default. It applies the selected **Citation and references style** in Live Preview and reading view. Source mode always shows Markdown.
+
+ZotLit asks the Pandoc engine to format the complete Document Citation Set. A complete render keeps numbering and style context consistent across the note. ZotLit swaps the whole document to formatted text only after that render finishes.
+
+In Live Preview, the Markdown source returns only for the citation touched by your cursor or selection. Other citations remain formatted.
+
+ZotLit leaves the native source visible when it cannot produce one complete formatted result.
+
+A Citation Cluster with any unresolved item stays completely unchanged. Its resolved items still affect later numeric numbering and the References Sidebar.
+
+Turning **Show formatted citations** off leaves every source in Obsidian's native presentation. It does not change set membership, Citekey Navigation, insertion, or export.
+
+## References and errors
+
+The References Sidebar presents one entry for each resolved item in the Document Citation Set. A formatted list follows the selected style's bibliography order and Entry Markers.
+
+Without formatted output, the sidebar uses a minimal list in first-occurrence order. A Reference Error keeps its exact source occurrence and contributes no bibliography entry.
+
+The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers navigation, item actions, bibliography copy, and error recovery.
+
+## Citekey Navigation
+
+**Open citations as links** controls navigation for both literal Pandoc citations and Literature Note wikilinks shown as citations. It works independently of formatted display and hover behavior.
+
+A single-item citation can open or create its Literature Note. A multi-item citation requires an item choice. An [ambiguous key](#ambiguous-key) requires a candidate choice because the key itself names no unique item.
+
+The Citation Popover presents every cited item's full bibliography entry in citation order. An unresolved or ambiguous key remains visible as its own state instead of adopting an item.
+
+The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers citation hover and the available navigation actions. The [commands reference](/docs/reference/commands) lists the open-under-cursor commands.
+
+## Theme hooks [#theme-hooks]
+
+ZotLit adds public CSS classes only to sources in the Document Citation Set where it supplies rendering or navigation. Excluded sources and sources with both applicable features inactive receive no public ZotLit class.
+
+See [Theme hooks](/docs/reference/theme-hooks) for class names, state meanings, and activation rules.
+
+## See also
+
+<Cards>
+  <Card
+    title="Insert citations"
+    description="Insert Markdown citations independently of citation source settings."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="Create and open literature notes"
+    description="Open or create a Literature Note from a citation or the quick switcher."
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="Review, copy, and troubleshoot references"
+    description="Navigate occurrences, inspect citation popovers, copy entries, and fix errors."
+    href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+  <Card
+    title="Export a note with citations"
+    description="Export the active note as a Word document or web page."
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="Settings"
+    description="Look up citation controls, defaults, storage, and dependencies."
+    href="/docs/reference/settings"
+  />
+</Cards>
