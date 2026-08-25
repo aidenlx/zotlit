@@ -10,7 +10,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -56,6 +56,46 @@ export async function writePristineDatabase(
     );
   });
   await writeFile(databasePath, gunzipSync(compressed));
+}
+
+/**
+ * The bundled CSL styles, gzipped, as a record of `styles/`-relative path to
+ * file content. Zotero unpacks them into the data directory on a first run, so
+ * the harvest keeps them beside the database it captures from that same run: a
+ * Fixture carrying the database alone offers no Citation and References Style
+ * until a Paired Zotero has run long enough to unpack them again.
+ */
+export const PRISTINE_STYLES_PATH = join(
+  import.meta.dirname,
+  "pristine-styles.json.gz",
+);
+
+/** Zotero's own styles directory, and the parents it keeps out of the picker. */
+const STYLES_DIR = "styles";
+const HIDDEN_DIR = "hidden";
+const CSL_EXT = ".csl";
+
+/** Lay the committed CSL styles down under `dataDir`, as Zotero installs them. */
+export async function writePristineStyles(dataDir: string): Promise<void> {
+  const compressed = await readFile(PRISTINE_STYLES_PATH).catch(() => {
+    throw new Error(
+      `no pristine styles at ${PRISTINE_STYLES_PATH}.` +
+        ` Harvest them with 'pnpm fixture harvest'.`,
+    );
+  });
+  const styles = readStyleArchive(compressed);
+  for (const [name, xml] of Object.entries(styles)) {
+    const path = join(dataDir, STYLES_DIR, ...name.split("/"));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, xml);
+  }
+}
+
+function readStyleArchive(compressed: Buffer): Record<string, string> {
+  return JSON.parse(gunzipSync(compressed).toString("utf8")) as Record<
+    string,
+    string
+  >;
 }
 
 export interface SchemaVersions {
@@ -104,6 +144,10 @@ export interface HarvestReport {
   bytes: number;
   /** Size of the committed template. */
   compressedBytes: number;
+  /** CSL styles the first run unpacked, which the harvest captured. */
+  styles: number;
+  /** Size of the committed style archive. */
+  stylesCompressedBytes: number;
 }
 
 /** Long enough for a cold first run to unpack translators and styles. */
@@ -152,8 +196,18 @@ export async function harvestPristineTemplate(
   const report = compact(databasePath, applicationDir);
   const template = gzipSync(await readFile(databasePath), { level: 9 });
   await writeFile(PRISTINE_TEMPLATE_PATH, template);
+
+  const styles = await captureStyles(target.dataDir);
+  const archive = gzipSync(JSON.stringify(styles), { level: 9 });
+  await writeFile(PRISTINE_STYLES_PATH, archive);
+
   await rm(workDir, { recursive: true, force: true });
-  return { ...report, compressedBytes: template.byteLength };
+  return {
+    ...report,
+    compressedBytes: template.byteLength,
+    styles: Object.keys(styles).length,
+    stylesCompressedBytes: archive.byteLength,
+  };
 }
 
 /**
@@ -210,6 +264,32 @@ async function readWriteSignature(dataDir: string): Promise<string | null> {
 }
 
 /**
+ * The CSL styles a first run unpacked, keyed by their path under `styles/`.
+ * Zotero keeps the independent parents that only dependent styles need in
+ * `styles/hidden/`, so both levels travel into the archive.
+ *
+ * @throws when the first run unpacked no style at all.
+ */
+async function captureStyles(dataDir: string): Promise<Record<string, string>> {
+  const root = join(dataDir, STYLES_DIR);
+  const styles: Record<string, string> = {};
+  for (const prefix of ["", HIDDEN_DIR]) {
+    const dir = join(root, prefix);
+    const names = await readdir(dir).catch(() => []);
+    for (const name of names.filter((entry) => entry.endsWith(CSL_EXT))) {
+      styles[prefix ? `${prefix}/${name}` : name] = await readFile(
+        join(dir, name),
+        "utf8",
+      );
+    }
+  }
+  if (Object.keys(styles).length === 0) {
+    throw new Error(`the first run unpacked no CSL style into ${root}.`);
+  }
+  return styles;
+}
+
+/**
  * Stop Zotero. It holds its database open under an exclusive lock and leaves
  * the write-ahead log behind either way, so the capture is only sound once
  * {@link compact} folds that log back in.
@@ -238,7 +318,10 @@ async function quit(zotero: ChildProcess): Promise<void> {
 function compact(
   databasePath: string,
   applicationDir: string,
-): Omit<HarvestReport, "compressedBytes"> {
+): Pick<
+  HarvestReport,
+  "applicationDir" | "userdata" | "compatibility" | "bytes"
+> {
   using db = new DatabaseSync(databasePath);
   db.exec("pragma wal_checkpoint(truncate)");
   db.exec("pragma journal_mode = delete");

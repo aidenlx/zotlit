@@ -27,6 +27,7 @@ import { runPairedRun } from "#fixture/paired-run";
 import { createNodePairedRunPorts } from "#fixture/paired-run-node";
 import {
   harvestPristineTemplate,
+  PRISTINE_STYLES_PATH,
   PRISTINE_TEMPLATE_PATH,
 } from "#fixture/pristine";
 import { getWorkspaceRoot } from "#package-roots";
@@ -218,7 +219,7 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     "harvest",
-    `re-capture the pristine Zotero database template from a Zotero ${PINNED_ZOTERO_VERSION} first run`,
+    `re-capture the pristine Zotero database template and CSL styles from a Zotero ${PINNED_ZOTERO_VERSION} first run`,
     () => {},
     async () => {
       const report = await harvestPristineTemplate(
@@ -231,7 +232,11 @@ const cli = yargs(hideBin(process.argv))
       console.log(
         `  ${kilobytes(report.bytes)} of database, ${kilobytes(report.compressedBytes)} committed`,
       );
+      console.log(
+        `  ${report.styles} CSL styles, ${kilobytes(report.stylesCompressedBytes)} committed`,
+      );
       console.log(`Wrote ${PRISTINE_TEMPLATE_PATH}`);
+      console.log(`Wrote ${PRISTINE_STYLES_PATH}`);
     },
   )
   .command(
