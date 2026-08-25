@@ -4,6 +4,10 @@
   "tasks": {
     "build": {
       "outputs": ["dist/**", ".tanstack/**", ".source/**"]
+    },
+    // `src/http.test.ts` fetches the built Worker, so the build runs first.
+    "test": {
+      "dependsOn": ["^build", "transit", "build"]
     }
   }
 }

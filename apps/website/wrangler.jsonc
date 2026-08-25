@@ -1,9 +1,11 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "zotlit-website",
+  "name": "zotlit-docs",
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
+  // Staging lives on workers.dev until the cutover switches DNS.
+  "workers_dev": true,
   "observability": {
     "enabled": true,
   },

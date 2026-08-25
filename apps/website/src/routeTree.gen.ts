@@ -9,50 +9,256 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as HomeRouteRouteImport } from './routes/_home/route'
+import { Route as DocsRouteRouteImport } from './routes/docs/route'
+import { Route as HomeIndexRouteImport } from './routes/_home/index'
+import { Route as HomeCommunityRouteImport } from './routes/_home/community'
+import { Route as DocsIndexRouteImport } from './routes/docs/index'
+import { Route as DocsSplatRouteImport } from './routes/docs/$'
+import { Route as HomeBlogIndexRouteImport } from './routes/_home/blog/index'
+import { Route as HomeBlogSlugRouteImport } from './routes/_home/blog/$slug'
+import { Route as HomeChangelogIndexRouteImport } from './routes/_home/changelog/index'
+import { Route as HomeChangelogVersionRouteImport } from './routes/_home/changelog/$version'
 
-const IndexRoute = IndexRouteImport.update({
+const HomeRouteRoute = HomeRouteRouteImport.update({
+  id: '/_home',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsRouteRoute = DocsRouteRouteImport.update({
+  id: '/docs',
+  path: '/docs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HomeIndexRoute = HomeIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const HomeCommunityRoute = HomeCommunityRouteImport.update({
+  id: '/community',
+  path: '/community',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const DocsIndexRoute = DocsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DocsRouteRoute,
+} as any)
+const DocsSplatRoute = DocsSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => DocsRouteRoute,
+} as any)
+const HomeBlogIndexRoute = HomeBlogIndexRouteImport.update({
+  id: '/blog/',
+  path: '/blog/',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const HomeBlogSlugRoute = HomeBlogSlugRouteImport.update({
+  id: '/blog/$slug',
+  path: '/blog/$slug',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const HomeChangelogIndexRoute = HomeChangelogIndexRouteImport.update({
+  id: '/changelog/',
+  path: '/changelog/',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const HomeChangelogVersionRoute = HomeChangelogVersionRouteImport.update({
+  id: '/changelog/$version',
+  path: '/changelog/$version',
+  getParentRoute: () => HomeRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof HomeIndexRoute
+  '/docs': typeof DocsRouteRouteWithChildren
+  '/community': typeof HomeCommunityRoute
+  '/docs/$': typeof DocsSplatRoute
+  '/docs/': typeof DocsIndexRoute
+  '/blog/$slug': typeof HomeBlogSlugRoute
+  '/changelog/$version': typeof HomeChangelogVersionRoute
+  '/blog/': typeof HomeBlogIndexRoute
+  '/changelog/': typeof HomeChangelogIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/community': typeof HomeCommunityRoute
+  '/docs/$': typeof DocsSplatRoute
+  '/': typeof HomeIndexRoute
+  '/docs': typeof DocsIndexRoute
+  '/blog/$slug': typeof HomeBlogSlugRoute
+  '/changelog/$version': typeof HomeChangelogVersionRoute
+  '/blog': typeof HomeBlogIndexRoute
+  '/changelog': typeof HomeChangelogIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_home': typeof HomeRouteRouteWithChildren
+  '/docs': typeof DocsRouteRouteWithChildren
+  '/_home/community': typeof HomeCommunityRoute
+  '/docs/$': typeof DocsSplatRoute
+  '/_home/': typeof HomeIndexRoute
+  '/docs/': typeof DocsIndexRoute
+  '/_home/blog/$slug': typeof HomeBlogSlugRoute
+  '/_home/changelog/$version': typeof HomeChangelogVersionRoute
+  '/_home/blog/': typeof HomeBlogIndexRoute
+  '/_home/changelog/': typeof HomeChangelogIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/docs'
+    | '/community'
+    | '/docs/$'
+    | '/docs/'
+    | '/blog/$slug'
+    | '/changelog/$version'
+    | '/blog/'
+    | '/changelog/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/community'
+    | '/docs/$'
+    | '/'
+    | '/docs'
+    | '/blog/$slug'
+    | '/changelog/$version'
+    | '/blog'
+    | '/changelog'
+  id:
+    | '__root__'
+    | '/_home'
+    | '/docs'
+    | '/_home/community'
+    | '/docs/$'
+    | '/_home/'
+    | '/docs/'
+    | '/_home/blog/$slug'
+    | '/_home/changelog/$version'
+    | '/_home/blog/'
+    | '/_home/changelog/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  HomeRouteRoute: typeof HomeRouteRouteWithChildren
+  DocsRouteRoute: typeof DocsRouteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_home': {
+      id: '/_home'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof HomeRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_home/': {
+      id: '/_home/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof HomeIndexRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
+    '/_home/community': {
+      id: '/_home/community'
+      path: '/community'
+      fullPath: '/community'
+      preLoaderRoute: typeof HomeCommunityRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
+    '/docs/': {
+      id: '/docs/'
+      path: '/'
+      fullPath: '/docs/'
+      preLoaderRoute: typeof DocsIndexRouteImport
+      parentRoute: typeof DocsRouteRoute
+    }
+    '/docs/$': {
+      id: '/docs/$'
+      path: '/$'
+      fullPath: '/docs/$'
+      preLoaderRoute: typeof DocsSplatRouteImport
+      parentRoute: typeof DocsRouteRoute
+    }
+    '/_home/blog/': {
+      id: '/_home/blog/'
+      path: '/blog'
+      fullPath: '/blog/'
+      preLoaderRoute: typeof HomeBlogIndexRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
+    '/_home/blog/$slug': {
+      id: '/_home/blog/$slug'
+      path: '/blog/$slug'
+      fullPath: '/blog/$slug'
+      preLoaderRoute: typeof HomeBlogSlugRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
+    '/_home/changelog/': {
+      id: '/_home/changelog/'
+      path: '/changelog'
+      fullPath: '/changelog/'
+      preLoaderRoute: typeof HomeChangelogIndexRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
+    '/_home/changelog/$version': {
+      id: '/_home/changelog/$version'
+      path: '/changelog/$version'
+      fullPath: '/changelog/$version'
+      preLoaderRoute: typeof HomeChangelogVersionRouteImport
+      parentRoute: typeof HomeRouteRoute
     }
   }
 }
 
+interface HomeRouteRouteChildren {
+  HomeCommunityRoute: typeof HomeCommunityRoute
+  HomeIndexRoute: typeof HomeIndexRoute
+  HomeBlogSlugRoute: typeof HomeBlogSlugRoute
+  HomeChangelogVersionRoute: typeof HomeChangelogVersionRoute
+  HomeBlogIndexRoute: typeof HomeBlogIndexRoute
+  HomeChangelogIndexRoute: typeof HomeChangelogIndexRoute
+}
+
+const HomeRouteRouteChildren: HomeRouteRouteChildren = {
+  HomeCommunityRoute: HomeCommunityRoute,
+  HomeIndexRoute: HomeIndexRoute,
+  HomeBlogSlugRoute: HomeBlogSlugRoute,
+  HomeChangelogVersionRoute: HomeChangelogVersionRoute,
+  HomeBlogIndexRoute: HomeBlogIndexRoute,
+  HomeChangelogIndexRoute: HomeChangelogIndexRoute,
+}
+
+const HomeRouteRouteWithChildren = HomeRouteRoute._addFileChildren(
+  HomeRouteRouteChildren,
+)
+
+interface DocsRouteRouteChildren {
+  DocsSplatRoute: typeof DocsSplatRoute
+  DocsIndexRoute: typeof DocsIndexRoute
+}
+
+const DocsRouteRouteChildren: DocsRouteRouteChildren = {
+  DocsSplatRoute: DocsSplatRoute,
+  DocsIndexRoute: DocsIndexRoute,
+}
+
+const DocsRouteRouteWithChildren = DocsRouteRoute._addFileChildren(
+  DocsRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  HomeRouteRoute: HomeRouteRouteWithChildren,
+  DocsRouteRoute: DocsRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

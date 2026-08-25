@@ -33,6 +33,8 @@ catalog:
   fflate: ^0.8.2
   fumadocs-core: 16.14.0
   fumadocs-mdx: 15.2.1
+  fumadocs-ui: npm:@fumadocs/base-ui@16.14.0
+  lucide-react: ^1.24.0
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0

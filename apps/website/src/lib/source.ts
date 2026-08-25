@@ -1,11 +1,8 @@
 // fumadocs loaders over the three collections, one per content directory.
 //
-// The app's module graph deliberately stops short of this file: the MDX bodies
-// import `fumadocs-ui` and `@/components/*` modules this package does not carry
-// yet, and the collections' lazy body glob makes `vite build` compile every
-// `.mdx` file as soon as a production module reaches a loader. The routing
-// shell adds those components and the first route that imports this module;
-// until then `source.test.ts` is what exercises the loaders.
+// Server-only: `collections/server` reads the content directory. Routes reach
+// it through `createServerFn` handlers, and the MDX bodies compile in the
+// browser through `collections/browser` instead.
 
 import { blogs, changelogs, docs } from "collections/server";
 import { loader } from "fumadocs-core/source";

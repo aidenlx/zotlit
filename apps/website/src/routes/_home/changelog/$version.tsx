@@ -1,0 +1,87 @@
+import { Link, createFileRoute, notFound } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import collections from "collections/browser";
+
+import { getMDXComponents } from "@/components/mdx.tsx";
+import { formatReleaseDate, repoUrl } from "@/lib/shared.ts";
+import { changelog, getChangelogPages } from "@/lib/source.ts";
+
+const getRelease = createServerFn({ method: "GET" })
+  .validator((version: string) => version)
+  .handler(({ data: version }) => {
+    const page = changelog.getPage([version]);
+    // A version this build never published still lives on Pre-release Docs;
+    // that fallback lands with the dynamic-parity slice (issue #852).
+    if (!page) throw notFound();
+    return {
+      path: page.path,
+      version: page.data.version,
+      description: page.data.description,
+      companion: page.data.companion,
+      date: page.data.date,
+      latest: getChangelogPages()[0]?.data.version === page.data.version,
+    };
+  });
+
+const releaseBody = collections.changelogs.createClientLoader<object>({
+  id: "changelogs",
+  component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
+});
+
+export const Route = createFileRoute("/_home/changelog/$version")({
+  component: ChangelogVersion,
+  loader: async ({ params }) => {
+    const release = await getRelease({ data: params.version });
+    await releaseBody.preload(release.path);
+    return release;
+  },
+});
+
+function ChangelogVersion() {
+  const release = Route.useLoaderData();
+  const Body = releaseBody.getComponent(release.path);
+
+  return (
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-14">
+      <p>
+        <Link to="/changelog" className="text-fd-muted-foreground">
+          ← Changelog
+        </Link>
+      </p>
+      <article>
+        <h1 className="mt-6 mb-2 text-4xl font-medium">
+          v{release.version}
+          {release.latest && (
+            <span className="ml-3 border border-fd-primary px-2 py-0.5 font-mono text-xs text-fd-primary">
+              latest
+            </span>
+          )}
+        </h1>
+        <p className="font-mono text-xs tracking-widest text-fd-muted-foreground uppercase">
+          {formatReleaseDate(release.date)}
+        </p>
+        {release.companion && (
+          <p className="mt-2 text-fd-muted-foreground">
+            Companion {release.companion} released alongside.
+          </p>
+        )}
+        {release.description && (
+          <p className="mt-2 text-fd-muted-foreground">{release.description}</p>
+        )}
+        <div className="prose mt-8">
+          <Body />
+        </div>
+        <p className="mt-8">
+          <a
+            href={`${repoUrl}/releases/tag/${release.version}`}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-fd-primary"
+          >
+            Open release on GitHub →
+          </a>
+        </p>
+      </article>
+    </main>
+  );
+}

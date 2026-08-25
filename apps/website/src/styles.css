@@ -1,1 +1,6 @@
 @import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* The "Manuscript & Machine" token system lands with the styling port
+   (issue #853); until then the fumadocs neutral preset carries the surfaces. */
