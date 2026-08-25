@@ -8,10 +8,11 @@ import {
 import { valid as isValidSemVer } from "semver";
 import * as v from "valibot";
 
-import { etaGrammar } from "./lib/eta-grammar";
-import { CONTRACT_IR } from "./lib/template-contract/contract.ts";
-import { renderContractTableMarkdown } from "./lib/template-contract/gfm.ts";
-import { buildPageModel } from "./lib/template-contract/page-model.ts";
+import { etaGrammar } from "./src/lib/eta-grammar.ts";
+import { publishedOn } from "./src/lib/shared.ts";
+import { CONTRACT_IR } from "./src/lib/template-contract/contract.ts";
+import { renderContractTableMarkdown } from "./src/lib/template-contract/gfm.ts";
+import { buildPageModel } from "./src/lib/template-contract/page-model.ts";
 
 const model = buildPageModel(CONTRACT_IR);
 
@@ -60,10 +61,13 @@ const markdownEdition: LLMsOptions = {
   },
 };
 
-/** @see https://fumadocs.dev/docs/mdx/collections */
+/** @see https://github.com/fuma-nama/fumadocs/blob/fumadocs-mdx%4015.2.1/apps/docs/content/docs/mdx/collections.mdx */
 export const docs = defineDocs({
   dir: "content/docs",
   docs: {
+    // Frontmatter loads eagerly, page bodies behind a dynamic import, so
+    // listing pages through the loader costs no MDX compilation.
+    async: true,
     schema: v.object({
       ...pageSchema.entries,
       /**
@@ -79,7 +83,11 @@ export const docs = defineDocs({
        */
       updated: v.optional(semverSchema),
     }),
-    files: ["**/*.mdx", "!**/_*.mdx"],
+    // Content partials are `_`-prefixed and reach a page through `<include>`,
+    // never as pages of their own. The exclusion is a character class rather
+    // than a `!` negation because fumadocs-mdx's Vite codegen prefixes every
+    // pattern with `./`, which turns `!**/_*.mdx` into the inert `./!**/_*.mdx`.
+    files: ["**/[!_]*.mdx"],
     postprocess: {
       includeProcessedMarkdown: markdownEdition,
     },
@@ -92,6 +100,7 @@ export const docs = defineDocs({
 export const changelogs = defineCollections({
   type: "doc",
   dir: "content/changelog",
+  async: true,
   postprocess: {
     includeProcessedMarkdown: true,
   },
@@ -99,18 +108,16 @@ export const changelogs = defineCollections({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     version: semverSchema,
-    /** Version of the Zotero companion released alongside this plugin version, if any. */
+    /** Version of ZotLit Companion, the Zotero add-on, released alongside this plugin version, if any. */
     companion: v.optional(semverSchema),
-    date: v.pipe(
-      v.union([v.string(), v.date()]),
-      v.transform((val) => new Date(val)),
-    ),
+    date: publishedOn,
   }),
 });
 
 export const blogs = defineCollections({
   type: "doc",
   dir: "content/blog",
+  async: true,
   postprocess: {
     includeProcessedMarkdown: true,
   },
@@ -120,10 +127,7 @@ export const blogs = defineCollections({
     description: v.optional(v.string()),
     /** @default "aidenlx" */
     author: v.optional(v.string(), "aidenlx"),
-    date: v.pipe(
-      v.union([v.string(), v.date()]),
-      v.transform((val) => new Date(val)),
-    ),
+    date: publishedOn,
   }),
 });
 

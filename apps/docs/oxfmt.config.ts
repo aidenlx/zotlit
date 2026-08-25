@@ -4,14 +4,13 @@ import baseConfig from "@zotlit/config/oxfmt";
 
 export default defineConfig({
   ...baseConfig,
+  sortTailwindcss: {
+    stylesheet: "./src/styles.css",
+  },
   ignorePatterns: [
     ...baseConfig.ignorePatterns,
-    ".source/**",
-    "**/.next/**",
-    "out/**",
+    "**/dist/**",
+    "**/.tanstack/**",
+    "src/routeTree.gen.ts",
   ],
-  sortTailwindcss: {
-    stylesheet: "./app/global.css",
-    functions: ["cn"],
-  },
 });

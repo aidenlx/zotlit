@@ -1,9 +1,0 @@
-{
-  "title": "Tutorial",
-  "pages": [
-    "first-note",
-    "write-and-export-cited-note",
-    "pandoc-citation-workflow",
-    "customize-template"
-  ]
-}

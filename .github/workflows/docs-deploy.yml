@@ -1,0 +1,83 @@
+name: Docs Deploy
+
+# Deploys the docs site to Cloudflare Workers, one line per branch.
+#
+# `main` carries the stable line, so a docs change there deploys the production
+# site — the top-level wrangler config, `zotlit-docs`, on zotlit.aidenlx.site.
+# `next` carries the pre-release line, so a docs change there deploys
+# Pre-release Docs — the `beta` wrangler environment, `zotlit-docs-beta`, on
+# zotlit-beta.aidenlx.site. See ADR 0021.
+on:
+  push:
+    branches: [main, next]
+    paths:
+      - "apps/docs/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/docs-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time per line: a queued run would otherwise overwrite a newer
+# build, while the two lines deploy independently of each other.
+concurrency:
+  group: docs-deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      # The wrangler environment this branch deploys: `beta` for Pre-release
+      # Docs, empty for the production line, which is the top-level config.
+      WRANGLER_ENV: ${{ github.ref_name == 'next' && 'beta' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
+      # `--no-submodules` skips checkout since actions/checkout already fetched
+      # them above.
+      - uses: jdx/mise-action@v4
+      # pnpm is activated by mise's corepack post-install; this step is only
+      # here for the store cache.
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - run: mise run init --no-submodules
+
+      - name: Turborepo cache
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      # `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the
+      # beta build has to be its own; a build made without it carries the
+      # production line's variables whatever `wrangler deploy --env` says.
+      - name: Build
+        run: |
+          if [ -n "$WRANGLER_ENV" ]; then
+            export CLOUDFLARE_ENV="$WRANGLER_ENV"
+          fi
+          pnpm turbo run build --filter=@zotlit/docs
+        env:
+          # Public Cloudflare Web Analytics site token; without it the built
+          # site serves no beacon.
+          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+
+      - name: Deploy
+        run: |
+          if [ -n "$WRANGLER_ENV" ]; then
+            pnpm --filter @zotlit/docs exec wrangler deploy --env "$WRANGLER_ENV"
+          else
+            pnpm --filter @zotlit/docs exec wrangler deploy
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
