@@ -79,6 +79,32 @@ describe("legacy redirects", () => {
   });
 });
 
+describe("search", () => {
+  /** The endpoint answers with fumadocs' sorted-result list. */
+  async function search(query: string) {
+    const response = await get(
+      `/api/search?query=${encodeURIComponent(query)}`,
+    );
+
+    expect(response.status).toBe(200);
+    return (await response.json()) as { url: string }[];
+  }
+
+  it("finds docs pages for a term the docs use", async () => {
+    const results = await search("annotation");
+
+    expect(results.length).toBeGreaterThan(0);
+    for (const result of results) expect(result.url).toMatch(/^\/docs\//);
+  });
+
+  it("leaves the changelog out of the index", async () => {
+    // "AGPL" appears in the changelog and nowhere in the docs content.
+    const results = await search("AGPL");
+
+    expect(results).toEqual([]);
+  });
+});
+
 describe("asset headers", () => {
   it("serves the giscus theme with its CORS header", async () => {
     const response = await get("/giscus/light.css");

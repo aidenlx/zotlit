@@ -29,9 +29,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {/* The search dialog reaches a live `/api/search` route that lands with
-            the search slice (issue #849); until then the trigger stays off. */}
-        <RootProvider search={{ enabled: false }}>{children}</RootProvider>
+        {/* The search dialog fetches `/api/search`, the fumadocs default. */}
+        <RootProvider>{children}</RootProvider>
         <TanStackDevtools
           config={{ position: "bottom-right" }}
           plugins={[

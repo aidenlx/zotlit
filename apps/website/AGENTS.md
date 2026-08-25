@@ -34,11 +34,12 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - **Server side:** [`src/lib/source.ts`](src/lib/source.ts) reads `collections/server` and stays server-only. Routes reach it through `createServerFn` handlers, which return JSON — a page's file path, its frontmatter, the sidebar tree.
 - **MDX bodies:** compile through `collections/browser`. Each route builds a client loader with `createClientLoader`, calls `preload(path)` in its loader, and renders `getComponent(path)`. The table of contents rides with the compiled module, so it never crosses the server boundary.
 - **Redirects and headers:** [`src/lib/v1-redirects.ts`](src/lib/v1-redirects.ts) owns the v1 permalink table; a Vite plugin in [`vite.config.ts`](vite.config.ts) renders it into `dist/client/_redirects` and `_headers`, which the Cloudflare asset layer answers without a Worker invocation.
-- **Pending slices:** search (`/api/search`), the Markdown editions, SEO endpoints, request-time GitHub data, and the "Manuscript & Machine" styling land in later tickets of issue #846.
+- **Search:** [`src/routes/api/search.ts`](src/routes/api/search.ts) serves `/api/search` from `createFromSource` over the docs loader alone, so the changelog and the blog stay unindexed. Its only `createFileRoute` property is `server`, which keeps it out of the client route tree and out of any prerender pass. The dialog is the fumadocs default and needs no client wiring.
+- **Pending slices:** the Markdown editions, SEO endpoints, request-time GitHub data, and the "Manuscript & Machine" styling land in later tickets of issue #846.
 
 ## Verification
 
-- [`http.test.ts`](src/http.test.ts) is the primary seam: it serves `dist/` through workerd and asserts what a browser sees — page status, redirect targets, asset headers. Run it through turbo so the build runs first.
+- [`http.test.ts`](src/http.test.ts) is the primary seam: it serves `dist/` through workerd and asserts what a browser sees — page status, redirect targets, search results, asset headers. Run it through turbo so the build runs first.
 - [`source.test.ts`](src/lib/source.test.ts) pins collection discovery, ordering, and normalized dates. [`gfm.test.ts`](src/lib/template-contract/gfm.test.ts) pins generated Markdown tables. [`v1-redirects.test.ts`](src/lib/v1-redirects.test.ts) pins the rendered rule files.
 
 ## Deployment

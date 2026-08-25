@@ -13,6 +13,7 @@ import { Route as HomeRouteRouteImport } from './routes/_home/route'
 import { Route as DocsRouteRouteImport } from './routes/docs/route'
 import { Route as HomeIndexRouteImport } from './routes/_home/index'
 import { Route as HomeCommunityRouteImport } from './routes/_home/community'
+import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as HomeBlogIndexRouteImport } from './routes/_home/blog/index'
@@ -38,6 +39,11 @@ const HomeCommunityRoute = HomeCommunityRouteImport.update({
   id: '/community',
   path: '/community',
   getParentRoute: () => HomeRouteRoute,
+} as any)
+const ApiSearchRoute = ApiSearchRouteImport.update({
+  id: '/api/search',
+  path: '/api/search',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DocsIndexRoute = DocsIndexRouteImport.update({
   id: '/',
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/': typeof HomeIndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/community': typeof HomeCommunityRoute
+  '/api/search': typeof ApiSearchRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/': typeof DocsIndexRoute
   '/blog/$slug': typeof HomeBlogSlugRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/community': typeof HomeCommunityRoute
+  '/api/search': typeof ApiSearchRoute
   '/docs/$': typeof DocsSplatRoute
   '/': typeof HomeIndexRoute
   '/docs': typeof DocsIndexRoute
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/_home': typeof HomeRouteRouteWithChildren
   '/docs': typeof DocsRouteRouteWithChildren
   '/_home/community': typeof HomeCommunityRoute
+  '/api/search': typeof ApiSearchRoute
   '/docs/$': typeof DocsSplatRoute
   '/_home/': typeof HomeIndexRoute
   '/docs/': typeof DocsIndexRoute
@@ -110,6 +119,7 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/community'
+    | '/api/search'
     | '/docs/$'
     | '/docs/'
     | '/blog/$slug'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/community'
+    | '/api/search'
     | '/docs/$'
     | '/'
     | '/docs'
@@ -131,6 +142,7 @@ export interface FileRouteTypes {
     | '/_home'
     | '/docs'
     | '/_home/community'
+    | '/api/search'
     | '/docs/$'
     | '/_home/'
     | '/docs/'
@@ -143,6 +155,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   HomeRouteRoute: typeof HomeRouteRouteWithChildren
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
+  ApiSearchRoute: typeof ApiSearchRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -174,6 +187,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/community'
       preLoaderRoute: typeof HomeCommunityRouteImport
       parentRoute: typeof HomeRouteRoute
+    }
+    '/api/search': {
+      id: '/api/search'
+      path: '/api/search'
+      fullPath: '/api/search'
+      preLoaderRoute: typeof ApiSearchRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/docs/': {
       id: '/docs/'
@@ -259,6 +279,7 @@ const DocsRouteRouteWithChildren = DocsRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   HomeRouteRoute: HomeRouteRouteWithChildren,
   DocsRouteRoute: DocsRouteRouteWithChildren,
+  ApiSearchRoute: ApiSearchRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
