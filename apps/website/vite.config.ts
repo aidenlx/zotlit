@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
+import { markdownEditionPages } from "./src/lib/prerender-pages.ts";
 import {
   renderHeadersFile,
   renderRedirectsFile,
@@ -55,7 +56,18 @@ export default defineConfig({
     fumadocsMdx(),
     cloudflareAssetRules(),
     cloudflare({ viteEnvironment: { name: "ssr" } }),
-    tanstackStart(),
+    // The Markdown surface prerenders into the client output, so the asset
+    // layer answers every `.md`, `/llms.mdx`, and `llms*.txt` request without
+    // invoking the Worker. Discovery stays off: the page routes are listed
+    // here deliberately, and the HTML routes still render on the Worker.
+    tanstackStart({
+      pages: markdownEditionPages(import.meta.dirname),
+      prerender: {
+        enabled: true,
+        autoStaticPathsDiscovery: false,
+        crawlLinks: false,
+      },
+    }),
     viteReact(),
   ],
 });
