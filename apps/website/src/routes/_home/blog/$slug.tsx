@@ -1,12 +1,16 @@
-import { Link, createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
+import { BackCrumb } from "@/components/back-crumb.tsx";
 import { Comments } from "@/components/comments.tsx";
 import { getMDXComponents } from "@/components/mdx.tsx";
+import { FooterCards } from "@/layouts/docs/page/slots/footer.tsx";
+import { cn } from "@/lib/cn.ts";
+import { ztProse } from "@/lib/prose.ts";
 import { pageHead } from "@/lib/seo.ts";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared.ts";
-import { blog } from "@/lib/source.ts";
+import { blog, getBlogPages } from "@/lib/source.ts";
 import {
   blogPostingSchema,
   breadcrumbListSchema,
@@ -17,6 +21,13 @@ const getPost = createServerFn({ method: "GET" })
   .handler(({ data: slug }) => {
     const page = blog.getPage([slug]);
     if (!page) throw notFound();
+    // getBlogPages() runs newest-first, so the neighbour after this post in
+    // the list is the older one and the neighbour before it is the newer one.
+    const pages = getBlogPages();
+    const index = pages.findIndex((entry) => entry.url === page.url);
+    const neighbour = (entry: (typeof pages)[number] | undefined) =>
+      entry && { name: entry.data.title, url: entry.url };
+
     return {
       path: page.path,
       url: page.url,
@@ -25,6 +36,8 @@ const getPost = createServerFn({ method: "GET" })
       description: page.data.description,
       author: page.data.author,
       date: page.data.date,
+      older: neighbour(pages[index + 1]),
+      newer: neighbour(index > 0 ? pages[index - 1] : undefined),
     };
   });
 
@@ -75,27 +88,39 @@ function BlogPost() {
   const Body = postBody.getComponent(post.path);
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-14">
-      <p>
-        <Link to="/blog" className="text-fd-muted-foreground">
-          ← Blog
-        </Link>
-      </p>
-      <article>
-        <h1 className="mt-6 mb-2 text-4xl font-medium text-balance">
-          {post.title}
-        </h1>
-        {post.description && (
-          <p className="text-lg text-fd-muted-foreground">{post.description}</p>
-        )}
-        <p className="mt-2 mb-8 font-mono text-xs tracking-widest text-fd-muted-foreground uppercase">
-          {formatReleaseDate(post.date)} · by {post.author}
-        </p>
-        <div className="prose">
-          <Body />
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
+      <article className="pb-14">
+        <BackCrumb to="/blog" label="Blog" />
+        <header className="pt-4.5 pb-2">
+          <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance">
+            {post.title}
+          </h1>
+          {post.description && (
+            <p className="mb-2.5 text-lg text-fd-muted-foreground italic">
+              {post.description}
+            </p>
+          )}
+          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
+            {formatReleaseDate(post.date)} · by {post.author}
+          </p>
+        </header>
+        <div className="border-t border-fd-border pt-6">
+          <div className={cn("prose max-w-none", ztProse)}>
+            <Body />
+          </div>
         </div>
-        {/* `mapping="specific"` keyed on the path, so a thread stays with its post. */}
-        <Comments term={post.url.replace("/", "")} className="mt-10" />
+
+        <footer className="font-sans">
+          {(post.older ?? post.newer) && (
+            <FooterCards
+              className="mt-10"
+              previous={post.older}
+              next={post.newer}
+            />
+          )}
+          {/* `mapping="specific"` keyed on the path, so a thread stays with its post. */}
+          <Comments term={post.url.replace("/", "")} className="mt-10" />
+        </footer>
       </article>
     </main>
   );

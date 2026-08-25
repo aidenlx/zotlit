@@ -1,14 +1,14 @@
-import {
-  Link,
-  createFileRoute,
-  notFound,
-  redirect,
-} from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
+import { ArrowUpRight } from "lucide-react";
 
+import { BackCrumb } from "@/components/back-crumb.tsx";
+import { CompanionNote } from "@/components/companion-note.tsx";
 import { getMDXComponents } from "@/components/mdx.tsx";
 import { betaFallbackUrl } from "@/lib/beta-fallback.ts";
+import { cn } from "@/lib/cn.ts";
+import { changelogProseRoles } from "@/lib/prose.ts";
 import { pageHead } from "@/lib/seo.ts";
 import {
   appName,
@@ -96,45 +96,45 @@ function ChangelogVersion() {
   const Body = releaseBody.getComponent(release.path);
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-14">
-      <p>
-        <Link to="/changelog" className="text-fd-muted-foreground">
-          ← Changelog
-        </Link>
-      </p>
-      <article>
-        <h1 className="mt-6 mb-2 text-4xl font-medium">
-          v{release.version}
-          {release.latest && (
-            <span className="ml-3 border border-fd-primary px-2 py-0.5 font-mono text-xs text-fd-primary">
-              latest
-            </span>
-          )}
-        </h1>
-        <p className="font-mono text-xs tracking-widest text-fd-muted-foreground uppercase">
-          {formatReleaseDate(release.date)}
-        </p>
-        {release.companion && (
-          <p className="mt-2 text-fd-muted-foreground">
-            Companion {release.companion} released alongside.
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
+      <article className="pb-14">
+        <BackCrumb to="/changelog" label="Changelog" />
+        <header className="pt-4.5 pb-2">
+          <h1 className="mb-2.5 flex flex-wrap items-baseline gap-4 text-4xl font-medium">
+            v{release.version}
+            {release.latest && (
+              <span className="border border-fd-primary px-2.5 py-0.5 font-mono text-xs tracking-[0.04em] text-fd-primary">
+                latest
+              </span>
+            )}
+          </h1>
+          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
+            {formatReleaseDate(release.date)}
+          </p>
+        </header>
+        {release.companion && <CompanionNote version={release.companion} />}
+        {release.description && (
+          <p className="mt-3.5 mb-1.5 text-fd-muted-foreground italic">
+            {release.description}
           </p>
         )}
-        {release.description && (
-          <p className="mt-2 text-fd-muted-foreground">{release.description}</p>
-        )}
-        <div className="prose mt-8">
+        <div
+          className={cn(
+            changelogProseRoles,
+            "mt-6 prose-h2:mt-10 prose-h2:mb-3 prose-h2:text-sm prose-h2:tracking-[0.18em] prose-h2:before:mr-2.5 prose-h2:before:h-3.5 prose-h3:mt-6 prose-h3:mb-1.5 prose-h3:text-lg prose-p:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-1 prose-li:leading-[1.6]",
+          )}
+        >
           <Body />
         </div>
-        <p className="mt-8">
-          <a
-            href={`${repoUrl}/releases/tag/${release.version}`}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="text-fd-primary"
-          >
-            Open release on GitHub →
-          </a>
-        </p>
+        <a
+          href={`${repoUrl}/releases/tag/${release.version}`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="mt-6.5 inline-flex items-center gap-2 border border-fd-border bg-fd-card px-4.5 py-2.25 text-[15px] hover:border-fd-primary hover:text-fd-primary"
+        >
+          Open release on GitHub
+          <ArrowUpRight aria-hidden className="size-[1.05em] shrink-0" />
+        </a>
       </article>
     </main>
   );

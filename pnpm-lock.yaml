@@ -6,6 +6,12 @@ settings:
 
 catalogs:
   default:
+    '@base-ui/react':
+      specifier: ^1.6.0
+      version: 1.6.0
+    '@fuma-translate/react':
+      specifier: ^1.0.2
+      version: 1.0.2
     '@logtape/logtape':
       specifier: ^2.0.7
       version: 2.1.0
@@ -45,6 +51,9 @@ catalogs:
     arkregex:
       specifier: ^0.0.5
       version: 0.0.5
+    class-variance-authority:
+      specifier: ^0.7.1
+      version: 0.7.1
     cross-env:
       specifier: ^10.1.0
       version: 10.1.0
@@ -180,10 +189,10 @@ importers:
   apps/docs:
     dependencies:
       '@base-ui/react':
-        specifier: ^1.6.0
+        specifier: 'catalog:'
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@fuma-translate/react':
-        specifier: ^1.0.2
+        specifier: 'catalog:'
         version: 1.0.2(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@giscus/react':
         specifier: ^3.1.0
@@ -195,7 +204,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/scripts
       class-variance-authority:
-        specifier: ^0.7.1
+        specifier: 'catalog:'
         version: 0.7.1
       cnfast:
         specifier: ^0.0.8
@@ -475,6 +484,21 @@ importers:
 
   apps/website:
     dependencies:
+      '@base-ui/react':
+        specifier: 'catalog:'
+        version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@fontsource-variable/gelasio':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/inter':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/ibm-plex-mono':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fuma-translate/react':
+        specifier: 'catalog:'
+        version: 1.0.2(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@giscus/react':
         specifier: ^3.1.0
         version: 3.1.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -496,6 +520,9 @@ importers:
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
+      class-variance-authority:
+        specifier: 'catalog:'
+        version: 0.7.1
       cnfast:
         specifier: ^0.1.0
         version: 0.1.0
@@ -2116,6 +2143,15 @@ packages:
   '@fluent/syntax@0.19.0':
     resolution: {integrity: sha512-5D2qVpZrgpjtqU4eNOcWGp1gnUCgjfM+vKGE2y03kKN6z5EBhtx0qdRFbg8QuNNj8wXNoX93KJoYb+NqoxswmQ==}
     engines: {node: '>=14.0.0', npm: '>=7.0.0'}
+
+  '@fontsource-variable/gelasio@5.3.0':
+    resolution: {integrity: sha512-RUfwJwntddu2U1e4B+ric2wxp0knkN501+7xYbec5Uo97wwPVfCAcK4AfQaB9xhi4S+4onQbbB5VVVC7MOHz/A==}
+
+  '@fontsource-variable/inter@5.3.0':
+    resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
+
+  '@fontsource/ibm-plex-mono@5.3.0':
+    resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
 
   '@fuma-translate/react@1.0.2':
     resolution: {integrity: sha512-uOiOtBx3nRXR8Nu1GzBf1tApgF1FErDBTHxRIAQeyQdyOoZbrNRN6H4kDCWObY4qyGeGbHydG0DHzgeUgFDMIw==}
@@ -9091,6 +9127,12 @@ snapshots:
   '@floating-ui/utils@0.2.12': {}
 
   '@fluent/syntax@0.19.0': {}
+
+  '@fontsource-variable/gelasio@5.3.0': {}
+
+  '@fontsource-variable/inter@5.3.0': {}
+
+  '@fontsource/ibm-plex-mono@5.3.0': {}
 
   '@fuma-translate/react@1.0.2(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:

@@ -13,6 +13,8 @@ allowBuilds:
   workerd: true
 
 catalog:
+  "@base-ui/react": ^1.6.0
+  "@fuma-translate/react": ^1.0.2
   "@logtape/logtape": ^2.0.7
   "@pnpm/find-workspace-dir": ^1000.1.5
   "@std/collections": jsr:1.2.0
@@ -26,6 +28,7 @@ catalog:
   "@types/semver": ^7.7.1
   ajv: ^8.20.0
   arkregex: ^0.0.5
+  class-variance-authority: ^0.7.1
   cross-env: ^10.1.0
   eta: 4.6.0
   drizzle-kit: 1.0.0-rc.4

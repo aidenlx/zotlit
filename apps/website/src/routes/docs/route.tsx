@@ -3,6 +3,13 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Root } from "fumadocs-core/page-tree";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 
+import { DocsSubnav } from "@/components/docs-subnav.tsx";
+import {
+  Sidebar,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/layouts/docs/slots/sidebar.tsx";
 import { baseOptions } from "@/lib/layout.shared.tsx";
 import { source } from "@/lib/source.ts";
 
@@ -27,6 +34,15 @@ function DocsShell() {
       tree={tree}
       {...baseOptions({ includeDocsLink: false })}
       sidebar={{ defaultOpenLevel: 1 }}
+      slots={{
+        header: DocsSubnav,
+        sidebar: {
+          provider: SidebarProvider,
+          root: Sidebar,
+          trigger: SidebarTrigger,
+          useSidebar,
+        },
+      }}
     >
       <Outlet />
     </DocsLayout>

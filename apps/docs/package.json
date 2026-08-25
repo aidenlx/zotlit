@@ -15,12 +15,12 @@
     "lint": "oxlint"
   },
   "dependencies": {
-    "@base-ui/react": "^1.6.0",
-    "@fuma-translate/react": "^1.0.2",
+    "@base-ui/react": "catalog:",
+    "@fuma-translate/react": "catalog:",
     "@giscus/react": "^3.1.0",
     "@vercel/analytics": "^2.0.1",
     "@zotlit/scripts": "workspace:*",
-    "class-variance-authority": "^0.7.1",
+    "class-variance-authority": "catalog:",
     "cnfast": "^0.0.8",
     "feed": "^6.0.0",
     "fflate": "catalog:",

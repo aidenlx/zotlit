@@ -6,14 +6,16 @@ import {
   UsersIcon,
 } from "lucide-react";
 
-import { appName, repoUrl } from "./shared.ts";
+import { Logo } from "@/components/logo.tsx";
+
+import { repoUrl } from "./shared.ts";
 
 /** Nav title and links shared by the home and docs layouts. */
 export function baseOptions({
   includeDocsLink = true,
 }: { includeDocsLink?: boolean } = {}): BaseLayoutProps {
   return {
-    nav: { title: appName },
+    nav: { title: <Logo small className="ml-1 text-lg" /> },
     links: [
       ...(includeDocsLink
         ? [{ text: "Docs", url: "/docs", icon: <BookIcon /> }]

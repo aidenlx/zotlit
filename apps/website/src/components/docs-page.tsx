@@ -17,10 +17,12 @@ import {
   DocsTitle,
 } from "fumadocs-ui/layouts/docs/page";
 
+import { DocsPageFooter } from "@/components/docs-page-footer.tsx";
 import { getMDXComponents } from "@/components/mdx.tsx";
 import { RedirectNotice } from "@/components/redirect-notice.tsx";
 import { ReleaseSnapshotProvider } from "@/components/release-snapshot.tsx";
 import { installPageSlugs } from "@/lib/github-releases.ts";
+import { ztProse } from "@/lib/prose.ts";
 import { getReleaseSnapshot } from "@/lib/release-data.ts";
 import type { ReleaseSnapshot } from "@/lib/release-data.ts";
 import { pageHead } from "@/lib/seo.ts";
@@ -61,11 +63,19 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
 export const docsBody = collections.docs.createClientLoader<object>({
   id: "docs",
   component: ({ toc, frontmatter, default: MDX }) => (
-    <DocsPage toc={toc} full={frontmatter.full}>
-      <DocsTitle>{frontmatter.title}</DocsTitle>
-      <DocsDescription>{frontmatter.description}</DocsDescription>
+    <DocsPage
+      toc={toc}
+      full={frontmatter.full}
+      slots={{ footer: DocsPageFooter }}
+    >
+      <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
+        {frontmatter.title}
+      </DocsTitle>
+      <DocsDescription className="mb-0 font-serif text-lg italic">
+        {frontmatter.description}
+      </DocsDescription>
       <RedirectNotice className="mb-6" />
-      <DocsBody>
+      <DocsBody className={ztProse}>
         <MDX components={getMDXComponents()} />
       </DocsBody>
     </DocsPage>

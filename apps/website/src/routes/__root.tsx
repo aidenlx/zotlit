@@ -1,9 +1,13 @@
+import gelasioLatinItalic from "@fontsource-variable/gelasio/files/gelasio-latin-wght-italic.woff2?url";
+import gelasioLatin from "@fontsource-variable/gelasio/files/gelasio-latin-wght-normal.woff2?url";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
+import { LegacyBanner } from "@/components/legacy-banner.tsx";
+import { Header } from "@/layouts/home/slots/header.tsx";
 import { baseOptions } from "@/lib/layout.shared.tsx";
 import { HOME_OG_ALT, ogImageMeta } from "@/lib/seo.ts";
 import { appDescription, appName, baseURL } from "@/lib/shared.ts";
@@ -38,7 +42,23 @@ export const Route = createRootRoute({
       { name: "twitter:description", content: appDescription },
       ...ogImageMeta("home", HOME_OG_ALT),
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      // Serif display paints on essentially every route, so both its latin
+      // faces are fetched eagerly — upright for headlines, italic for the lede
+      // and standfirst lines that ride beside them. Inter and IBM Plex Mono
+      // stay unpreloaded: both swap in from a system fallback of the same
+      // class. The Archivo wordmark needs no entry — it is small enough that
+      // Vite inlines it into the stylesheet.
+      // @see apps/docs/DESIGN.md → Font loading
+      ...[gelasioLatin, gelasioLatinItalic].map((href) => ({
+        rel: "preload",
+        as: "font",
+        type: "font/woff2",
+        crossOrigin: "anonymous" as const,
+        href,
+      })),
+    ],
   }),
   shellComponent: RootDocument,
   notFoundComponent: NotFound,
@@ -50,9 +70,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="flex min-h-screen flex-col">
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}
-        <RootProvider>{children}</RootProvider>
+        <RootProvider>
+          <LegacyBanner />
+          {children}
+        </RootProvider>
         {analyticsToken && (
           <script
             defer
@@ -77,7 +100,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
 function NotFound() {
   return (
-    <HomeLayout {...baseOptions()}>
+    // The owned header rides along, so the nav reads the same here as on every
+    // other surface — this page renders outside the `_home` shell.
+    <HomeLayout {...baseOptions()} slots={{ header: Header }}>
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-16">
         <h1 className="mb-2 text-3xl font-medium">Page not found</h1>
         <p className="text-fd-muted-foreground">

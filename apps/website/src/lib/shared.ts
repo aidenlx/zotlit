@@ -67,6 +67,15 @@ export const publishedOn = v.pipe(
 );
 
 /**
+ * The closing year of the footer's copyright range, read at render time.
+ * `Date` stands in for `Temporal` (policies/temporal-dates.md) because workerd
+ * carries no Temporal API.
+ */
+export function currentYear() {
+  return new Date().getFullYear();
+}
+
+/**
  * Publication day in the reader's long form. Collections normalize the day to
  * its ISO form (see `source.config.ts`), so the value parses as a UTC instant
  * and formats in UTC. `Date` stands in for `Temporal`
