@@ -10,6 +10,7 @@ allowBuilds:
   esbuild: true
   lefthook: true
   sharp: false
+  workerd: true
 
 catalog:
   "@logtape/logtape": ^2.0.7
