@@ -1,5 +1,8 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 
+import { RepoDatum } from "@/components/repo-datum.tsx";
+import { getRepoStats } from "@/lib/release-data.ts";
 import { HOME_OG_ALT, pageHead } from "@/lib/seo.ts";
 import { appDescription, appName } from "@/lib/shared.ts";
 import {
@@ -8,8 +11,14 @@ import {
   websiteSchema,
 } from "@/lib/structured-data.ts";
 
+/** Live star and download counts, fetched per request with ~1h edge caching. */
+const loadRepoStats = createServerFn({ method: "GET" }).handler(() =>
+  getRepoStats(),
+);
+
 export const Route = createFileRoute("/_home/")({
   component: Home,
+  loader: () => loadRepoStats(),
   head: () =>
     pageHead({
       ogTitle: appName,
@@ -59,6 +68,8 @@ const features = [
 ];
 
 function Home() {
+  const stats = Route.useLoaderData();
+
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 py-14">
       <h1 className="mb-4 text-4xl font-medium text-balance">
@@ -67,12 +78,13 @@ function Home() {
       <p className="mb-6 max-w-[60ch] text-lg text-fd-muted-foreground">
         {appDescription}
       </p>
-      <p className="mb-10 flex flex-wrap gap-4">
+      <p className="mb-6 flex flex-wrap gap-4">
         <Link to="/docs/$" params={{ _splat: "tutorial/first-note" }}>
           Get started
         </Link>
         <Link to="/docs">Read the docs</Link>
       </p>
+      <RepoDatum stats={stats} className="mb-10" />
 
       <dl className="border-t border-fd-border pt-6">
         {features.map((feature) => (

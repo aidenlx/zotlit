@@ -18,6 +18,11 @@ import {
 } from "fumadocs-ui/layouts/docs/page";
 
 import { getMDXComponents } from "@/components/mdx.tsx";
+import { RedirectNotice } from "@/components/redirect-notice.tsx";
+import { ReleaseSnapshotProvider } from "@/components/release-snapshot.tsx";
+import { installPageSlugs } from "@/lib/github-releases.ts";
+import { getReleaseSnapshot } from "@/lib/release-data.ts";
+import type { ReleaseSnapshot } from "@/lib/release-data.ts";
 import { pageHead } from "@/lib/seo.ts";
 import { appName, docsRoute } from "@/lib/shared.ts";
 import { source } from "@/lib/source.ts";
@@ -27,7 +32,7 @@ import { breadcrumbListSchema } from "@/lib/structured-data.ts";
 /** Resolves a docs URL to the collection file the client loader compiles, plus what the head needs. */
 export const resolveDocsPage = createServerFn({ method: "GET" })
   .validator((splat: string) => splat)
-  .handler(({ data: splat }) => {
+  .handler(async ({ data: splat }) => {
     const page = source.getPage(splat.split("/").filter(Boolean));
     if (!page) throw notFound();
 
@@ -45,6 +50,11 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       title: page.data.title,
       description: page.data.description,
       trail,
+      // Only the install pages carry request-time release facts; every other
+      // docs page prerenders, so it must not depend on a GitHub lookup.
+      snapshot: installPageSlugs.includes(page.slugs.join("/"))
+        ? await getReleaseSnapshot()
+        : null,
     };
   });
 
@@ -54,6 +64,7 @@ export const docsBody = collections.docs.createClientLoader<object>({
     <DocsPage toc={toc} full={frontmatter.full}>
       <DocsTitle>{frontmatter.title}</DocsTitle>
       <DocsDescription>{frontmatter.description}</DocsDescription>
+      <RedirectNotice className="mb-6" />
       <DocsBody>
         <MDX components={getMDXComponents()} />
       </DocsBody>
@@ -96,7 +107,17 @@ export function docsPageHead(page: DocsPageData | undefined) {
   });
 }
 
-export function DocsPageView({ path }: { path: string }) {
+export function DocsPageView({
+  path,
+  snapshot,
+}: {
+  path: string;
+  snapshot: ReleaseSnapshot | null;
+}) {
   const Body = docsBody.getComponent(path);
-  return <Body />;
+  return (
+    <ReleaseSnapshotProvider snapshot={snapshot}>
+      <Body />
+    </ReleaseSnapshotProvider>
+  );
 }

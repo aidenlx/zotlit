@@ -11,7 +11,7 @@ import type { Plugin } from "vite";
 import { agentSkillAssets } from "./src/lib/agent-skills.ts";
 import { createOgCardRenderer } from "./src/lib/og-card.tsx";
 import { ogCards } from "./src/lib/og-cards.ts";
-import { machineRoutePages } from "./src/lib/prerender-pages.ts";
+import { prerenderPages } from "./src/lib/prerender-pages.ts";
 import {
   renderHeadersFile,
   renderRedirectsFile,
@@ -129,12 +129,12 @@ export default defineConfig({
     cloudflareAssetRules(),
     machineAssets(),
     cloudflare({ viteEnvironment: { name: "ssr" } }),
-    // The Markdown surface and the SEO endpoints prerender into the client
-    // output, so the asset layer answers them without invoking the Worker.
-    // Discovery stays off: the page routes are listed here deliberately, and
-    // the HTML routes still render on the Worker.
+    // The Markdown surface, the SEO endpoints, and every build-time-safe HTML
+    // page prerender into the client output, so the asset layer answers them
+    // without invoking the Worker. Discovery stays off: the routes are listed
+    // deliberately, and the request-time ones stay off the list.
     tanstackStart({
-      pages: machineRoutePages(packageRoot),
+      pages: prerenderPages(packageRoot),
       prerender: {
         enabled: true,
         autoStaticPathsDiscovery: false,

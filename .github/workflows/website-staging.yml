@@ -3,9 +3,12 @@ name: Website Staging
 # Continuous staging deploys of the TanStack Start site to the `zotlit-docs`
 # worker on workers.dev, so every migration slice is inspectable in a real
 # environment. Production deploys stay deliberate; see issue #846.
+#
+# `next` carries the pre-release line, so a website change there deploys
+# Pre-release Docs — the `beta` wrangler environment, `zotlit-docs-beta`.
 on:
   push:
-    branches: [refactor/tanstack]
+    branches: [refactor/tanstack, next]
     paths:
       - "apps/website/**"
       - "pnpm-workspace.yaml"
@@ -16,14 +19,19 @@ on:
 permissions:
   contents: read
 
-# One deploy at a time: a queued run would otherwise overwrite a newer build.
+# One deploy at a time per line: a queued run would otherwise overwrite a newer
+# build, while the two lines deploy independently of each other.
 concurrency:
-  group: website-staging
+  group: website-staging-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      # The wrangler environment this branch deploys: `beta` for Pre-release
+      # Docs, empty for the production line, which is the top-level config.
+      WRANGLER_ENV: ${{ github.ref_name == 'next' && 'beta' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,11 +56,27 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-
 
+      # `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the
+      # beta build has to be its own; a build made without it carries the
+      # production line's variables whatever `wrangler deploy --env` says.
       - name: Build
-        run: pnpm turbo run build --filter=@zotlit/website
+        run: |
+          if [ -n "$WRANGLER_ENV" ]; then
+            export CLOUDFLARE_ENV="$WRANGLER_ENV"
+          fi
+          pnpm turbo run build --filter=@zotlit/website
+        env:
+          # Public Cloudflare Web Analytics site token; without it the built
+          # site serves no beacon.
+          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
 
       - name: Deploy
-        run: pnpm --filter @zotlit/website exec wrangler deploy
+        run: |
+          if [ -n "$WRANGLER_ENV" ]; then
+            pnpm --filter @zotlit/website exec wrangler deploy --env "$WRANGLER_ENV"
+          else
+            pnpm --filter @zotlit/website exec wrangler deploy
+          fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

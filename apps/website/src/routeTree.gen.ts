@@ -22,6 +22,7 @@ import { Route as ChangelogRssDotxmlRouteImport } from './routes/changelog/rss[.
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as LlmsDotmdxSplatRouteImport } from './routes/llms[.]mdx/$'
+import { Route as OgSplatRouteImport } from './routes/og/$'
 import { Route as HomeBlogIndexRouteImport } from './routes/_home/blog/index'
 import { Route as HomeBlogSlugRouteImport } from './routes/_home/blog/$slug'
 import { Route as HomeChangelogIndexRouteImport } from './routes/_home/changelog/index'
@@ -91,6 +92,11 @@ const LlmsDotmdxSplatRoute = LlmsDotmdxSplatRouteImport.update({
   path: '/llms.mdx/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OgSplatRoute = OgSplatRouteImport.update({
+  id: '/og/$',
+  path: '/og/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HomeBlogIndexRoute = HomeBlogIndexRouteImport.update({
   id: '/blog/',
   path: '/blog/',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
   '/llms.mdx/$': typeof LlmsDotmdxSplatRoute
+  '/og/$': typeof OgSplatRoute
   '/docs/': typeof DocsIndexRoute
   '/blog/$slug': typeof HomeBlogSlugRoute
   '/changelog/$version': typeof HomeChangelogVersionRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
   '/llms.mdx/$': typeof LlmsDotmdxSplatRoute
+  '/og/$': typeof OgSplatRoute
   '/': typeof HomeIndexRoute
   '/docs': typeof DocsIndexRoute
   '/blog/$slug': typeof HomeBlogSlugRoute
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
   '/llms.mdx/$': typeof LlmsDotmdxSplatRoute
+  '/og/$': typeof OgSplatRoute
   '/_home/': typeof HomeIndexRoute
   '/docs/': typeof DocsIndexRoute
   '/_home/blog/$slug': typeof HomeBlogSlugRoute
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/changelog/rss.xml'
     | '/docs/$'
     | '/llms.mdx/$'
+    | '/og/$'
     | '/docs/'
     | '/blog/$slug'
     | '/changelog/$version'
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
     | '/changelog/rss.xml'
     | '/docs/$'
     | '/llms.mdx/$'
+    | '/og/$'
     | '/'
     | '/docs'
     | '/blog/$slug'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/changelog/rss.xml'
     | '/docs/$'
     | '/llms.mdx/$'
+    | '/og/$'
     | '/_home/'
     | '/docs/'
     | '/_home/blog/$slug'
@@ -234,6 +246,7 @@ export interface RootRouteChildren {
   ApiSearchRoute: typeof ApiSearchRoute
   ChangelogRssDotxmlRoute: typeof ChangelogRssDotxmlRoute
   LlmsDotmdxSplatRoute: typeof LlmsDotmdxSplatRoute
+  OgSplatRoute: typeof OgSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -329,6 +342,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LlmsDotmdxSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/og/$': {
+      id: '/og/$'
+      path: '/og/$'
+      fullPath: '/og/$'
+      preLoaderRoute: typeof OgSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_home/blog/': {
       id: '/_home/blog/'
       path: '/blog'
@@ -406,6 +426,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSearchRoute: ApiSearchRoute,
   ChangelogRssDotxmlRoute: ChangelogRssDotxmlRoute,
   LlmsDotmdxSplatRoute: LlmsDotmdxSplatRoute,
+  OgSplatRoute: OgSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

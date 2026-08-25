@@ -13,5 +13,6 @@ export const Route = createFileRoute("/docs/")({
 });
 
 function DocsIndex() {
-  return <DocsPageView path={Route.useLoaderData().path} />;
+  const page = Route.useLoaderData();
+  return <DocsPageView path={page.path} snapshot={page.snapshot} />;
 }

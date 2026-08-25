@@ -12,7 +12,8 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { unstable_startWorker } from "wrangler";
 
-import { ogImageUrl } from "./lib/shared.ts";
+import { installPageSlugs } from "./lib/github-releases.ts";
+import { ogImageUrl, zotlitBetaUrl } from "./lib/shared.ts";
 import { getBlogPages, getChangelogPages, source } from "./lib/source.ts";
 import { buildV1Redirects } from "./lib/v1-redirects.ts";
 
@@ -23,8 +24,16 @@ const clientOutput = resolve(import.meta.dirname, "../dist/client");
 let worker: Awaited<ReturnType<typeof unstable_startWorker>>;
 
 /** `redirect: "manual"` so a redirect answers instead of being followed. */
-function get(path: string) {
-  return worker.fetch(`http://localhost${path}`, { redirect: "manual" });
+function get(path: string, headers?: Record<string, string>) {
+  return worker.fetch(`http://localhost${path}`, {
+    redirect: "manual",
+    headers,
+  });
+}
+
+/** A file in the client output is served by the asset layer, without the Worker. */
+function isPrerendered(path: string) {
+  return existsSync(resolve(clientOutput, path.slice(1), "index.html"));
 }
 
 beforeAll(async () => {
@@ -60,6 +69,133 @@ describe("page routes", () => {
     const response = await get("/no-such-page");
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("markdown negotiation", () => {
+  /** What an agent that wants Markdown over HTML sends. */
+  const prefersMarkdown = { accept: "text/markdown" };
+  /** What a browser sends. */
+  const prefersHtml = {
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  };
+
+  it.for([
+    "/docs",
+    "/docs/how-to/insert-citations",
+    "/changelog",
+    // A version slug carries dots of its own, which must not read as a file.
+    ...getChangelogPages().map((page) => page.url),
+    "/blog",
+    ...getBlogPages().map((page) => page.url),
+  ])("answers %s with its authored Markdown edition", async (path) => {
+    const response = await get(path, prefersMarkdown);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/markdown");
+    expect(await response.text()).toBe(await (await get(`${path}.md`)).text());
+  });
+
+  it.for(["/docs", "/docs/how-to/insert-citations", "/blog", "/changelog"])(
+    "answers %s with the prerendered page for a browser",
+    async (path) => {
+      const response = await get(path, prefersHtml);
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/html");
+      expect(isPrerendered(path)).toBe(true);
+    },
+  );
+
+  it("leaves a page with no Markdown edition on its HTML", async () => {
+    const response = await get("/community", prefersMarkdown);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("leaves the changelog feed alone", async () => {
+    // `/changelog/rss.xml` sits under the negotiated section but names a file.
+    const response = await get("/changelog/rss.xml", prefersMarkdown);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain(
+      "application/rss+xml",
+    );
+  });
+});
+
+/** A version this build never published; it exists only on the beta line. */
+const unpublished = "9.9.9-beta.0";
+
+/** Every URL that version is asked at: the page, both editions, and its card. */
+const unpublishedPaths = [
+  `/changelog/${unpublished}`,
+  `/changelog/${unpublished}.md`,
+  `/llms.mdx/changelog/${unpublished}/content.md`,
+  `/og/changelog/${unpublished}/image.webp`,
+];
+
+describe("pre-release docs fallback", () => {
+  it.for(unpublishedPaths)("sends %s to Pre-release Docs", async (path) => {
+    const response = await get(path);
+
+    expect(response.status).toBe(307);
+    // The `.md` suffix edition answers at the content route on the other line.
+    const target = path.endsWith(".md")
+      ? `/llms.mdx/changelog/${unpublished}/content.md`
+      : path;
+    expect(response.headers.get("location")).toBe(`${zotlitBetaUrl}${target}`);
+  });
+
+  it("answers a card outside the changelog with 404", async () => {
+    const response = await get("/og/no-such-type/no-such-page/image.webp");
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("pre-release docs line", () => {
+  // The same build served as Pre-release Docs: the gate is the `DOCS_LINE`
+  // Worker variable, so the beta line is this Worker with that variable set.
+  let betaWorker: Awaited<ReturnType<typeof unstable_startWorker>>;
+
+  beforeAll(async () => {
+    betaWorker = await unstable_startWorker({
+      config,
+      bindings: { DOCS_LINE: { type: "plain_text", value: "beta" } },
+      // Its own ports: the two workers run side by side, and both default to
+      // the same server and inspector port.
+      dev: { server: { port: 0 }, inspector: false },
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    await betaWorker?.dispose();
+  });
+
+  it.for(unpublishedPaths)("answers %s with 404", async (path) => {
+    // The beta line owns every version it publishes, so an unknown one is a
+    // plain 404 rather than a redirect to itself.
+    const response = await betaWorker.fetch(`http://localhost${path}`, {
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  // A version this build did publish still renders here; the 404s above are
+  // the missing version, not the beta line refusing the whole section.
+  it.for(
+    getChangelogPages()
+      .slice(0, 1)
+      .map((page) => page.url),
+  )("still renders %s", async (path) => {
+    const response = await betaWorker.fetch(`http://localhost${path}`, {
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(200);
   });
 });
 
@@ -154,6 +290,29 @@ describe("markdown editions", () => {
     const response = await get("/docs/no-such-page.md");
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("rendering shape", () => {
+  it.for([
+    "/docs",
+    "/docs/how-to/insert-citations",
+    "/blog",
+    ...getBlogPages().map((page) => page.url),
+    "/changelog",
+  ])("prerenders %s", (path) => {
+    expect(isPrerendered(path)).toBe(true);
+  });
+
+  it.for([
+    "/",
+    "/community",
+    ...installPageSlugs.map((slug) => `/docs/${slug}`),
+    ...getChangelogPages().map((page) => page.url),
+  ])("renders %s on the Worker", (path) => {
+    // These carry request-time behavior — GitHub-fresh data, or the
+    // Pre-release Docs fallback — so no prerendered file may shadow them.
+    expect(isPrerendered(path)).toBe(false);
   });
 });
 

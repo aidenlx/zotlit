@@ -475,6 +475,9 @@ importers:
 
   apps/website:
     dependencies:
+      '@giscus/react':
+        specifier: ^3.1.0
+        version: 3.1.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-devtools':
         specifier: ^0.10.12
         version: 0.10.12(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(csstype@3.2.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(solid-js@1.9.15)
@@ -560,6 +563,9 @@ importers:
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../../packages/scripts
+      cross-env:
+        specifier: 'catalog:'
+        version: 10.1.0
       fflate:
         specifier: 'catalog:'
         version: 0.8.3

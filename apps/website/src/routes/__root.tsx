@@ -9,6 +9,14 @@ import { HOME_OG_ALT, ogImageMeta } from "@/lib/seo.ts";
 import { appDescription, appName, baseURL } from "@/lib/shared.ts";
 import appCss from "@/styles.css?url";
 
+/**
+ * Cloudflare Web Analytics, the privacy-friendly counter that replaced Vercel
+ * Analytics at the move off Vercel. The site token is public — it identifies
+ * the property, not the account — and rides in at build time, so a checkout
+ * without one simply serves no beacon.
+ */
+const analyticsToken: string | undefined = import.meta.env.VITE_CF_BEACON_TOKEN;
+
 export const Route = createRootRoute({
   // Site-wide defaults. A page's own `head` overrides these tag by tag, so a
   // route only names what differs — see `src/lib/seo.ts`.
@@ -45,6 +53,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}
         <RootProvider>{children}</RootProvider>
+        {analyticsToken && (
+          <script
+            defer
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={JSON.stringify({ token: analyticsToken })}
+          />
+        )}
         <TanStackDevtools
           config={{ position: "bottom-right" }}
           plugins={[

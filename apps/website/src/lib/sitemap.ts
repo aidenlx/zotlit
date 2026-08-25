@@ -18,6 +18,7 @@ const machineRoutes = [
   "/llms.txt",
   "/llms-full.txt",
   "/llms.mdx/$",
+  "/og/$",
   "/robots.txt",
   "/sitemap.xml",
   "/changelog/rss.xml",

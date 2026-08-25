@@ -1,4 +1,5 @@
 import { ActionLink } from "@/components/action-link.tsx";
+import { useReleaseSnapshot } from "@/components/release-snapshot.tsx";
 import { releasesUrl } from "@/lib/github-releases.ts";
 import type { ReleaseChannel } from "@/lib/github-releases.ts";
 
@@ -7,16 +8,28 @@ export interface XpiDownloadProps {
 }
 
 /**
- * Download link for the newest companion `.xpi`. Resolving the exact asset
- * needs release facts from GitHub at request time, which the routing shell does
- * not fetch yet, so the link falls back to the releases listing — the same form
- * it takes whenever GitHub is unreachable.
+ * Direct download link for the newest companion `.xpi`, so readers skip the
+ * releases page. Falls back to the releases listing when the release could not
+ * be resolved — the channel has no release yet, or GitHub was unreachable.
  */
-// oxlint-disable-next-line no-unused-vars -- the props are the contract the MDX writes against
-export function XpiDownload(props: XpiDownloadProps) {
+export function XpiDownload({ channel = "pre-release" }: XpiDownloadProps) {
+  const companion = useReleaseSnapshot()?.companion[channel];
+
+  if (!companion) {
+    return (
+      <ActionLink href={releasesUrl} kind="external">
+        Browse releases for the latest <code>.xpi</code>
+      </ActionLink>
+    );
+  }
+
   return (
-    <ActionLink href={releasesUrl} kind="external">
-      Browse releases for the latest <code>.xpi</code>
+    <ActionLink
+      href={companion.xpiUrl}
+      kind="download"
+      filename={`zotlit-zotero-${companion.version}.xpi`}
+    >
+      Download the <code>.xpi</code>
     </ActionLink>
   );
 }

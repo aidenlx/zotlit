@@ -2,6 +2,7 @@ import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
+import { Comments } from "@/components/comments.tsx";
 import { getMDXComponents } from "@/components/mdx.tsx";
 import { pageHead } from "@/lib/seo.ts";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared.ts";
@@ -93,6 +94,8 @@ function BlogPost() {
         <div className="prose">
           <Body />
         </div>
+        {/* `mapping="specific"` keyed on the path, so a thread stays with its post. */}
+        <Comments term={post.url.replace("/", "")} className="mt-10" />
       </article>
     </main>
   );

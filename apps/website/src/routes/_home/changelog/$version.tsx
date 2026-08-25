@@ -1,8 +1,14 @@
-import { Link, createFileRoute, notFound } from "@tanstack/react-router";
+import {
+  Link,
+  createFileRoute,
+  notFound,
+  redirect,
+} from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
 import { getMDXComponents } from "@/components/mdx.tsx";
+import { betaFallbackUrl } from "@/lib/beta-fallback.ts";
 import { pageHead } from "@/lib/seo.ts";
 import {
   appName,
@@ -21,9 +27,13 @@ const getRelease = createServerFn({ method: "GET" })
   .validator((version: string) => version)
   .handler(({ data: version }) => {
     const page = changelog.getPage([version]);
-    // A version this build never published still lives on Pre-release Docs;
-    // that fallback lands with the dynamic-parity slice (issue #852).
-    if (!page) throw notFound();
+    if (!page) {
+      // A version this build never published still lives on Pre-release Docs.
+      const href = betaFallbackUrl(`${changelogRoute}/${version}`);
+      throw href === undefined
+        ? notFound()
+        : redirect({ href, statusCode: 307 });
+    }
     return {
       path: page.path,
       url: page.url,

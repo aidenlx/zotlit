@@ -7,11 +7,12 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 
+import { betaFallbackResponse } from "@/lib/beta-fallback.ts";
 import {
   getMarkdownEdition,
   markdownHeaders,
 } from "@/lib/markdown-editions.ts";
-import { parseContentRoute } from "@/lib/markdown-routes.ts";
+import { contentRouteUrl, parseContentRoute } from "@/lib/markdown-routes.ts";
 
 export const Route = createFileRoute("/llms.mdx/$")({
   server: {
@@ -20,7 +21,11 @@ export const Route = createFileRoute("/llms.mdx/$")({
         const page = parseContentRoute(params._splat ?? "");
         const edition = page && (await getMarkdownEdition(page));
         if (edition === undefined) {
-          return new Response("Not found", { status: 404 });
+          // A changelog version this build never published still has an
+          // edition on Pre-release Docs.
+          return page?.section === "changelog" && page.slugs.length > 0
+            ? betaFallbackResponse(contentRouteUrl(page))
+            : new Response("Not found", { status: 404 });
         }
 
         return new Response(edition, { headers: markdownHeaders });

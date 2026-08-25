@@ -6,9 +6,11 @@
 // suffix edition onto the content route before the router matches, the way
 // the Next.js site's proxy rewrote it.
 //
-// Three callers share this scheme, which is why it lives apart from the
+// Four callers share this scheme, which is why it lives apart from the
 // editions themselves: the router (client and server), the `/llms.mdx` route
-// handler, and the build's prerender list.
+// handler, the build's prerender list, and the Worker's Accept negotiation.
+
+import { changelogFeedRoute } from "./shared.ts";
 
 /** The content sections that publish a Markdown edition. */
 export const markdownSections = ["docs", "changelog", "blog"] as const;
@@ -49,6 +51,25 @@ export function parseContentRoute(splat: string): MarkdownPage | undefined {
   if (section === undefined || !isMarkdownSection(section)) return undefined;
 
   return { section, slugs };
+}
+
+/**
+ * The content route a bare page path negotiates to, or undefined when the path
+ * publishes no Markdown edition: the landing and community pages, every machine
+ * endpoint, and the two things under a section that name a file rather than a
+ * page — a `.md` suffix edition, which is already the edition, and the
+ * changelog feed. A page slug is free to carry dots of its own (`/changelog/
+ * 2.1.0`, `/blog/v2.1-release`), so the extension cannot be guessed from one.
+ */
+export function negotiatedContentRoute(pathname: string): string | undefined {
+  if (pathname.endsWith(suffix) || pathname === changelogFeedRoute) {
+    return undefined;
+  }
+
+  const [section, ...slugs] = pathname.split("/").filter(Boolean);
+  if (section === undefined || !isMarkdownSection(section)) return undefined;
+
+  return contentRouteUrl({ section, slugs });
 }
 
 /**

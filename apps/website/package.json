@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
+    "deploy:beta": "cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
     "cf-typegen": "wrangler types",
     "postinstall": "fumadocs-mdx",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
@@ -15,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@giscus/react": "^3.1.0",
     "@tanstack/react-devtools": "^0.10.12",
     "@tanstack/react-router": "^1.170.31",
     "@tanstack/react-router-devtools": "^1.167.1",
@@ -45,6 +47,7 @@
     "@zotlit/config": "workspace:*",
     "@zotlit/db": "workspace:*",
     "@zotlit/scripts": "workspace:*",
+    "cross-env": "catalog:",
     "fflate": "catalog:",
     "oxlint": "catalog:",
     "schema-dts": "^2.0.0",

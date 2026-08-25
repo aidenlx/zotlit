@@ -19,7 +19,10 @@ export const gitConfig = {
   branch: "main",
 };
 
-export const repoUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
+/** `owner/name`, the form GitHub's API and giscus both name the repository by. */
+export const repoSlug = `${gitConfig.user}/${gitConfig.repo}` as const;
+
+export const repoUrl = `https://github.com/${repoSlug}`;
 
 /** The frozen v1 site; every v1-only permalink still resolves there. */
 export const zotlitLegacyUrl = "https://zotlit-v1.aidenlx.site";
@@ -76,4 +79,19 @@ export function formatReleaseDate(isoDay: string) {
     month: "long",
     day: "numeric",
   }).format(new Date(`${isoDay}T00:00:00Z`));
+}
+
+/**
+ * Publication day in the reader's short form, from the ISO instant GitHub
+ * stamps a release with; the day is read in UTC, as the long form is. `Date`
+ * stands in for `Temporal` (policies/temporal-dates.md) because workerd carries
+ * no Temporal API.
+ */
+export function formatReleaseInstant(iso: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(iso));
 }

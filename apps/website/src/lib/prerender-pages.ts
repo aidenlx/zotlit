@@ -5,8 +5,14 @@
 // invocation. `src/lib/content-scan.ts` supplies the content side of the list;
 // `src/http.test.ts` asserts the built site carries a prerendered file for
 // every page the loaders publish.
+//
+// What is missing from the list is the other half of the shape: the landing
+// page, the community page, the two install docs pages, and the per-version
+// changelog page all carry request-time behavior, so they render on the Worker.
+// @see docs/adr/0025-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { scanContent } from "./content-scan.ts";
+import { installPageSlugs } from "./github-releases.ts";
 import type { MarkdownSection } from "./markdown-routes.ts";
 import {
   contentRouteUrl,
@@ -33,18 +39,16 @@ const seoPages: PrerenderPage[] = [
   { path: "/changelog/rss.xml" },
 ];
 
-/**
- * Every build-time-safe machine route, for the build to prerender.
- * @param packageRoot the app's own root, which `vite.config.ts` owns.
- */
-export function machineRoutePages(packageRoot: string): PrerenderPage[] {
+/** Every build-time-safe machine route. */
+function machineRoutePages(
+  content: Record<MarkdownSection, { slugs: string[] }[]>,
+): PrerenderPage[] {
   const pages: PrerenderPage[] = [
     ...seoPages,
     { path: "/llms.txt" },
     { path: "/llms-full.txt" },
   ];
 
-  const content = scanContent(packageRoot);
   for (const section of markdownSections) {
     const slugSets = content[section].map((entry) => entry.slugs);
     if (landingSections.includes(section)) slugSets.push([]);
@@ -57,4 +61,31 @@ export function machineRoutePages(packageRoot: string): PrerenderPage[] {
   }
 
   return pages;
+}
+
+/**
+ * The HTML pages whose body is settled at build time: the whole docs tree bar
+ * the install pages, the blog and its posts, and the changelog index.
+ */
+function htmlPages(
+  content: Record<MarkdownSection, { slugs: string[] }[]>,
+): PrerenderPage[] {
+  const docs = content.docs
+    .filter((entry) => !installPageSlugs.includes(entry.slugs.join("/")))
+    .map((entry) => ({ path: `/${["docs", ...entry.slugs].join("/")}` }));
+  const blog = content.blog.map((entry) => ({
+    path: `/${["blog", ...entry.slugs].join("/")}`,
+  }));
+
+  return [...docs, ...blog, { path: "/blog" }, { path: "/changelog" }];
+}
+
+/**
+ * Every route the build prerenders into the client output.
+ * @param packageRoot the app's own root, which `vite.config.ts` owns.
+ */
+export function prerenderPages(packageRoot: string): PrerenderPage[] {
+  const content = scanContent(packageRoot);
+
+  return [...machineRoutePages(content), ...htmlPages(content)];
 }
