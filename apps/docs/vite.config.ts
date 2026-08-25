@@ -119,15 +119,15 @@ export default defineConfig({
   optimizeDeps: {
     include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
   },
+  // Both aliases are declared here rather than through
+  // `resolve.tsconfigPaths`, which under Vite 8 leaves the `paths` in
+  // `tsconfig.app.json` unresolved.
   resolve: {
     alias: {
       "@": resolve(packageRoot, "src"),
       // fumadocs-mdx writes its collection index files under `.source`
       collections: resolve(packageRoot, ".source"),
     },
-    // vite 8 seems to have trouble with tsconfigPaths + tsconfig.app.json
-    // define explictly for now
-    // tsconfigPaths: true,
   },
   plugins: [
     devtools(),

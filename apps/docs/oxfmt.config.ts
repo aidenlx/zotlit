@@ -6,6 +6,7 @@ export default defineConfig({
   ...baseConfig,
   sortTailwindcss: {
     stylesheet: "./src/styles.css",
+    functions: ["cn"],
   },
   ignorePatterns: [
     ...baseConfig.ignorePatterns,

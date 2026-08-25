@@ -17,17 +17,20 @@ import {
   DocsTitle,
 } from "fumadocs-ui/layouts/docs/page";
 
+import { DocsAvailability } from "@/components/docs-availability.tsx";
 import { DocsPageFooter } from "@/components/docs-page-footer.tsx";
 import { getMDXComponents } from "@/components/mdx.tsx";
 import { RedirectNotice } from "@/components/redirect-notice.tsx";
 import { ReleaseSnapshotProvider } from "@/components/release-snapshot.tsx";
+import { getDocsAvailability } from "@/lib/docs-availability.ts";
+import type { DocsAvailability as Availability } from "@/lib/docs-availability.ts";
 import { installPageSlugs } from "@/lib/github-releases.ts";
 import { ztProse } from "@/lib/prose.ts";
 import { getReleaseSnapshot } from "@/lib/release-data.ts";
 import type { ReleaseSnapshot } from "@/lib/release-data.ts";
 import { pageHead } from "@/lib/seo.ts";
 import { appName, docsRoute } from "@/lib/shared.ts";
-import { source } from "@/lib/source.ts";
+import { changelog, source } from "@/lib/source.ts";
 import type { Crumb } from "@/lib/structured-data.ts";
 import { breadcrumbListSchema } from "@/lib/structured-data.ts";
 
@@ -38,6 +41,7 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
     const page = source.getPage(splat.split("/").filter(Boolean));
     if (!page) throw notFound();
 
+    const availability = getDocsAvailability(page.data.introduced);
     const trail = getBreadcrumbItems(page.url, source.pageTree, {
       includePage: true,
     }).filter(
@@ -52,6 +56,10 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       title: page.data.title,
       description: page.data.description,
       trail,
+      availability,
+      changelogUrl: availability
+        ? changelog.getPage([availability.introduced])?.url
+        : undefined,
       // Only the install pages carry request-time release facts; every other
       // docs page prerenders, so it must not depend on a GitHub lookup.
       snapshot: installPageSlugs.includes(page.slugs.join("/"))
@@ -60,9 +68,18 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
     };
   });
 
-export const docsBody = collections.docs.createClientLoader<object>({
+/** What the compiled body needs beyond the module: the page's release history. */
+interface DocsBodyProps {
+  availability?: Availability;
+  changelogUrl?: string;
+}
+
+export const docsBody = collections.docs.createClientLoader<DocsBodyProps>({
   id: "docs",
-  component: ({ toc, frontmatter, default: MDX }) => (
+  component: (
+    { toc, frontmatter, default: MDX },
+    { availability, changelogUrl },
+  ) => (
     <DocsPage
       toc={toc}
       full={frontmatter.full}
@@ -74,6 +91,10 @@ export const docsBody = collections.docs.createClientLoader<object>({
       <DocsDescription className="mb-0 font-serif text-lg italic">
         {frontmatter.description}
       </DocsDescription>
+      <DocsAvailability
+        availability={availability}
+        changelogUrl={changelogUrl}
+      />
       <RedirectNotice className="mb-6" />
       <DocsBody className={ztProse}>
         <MDX components={getMDXComponents()} />
@@ -120,14 +141,16 @@ export function docsPageHead(page: DocsPageData | undefined) {
 export function DocsPageView({
   path,
   snapshot,
-}: {
+  availability,
+  changelogUrl,
+}: DocsBodyProps & {
   path: string;
   snapshot: ReleaseSnapshot | null;
 }) {
   const Body = docsBody.getComponent(path);
   return (
     <ReleaseSnapshotProvider snapshot={snapshot}>
-      <Body />
+      <Body availability={availability} changelogUrl={changelogUrl} />
     </ReleaseSnapshotProvider>
   );
 }

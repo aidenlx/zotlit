@@ -8,6 +8,10 @@
 
 import { llms } from "fumadocs-core/source";
 
+import {
+  getDocsAvailability,
+  renderAvailabilityMarkdown,
+} from "./docs-availability.ts";
 import type { MarkdownPage } from "./markdown-routes.ts";
 import {
   blog,
@@ -33,11 +37,24 @@ interface EditionPage {
   data: { getText: (kind: "processed") => Promise<string> };
 }
 
-/** Title line, page URL, then the processed Markdown body. */
-async function renderPage(heading: string, page: EditionPage) {
+/** Title line, page URL, an optional preamble, then the processed Markdown body. */
+async function renderPage(heading: string, page: EditionPage, preamble = "") {
   return `# ${heading} (${page.url})
 
-${await page.data.getText("processed")}`;
+${preamble}${await page.data.getText("processed")}`;
+}
+
+/**
+ * A docs page's edition, led by its `_Available since ZotLit …._` line. The
+ * preamble is empty for a page with no Introduced Release yet — see ADR 0002.
+ */
+function renderDocsPage(page: (typeof source)["$inferPage"]) {
+  const availability = getDocsAvailability(page.data.introduced);
+  const preamble = availability
+    ? `${renderAvailabilityMarkdown(availability, changelog.getPage([availability.introduced])?.url)}\n\n`
+    : "";
+
+  return renderPage(page.data.title, page, preamble);
 }
 
 /** Markdown listing under `heading`, each page linked to its `.md` edition. */
@@ -72,7 +89,7 @@ export async function getMarkdownEdition({
     case "docs": {
       // The docs index is a page of its own, so it needs no generated listing.
       const page = source.getPage(slugs);
-      return page && renderPage(page.data.title, page);
+      return page && renderDocsPage(page);
     }
     case "changelog": {
       if (slugs.length === 0) {
@@ -106,9 +123,7 @@ export function getLlmsIndex() {
 
 /** `llms-full.txt`: every docs page's edition, concatenated. */
 export async function getLlmsFullText() {
-  const editions = await Promise.all(
-    source.getPages().map((page) => renderPage(page.data.title, page)),
-  );
+  const editions = await Promise.all(source.getPages().map(renderDocsPage));
 
   return editions.join("\n\n");
 }

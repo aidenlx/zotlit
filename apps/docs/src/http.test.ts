@@ -286,6 +286,13 @@ describe("markdown editions", () => {
     }
   });
 
+  it("leads a released page with its availability preamble", async () => {
+    const preamble = "_Available since ZotLit [2.0.0](/changelog/2.0.0)._";
+
+    expect(await markdown("/docs/reference/commands.md")).toContain(preamble);
+    expect(await index("/llms-full.txt")).toContain(preamble);
+  });
+
   it("answers an unknown edition with 404", async () => {
     const response = await get("/docs/no-such-page.md");
 
@@ -502,6 +509,38 @@ describe("structured data", () => {
     );
 
     expect(types).toEqual(["BreadcrumbList"]);
+  });
+});
+
+describe("release availability", () => {
+  async function html(path: string) {
+    const response = await get(path);
+
+    expect(response.status).toBe(200);
+    return response.text();
+  }
+
+  it("states when a released page became available", async () => {
+    const page = await html("/docs/reference/commands");
+
+    expect(page).toContain("Available since");
+    expect(page).toContain(">2.0.0<");
+    expect(page).toContain('href="/changelog/2.0.0"');
+  });
+
+  it("leaves a page with no Introduced Release without the row", async () => {
+    // The docs index is a Section Index page — it carries no availability
+    // metadata at all, see ADR 0002.
+    expect(await html("/docs")).not.toContain("Available since");
+  });
+
+  it("pills the sidebar entries of the current Docs Release Line", async () => {
+    const page = await html("/docs");
+
+    // `theme-hooks` was introduced in the Docs Release Line, `commands` only
+    // materially changed in it.
+    expect(page).toContain('data-availability="new"');
+    expect(page).toContain('data-availability="updated"');
   });
 });
 
