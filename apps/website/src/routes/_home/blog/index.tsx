@@ -1,8 +1,10 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
-import { formatReleaseDate } from "@/lib/shared.ts";
+import { pageHead } from "@/lib/seo.ts";
+import { appName, blogRoute, formatReleaseDate } from "@/lib/shared.ts";
 import { getBlogPages } from "@/lib/source.ts";
+import { breadcrumbListSchema } from "@/lib/structured-data.ts";
 
 const listPosts = createServerFn({ method: "GET" }).handler(() =>
   getBlogPages().map((page) => ({
@@ -14,9 +16,22 @@ const listPosts = createServerFn({ method: "GET" }).handler(() =>
   })),
 );
 
+const crumbs = [
+  { name: appName, url: "/" },
+  { name: "Blog", url: blogRoute },
+];
+
 export const Route = createFileRoute("/_home/blog/")({
   component: BlogIndex,
   loader: () => listPosts(),
+  head: () =>
+    pageHead({
+      title: "Blog",
+      description: "Notes from building ZotLit.",
+      path: blogRoute,
+      card: { type: "blog", alt: "ZotLit Blog" },
+      schemas: [breadcrumbListSchema(crumbs)],
+    }),
 });
 
 function BlogIndex() {

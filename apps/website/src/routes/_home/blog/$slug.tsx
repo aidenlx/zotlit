@@ -3,8 +3,13 @@ import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
 import { getMDXComponents } from "@/components/mdx.tsx";
-import { formatReleaseDate } from "@/lib/shared.ts";
+import { pageHead } from "@/lib/seo.ts";
+import { appName, blogRoute, formatReleaseDate } from "@/lib/shared.ts";
 import { blog } from "@/lib/source.ts";
+import {
+  blogPostingSchema,
+  breadcrumbListSchema,
+} from "@/lib/structured-data.ts";
 
 const getPost = createServerFn({ method: "GET" })
   .validator((slug: string) => slug)
@@ -13,6 +18,8 @@ const getPost = createServerFn({ method: "GET" })
     if (!page) throw notFound();
     return {
       path: page.path,
+      url: page.url,
+      slugs: page.slugs,
       title: page.data.title,
       description: page.data.description,
       author: page.data.author,
@@ -32,6 +39,34 @@ export const Route = createFileRoute("/_home/blog/$slug")({
     await postBody.preload(post.path);
     return post;
   },
+  head: ({ loaderData: post }) =>
+    post === undefined
+      ? {}
+      : pageHead({
+          title: post.title,
+          description: post.description,
+          path: post.url,
+          card: {
+            type: "blog",
+            slugs: post.slugs,
+            alt: `${post.title} — ZotLit blog`,
+          },
+          article: { publishedTime: post.date, authors: [post.author] },
+          schemas: [
+            blogPostingSchema({
+              title: post.title,
+              description: post.description,
+              author: post.author,
+              date: post.date,
+              url: post.url,
+            }),
+            breadcrumbListSchema([
+              { name: appName, url: "/" },
+              { name: "Blog", url: blogRoute },
+              { name: post.title, url: post.url },
+            ]),
+          ],
+        }),
 });
 
 function BlogPost() {

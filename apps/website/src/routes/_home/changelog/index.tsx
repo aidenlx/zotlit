@@ -3,8 +3,15 @@ import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
 import { getMDXComponents } from "@/components/mdx.tsx";
-import { formatReleaseDate } from "@/lib/shared.ts";
+import { pageHead } from "@/lib/seo.ts";
+import {
+  appName,
+  changelogFeedRoute,
+  changelogRoute,
+  formatReleaseDate,
+} from "@/lib/shared.ts";
 import { getChangelogPages } from "@/lib/source.ts";
+import { breadcrumbListSchema } from "@/lib/structured-data.ts";
 
 const listReleases = createServerFn({ method: "GET" }).handler(() =>
   getChangelogPages().map((page) => ({
@@ -21,8 +28,22 @@ const releaseBody = collections.changelogs.createClientLoader<object>({
   component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
 });
 
+const crumbs = [
+  { name: appName, url: "/" },
+  { name: "Changelog", url: changelogRoute },
+];
+
 export const Route = createFileRoute("/_home/changelog/")({
   component: ChangelogIndex,
+  head: () =>
+    pageHead({
+      title: "Changelog",
+      description: "Every ZotLit release, newest first.",
+      path: changelogRoute,
+      card: { type: "changelog", alt: "ZotLit Changelog" },
+      feeds: { "application/rss+xml": changelogFeedRoute },
+      schemas: [breadcrumbListSchema(crumbs)],
+    }),
   loader: async () => {
     const releases = await listReleases();
     await Promise.all(

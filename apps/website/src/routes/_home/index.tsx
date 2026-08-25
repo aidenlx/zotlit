@@ -1,9 +1,23 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 
-import { appDescription } from "@/lib/shared.ts";
+import { HOME_OG_ALT, pageHead } from "@/lib/seo.ts";
+import { appDescription, appName } from "@/lib/shared.ts";
+import {
+  organizationSchema,
+  softwareApplicationSchema,
+  websiteSchema,
+} from "@/lib/structured-data.ts";
 
 export const Route = createFileRoute("/_home/")({
   component: Home,
+  head: () =>
+    pageHead({
+      ogTitle: appName,
+      description: appDescription,
+      path: "/",
+      card: { type: "home", alt: HOME_OG_ALT },
+      schemas: [websiteSchema, organizationSchema, softwareApplicationSchema],
+    }),
 });
 
 const features = [

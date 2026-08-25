@@ -8,11 +8,16 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
-import { markdownEditionPages } from "./src/lib/prerender-pages.ts";
+import { agentSkillAssets } from "./src/lib/agent-skills.ts";
+import { createOgCardRenderer } from "./src/lib/og-card.tsx";
+import { ogCards } from "./src/lib/og-cards.ts";
+import { machineRoutePages } from "./src/lib/prerender-pages.ts";
 import {
   renderHeadersFile,
   renderRedirectsFile,
 } from "./src/lib/v1-redirects.ts";
+
+const packageRoot = import.meta.dirname;
 
 /**
  * Emits the Cloudflare asset-layer rule files into the client build, so legacy
@@ -39,12 +44,79 @@ function cloudflareAssetRules(): Plugin {
   };
 }
 
+/**
+ * Emits the binary machine assets — the OG cards and the agent-skill archives
+ * with their discovery index — into the client build, and serves the same
+ * bytes from the dev server.
+ *
+ * These bypass the prerender pass because it writes every response as text,
+ * which a WebP or a zip does not survive. Rendering them here also keeps the
+ * native takumi renderer and the workspace file reads in Node, where the
+ * Worker runtime cannot reach them.
+ */
+function machineAssets(): Plugin {
+  const renderCard = createOgCardRenderer(packageRoot);
+  let skills: Promise<Map<string, Uint8Array>> | undefined;
+  const agentSkills = () => (skills ??= agentSkillAssets(packageRoot));
+
+  return {
+    name: "zotlit:machine-assets",
+    async generateBundle() {
+      if (this.environment.name !== "client") return;
+
+      const assets = new Map(await agentSkills());
+      for (const [path, card] of ogCards(packageRoot)) {
+        assets.set(path, await renderCard(card));
+      }
+      for (const [path, source] of assets) {
+        this.emitFile({ type: "asset", fileName: path.slice(1), source });
+      }
+    },
+    configureServer(server) {
+      /** The asset's bytes and media type, or undefined when no asset owns the path. */
+      async function resolveAsset(path: string) {
+        const skill = (await agentSkills()).get(path);
+        if (skill) {
+          const type = path.endsWith(".json")
+            ? "application/json"
+            : "application/zip";
+          return { type, body: skill };
+        }
+
+        const card = ogCards(packageRoot).get(path);
+        if (!card) return undefined;
+        return { type: "image/webp", body: await renderCard(card) };
+      }
+
+      server.middlewares.use(async (req, res, next) => {
+        const path = req.url?.split("?")[0];
+        if (!path) {
+          next();
+          return;
+        }
+
+        try {
+          const asset = await resolveAsset(path);
+          if (!asset) {
+            next();
+            return;
+          }
+          res.setHeader("content-type", asset.type);
+          res.end(Buffer.from(asset.body));
+        } catch (error) {
+          next(error as Error);
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   resolve: {
     alias: {
-      "@": resolve(import.meta.dirname, "src"),
+      "@": resolve(packageRoot, "src"),
       // fumadocs-mdx writes its collection index files under `.source`
-      collections: resolve(import.meta.dirname, ".source"),
+      collections: resolve(packageRoot, ".source"),
     },
     // vite 8 seems to have trouble with tsconfigPaths + tsconfig.app.json
     // define explictly for now
@@ -55,13 +127,14 @@ export default defineConfig({
     tailwindcss(),
     fumadocsMdx(),
     cloudflareAssetRules(),
+    machineAssets(),
     cloudflare({ viteEnvironment: { name: "ssr" } }),
-    // The Markdown surface prerenders into the client output, so the asset
-    // layer answers every `.md`, `/llms.mdx`, and `llms*.txt` request without
-    // invoking the Worker. Discovery stays off: the page routes are listed
-    // here deliberately, and the HTML routes still render on the Worker.
+    // The Markdown surface and the SEO endpoints prerender into the client
+    // output, so the asset layer answers them without invoking the Worker.
+    // Discovery stays off: the page routes are listed here deliberately, and
+    // the HTML routes still render on the Worker.
     tanstackStart({
-      pages: markdownEditionPages(import.meta.dirname),
+      pages: machineRoutePages(packageRoot),
       prerender: {
         enabled: true,
         autoStaticPathsDiscovery: false,

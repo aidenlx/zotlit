@@ -1,9 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { pageHead } from "@/lib/seo.ts";
 import { repoUrl } from "@/lib/shared.ts";
 
 export const Route = createFileRoute("/_home/community")({
   component: Community,
+  head: () =>
+    pageHead({
+      title: "Community",
+      description: "Get help, share ideas, and shape where ZotLit goes next.",
+      path: "/community",
+      card: { type: "community", alt: "ZotLit Community" },
+    }),
 });
 
 const destinations = [

@@ -5,16 +5,30 @@ import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
 import { baseOptions } from "@/lib/layout.shared.tsx";
-import { appDescription, appName } from "@/lib/shared.ts";
+import { HOME_OG_ALT, ogImageMeta } from "@/lib/seo.ts";
+import { appDescription, appName, baseURL } from "@/lib/shared.ts";
 import appCss from "@/styles.css?url";
 
 export const Route = createRootRoute({
+  // Site-wide defaults. A page's own `head` overrides these tag by tag, so a
+  // route only names what differs — see `src/lib/seo.ts`.
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: appName },
+      { name: "application-name", content: appName },
       { name: "description", content: appDescription },
+      { property: "og:site_name", content: appName },
+      { property: "og:locale", content: "en_US" },
+      { property: "og:type", content: "website" },
+      { property: "og:url", content: baseURL },
+      { property: "og:title", content: appName },
+      { property: "og:description", content: appDescription },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: appName },
+      { name: "twitter:description", content: appDescription },
+      ...ogImageMeta("home", HOME_OG_ALT),
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),

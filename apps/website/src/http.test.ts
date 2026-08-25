@@ -5,11 +5,14 @@
 // `dist/`, so run it through turbo (`turbo run test --filter=@zotlit/website`),
 // which builds first.
 
+import { regex } from "arkregex";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { unstable_startWorker } from "wrangler";
 
+import { ogImageUrl } from "./lib/shared.ts";
 import { getBlogPages, getChangelogPages, source } from "./lib/source.ts";
 import { buildV1Redirects } from "./lib/v1-redirects.ts";
 
@@ -177,6 +180,192 @@ describe("search", () => {
     const results = await search("AGPL");
 
     expect(results).toEqual([]);
+  });
+});
+
+describe("seo endpoints", () => {
+  it.for(["sitemap.xml", "robots.txt", "changelog/rss.xml"])(
+    "prerenders %s into the client output",
+    (file) => {
+      expect(existsSync(resolve(clientOutput, file))).toBe(true);
+    },
+  );
+
+  it("lists every page route in the sitemap", async () => {
+    const response = await get("/sitemap.xml");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("xml");
+    const sitemap = await response.text();
+    for (const path of [
+      "/",
+      "/blog",
+      "/changelog",
+      "/community",
+      "/docs",
+      ...getBlogPages().map((page) => page.url),
+      ...getChangelogPages().map((page) => page.url),
+      ...source.getPages().map((page) => page.url),
+    ]) {
+      expect(sitemap).toContain(
+        `<loc>https://zotlit.aidenlx.site${path === "/" ? "" : path}</loc>`,
+      );
+    }
+  });
+
+  it("disallows the search API and the other machine endpoints in robots", async () => {
+    const response = await get("/robots.txt");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    const robots = await response.text();
+    for (const path of [
+      "/api/",
+      "/og/",
+      "/llms.txt",
+      "/llms-full.txt",
+      "/llms.mdx/",
+      "/.well-known/agent-skills/",
+    ]) {
+      expect(robots).toContain(`Disallow: ${path}`);
+    }
+    expect(robots).toContain(
+      "Sitemap: https://zotlit.aidenlx.site/sitemap.xml",
+    );
+  });
+
+  it("serves the changelog feed with an item per release", async () => {
+    const response = await get("/changelog/rss.xml");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain(
+      "application/rss+xml",
+    );
+    const feed = await response.text();
+    for (const page of getChangelogPages()) {
+      expect(feed).toContain(
+        `<link>https://zotlit.aidenlx.site${page.url}</link>`,
+      );
+    }
+  });
+});
+
+describe("og images", () => {
+  // Every card the pages advertise, by the type and slugs their heads use.
+  const cards = [
+    ogImageUrl("home"),
+    ogImageUrl("community"),
+    ogImageUrl("blog"),
+    ogImageUrl("changelog"),
+    ...source.getPages().map((page) => ogImageUrl("docs", page.slugs)),
+    ...getBlogPages().map((page) => ogImageUrl("blog", page.slugs)),
+    ...getChangelogPages().map((page) => ogImageUrl("changelog", page.slugs)),
+  ];
+
+  it.for(cards)("serves %s as WebP", async (path) => {
+    const response = await get(path);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/webp");
+  });
+});
+
+describe("agent skills", () => {
+  it("pins every archive to the build's commit and its own digest", async () => {
+    const response = await get("/.well-known/agent-skills/index.json");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    const { skills } = (await response.json()) as {
+      skills: { name: string; url: string; digest: string }[];
+    };
+    expect(skills.map((skill) => skill.name)).toEqual([
+      "zotlit-template",
+      "zotlit-pandoc",
+      "zotlit-citations",
+    ]);
+
+    for (const skill of skills) {
+      const archive = await get(new URL(skill.url).pathname);
+
+      expect(archive.status).toBe(200);
+      expect(archive.headers.get("content-type")).toContain("application/zip");
+      const bytes = new Uint8Array(await archive.arrayBuffer());
+      const hash = createHash("sha256").update(bytes).digest("hex");
+      expect(skill.digest).toBe(`sha256:${hash}`);
+    }
+  });
+});
+
+describe("structured data", () => {
+  const JSON_LD = regex(
+    '<script type="application/ld\\+json">(?<schema>.*?)</script>',
+    "g",
+  );
+
+  /** The JSON-LD blocks a page publishes, in document order. */
+  async function jsonLd(path: string) {
+    const response = await get(path);
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    const schemas: { "@type": string }[] = [];
+    // `exec` carries arkregex's typed capture; `String.matchAll` widens it away.
+    for (let match = JSON_LD.exec(html); match; match = JSON_LD.exec(html)) {
+      schemas.push(JSON.parse(match.groups.schema) as { "@type": string });
+    }
+    return schemas;
+  }
+
+  it("describes the site on the home page", async () => {
+    const types = (await jsonLd("/")).map((schema) => schema["@type"]);
+
+    expect(types).toEqual(["WebSite", "Organization", "SoftwareApplication"]);
+  });
+
+  it("describes a blog post and its trail", async () => {
+    const post = getBlogPages()[0]!;
+    const types = (await jsonLd(post.url)).map((schema) => schema["@type"]);
+
+    expect(types).toEqual(["BlogPosting", "BreadcrumbList"]);
+  });
+
+  it("describes a release and its trail", async () => {
+    const release = getChangelogPages()[0]!;
+    const types = (await jsonLd(release.url)).map((schema) => schema["@type"]);
+
+    expect(types).toEqual(["Article", "BreadcrumbList"]);
+  });
+
+  it("describes the trail of a docs page", async () => {
+    const types = (await jsonLd("/docs/how-to/insert-citations")).map(
+      (schema) => schema["@type"],
+    );
+
+    expect(types).toEqual(["BreadcrumbList"]);
+  });
+});
+
+describe("page head", () => {
+  it("points a docs page at its canonical URL and its own card", async () => {
+    const response = await get("/docs/how-to/insert-citations");
+    const html = await response.text();
+
+    expect(html).toContain(
+      '<link rel="canonical" href="https://zotlit.aidenlx.site/docs/how-to/insert-citations"',
+    );
+    expect(html).toContain(
+      'content="https://zotlit.aidenlx.site/og/docs/how-to/insert-citations/image.webp"',
+    );
+  });
+
+  it("advertises the feed on the changelog", async () => {
+    const response = await get("/changelog");
+    const html = await response.text();
+
+    expect(html).toContain(
+      'href="https://zotlit.aidenlx.site/changelog/rss.xml"',
+    );
   });
 });
 

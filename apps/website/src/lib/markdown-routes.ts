@@ -11,7 +11,7 @@
 // handler, and the build's prerender list.
 
 /** The content sections that publish a Markdown edition. */
-const markdownSections = ["docs", "changelog", "blog"] as const;
+export const markdownSections = ["docs", "changelog", "blog"] as const;
 
 export type MarkdownSection = (typeof markdownSections)[number];
 

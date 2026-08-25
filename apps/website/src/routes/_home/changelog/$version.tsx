@@ -3,8 +3,19 @@ import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
 import { getMDXComponents } from "@/components/mdx.tsx";
-import { formatReleaseDate, repoUrl } from "@/lib/shared.ts";
+import { pageHead } from "@/lib/seo.ts";
+import {
+  appName,
+  changelogFeedRoute,
+  changelogRoute,
+  formatReleaseDate,
+  repoUrl,
+} from "@/lib/shared.ts";
 import { changelog, getChangelogPages } from "@/lib/source.ts";
+import {
+  breadcrumbListSchema,
+  changelogArticleSchema,
+} from "@/lib/structured-data.ts";
 
 const getRelease = createServerFn({ method: "GET" })
   .validator((version: string) => version)
@@ -15,6 +26,9 @@ const getRelease = createServerFn({ method: "GET" })
     if (!page) throw notFound();
     return {
       path: page.path,
+      url: page.url,
+      slugs: page.slugs,
+      title: page.data.title,
       version: page.data.version,
       description: page.data.description,
       companion: page.data.companion,
@@ -35,6 +49,36 @@ export const Route = createFileRoute("/_home/changelog/$version")({
     await releaseBody.preload(release.path);
     return release;
   },
+  head: ({ loaderData: release }) =>
+    release === undefined
+      ? {}
+      : pageHead({
+          title: `v${release.version}`,
+          description:
+            release.description ??
+            `Changelog for ZotLit v${release.version} released on ${formatReleaseDate(release.date)}.`,
+          path: release.url,
+          card: {
+            type: "changelog",
+            slugs: release.slugs,
+            alt: `ZotLit v${release.version} release notes`,
+          },
+          article: { publishedTime: release.date },
+          feeds: { "application/rss+xml": changelogFeedRoute },
+          schemas: [
+            changelogArticleSchema({
+              title: release.title,
+              version: release.version,
+              date: release.date,
+              url: release.url,
+            }),
+            breadcrumbListSchema([
+              { name: appName, url: "/" },
+              { name: "Changelog", url: changelogRoute },
+              { name: `v${release.version}`, url: release.url },
+            ]),
+          ],
+        }),
 });
 
 function ChangelogVersion() {

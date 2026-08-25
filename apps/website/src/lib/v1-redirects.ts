@@ -92,16 +92,29 @@ export function buildV1Redirects(): RedirectRule[] {
   return redirects;
 }
 
-/**
- * giscus loads the custom comment themes (public/giscus/*.css) into its
- * cross-origin iframe via `<link crossorigin="anonymous">`, so they must send
- * an Access-Control-Allow-Origin header or the browser blocks the stylesheet.
- */
 export function buildHeaderRules(): HeaderRule[] {
   return [
+    /**
+     * giscus loads the custom comment themes (public/giscus/*.css) into its
+     * cross-origin iframe via `<link crossorigin="anonymous">`, so they must
+     * send an Access-Control-Allow-Origin header or the browser blocks the
+     * stylesheet.
+     */
     {
       source: "/giscus/*",
       headers: { "Access-Control-Allow-Origin": "https://giscus.app" },
+    },
+    // The asset layer types a prerendered `.xml` file as generic XML; feed
+    // readers expect the RSS media type the Next.js site served.
+    {
+      source: "/changelog/rss.xml",
+      headers: { "Content-Type": "application/rss+xml; charset=utf-8" },
+    },
+    // Every archive URL is pinned to the commit it was built from, so its
+    // bytes never change.
+    {
+      source: "/.well-known/agent-skills/*/archive.zip",
+      headers: { "Cache-Control": "public, max-age=31536000, immutable" },
     },
   ];
 }

@@ -110,9 +110,23 @@ describe("renderRedirectsFile", () => {
 });
 
 describe("renderHeadersFile", () => {
+  const file = renderHeadersFile();
+
   it("adds the giscus CORS header to the comment themes", () => {
-    expect(renderHeadersFile()).toBe(
-      "/giscus/*\n  Access-Control-Allow-Origin: https://giscus.app\n",
+    expect(file).toContain(
+      "/giscus/*\n  Access-Control-Allow-Origin: https://giscus.app",
+    );
+  });
+
+  it("types the changelog feed as RSS", () => {
+    expect(file).toContain(
+      "/changelog/rss.xml\n  Content-Type: application/rss+xml; charset=utf-8",
+    );
+  });
+
+  it("caches the commit-pinned agent-skill archives forever", () => {
+    expect(file).toContain(
+      "/.well-known/agent-skills/*/archive.zip\n  Cache-Control: public, max-age=31536000, immutable",
     );
   });
 });
