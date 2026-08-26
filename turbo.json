@@ -1,5 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": ["mise.toml"],
+  "globalEnv": ["ZOTLIT_TOOLCHAIN"],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]

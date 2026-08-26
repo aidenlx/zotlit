@@ -8,12 +8,9 @@ name: Docs Deploy
 # Pre-release Docs — the `beta` wrangler environment, `zotlit-docs-beta`, on
 # zotlit-beta.aidenlx.site. See ADR 0021.
 #
-# Every push on the two branches enters the `gate` job, which asks turbo
-# whether the push touched `@zotlit/docs` or anything in its dependency
-# closure — package sources, the lockfile entries it resolves, and the turbo
-# inputs the build task declares (the repo-root `skills/` tree among them).
-# The `deploy` job runs only when the answer is yes, so a push that leaves the
-# docs untouched costs one short gate job and no deploy.
+# Every push on the two branches enters the gate job, which asks Turbo whether
+# the push touched `@zotlit/docs` or anything in its dependency closure. An
+# unaffected push stops at the gate; an affected push runs the deploy job.
 on:
   push:
     branches: [main, next]
@@ -34,16 +31,20 @@ jobs:
     outputs:
       deploy: ${{ steps.check.outputs.deploy }}
     steps:
-      # Full history so the pushed range's base commit is present for the
-      # turbo comparison; submodules so the workspace package graph resolves.
+      # The gate compares the push base against HEAD, so it needs full history.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          submodules: recursive
+
+      # The gate needs the pinned pnpm and Turbo versions, but an unaffected
+      # push stops before dependency installation or package builds.
+      - uses: ./.github/actions/setup-workspace
+        with:
+          bootstrap: "false"
 
       # Fail open: every path that cannot prove "docs untouched" deploys —
       # a manual dispatch, an unknown base commit, a force push, a change to
-      # this workflow, or a turbo failure.
+      # deployment machinery, or a Turbo failure.
       - name: Check whether the docs closure changed
         id: check
         env:
@@ -61,19 +62,20 @@ jobs:
           if ! git merge-base --is-ancestor "$BEFORE" HEAD; then
             deploy "force push"
           fi
-          if [ -n "$(git diff --name-only "$BEFORE" HEAD -- .github/workflows/docs-deploy.yml)" ]; then
-            deploy "workflow changed"
+          if [ -n "$(git diff --name-only "$BEFORE" HEAD -- \
+            .github/workflows/docs-deploy.yml \
+            .github/actions/setup-workspace/action.yml)" ]; then
+            deploy "deployment machinery changed"
           fi
 
-          # turbo's dry run lists the packages the filter selects: the docs
-          # package plus dependencies, restricted to those affected since the
-          # base commit. The pinned version tracks the root devDependency.
+          # The dry run lists docs and its dependencies that changed since the
+          # push base. The pinned version tracks the root devDependency.
           turbo_version=$(jq -r '.devDependencies.turbo' package.json | tr -d '^~')
-          affected=$(npx -y "turbo@${turbo_version}" run build \
+          affected=$(pnpm dlx "turbo@${turbo_version}" run build \
             --filter="@zotlit/docs...[$BEFORE]" --dry=json 2>/dev/null \
             | jq '.packages | length') || affected=""
           if [ -z "$affected" ]; then
-            deploy "turbo dry run failed"
+            deploy "Turbo dry run failed"
           fi
           if [ "$affected" -gt 0 ]; then
             deploy "$affected affected package(s)"
@@ -90,27 +92,20 @@ jobs:
       WRANGLER_ENV: ${{ github.ref_name == 'next' && 'beta' || '' }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
-      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
-      # `--no-submodules` skips checkout since actions/checkout already fetched
-      # them above.
-      - uses: jdx/mise-action@v4
-      # pnpm is activated by mise's corepack post-install; this step is only
-      # here for the store cache.
-      - uses: pnpm/action-setup@v6
+      # The docs build installs its own dependency closure below, so the
+      # workspace-wide bootstrap stays off.
+      - uses: ./.github/actions/setup-workspace
         with:
-          cache: true
-      - run: mise run init --no-submodules
+          bootstrap: "false"
 
-      - name: Turborepo cache
-        uses: actions/cache@v5
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # zotero-types copies this schema into its package output. The other two
+      # repository submodules are outside the docs dependency closure.
+      - name: Initialize Zotero schema
+        run: git submodule update --init --depth 1 --single-branch packages/zotero-types/zotero-schema
+
+      - name: Install docs dependencies
+        run: pnpm install --frozen-lockfile --filter @zotlit/docs...
 
       # `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the
       # beta build has to be its own; a build made without it carries the
