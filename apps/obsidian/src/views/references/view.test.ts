@@ -293,13 +293,19 @@ describe("ReferencesView copy readiness", () => {
     expect(copyAction().hasAttribute("disabled")).toBe(false);
   });
 
-  it("takes copy back when the held renders go stale", async () => {
+  it("takes copy back but keeps the entries when the held renders go stale", async () => {
     await finishRender();
 
     await act(() => onInvalidated?.());
 
-    expect(view!.contentEl.textContent).not.toContain("Rivers, A. (2020).");
+    // Stale entries stay on screen while the fresh render replaces them, so
+    // a Zotero refresh that changes nothing never flashes the minimal list.
+    expect(view!.contentEl.textContent).toContain("Rivers, A. (2020).");
     expect(copyAction().hasAttribute("disabled")).toBe(true);
+
+    await finishRender();
+
+    expect(copyAction().hasAttribute("disabled")).toBe(false);
   });
 
   it("takes copy back the moment the pane follows another note", async () => {
