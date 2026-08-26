@@ -2,7 +2,13 @@
 // IBM Plex Mono uppercase links under the double-hairline signature.
 // Vendored from @fumadocs/base-ui `layouts/home/slots/header`; everything it
 // imports stays on package entry points. Re-diff on bumps.
+//
+// `MobileSearchTrigger` below is a local addition, not part of the vendored
+// original: it reproduces `fumadocs-ui`'s icon-variant `SearchTrigger`
+// because that component drops every prop but `className`, so it can't take
+// the `suppressHydrationWarning` this nav needs (see the note beside it).
 
+import { Dialog } from "@base-ui/react/dialog";
 import { NavigationMenu as Primitive } from "@base-ui/react/navigation-menu";
 import { useTranslations } from "@fuma-translate/react";
 import { cva } from "class-variance-authority";
@@ -13,11 +19,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "fumadocs-ui/components/ui/collapsible";
+import { useSearchContext } from "fumadocs-ui/contexts/search";
 import { useHomeLayout } from "fumadocs-ui/layouts/home";
 import { LinkItem } from "fumadocs-ui/layouts/shared";
 import type { LinkItemType } from "fumadocs-ui/layouts/shared";
 import { useIsScrollTop } from "fumadocs-ui/utils/use-is-scroll-top";
-import { ChevronDown, Languages } from "lucide-react";
+import { ChevronDown, Languages, Search } from "lucide-react";
 import {
   createContext,
   Fragment,
@@ -112,6 +119,13 @@ export function Header(props: ComponentProps<"header">) {
             // Chrome control, so it stays on the sans stack even though the
             // (home) container voice is serif — matches the /docs sidebar trigger.
             className="w-full max-w-[240px] rounded-full ps-2.5 font-sans"
+            // Base UI's NavigationMenu.List wraps every descendant in a
+            // Composite roving-tabindex domain, even non-item children like
+            // this trigger. Its tabIndex/aria-disabled only settle once the
+            // Composite registers this button post-mount, so the very first
+            // client render disagrees with the SSR markup — self-corrects
+            // before paint, so this is a false-positive hydration warning.
+            suppressHydrationWarning
           />
         )}
         {slots.themeSwitch && <slots.themeSwitch />}
@@ -133,9 +147,7 @@ export function Header(props: ComponentProps<"header">) {
         </ul>
       </div>
       <div className="ms-auto -me-1.5 flex flex-row items-center lg:hidden">
-        {slots.searchTrigger && (
-          <slots.searchTrigger.sm hideIfDisabled className="p-2" />
-        )}
+        {slots.searchTrigger && <MobileSearchTrigger />}
         <CollapsibleTrigger
           aria-label={t("Toggle Menu", { note: "aria-label" })}
           className={cn(
@@ -151,6 +163,9 @@ export function Header(props: ComponentProps<"header">) {
                 }
               : undefined
           }
+          // See the suppressHydrationWarning note on the full search
+          // trigger above — same Composite roving-tabindex false positive.
+          suppressHydrationWarning
         >
           <ChevronDown
             className={cn("transition-transform", open && "rotate-180")}
@@ -248,6 +263,30 @@ export function Header(props: ComponentProps<"header">) {
         </header>
       }
     />
+  );
+}
+
+// Vendored equivalent of fumadocs-ui's `SearchTrigger` (icon variant): its
+// packaged component only forwards `className`, dropping every other prop
+// before it reaches the rendered `<button>`. We need `suppressHydrationWarning`
+// to land there (see the note on the full search trigger above), so this
+// stays a thin, exact reproduction of the packaged markup.
+function MobileSearchTrigger() {
+  const { enabled, dialogHandle } = useSearchContext();
+  const t = useTranslations({ note: "search trigger" });
+  if (!enabled) return null;
+
+  return (
+    <Dialog.Trigger
+      handle={dialogHandle}
+      type="button"
+      className={cn(buttonVariants({ size: "icon-sm", color: "ghost" }), "p-2")}
+      data-search=""
+      aria-label={t("Open Search", { note: "aria-label" })}
+      suppressHydrationWarning
+    >
+      <Search />
+    </Dialog.Trigger>
   );
 }
 
