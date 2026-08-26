@@ -16,7 +16,7 @@ import * as v from "valibot";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { baseURL } from "./shared";
+import { baseURL } from "./shared.js";
 
 const AGENT_SKILLS_SCHEMA =
   "https://schemas.agentskills.io/discovery/0.2.0/schema.json";

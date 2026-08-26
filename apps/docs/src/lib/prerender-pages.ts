@@ -11,13 +11,13 @@
 // the search and release-fact endpoints and the Pre-release Docs fallback.
 // @see docs/adr/0025-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
-import { scanContent } from "./content-scan";
-import type { MarkdownSection } from "./markdown-routes";
+import { scanContent } from "./content-scan.js";
+import type { MarkdownSection } from "./markdown-routes.js";
 import {
   contentRouteUrl,
   markdownSections,
   suffixEditionUrl,
-} from "./markdown-routes";
+} from "./markdown-routes.js";
 
 /** A page for `tanstackStart({ pages })` to prerender. */
 interface PrerenderPage {

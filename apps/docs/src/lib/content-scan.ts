@@ -14,7 +14,7 @@ import { getSlugs } from "fumadocs-core/source";
 import { globSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import type { MarkdownSection } from "./markdown-routes";
+import type { MarkdownSection } from "./markdown-routes.js";
 
 /** One content file, addressed the way the loaders address it. */
 export interface ContentEntry {
