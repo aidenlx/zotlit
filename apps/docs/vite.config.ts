@@ -18,6 +18,14 @@ import {
 } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
+let docsLine: Cloudflare.Env["DOCS_LINE"] | undefined;
+
+function resolvedDocsLine(): Cloudflare.Env["DOCS_LINE"] {
+  if (docsLine === undefined) {
+    throw new Error("Cloudflare configuration did not provide DOCS_LINE.");
+  }
+  return docsLine;
+}
 
 /**
  * Emits the Cloudflare asset-layer rule files into the client build, so legacy
@@ -57,7 +65,8 @@ function cloudflareAssetRules(): Plugin {
 function machineAssets(): Plugin {
   const renderCard = createOgCardRenderer(packageRoot);
   let skills: Promise<Map<string, Uint8Array>> | undefined;
-  const agentSkills = () => (skills ??= agentSkillAssets(packageRoot));
+  const agentSkills = () =>
+    (skills ??= agentSkillAssets(packageRoot, resolvedDocsLine()));
 
   return {
     name: "zotlit:machine-assets",
@@ -135,7 +144,16 @@ export default defineConfig({
     fumadocsMdx(),
     cloudflareAssetRules(),
     machineAssets(),
-    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    cloudflare({
+      viteEnvironment: { name: "ssr" },
+      config(config) {
+        const value = config.vars?.DOCS_LINE;
+        if (value !== "production" && value !== "beta") {
+          throw new Error("DOCS_LINE must be 'production' or 'beta'.");
+        }
+        docsLine = value;
+      },
+    }),
     // The Markdown surface, the SEO endpoints, and every build-time-safe HTML
     // page prerender into the client output, so the asset layer answers them
     // without invoking the Worker. Discovery stays off: the routes are listed

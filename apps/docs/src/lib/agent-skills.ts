@@ -83,11 +83,11 @@ function archiveUrl(name: AgentSkillName, commitSha: string): string {
  */
 export async function agentSkillAssets(
   packageRoot: string,
+  docsLine: Cloudflare.Env["DOCS_LINE"],
 ): Promise<Map<string, Uint8Array>> {
   const workspaceRoot = await getWorkspaceRoot(packageRoot);
   const commitSha = resolvePinnedCommitSha(workspaceRoot);
-  const assetBaseURL =
-    process.env.CLOUDFLARE_ENV === "beta" ? zotlitBetaUrl : baseURL;
+  const assetBaseURL = docsLine === "beta" ? zotlitBetaUrl : baseURL;
 
   const built = await Promise.all(
     SKILL_NAMES.map(async (directoryName) => {

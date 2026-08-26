@@ -23,7 +23,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/docs preview` — serve the built Worker locally through workerd.
 - `pnpm --filter @zotlit/docs deploy` — build, then `wrangler deploy` to Cloudflare Workers.
 - `pnpm --filter @zotlit/docs deploy:beta` — the same for Pre-release Docs. `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the beta build has to be its own; a build made without it carries the production line's variables whatever `wrangler deploy --env` says.
-- `pnpm --filter @zotlit/docs cf-typegen` — write `worker-configuration.d.ts` to read the generated shape of a binding. The file stays ignored and out of `tsconfig.app.json`; the binding and variables the site actually reads are declared by hand in [`src/cloudflare-workers.d.ts`](src/cloudflare-workers.d.ts).
+- `pnpm --filter @zotlit/docs cf-typegen` — regenerate the committed `worker-configuration.d.ts` from `wrangler.jsonc`. Both TypeScript configurations consume it; run this command after a Worker binding, variable, secret, compatibility date, or compatibility flag changes. The typecheck verifies that the generated file is current.
 - `pnpm --filter @zotlit/docs codegen` — regenerate the `.source/` collection index (`fumadocs-mdx`); `postinstall` and `vite build` already run it.
 - `pnpm exec turbo run generate:template-data --filter=@zotlit/docs` — regenerate the template-data reference page.
 

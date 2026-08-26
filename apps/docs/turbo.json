@@ -19,6 +19,10 @@
       "outputs": [".source/**"],
       "outputLogs": "errors-only"
     },
+    "cf-typegen:check": {
+      "inputs": ["wrangler.jsonc", "worker-configuration.d.ts"],
+      "outputLogs": "errors-only"
+    },
     "generate:template-data": {
       "dependsOn": ["^build"],
       "outputs": ["content/docs/reference/templates/data.mdx"],

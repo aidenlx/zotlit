@@ -14,5 +14,10 @@ export default defineConfig({
       },
     },
   ],
-  ignorePatterns: ["src/routeTree.gen.ts", "dist/**", ".tanstack/**"],
+  ignorePatterns: [
+    "src/routeTree.gen.ts",
+    "worker-configuration.d.ts",
+    "dist/**",
+    ".tanstack/**",
+  ],
 });

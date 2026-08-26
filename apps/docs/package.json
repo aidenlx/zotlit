@@ -13,10 +13,11 @@
     "deploy": "vite build && wrangler deploy",
     "deploy:beta": "cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
     "cf-typegen": "wrangler types",
+    "cf-typegen:check": "wrangler types --check",
     "codegen": "fumadocs-mdx",
     "generate:template-data": "node scripts/generate-template-data.ts",
     "postinstall": "fumadocs-mdx",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "pnpm cf-typegen:check && tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint",
     "test": "vitest run"
   },

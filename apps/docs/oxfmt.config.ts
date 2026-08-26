@@ -13,5 +13,6 @@ export default defineConfig({
     "**/dist/**",
     "**/.tanstack/**",
     "src/routeTree.gen.ts",
+    "worker-configuration.d.ts",
   ],
 });

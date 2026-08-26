@@ -50,6 +50,9 @@
     // bounced back and forth.
     "DOCS_LINE": "production",
   },
+  "secrets": {
+    "required": ["GITHUB_TOKEN"],
+  },
   "observability": {
     "enabled": true,
   },
@@ -62,6 +65,9 @@
       ],
       "vars": {
         "DOCS_LINE": "beta",
+      },
+      "secrets": {
+        "required": ["GITHUB_TOKEN"],
       },
     },
   },

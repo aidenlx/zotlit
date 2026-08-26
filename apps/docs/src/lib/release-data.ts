@@ -73,11 +73,8 @@ async function fetchJson<T>(url: string): Promise<T | null> {
             authorization: `Bearer ${env.GITHUB_TOKEN}`,
           }),
       },
-      // `cf` is a Cloudflare addition to `RequestInit`; the hand-written
-      // environment types in src/cloudflare-workers.d.ts leave the rest of the
-      // workerd surface out, so the option is asserted in here.
       cf: { cacheTtl: CACHE_SECONDS, cacheEverything: true },
-    } as RequestInit);
+    });
     return response.ok ? ((await response.json()) as T) : null;
   } catch {
     return null;

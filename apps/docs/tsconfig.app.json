@@ -17,7 +17,7 @@
     "jsx": "react-jsx",
     "isolatedDeclarations": false,
     "noUncheckedSideEffectImports": true,
-    "types": ["vite/client", "node"],
+    "types": ["./worker-configuration.d.ts", "vite/client", "node"],
     "paths": {
       "@/*": ["./src/*"],
       "collections/*": ["./.source/*"]

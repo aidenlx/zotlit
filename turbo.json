@@ -53,7 +53,8 @@
         "@zotlit/shared#build",
         "@zotlit/templates#build",
         "@zotlit/zotero-types#build",
-        "@zotlit/docs#codegen"
+        "@zotlit/docs#codegen",
+        "@zotlit/docs#cf-typegen:check"
       ]
     },
     "//#lint:repo": {
