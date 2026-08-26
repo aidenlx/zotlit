@@ -301,7 +301,10 @@ export class DatabaseService extends Service<void> {
       this.#torndown = true;
     });
 
-    await this.#refreshOnce();
+    // Through the single-flight lane, so a change signal whose debounce elapses
+    // during this first read coalesces into a trailing rerun instead of opening
+    // a second, concurrent read stack.
+    await this.#enqueueRefresh();
     this.commit(stack.move());
   }
 
