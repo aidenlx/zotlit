@@ -19,6 +19,12 @@ import {
 } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
+// Keep Miniflare's local Worker registry with the package's other ignored
+// runtime state, so a build needs no access to the user's global config path.
+process.env.MINIFLARE_REGISTRY_PATH ??= resolve(
+  packageRoot,
+  ".wrangler/registry",
+);
 let docsLine: Cloudflare.Env["DOCS_LINE"] | undefined;
 
 function resolvedDocsLine(): Cloudflare.Env["DOCS_LINE"] {
