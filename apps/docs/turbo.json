@@ -3,17 +3,27 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": ["dist/**", ".tanstack/**", ".source/**"],
+      // The Cloudflare Web Analytics site token is read at build time, so a
+      // build with it differs from one without; `CLOUDFLARE_ENV` picks the
+      // wrangler environment the build carries, so the beta build and the
+      // production build are two different outputs.
+      "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV"]
     },
+    // The `.source/` collection index, which the typecheck reads. `vite build`
+    // regenerates it too, so a lint or typecheck run needs only this task.
     "codegen": {
-      "dependsOn": ["^build"],
-      "outputs": [".source/**", ".next/types/**", "next-env.d.ts"],
+      "outputs": [".source/**"],
       "outputLogs": "errors-only"
     },
     "generate:template-data": {
       "dependsOn": ["^build"],
       "outputs": ["content/docs/reference/templates/data.mdx"],
       "outputLogs": "errors-only"
+    },
+    // `src/http.test.ts` fetches the built Worker, so the build runs first.
+    "test": {
+      "dependsOn": ["^build", "transit", "build"]
     }
   }
 }

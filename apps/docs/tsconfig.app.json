@@ -1,0 +1,28 @@
+{
+  "extends": ["@zotlit/config/tsconfig"],
+  "compilerOptions": {
+    "target": "es2024",
+    // `es2025.regexp` covers `RegExp.escape`, which policies/regex.md requires
+    // for dynamic literal text.
+    "lib": [
+      "es2024",
+      "es2025.regexp",
+      "esnext.array",
+      "esnext.disposable",
+      "DOM"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "isolatedDeclarations": false,
+    "noUncheckedSideEffectImports": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "collections/*": ["./.source/*"]
+    }
+  },
+  "include": ["./src/**/*.ts", "./src/**/*.tsx"],
+  "exclude": ["./node_modules", "./dist", "./.tanstack"]
+}

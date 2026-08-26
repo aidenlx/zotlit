@@ -1,0 +1,153 @@
+import { cloudflare } from "@cloudflare/vite-plugin";
+import tailwindcss from "@tailwindcss/vite";
+import { devtools } from "@tanstack/devtools-vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import { fumadocsMdx } from "fumadocs-mdx/vite";
+import { resolve } from "node:path";
+import { defineConfig } from "vite";
+import type { Plugin } from "vite";
+
+import { agentSkillAssets } from "./src/lib/agent-skills.js";
+import { createOgCardRenderer } from "./src/lib/og-card.js";
+import { ogCards } from "./src/lib/og-cards.js";
+import { prerenderPages } from "./src/lib/prerender-pages.js";
+import {
+  renderHeadersFile,
+  renderRedirectsFile,
+} from "./src/lib/v1-redirects.js";
+
+const packageRoot = import.meta.dirname;
+
+/**
+ * Emits the Cloudflare asset-layer rule files into the client build, so legacy
+ * permalinks and the giscus CORS header resolve without a Worker invocation.
+ * @see src/lib/v1-redirects.ts
+ */
+function cloudflareAssetRules(): Plugin {
+  return {
+    name: "zotlit:cloudflare-asset-rules",
+    apply: "build",
+    generateBundle() {
+      if (this.environment.name !== "client") return;
+      this.emitFile({
+        type: "asset",
+        fileName: "_redirects",
+        source: renderRedirectsFile(),
+      });
+      this.emitFile({
+        type: "asset",
+        fileName: "_headers",
+        source: renderHeadersFile(),
+      });
+    },
+  };
+}
+
+/**
+ * Emits the binary machine assets — the OG cards and the agent-skill archives
+ * with their discovery index — into the client build, and serves the same
+ * bytes from the dev server.
+ *
+ * These bypass the prerender pass because it writes every response as text,
+ * which a WebP or a zip does not survive. Rendering them here also keeps the
+ * native takumi renderer and the workspace file reads in Node, where the
+ * Worker runtime cannot reach them.
+ */
+function machineAssets(): Plugin {
+  const renderCard = createOgCardRenderer(packageRoot);
+  let skills: Promise<Map<string, Uint8Array>> | undefined;
+  const agentSkills = () => (skills ??= agentSkillAssets(packageRoot));
+
+  return {
+    name: "zotlit:machine-assets",
+    async generateBundle() {
+      if (this.environment.name !== "client") return;
+
+      const assets = new Map(await agentSkills());
+      for (const [path, card] of ogCards(packageRoot)) {
+        assets.set(path, await renderCard(card));
+      }
+      for (const [path, source] of assets) {
+        this.emitFile({ type: "asset", fileName: path.slice(1), source });
+      }
+    },
+    configureServer(server) {
+      /** The asset's bytes and media type, or undefined when no asset owns the path. */
+      async function resolveAsset(path: string) {
+        const skill = (await agentSkills()).get(path);
+        if (skill) {
+          const type = path.endsWith(".json")
+            ? "application/json"
+            : "application/zip";
+          return { type, body: skill };
+        }
+
+        const card = ogCards(packageRoot).get(path);
+        if (!card) return undefined;
+        return { type: "image/webp", body: await renderCard(card) };
+      }
+
+      server.middlewares.use(async (req, res, next) => {
+        const path = req.url?.split("?")[0];
+        if (!path) {
+          next();
+          return;
+        }
+
+        try {
+          const asset = await resolveAsset(path);
+          if (!asset) {
+            next();
+            return;
+          }
+          res.setHeader("content-type", asset.type);
+          res.end(Buffer.from(asset.body));
+        } catch (error) {
+          next(error as Error);
+        }
+      });
+    },
+  };
+}
+
+export default defineConfig({
+  // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
+  // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
+  // is told to convert it, and the missing named export stops hydration before
+  // the page becomes interactive. The production build converts it either way.
+  optimizeDeps: {
+    include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
+  },
+  // Both aliases are declared here rather than through
+  // `resolve.tsconfigPaths`, which under Vite 8 leaves the `paths` in
+  // `tsconfig.app.json` unresolved.
+  resolve: {
+    alias: {
+      "@": resolve(packageRoot, "src"),
+      // fumadocs-mdx writes its collection index files under `.source`
+      collections: resolve(packageRoot, ".source"),
+    },
+  },
+  plugins: [
+    devtools(),
+    tailwindcss(),
+    fumadocsMdx(),
+    cloudflareAssetRules(),
+    machineAssets(),
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    // The Markdown surface, the SEO endpoints, and every build-time-safe HTML
+    // page prerender into the client output, so the asset layer answers them
+    // without invoking the Worker. Discovery stays off: the routes are listed
+    // deliberately, and the request-time ones stay off the list.
+    tanstackStart({
+      pages: prerenderPages(packageRoot),
+      prerender: {
+        enabled: true,
+        autoStaticPathsDiscovery: false,
+        crawlLinks: false,
+      },
+    }),
+    viteReact(),
+  ],
+});

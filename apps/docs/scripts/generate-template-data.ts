@@ -1,20 +1,20 @@
 // Emits the template-data reference page from the committed Template Contract IR.
 //
 // Prose comes from the contract's doc comments; the page template around it
-// lives in `lib/template-contract/sections.ts`.
+// lives in `src/lib/template-contract/sections.ts`.
 //
 // @see docs/adr/0015-template-contract-artifacts-generate-from-ts-types.md
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { CONTRACT_IR } from "../lib/template-contract/contract.ts";
-import { renderDocMarkdown } from "../lib/template-contract/gfm.ts";
-import { buildPageModel } from "../lib/template-contract/page-model.ts";
+import { CONTRACT_IR } from "../src/lib/template-contract/contract.js";
+import { renderDocMarkdown } from "../src/lib/template-contract/gfm.js";
+import { buildPageModel } from "../src/lib/template-contract/page-model.js";
 import type {
   PageSection,
   SectionValue,
-} from "../lib/template-contract/page-model.ts";
+} from "../src/lib/template-contract/page-model.js";
 
 const PAGE = join("content", "docs", "reference", "templates", "data.mdx");
 
