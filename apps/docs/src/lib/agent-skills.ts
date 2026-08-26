@@ -49,6 +49,8 @@ interface AgentSkillFiles {
 
 /** The commit this build publishes, which every archive URL is pinned to. */
 function resolvePinnedCommitSha(workspaceRoot: string): string {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+
   return execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: workspaceRoot,
     encoding: "utf8",

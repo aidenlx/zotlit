@@ -11,7 +11,7 @@
       // build with it differs from one without; `CLOUDFLARE_ENV` picks the
       // wrangler environment the build carries, so the beta build and the
       // production build are two different outputs.
-      "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV"]
+      "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV", "GITHUB_SHA"]
     },
     // The `.source/` collection index, which the typecheck reads. `vite build`
     // regenerates it too, so a lint or typecheck run needs only this task.
