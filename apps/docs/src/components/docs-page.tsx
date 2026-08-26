@@ -15,6 +15,8 @@ import {
   DocsDescription,
   DocsPage,
   DocsTitle,
+  MarkdownCopyButton,
+  ViewOptionsPopover,
 } from "fumadocs-ui/layouts/docs/page";
 
 import { DocsAvailability } from "@/components/docs-availability";
@@ -25,11 +27,12 @@ import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
 import { getDocsAvailability } from "@/lib/docs-availability";
 import type { DocsAvailability as Availability } from "@/lib/docs-availability";
 import { installPageSlugs } from "@/lib/github-releases";
+import { contentRouteUrl } from "@/lib/markdown-routes";
 import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
 import type { ReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
-import { appName, docsRoute } from "@/lib/shared";
+import { appName, docsRoute, gitConfig } from "@/lib/shared";
 import { changelog, source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
@@ -57,6 +60,8 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       description: page.data.description,
       trail,
       availability,
+      markdownUrl: contentRouteUrl({ section: "docs", slugs: page.slugs }),
+      githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${page.path}`,
       changelogUrl: availability
         ? changelog.getPage([availability.introduced])?.url
         : undefined,
@@ -69,17 +74,19 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
     };
   });
 
-/** What the compiled body needs beyond the module: the page's release history. */
+/** What the compiled body needs beyond the module: release history and page actions. */
 interface DocsBodyProps {
   availability?: Availability;
   changelogUrl?: string;
+  githubUrl: string;
+  markdownUrl: string;
 }
 
 export const docsBody = collections.docs.createClientLoader<DocsBodyProps>({
   id: "docs",
   component: (
     { toc, frontmatter, default: MDX },
-    { availability, changelogUrl },
+    { availability, changelogUrl, githubUrl, markdownUrl },
   ) => (
     <DocsPage
       toc={toc}
@@ -96,6 +103,10 @@ export const docsBody = collections.docs.createClientLoader<DocsBodyProps>({
         availability={availability}
         changelogUrl={changelogUrl}
       />
+      <div className="flex flex-row items-center gap-2 border-b pb-6">
+        <MarkdownCopyButton markdownUrl={markdownUrl} />
+        <ViewOptionsPopover markdownUrl={markdownUrl} githubUrl={githubUrl} />
+      </div>
       <RedirectNotice className="mb-6" />
       <DocsBody className={ztProse}>
         <MDX components={getMDXComponents()} />
@@ -144,6 +155,8 @@ export function DocsPageView({
   snapshot,
   availability,
   changelogUrl,
+  githubUrl,
+  markdownUrl,
 }: DocsBodyProps & {
   path: string;
   snapshot: ReleaseSnapshot | null;
@@ -151,7 +164,12 @@ export function DocsPageView({
   const Body = docsBody.getComponent(path);
   return (
     <ReleaseSnapshotProvider snapshot={snapshot}>
-      <Body availability={availability} changelogUrl={changelogUrl} />
+      <Body
+        availability={availability}
+        changelogUrl={changelogUrl}
+        githubUrl={githubUrl}
+        markdownUrl={markdownUrl}
+      />
     </ReleaseSnapshotProvider>
   );
 }

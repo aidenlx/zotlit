@@ -20,6 +20,8 @@ function DocsCatchAll() {
       snapshot={page.snapshot}
       availability={page.availability}
       changelogUrl={page.changelogUrl}
+      githubUrl={page.githubUrl}
+      markdownUrl={page.markdownUrl}
     />
   );
 }
