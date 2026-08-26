@@ -3,6 +3,9 @@
   "extends": ["//"],
   "tasks": {
     "build": {
+      // The agent-skill archives are read from the repo-root `skills/` tree at
+      // build time (src/lib/agent-skills.ts), so those files are build inputs.
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/skills/**"],
       "outputs": ["dist/**", ".tanstack/**", ".source/**"],
       // The Cloudflare Web Analytics site token is read at build time, so a
       // build with it differs from one without; `CLOUDFLARE_ENV` picks the
