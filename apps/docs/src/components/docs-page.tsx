@@ -8,6 +8,7 @@
 
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { env } from "cloudflare:workers";
 import collections from "collections/browser";
 import { getBreadcrumbItems } from "fumadocs-core/breadcrumb";
 import {
@@ -32,7 +33,7 @@ import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
 import type { ReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
-import { appName, docsRoute, gitConfig } from "@/lib/shared";
+import { appName, docsRoute, docsSourceBranch, gitConfig } from "@/lib/shared";
 import { changelog, source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
@@ -61,7 +62,7 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       trail,
       availability,
       markdownUrl: contentRouteUrl({ section: "docs", slugs: page.slugs }),
-      githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${page.path}`,
+      githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${docsSourceBranch(env.DOCS_LINE)}/apps/docs/content/docs/${page.path}`,
       changelogUrl: availability
         ? changelog.getPage([availability.introduced])?.url
         : undefined,

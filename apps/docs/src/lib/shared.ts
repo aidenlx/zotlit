@@ -19,6 +19,11 @@ export const gitConfig = {
   branch: "main",
 };
 
+/** The repository branch that publishes each documentation line. */
+export function docsSourceBranch(docsLine: Cloudflare.Env["DOCS_LINE"]) {
+  return docsLine === "beta" ? "next" : gitConfig.branch;
+}
+
 /** `owner/name`, the form GitHub's API and giscus both name the repository by. */
 export const repoSlug = `${gitConfig.user}/${gitConfig.repo}` as const;
 
