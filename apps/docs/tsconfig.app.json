@@ -13,6 +13,7 @@
     ],
     "module": "esnext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "isolatedDeclarations": false,
