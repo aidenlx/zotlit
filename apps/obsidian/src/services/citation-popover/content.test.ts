@@ -65,13 +65,14 @@ afterEach(async () => {
 async function render(
   blocks: readonly CitationPopoverBlock[],
   note?: Inlines,
+  pending?: boolean,
 ): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(() => {
     root!.render(
-      createElement(CitationPopoverContent, { blocks, note, actions }),
+      createElement(CitationPopoverContent, { blocks, note, actions, pending }),
     );
   });
   return container;
@@ -196,6 +197,20 @@ describe("CitationPopoverContent", () => {
       m.references_citekey_unresolved({ citekey: "typo2024" }),
     );
     expect(iconsOf(unresolved!)).toEqual([]);
+  });
+
+  it("reads an unresolved citekey as a lookup in progress while resolution is pending", async () => {
+    const container = await render(
+      [{ kind: "unresolved", citekey: "doe2024" }],
+      undefined,
+      true,
+    );
+
+    const [block] = blocksOf(container);
+    expect(block!.textContent).toBe(
+      m.references_citekey_pending({ citekey: "doe2024" }),
+    );
+    expect(block!.querySelector(".zt\\:text-destructive")).toBeNull();
   });
 
   it("explains an ambiguous citekey by the candidates it names", async () => {
