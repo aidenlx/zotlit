@@ -4,14 +4,32 @@
 import { Terminal } from "lucide-react";
 import { useState } from "react";
 
-export interface CommandProps {
-  /** Exact command-palette string, e.g. `ZotLit: Open template data explorer`. */
-  children: string;
+import type { LocalizedString } from "@/paraglide/runtime.js";
+
+interface CommandOptions {
   /** Render mid-sentence instead of as a standalone block directive. */
   inline?: boolean;
 }
 
-export function Command({ children, inline = false }: CommandProps) {
+export type CommandProps = CommandOptions &
+  (
+    | {
+        /** ZotLit command name rendered from the product Message catalog. */
+        name: LocalizedString;
+        children?: never;
+      }
+    | {
+        /** Exact command-palette name owned by another product. */
+        children: string;
+        name?: never;
+      }
+  );
+
+export function Command(props: CommandProps) {
+  const inline = props.inline ?? false;
+  const commandName =
+    props.name === undefined ? props.children : `ZotLit: ${props.name}`;
+
   if (inline) {
     return (
       <span className="not-prose inline">
@@ -20,19 +38,19 @@ export function Command({ children, inline = false }: CommandProps) {
           className="mr-[0.2em] inline size-[1em] shrink-0 align-[-0.14em] text-fd-primary select-none"
         />
         <span className="border-b border-fd-primary/45 pb-[0.02em] font-medium text-fd-foreground">
-          {children}
+          {commandName}
         </span>
       </span>
     );
   }
-  return <BlockCommand>{children}</BlockCommand>;
+  return <BlockCommand commandName={commandName} />;
 }
 
-function BlockCommand({ children }: { children: string }) {
+function BlockCommand({ commandName }: { commandName: string }) {
   const [copied, setCopied] = useState(false);
 
   function copy() {
-    navigator.clipboard.writeText(children).then(
+    navigator.clipboard.writeText(commandName).then(
       () => {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
@@ -48,7 +66,7 @@ function BlockCommand({ children }: { children: string }) {
         className="size-[1.15rem] shrink-0 text-fd-primary select-none"
       />
       <span className="font-serif text-[1.22rem] leading-tight font-medium text-fd-foreground">
-        {children}
+        {commandName}
       </span>
       <button
         type="button"

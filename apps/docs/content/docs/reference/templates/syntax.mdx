@@ -7,6 +7,7 @@ updated: "2.0.0"
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { m } from "@/paraglide/messages.js";
 
 This page documents the Liquid template language as configured in ZotLit: output expressions, tags, filters, whitespace control, the ZotLit-specific vocabulary, output coercion, includes, and template file naming.
 
@@ -414,9 +415,9 @@ Files with non-canonical names are compiled and available as partials via `{% re
 
 ## Liquid-wins shadowing
 
-When both a `.liquid.md` and a `.eta.md` file exist for the same template name, the Liquid file takes precedence. The Eta file is ignored regardless of whether JavaScript templates are enabled.
+When both a `.liquid.md` and a `.eta.md` file exist for the same template name, the Liquid file takes precedence. The Eta file is ignored regardless of whether {m.settings_template_js_enable_name()} are enabled.
 
-**Settings > Templates** reports a warning on the shadowed file:
+**Settings > {m.settings_page_templates()}** reports a warning on the shadowed file:
 
 > The Eta template at \{path\} is ignored because a Liquid template with the same name takes precedence.
 

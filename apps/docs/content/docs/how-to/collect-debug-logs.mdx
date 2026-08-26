@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 Bug reports often need ZotLit logs, Obsidian logs, or Zotero debug output from ZotLit Companion, the Zotero add-on. Each section below is self-contained. Follow only the one you were asked for.
 
@@ -45,13 +46,13 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   <Step>
     ### Open the Maintenance settings
 
-    In Obsidian, open **Settings > ZotLit > Maintenance**.
+    In Obsidian, open **Settings > ZotLit > {m.settings_page_maintenance()}**.
 
   </Step>
   <Step>
     ### Turn on debug logging
 
-    Set **Log level** to **debug**, then turn on **Write logs to file**. Logs now append to `zotlit.log.jsonl` inside the plugin folder.
+    Set **{m.settings_log_level_name()}** to **debug**, then turn on **{m.settings_log_to_file_name()}**. Logs now append to `zotlit.log.jsonl` inside the plugin folder.
 
   </Step>
   <Step>
@@ -63,7 +64,7 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   <Step>
     ### Save the log archive
 
-    Back in **Settings > ZotLit > Maintenance**, click **Save log archive**. This exports the log file for sharing.
+    Back in **Settings > ZotLit > {m.settings_page_maintenance()}**, click **{m.settings_log_export_name()}**. This exports the log file for sharing.
 
   </Step>
   <Step>
@@ -75,8 +76,8 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
 </Steps>
 
 <Callout type="info" title="Turn logging back off">
-  Set **Log level** back to **info** and turn off **Write logs to file** once
-  you no longer need ongoing logging.
+  Set **{m.settings_log_level_name()}** back to **info** and turn off **
+  {m.settings_log_to_file_name()}** once you no longer need ongoing logging.
 </Callout>
 
 ## Template data [#template-data]
@@ -93,13 +94,13 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
   <Step>
     ### Anchor at the annotation
 
-    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select **Explore as annotation template data**. For any other template, skip this step and stay at the note root.
+    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select **{m.template_data_explorer_menu_explore_annotation()}**. For any other template, skip this step and stay at the note root.
 
   </Step>
   <Step>
     ### Save the template data
 
-    Open the more-options menu on the explorer's tab and select **Save template data as JSON**. This downloads a file named like `zotlit-template-data-ABCD2345-20260512-143000.json`.
+    Open the more-options menu on the explorer's tab and select **{m.template_data_explorer_menu_export_json()}**. This downloads a file named like `zotlit-template-data-ABCD2345-20260512-143000.json`.
 
     The file always holds the whole current root: the full note template data at the note root, or the annotation's data when the explorer is anchored at an annotation. A filter in the explorer does not narrow it.
 
@@ -183,7 +184,12 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
 <Cards>
   <Card
     title="Settings"
-    description="Full reference for every ZotLit setting, including Maintenance."
+    description={
+      <>
+        Full reference for every ZotLit setting, including{" "}
+        {m.settings_page_maintenance()}.
+      </>
+    }
     href="/docs/reference/settings"
   />
   <Card

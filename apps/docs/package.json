@@ -15,9 +15,10 @@
     "cf-typegen": "wrangler types",
     "cf-typegen:check": "wrangler types --check",
     "codegen": "fumadocs-mdx",
+    "generate:i18n": "paraglide-js compile --project ../../project.inlang --outdir ./src/paraglide --strategy baseLocale --output-structure message-modules --emit-ts-declarations --silent",
     "generate:template-data": "node scripts/generate-template-data.ts",
-    "postinstall": "fumadocs-mdx",
-    "typecheck": "pnpm cf-typegen:check && tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
+    "postinstall": "fumadocs-mdx && pnpm generate:i18n",
+    "typecheck": "pnpm cf-typegen:check && pnpm generate:i18n && tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint",
     "test": "vitest run"
   },
@@ -48,6 +49,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.1",
+    "@inlang/paraglide-js": "^2.24.1",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/devtools-vite": "^0.8.5",
     "@types/mdx": "^2.0.14",

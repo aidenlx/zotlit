@@ -5,7 +5,12 @@
     "build": {
       // The agent-skill archives are read from the repo-root `skills/` tree at
       // build time (src/lib/agent-skills.ts), so those files are build inputs.
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/skills/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/skills/**",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
       "outputs": ["dist/**", ".tanstack/**", ".source/**"],
       // The Cloudflare Web Analytics site token is read at build time, so a
       // build with it differs from one without; `CLOUDFLARE_ENV` picks the
@@ -17,6 +22,14 @@
     // regenerates it too, so a lint or typecheck run needs only this task.
     "codegen": {
       "outputs": [".source/**"],
+      "outputLogs": "errors-only"
+    },
+    "generate:i18n": {
+      "inputs": [
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
+      "outputs": ["src/paraglide/**"],
       "outputLogs": "errors-only"
     },
     "cf-typegen:check": {

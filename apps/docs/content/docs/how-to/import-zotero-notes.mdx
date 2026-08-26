@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 ZotLit can import Zotero child notes as standalone Markdown files in your vault and link to them from the parent literature note.
 
@@ -36,12 +37,11 @@ When you create, update, or overwrite a literature note whose template or frontm
 
 <Callout type="info" title="Metadata-only update">
   A metadata-only update (
-  <Command inline>ZotLit: Update literature note metadata</Command>)
-  re-evaluates frontmatter but does not re-render the note body. If a
-  frontmatter expression references `noteLink`, child notes are still imported
-  during that update. A `noteLink` reference that exists only in the body
-  template has no effect during a metadata-only update because the body is not
-  re-rendered.
+  <Command inline name={m.command_update_note_metadata_name()} />) re-evaluates
+  frontmatter but does not re-render the note body. If a frontmatter expression
+  references `noteLink`, child notes are still imported during that update. A
+  `noteLink` reference that exists only in the body template has no effect
+  during a metadata-only update because the body is not re-rendered.
 </Callout>
 
 ## Import all child notes at once
@@ -58,11 +58,11 @@ When you create, update, or overwrite a literature note whose template or frontm
 
     Open the command palette and run:
 
-    <Command>ZotLit: Import child notes from Zotero</Command>
+    <Command name={m.command_import_child_notes_name()} />
 
-    A modal titled **Import child notes** appears. It shows how many child notes will be imported and lists any that are already imported.
+    A modal titled **{m.batch_import_child_title()}** appears. It shows how many child notes will be imported and lists any that are already imported.
 
-    Click **Import notes** to proceed.
+    Click **{m.batch_import_confirm_button()}** to proceed.
 
   </Step>
 </Steps>
@@ -77,7 +77,7 @@ To bring an imported note up to date, use the re-import commands described below
 
 If an attachment was skipped because its folder was not approved, a notice lists the blocked source folder. This can happen with a Zotero linked file, which Zotero stores in an external folder instead of its data directory. See [Zotero's guide to linked files](https://www.zotero.org/support/attaching_files#adding_linked_files).
 
-Select **Open ZotLit settings**, open **Attachments → Approved folders**, and approve the folder if you trust it. Then re-import the note to copy the attachment. Approval applies to future imports and does not update earlier imports automatically.
+Select **{m.notice_attachment_sources_skipped_action()}**, open **{m.settings_page_attachments()} → {m.settings_attachment_approved_name()}**, and approve the folder if you trust it. Then re-import the note to copy the attachment. Approval applies to future imports and does not update earlier imports automatically.
 
 ## Re-import a single note
 
@@ -93,11 +93,11 @@ Select **Open ZotLit settings**, open **Attachments → Approved folders**, and 
 
     Open the command palette and run:
 
-    <Command>ZotLit: Update imported note from Zotero</Command>
+    <Command name={m.command_reimport_note_name()} />
 
-    A confirmation dialog appears: **Update imported note**: "Overwrite this file with the latest content from Zotero. Any local edits will be lost."
+    A confirmation dialog appears: **{m.modal_reimport_note_title()}**: "Overwrite this file with the latest content from Zotero. Any local edits will be lost."
 
-    Click **Update** to proceed.
+    Click **{m.modal_reimport_note_confirm()}** to proceed.
 
   </Step>
 </Steps>
@@ -108,17 +108,17 @@ This path imports both kinds of note in one action: the child notes attached to 
 
 For the whole library, open the command palette and run:
 
-<Command>ZotLit: Import all child and standalone notes</Command>
+<Command name={m.command_import_all_notes_name()} />
 
 For one collection, right-click it in the Zotero sidebar and choose **ZotLit > Import Child and Standalone Notes**. Nested subcollections are included. The same entry on **My Library** or a group library covers that whole library.
 
-Obsidian opens the **Import notes** modal described below, listing every note it found. Review the list, then confirm to start the batch.
+Obsidian opens the **{m.batch_import_title()}** modal described below, listing every note it found. Review the list, then confirm to start the batch.
 
 The Obsidian command covers every library in your [library scope](/docs/reference/settings#library-scope) (set in **Settings > ZotLit**). The Zotero entries cover the library or collection you right-clicked, whatever your library scope is.
 
 If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero." If the library no longer exists, it reports "That Zotero library is not available."
 
-While more than one library contributes notes, the **Import notes** modal names the library beside each heading. If a selected library is missing from your Zotero database, the import continues over the rest and states how many libraries it skipped. If none of your selected libraries is available, no modal opens and a notice reports "No library in the library scope is available."
+While more than one library contributes notes, the **{m.batch_import_title()}** modal names the library beside each heading. If a selected library is missing from your Zotero database, the import continues over the rest and states how many libraries it skipped. If none of your selected libraries is available, no modal opens and a notice reports "No library in the library scope is available."
 
 ## Re-import notes in batch
 
@@ -138,9 +138,9 @@ ZotLit Companion, the Zotero add-on, starts batch re-import from Zotero.
 
     What happens next depends on how many notes you selected:
 
-    **Single note:** If the note has not been imported before, it imports directly and a toast confirms success. If it already exists in the vault, Obsidian shows a confirmation: **Overwrite imported note**: "Overwrite `{title}` with the latest content from Zotero? Any local edits will be lost." Click **Overwrite** to proceed, or dismiss to cancel.
+    **Single note:** If the note has not been imported before, it imports directly and a toast confirms success. If it already exists in the vault, Obsidian shows a confirmation: **{m.modal_import_overwrite_title()}**: "Overwrite `{title}` with the latest content from Zotero? Any local edits will be lost." Click **{m.modal_import_overwrite_confirm()}** to proceed, or dismiss to cancel.
 
-    **Two or more notes:** Obsidian opens a modal titled **Import notes**. It groups notes by status:
+    **Two or more notes:** Obsidian opens a modal titled **{m.batch_import_title()}**. It groups notes by status:
 
     - **Import**: new notes that do not yet exist in the vault.
     - **Overwrite**: notes whose Zotero content has changed since the last import.
@@ -148,7 +148,7 @@ ZotLit Companion, the Zotero add-on, starts batch re-import from Zotero.
 
     The up-to-date check compares the `zotero-lastmod` frontmatter value in the existing file against the live `dateModified` timestamp in Zotero, rounded to whole seconds.
 
-    Click **Import notes** to proceed.
+    Click **{m.batch_import_confirm_button()}** to proceed.
 
   </Step>
 </Steps>
@@ -164,7 +164,7 @@ ZotLit Companion, the Zotero add-on, starts batch re-import from Zotero.
 
 ## Import folder
 
-Imported notes are saved to the folder configured in **Settings > Note import > Imported note folder** (default: `zotero_notes`). The folder is created automatically if it does not exist. Each filename includes a short random suffix to guarantee uniqueness.
+Imported notes are saved to the folder configured in **Settings > {m.settings_page_note_import()} > {m.settings_note_import_folder_name()}** (default: `zotero_notes`). The folder is created automatically if it does not exist. Each filename includes a short random suffix to guarantee uniqueness.
 
 ## Citations in imported notes
 
@@ -180,7 +180,7 @@ If every cited reference within a single citation is unresolvable (no citation k
 
 ## Use colored highlight syntax
 
-Turn on **Settings > Note import > Use colored highlight syntax** before you import or re-import a note.
+Turn on **Settings > {m.settings_page_note_import()} > {m.settings_note_import_colored_highlights_name()}** before you import or re-import a note.
 
 ZotLit converts six colors to Colored Highlight Syntax: red, orange, yellow, green, blue, and purple. A circle emoji at the start of a highlight sets its color:
 
@@ -196,13 +196,13 @@ The setting applies to highlights created in Zotero's note editor and inline Ann
 
 Highlights with unsupported, missing, or custom colors remain HTML. ZotLit also keeps HTML when the text contains `==` because it conflicts with the Markdown delimiter.
 
-The setting affects later imports and re-imports. It does not rewrite imported notes immediately. When **Render annotations from template** is on, annotation-template output stays unchanged.
+The setting affects later imports and re-imports. It does not rewrite imported notes immediately. When **{m.settings_note_import_annotations_template_name()}** is on, annotation-template output stays unchanged.
 
 ## Render annotations from template
 
 By default, annotation paragraphs in imported notes keep the HTML that Zotero inserted: highlighted or underlined excerpts with a citation link.
 
-Turn on **Settings > Note import > Render annotations from template** to render those paragraphs through your `annotation` template instead, producing the same rich callouts used in literature notes.
+Turn on **Settings > {m.settings_page_note_import()} > {m.settings_note_import_annotations_template_name()}** to render those paragraphs through your `annotation` template instead, producing the same rich callouts used in literature notes.
 
 <Callout type="warn" title="Replace on refresh">
   With this setting on, each annotation's text, comment, color, page, and image

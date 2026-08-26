@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 ZotLit ships six built-in templates that control literature note filenames, note bodies, annotations, the managed region, and citations. You can override any of them by creating an editable file in your vault.
 
@@ -24,22 +25,22 @@ ZotLit ships six built-in templates that control literature note filenames, note
   <Step>
     ### Open template settings
 
-    In Obsidian, open **Settings > ZotLit > Templates**. Under the **Template files** heading you see a row for each template type: Note filename, Literature note, Annotation, Managed region, Citation, and Alternate citation.
+    In Obsidian, open **Settings > ZotLit > {m.settings_page_templates()}**. Under the **Template files** heading you see a row for each template type: {m.settings_template_name_filename()}, {m.settings_template_name_note()}, {m.settings_template_name_annotation()}, {m.settings_template_name_content()}, {m.settings_template_name_cite()}, and {m.settings_template_name_cite2()}.
 
   </Step>
   <Step>
     ### Create the file
 
-    On the row for the template you want to customize, click the **Create editable template file** button (pencil-on-file icon). ZotLit copies the built-in default into your vault and opens it in the editor.
+    On the row for the template you want to customize, click the **{m.settings_template_eject()}** button (pencil-on-file icon). ZotLit copies the built-in default into your vault and opens it in the editor.
 
     A notice confirms the location: "Template saved to `{path}`."
 
-    The file is created at `<template folder>/zotlit-<name>.liquid.md`, where `<template folder>` is the path configured in **Settings > ZotLit > Templates > Template folder** (default: `templates`).
+    The file is created at `<template folder>/zotlit-<name>.liquid.md`, where `<template folder>` is the path configured in **Settings > ZotLit > {m.settings_page_templates()} > {m.settings_template_folder_name()}** (default: `templates`).
 
   </Step>
 </Steps>
 
-To create all six template files at once, click the **Create all editable template files** button at the top of the Template files section.
+To create all six template files at once, click the **{m.settings_template_eject_all()}** button at the top of the Template files section.
 
 ## Edit the template
 
@@ -53,24 +54,24 @@ ZotLit watches the template folder and recompiles changed files immediately. No 
 
 To apply your updated template to an existing literature note, run:
 
-<Command>ZotLit: Update literature note</Command>
+<Command name={m.command_update_note_name()} />
 
 This re-renders the managed region using the current template. To update only frontmatter fields without touching the body, run:
 
-<Command>ZotLit: Update literature note metadata</Command>
+<Command name={m.command_update_note_metadata_name()} />
 
 ## Restore the built-in default
 
 Two options return a template to its built-in default:
 
-- **Reset to default** (rotate icon on the template row): replaces the file's contents with the built-in default while keeping the file in place. A confirm modal asks: "Replace '`{name}`' with the built-in default? Your changes will be lost."
-- **Delete template file** (trash icon on the template row): moves the file to Obsidian's trash. With the file gone, ZotLit falls back to the built-in default automatically. The watcher picks up the deletion immediately.
+- **{m.settings_template_reset()}** (rotate icon on the template row): replaces the file's contents with the built-in default while keeping the file in place. A confirm modal asks: "Replace '`{name}`' with the built-in default? Your changes will be lost."
+- **{m.settings_template_delete()}** (trash icon on the template row): moves the file to Obsidian's trash. With the file gone, ZotLit falls back to the built-in default automatically. The watcher picks up the deletion immediately.
 
 ## Switch to Eta (JavaScript)
 
-After enabling the JavaScript Templates gate, each template row shows a **Template language** dropdown with **Liquid** and **JavaScript (Eta)** options. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
+After enabling the {m.settings_template_js_enable_name()} gate, each template row shows a **{m.settings_template_language_tooltip()}** dropdown with **{m.settings_template_language_liquid()}** and **{m.settings_template_language_eta()}** options. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
 
-Selecting JavaScript (Eta) replaces the file. It does not convert syntax between Liquid and Eta.
+Selecting {m.settings_template_language_eta()} replaces the file. It does not convert syntax between Liquid and Eta.
 
 ## See also
 

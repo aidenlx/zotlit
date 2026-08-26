@@ -25,6 +25,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/docs deploy:beta` — the same for Pre-release Docs. `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the beta build has to be its own; a build made without it carries the production line's variables whatever `wrangler deploy --env` says.
 - `pnpm --filter @zotlit/docs cf-typegen` — regenerate the committed `worker-configuration.d.ts` from `wrangler.jsonc`. Both TypeScript configurations consume it; run this command after a Worker binding, variable, secret, compatibility date, or compatibility flag changes. The typecheck verifies that the generated file is current.
 - `pnpm --filter @zotlit/docs codegen` — regenerate the `.source/` collection index (`fumadocs-mdx`); `postinstall` and `vite build` already run it.
+- `pnpm --filter @zotlit/docs generate:i18n` — regenerate the typed Paraglide facade from the root Inlang project; dev, build, and typecheck already run it.
 - `pnpm exec turbo run generate:template-data --filter=@zotlit/docs` — regenerate the template-data reference page.
 
 ## Content pipeline
@@ -88,7 +89,7 @@ Read `/docs-writing` to scope content decisions, then delegate prose to the `doc
 
 Custom MDX components (`src/components/`) are imported per-page in the `.mdx`, not registered in [`src/components/mdx.tsx`](src/components/mdx.tsx); wrap them in `not-prose` and style over `--color-fd-*` tokens (see [`src/components/action-link.tsx`](src/components/action-link.tsx)).
 
-`<Command>` marks an Obsidian command-palette string, keeping the `ZotLit:` prefix — `<Command>` block or `<Command inline>` mid-sentence; menu items and labels stay `**bold**`. See [`src/components/command.tsx`](src/components/command.tsx) and [`DESIGN.md`](DESIGN.md).
+**UI Labels:** When docs quote a command, setting, option, menu item, button, or tooltip, follow [`policies/ui-labels.md`](policies/ui-labels.md).
 
 Give any heading that is a deep-link target (linked from another page, a changelog entry, or an issue reply as `/path#anchor`) a stable custom anchor via fumadocs' `[#slug]` syntax, e.g. `## Section title [#bulk]`. The auto-generated slug tracks the heading text, so rewording it silently breaks inbound links; a short custom id does not. Reference: https://www.fumadocs.dev/docs/markdown#toc-settings
 
