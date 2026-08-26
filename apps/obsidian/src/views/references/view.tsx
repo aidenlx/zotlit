@@ -216,6 +216,12 @@ export class ReferencesView extends ItemView {
         this.#rescan();
       }),
     );
+    // A rebuild that settles with the maps unchanged emits no
+    // resolution-changed — only cited-by-invalidated announces the state
+    // flip — so this is what returns the pending label to a verdict.
+    this.register(
+      citationIndex.on("cited-by-invalidated", () => this.#publishResolution()),
+    );
     this.register(citationIndex.on("membership-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
     // What the document's own citations show decides what this gutter shows,
