@@ -1,7 +1,7 @@
 ---
-title: Pandoc Citation Test
+title: Literature Note Citation Test
 ---
-# Pandoc Citation Test
+# Literature Note Citation Test
 
 This note exercises the Literature Note Citation workflow described in spec #612.
 
@@ -65,7 +65,7 @@ Evidence spans several studies ([[literatures/wangMutationalClinicalSpectrum2020
 
 A link to an ordinary note is not converted to a citation:
 
-See also [[pandoc-citation-test]] for the test itself.
+See also [[literature-note-citation-test]] for the test itself.
 
 ## Embed (stays as embed)
 
@@ -83,10 +83,10 @@ The study by [[literatures/Hensher2011|Hensher & Collins (2011)]] addressed this
 
 A `#cite:` fragment on a non-literature-note target should stop export:
 
-This should error: [[pandoc-citation-test#cite:locator=1]].
+This should error: [[literature-note-citation-test#cite:locator=1]].
 
 ## Mixed content
 
 A paragraph with both citation wikilinks and ordinary wikilinks:
 
-According to [[literatures/Hensher2011#cite:mode=author-in-text]], the method in [[pandoc-citation-test]] produces valid output ([[literatures/wangMutationalClinicalSpectrum2020a#cite:locator=9]]; [[literatures/yinClinicopathologicalFeaturesMutational2021]]).
+According to [[literatures/Hensher2011#cite:mode=author-in-text]], the method in [[literature-note-citation-test]] produces valid output ([[literatures/wangMutationalClinicalSpectrum2020a#cite:locator=9]]; [[literatures/yinClinicopathologicalFeaturesMutational2021]]).
