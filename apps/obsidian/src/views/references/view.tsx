@@ -228,13 +228,13 @@ export class ReferencesView extends ItemView {
     this.register(db.on("changed", () => this.#reload()));
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
-    // for a Zotero change, a Citation and References Style change, or an engine that came or
-    // went — is the one signal that makes the formatted entries here stale.
-    this.register(
-      bibliographyRender.on("invalidated", () =>
-        this.#reload({ invalidate: true }),
-      ),
-    );
+    // for a Zotero change, a Citation and References Style change, or an engine
+    // that came or went — makes the formatted entries here stale rather than
+    // wrong. The reload's own render is what replaces them, so they stay on
+    // screen while it runs and a Zotero refresh that changes nothing never
+    // flashes the minimal list; an unavailable or failed outcome still clears
+    // them through #showMinimal.
+    this.register(bibliographyRender.on("invalidated", () => this.#reload()));
     this.#reload();
     this.#rescan();
     await db.ready;
