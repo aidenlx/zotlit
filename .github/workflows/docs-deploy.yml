@@ -7,14 +7,16 @@ name: Docs Deploy
 # `next` carries the pre-release line, so a docs change there deploys
 # Pre-release Docs — the `beta` wrangler environment, `zotlit-docs-beta`, on
 # zotlit-beta.aidenlx.site. See ADR 0021.
+#
+# Every push on the two branches enters the `gate` job, which asks turbo
+# whether the push touched `@zotlit/docs` or anything in its dependency
+# closure — package sources, the lockfile entries it resolves, and the turbo
+# inputs the build task declares (the repo-root `skills/` tree among them).
+# The `deploy` job runs only when the answer is yes, so a push that leaves the
+# docs untouched costs one short gate job and no deploy.
 on:
   push:
     branches: [main, next]
-    paths:
-      - "apps/docs/**"
-      - "pnpm-workspace.yaml"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/docs-deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -27,7 +29,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      # Full history so the pushed range's base commit is present for the
+      # turbo comparison; submodules so the workspace package graph resolves.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      # Fail open: every path that cannot prove "docs untouched" deploys —
+      # a manual dispatch, an unknown base commit, a force push, a change to
+      # this workflow, or a turbo failure.
+      - name: Check whether the docs closure changed
+        id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          deploy() { echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "gate: deploy — $1"; exit 0; }
+          skip()   { echo "deploy=false" >> "$GITHUB_OUTPUT"; echo "gate: skip — $1"; exit 0; }
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            deploy "manual dispatch"
+          fi
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            deploy "base commit unavailable"
+          fi
+          if ! git merge-base --is-ancestor "$BEFORE" HEAD; then
+            deploy "force push"
+          fi
+          if [ -n "$(git diff --name-only "$BEFORE" HEAD -- .github/workflows/docs-deploy.yml)" ]; then
+            deploy "workflow changed"
+          fi
+
+          # turbo's dry run lists the packages the filter selects: the docs
+          # package plus dependencies, restricted to those affected since the
+          # base commit. The pinned version tracks the root devDependency.
+          turbo_version=$(jq -r '.devDependencies.turbo' package.json | tr -d '^~')
+          affected=$(npx -y "turbo@${turbo_version}" run build \
+            --filter="@zotlit/docs...[$BEFORE]" --dry=json 2>/dev/null \
+            | jq '.packages | length') || affected=""
+          if [ -z "$affected" ]; then
+            deploy "turbo dry run failed"
+          fi
+          if [ "$affected" -gt 0 ]; then
+            deploy "$affected affected package(s)"
+          fi
+          skip "docs closure untouched"
+
   deploy:
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     env:
       # The wrangler environment this branch deploys: `beta` for Pre-release
