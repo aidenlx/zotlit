@@ -63,7 +63,7 @@ The site wears the "Manuscript & Machine" design. Its spec — theme, the four-f
 ## Verification
 
 - [`http.test.ts`](src/http.test.ts) is the primary seam: it serves `dist/` through workerd and asserts what a browser sees — page status, redirect targets, Accept-header negotiation, the Pre-release Docs fallback on both lines, which routes carry a prerendered file, Markdown editions, search results, sitemap and robots content, feed items, OG card content types, agent-skill digests, JSON-LD, and asset headers. It walks the page list from the loaders, so a page the prerender scan or the card scan misses fails there. Run it through turbo so the build runs first.
-- [`source.test.ts`](src/lib/source.test.ts) pins collection discovery, ordering, and normalized dates. [`gfm.test.ts`](src/lib/template-contract/gfm.test.ts) pins generated Markdown tables. [`v1-redirects.test.ts`](src/lib/v1-redirects.test.ts) pins the rendered rule files. [`docs-availability.test.ts`](src/lib/docs-availability.test.ts) pins the badge and preamble derivation.
+- [`source.test.ts`](src/lib/source.test.ts) pins that each collection discovers content, that the docs collection carries pages alone and leaves the `_` partials to `<include>`, that the changelog and the blog come back newest-first, and that a frontmatter date normalizes to an ISO day. [`gfm.test.ts`](src/lib/template-contract/gfm.test.ts) pins generated Markdown tables. [`v1-redirects.test.ts`](src/lib/v1-redirects.test.ts) pins the rendered rule files. [`docs-availability.test.ts`](src/lib/docs-availability.test.ts) pins the badge and preamble derivation.
 
 ## Deployment
 
