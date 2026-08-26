@@ -19,8 +19,8 @@
 <p>
   <a href="https://github.com/aidenlx/zotlit/stargazers"><img alt="GitHub stars" src="https://custom-icon-badges.demolab.com/github/stars/aidenlx/zotlit"></a>
   <a href="LICENSE"><img alt="License" src="https://custom-icon-badges.demolab.com/github/license/aidenlx/zotlit?logo=law&logoColor=white"></a>
-  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Obsidian plugin version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit%2Fnext%2Fapps%2Fobsidian%2Fpackage.json&label=obsidian%20plugin&logo=obsidian&logoColor=white&color=8b6cef"></a>
-  <a href="https://zotlit.aidenlx.site/docs/install-companion"><img alt="Zotero companion version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit%2Fnext%2Fapps%2Fzotero%2Fpackage.json&label=zotero%20companion&logo=zotero-32&color=bc3a3c"></a>
+  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Obsidian plugin version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit%2Fmain%2Fapps%2Fobsidian%2Fpackage.json&label=obsidian%20plugin&logo=obsidian&logoColor=white&color=8b6cef"></a>
+  <a href="https://zotlit.aidenlx.site/docs/install-companion"><img alt="Zotero companion version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit%2Fmain%2Fapps%2Fzotero%2Fpackage.json&label=zotero%20companion&logo=zotero-32&color=bc3a3c"></a>
 </p>
 
 <p>
