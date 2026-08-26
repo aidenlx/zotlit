@@ -16,7 +16,7 @@ import * as v from "valibot";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { baseURL } from "./shared.js";
+import { baseURL, zotlitBetaUrl } from "./shared.js";
 
 const AGENT_SKILLS_SCHEMA =
   "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
@@ -86,6 +86,8 @@ export async function agentSkillAssets(
 ): Promise<Map<string, Uint8Array>> {
   const workspaceRoot = await getWorkspaceRoot(packageRoot);
   const commitSha = resolvePinnedCommitSha(workspaceRoot);
+  const assetBaseURL =
+    process.env.CLOUDFLARE_ENV === "beta" ? zotlitBetaUrl : baseURL;
 
   const built = await Promise.all(
     SKILL_NAMES.map(async (directoryName) => {
@@ -116,7 +118,7 @@ export async function agentSkillAssets(
         name: directoryName,
         type: "archive",
         description,
-        url: `${baseURL}${archiveUrl(directoryName, commitSha)}`,
+        url: `${assetBaseURL}${archiveUrl(directoryName, commitSha)}`,
         digest: digest(archive),
       })),
     },
