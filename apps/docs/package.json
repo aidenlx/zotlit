@@ -62,7 +62,6 @@
     "fflate": "catalog:",
     "oxlint": "catalog:",
     "schema-dts": "^2.0.0",
-    "shiki": "catalog:",
     "tailwindcss": "catalog:",
     "takumi-js": "^2.3.0",
     "typescript": "catalog:",

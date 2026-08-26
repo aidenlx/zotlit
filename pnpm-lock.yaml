@@ -96,9 +96,6 @@ catalogs:
     semver:
       specifier: ^7.7.2
       version: 7.8.5
-    shiki:
-      specifier: 4.3.1
-      version: 4.3.1
     tailwindcss:
       specifier: ^4.3.0
       version: 4.3.2
@@ -124,10 +121,8 @@ catalogs:
 overrides:
   zotero-types>epubjs: 0.3.93
   zotero-types>pdfjs-dist: workspace:*
-  next>postcss: '>=8.5.18'
   ajv>fast-uri: ^3.1.5
   postcss>nanoid: ^3.3.17
-  cosmiconfig>js-yaml: ^4.3.1
 
 importers:
 
@@ -303,9 +298,6 @@ importers:
       schema-dts:
         specifier: ^2.0.0
         version: 2.0.0(typescript@7.0.2)
-      shiki:
-        specifier: 'catalog:'
-        version: 4.3.1
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.2
