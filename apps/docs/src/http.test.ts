@@ -565,6 +565,21 @@ describe("page head", () => {
       'href="https://zotlit.aidenlx.site/changelog/rss.xml"',
     );
   });
+
+  it("points at both favicon editions and serves them", async () => {
+    const html = await (await get("/")).text();
+    expect(html).toContain('rel="icon" href="/favicon.ico"');
+    expect(html).toContain('rel="icon" href="/favicon.svg"');
+
+    for (const [path, type] of [
+      ["/favicon.ico", "image/vnd.microsoft.icon"],
+      ["/favicon.svg", "image/svg+xml"],
+    ] as const) {
+      const response = await get(path);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain(type);
+    }
+  });
 });
 
 describe("asset headers", () => {

@@ -44,6 +44,13 @@ export const Route = createRootRoute({
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      // `.ico` leads for the browsers that pass over an SVG icon; it pairs the
+      // 16 px pixel-fit cut with the master tile at 32. Both editions are the
+      // tile rather than the bare mark, which is what keeps them legible on a
+      // dark tab bar.
+      // @see docs/brand.md → Tile padding
+      { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       // Serif display paints on essentially every route, so both its latin
       // faces are fetched eagerly — upright for headlines, italic for the lede
       // and standfirst lines that ride beside them. Inter and IBM Plex Mono
