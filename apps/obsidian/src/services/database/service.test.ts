@@ -313,6 +313,32 @@ describe("DatabaseService", () => {
     expect(events).toEqual([true, false]);
   });
 
+  it("coalesces an external change during the initial load into the single-flight lane", async () => {
+    const startup = Promise.withResolvers<PreparedRead>();
+    prepareMock
+      .mockImplementationOnce(() => startup.promise)
+      .mockResolvedValueOnce(prepared("/clone/two.sqlite", "copy"));
+    createClientMock
+      .mockReturnValueOnce(fakeClient())
+      .mockReturnValueOnce(fakeClient());
+
+    await using service = new DatabaseService(deps(settings, zoteroPref));
+    await waitForCallCount(prepareMock, 1);
+
+    // A Zotero push lands while the initial read is still preparing, and its
+    // debounce elapses inside that window: one refresh at a time, so the push
+    // becomes the trailing rerun instead of a second concurrent open.
+    service.notifyExternalChange();
+    await vi.advanceTimersByTimeAsync(2000);
+    const callsDuringInitialLoad = prepareMock.mock.calls.length;
+
+    startup.resolve(prepared("/clone/one.sqlite", "copy"));
+    await service.ready;
+    expect(callsDuringInitialLoad).toBe(1);
+    await waitForCallCount(prepareMock, 2);
+    expect(service.state).toBe("ready");
+  });
+
   it("defers refresh while a read lease is held and swaps once after release", async () => {
     const client1 = fakeClient();
     const client2 = fakeClient();
