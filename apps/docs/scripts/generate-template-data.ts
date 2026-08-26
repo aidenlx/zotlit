@@ -8,13 +8,13 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { CONTRACT_IR } from "../src/lib/template-contract/contract.ts";
-import { renderDocMarkdown } from "../src/lib/template-contract/gfm.ts";
-import { buildPageModel } from "../src/lib/template-contract/page-model.ts";
+import { CONTRACT_IR } from "../src/lib/template-contract/contract.js";
+import { renderDocMarkdown } from "../src/lib/template-contract/gfm.js";
+import { buildPageModel } from "../src/lib/template-contract/page-model.js";
 import type {
   PageSection,
   SectionValue,
-} from "../src/lib/template-contract/page-model.ts";
+} from "../src/lib/template-contract/page-model.js";
 
 const PAGE = join("content", "docs", "reference", "templates", "data.mdx");
 

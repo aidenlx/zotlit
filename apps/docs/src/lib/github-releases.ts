@@ -3,7 +3,7 @@
 // Client-safe: the lookups that fetch these facts live in
 // `src/lib/release-data.ts`, which reaches the Worker environment. This module
 // carries only what a browser bundle and the build's page lists may both read.
-import { repoUrl } from "./shared.ts";
+import { repoUrl } from "./shared";
 
 export type ReleaseChannel = "pre-release" | "stable";
 

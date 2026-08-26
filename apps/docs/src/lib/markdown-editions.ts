@@ -11,15 +11,15 @@ import { llms } from "fumadocs-core/source";
 import {
   getDocsAvailability,
   renderAvailabilityMarkdown,
-} from "./docs-availability.ts";
-import type { MarkdownPage } from "./markdown-routes.ts";
+} from "./docs-availability";
+import type { MarkdownPage } from "./markdown-routes";
 import {
   blog,
   changelog,
   getBlogPages,
   getChangelogPages,
   source,
-} from "./source.ts";
+} from "./source";
 
 /** Every edition is authored Markdown, never HTML converted after the fact. */
 export const markdownHeaders = {

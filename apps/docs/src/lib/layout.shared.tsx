@@ -6,9 +6,9 @@ import {
   UsersIcon,
 } from "lucide-react";
 
-import { Logo } from "@/components/logo.tsx";
+import { Logo } from "@/components/logo";
 
-import { repoUrl } from "./shared.ts";
+import { repoUrl } from "./shared";
 
 /** Nav title and links shared by the home and docs layouts. */
 export function baseOptions({

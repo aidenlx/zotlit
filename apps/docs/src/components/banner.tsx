@@ -10,7 +10,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
 
-import { cn } from "@/lib/cn.ts";
+import { cn } from "@/lib/cn";
 
 type BannerVariant = "rainbow" | "normal";
 

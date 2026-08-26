@@ -8,16 +8,11 @@
 
 import * as v from "valibot";
 
-import { scanContent } from "./content-scan.ts";
-import type { ContentEntry } from "./content-scan.ts";
-import type { CardProps } from "./og-card.tsx";
-import {
-  baseURL,
-  formatReleaseDate,
-  ogImageUrl,
-  publishedOn,
-} from "./shared.ts";
-import type { OgType } from "./shared.ts";
+import { scanContent } from "./content-scan";
+import type { ContentEntry } from "./content-scan";
+import type { CardProps } from "./og-card";
+import { baseURL, formatReleaseDate, ogImageUrl, publishedOn } from "./shared";
+import type { OgType } from "./shared";
 
 const docsCard = v.object({
   title: v.string(),

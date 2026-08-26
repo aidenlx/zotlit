@@ -16,7 +16,6 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "isolatedDeclarations": false,
-    "allowImportingTsExtensions": true,
     "noUncheckedSideEffectImports": true,
     "types": ["vite/client", "node"],
     "paths": {

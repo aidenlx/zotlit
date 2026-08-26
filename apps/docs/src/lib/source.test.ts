@@ -4,7 +4,7 @@
 import { rcompare } from "semver";
 import { describe, expect, it } from "vitest";
 
-import { getBlogPages, getChangelogPages, source } from "./source.ts";
+import { getBlogPages, getChangelogPages, source } from "./source";
 
 describe("docs collection", () => {
   it("loads every page but the `_` partials", () => {

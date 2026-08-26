@@ -2,8 +2,8 @@ import Link from "fumadocs-core/link";
 import { ArrowUpRight, Download, Link as LinkIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { ObsidianMark } from "@/components/obsidian-mark.tsx";
-import { cn } from "@/lib/cn.ts";
+import { ObsidianMark } from "@/components/obsidian-mark";
+import { cn } from "@/lib/cn";
 
 type ActionKind = "download" | "obsidian" | "external";
 

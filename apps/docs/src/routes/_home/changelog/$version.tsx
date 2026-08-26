@@ -3,25 +3,25 @@ import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 import { ArrowUpRight } from "lucide-react";
 
-import { BackCrumb } from "@/components/back-crumb.tsx";
-import { CompanionNote } from "@/components/companion-note.tsx";
-import { getMDXComponents } from "@/components/mdx.tsx";
-import { betaFallbackUrl } from "@/lib/beta-fallback.ts";
-import { cn } from "@/lib/cn.ts";
-import { changelogProseRoles } from "@/lib/prose.ts";
-import { pageHead } from "@/lib/seo.ts";
+import { BackCrumb } from "@/components/back-crumb";
+import { CompanionNote } from "@/components/companion-note";
+import { getMDXComponents } from "@/components/mdx";
+import { betaFallbackUrl } from "@/lib/beta-fallback";
+import { cn } from "@/lib/cn";
+import { changelogProseRoles } from "@/lib/prose";
+import { pageHead } from "@/lib/seo";
 import {
   appName,
   changelogFeedRoute,
   changelogRoute,
   formatReleaseDate,
   repoUrl,
-} from "@/lib/shared.ts";
-import { changelog, getChangelogPages } from "@/lib/source.ts";
+} from "@/lib/shared";
+import { changelog, getChangelogPages } from "@/lib/source";
 import {
   breadcrumbListSchema,
   changelogArticleSchema,
-} from "@/lib/structured-data.ts";
+} from "@/lib/structured-data";
 
 const getRelease = createServerFn({ method: "GET" })
   .validator((version: string) => version)

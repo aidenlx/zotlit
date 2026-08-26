@@ -2,7 +2,6 @@
   "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.node26"],
   "compilerOptions": {
     "noEmit": true,
-    "allowImportingTsExtensions": true,
     "isolatedDeclarations": false,
     // The build renders the OG cards from JSX through takumi.
     "jsx": "react-jsx",

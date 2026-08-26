@@ -16,8 +16,8 @@ import type {
   ContractType,
 } from "@zotlit/db/contract/ir";
 
-import { SECTIONS } from "./sections.ts";
-import type { SectionSpec } from "./sections.ts";
+import { SECTIONS } from "./sections";
+import type { SectionSpec } from "./sections";
 
 /** One run of a description: plain prose, inline code, or a resolved link. */
 export type InlineNode =

@@ -1,6 +1,6 @@
 // Shared copyright footer for the (home) index surfaces (landing, blog, changelog).
 
-import { currentYear, gitConfig } from "@/lib/shared.ts";
+import { currentYear, gitConfig } from "@/lib/shared";
 
 export function SiteFooter() {
   return (

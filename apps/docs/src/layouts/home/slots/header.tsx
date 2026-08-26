@@ -37,8 +37,8 @@ import {
 } from "react";
 import type { ComponentProps } from "react";
 
-import { cn } from "@/lib/cn.ts";
-import { mergeRefs } from "@/lib/merge-refs.ts";
+import { cn } from "@/lib/cn";
+import { mergeRefs } from "@/lib/merge-refs";
 
 export const navItemVariants = cva("[&_svg]:size-4", {
   variants: {

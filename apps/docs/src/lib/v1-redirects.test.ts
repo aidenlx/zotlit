@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { zotlitLegacyUrl } from "./shared.ts";
+import { zotlitLegacyUrl } from "./shared";
 import {
   buildV1Redirects,
   renderHeadersFile,
   renderRedirectsFile,
-} from "./v1-redirects.ts";
+} from "./v1-redirects";
 
 const redirects = buildV1Redirects();
 const find = (source: string) => redirects.find((r) => r.source === source);

@@ -11,8 +11,8 @@ import {
   getStableReleaseLine,
   renderAvailabilityMarkdown,
   withDocsAvailability,
-} from "./docs-availability.ts";
-import type { DocsPageTreeItem } from "./docs-availability.ts";
+} from "./docs-availability";
+import type { DocsPageTreeItem } from "./docs-availability";
 
 describe("getStableReleaseLine", () => {
   it("normalizes a prerelease to its stable release line", () => {

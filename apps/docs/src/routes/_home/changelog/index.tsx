@@ -2,20 +2,20 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
-import { CompanionNote } from "@/components/companion-note.tsx";
-import { getMDXComponents } from "@/components/mdx.tsx";
-import { SiteFooter } from "@/components/site-footer.tsx";
-import { cn } from "@/lib/cn.ts";
-import { changelogProseRoles } from "@/lib/prose.ts";
-import { pageHead } from "@/lib/seo.ts";
+import { CompanionNote } from "@/components/companion-note";
+import { getMDXComponents } from "@/components/mdx";
+import { SiteFooter } from "@/components/site-footer";
+import { cn } from "@/lib/cn";
+import { changelogProseRoles } from "@/lib/prose";
+import { pageHead } from "@/lib/seo";
 import {
   appName,
   changelogFeedRoute,
   changelogRoute,
   formatReleaseDate,
-} from "@/lib/shared.ts";
-import { getChangelogPages } from "@/lib/source.ts";
-import { breadcrumbListSchema } from "@/lib/structured-data.ts";
+} from "@/lib/shared";
+import { getChangelogPages } from "@/lib/source";
+import { breadcrumbListSchema } from "@/lib/structured-data";
 
 const listReleases = createServerFn({ method: "GET" }).handler(() =>
   getChangelogPages().map((page) => ({

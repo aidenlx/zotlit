@@ -3,8 +3,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Feed } from "feed";
 
-import { baseURL, changelogRoute } from "@/lib/shared.ts";
-import { getChangelogPages } from "@/lib/source.ts";
+import { baseURL, changelogRoute } from "@/lib/shared";
+import { getChangelogPages } from "@/lib/source";
 
 function renderFeed(): string {
   const feed = new Feed({

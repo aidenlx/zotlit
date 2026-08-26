@@ -6,11 +6,11 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
-import { LegacyBanner } from "@/components/legacy-banner.tsx";
-import { Header } from "@/layouts/home/slots/header.tsx";
-import { baseOptions } from "@/lib/layout.shared.tsx";
-import { HOME_OG_ALT, ogImageMeta } from "@/lib/seo.ts";
-import { appDescription, appName, baseURL } from "@/lib/shared.ts";
+import { LegacyBanner } from "@/components/legacy-banner";
+import { Header } from "@/layouts/home/slots/header";
+import { baseOptions } from "@/lib/layout.shared";
+import { HOME_OG_ALT, ogImageMeta } from "@/lib/seo";
+import { appDescription, appName, baseURL } from "@/lib/shared";
 import appCss from "@/styles.css?url";
 
 /**

@@ -2,8 +2,8 @@ import Giscus from "@giscus/react";
 import { useTheme } from "fumadocs-ui/provider/base";
 import { useEffect, useState } from "react";
 
-import { cn } from "@/lib/cn.ts";
-import { repoSlug } from "@/lib/shared.ts";
+import { cn } from "@/lib/cn";
+import { repoSlug } from "@/lib/shared";
 
 /**
  * Giscus mount, framed only by its own "N reactions / N comments / input"

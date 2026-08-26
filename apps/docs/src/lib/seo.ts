@@ -8,9 +8,9 @@
 
 import type { Thing, WithContext } from "schema-dts";
 
-import { appName, baseURL, ogImageUrl } from "./shared.ts";
-import type { OgType } from "./shared.ts";
-import { absoluteUrl, serializeJsonLd } from "./structured-data.ts";
+import { appName, baseURL, ogImageUrl } from "./shared";
+import type { OgType } from "./shared";
+import { absoluteUrl, serializeJsonLd } from "./structured-data";
 
 const OG_IMAGE_DIMENSIONS = { width: "1200", height: "630" } as const;
 

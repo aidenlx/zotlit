@@ -3,16 +3,16 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Root } from "fumadocs-core/page-tree";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 
-import { DocsSubnav } from "@/components/docs-subnav.tsx";
+import { DocsSubnav } from "@/components/docs-subnav";
 import {
   Sidebar,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from "@/layouts/docs/slots/sidebar.tsx";
-import { withDocsAvailability } from "@/lib/docs-availability.ts";
-import { baseOptions } from "@/lib/layout.shared.tsx";
-import { source } from "@/lib/source.ts";
+} from "@/layouts/docs/slots/sidebar";
+import { withDocsAvailability } from "@/lib/docs-availability";
+import { baseOptions } from "@/lib/layout.shared";
+import { source } from "@/lib/source";
 
 // The sidebar tree crosses the server boundary as JSON. Its `name` and `icon`
 // fields are typed as React nodes, which the serializer rejects at the type

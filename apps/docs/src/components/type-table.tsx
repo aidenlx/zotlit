@@ -12,7 +12,7 @@ import { ChevronDown } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
 
-import { cn } from "@/lib/cn.ts";
+import { cn } from "@/lib/cn";
 
 /** One labelled line in an expanded row, e.g. `Liquid` → `{{ zt.noteLink }}`. */
 export interface DetailNode {

@@ -1,9 +1,9 @@
 // Current-version and compatibility ledger for the install pages.
 import type { ReactNode } from "react";
 
-import { useReleaseSnapshot } from "@/components/release-snapshot.tsx";
-import type { ReleaseChannel } from "@/lib/github-releases.ts";
-import { formatReleaseInstant } from "@/lib/shared.ts";
+import { useReleaseSnapshot } from "@/components/release-snapshot";
+import type { ReleaseChannel } from "@/lib/github-releases";
+import { formatReleaseInstant } from "@/lib/shared";
 
 /** The channel label the ledger's first row carries. */
 const channelLabels: Record<ReleaseChannel, string> = {

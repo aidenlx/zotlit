@@ -12,7 +12,7 @@ import type {
   WithContext,
 } from "schema-dts";
 
-import { appName, baseURL, gitConfig, repoUrl } from "./shared.ts";
+import { appName, baseURL, gitConfig, repoUrl } from "./shared";
 
 const logoUrl = `${baseURL}/logo/zotlit-logo-512.png`;
 const obsidianDirectoryUrl = "https://community.obsidian.md/plugins/zotlit";

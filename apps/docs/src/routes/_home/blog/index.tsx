@@ -1,11 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
-import { SiteFooter } from "@/components/site-footer.tsx";
-import { pageHead } from "@/lib/seo.ts";
-import { appName, blogRoute, formatReleaseDate } from "@/lib/shared.ts";
-import { getBlogPages } from "@/lib/source.ts";
-import { breadcrumbListSchema } from "@/lib/structured-data.ts";
+import { SiteFooter } from "@/components/site-footer";
+import { pageHead } from "@/lib/seo";
+import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
+import { getBlogPages } from "@/lib/source";
+import { breadcrumbListSchema } from "@/lib/structured-data";
 
 const listPosts = createServerFn({ method: "GET" }).handler(() =>
   getBlogPages().map((page) => ({

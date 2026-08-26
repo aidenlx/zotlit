@@ -16,8 +16,8 @@
 // two Chinese branches below with per-page 308s to /zh-CN/<equiv>, derived from
 // PAGE_MAP (no separate zh map to maintain).
 
-import { zotlitLegacyUrl } from "./shared.ts";
-import { PAGE_MAP, V1_ONLY } from "./v1-routes.ts";
+import { zotlitLegacyUrl } from "./shared";
+import { PAGE_MAP, V1_ONLY } from "./v1-routes";
 
 /** One line of a Cloudflare `_redirects` file. */
 export interface RedirectRule {

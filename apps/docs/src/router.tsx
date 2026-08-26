@@ -1,6 +1,6 @@
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 
-import { rewriteMarkdownSuffix } from "./lib/markdown-routes.ts";
+import { rewriteMarkdownSuffix } from "./lib/markdown-routes";
 import { routeTree } from "./routeTree.gen";
 
 export function getRouter() {

@@ -1,6 +1,6 @@
 import Link from "fumadocs-core/link";
 
-import type { DocsAvailability as Availability } from "@/lib/docs-availability.ts";
+import type { DocsAvailability as Availability } from "@/lib/docs-availability";
 
 function Version({
   version,

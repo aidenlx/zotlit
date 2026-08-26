@@ -12,7 +12,7 @@ import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { env } from "cloudflare:workers";
 import { isMarkdownPreferred } from "fumadocs-core/negotiation";
 
-import { negotiatedContentRoute } from "./lib/markdown-routes.ts";
+import { negotiatedContentRoute } from "./lib/markdown-routes";
 
 /**
  * The request as the rest of the site should see it. An agent that prefers

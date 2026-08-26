@@ -11,7 +11,7 @@
 
 import { env } from "cloudflare:workers";
 
-import { zotlitBetaUrl } from "./shared.ts";
+import { zotlitBetaUrl } from "./shared";
 
 /**
  * Pre-release Docs' copy of `path`, or undefined when this deployment is

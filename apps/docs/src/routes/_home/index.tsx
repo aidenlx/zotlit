@@ -1,14 +1,14 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 
-import { RepoDatum, loadRepoStats } from "@/components/repo-datum.tsx";
-import { SiteFooter } from "@/components/site-footer.tsx";
-import { HOME_OG_ALT, pageHead } from "@/lib/seo.ts";
-import { appDescription, appName } from "@/lib/shared.ts";
+import { RepoDatum, loadRepoStats } from "@/components/repo-datum";
+import { SiteFooter } from "@/components/site-footer";
+import { HOME_OG_ALT, pageHead } from "@/lib/seo";
+import { appDescription, appName } from "@/lib/shared";
 import {
   organizationSchema,
   softwareApplicationSchema,
   websiteSchema,
-} from "@/lib/structured-data.ts";
+} from "@/lib/structured-data";
 
 export const Route = createFileRoute("/_home/")({
   component: Home,

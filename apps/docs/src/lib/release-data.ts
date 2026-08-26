@@ -9,9 +9,9 @@
 import { env } from "cloudflare:workers";
 import { gt, rcompare, valid } from "semver";
 
-import { assetUrl, tagUrl } from "./github-releases.ts";
-import type { ReleaseChannel } from "./github-releases.ts";
-import { gitConfig, repoSlug } from "./shared.ts";
+import { assetUrl, tagUrl } from "./github-releases";
+import type { ReleaseChannel } from "./github-releases";
+import { gitConfig, repoSlug } from "./shared";
 
 const ZOTERO_ADDON_ID = "zotlit@aidenlx.site";
 /** Release facts may lag GitHub by up to an hour. */

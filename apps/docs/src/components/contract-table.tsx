@@ -1,20 +1,17 @@
 import Link from "fumadocs-core/link";
 import type { ReactNode } from "react";
 
-import { CONTRACT_IR } from "@/lib/template-contract/contract.ts";
-import {
-  buildPageModel,
-  sectionOf,
-} from "@/lib/template-contract/page-model.ts";
+import { CONTRACT_IR } from "@/lib/template-contract/contract";
+import { buildPageModel, sectionOf } from "@/lib/template-contract/page-model";
 import type {
   Doc,
   ItemTypeRow,
   RowModel,
   TableModel,
-} from "@/lib/template-contract/page-model.ts";
+} from "@/lib/template-contract/page-model";
 
-import { TypeTable } from "./type-table.tsx";
-import type { DetailNode, TypeNode } from "./type-table.tsx";
+import { TypeTable } from "./type-table";
+import type { DetailNode, TypeNode } from "./type-table";
 
 const model = buildPageModel(CONTRACT_IR);
 

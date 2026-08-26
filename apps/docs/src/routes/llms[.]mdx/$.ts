@@ -7,12 +7,9 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 
-import { betaFallbackResponse } from "@/lib/beta-fallback.ts";
-import {
-  getMarkdownEdition,
-  markdownHeaders,
-} from "@/lib/markdown-editions.ts";
-import { contentRouteUrl, parseContentRoute } from "@/lib/markdown-routes.ts";
+import { betaFallbackResponse } from "@/lib/beta-fallback";
+import { getMarkdownEdition, markdownHeaders } from "@/lib/markdown-editions";
+import { contentRouteUrl, parseContentRoute } from "@/lib/markdown-routes";
 
 export const Route = createFileRoute("/llms.mdx/$")({
   server: {

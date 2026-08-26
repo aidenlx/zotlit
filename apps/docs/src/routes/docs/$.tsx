@@ -4,7 +4,7 @@ import {
   DocsPageView,
   docsPageHead,
   loadDocsPage,
-} from "@/components/docs-page.tsx";
+} from "@/components/docs-page";
 
 export const Route = createFileRoute("/docs/$")({
   component: DocsCatchAll,

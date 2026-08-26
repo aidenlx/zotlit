@@ -1,9 +1,9 @@
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 
-import { RedirectNotice } from "@/components/redirect-notice.tsx";
-import { Header } from "@/layouts/home/slots/header.tsx";
-import { baseOptions } from "@/lib/layout.shared.tsx";
+import { RedirectNotice } from "@/components/redirect-notice";
+import { Header } from "@/layouts/home/slots/header";
+import { baseOptions } from "@/lib/layout.shared";
 
 export const Route = createFileRoute("/_home")({
   component: HomeShell,

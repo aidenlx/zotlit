@@ -9,8 +9,8 @@
 
 import type { FileRouteTypes } from "@/routeTree.gen";
 
-import { baseURL } from "./shared.ts";
-import { blog, changelog, source } from "./source.ts";
+import { baseURL } from "./shared";
+import { blog, changelog, source } from "./source";
 
 /** Routes that answer machines rather than readers, so no crawler indexes them. */
 const machineRoutes = [

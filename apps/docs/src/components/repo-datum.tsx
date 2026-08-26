@@ -5,12 +5,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { Download, Star } from "lucide-react";
 import { Fragment } from "react";
 
-import { GithubMark } from "@/components/github-mark.tsx";
-import { cn } from "@/lib/cn.ts";
-import { getRepoStats } from "@/lib/release-data.ts";
-import type { RepoStats } from "@/lib/release-data.ts";
-import { gitConfig, repoUrl } from "@/lib/shared.ts";
-import { useBakedThenFresh } from "@/lib/use-baked-then-fresh.ts";
+import { GithubMark } from "@/components/github-mark";
+import { cn } from "@/lib/cn";
+import { getRepoStats } from "@/lib/release-data";
+import type { RepoStats } from "@/lib/release-data";
+import { gitConfig, repoUrl } from "@/lib/shared";
+import { useBakedThenFresh } from "@/lib/use-baked-then-fresh";
 
 /** The counters the build bakes into the prerendered page; `<RepoDatum>` refreshes them. */
 export const loadRepoStats = createServerFn({ method: "GET" }).handler(() =>

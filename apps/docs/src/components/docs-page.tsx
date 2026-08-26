@@ -17,22 +17,22 @@ import {
   DocsTitle,
 } from "fumadocs-ui/layouts/docs/page";
 
-import { DocsAvailability } from "@/components/docs-availability.tsx";
-import { DocsPageFooter } from "@/components/docs-page-footer.tsx";
-import { getMDXComponents } from "@/components/mdx.tsx";
-import { RedirectNotice } from "@/components/redirect-notice.tsx";
-import { ReleaseSnapshotProvider } from "@/components/release-snapshot.tsx";
-import { getDocsAvailability } from "@/lib/docs-availability.ts";
-import type { DocsAvailability as Availability } from "@/lib/docs-availability.ts";
-import { installPageSlugs } from "@/lib/github-releases.ts";
-import { ztProse } from "@/lib/prose.ts";
-import { getReleaseSnapshot } from "@/lib/release-data.ts";
-import type { ReleaseSnapshot } from "@/lib/release-data.ts";
-import { pageHead } from "@/lib/seo.ts";
-import { appName, docsRoute } from "@/lib/shared.ts";
-import { changelog, source } from "@/lib/source.ts";
-import type { Crumb } from "@/lib/structured-data.ts";
-import { breadcrumbListSchema } from "@/lib/structured-data.ts";
+import { DocsAvailability } from "@/components/docs-availability";
+import { DocsPageFooter } from "@/components/docs-page-footer";
+import { getMDXComponents } from "@/components/mdx";
+import { RedirectNotice } from "@/components/redirect-notice";
+import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
+import { getDocsAvailability } from "@/lib/docs-availability";
+import type { DocsAvailability as Availability } from "@/lib/docs-availability";
+import { installPageSlugs } from "@/lib/github-releases";
+import { ztProse } from "@/lib/prose";
+import { getReleaseSnapshot } from "@/lib/release-data";
+import type { ReleaseSnapshot } from "@/lib/release-data";
+import { pageHead } from "@/lib/seo";
+import { appName, docsRoute } from "@/lib/shared";
+import { changelog, source } from "@/lib/source";
+import type { Crumb } from "@/lib/structured-data";
+import { breadcrumbListSchema } from "@/lib/structured-data";
 
 /** Resolves a docs URL to the collection file the client loader compiles, plus what the head needs. */
 export const resolveDocsPage = createServerFn({ method: "GET" })

@@ -8,14 +8,14 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
-import { agentSkillAssets } from "./src/lib/agent-skills.ts";
-import { createOgCardRenderer } from "./src/lib/og-card.tsx";
-import { ogCards } from "./src/lib/og-cards.ts";
-import { prerenderPages } from "./src/lib/prerender-pages.ts";
+import { agentSkillAssets } from "./src/lib/agent-skills.js";
+import { createOgCardRenderer } from "./src/lib/og-card.js";
+import { ogCards } from "./src/lib/og-cards.js";
+import { prerenderPages } from "./src/lib/prerender-pages.js";
 import {
   renderHeadersFile,
   renderRedirectsFile,
-} from "./src/lib/v1-redirects.ts";
+} from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
 

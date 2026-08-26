@@ -2,19 +2,16 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import collections from "collections/browser";
 
-import { BackCrumb } from "@/components/back-crumb.tsx";
-import { Comments } from "@/components/comments.tsx";
-import { getMDXComponents } from "@/components/mdx.tsx";
-import { FooterCards } from "@/layouts/docs/page/slots/footer.tsx";
-import { cn } from "@/lib/cn.ts";
-import { ztProse } from "@/lib/prose.ts";
-import { pageHead } from "@/lib/seo.ts";
-import { appName, blogRoute, formatReleaseDate } from "@/lib/shared.ts";
-import { blog, getBlogPages } from "@/lib/source.ts";
-import {
-  blogPostingSchema,
-  breadcrumbListSchema,
-} from "@/lib/structured-data.ts";
+import { BackCrumb } from "@/components/back-crumb";
+import { Comments } from "@/components/comments";
+import { getMDXComponents } from "@/components/mdx";
+import { FooterCards } from "@/layouts/docs/page/slots/footer";
+import { cn } from "@/lib/cn";
+import { ztProse } from "@/lib/prose";
+import { pageHead } from "@/lib/seo";
+import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
+import { blog, getBlogPages } from "@/lib/source";
+import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
 
 const getPost = createServerFn({ method: "GET" })
   .validator((slug: string) => slug)

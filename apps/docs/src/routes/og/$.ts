@@ -11,8 +11,8 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 
-import { betaFallbackResponse } from "@/lib/beta-fallback.ts";
-import { ogImageUrl } from "@/lib/shared.ts";
+import { betaFallbackResponse } from "@/lib/beta-fallback";
+import { ogImageUrl } from "@/lib/shared";
 
 /** The tail segment every card URL ends with. @see ogImageUrl */
 const cardFile = "image.webp";

@@ -8,11 +8,11 @@ import {
 import { valid as isValidSemVer } from "semver";
 import * as v from "valibot";
 
-import { etaGrammar } from "./src/lib/eta-grammar.ts";
-import { publishedOn } from "./src/lib/shared.ts";
-import { CONTRACT_IR } from "./src/lib/template-contract/contract.ts";
-import { renderContractTableMarkdown } from "./src/lib/template-contract/gfm.ts";
-import { buildPageModel } from "./src/lib/template-contract/page-model.ts";
+import { etaGrammar } from "./src/lib/eta-grammar.js";
+import { publishedOn } from "./src/lib/shared.js";
+import { CONTRACT_IR } from "./src/lib/template-contract/contract.js";
+import { renderContractTableMarkdown } from "./src/lib/template-contract/gfm.js";
+import { buildPageModel } from "./src/lib/template-contract/page-model.js";
 
 const model = buildPageModel(CONTRACT_IR);
 

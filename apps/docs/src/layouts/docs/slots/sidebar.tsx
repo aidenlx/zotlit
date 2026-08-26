@@ -34,12 +34,12 @@ import {
 import { useMemo, useRef, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
 
-import { cn } from "@/lib/cn.ts";
+import { cn } from "@/lib/cn";
 import type {
   DocsPageTreeItem,
   DocsSidebarBadge,
-} from "@/lib/docs-availability.ts";
-import { mergeRefs } from "@/lib/merge-refs.ts";
+} from "@/lib/docs-availability";
+import { mergeRefs } from "@/lib/merge-refs";
 
 const itemVariants = cva(
   "relative flex flex-row items-center gap-2 rounded-lg p-2 text-start text-fd-muted-foreground wrap-anywhere [&_svg]:size-4 [&_svg]:shrink-0",

@@ -1,7 +1,7 @@
 import { ArrowUpRight } from "lucide-react";
 
-import { Banner } from "@/components/banner.tsx";
-import { zotlitLegacyUrl } from "@/lib/shared.ts";
+import { Banner } from "@/components/banner";
+import { zotlitLegacyUrl } from "@/lib/shared";
 
 // Dismissible thin top strip: flags the v2 docs and links back to v1.
 export function LegacyBanner() {

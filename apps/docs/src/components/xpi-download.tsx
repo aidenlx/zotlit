@@ -1,7 +1,7 @@
-import { ActionLink } from "@/components/action-link.tsx";
-import { useReleaseSnapshot } from "@/components/release-snapshot.tsx";
-import { releasesUrl } from "@/lib/github-releases.ts";
-import type { ReleaseChannel } from "@/lib/github-releases.ts";
+import { ActionLink } from "@/components/action-link";
+import { useReleaseSnapshot } from "@/components/release-snapshot";
+import { releasesUrl } from "@/lib/github-releases";
+import type { ReleaseChannel } from "@/lib/github-releases";
 
 export interface XpiDownloadProps {
   channel?: ReleaseChannel;

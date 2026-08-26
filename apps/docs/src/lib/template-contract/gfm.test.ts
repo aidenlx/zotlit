@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { renderContractTableMarkdown } from "./gfm.ts";
-import { buildPageModel } from "./page-model.ts";
-import { IR, SPECS } from "./test-fixtures.ts";
+import { renderContractTableMarkdown } from "./gfm";
+import { buildPageModel } from "./page-model";
+import { IR, SPECS } from "./test-fixtures";
 
 const model = buildPageModel(IR, SPECS);
 
