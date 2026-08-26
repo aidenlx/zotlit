@@ -11,7 +11,11 @@ import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import { FIXTURE_PLUGIN_ID } from "./layout.ts";
 import type { FixtureLayout } from "./layout.ts";
 import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
-import { assertSchemaVersions, writePristineDatabase } from "./pristine.ts";
+import {
+  assertSchemaVersions,
+  writePristineDatabase,
+  writePristineStyles,
+} from "./pristine.ts";
 import {
   ANNOTATIONS,
   ATTACHMENTS,
@@ -20,6 +24,7 @@ import {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
+  INSTALLED_STYLES,
   ITEMS,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
@@ -43,6 +48,7 @@ export {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
+  INSTALLED_STYLES,
   ITEMS,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
@@ -66,6 +72,7 @@ export type {
   FixtureLibrary,
   FixtureNote,
   FixtureScopeCase,
+  FixtureStyle,
   LibrarySelector,
   PersistedLibraryScope,
 } from "./spec.ts";
@@ -118,6 +125,11 @@ export async function buildFixture(
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
   await writeDatabase(layout, items, options.linkedAttachmentVaultDir);
+  // A Paired Zotero unpacks its bundled styles seconds after it starts, so the
+  // build lays them down itself: every Fixture offers the same Citation and
+  // References Style choices from the moment it exists, Zotero running or not.
+  await writePristineStyles(layout.dataDir);
+  await writeInstalledStyles(layout);
   await writeAttachmentFiles(layout);
   await writeAnnotationCacheFiles(layout);
   await writePrefs(layout, options);
@@ -221,6 +233,21 @@ async function writeAnnotationCacheFiles(layout: FixtureLayout): Promise<void> {
     );
     await mkdir(dirname(destination), { recursive: true });
     await cp(join(ASSET_DIR, annotation.cacheImageAsset), destination);
+  }
+}
+
+/**
+ * Lay the Spec's user-installed styles down beside Zotero's bundled set, the
+ * way Zotero keeps an installed style: one flat `.csl` file under `styles/`.
+ */
+async function writeInstalledStyles(layout: FixtureLayout): Promise<void> {
+  const stylesDir = join(layout.dataDir, "styles");
+  await mkdir(stylesDir, { recursive: true });
+  for (const style of INSTALLED_STYLES) {
+    await cp(
+      join(ASSET_DIR, "styles", style.file),
+      join(stylesDir, style.file),
+    );
   }
 }
 

@@ -1000,6 +1000,33 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
   },
 ];
 
+/** One CSL style a user installed in Zotero, as the Fixture carries it. */
+export interface FixtureStyle {
+  /** File under `assets/styles/`, and the name Zotero installs it under. */
+  file: string;
+  /** `<info><id>` — the identity the Citation and References Style setting stores. */
+  id: string;
+  /** `<info><title>` — the label the Citation and References Style picker lists. */
+  title: string;
+}
+
+/**
+ * The styles a user installed on top of Zotero's bundled set, which every build
+ * lays down beside it. The one here is a numeric style carrying its own
+ * `zh-CN` default locale, so the picker offers a selection the bundled styles
+ * have no equivalent of, and a Citation Locale case that reads in one glance.
+ *
+ * Each file travels under its own CC BY-SA 3.0 licence, as its `<rights>`
+ * element states.
+ */
+export const INSTALLED_STYLES: readonly FixtureStyle[] = [
+  {
+    file: "chinese-gb7714-1987-numeric.csl",
+    id: "http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
+    title: "China National Standard GB/T 7714-1987 (numeric, 中文)",
+  },
+];
+
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
 

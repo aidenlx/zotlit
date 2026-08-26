@@ -1,0 +1,133 @@
+name: Docs Deploy
+
+# Deploys the docs site to Cloudflare Workers, one line per branch.
+#
+# `main` carries the stable line, so a docs change there deploys the production
+# site — the top-level wrangler config, `zotlit-docs`, on zotlit.aidenlx.site.
+# `next` carries the pre-release line, so a docs change there deploys
+# Pre-release Docs — the `beta` wrangler environment, `zotlit-docs-beta`, on
+# zotlit-beta.aidenlx.site. See ADR 0021.
+#
+# Every push on the two branches enters the gate job, which asks Turbo whether
+# the push touched `@zotlit/docs` or anything in its dependency closure. An
+# unaffected push stops at the gate; an affected push runs the deploy job.
+on:
+  push:
+    branches: [main, next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time per line: a queued run would otherwise overwrite a newer
+# build, while the two lines deploy independently of each other.
+concurrency:
+  group: docs-deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      # The gate compares the push base against HEAD, so it needs full history.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The gate needs the pinned pnpm and Turbo versions, but an unaffected
+      # push stops before dependency installation or package builds.
+      - uses: ./.github/actions/setup-workspace
+        with:
+          bootstrap: "false"
+
+      # Fail open: every path that cannot prove "docs untouched" deploys —
+      # a manual dispatch, an unknown base commit, a force push, a change to
+      # deployment machinery, or a Turbo failure.
+      - name: Check whether the docs closure changed
+        id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          deploy() { echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "gate: deploy — $1"; exit 0; }
+          skip()   { echo "deploy=false" >> "$GITHUB_OUTPUT"; echo "gate: skip — $1"; exit 0; }
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            deploy "manual dispatch"
+          fi
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            deploy "base commit unavailable"
+          fi
+          if ! git merge-base --is-ancestor "$BEFORE" HEAD; then
+            deploy "force push"
+          fi
+          if [ -n "$(git diff --name-only "$BEFORE" HEAD -- \
+            .github/workflows/docs-deploy.yml \
+            .github/actions/setup-workspace/action.yml)" ]; then
+            deploy "deployment machinery changed"
+          fi
+
+          # The dry run lists docs and its dependencies that changed since the
+          # push base. The pinned version tracks the root devDependency.
+          turbo_version=$(jq -r '.devDependencies.turbo' package.json | tr -d '^~')
+          affected=$(pnpm dlx "turbo@${turbo_version}" run build \
+            --filter="@zotlit/docs...[$BEFORE]" --dry=json 2>/dev/null \
+            | jq '.packages | length') || affected=""
+          if [ -z "$affected" ]; then
+            deploy "Turbo dry run failed"
+          fi
+          if [ "$affected" -gt 0 ]; then
+            deploy "$affected affected package(s)"
+          fi
+          skip "docs closure untouched"
+
+  deploy:
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    env:
+      # The wrangler environment this branch deploys: `beta` for Pre-release
+      # Docs, empty for the production line, which is the top-level config.
+      WRANGLER_ENV: ${{ github.ref_name == 'next' && 'beta' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The docs build installs its own dependency closure below, so the
+      # workspace-wide bootstrap stays off.
+      - uses: ./.github/actions/setup-workspace
+        with:
+          bootstrap: "false"
+
+      # zotero-types copies this schema into its package output. The other two
+      # repository submodules are outside the docs dependency closure.
+      - name: Initialize Zotero schema
+        run: git submodule update --init --depth 1 --single-branch packages/zotero-types/zotero-schema
+
+      - name: Install docs dependencies
+        run: pnpm install --frozen-lockfile --filter @zotlit/docs...
+
+      # `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the
+      # beta build has to be its own; a build made without it carries the
+      # production line's variables whatever `wrangler deploy --env` says.
+      - name: Build
+        run: |
+          if [ -n "$WRANGLER_ENV" ]; then
+            export CLOUDFLARE_ENV="$WRANGLER_ENV"
+          fi
+          pnpm turbo run build --filter=@zotlit/docs
+        env:
+          # Public Cloudflare Web Analytics site token; without it the built
+          # site serves no beacon.
+          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+
+      - name: Deploy
+        run: |
+          if [ -n "$WRANGLER_ENV" ]; then
+            pnpm --filter @zotlit/docs exec wrangler deploy --env "$WRANGLER_ENV"
+          else
+            pnpm --filter @zotlit/docs exec wrangler deploy
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,5 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": ["mise.toml"],
+  "globalEnv": ["ZOTLIT_TOOLCHAIN"],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]
@@ -53,7 +55,8 @@
         "@zotlit/shared#build",
         "@zotlit/templates#build",
         "@zotlit/zotero-types#build",
-        "@zotlit/docs#codegen"
+        "@zotlit/docs#codegen",
+        "@zotlit/docs#cf-typegen:check"
       ]
     },
     "//#lint:repo": {

@@ -26,6 +26,7 @@ The generated tree is under `tmp/acceptance-fixture`:
 | --- | --- |
 | `tmp/acceptance-fixture/zotero-data` | Zotero data directory |
 | `tmp/acceptance-fixture/zotero-data/zotero.sqlite` | Generated Zotero database |
+| `tmp/acceptance-fixture/zotero-data/styles` | Bundled CSL styles, plus the Fixture Spec's user-installed styles |
 | `tmp/acceptance-fixture/linked-files` | Host-native files for linked-file attachments |
 | `tmp/acceptance-fixture/zotero-profile` | Zotero profile whose preferences select the generated data directory |
 | `tmp/acceptance-fixture/zt-fixture-vault` | Fixture Vault |
@@ -205,6 +206,10 @@ A Paired Zotero session can change the generated database. Close Paired Zotero a
 
 Each build copies `packages/scripts/lib/fixture/pristine-zotero.sqlite.gz`, then inserts the Fixture Spec rows. Zotero itself creates this committed pristine database.
 
+Each build also lays down `packages/scripts/lib/fixture/pristine-styles.json.gz` under `zotero-data/styles`. It holds the CSL styles the same first run unpacked, so the Citation and References Style picker lists them immediately after a build.
+
+Beside that bundled set, each build copies the styles the Fixture Spec declares in `INSTALLED_STYLES`, from `packages/scripts/lib/fixture/assets/styles/`. These stand for the styles a user installs in Zotero. Add a style by placing the `.csl` file in that folder and declaring its file, ID, and title in the Spec.
+
 Before regeneration, align these version declarations with the target Zotero release:
 
 | Declaration | File |
@@ -221,7 +226,7 @@ Regenerate the template with one command on macOS or Windows:
 pnpm fixture harvest
 ```
 
-The command first-runs the resolved Zotero application on an empty data directory. It waits for initialization, stops Zotero, checkpoints the write-ahead log, switches to the delete journal, and vacuums the database. It then checks database integrity, foreign keys, and schema versions before it writes the compressed template.
+The command first-runs the resolved Zotero application on an empty data directory. It waits for initialization, stops Zotero, checkpoints the write-ahead log, switches to the delete journal, and vacuums the database. It then checks database integrity, foreign keys, and schema versions before it writes the compressed template. It writes the compressed style archive from the same run, and reports the style count.
 
 Rebuild and run the generator tests:
 
@@ -229,7 +234,7 @@ Rebuild and run the generator tests:
 pnpm fixture && pnpm exec turbo run test --filter=@zotlit/scripts
 ```
 
-Commit the regenerated template with all related version changes.
+Commit the regenerated template and style archive with all related version changes.
 
 ## Run the End-to-end Run suite
 

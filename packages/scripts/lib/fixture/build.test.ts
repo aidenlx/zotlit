@@ -44,6 +44,7 @@ import {
   buildFixture,
   COLLECTIONS,
   getFixtureLayout,
+  INSTALLED_STYLES,
   ITEMS,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
@@ -1112,7 +1113,7 @@ describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
     for (const name of [
       "citekey-smoke-test.md",
-      "pandoc-citation-test.md",
+      "literature-note-citation-test.md",
       "pandoc-export-error-intent.md",
       "pandoc-export-missing-bibliography.md",
       "pandoc-export-success.md",
@@ -1142,7 +1143,7 @@ describe("the generated Obsidian vault", () => {
       "[[literatures/wallgren-petterssonDistalMyopathyCaused2007]]; [[literatures/yinClinicopathologicalFeaturesMutational2021#cite:locator=3]]",
     );
     expect(note).toContain("[@wittNebulinRegulatesThin2006, p. 4]");
-    expect(note).toContain("[[pandoc-citation-test]]");
+    expect(note).toContain("[[literature-note-citation-test]]");
   });
 
   it("resolves every generated Literature Note through the database", async () => {
@@ -1299,6 +1300,33 @@ describe("the generated Obsidian vault", () => {
 
     expect(prefs).toContain(JSON.stringify(layout.dataDir));
     expect(prefs).toContain("extensions.zotero.useDataDir");
+  });
+
+  it("installs the bundled CSL styles a Paired Zotero would unpack", async () => {
+    const stylesDir = join(layout.dataDir, "styles");
+    const names = await readdir(stylesDir);
+
+    // The style the Citation and References Style picker offers as Default is
+    // the one a styleless data directory would leave as the only choice.
+    expect(names).toContain("chicago-author-date.csl");
+    expect(
+      names.filter((name) => name.endsWith(".csl")).length,
+    ).toBeGreaterThan(1);
+    expect(
+      await readFile(join(stylesDir, "chicago-author-date.csl"), "utf-8"),
+    ).toContain("<id>http://www.zotero.org/styles/chicago-author-date</id>");
+  });
+
+  it("installs the Fixture Spec's user-installed styles beside the bundled set", async () => {
+    const stylesDir = join(layout.dataDir, "styles");
+    const names = await readdir(stylesDir);
+
+    for (const style of INSTALLED_STYLES) {
+      expect(names).toContain(style.file);
+      const xml = await readFile(join(stylesDir, style.file), "utf-8");
+      expect(xml).toContain(`<id>${style.id}</id>`);
+      expect(xml).toContain(`<title>${style.title}</title>`);
+    }
   });
 
   it("quiets the first run, so a Paired Zotero opens no start page", async () => {

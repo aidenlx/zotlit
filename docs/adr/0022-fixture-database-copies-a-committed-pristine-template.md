@@ -32,6 +32,12 @@ serves both the template harvest and the Paired Zotero.
   of mostly empty pages. Regeneration is that one command, needed only when
   Zotero bumps its schema; the [Fixture guide](../fixture.md#regenerate-the-pristine-zotero-template)
   carries the procedure.
+- The same harvest captures the CSL styles that first run unpacked, committed
+  beside the template as `pristine-styles.json.gz`. Zotero unpacks its bundled
+  styles into the data directory seconds after it starts, so a Fixture carrying
+  the database alone would offer no Citation and References Style until a Paired
+  Zotero had run. Every build lays the styles down itself, which also serves the
+  e2e and CLI flows that read the Fixture with no Zotero running.
 - The template already holds Zotero's global schema, so the build reads item
   type, field, and creator type ids back by name instead of declaring them,
   and Zotero's own foreign keys and triggers check every inserted row.

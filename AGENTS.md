@@ -17,7 +17,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 ## Bootstrap & toolchain
 
-- `mise` pins to Node 26 version (see `mise.toml`). It also runs `corepack enable` post-install to activate pnpm at the version declared in root `package.json`.
+- `mise` pins to Node 26 version (see `mise.toml`). Its `idiomatic_version_file_enable_tools = ["pnpm"]` setting also activates pnpm at the version declared in root `package.json`'s `packageManager` field.
 - `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
 - Resolve tool availability from the current workspace environment. Use `pnpm exec` for workspace binaries; use the Mise-managed toolchain defined by `mise.toml`.
 
@@ -27,7 +27,6 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm build`                      | `turbo run build` across the graph.                                                                                         |
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
 | `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
 | `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks + lints in one pass. **A clean run verifies types — no separate `tsgo`/`turbo run typecheck` pass.** |

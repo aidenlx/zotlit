@@ -224,6 +224,15 @@ rows into the copy, so the Paired Zotero opens a database of its own making.
 The template declares userdata ${PRISTINE_SCHEMA_VERSIONS.userdata} / compatibility ${PRISTINE_SCHEMA_VERSIONS.compatibility}, and a build fails when it
 declares anything else. See ADR 0022.
 
+The same harvest captures the CSL styles that first run unpacked, as
+packages/scripts/lib/fixture/pristine-styles.json.gz. Every build lays them down
+under zotero-data/styles, so the Citation and References Style picker lists them
+from the moment the Fixture exists, Paired Zotero running or not.
+
+Beside them the build copies the Spec's INSTALLED_STYLES from
+packages/scripts/lib/fixture/assets/styles — the styles a user installs in
+Zotero. Add one by placing the .csl file there and declaring it in spec.ts.
+
 Regenerate it after a Zotero schema bump:
 
 1. Raise PINNED_ZOTERO_VERSION in packages/scripts/lib/fixture/paired-zotero.ts
@@ -238,12 +247,13 @@ Regenerate it after a Zotero schema bump:
 
    It first-runs the managed Zotero on an empty data directory, waits for the
    database to initialize, quits Zotero, checkpoints and vacuums the result,
-   and rewrites the committed template. It reports the versions it captured.
+   and rewrites the committed template and style archive. It reports the
+   versions and the style count it captured.
 4. Rebuild and run the generator suite:
 
      pnpm fixture && pnpm exec turbo run test --filter=@zotlit/scripts
 
-5. Commit the template with the version bumps.`;
+5. Commit the template and the style archive with the version bumps.`;
 
 const CHANGING_THE_FIXTURE_SECTION = `CHANGING THE FIXTURE
 

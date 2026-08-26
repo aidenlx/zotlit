@@ -68,7 +68,7 @@
     "@zotlit/config": "workspace:*",
     "@zotlit/scripts": "workspace:*",
     "ajv": "catalog:",
-    "electron": "^39.8.10",
+    "electron": "43.3.0",
     "happy-dom": "^20.9.0",
     "obsidian": "workspace:*",
     "oxlint": "catalog:",

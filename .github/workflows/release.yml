@@ -24,16 +24,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
-      # `--no-submodules` skips checkout since actions/checkout already fetched
-      # them.
-      - uses: jdx/mise-action@v4
-      # pnpm is activated by mise's corepack post-install; this step is only
-      # here for the store cache.
-      - uses: pnpm/action-setup@v6
-        with:
-          cache: true
-      - run: mise run init --no-submodules
 
       - name: Resolve version
         id: meta
@@ -42,11 +32,10 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$version" >> "$GITHUB_OUTPUT"
           echo "res_tag=res-$version" >> "$GITHUB_OUTPUT"
-          prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
-            "require('semver').prerelease('$version') !== null")"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
-      # Tag existence is the idempotency gate: re-running on the same version is a no-op.
+      # Tag existence is the idempotency gate: re-running on the same version is
+      # a no-op. Runs before the toolchain setup below so a re-run on an
+      # already-released version skips it instead of paying for it.
       - name: Check release exists
         id: gate
         run: |
@@ -55,6 +44,17 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: ./.github/actions/setup-workspace
+        if: steps.gate.outputs.exists == 'false'
+
+      - name: Resolve prerelease flag
+        id: prerelease
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
+            "require('semver').prerelease('${{ steps.meta.outputs.version }}') !== null")"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Build
         if: steps.gate.outputs.exists == 'false'
@@ -91,7 +91,7 @@ jobs:
               --title "${{ steps.meta.outputs.res_tag }}" \
               --target "${{ github.sha }}" \
               --notes "$notes" \
-              ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '' }} \
+              ${{ steps.prerelease.outputs.prerelease == 'true' && '--prerelease' || '' }} \
               --latest=false
           fi
           gh release upload "${{ steps.meta.outputs.res_tag }}" \
@@ -133,7 +133,7 @@ jobs:
             --title "${{ steps.meta.outputs.tag }}" \
             --target "${{ github.sha }}" \
             --notes "$notes" \
-            ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }} \
+            ${{ steps.prerelease.outputs.prerelease == 'true' && '--prerelease' || '--latest' }} \
             apps/obsidian/dist/main.js \
             apps/obsidian/dist/manifest.json \
             apps/obsidian/dist/styles.css
@@ -156,16 +156,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
-      # `--no-submodules` skips checkout since actions/checkout already fetched
-      # them.
-      - uses: jdx/mise-action@v4
-      # pnpm is activated by mise's corepack post-install; this step is only
-      # here for the store cache.
-      - uses: pnpm/action-setup@v6
-        with:
-          cache: true
-      - run: mise run init --no-submodules
 
       - name: Resolve version
         id: meta
@@ -177,10 +167,10 @@ jobs:
           # The changelog is keyed on the Obsidian plugin version (the headline
           # product); this companion release points at that same entry.
           echo "changelog=$(node -p "require('./apps/obsidian/package.json').version")" >> "$GITHUB_OUTPUT"
-          prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
-            "require('semver').prerelease('$version') !== null")"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
+      # Tag existence is the idempotency gate: re-running on the same version is
+      # a no-op. Runs before the toolchain setup below so a re-run on an
+      # already-released version skips it instead of paying for it.
       - name: Check release exists
         id: gate
         run: |
@@ -189,6 +179,17 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: ./.github/actions/setup-workspace
+        if: steps.gate.outputs.exists == 'false'
+
+      - name: Resolve prerelease flag
+        id: prerelease
+        if: steps.gate.outputs.exists == 'false'
+        run: |
+          prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
+            "require('semver').prerelease('${{ steps.meta.outputs.version }}') !== null")"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Build
         if: steps.gate.outputs.exists == 'false'
@@ -223,7 +224,7 @@ jobs:
             --title "${{ steps.meta.outputs.tag }}" \
             --target "${{ github.sha }}" \
             --notes "$notes" \
-            ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest=false' }} \
+            ${{ steps.prerelease.outputs.prerelease == 'true' && '--prerelease' || '--latest=false' }} \
             "${{ steps.meta.outputs.xpi }}"
 
       # The `zotero-release` tag is permanent: prerelease, never "Latest". Uses `edit`
