@@ -60,8 +60,9 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       changelogUrl: availability
         ? changelog.getPage([availability.introduced])?.url
         : undefined,
-      // Only the install pages carry request-time release facts; every other
-      // docs page prerenders, so it must not depend on a GitHub lookup.
+      // Only the install pages carry release facts. The snapshot is the one
+      // this render saw — the build's own in a prerendered page, where the
+      // provider then refreshes it from `/api/release-snapshot`.
       snapshot: installPageSlugs.includes(page.slugs.join("/"))
         ? await getReleaseSnapshot()
         : null,

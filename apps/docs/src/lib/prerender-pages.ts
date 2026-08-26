@@ -6,13 +6,12 @@
 // `src/http.test.ts` asserts the built site carries a prerendered file for
 // every page the loaders publish.
 //
-// What is missing from the list is the other half of the shape: the landing
-// page, the community page, the two install docs pages, and the per-version
-// changelog page all carry request-time behavior, so they render on the Worker.
+// Every HTML page is on the list — the pages with GitHub data bake the facts
+// their build saw and refresh them client-side — so the Worker renders only
+// the search and release-fact endpoints and the Pre-release Docs fallback.
 // @see docs/adr/0025-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { scanContent } from "./content-scan.ts";
-import { installPageSlugs } from "./github-releases.ts";
 import type { MarkdownSection } from "./markdown-routes.ts";
 import {
   contentRouteUrl,
@@ -64,20 +63,31 @@ function machineRoutePages(
 }
 
 /**
- * The HTML pages whose body is settled at build time: the whole docs tree bar
- * the install pages, the blog and its posts, and the changelog index.
+ * The HTML pages: the landing and community pages, the whole docs tree, the
+ * blog and its posts, and the changelog index with its versions.
  */
 function htmlPages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
 ): PrerenderPage[] {
-  const docs = content.docs
-    .filter((entry) => !installPageSlugs.includes(entry.slugs.join("/")))
-    .map((entry) => ({ path: `/${["docs", ...entry.slugs].join("/")}` }));
+  const docs = content.docs.map((entry) => ({
+    path: `/${["docs", ...entry.slugs].join("/")}`,
+  }));
   const blog = content.blog.map((entry) => ({
     path: `/${["blog", ...entry.slugs].join("/")}`,
   }));
+  const changelog = content.changelog.map((entry) => ({
+    path: `/${["changelog", ...entry.slugs].join("/")}`,
+  }));
 
-  return [...docs, ...blog, { path: "/blog" }, { path: "/changelog" }];
+  return [
+    { path: "/" },
+    { path: "/community" },
+    ...docs,
+    ...blog,
+    ...changelog,
+    { path: "/blog" },
+    { path: "/changelog" },
+  ];
 }
 
 /**

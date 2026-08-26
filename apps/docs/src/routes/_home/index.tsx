@@ -1,9 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
 
-import { RepoDatum } from "@/components/repo-datum.tsx";
+import { RepoDatum, loadRepoStats } from "@/components/repo-datum.tsx";
 import { SiteFooter } from "@/components/site-footer.tsx";
-import { getRepoStats } from "@/lib/release-data.ts";
 import { HOME_OG_ALT, pageHead } from "@/lib/seo.ts";
 import { appDescription, appName } from "@/lib/shared.ts";
 import {
@@ -11,11 +9,6 @@ import {
   softwareApplicationSchema,
   websiteSchema,
 } from "@/lib/structured-data.ts";
-
-/** Live star and download counts, fetched per request with ~1h edge caching. */
-const loadRepoStats = createServerFn({ method: "GET" }).handler(() =>
-  getRepoStats(),
-);
 
 export const Route = createFileRoute("/_home/")({
   component: Home,
@@ -70,7 +63,6 @@ const features = [
 
 function Home() {
   const stats = Route.useLoaderData();
-
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 font-serif">
       <section className="grid items-center gap-13 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">

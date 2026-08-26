@@ -17,6 +17,8 @@ import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as HomeIndexRouteImport } from './routes/_home/index'
 import { Route as HomeCommunityRouteImport } from './routes/_home/community'
+import { Route as ApiReleaseSnapshotRouteImport } from './routes/api/release-snapshot'
+import { Route as ApiRepoStatsRouteImport } from './routes/api/repo-stats'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ChangelogRssDotxmlRouteImport } from './routes/changelog/rss[.]xml'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
@@ -66,6 +68,16 @@ const HomeCommunityRoute = HomeCommunityRouteImport.update({
   id: '/community',
   path: '/community',
   getParentRoute: () => HomeRouteRoute,
+} as any)
+const ApiReleaseSnapshotRoute = ApiReleaseSnapshotRouteImport.update({
+  id: '/api/release-snapshot',
+  path: '/api/release-snapshot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRepoStatsRoute = ApiRepoStatsRouteImport.update({
+  id: '/api/repo-stats',
+  path: '/api/repo-stats',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSearchRoute = ApiSearchRouteImport.update({
   id: '/api/search',
@@ -126,6 +138,8 @@ export interface FileRoutesByFullPath {
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/community': typeof HomeCommunityRoute
+  '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
+  '/api/repo-stats': typeof ApiRepoStatsRoute
   '/api/search': typeof ApiSearchRoute
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
@@ -143,6 +157,8 @@ export interface FileRoutesByTo {
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/community': typeof HomeCommunityRoute
+  '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
+  '/api/repo-stats': typeof ApiRepoStatsRoute
   '/api/search': typeof ApiSearchRoute
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
@@ -164,6 +180,8 @@ export interface FileRoutesById {
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_home/community': typeof HomeCommunityRoute
+  '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
+  '/api/repo-stats': typeof ApiRepoStatsRoute
   '/api/search': typeof ApiSearchRoute
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
@@ -186,6 +204,8 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/sitemap.xml'
     | '/community'
+    | '/api/release-snapshot'
+    | '/api/repo-stats'
     | '/api/search'
     | '/changelog/rss.xml'
     | '/docs/$'
@@ -203,6 +223,8 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/sitemap.xml'
     | '/community'
+    | '/api/release-snapshot'
+    | '/api/repo-stats'
     | '/api/search'
     | '/changelog/rss.xml'
     | '/docs/$'
@@ -223,6 +245,8 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/sitemap.xml'
     | '/_home/community'
+    | '/api/release-snapshot'
+    | '/api/repo-stats'
     | '/api/search'
     | '/changelog/rss.xml'
     | '/docs/$'
@@ -243,6 +267,8 @@ export interface RootRouteChildren {
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiReleaseSnapshotRoute: typeof ApiReleaseSnapshotRoute
+  ApiRepoStatsRoute: typeof ApiRepoStatsRoute
   ApiSearchRoute: typeof ApiSearchRoute
   ChangelogRssDotxmlRoute: typeof ChangelogRssDotxmlRoute
   LlmsDotmdxSplatRoute: typeof LlmsDotmdxSplatRoute
@@ -306,6 +332,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/community'
       preLoaderRoute: typeof HomeCommunityRouteImport
       parentRoute: typeof HomeRouteRoute
+    }
+    '/api/release-snapshot': {
+      id: '/api/release-snapshot'
+      path: '/api/release-snapshot'
+      fullPath: '/api/release-snapshot'
+      preLoaderRoute: typeof ApiReleaseSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/repo-stats': {
+      id: '/api/repo-stats'
+      path: '/api/repo-stats'
+      fullPath: '/api/repo-stats'
+      preLoaderRoute: typeof ApiRepoStatsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/search': {
       id: '/api/search'
@@ -423,6 +463,8 @@ const rootRouteChildren: RootRouteChildren = {
   LlmsDottxtRoute: LlmsDottxtRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiReleaseSnapshotRoute: ApiReleaseSnapshotRoute,
+  ApiRepoStatsRoute: ApiRepoStatsRoute,
   ApiSearchRoute: ApiSearchRoute,
   ChangelogRssDotxmlRoute: ChangelogRssDotxmlRoute,
   LlmsDotmdxSplatRoute: LlmsDotmdxSplatRoute,

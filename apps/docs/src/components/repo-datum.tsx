@@ -1,10 +1,21 @@
+// The whole counters surface in one module: the server fn a route's loader
+// bakes with, and the repository link that shows and refreshes the counters.
+
+import { createServerFn } from "@tanstack/react-start";
 import { Download, Star } from "lucide-react";
 import { Fragment } from "react";
 
 import { GithubMark } from "@/components/github-mark.tsx";
 import { cn } from "@/lib/cn.ts";
+import { getRepoStats } from "@/lib/release-data.ts";
 import type { RepoStats } from "@/lib/release-data.ts";
 import { gitConfig, repoUrl } from "@/lib/shared.ts";
+import { useBakedThenFresh } from "@/lib/use-baked-then-fresh.ts";
+
+/** The counters the build bakes into the prerendered page; `<RepoDatum>` refreshes them. */
+export const loadRepoStats = createServerFn({ method: "GET" }).handler(() =>
+  getRepoStats(),
+);
 
 /** Humanizes a count: under a thousand verbatim, else `N.MK` with a trailing `.0` stripped. */
 function humanize(count: number): string {
@@ -19,12 +30,13 @@ function humanize(count: number): string {
  * renders, since the repo has to stay reachable from the page.
  */
 export function RepoDatum({
-  stats,
+  stats: baked,
   className,
 }: {
   stats: RepoStats;
   className?: string;
 }) {
+  const stats = useBakedThenFresh("/api/repo-stats", baked);
   const counters = [
     stats.stars !== null
       ? { Icon: Star, label: "stars", value: humanize(stats.stars) }

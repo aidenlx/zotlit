@@ -20,8 +20,9 @@ export function assetUrl(tag: string, asset: string) {
 }
 
 /**
- * The docs pages whose body carries request-time release facts — the Version
- * Ledger and the direct `.xpi` link. They render on the Worker rather than
- * prerendering, and their loader fetches the release snapshot.
+ * The docs pages whose body carries release facts — the Version Ledger and
+ * the direct `.xpi` link. Their loader bakes the build's snapshot into the
+ * prerendered page, and the browser replaces it with the latest from
+ * `/api/release-snapshot`.
  */
 export const installPageSlugs = ["install-zotlit", "install-companion"];

@@ -15,6 +15,8 @@ import { blog, changelog, source } from "./source.ts";
 /** Routes that answer machines rather than readers, so no crawler indexes them. */
 const machineRoutes = [
   "/api/search",
+  "/api/repo-stats",
+  "/api/release-snapshot",
   "/llms.txt",
   "/llms-full.txt",
   "/llms.mdx/$",

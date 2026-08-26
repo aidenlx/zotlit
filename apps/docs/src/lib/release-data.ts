@@ -1,5 +1,5 @@
-// Request-time GitHub lookups: the install pages' release facts and the
-// repository counters the landing and community pages show.
+// The GitHub lookups: the install pages' release facts and the repository
+// counters the landing and community pages show.
 //
 // Server-only — the `GITHUB_TOKEN` secret lives in the Worker environment. Each
 // lookup is cached at the edge for about an hour, so a release shows up within
@@ -305,5 +305,18 @@ export async function getRepoStats(): Promise<RepoStats> {
   return {
     stars: repo?.stargazers_count ?? null,
     downloads: plugins?.[gitConfig.repo]?.downloads ?? null,
+  };
+}
+
+/**
+ * GET handlers for a release-fact endpoint: the lookup's JSON, browser-cacheable
+ * for the same horizon as the edge cache on the lookups themselves.
+ */
+export function releaseFactHandlers(lookup: () => Promise<unknown>) {
+  return {
+    GET: async () =>
+      Response.json(await lookup(), {
+        headers: { "cache-control": `public, max-age=${CACHE_SECONDS}` },
+      }),
   };
 }

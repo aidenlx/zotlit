@@ -1,18 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
 
 import { DiscordMark } from "@/components/discord-mark.tsx";
 import { GithubMark } from "@/components/github-mark.tsx";
-import { RepoDatum } from "@/components/repo-datum.tsx";
+import { RepoDatum, loadRepoStats } from "@/components/repo-datum.tsx";
 import { SiteFooter } from "@/components/site-footer.tsx";
-import { getRepoStats } from "@/lib/release-data.ts";
 import { pageHead } from "@/lib/seo.ts";
 import { repoUrl } from "@/lib/shared.ts";
-
-/** Live star and download counts, fetched per request with ~1h edge caching. */
-const loadRepoStats = createServerFn({ method: "GET" }).handler(() =>
-  getRepoStats(),
-);
 
 export const Route = createFileRoute("/_home/community")({
   component: Community,
@@ -49,7 +42,6 @@ const destinations = [
 
 function Community() {
   const stats = Route.useLoaderData();
-
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 font-serif">
       <header className="max-w-2xl pt-16 pb-2">
