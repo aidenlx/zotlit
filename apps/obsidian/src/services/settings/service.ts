@@ -88,6 +88,7 @@ import {
 import type { HydrationOrigin } from "./classify";
 import { DEFAULT_LITERATURE_NOTE_PROFILE, defaults, schema } from "./schema";
 import type {
+  DefaultLiteratureNoteProfile,
   LiteratureNoteProfile,
   LiteratureNoteProfileBindings,
   Settings,
@@ -288,14 +289,31 @@ export class SettingsService extends Service<void> {
     id?: string,
   ):
     | typeof DEFAULT_LITERATURE_NOTE_PROFILE
+    | DefaultLiteratureNoteProfile
     | LiteratureNoteProfile
     | undefined {
     this.#requireLoaded("getLiteratureNoteProfile");
-    if (id === undefined) return DEFAULT_LITERATURE_NOTE_PROFILE;
+    if (id === undefined) {
+      const profile = this.#snapshot()["note.default-profile"];
+      return profile.document === undefined
+        ? DEFAULT_LITERATURE_NOTE_PROFILE
+        : { document: profile.document };
+    }
     const profile = this.#snapshot()["note.profiles"].find(
       (profile) => profile.id === id,
     );
     return profile && cloneLiteratureNoteProfile(profile);
+  }
+
+  /** Set the built-in default Profile document, or clear it to use built-in rendering. */
+  setDefaultLiteratureNoteProfileDocument(reference: string | null): void {
+    this.#requireLoaded("setDefaultLiteratureNoteProfileDocument");
+    this.update({
+      "note.default-profile":
+        reference === null
+          ? DEFAULT_LITERATURE_NOTE_PROFILE
+          : { document: reference },
+    });
   }
 
   /** Add a Profile with a generated identity and no binding overrides. */

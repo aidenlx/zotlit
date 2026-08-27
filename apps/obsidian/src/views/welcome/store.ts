@@ -11,6 +11,8 @@ export interface WelcomeState {
   connection: ConnectionReadout;
   /** Current `note.literature-folder` setting; seeded once by the view on open. */
   literatureFolder: string;
+  /** The old three-slot Literature Note Template awaits user-consented conversion. */
+  templateConversionPending: boolean;
 }
 
 export type WelcomeStore = ReturnType<typeof createWelcomeStore>;
@@ -20,6 +22,7 @@ export function createWelcomeStore() {
     mode: "fresh",
     connection: { status: "checking" },
     literatureFolder: "",
+    templateConversionPending: false,
   }));
 }
 

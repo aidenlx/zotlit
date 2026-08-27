@@ -10,6 +10,7 @@ import type {
 } from "@zotlit/templates/constants";
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type {
+  ConvertedLegacyLiteratureNoteTemplate,
   LiteratureNoteTemplateDocument,
   LiteratureNoteTemplateManifest,
   RootVariableUse,
@@ -97,6 +98,10 @@ export interface ResolvedLiteratureNoteTemplate {
   renderForCreate<T extends object>(data: T): string;
   renderForUpdate<T extends object>(data: T): string | null;
   renderFilename<T extends object>(data: T): string;
+}
+
+export interface ConvertedLegacyProfileDocument extends ConvertedLegacyLiteratureNoteTemplate {
+  readonly legacyFiles: readonly string[];
 }
 
 interface ReconciledLiteratureNoteTemplate {
@@ -456,6 +461,49 @@ export class TemplateService extends Service<void> {
       if (file) return await this.#app.vault.cachedRead(file);
     }
     return DEFAULT_TEMPLATES[name];
+  }
+
+  /** Vault files that make the default Profile use the legacy three-slot format. */
+  getLegacyLiteratureNoteTemplateFiles(): readonly string[] {
+    return this.getTemplateFileStatuses()
+      .filter(
+        (status) =>
+          (status.name === "filename" ||
+            status.name === "note" ||
+            status.name === "content") &&
+          status.winner.source.kind === "vault",
+      )
+      .map((status) =>
+        status.winner.source.kind === "vault" ? status.winner.source.path : "",
+      );
+  }
+
+  /** Build and byte-verify the converted default Profile document in memory. */
+  async convertLegacyLiteratureNoteTemplates(data: {
+    readonly note: object;
+    readonly filename: object;
+  }): Promise<ConvertedLegacyProfileDocument> {
+    this.#requireLoaded("convertLegacyLiteratureNoteTemplates");
+    const statuses = this.getTemplateFileStatuses();
+    const source = async (name: "filename" | "note" | "content") => {
+      const status = statuses.find((candidate) => candidate.name === name)!;
+      return {
+        source: await this.getTemplateSource(name),
+        language: status.winner.language,
+      };
+    };
+    const [note, content, filename] = await Promise.all([
+      source("note"),
+      source("content"),
+      source("filename"),
+    ]);
+    return {
+      ...this.#facade.convertLegacyLiteratureNoteTemplates(
+        { note, content, filename },
+        data,
+      ),
+      legacyFiles: this.getLegacyLiteratureNoteTemplateFiles(),
+    };
   }
 
   /**

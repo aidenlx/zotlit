@@ -118,21 +118,27 @@ export class ZotLitSettingTab extends PluginSettingTab {
     let lastFields = settings.current?.["note.frontmatter-fields"];
     let lastProfiles = settings.current?.["note.profiles"];
     let lastPending = settings.current?.["release.migration-pending"];
+    let lastTemplateConversionPending =
+      settings.current?.["note.template-conversion-pending"];
     plugin.register(
       settings.subscribe((value) => {
         const fields = value?.["note.frontmatter-fields"];
         const profiles = value?.["note.profiles"];
         const pending = value?.["release.migration-pending"];
+        const templateConversionPending =
+          value?.["note.template-conversion-pending"];
         if (
           fields === lastFields &&
           profiles === lastProfiles &&
-          pending === lastPending
+          pending === lastPending &&
+          templateConversionPending === lastTemplateConversionPending
         ) {
           return;
         }
         lastFields = fields;
         lastProfiles = profiles;
         lastPending = pending;
+        lastTemplateConversionPending = templateConversionPending;
         this.#requestUpdate();
       }),
     );

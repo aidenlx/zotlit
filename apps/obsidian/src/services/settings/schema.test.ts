@@ -83,6 +83,17 @@ describe("schema/defaults invariants", () => {
     );
   });
 
+  it("keeps the built-in default profile empty until it references a document", () => {
+    const entry = schema.entries["note.default-profile"];
+
+    expect(defaults["note.default-profile"]).toEqual({});
+    expect(v.safeParse(entry, {}).success).toBe(true);
+    expect(v.safeParse(entry, { document: "literature-note.md" }).success).toBe(
+      true,
+    );
+    expect(v.safeParse(entry, { document: "   " }).success).toBe(false);
+  });
+
   it("keeps profile bindings sparse and validates each supplied binding", () => {
     const entry = schema.entries["note.profiles"];
     const base = {

@@ -925,6 +925,116 @@ describe("createNote", () => {
     );
   });
 
+  it("keeps the default Profile on legacy rendering while conversion is pending", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const template = makeTemplate();
+    const renderLegacy = vi.spyOn(template, "render");
+    const result = await createNoteFeature({
+      app,
+      template,
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({ "note.template-conversion-pending": true }),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    }).createNote(makeCreateGateItem());
+
+    expect(result.outcome).toBe("created");
+    expect(renderLegacy).toHaveBeenCalledWith("note", expect.anything());
+  });
+
+  it("gates added Profiles while legacy template conversion is pending", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const app = makeApp();
+    const result = await createNoteFeature({
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        "note.template-conversion-pending": true,
+        "note.profiles": [{ id: profileId, label: "Books" }],
+      }),
+      attachmentImport: { prepare: vi.fn() },
+      noteImport: { prepare: vi.fn() },
+    }).createNote(makeCreateGateItem(), { profileId });
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "literature-note-template-conversion-required",
+        hint: expect.stringContaining("Convert"),
+        profileId,
+        indexedKey: "ROOT1234",
+      },
+    });
+    expect(app.vault.create).not.toHaveBeenCalled();
+  });
+
+  it("uses the converted document for the default Profile", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const document = makeDocumentTemplate({
+      createBody: `# Converted\n\n${formatManagedRegion("BODY")}`,
+      filename: "Converted-Root",
+    });
+    const result = await createNoteFeature({
+      app,
+      template: {
+        ...makeTemplate(),
+        getLiteratureNoteTemplate: (reference) =>
+          reference === "literature-note-default.md" ? document : undefined,
+      },
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        "note.default-profile": { document: "literature-note-default.md" },
+      }),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    }).createNote(makeCreateGateItem());
+
+    const file = createdFile(result);
+    expect(file.path).toBe("Literature/Converted-Root.md");
+    expect(document.renderForCreate).toHaveBeenCalledOnce();
+  });
+
   it("renders a Profile document body and manifest filename", async () => {
     const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
     const item = makeCreateGateItem();
@@ -1300,6 +1410,36 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 }
 
 describe("updateNote", () => {
+  it("gates a stamped added Profile while legacy conversion is pending", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+      settings: {
+        "note.template-conversion-pending": true,
+        "note.profiles": [{ id: profileId, label: "Books" }],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result).toEqual({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: {
+        code: "literature-note-template-conversion-required",
+        hint: expect.stringContaining("Convert"),
+        profileId,
+        path: "Books/Root.md",
+      },
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+
   it("follows the stamped Profile and refreshes its citation-style binding", async () => {
     const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
     stubIndexedKeyUpdate(updateContext());

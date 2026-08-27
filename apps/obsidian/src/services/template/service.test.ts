@@ -797,6 +797,37 @@ describe("TemplateService", () => {
     ).toContain("# Paper");
   });
 
+  it("synthesizes and verifies a legacy Profile document from current winners", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-note.liquid.md",
+      'Before {% render "content" with zt as zt %} After {{ zt.title }}',
+    );
+    vault.addFile(
+      "templates/zotlit-content.liquid.md",
+      "Managed {{ zt.title }}",
+    );
+    vault.addFile(
+      "templates/zotlit-filename.liquid.md",
+      "{{ zt.citationKey }}",
+    );
+    const { service } = await makeHarness({ vault });
+
+    const converted = await service.convertLegacyLiteratureNoteTemplates({
+      note: { title: "Paper" },
+      filename: { citationKey: "doePaper" },
+    });
+
+    expect(converted.source).toContain(
+      "{% managed %}Managed {{ zt.title }}{% endmanaged %}",
+    );
+    expect(converted.legacyFiles).toEqual([
+      "templates/zotlit-filename.liquid.md",
+      "templates/zotlit-note.liquid.md",
+      "templates/zotlit-content.liquid.md",
+    ]);
+  });
+
   it("reports the winner the reconciler compiled", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.eta.md", "E <%= zt.title %>");

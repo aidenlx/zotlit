@@ -36,6 +36,20 @@ describe("Welcome Companion setup", () => {
     expect(actions.openExternal).toHaveBeenCalledWith(DOCS_COMPANION);
   });
 
+  it("offers the user-controlled template conversion in upgraded onboarding", async () => {
+    const { actions, container } = await render("upgraded", true);
+    const button = [...container.querySelectorAll("button")].find(
+      (candidate) =>
+        candidate.textContent === m.welcome_template_conversion_action(),
+    );
+
+    expect(container.textContent).toContain(
+      m.welcome_template_conversion_title(),
+    );
+    await act(() => button?.click());
+    expect(actions.convertLiteratureNoteTemplates).toHaveBeenCalledOnce();
+  });
+
   it("shows Zotero 10 Companion guidance and link in upgraded onboarding", async () => {
     const { actions, container } = await render("upgraded");
     const button = [...container.querySelectorAll("button")].find(
@@ -51,13 +65,21 @@ describe("Welcome Companion setup", () => {
   });
 });
 
-async function render(mode: "fresh" | "upgraded"): Promise<{
+async function render(
+  mode: "fresh" | "upgraded",
+  templateConversionPending = false,
+): Promise<{
   actions: WelcomeActions;
   container: HTMLElement;
 }> {
   const store = createWelcomeStore();
-  store.setState({ mode, literatureFolder: "Literature" });
+  store.setState({
+    mode,
+    literatureFolder: "Literature",
+    templateConversionPending,
+  });
   const actions: WelcomeActions = {
+    convertLiteratureNoteTemplates: vi.fn(async () => {}),
     locateZotero: vi.fn(),
     openExternal: vi.fn(),
     openSettings: vi.fn(),

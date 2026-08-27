@@ -5,6 +5,103 @@ import type { LiteratureNoteTemplateError } from "./facade";
 import { formatManagedRegion } from "./obsidian";
 
 describe("Literature Note Template document", () => {
+  it.each([
+    {
+      language: "liquid" as const,
+      note: 'Before\n{% render "content" with zt as zt %}\nAfter {{ zt.title }}',
+      content: "Managed {{ zt.title }}",
+      filename: "{{ zt.citationKey }}\n",
+    },
+    {
+      language: "eta" as const,
+      note: 'Before\n<%~ include("content", zt) %>\nAfter <%= zt.title %>',
+      content: "Managed <%= zt.title %>",
+      filename: "<%= zt.citationKey %>\n",
+    },
+  ])(
+    "converts legacy $language templates with byte-identical renders",
+    ({ language, note, content, filename }) => {
+      const facade = new TemplateFacade({
+        transformRender: (name, output) =>
+          name === "content" ? formatManagedRegion(output) : output,
+      });
+      facade.define("note", note, language);
+      facade.define("content", content, language);
+      facade.define("filename", filename, language);
+
+      const converted = facade.convertLegacyLiteratureNoteTemplates(
+        {
+          note: { source: note, language },
+          content: { source: content, language },
+          filename: { source: filename, language },
+        },
+        {
+          note: { title: "Paper" },
+          filename: { citationKey: "doePaper" },
+        },
+      );
+
+      expect(converted.source).toContain(
+        `{% managed %}${content}{% endmanaged %}`,
+      );
+      expect(converted.rendered).toEqual({
+        create: facade.render("note", { title: "Paper" }),
+        update: facade.render("content", { title: "Paper" }),
+        filename: facade.render("filename", { citationKey: "doePaper" }),
+      });
+    },
+  );
+
+  it("refuses a conversion when the legacy note has no supported content insertion", () => {
+    const facade = new TemplateFacade();
+    facade.define("note", "User-owned body", "liquid");
+    facade.define("content", "Managed", "liquid");
+    facade.define("filename", "note", "liquid");
+
+    expect(() =>
+      facade.convertLegacyLiteratureNoteTemplates(
+        {
+          note: { source: "User-owned body", language: "liquid" },
+          content: { source: "Managed", language: "liquid" },
+          filename: { source: "note", language: "liquid" },
+        },
+        { note: {}, filename: {} },
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "unsupported-legacy-template",
+        difference: "content insertion",
+        recovery: expect.any(String),
+      }),
+    );
+  });
+
+  it("refuses a conversion when note and content use different languages", () => {
+    const facade = new TemplateFacade();
+    facade.define("note", '{% render "content" with zt as zt %}', "liquid");
+    facade.define("content", "Managed", "eta");
+    facade.define("filename", "note", "liquid");
+
+    expect(() =>
+      facade.convertLegacyLiteratureNoteTemplates(
+        {
+          note: {
+            source: '{% render "content" with zt as zt %}',
+            language: "liquid",
+          },
+          content: { source: "Managed", language: "eta" },
+          filename: { source: "note", language: "liquid" },
+        },
+        { note: {}, filename: {} },
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "unsupported-legacy-template",
+        difference: "template language",
+      }),
+    );
+  });
+
   it("parses the manifest, body, and Managed Block", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(`---

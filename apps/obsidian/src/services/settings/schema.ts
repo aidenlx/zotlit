@@ -83,8 +83,28 @@ const literatureNoteProfilesSchema = v.pipe(
   v.readonly(),
 );
 
-/** The built-in Profile has no identity or overrides of its own. */
-export const DEFAULT_LITERATURE_NOTE_PROFILE = Object.freeze({});
+const defaultLiteratureNoteProfileSchema = v.pipe(
+  v.object({
+    document: v.optional(
+      v.pipe(
+        v.string(),
+        v.check(
+          (document) => document.trim().length > 0,
+          "Empty profile document reference",
+        ),
+      ),
+    ),
+  }),
+  v.readonly(),
+);
+export type DefaultLiteratureNoteProfile = v.InferOutput<
+  typeof defaultLiteratureNoteProfileSchema
+>;
+
+/** The built-in Profile starts with no identity or overrides of its own. */
+export const DEFAULT_LITERATURE_NOTE_PROFILE = Object.freeze(
+  {},
+) satisfies DefaultLiteratureNoteProfile;
 
 /** JSON-safe finite number that settings values may take. */
 export const settingsNumber = v.pipe(v.number(), v.finite());
@@ -150,7 +170,9 @@ export const schema = v.object({
   "citation.hover-require-mod-reading": v.boolean(),
 
   "note.literature-folder": v.string(),
+  "note.default-profile": defaultLiteratureNoteProfileSchema,
   "note.profiles": literatureNoteProfilesSchema,
+  "note.template-conversion-pending": v.boolean(),
   "note.frontmatter-fields": frontmatterFieldsSchema,
   "note.import-folder": v.string(),
   "note.import-colored-highlights": v.boolean(),
@@ -208,7 +230,9 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-live-preview": false,
   "citation.hover-require-mod-reading": false,
   "note.literature-folder": "literatures",
+  "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
   "note.profiles": [],
+  "note.template-conversion-pending": false,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",
   "note.import-colored-highlights": false,

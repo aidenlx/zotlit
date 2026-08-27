@@ -172,6 +172,7 @@ export function createNoteNotice(result: CreateNoteResult): string {
     case "unknown-literature-note-profile":
     case "literature-note-profile-conflict":
     case "missing-literature-note-template":
+    case "literature-note-template-conversion-required":
       return noteProfileDiagnosticNotice(diagnostic);
   }
 }
@@ -190,6 +191,8 @@ export function noteProfileDiagnosticNotice(
       return m.notice_literature_note_template_missing({
         document: diagnostic.document,
       });
+    case "literature-note-template-conversion-required":
+      return m.notice_literature_note_template_conversion_required();
   }
 }
 
