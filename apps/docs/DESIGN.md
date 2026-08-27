@@ -89,13 +89,18 @@ wordmark likewise stays outside label treatment.
 
 Fontsource serves all four faces from the package's own assets: the `@import`s
 at the top of `src/styles.css` register them, and the `@theme inline` block in
-the same file assigns the roles. Gelasio preloads in `src/routes/__root.tsx`,
-upright and italic (serif display paints on essentially every route). Inter goes
-unpreloaded — sans is the app-wide body default, but its metric-adjusted
-fallback swaps shift-free, so an eager fetch buys little.
+the same file assigns the roles. Metric-adjusted local fallback faces in that
+stylesheet preserve the shift-free swaps that `next/font` generated before the
+TanStack Start migration. Their overrides come from Next.js 16.3.0's metrics
+for these Google Font families.
+
+Gelasio's upright and italic latin faces preload in `src/routes/__root.tsx`
+because serif display paints on essentially every route. Inter stays
+unpreloaded because its adjusted fallback stabilizes the app-wide body and
+chrome until the real face loads.
 
 IBM Plex Mono loads three explicit weights (400/500/600 — Plex Mono isn't a
-variable font), unpreloaded, swapping shift-free from a system-mono fallback.
+variable font), unpreloaded, swapping from its adjusted local fallback.
 Its `@theme inline` `--font-mono` override reroutes both the `font-mono` utility
 and every `var(--font-mono)` reference onto it in one lever.
 
