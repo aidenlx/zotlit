@@ -18,6 +18,7 @@ import type {
 import {
   batchImportAllToast,
   childImportToast,
+  importedNoteProfileErrorNotice,
 } from "@/services/note-import/batch-import-notices";
 import {
   isLiteratureNote,
@@ -222,7 +223,8 @@ function reimportNoteToast(): {
     error: (_msg, e) =>
       e instanceof InertTemplateError
         ? e.message
-        : m.notice_reimport_note_failed(),
+        : (importedNoteProfileErrorNotice(e) ??
+          m.notice_reimport_note_failed()),
   };
 }
 

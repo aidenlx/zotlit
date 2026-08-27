@@ -3,6 +3,17 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { BatchRunResult } from "@/services/batch-run";
 
 import type { BatchImportResult } from "./batch-import";
+import { NoteImportProfileError } from "./service";
+
+export function importedNoteProfileErrorNotice(
+  error: unknown,
+): string | undefined {
+  return error instanceof NoteImportProfileError ? error.message : undefined;
+}
+
+function importErrorNotice(_message: string, error: unknown): string {
+  return importedNoteProfileErrorNotice(error) ?? m.batch_import_failed();
+}
 
 /** Map preflight import outcomes to a notice; modal/cancelled paths are silent. */
 export function batchImportNotice(
@@ -55,32 +66,32 @@ export function batchImportAllNotice(
 
 export function batchImportAllToast(): {
   success: (result: BatchImportResult) => string | undefined;
-  error: string;
+  error: typeof importErrorNotice;
 } {
   return {
     success: batchImportAllNotice,
-    error: m.batch_import_failed(),
+    error: importErrorNotice,
   };
 }
 
 export function batchImportToast(): {
   success: (result: BatchImportResult) => string | undefined;
-  error: string;
+  error: typeof importErrorNotice;
 } {
   return {
     success: batchImportNotice,
-    error: m.batch_import_failed(),
+    error: importErrorNotice,
   };
 }
 
 export function childImportToast(): {
   success: (result: BatchImportResult | null) => string | undefined;
-  error: string;
+  error: typeof importErrorNotice;
 } {
   return {
     success: (result) =>
       result ? batchImportNotice(result) : m.notice_protocol_item_not_found(),
-    error: m.batch_import_failed(),
+    error: importErrorNotice,
   };
 }
 

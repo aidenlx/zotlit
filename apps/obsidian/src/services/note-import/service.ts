@@ -1,11 +1,12 @@
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
-import type { FileManager, TFile, Vault } from "obsidian";
+import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
 import pLimit from "p-limit";
 
 import {
   citekeysToCiteTemplateData,
   getAnnotationsByKey,
+  getItemsByID,
   getNoteByKey,
 } from "@zotlit/db";
 import type {
@@ -19,6 +20,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import {
+  FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_LASTMOD,
   FIELD_ZOTERO_NOTE_KEY,
   stringifyInstant,
@@ -28,6 +30,7 @@ import {
   joinFolderPath,
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
+import * as m from "@/lib/i18n/generated/messages";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
@@ -43,7 +46,11 @@ import {
   truncateToByteLimit,
 } from "@/services/note-feature/filename";
 import type { NoteIndex } from "@/services/note-index/service";
-import { getProfileBinding } from "@/services/settings/service";
+import {
+  bindLiteratureNoteProfile,
+  boundLiteratureNoteProfileId,
+  getProfileBinding,
+} from "@/services/settings/service";
 import type { ProfileBindingSettings } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -72,6 +79,7 @@ interface RunContext {
   groupIdMemo?: GroupIDMemo;
   tagMemo?: TagMemo;
   attachmentFolderCache: Map<string, string>;
+  profileId: string | undefined;
 }
 
 interface QueuedImport {
@@ -91,11 +99,12 @@ export type ImportVaultApp = {
     | "process"
   >;
   fileManager: Pick<FileManager, "generateMarkdownLink">;
+  metadataCache: Pick<MetadataCache, "getFileCache">;
 };
 
 interface NoteImporterDeps {
   app: ImportVaultApp;
-  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">;
+  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey" | "getNotesByItemKey">;
   template: Pick<TemplateService, "render">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
@@ -195,6 +204,7 @@ async function prepareImport(
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
     attachmentFolderCache: new Map(),
+    profileId: boundLiteratureNoteProfileId(settings),
   };
   const queue: QueuedImport[] = [];
   logger.debug("Prepared note import", { sourcePath, importFolder });
@@ -216,12 +226,23 @@ async function doImportNote(
         ? ctx.app.vault.getFileByPath(options.targetFile.path)
         : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
 
+    const profileId = existing
+      ? stampedProfileId(ctx, existing)
+      : profileIdForExplicitCreate(ctx, note, options);
+    const settings = bindLiteratureNoteProfile(options.settings, profileId);
+    if (!settings) {
+      throw new NoteImportProfileError(profileId!, {
+        path: existing?.path,
+        indexedKey: note.indexedKey,
+      });
+    }
     const run: RunContext = {
       client: options.client,
-      settings: options.settings,
+      settings,
       groupIdMemo: options.groupIdMemo,
       tagMemo: options.tagMemo,
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
+      profileId,
     };
 
     if (existing) {
@@ -232,7 +253,7 @@ async function doImportNote(
     }
     const folder = await ensureImportFolder(
       ctx.app,
-      getProfileBinding(options.settings, "note.import-folder"),
+      getProfileBinding(settings, "note.import-folder"),
     );
     return writeNote(ctx, note, {
       mode: { action: "create", path: mintImportPath(ctx.app, folder, note) },
@@ -410,6 +431,9 @@ async function writeNote(
     date: stringifyInstant(note.dateAdded),
     [FIELD_ZOTERO_NOTE_KEY]: note.indexedKey,
     [FIELD_ZOTERO_LASTMOD]: stringifyInstant(note.dateModified),
+    ...(run.profileId === undefined
+      ? {}
+      : { [FIELD_LITERATURE_NOTE_PROFILE]: run.profileId }),
   };
   const content = `---\n${stringifyYaml(frontmatter)}---\n${body}`;
 
@@ -440,6 +464,60 @@ async function writeNote(
     });
   }
   return outcome;
+}
+
+function profileIdForExplicitCreate(
+  ctx: Ctx,
+  note: Note,
+  options: ImportNoteOptions,
+): string | undefined {
+  if (note.parentItemID === null) return undefined;
+  const parent = getItemsByID(options.client, [note.parentItemID], {
+    memo: options.groupIdMemo,
+  })[0];
+  if (!parent) return undefined;
+  const literatureNote = ctx.noteIndex.getNotesByItemKey(parent.indexedKey)[0];
+  return literatureNote ? stampedProfileId(ctx, literatureNote) : undefined;
+}
+
+function stampedProfileId(ctx: Ctx, file: TFile): string | undefined {
+  const value =
+    ctx.app.metadataCache.getFileCache(file)?.frontmatter?.[
+      FIELD_LITERATURE_NOTE_PROFILE
+    ];
+  return value === undefined ? undefined : String(value);
+}
+
+export interface UnknownImportedNoteProfileDiagnostic {
+  readonly code: "unknown-literature-note-profile";
+  readonly hint: string;
+  readonly profileId: string;
+  readonly path?: string;
+  readonly indexedKey?: string;
+}
+
+export class NoteImportProfileError extends Error {
+  readonly diagnostic: UnknownImportedNoteProfileDiagnostic;
+
+  constructor(
+    profileId: string,
+    context: { path?: string; indexedKey?: string },
+  ) {
+    const diagnostic: UnknownImportedNoteProfileDiagnostic = {
+      code: "unknown-literature-note-profile",
+      hint: "Re-stamp the note or recreate the Profile with the same ID.",
+      profileId,
+      ...context,
+    };
+    super(
+      m.notice_imported_note_profile_unknown({
+        id: profileId,
+        target: context.path ?? context.indexedKey ?? profileId,
+      }),
+    );
+    this.name = "NoteImportProfileError";
+    this.diagnostic = diagnostic;
+  }
 }
 
 /**
