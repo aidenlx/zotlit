@@ -1452,6 +1452,29 @@ describe("the generated Obsidian vault", () => {
     ]);
   });
 
+  it("writes Managed Frontmatter into the Fixture Profile document", async () => {
+    const document = await readFile(
+      join(layout.vaultDir, "templates", "books.md"),
+      "utf-8",
+    );
+
+    expect(document).toContain(`frontmatter:
+  - key: fixture-title
+    expr: zt.title
+    merge: replace`);
+    expect(document).toContain(`  - key: fixture-kind
+    value:
+      $if: 'zt.itemType == "journalArticle"'
+      then: reference/article
+      else: reference/other
+    merge: replace`);
+    expect(document).toContain(`  - key: fixture-obsolete
+    value:
+      $if: 'zt.itemType == "bookSection"'
+      then: retained
+    merge: replace`);
+  });
+
   it("selects the available, partial, and fully unavailable scope cases", async () => {
     for (const scopeCase of SCOPE_CASES) {
       await selectScopeCase(layout, scopeCase.id);
