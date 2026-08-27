@@ -48,6 +48,10 @@ const TEMPLATE_RENDER_SYNOPSIS = `obsidian zotlit:template-render key=<zotero-ke
     template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
     [format=<json|markdown>]`;
 
+const DOCUMENT_RENDER_SYNOPSIS = `obsidian zotlit:template-document-render key=<zotero-key> \\
+    (profile=<default|profile-id> | document=<reference> | source=<document-source>) \\
+    [expect-source=<source-id>]`;
+
 const FRONTMATTER_EVAL_SYNOPSIS = `obsidian zotlit:frontmatter-eval key=<zotero-key> \\
     [expr=<expression> [language=<${FRONTMATTER_LANGUAGE_NAMES.join("|")}>]] \\
     [expect-source=<source-id>]`;
@@ -317,6 +321,31 @@ FIELD ROWS
   zotero-key row, which is always present. Every configured field reports
   "user".`;
 
+const PROFILES_SECTION = `LITERATURE NOTE PROFILES AND DOCUMENTS
+
+MODEL
+  A Literature Note Profile selects one optional Literature Note Template
+  document and vault-local bindings. The built-in default Profile has id=null
+  in template-status. An unset reference means the built-in template. A set
+  reference must resolve to one document in the configured template folder.
+
+  One document contains a YAML manifest, its filename rule, and the note body.
+  A single optional Managed Block marks the body bytes rendered on update.
+
+INSPECTION
+  template-status reports Profiles under profiles and the union of installed
+  and referenced documents under documents. Each document has a valid, invalid,
+  or missing validation state. A failed state carries diagnostic.hint.
+
+RENDER
+  ${DOCUMENT_RENDER_SYNOPSIS}
+
+  Select exactly one input. profile resolves a Profile's installed document;
+  document resolves one installed reference; source parses an in-memory source
+  override, whether installed or not. The command loads real root=note data and
+  returns render.create plus render.update. update is null for a static body.
+  Inspection and rendering do not write a note, document, or setting.`;
+
 /** Canonical `topic` registry for `template-guide`. */
 export const GUIDE_TOPICS = {
   data: DATA_SECTION,
@@ -325,6 +354,7 @@ export const GUIDE_TOPICS = {
   eta: ETA_SECTION,
   liquid: LIQUID_SECTION,
   frontmatter: FRONTMATTER_SECTION,
+  profiles: PROFILES_SECTION,
 } as const satisfies Record<string, string>;
 
 export type GuideTopic = keyof typeof GUIDE_TOPICS;
@@ -347,6 +377,7 @@ const TOPIC_SUMMARIES = {
   eta: "JavaScript Templates gate, precedence, and security",
   liquid: "Engine, data root, tags, filters, and whitespace",
   frontmatter: "Commands, field= vs key=, value lists, and gate behavior",
+  profiles: "Profile state, document validation, and in-memory rendering",
 } as const satisfies Record<GuideTopic, string>;
 
 const TOPIC_INDEX = GUIDE_TOPIC_NAMES.map(
@@ -365,12 +396,14 @@ SYNOPSIS
   ${TEMPLATE_DATA_SYNOPSIS}
   obsidian zotlit:template-source template=<${TEMPLATE_SLOT_NAMES.join("|")}>
   ${TEMPLATE_RENDER_SYNOPSIS}
+  ${DOCUMENT_RENDER_SYNOPSIS}
   ${FRONTMATTER_SYNOPSIS}
   obsidian zotlit:template-guide [topic=<${GUIDE_TOPIC_NAMES.join("|")}>]
 
 DESCRIPTION
   The Template Workbench inspects template state and data, reads active source,
   renders changes in memory, and manages Managed Frontmatter field configuration.
+  template-status also reports Literature Note Profiles and documents.
 
 NAMESPACES
   root=<name> Selects a CLI data shape. It does not select a field.
@@ -390,6 +423,11 @@ WORKFLOW
   5. Edit winner.source.path, or editablePath when no vault file is active.
   6. Run template-render with expect-source=<identity.source.id>; test ok, then read
      warnings. Use format=markdown for raw bytes.
+
+LITERATURE NOTE DOCUMENTS
+  Run template-status to inspect Profile references and document validation.
+  Run template-document-render with a Profile, installed document, or source
+  override to return create and update bytes without touching a note.
 
 MANAGED FRONTMATTER
   Template expressions stored in plugin settings whose values ZotLit writes
@@ -417,6 +455,8 @@ OUTPUT
               Rendered bytes are under "markdown"; diagnostics are under "warnings".
   template-source
               Active template text is under "source".
+  template-document-render
+              Create and update bytes are under "render". Static update is null.
 
 ${SIZE_SECTION}
 

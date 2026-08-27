@@ -232,6 +232,46 @@ describe("TemplateService", () => {
     expect(service.getLiteratureNoteTemplate("books.md")).toBeUndefined();
   });
 
+  it("reports valid and invalid Literature Note Template documents", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/books.md", literatureNoteDocument("Books"));
+    vault.addFile(
+      "templates/duplicate.md",
+      literatureNoteDocument("{% managed %}One{% endmanaged %}"),
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getLiteratureNoteTemplateStatuses()).toMatchObject([
+      {
+        reference: "books.md",
+        path: "templates/books.md",
+        validation: { state: "valid", hasManagedBlock: true },
+      },
+      {
+        reference: "duplicate.md",
+        path: "templates/duplicate.md",
+        validation: {
+          state: "invalid",
+          error: { code: "duplicate-managed-block" },
+        },
+      },
+    ]);
+  });
+
+  it("renders an uninstalled Literature Note Template source in memory", async () => {
+    const { service, vault } = await makeHarness();
+    const paths = [...vault.files.keys()];
+
+    const rendered = service.renderLiteratureNoteTemplateSource(
+      literatureNoteDocument("Draft"),
+      { title: "Paper" },
+    );
+
+    expect(rendered.create).toContain("# Draft Paper");
+    expect(rendered.update).toContain("Managed Paper");
+    expect([...vault.files.keys()]).toEqual(paths);
+  });
+
   it("bounds the settle wait while initial settings are still loading", async () => {
     const loaded = deferred<Readonly<Settings>>();
     const vault = new MockVault();

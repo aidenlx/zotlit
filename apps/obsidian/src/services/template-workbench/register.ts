@@ -26,6 +26,7 @@ import {
   FRONTMATTER_SET_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
+  TEMPLATE_DOCUMENT_RENDER_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
   TEMPLATE_SCHEMA_COMMAND,
@@ -41,6 +42,7 @@ import {
 } from "./request";
 import type {
   DATA_PARAMS,
+  DOCUMENT_RENDER_PARAMS,
   FRONTMATTER_EVAL_PARAMS,
   FRONTMATTER_REMOVE_PARAMS,
   FRONTMATTER_REORDER_PARAMS,
@@ -127,6 +129,25 @@ function renderFlags(): CliFlags {
     format: formatFlag(["markdown", "json"]),
     ...expectationFlags(),
   } satisfies Record<(typeof RENDER_PARAMS)[number], CliFlag>;
+}
+
+function documentRenderFlags(): CliFlags {
+  return {
+    key: keyFlag(),
+    profile: {
+      value: "<default|profile-id>",
+      description: "Profile stamp whose document to render",
+    },
+    document: {
+      value: "<reference>",
+      description: "Installed document reference to render",
+    },
+    source: {
+      value: "<document-source>",
+      description: "Uninstalled document source to render in memory",
+    },
+    ...expectationFlags(),
+  } satisfies Record<(typeof DOCUMENT_RENDER_PARAMS)[number], CliFlag>;
 }
 
 function sourceFlags(): CliFlags {
@@ -224,6 +245,22 @@ export function registerTemplateWorkbench(
     },
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
     templates: deps.templates,
+    literatureNotes: {
+      readProfiles: () => {
+        const settings = deps.settings.current;
+        if (!settings) throw new Error("Settings are not loaded");
+        return {
+          defaultProfile: settings["note.default-profile"],
+          profiles: settings["note.profiles"],
+        };
+      },
+      getDocumentStatuses: () =>
+        deps.templates.getLiteratureNoteTemplateStatuses(),
+      getDocument: (reference) =>
+        deps.templates.getLiteratureNoteTemplate(reference),
+      renderSource: (source, data) =>
+        deps.templates.renderLiteratureNoteTemplateSource(source, data),
+    },
     frontmatter: {
       read: () => {
         const status = deps.templates.getFrontmatterFieldStatus();
@@ -266,6 +303,12 @@ export function registerTemplateWorkbench(
     "Render an active ZotLit Template in memory, rendered bytes under 'markdown'",
     renderFlags(),
     handlers[TEMPLATE_RENDER_COMMAND],
+  );
+  plugin.registerCliHandler(
+    TEMPLATE_DOCUMENT_RENDER_COMMAND,
+    "Render a Literature Note Template document in memory, create and update bytes under 'render'",
+    documentRenderFlags(),
+    handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND],
   );
   plugin.registerCliHandler(
     TEMPLATE_GUIDE_COMMAND,

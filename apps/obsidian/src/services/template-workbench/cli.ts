@@ -5,13 +5,17 @@ import type { CliData, CliHandler } from "obsidian";
 import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
 import type { ContractRoot, TemplateSlot } from "@zotlit/db";
 import type { FrontmatterLanguage } from "@zotlit/templates/constants";
+import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
 import type { RootVariableUse } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
+import { InertTemplateError } from "@/services/template/errors";
 import type {
   CompileError,
+  LiteratureNoteTemplateStatus,
+  ResolvedLiteratureNoteTemplate,
   SettleOutcome,
   TemplateFileStatus,
 } from "@/services/template/service";
@@ -29,12 +33,15 @@ import type {
   Diagnostic,
   FrontmatterEvalRow,
   FrontmatterFieldRow,
+  LiteratureNoteDocumentRow,
+  LiteratureNoteProfileRow,
   WorkbenchCommand,
   WorkbenchIdentity,
 } from "./envelope";
 import { renderGuide } from "./guide";
 import {
   parseDataRequest,
+  parseDocumentRenderRequest,
   parseFrontmatterEvalRequest,
   parseFrontmatterRemoveRequest,
   parseFrontmatterReorderRequest,
@@ -61,6 +68,8 @@ export const TEMPLATE_SCHEMA_COMMAND =
   "zotlit:template-schema" as const satisfies WorkbenchCommand;
 export const TEMPLATE_RENDER_COMMAND =
   "zotlit:template-render" as const satisfies WorkbenchCommand;
+export const TEMPLATE_DOCUMENT_RENDER_COMMAND =
+  "zotlit:template-document-render" as const satisfies WorkbenchCommand;
 export const TEMPLATE_GUIDE_COMMAND =
   "zotlit:template-guide" as const satisfies WorkbenchCommand;
 export const TEMPLATE_SOURCE_COMMAND =
@@ -142,6 +151,29 @@ interface TemplateWorkbenchDeps {
      */
     write: (fields: readonly FrontmatterField[]) => void;
   };
+  literatureNotes?: {
+    readProfiles: () => {
+      defaultProfile: { readonly document?: string };
+      profiles: readonly {
+        readonly id: string;
+        readonly label: string;
+        readonly document?: string;
+      }[];
+    };
+    getDocumentStatuses: () => readonly LiteratureNoteTemplateStatus[];
+    getDocument: (
+      reference: string,
+    ) =>
+      | Pick<
+          ResolvedLiteratureNoteTemplate,
+          "renderForCreate" | "renderForUpdate"
+        >
+      | undefined;
+    renderSource: (
+      source: string,
+      data: object,
+    ) => { create: string; update: string | null };
+  };
 }
 
 export type TemplateWorkbenchHandlers = Record<
@@ -149,6 +181,7 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_DATA_COMMAND
   | typeof TEMPLATE_SCHEMA_COMMAND
   | typeof TEMPLATE_RENDER_COMMAND
+  | typeof TEMPLATE_DOCUMENT_RENDER_COMMAND
   | typeof TEMPLATE_GUIDE_COMMAND
   | typeof TEMPLATE_SOURCE_COMMAND
   | typeof FRONTMATTER_STATUS_COMMAND
@@ -253,6 +286,9 @@ export function createTemplateWorkbenchHandlers(
         identity: await deps.getIdentity(),
         javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
         templates: deps.templates.getTemplateFileStatuses(),
+        ...(deps.literatureNotes
+          ? literatureNoteAuthoringState(deps.literatureNotes)
+          : {}),
       });
     },
 
@@ -347,6 +383,88 @@ export function createTemplateWorkbenchHandlers(
               template: request.template,
               compileErrors: deps.templates.compileErrors,
             }),
+          });
+        }
+      },
+    ),
+
+    [TEMPLATE_DOCUMENT_RENDER_COMMAND]: gated(
+      TEMPLATE_DOCUMENT_RENDER_COMMAND,
+      parseDocumentRenderRequest,
+      async (request, identity) => {
+        const echoed = { request, identity };
+        const literatureNotes = deps.literatureNotes;
+        if (!literatureNotes) {
+          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+            ok: false,
+            ...echoed,
+            diagnostic: diagnostic(
+              "DOCUMENT_INVALID",
+              "Literature Note document rendering is unavailable.",
+            ),
+          });
+        }
+
+        let render: (data: object) => {
+          create: string;
+          update: string | null;
+        };
+        if ("source" in request) {
+          render = (data) => literatureNotes.renderSource(request.source, data);
+        } else {
+          const reference =
+            "document" in request
+              ? request.document
+              : profileDocumentReference(literatureNotes, request.profile);
+          if (typeof reference !== "string") {
+            return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: reference,
+            });
+          }
+          let document;
+          try {
+            document = literatureNotes.getDocument(reference);
+          } catch (error) {
+            return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: literatureNoteDocumentDiagnostic(error),
+            });
+          }
+          if (!document) {
+            return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: documentNotFoundDiagnostic(reference),
+            });
+          }
+          render = (data) => ({
+            create: document.renderForCreate(data),
+            update: document.renderForUpdate(data),
+          });
+        }
+
+        const result = await deps.loadData(request.key, "note");
+        if (result.kind !== "data") {
+          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+            ok: false,
+            ...echoed,
+            diagnostic: dataLoadDiagnostic(result, request.key),
+          });
+        }
+        try {
+          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+            ok: true,
+            ...echoed,
+            render: render(result.data),
+          });
+        } catch (error) {
+          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+            ok: false,
+            ...echoed,
+            diagnostic: literatureNoteDocumentDiagnostic(error),
           });
         }
       },
@@ -682,6 +800,125 @@ export function createTemplateWorkbenchHandlers(
       });
     },
   };
+}
+
+function literatureNoteAuthoringState(
+  literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
+): {
+  profiles: readonly LiteratureNoteProfileRow[];
+  documents: readonly LiteratureNoteDocumentRow[];
+} {
+  const state = literatureNotes.readProfiles();
+  const profiles: LiteratureNoteProfileRow[] = [
+    {
+      id: null,
+      label: "Default",
+      document: state.defaultProfile.document ?? null,
+    },
+    ...state.profiles.map((profile) => ({
+      id: profile.id,
+      label: profile.label,
+      document: profile.document ?? null,
+    })),
+  ];
+  const documents = new Map<string, LiteratureNoteDocumentRow>();
+  for (const status of literatureNotes.getDocumentStatuses()) {
+    documents.set(
+      status.reference,
+      status.validation.state === "valid"
+        ? {
+            reference: status.reference,
+            path: status.path,
+            validation: status.validation,
+          }
+        : {
+            reference: status.reference,
+            path: status.path,
+            validation: {
+              state: "invalid",
+              diagnostic: literatureNoteDocumentDiagnosticCode(
+                status.validation.error.code,
+                status.validation.error.message,
+              ),
+            },
+          },
+    );
+  }
+  for (const profile of profiles) {
+    if (profile.document && !documents.has(profile.document)) {
+      documents.set(profile.document, {
+        reference: profile.document,
+        path: null,
+        validation: {
+          state: "missing",
+          diagnostic: documentNotFoundDiagnostic(profile.document),
+        },
+      });
+    }
+  }
+  return {
+    profiles,
+    documents: [...documents.values()].sort((a, b) =>
+      a.reference.localeCompare(b.reference),
+    ),
+  };
+}
+
+function profileDocumentReference(
+  literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
+  profileId: string,
+): string | Diagnostic {
+  const state = literatureNotes.readProfiles();
+  const profile =
+    profileId === "default"
+      ? state.defaultProfile
+      : state.profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    return diagnostic(
+      "UNKNOWN_PROFILE_STAMP",
+      `No Literature Note Profile has the stamped ID '${profileId}'.`,
+    );
+  }
+  if (!profile.document) {
+    return diagnostic(
+      "DOCUMENT_NOT_FOUND",
+      `Profile '${profileId}' uses the built-in Literature Note Template and has no document reference.`,
+    );
+  }
+  return profile.document;
+}
+
+function documentNotFoundDiagnostic(reference: string): Diagnostic {
+  return diagnostic(
+    "DOCUMENT_NOT_FOUND",
+    `Literature Note Template document '${reference}' was not found.`,
+  );
+}
+
+function literatureNoteDocumentDiagnostic(error: unknown): Diagnostic {
+  if (error instanceof InertTemplateError) {
+    return diagnostic("ETA_OPT_IN_REQUIRED", error.message);
+  }
+  if (error instanceof LiteratureNoteTemplateError) {
+    return literatureNoteDocumentDiagnosticCode(error.code, error.message);
+  }
+  return diagnostic(
+    "DOCUMENT_INVALID",
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+function literatureNoteDocumentDiagnosticCode(
+  code: string,
+  message: string,
+): Diagnostic {
+  if (code === "duplicate-managed-block") {
+    return diagnostic("DUPLICATE_MANAGED_BLOCK", message);
+  }
+  if (code === "frontmatter-not-supported") {
+    return diagnostic("RESERVED_FRONTMATTER_SECTION", message);
+  }
+  return diagnostic("DOCUMENT_INVALID", message);
 }
 
 /**

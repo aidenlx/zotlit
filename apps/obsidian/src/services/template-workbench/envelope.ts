@@ -27,10 +27,9 @@ import type { SchemaAsset } from "./schema";
 /**
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
  * commands, versioned on its own (ADR 0026). The value has stood since
- * 2.0.0-beta.4, when `@zotlit/db`'s `CONTRACT_VERSION` still stamped this
- * envelope as well.
+ * Version 3 adds Literature Note Profile/document inspection and rendering.
  */
-export const CONTRACT_VERSION = 2;
+export const CONTRACT_VERSION = 3;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
@@ -77,6 +76,16 @@ export const DIAGNOSTIC_HINTS = {
     "Choose a field key ZotLit does not manage; the reservedKeys list from frontmatter-status names every key that is off limits.",
   FIELD_NOT_FOUND:
     "Run frontmatter-status to see the configured keys, then use one of them.",
+  DOCUMENT_NOT_FOUND:
+    "Restore the referenced document, select another document, or provide a source override.",
+  UNKNOWN_PROFILE_STAMP:
+    "Re-stamp the note with an existing Profile, or recreate the Profile with the same ID.",
+  DUPLICATE_MANAGED_BLOCK:
+    "Keep at most one Managed Block in the document, then render it again.",
+  RESERVED_FRONTMATTER_SECTION:
+    "Remove the reserved frontmatter section until its format is supported.",
+  DOCUMENT_INVALID:
+    "Correct the document validation error, then inspect or render it again.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -114,6 +123,7 @@ export type WorkbenchCommand =
       | "data"
       | "schema"
       | "render"
+      | "document-render"
       | "guide"
       | "source"}`
   | `zotlit:frontmatter-${"status" | "eval" | "set" | "remove" | "reorder"}`;
@@ -146,6 +156,26 @@ export interface FrontmatterEvalRow {
   error?: { message: string };
 }
 
+/** One Profile row in template-status. `null` identifies the built-in default. */
+export interface LiteratureNoteProfileRow {
+  id: string | null;
+  label: string;
+  document: string | null;
+}
+
+/** One installed or referenced Literature Note Template document. */
+export interface LiteratureNoteDocumentRow {
+  reference: string;
+  path: string | null;
+  validation:
+    | {
+        state: "valid";
+        manifest: object;
+        hasManagedBlock: boolean;
+      }
+    | { state: "invalid" | "missing"; diagnostic: Diagnostic };
+}
+
 /** The facts a command echoes back beside its result, all optional because a
  *  selector-level failure is answered before any of them is resolved. */
 interface EnvelopeFacts {
@@ -171,9 +201,12 @@ export type EnvelopeTail =
       schemas?: Readonly<Record<ContractRoot, SchemaAsset>>;
       javascriptTemplatesEnabled?: boolean;
       templates?: readonly TemplateFileStatus[];
+      profiles?: readonly LiteratureNoteProfileRow[];
+      documents?: readonly LiteratureNoteDocumentRow[];
       /** The object a Template reads as `zt`. */
       zt?: unknown;
       markdown?: string;
+      render?: { create: string; update: string | null };
       language?: TemplateLanguage;
       source?: string;
       /** Configured Managed Frontmatter fields, in configuration order. */
