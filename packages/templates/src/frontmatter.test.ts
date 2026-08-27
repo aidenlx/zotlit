@@ -206,6 +206,51 @@ describe("evalFrontmatterFields (javascript fields)", () => {
 });
 
 describe("evalFrontmatterFields (liquid fields)", () => {
+  it("returns a flattened unique collection-path list", () => {
+    const fm = evalFields(
+      [
+        {
+          key: "collections",
+          expr: 'zt.collections | map: "path" | flatten | uniq',
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+      {
+        collections: [{ path: ["Top", "Sub"] }, { path: ["Top", "Other"] }],
+      },
+    );
+
+    expect(fm).toEqual({ collections: ["Top", "Sub", "Other"] });
+  });
+
+  it("reports non-array flatten input against its field key", () => {
+    const errors: { key: string; message: string }[] = [];
+    const fm = evalFields(
+      [
+        {
+          key: "collections",
+          expr: "zt.collections | flatten",
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+      { collections: null },
+      {
+        onError: (key, error) =>
+          errors.push({
+            key,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+      },
+    );
+
+    expect(fm).toEqual({});
+    expect(errors).toEqual([
+      { key: "collections", message: "flatten requires an array" },
+    ]);
+  });
+
   it("returns an intact array regardless of the javascript gate", () => {
     const zt = { tags: [{ name: "ai" }, { name: "nlp" }] };
     const fields: FrontmatterField[] = [

@@ -313,6 +313,58 @@ describe("collection_paths filter", () => {
   });
 });
 
+describe("flatten filter", () => {
+  it("flattens one array level by default without deduplicating", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | flatten", {
+        zt: { items: ["first", ["second", ["third"]], "second"] },
+      }),
+    ).toEqual(["first", "second", ["third"], "second"]);
+  });
+
+  it("accepts an explicit flatten depth", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | flatten: 2", {
+        zt: { items: ["first", ["second", ["third"]]] },
+      }),
+    ).toEqual(["first", "second", "third"]);
+  });
+
+  it("refuses non-array input", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync("zt.items | flatten", {
+        zt: { items: "not-array" },
+      }),
+    ).toThrow("flatten requires an array");
+  });
+
+  it.each([-1, 1.5, "2"])("refuses invalid depth %s", (depth) => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync("zt.items | flatten: zt.depth", {
+        zt: { items: [["value"]], depth },
+      }),
+    ).toThrow("flatten depth must be a non-negative integer");
+  });
+
+  it("supports the collection-path pipeline in body templates", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.parseAndRenderSync(
+        '{{ zt.collections | map: "path" | flatten | uniq | join: "/" }}',
+        {
+          zt: {
+            collections: [{ path: ["Top", "Sub"] }, { path: ["Top", "Other"] }],
+          },
+        },
+      ),
+    ).toBe("Top/Sub/Other");
+  });
+});
+
 describe("arr_prefix filter", () => {
   it("prepends a string to every element", () => {
     const engine = createLiquidEngine();
