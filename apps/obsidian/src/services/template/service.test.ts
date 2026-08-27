@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
+import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
@@ -270,6 +271,55 @@ describe("TemplateService", () => {
     expect(rendered.create).toContain("# Draft Paper");
     expect(rendered.update).toContain("Managed Paper");
     expect([...vault.files.keys()]).toEqual(paths);
+  });
+
+  it("exports an installed document with its reachable partials bundled", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/books.md",
+      literatureNoteDocument("Draft").replace(
+        "Managed {{ zt.title }}",
+        '{% render "summary" with zt as zt %}',
+      ),
+    );
+    vault.addFile(
+      "templates/zotlit-summary.liquid.md",
+      "Summary {{ zt.title }}",
+    );
+    const { service } = await makeHarness({ vault });
+
+    const exported = new TemplateFacade().parseLiteratureNoteTemplate(
+      await service.exportLiteratureNotePack("books.md"),
+    );
+
+    expect(exported.manifest.partials).toEqual([
+      {
+        name: "summary",
+        language: "liquid",
+        source: "Summary {{ zt.title }}",
+      },
+    ]);
+  });
+
+  it("renders bundled Pack partials from an uninstalled source", async () => {
+    const { service } = await makeHarness();
+    const source = exportLiteratureNotePack(
+      literatureNoteDocument("Draft").replace(
+        "Managed {{ zt.title }}",
+        '{% render "summary" with zt as zt %}',
+      ),
+      [
+        {
+          name: "summary",
+          language: "liquid",
+          source: "Summary {{ zt.title }}",
+        },
+      ],
+    );
+
+    expect(
+      service.renderLiteratureNoteTemplateSource(source, { title: "Paper" }),
+    ).toMatchObject({ create: expect.stringContaining("Summary Paper") });
   });
 
   it("bounds the settle wait while initial settings are still loading", async () => {

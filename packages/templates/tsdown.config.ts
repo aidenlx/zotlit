@@ -9,6 +9,7 @@ export default defineConfig({
     "./src/obsidian.ts",
     "./src/frontmatter.ts",
     "./src/frontmatter-merge.ts",
+    "./src/literature-note-pack.ts",
   ],
   tsconfig: "./tsconfig.lib.json",
   dts: true,

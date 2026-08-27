@@ -97,6 +97,41 @@ const defaultLiteratureNoteProfileSchema = v.pipe(
   }),
   v.readonly(),
 );
+
+const literatureNotePackPreviousStateSchema = v.union([
+  v.strictObject({ kind: v.picklist(["absent", "built-in"]) }),
+  v.strictObject({
+    kind: v.picklist(["user-file", "prior-pack"]),
+    source: v.string(),
+  }),
+]);
+
+const literatureNotePackInstallRecordSchema = v.strictObject({
+  pack: v.strictObject({ id: nonEmptyString(), version: nonEmptyString() }),
+  files: v.pipe(
+    v.array(
+      v.strictObject({
+        key: nonEmptyString(),
+        installedSource: v.string(),
+        previous: literatureNotePackPreviousStateSchema,
+      }),
+    ),
+    v.readonly(),
+  ),
+});
+
+function nonEmptyString() {
+  return v.pipe(v.string(), v.trim(), v.nonEmpty());
+}
+
+export type LiteratureNotePackInstallRecord = v.InferOutput<
+  typeof literatureNotePackInstallRecordSchema
+>;
+
+const literatureNotePackInstallRecordsSchema = v.pipe(
+  v.array(literatureNotePackInstallRecordSchema),
+  v.readonly(),
+);
 export type DefaultLiteratureNoteProfile = v.InferOutput<
   typeof defaultLiteratureNoteProfileSchema
 >;
@@ -173,6 +208,7 @@ export const schema = v.object({
   "note.default-profile": defaultLiteratureNoteProfileSchema,
   "note.profiles": literatureNoteProfilesSchema,
   "note.template-conversion-pending": v.boolean(),
+  "note.template-pack-installs": literatureNotePackInstallRecordsSchema,
   "note.frontmatter-fields": frontmatterFieldsSchema,
   "note.import-folder": v.string(),
   "note.import-colored-highlights": v.boolean(),
@@ -233,6 +269,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
   "note.profiles": [],
   "note.template-conversion-pending": false,
+  "note.template-pack-installs": [],
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",
   "note.import-colored-highlights": false,

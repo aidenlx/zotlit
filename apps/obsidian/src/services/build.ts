@@ -42,6 +42,7 @@ import {
   LiteratureNoteTemplateMigrationService,
   loadLiteratureNoteTemplateMigrationData,
 } from "./template/migration";
+import { LiteratureNotePackService } from "./template/pack";
 import { TemplateService } from "./template/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
@@ -96,6 +97,14 @@ export function buildServices(
     .use({
       template: ({ settings }) =>
         new TemplateService({ plugin, app: plugin.app, settings }),
+    })
+    .use({
+      templatePack: ({ settings, template }) =>
+        new LiteratureNotePackService({
+          app: plugin.app,
+          settings,
+          template,
+        }),
     })
     .use({
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
