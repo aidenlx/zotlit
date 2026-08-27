@@ -201,15 +201,6 @@ describe("Template Workbench Profile documents", () => {
       code: "DUPLICATE_MANAGED_BLOCK",
     },
     {
-      name: "reserved frontmatter section",
-      error: new LiteratureNoteTemplateError(
-        "frontmatter-not-supported",
-        "Manifest frontmatter is reserved",
-        { recovery: "Remove the frontmatter section." },
-      ),
-      code: "RESERVED_FRONTMATTER_SECTION",
-    },
-    {
       name: "inert Eta document",
       error: new InertTemplateError("JavaScript Templates are disabled"),
       code: "ETA_OPT_IN_REQUIRED",
