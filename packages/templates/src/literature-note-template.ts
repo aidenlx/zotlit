@@ -6,6 +6,10 @@ import {
   stringify as stringifyYaml,
 } from "yaml";
 
+import {
+  frontmatterMergeStrategySchema,
+  RESERVED_FRONTMATTER_KEYS,
+} from "./constants";
 import type { TemplateLanguage } from "./constants";
 
 const OPEN_MANAGED = "{% managed %}";
@@ -33,6 +37,33 @@ const partialsSchema = v.pipe(
   v.readonly(),
 );
 
+const managedFrontmatterEntryBase = {
+  key: nonEmptyString,
+  merge: v.optional(frontmatterMergeStrategySchema, "replace"),
+};
+
+const managedFrontmatterEntrySchema = v.pipe(
+  v.union([
+    v.strictObject({ ...managedFrontmatterEntryBase, expr: v.string() }),
+    v.strictObject({ ...managedFrontmatterEntryBase, value: v.unknown() }),
+    v.strictObject({ ...managedFrontmatterEntryBase, js: v.string() }),
+  ]),
+  v.check(
+    ({ key }) => !RESERVED_FRONTMATTER_KEYS.has(key),
+    ({ input }) => `Managed Frontmatter key '${input.key}' is reserved`,
+  ),
+);
+
+const managedFrontmatterSchema = v.pipe(
+  v.array(managedFrontmatterEntrySchema),
+  v.checkItems(
+    (entry, index, entries) =>
+      entries.findIndex(({ key }) => key === entry.key) === index,
+    ({ input }) => `Duplicate Managed Frontmatter key '${input.key}'`,
+  ),
+  v.readonly(),
+);
+
 const manifestSchema = v.strictObject({
   id: nonEmptyString,
   name: nonEmptyString,
@@ -52,7 +83,12 @@ const manifestSchema = v.strictObject({
   ),
   language: v.optional(v.picklist(["liquid", "eta"]), "liquid"),
   partials: v.optional(partialsSchema),
+  frontmatter: v.optional(managedFrontmatterSchema),
 });
+
+export type ManagedFrontmatterEntry = v.InferOutput<
+  typeof managedFrontmatterEntrySchema
+>;
 
 export interface LiteratureNoteTemplatePartial {
   readonly name: string;
@@ -76,6 +112,7 @@ export interface LiteratureNoteTemplateManifest {
   };
   language: TemplateLanguage;
   partials?: readonly LiteratureNoteTemplatePartial[];
+  frontmatter?: readonly ManagedFrontmatterEntry[];
 }
 
 export interface ManagedBlock {
@@ -209,7 +246,6 @@ function countOccurrences(source: string, value: string): number {
 export type LiteratureNoteTemplateErrorCode =
   | "invalid-document"
   | "invalid-manifest"
-  | "frontmatter-not-supported"
   | "invalid-managed-block"
   | "duplicate-managed-block";
 
@@ -234,25 +270,24 @@ export function parseLiteratureNoteTemplate(
 ): LiteratureNoteTemplateDocument {
   const { manifestSource, body } = splitDocument(source);
   const rawManifest = parseManifestYaml(manifestSource);
-  if (hasOwn(rawManifest, "frontmatter")) {
-    throw new LiteratureNoteTemplateError(
-      "frontmatter-not-supported",
-      'Manifest field "frontmatter" is reserved and is not supported yet',
-      {
-        recovery:
-          'Remove "frontmatter" until the Managed Frontmatter format is available.',
-      },
-    );
-  }
 
   const result = v.safeParse(manifestSchema, rawManifest);
   if (!result.success) {
     const issue = result.issues[0]!;
+    const frontmatter = frontmatterIssueContext(rawManifest, issue);
     throw new LiteratureNoteTemplateError(
       "invalid-manifest",
-      `Invalid Literature Note Template manifest: ${issue.message}`,
+      frontmatter?.entry
+        ? `Invalid Managed Frontmatter entry ${frontmatter.entry}: ${issue.message}`
+        : frontmatter
+          ? `Invalid Literature Note Template manifest field 'frontmatter': ${issue.message}`
+          : `Invalid Literature Note Template manifest: ${issue.message}`,
       {
-        recovery: "Correct the manifest field named by the validation error.",
+        recovery: frontmatter?.entry
+          ? "Correct the named Managed Frontmatter entry."
+          : frontmatter
+            ? "Correct the Managed Frontmatter section."
+            : "Correct the manifest field named by the validation error.",
         cause: issue,
       },
     );
@@ -262,6 +297,30 @@ export function parseLiteratureNoteTemplate(
     manifest: result.output,
     body,
     managedBlock: findManagedBlock(body, result.output.language),
+  };
+}
+
+function frontmatterIssueContext(
+  rawManifest: unknown,
+  issue: { path?: readonly { key: unknown }[] },
+): { entry?: string } | null {
+  const frontmatterPath = issue.path?.findIndex(
+    ({ key }) => key === "frontmatter",
+  );
+  if (frontmatterPath === undefined || frontmatterPath === -1) return null;
+  const index = issue.path
+    ?.slice(frontmatterPath + 1)
+    .find(({ key }) => typeof key === "number")?.key;
+  if (typeof index !== "number") return {};
+
+  const entries = readOwn(rawManifest, "frontmatter");
+  if (!Array.isArray(entries)) return {};
+  const key = readOwn(entries[index], "key");
+  return {
+    entry:
+      typeof key === "string" && key.trim() !== ""
+        ? `'${key.trim()}'`
+        : `#${index + 1}`,
   };
 }
 
@@ -444,4 +503,10 @@ function hasOwn(value: unknown, key: string): boolean {
     value !== null &&
     Object.prototype.hasOwnProperty.call(value, key)
   );
+}
+
+function readOwn(value: unknown, key: string): unknown {
+  return hasOwn(value, key)
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
 }
