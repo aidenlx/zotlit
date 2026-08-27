@@ -7,7 +7,11 @@ import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
 } from "./constants";
-import { renderJsonEFrontmatterValue } from "./frontmatter-json-e";
+import {
+  assertFrontmatterOutputDomain,
+  renderJsonEFrontmatterValue,
+} from "./frontmatter-json-e";
+import { FRONTMATTER_ABSENT } from "./frontmatter-merge";
 import type { ManagedFrontmatterEntry } from "./literature-note-template";
 
 export {
@@ -110,7 +114,11 @@ export function evalManagedFrontmatterEntries(
   const errors: ManagedFrontmatterEvaluationError[] = [];
   for (const entry of entries) {
     try {
-      values[entry.key] = entry.fn(zt, operationTimestamp);
+      const value = entry.fn(zt, operationTimestamp);
+      if (value !== undefined && value !== FRONTMATTER_ABSENT) {
+        assertFrontmatterOutputDomain(value);
+      }
+      values[entry.key] = value;
     } catch (error) {
       errors.push({ key: entry.key, error });
     }
