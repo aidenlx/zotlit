@@ -741,7 +741,7 @@ function writePrefs(
 }
 
 /** ZotLit's settings version, so the vault loads without a migration pass. */
-const SETTINGS_VERSION = 9;
+const SETTINGS_VERSION = 10;
 
 async function writeVault(
   layout: FixtureLayout,
@@ -829,9 +829,16 @@ async function writeVault(
   // saved there. The generated settings are the ones this build promises.
   await writeJson(layout.pluginDataPath, {
     __VERSION__: SETTINGS_VERSION,
-    "note.literature-folder": "literatures",
+    "note.default-profile": {
+      bindings: {
+        "note.literature-folder": "literatures",
+        "citation.references-style": null,
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false,
+      },
+    },
     "note.profiles": LITERATURE_NOTE_PROFILES,
-    "note.import-folder": "zotero_notes",
     "server.enabled": true,
     ...(options.liveUpdatePort === undefined
       ? {}

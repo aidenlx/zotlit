@@ -43,7 +43,8 @@ import {
   truncateToByteLimit,
 } from "@/services/note-feature/filename";
 import type { NoteIndex } from "@/services/note-index/service";
-import type { Settings } from "@/services/settings/schema";
+import { getProfileBinding } from "@/services/settings/service";
+import type { ProfileBindingSettings } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -67,7 +68,7 @@ type WriteMode =
 /** Shared per-run inputs threaded to every write in a `prepare`/`importNote` call. */
 interface RunContext {
   client: NodeDatabaseClient;
-  settings: Readonly<Settings>;
+  settings: ProfileBindingSettings;
   groupIdMemo?: GroupIDMemo;
   tagMemo?: TagMemo;
   attachmentFolderCache: Map<string, string>;
@@ -105,7 +106,7 @@ export interface PrepareNoteImportOptions {
   /** The literature note's vault path; the link source for `noteLink`. */
   sourcePath: string;
   /** Caller-held settings snapshot (import folder and related note-import prefs). */
-  settings: Readonly<Settings>;
+  settings: ProfileBindingSettings;
   /** Shared across a run so group-library lookups memoize. */
   groupIdMemo?: GroupIDMemo;
   /** Shared across a run so parent-item/annotation tag lookups memoize. */
@@ -125,7 +126,7 @@ export interface NoteImport {
 
 interface ImportNoteOptions {
   client: NodeDatabaseClient;
-  settings: Readonly<Settings>;
+  settings: ProfileBindingSettings;
   groupIdMemo?: GroupIDMemo;
   tagMemo?: TagMemo;
   attachmentFolderCache?: Map<string, string>;
@@ -186,7 +187,7 @@ async function prepareImport(
 ): Promise<NoteImport> {
   const { settings, sourcePath } = options;
   const importFolder = normalizeFolderPath(
-    normalizePath(settings["note.import-folder"]),
+    normalizePath(getProfileBinding(settings, "note.import-folder")),
   );
   const run: RunContext = {
     client: options.client,
@@ -231,7 +232,7 @@ async function doImportNote(
     }
     const folder = await ensureImportFolder(
       ctx.app,
-      options.settings["note.import-folder"],
+      getProfileBinding(options.settings, "note.import-folder"),
     );
     return writeNote(ctx, note, {
       mode: { action: "create", path: mintImportPath(ctx.app, folder, note) },
@@ -368,9 +369,10 @@ async function writeNote(
       folderCache: run.attachmentFolderCache,
     });
     attachmentBatch = batch;
-    const renderAnnotationParagraph = run.settings[
-      "note.import-annotations-as-template"
-    ]
+    const renderAnnotationParagraph = getProfileBinding(
+      run.settings,
+      "note.import-annotations-as-template",
+    )
       ? (keys: readonly string[]) =>
           renderAnnotations(
             run.client,
@@ -395,7 +397,10 @@ async function writeNote(
         dataDir: ctx.zoteroPref.dataDir,
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
       },
-      useColoredHighlightSyntax: run.settings["note.import-colored-highlights"],
+      useColoredHighlightSyntax: getProfileBinding(
+        run.settings,
+        "note.import-colored-highlights",
+      ),
       attachmentImport: batch,
       renderAnnotationParagraph,
     });

@@ -3,21 +3,22 @@ import type { SettingDefinitionItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import type { SettingsKey, SettingTabContext } from "./context";
-import { defaultPlaceholder } from "./placeholder";
+import type { SettingsControlKey, SettingTabContext } from "./context";
+import { defaultProfileBindingPlaceholder } from "./placeholder";
+import { profileControlKey } from "./profiles";
 
 /** Items for the "Note import" sub-page. */
 export function noteImportPageItems(
   _ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
+): SettingDefinitionItem<SettingsControlKey>[] {
   return [
     {
       name: m.settings_note_import_folder_name(),
       desc: m.settings_note_import_folder_desc(),
       control: {
         type: "folder",
-        key: "note.import-folder",
-        placeholder: defaultPlaceholder("note.import-folder"),
+        key: profileControlKey("default", "import-folder"),
+        placeholder: defaultProfileBindingPlaceholder("note.import-folder"),
       },
     },
     {
@@ -25,7 +26,7 @@ export function noteImportPageItems(
       desc: m.settings_note_import_colored_highlights_desc(),
       control: {
         type: "toggle",
-        key: "note.import-colored-highlights",
+        key: profileControlKey("default", "colored-highlights"),
       },
     },
     {
@@ -33,7 +34,7 @@ export function noteImportPageItems(
       desc: m.settings_note_import_annotations_template_desc(),
       control: {
         type: "toggle",
-        key: "note.import-annotations-as-template",
+        key: profileControlKey("default", "annotations-as-template"),
       },
     },
   ];

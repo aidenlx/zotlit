@@ -44,7 +44,8 @@ import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
-import { resolveLiteratureNoteProfileBindings } from "@/services/settings/service";
+import { bindLiteratureNoteProfile } from "@/services/settings/service";
+import type { ProfileBindingSettings } from "@/services/settings/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
 import {
@@ -1183,7 +1184,7 @@ function applyFrontmatter(
 interface ResolvedLiteratureNoteProfile {
   id: string | undefined;
   document: string | undefined;
-  settings: Readonly<Settings>;
+  settings: ProfileBindingSettings;
   citationStyle: string | null | undefined;
 }
 
@@ -1195,7 +1196,7 @@ function resolveLiteratureNoteProfile(
     return {
       id,
       document: settings["note.default-profile"].document,
-      settings,
+      settings: bindLiteratureNoteProfile(settings)!,
       citationStyle: undefined,
     };
   }
@@ -1203,14 +1204,10 @@ function resolveLiteratureNoteProfile(
     (candidate) => candidate.id === id,
   );
   if (!profile) return undefined;
-  const bindings = resolveLiteratureNoteProfileBindings(settings, id)!;
   return {
     id,
     document: profile.document,
-    settings: {
-      ...settings,
-      ...bindings,
-    },
+    settings: bindLiteratureNoteProfile(settings, id)!,
     citationStyle: profile.bindings?.["citation.references-style"],
   };
 }

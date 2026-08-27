@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 
 import { registerPandocExport } from "./register";
 import type { PandocExportDeps } from "./register";
@@ -32,7 +34,11 @@ const VAULT_STYLE = {
 interface VaultOptions {
   /** The properties the active note carries; `undefined` leaves no note active. */
   note?: Record<string, unknown>;
-  settings?: Partial<Settings>;
+  settings?: Partial<Settings> &
+    Pick<
+      Partial<ResolvedLiteratureNoteProfileBindings>,
+      "citation.references-style"
+    >;
   engineInstalled?: boolean;
 }
 
@@ -46,6 +52,25 @@ function openVault({
   const frontmatter = note ?? {};
   const getEngine = vi.fn();
   let command: Command | undefined;
+  const {
+    ["citation.references-style"]: referencesStyle,
+    ...persistedSettings
+  } = settings;
+  const resolvedSettings: Settings = {
+    ...defaults,
+    ...persistedSettings,
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      ...persistedSettings["note.default-profile"],
+      bindings: {
+        ...defaults["note.default-profile"].bindings,
+        ...persistedSettings["note.default-profile"]?.bindings,
+        ...(referencesStyle === undefined
+          ? {}
+          : { "citation.references-style": referencesStyle }),
+      },
+    },
+  };
 
   const app = {
     workspace: { getActiveFile: () => (note ? file : null) },
@@ -68,7 +93,7 @@ function openVault({
         getEngine,
       },
       zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
-      settings: { current: settings as Settings },
+      settings: { current: resolvedSettings },
       openSettings: () => undefined,
     } as unknown as PandocExportDeps,
   );

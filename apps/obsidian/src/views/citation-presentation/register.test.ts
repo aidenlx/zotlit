@@ -3,7 +3,9 @@ import type { App, Command, Plugin, TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 
 import type { CitationPresentationModalOptions } from "./modal";
 import type { CitationPresentationChoice } from "./presentation";
@@ -35,7 +37,7 @@ type FileMenuHandler = (
 interface VaultOptions {
   /** The properties the active note carries; `undefined` leaves no note active. */
   note?: Record<string, unknown>;
-  settings?: Partial<Settings>;
+  settings?: Partial<Settings> & Partial<ResolvedLiteratureNoteProfileBindings>;
   /** Holds the vault selections back until `loadSettings()` hands them over. */
   loading?: boolean;
 }
@@ -44,7 +46,26 @@ interface VaultOptions {
 function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
   const file = markdownFile("draft.md");
   const vaultSettings = Promise.withResolvers<Settings>();
-  if (!loading) vaultSettings.resolve(settings as Settings);
+  const {
+    ["citation.references-style"]: referencesStyle,
+    ...persistedSettings
+  } = settings;
+  const resolvedSettings: Settings = {
+    ...defaults,
+    ...persistedSettings,
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      ...persistedSettings["note.default-profile"],
+      bindings: {
+        ...defaults["note.default-profile"].bindings,
+        ...persistedSettings["note.default-profile"]?.bindings,
+        ...(referencesStyle === undefined
+          ? {}
+          : { "citation.references-style": referencesStyle }),
+      },
+    },
+  };
+  if (!loading) vaultSettings.resolve(resolvedSettings);
   const frontmatter = note ?? {};
   const writes: string[] = [];
   let command: Command | undefined;
@@ -116,7 +137,7 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
     },
     /** Hand over the vault selections a loading vault held back. */
     loadSettings() {
-      vaultSettings.resolve(settings as Settings);
+      vaultSettings.resolve(resolvedSettings);
     },
     /** One menu this action was offered a place in, as Obsidian builds it. */
     menu(source: string, target: TAbstractFile = file as never) {

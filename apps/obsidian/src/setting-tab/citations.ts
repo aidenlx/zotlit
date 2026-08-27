@@ -10,7 +10,6 @@ import { isLanguageTag } from "@/lib/language-tag";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { HoverAction } from "@/services/settings/schema";
-import { RESET_SETTING } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { pandocEngineDefinition } from "./pandoc-engine";
@@ -241,7 +240,9 @@ function renderReferencesStyleRow(
   });
 
   const selectedValue = (): string =>
-    ctx.settings.current?.["citation.references-style"] ?? STYLE_DEFAULT;
+    ctx.settings.current?.["note.default-profile"].bindings[
+      "citation.references-style"
+    ] ?? STYLE_DEFAULT;
 
   const repopulate = (): void => {
     if (!dropdown) return;
@@ -287,9 +288,8 @@ function renderReferencesStyleRow(
   setting.addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
-      ctx.settings.update({
-        "citation.references-style":
-          value === STYLE_DEFAULT ? RESET_SETTING : value,
+      ctx.settings.updateDefaultLiteratureNoteProfileBindings({
+        "citation.references-style": value === STYLE_DEFAULT ? null : value,
       });
     });
     repopulate();

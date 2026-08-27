@@ -96,7 +96,10 @@ export function vaultPresentation(
   settings: Readonly<Settings> | null | undefined,
 ): EffectivePresentation {
   return {
-    styleId: settings?.["citation.references-style"] ?? null,
+    styleId:
+      settings?.["note.default-profile"].bindings[
+        "citation.references-style"
+      ] ?? null,
     // An empty Citation Locale asks for Style default, as an unset one does.
     locale: settings?.["citation.locale"] || null,
   };

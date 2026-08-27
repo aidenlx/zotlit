@@ -83,14 +83,25 @@ describe("schema/defaults invariants", () => {
     );
   });
 
-  it("keeps the built-in default profile empty until it references a document", () => {
+  it("keeps every built-in default Profile binding total", () => {
     const entry = schema.entries["note.default-profile"];
 
-    expect(defaults["note.default-profile"]).toEqual({});
-    expect(v.safeParse(entry, {}).success).toBe(true);
-    expect(v.safeParse(entry, { document: "literature-note.md" }).success).toBe(
-      true,
-    );
+    expect(defaults["note.default-profile"]).toEqual({
+      bindings: {
+        "note.literature-folder": "literatures",
+        "citation.references-style": null,
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false,
+      },
+    });
+    expect(v.safeParse(entry, {}).success).toBe(false);
+    expect(
+      v.safeParse(entry, {
+        document: "literature-note.md",
+        bindings: defaults["note.default-profile"].bindings,
+      }).success,
+    ).toBe(true);
     expect(v.safeParse(entry, { document: "   " }).success).toBe(false);
   });
 
@@ -106,7 +117,12 @@ describe("schema/defaults invariants", () => {
       v.safeParse(entry, [
         {
           ...base,
-          bindings: { "citation.references-style": "apa" },
+          bindings: {
+            "citation.references-style": "apa",
+            "note.import-folder": "Imported",
+            "note.import-colored-highlights": true,
+            "note.import-annotations-as-template": true,
+          },
         },
       ]).success,
     ).toBe(true);
