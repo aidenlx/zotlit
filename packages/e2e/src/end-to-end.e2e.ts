@@ -68,6 +68,7 @@ const reachable = await isObsidianReachable();
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
+  let booksNotePath = "";
 
   beforeAll(async () => {
     // `create` reuses whatever plugin bundle already sits in the target
@@ -160,6 +161,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) {
       throw new Error("The two-Profile scenario did not create both notes");
     }
+    booksNotePath = booksResult.path;
 
     expect(defaultResult.path.startsWith("literatures/")).toBe(true);
     expect(booksResult.path.startsWith("books/books-")).toBe(true);
@@ -194,6 +196,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("renders a Literature Note via the update-all-notes batch operation", async () => {
     const noteName = targetItem.literatureNoteName ?? targetItem.key;
     const notePath = join(e2eVaultPath, "literatures", `${noteName}.md`);
+    if (booksNotePath === "") {
+      throw new Error("The Books Profile note was not created");
+    }
+
+    const staleFieldSeeded = await obEvalUntil(
+      vaultId,
+      `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});if(!file||file.extension!=='md'){return 'missing';}await app.fileManager.processFrontMatter(file,function(frontmatter){frontmatter['fixture-obsolete']='stale';});return 'seeded';})()`,
+      { expected: "seeded" },
+    );
+    expect(staleFieldSeeded).toBe(true);
 
     const triggered = await obEvalUntil(
       vaultId,
@@ -233,6 +245,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(content).toContain(`# ${targetItem.title}`);
     expect(content).toContain("related:");
     expect(content).toContain("collections:");
+
+    let managedFrontmatter: ManagedFrontmatterReport | undefined;
+    const managedFrontmatterApplied = await waitFor(async () => {
+      const response = await obEval(
+        vaultId,
+        `(function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});var frontmatter=file&&app.metadataCache.getFileCache(file)?.frontmatter;return JSON.stringify({title:frontmatter?.['fixture-title'],kind:frontmatter?.['fixture-kind'],obsolete:frontmatter?Object.prototype.hasOwnProperty.call(frontmatter,'fixture-obsolete'):false});})()`,
+      ).catch(() => "");
+      if (response === "") return false;
+      managedFrontmatter = JSON.parse(response) as ManagedFrontmatterReport;
+      return (
+        managedFrontmatter.title === booksProfileTargetItem.title &&
+        managedFrontmatter.kind === "reference/article" &&
+        !managedFrontmatter.obsolete
+      );
+    }, 40);
+
+    expect(managedFrontmatterApplied).toBe(true);
+    expect(managedFrontmatter).toEqual({
+      title: booksProfileTargetItem.title,
+      kind: "reference/article",
+      obsolete: false,
+    });
 
     expect(await hasOneIndexedNote(vaultId, createTargetItem.key)).toBe(true);
   });
@@ -314,6 +348,12 @@ interface LibraryScopeReport {
   invalid?: boolean;
   available?: { selector: unknown; libraryID: number; name: string | null }[];
   unavailable?: unknown[];
+}
+
+interface ManagedFrontmatterReport {
+  title?: unknown;
+  kind?: unknown;
+  obsolete: boolean;
 }
 
 type CreateOperationReply =
