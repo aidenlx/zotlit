@@ -27,7 +27,7 @@ _For the longer personal backstory behind the decision to rebuild, see [Reconnec
 
 On top of the driver swap, v2 uses Drizzle ORM as a structured data layer. In v1, every database query was hand-written SQL, and item fields were essentially untyped. If Zotero changed a field name or added a column, v1 had no way to notice until something rendered wrong in a template. In v2, field types are generated from Zotero's own schema definitions, so each item type (journal article, book, conference paper) gets typed fields. Mismatches show up in the Template Data Explorer rather than in a silently wrong note. This also makes it easier to keep up with Zotero's own changes. v2 tracks Zotero's schema version with an update procedure. By comparison, v1's types were generated once and never refreshed.
 
-v2's Zotero companion add-on targets Zotero 9, whose API has settled enough to build against without chasing a moving target.
+ZotLit Companion, the Zotero add-on, targets Zotero 9, whose API has settled enough to build against without chasing a moving target.
 
 I wrote v1 while teaching myself to program alongside medical school. Working in tech full-time since has changed how I build software, and the rewrite was a chance to apply that: fewer moving parts, less code to break. The plugin does the same things with a simpler internal structure, which means fixes and new features take less time to ship. Coding agents help too. They work better with straightforward code, which is another reason to keep the internals simple.
 

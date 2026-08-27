@@ -45,16 +45,7 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
-      # `--no-submodules` skips checkout since actions/checkout already fetched
-      # them.
-      - uses: jdx/mise-action@v4
-        if: steps.gate.outputs.exists == 'false'
-      - uses: pnpm/action-setup@v6
-        if: steps.gate.outputs.exists == 'false'
-        with:
-          cache: true
-      - run: mise run init --no-submodules
+      - uses: ./.github/actions/setup-workspace
         if: steps.gate.outputs.exists == 'false'
 
       - name: Resolve prerelease flag
@@ -189,16 +180,7 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # `mise run init` installs deps (frozen lockfile) and builds packages/*.
-      # `--no-submodules` skips checkout since actions/checkout already fetched
-      # them.
-      - uses: jdx/mise-action@v4
-        if: steps.gate.outputs.exists == 'false'
-      - uses: pnpm/action-setup@v6
-        if: steps.gate.outputs.exists == 'false'
-        with:
-          cache: true
-      - run: mise run init --no-submodules
+      - uses: ./.github/actions/setup-workspace
         if: steps.gate.outputs.exists == 'false'
 
       - name: Resolve prerelease flag

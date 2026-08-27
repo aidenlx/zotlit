@@ -1,0 +1,148 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* The four faces of the "Manuscript & Machine" type system, self-hosted from
+   Fontsource so the site serves its own font files. Each family ships one
+   @font-face per unicode subset, so a reader only downloads the subset the
+   page actually uses. Gelasio and Inter both load upright and italic; IBM Plex
+   Mono is not a variable font, so its three weights load explicitly.
+   @see apps/docs/DESIGN.md → Type system */
+@import "@fontsource-variable/gelasio/index.css";
+@import "@fontsource-variable/gelasio/wght-italic.css";
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/inter/wght-italic.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+/* Metric-adjusted local fallbacks preserve the shift-free swaps that
+   next/font generated before the TanStack Start migration. The values come
+   from Next.js 16.3.0's font metrics for the same Google Font families.
+   @see apps/docs/DESIGN.md → Font loading */
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
+
+@font-face {
+  font-family: "Gelasio Fallback";
+  src: local("Times New Roman");
+  ascent-override: 84.54%;
+  descent-override: 31.15%;
+  line-gap-override: 0%;
+  size-adjust: 109.74%;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono Fallback";
+  src: local("Arial");
+  ascent-override: 76.16%;
+  descent-override: 20.43%;
+  line-gap-override: 0%;
+  size-adjust: 134.59%;
+}
+
+/* Archivo SemiBold subset to the five "ZotLit" glyphs (~1 KB) — the wordmark,
+   and nothing else. @see docs/brand.md */
+@font-face {
+  font-family: "Archivo ZotLit";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/archivo-semibold-zotlit.woff2") format("woff2");
+}
+
+/* ZotLit brand palette — see docs/brand.md. Orange carries the interactive
+   accent; navy/light ink carries structure and drives the mark. */
+/* "Manuscript & Machine" site theme — cream ground, navy ink, deep-orange
+   accent. Applies site-wide (including /docs) since one token system drives
+   the whole site. */
+:root {
+  --color-fd-background: oklch(97.33% 0.0111 89.72); /* #f9f6ee */
+  --color-fd-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-card: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
+  --color-fd-card-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-popover: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
+  --color-fd-popover-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-border: oklch(86.42% 0.0226 89.81); /* #d8d2c2 */
+  --color-fd-muted: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
+  --color-fd-muted-foreground: oklch(52.94% 0.0384 255.32); /* #5d6d82 */
+  --color-fd-secondary: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
+  --color-fd-secondary-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-accent: oklch(95.04% 0.0204 62.86); /* #f9ece1 */
+  --color-fd-accent-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
+  --color-fd-primary: oklch(
+    0.58 0.17 40.45
+  ); /* deeper orange, ~4.6:1 vs cream */
+  --color-fd-primary-foreground: oklch(96.13% 0.0111 89.72);
+  --color-fd-ring: oklch(0.58 0.17 40.45);
+  --zotlit-ink: oklch(34.62% 0.0736 256.04); /* #1e3a5f */
+  --zotlit-accent: oklch(65.74% 0.1789 40.45); /* #e8622c */
+}
+
+.dark {
+  --color-fd-background: oklch(23% 0.0232 262.36); /* #171d28 */
+  --color-fd-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-card: oklch(26.29% 0.0271 259.99); /* #1d2532 */
+  --color-fd-card-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-popover: oklch(26.29% 0.0271 259.99); /* #1d2532 */
+  --color-fd-popover-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-border: oklch(35.31% 0.0316 257.68); /* #313c4c */
+  --color-fd-muted: oklch(31.01% 0.0288 256.84); /* #27313f */
+  --color-fd-muted-foreground: oklch(70.71% 0.0339 255.63); /* #93a2b6 */
+  --color-fd-secondary: oklch(31.01% 0.0288 256.84); /* #27313f */
+  --color-fd-secondary-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-accent: oklch(32.99% 0.0116 9.17); /* #3b3334 */
+  --color-fd-accent-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
+  --color-fd-primary: oklch(
+    0.75 0.155 45
+  ); /* lifted orange, ~7:1 vs the dark ground */
+  --color-fd-primary-foreground: oklch(
+    0.22 0.04 256
+  ); /* near-black with navy tint, ~7:1 */
+  --color-fd-ring: oklch(0.75 0.155 45);
+  --zotlit-ink: oklch(90.94% 0.022 256.73); /* #d8e2f0 */
+  --zotlit-accent: oklch(70.36% 0.163 44.66); /* #f0793f */
+}
+
+@theme inline {
+  /* Sans is the app-wide default: preflight's html font-family rule reads
+     --default-font-family, which resolves to --font-sans, so Inter reaches
+     everywhere — portaled dialogs and the not-found page included. */
+  --font-sans:
+    "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-brand: "Archivo ZotLit", ui-sans-serif, system-ui, sans-serif;
+  /* IBM Plex Mono is the "Machine" voice — overriding --font-mono here reroutes
+     both the `font-mono` utility and every var(--font-mono) reference (code,
+     kbd, version chips, meta lines, uppercase apparatus labels) onto it. */
+  --font-mono:
+    "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, "Liberation Mono", monospace;
+  /* Serif is opt-in per surface, so --font-serif names the stack rather than
+     riding on <html>; the system-serif tail carries a surface until Gelasio
+     swaps in. */
+  --font-serif:
+    "Gelasio Variable", "Gelasio Fallback", "Iowan Old Style", Charter, Georgia,
+    serif;
+}
+
+/* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact
+   id and exposes no className hook short of ejecting the whole TOC slot. */
+#toc-title {
+  @apply font-mono text-[0.8125rem] font-semibold tracking-widest uppercase;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
