@@ -26,6 +26,7 @@ import {
   findScopeCase,
   INSTALLED_STYLES,
   ITEMS,
+  LITERATURE_NOTE_DOCUMENTS,
   LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
@@ -51,6 +52,7 @@ export {
   findScopeCase,
   INSTALLED_STYLES,
   ITEMS,
+  LITERATURE_NOTE_DOCUMENTS,
   LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
@@ -748,6 +750,7 @@ async function writeVault(
   const configDir = join(layout.vaultDir, ".obsidian");
   await mkdir(layout.pluginDir, { recursive: true });
   await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
+  await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
   await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
 
   await writeJson(join(configDir, "app.json"), {});
@@ -778,6 +781,12 @@ async function writeVault(
     join(configDir, "plugins", "hot-reload"),
     { recursive: true },
   );
+  for (const document of LITERATURE_NOTE_DOCUMENTS) {
+    await writeFile(
+      join(layout.vaultDir, "templates", document.filename),
+      document.source,
+    );
+  }
 
   const scope: PersistedLibraryScope = findScopeCase(
     options.scopeCase ?? DEFAULT_SCOPE_CASE,

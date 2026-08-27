@@ -128,6 +128,8 @@ export interface SettingsDiagnostic {
 
 export interface LiteratureNoteProfilePatch {
   readonly label?: string;
+  /** Document filename, or `null` to use the built-in document. */
+  readonly document?: string | null;
   /** Complete sparse binding record. Omitted keys inherit global settings. */
   readonly bindings?: LiteratureNoteProfileBindings;
 }
@@ -317,9 +319,14 @@ export class SettingsService extends Service<void> {
     if (index === -1) throw new Error(`Unknown literature note Profile: ${id}`);
     const current = profiles[index]!;
     const bindings = patch.bindings ?? current.bindings;
+    const document =
+      patch.document === null
+        ? undefined
+        : (patch.document ?? current.document);
     const profile: LiteratureNoteProfile = {
       id,
       label: patch.label ?? current.label,
+      ...(document === undefined ? {} : { document }),
       ...(bindings === undefined ? {} : { bindings }),
     };
     const next = [...profiles];
@@ -855,6 +862,7 @@ function cloneLiteratureNoteProfile(
   return {
     id: profile.id,
     label: profile.label,
+    ...(profile.document === undefined ? {} : { document: profile.document }),
     ...(profile.bindings === undefined
       ? {}
       : { bindings: { ...profile.bindings } }),

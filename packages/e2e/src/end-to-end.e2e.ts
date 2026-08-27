@@ -140,7 +140,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(oneNote).toBe(true);
   });
 
-  it("creates one note per Item in two Profile folders", async () => {
+  it("creates one differently shaped note per Item from two Profile documents", async () => {
     const defaultResult = await createFixtureNote(
       vaultId,
       defaultProfileTargetItem.itemID,
@@ -162,7 +162,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
 
     expect(defaultResult.path.startsWith("literatures/")).toBe(true);
-    expect(booksResult.path.startsWith("books/")).toBe(true);
+    expect(booksResult.path.startsWith("books/books-")).toBe(true);
 
     const defaultContent = await readFile(
       join(e2eVaultPath, defaultResult.path),
@@ -177,6 +177,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(booksContent).toContain(
       `zotlit-csl: ${booksProfile.bindings["citation.references-style"]}`,
     );
+    expect(defaultContent).toContain("# ");
+    expect(defaultContent).not.toContain("# Book profile:");
+    expect(booksContent).toContain("# Book profile:");
+    expect(booksContent).toContain("## Book details");
 
     for (const result of [defaultResult, booksResult]) {
       expect(await hasOneIndexedNote(vaultId, result.indexedKey)).toBe(true);

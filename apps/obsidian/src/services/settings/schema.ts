@@ -56,6 +56,15 @@ export const literatureNoteProfileSchema = v.pipe(
       v.string(),
       v.check((label) => label.trim().length > 0, "Empty profile label"),
     ),
+    document: v.optional(
+      v.pipe(
+        v.string(),
+        v.check(
+          (document) => document.trim().length > 0,
+          "Empty profile document reference",
+        ),
+      ),
+    ),
     bindings: v.optional(literatureNoteProfileBindingsSchema),
   }),
   v.readonly(),

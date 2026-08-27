@@ -107,7 +107,9 @@ export function updateNoteToast(scope: UpdateScope): {
         ? noteProfileDiagnosticNotice(result.diagnostic)
         : result.bodyUpdated
           ? m.notice_updated_note()
-          : m.notice_updated_note_no_region(),
+          : result.noManagedBlock
+            ? m.notice_updated_note_no_managed_block()
+            : m.notice_updated_note_no_region(),
     error,
   };
 }
@@ -169,6 +171,7 @@ export function createNoteNotice(result: CreateNoteResult): string {
       });
     case "unknown-literature-note-profile":
     case "literature-note-profile-conflict":
+    case "missing-literature-note-template":
       return noteProfileDiagnosticNotice(diagnostic);
   }
 }
@@ -176,9 +179,18 @@ export function createNoteNotice(result: CreateNoteResult): string {
 export function noteProfileDiagnosticNotice(
   diagnostic: NoteProfileDiagnostic,
 ): string {
-  return diagnostic.code === "unknown-literature-note-profile"
-    ? m.notice_literature_note_profile_unknown({ id: diagnostic.profileId })
-    : m.notice_literature_note_profile_conflict();
+  switch (diagnostic.code) {
+    case "unknown-literature-note-profile":
+      return m.notice_literature_note_profile_unknown({
+        id: diagnostic.profileId,
+      });
+    case "literature-note-profile-conflict":
+      return m.notice_literature_note_profile_conflict();
+    case "missing-literature-note-template":
+      return m.notice_literature_note_template_missing({
+        document: diagnostic.document,
+      });
+  }
 }
 
 export function duplicateLiteratureNoteWarning(

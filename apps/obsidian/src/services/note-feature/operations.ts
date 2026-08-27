@@ -42,6 +42,7 @@ import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
 import {
   buildNoteResolvers,
@@ -61,6 +62,7 @@ const FRONTMATTER_BLOCK = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n+|$)/;
 export interface UpdateResult {
   bodyUpdated: boolean;
   duplicateRegionCount: number;
+  noManagedBlock?: true;
   diagnostic?: NoteProfileDiagnostic;
 }
 
@@ -88,9 +90,18 @@ export interface NoteProfileConflictDiagnostic {
   requestedProfileId: string | null;
 }
 
+export interface MissingLiteratureNoteTemplateDiagnostic {
+  code: "missing-literature-note-template";
+  hint: string;
+  document: string;
+  path?: string;
+  indexedKey?: string;
+}
+
 export type NoteProfileDiagnostic =
   | UnknownNoteProfileDiagnostic
-  | NoteProfileConflictDiagnostic;
+  | NoteProfileConflictDiagnostic
+  | MissingLiteratureNoteTemplateDiagnostic;
 
 export type CreateNoteDiagnostic =
   | ExistingNoteDiagnostic
@@ -379,6 +390,12 @@ async function createNote(
     }
     return refusedCreate(item.indexedKey, existing);
   }
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedMissingDocument(profile.document!, {
+      indexedKey: item.indexedKey,
+    });
+  }
   // Pin the client across the async vault write and the child-note import flush
   // so an auto-refresh swap can't dispose it mid-operation; `lease.client` is
   // threaded through the helpers so they read one stable snapshot.
@@ -397,6 +414,7 @@ async function createNote(
     itemTags,
     itemCollections,
     settings: profile.settings,
+    document,
   });
 
   for (let attempt = 0; ; attempt++) {
@@ -409,6 +427,7 @@ async function createNote(
         path,
         settings: profile.settings,
         profile,
+        document,
         groupIdMemo: options.groupIdMemo,
         username,
         onFileCreated: (created) => {
@@ -436,6 +455,7 @@ async function createNote(
         itemCollections,
         settings: profile.settings,
         forceSuffix: true,
+        document,
       }));
     }
   }
@@ -457,6 +477,7 @@ async function writeNewNote(
     path: string;
     settings: Readonly<Settings>;
     profile: ResolvedLiteratureNoteProfile;
+    document: ResolvedLiteratureNoteTemplate | undefined;
     groupIdMemo?: GroupIDMemo;
     username: string | null;
     onFileCreated?: (file: TFile) => void;
@@ -486,7 +507,9 @@ async function writeNewNote(
     groupIdMemo: options.groupIdMemo,
     username: options.username,
   });
-  const body = ctx.template.render("note", context);
+  const body = options.document
+    ? options.document.renderForCreate(context)
+    : ctx.template.render("note", context);
   const fm: Record<string, unknown> = {};
   applyFrontmatter(ctx, fm, {
     context,
@@ -539,6 +562,11 @@ async function updateNote(
     profileOverride === undefined ? stampedId : (profileOverride ?? undefined);
   const profile = resolveLiteratureNoteProfile(settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  const document =
+    scope === "full" ? resolveProfileDocument(ctx, profile) : undefined;
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
   const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
@@ -554,6 +582,7 @@ async function updateNote(
     itemKey: indexedKey,
     scope,
     profile,
+    document,
   });
 }
 
@@ -566,6 +595,10 @@ async function switchNoteProfile(
   const profileId = options.profileId ?? undefined;
   const profile = resolveLiteratureNoteProfile(settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
 
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
     if (profileId === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
@@ -607,6 +640,13 @@ async function writeNoteUpdate(
   }
   const profile = resolveLiteratureNoteProfile(options.settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  const document =
+    options.scope === "metadata"
+      ? undefined
+      : resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   const noteImport = await ctx.noteImport.prepare({
     client: options.client,
@@ -635,6 +675,7 @@ async function writeNoteUpdate(
     itemKey: options.item.indexedKey,
     scope: options.scope ?? "full",
     profile,
+    document,
   });
 }
 
@@ -652,14 +693,28 @@ async function applyManagedUpdate(
     itemKey: string;
     scope: UpdateScope;
     profile: ResolvedLiteratureNoteProfile;
+    document: ResolvedLiteratureNoteTemplate | undefined;
   },
 ): Promise<UpdateResult> {
-  const { context, attachmentImport, noteImport, itemKey, scope, profile } =
-    input;
+  const {
+    context,
+    attachmentImport,
+    noteImport,
+    itemKey,
+    scope,
+    profile,
+    document,
+  } = input;
   await refreshFrontmatter(ctx, file, { context, itemKey, profile });
   const result =
     scope === "full"
-      ? await replaceManagedBody(ctx, file, { context, itemKey })
+      ? document
+        ? await replaceDocumentManagedBody(ctx, file, {
+            context,
+            itemKey,
+            document,
+          })
+        : await replaceManagedBody(ctx, file, { context, itemKey })
       : NO_BODY_UPDATE;
 
   await Promise.all([attachmentImport.flush(), noteImport.flush()]);
@@ -673,15 +728,39 @@ async function applyManagedUpdate(
   return result;
 }
 
+async function replaceDocumentManagedBody(
+  ctx: NoteFeatureDeps,
+  file: TFile,
+  input: {
+    context: NoteTemplateContext;
+    itemKey: string;
+    document: ResolvedLiteratureNoteTemplate;
+  },
+): Promise<UpdateResult> {
+  const { context, itemKey, document } = input;
+  if (!document.hasManagedBlock) {
+    return { ...NO_BODY_UPDATE, noManagedBlock: true };
+  }
+  return replaceManagedBody(ctx, file, {
+    context,
+    itemKey,
+    renderRegion: () => document.renderForUpdate(context)!,
+  });
+}
+
 /** Replace the managed body region in place, re-rendering the `content`
  *  template. The engine's transformRender wraps `content` in the managed-region
  *  markers, so the render is already wrapped. */
 async function replaceManagedBody(
   ctx: NoteFeatureDeps,
   file: TFile,
-  input: { context: NoteTemplateContext; itemKey: string },
+  input: {
+    context: NoteTemplateContext;
+    itemKey: string;
+    renderRegion?: () => string;
+  },
 ): Promise<UpdateResult> {
-  const { context, itemKey } = input;
+  const { context, itemKey, renderRegion } = input;
   let replaced = false;
   let duplicateCount = 0;
   await ctx.app.vault.process(file, (content) => {
@@ -689,7 +768,7 @@ async function replaceManagedBody(
     // so rendering `content` — and the attachment imports its lazy imgLink
     // closures queue as a side effect — is skipped when there is no region.
     const result = replaceManagedRegion(content, () =>
-      ctx.template.render("content", context),
+      renderRegion ? renderRegion() : ctx.template.render("content", context),
     );
     replaced = result.replaced;
     duplicateCount = result.duplicateCount;
@@ -722,6 +801,10 @@ async function overwriteNote(
   const profileId = stampedProfileId(ctx, file);
   const profile = resolveLiteratureNoteProfile(settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  const document = resolveProfileDocument(ctx, profile);
+  if (document === null) {
+    return refusedUpdateMissingDocument(profile.document!, file.path);
+  }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
   const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
@@ -735,7 +818,9 @@ async function overwriteNote(
     itemKey: indexedKey,
     profile,
   });
-  const body = ctx.template.render("note", context);
+  const body = document
+    ? document.renderForCreate(context)
+    : ctx.template.render("note", context);
   await ctx.app.vault.process(file, (content) => {
     const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
     return `${prefix}${body}`;
@@ -939,6 +1024,7 @@ function applyFrontmatter(
 
 interface ResolvedLiteratureNoteProfile {
   id: string | undefined;
+  document: string | undefined;
   settings: Readonly<Settings>;
   citationStyle: string | null | undefined;
 }
@@ -948,7 +1034,7 @@ function resolveLiteratureNoteProfile(
   id: string | undefined,
 ): ResolvedLiteratureNoteProfile | undefined {
   if (id === undefined) {
-    return { id, settings, citationStyle: undefined };
+    return { id, document: undefined, settings, citationStyle: undefined };
   }
   const profile = settings["note.profiles"].find(
     (candidate) => candidate.id === id,
@@ -957,6 +1043,7 @@ function resolveLiteratureNoteProfile(
   const bindings = profile.bindings;
   return {
     id,
+    document: profile.document,
     settings: {
       ...settings,
       "note.literature-folder":
@@ -969,6 +1056,14 @@ function resolveLiteratureNoteProfile(
     },
     citationStyle: bindings?.["citation.references-style"],
   };
+}
+
+function resolveProfileDocument(
+  ctx: NoteFeatureDeps,
+  profile: ResolvedLiteratureNoteProfile,
+): ResolvedLiteratureNoteTemplate | undefined | null {
+  if (profile.document === undefined) return undefined;
+  return ctx.template.getLiteratureNoteTemplate(profile.document) ?? null;
 }
 
 function stampedProfileId(
@@ -1004,6 +1099,31 @@ function refusedUpdateProfile(profileId: string, path: string): UpdateResult {
   return {
     ...NO_BODY_UPDATE,
     diagnostic: refusedUnknownProfile(profileId, { path }).diagnostic,
+  };
+}
+
+function refusedMissingDocument(
+  document: string,
+  context: { path?: string; indexedKey?: string },
+): { outcome: "refused"; diagnostic: MissingLiteratureNoteTemplateDiagnostic } {
+  return {
+    outcome: "refused",
+    diagnostic: {
+      code: "missing-literature-note-template",
+      hint: `Restore '${document}' in the template folder or clear the Profile document reference.`,
+      document,
+      ...context,
+    },
+  };
+}
+
+function refusedUpdateMissingDocument(
+  document: string,
+  path: string,
+): UpdateResult {
+  return {
+    ...NO_BODY_UPDATE,
+    diagnostic: refusedMissingDocument(document, { path }).diagnostic,
   };
 }
 

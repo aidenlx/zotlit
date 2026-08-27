@@ -340,9 +340,18 @@ describe("SettingsService literature note profiles", () => {
 
     const edited = service.updateLiteratureNoteProfile(created.id, {
       label: "Monographs",
+      document: "books.md",
     });
-    expect(edited).toEqual({ id: created.id, label: "Monographs" });
+    expect(edited).toEqual({
+      id: created.id,
+      label: "Monographs",
+      document: "books.md",
+    });
     expect(service.getLiteratureNoteProfile(created.id)).toEqual(edited);
+
+    expect(
+      service.updateLiteratureNoteProfile(created.id, { document: null }),
+    ).toEqual({ id: created.id, label: "Monographs" });
 
     service.deleteLiteratureNoteProfile(created.id);
     expect(service.getLiteratureNoteProfile(created.id)).toBeUndefined();

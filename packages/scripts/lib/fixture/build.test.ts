@@ -1433,7 +1433,7 @@ describe("the generated Obsidian vault", () => {
     expect(data[LIBRARY_SCOPE_SETTING_KEY]).toEqual({ mode: "all" });
   });
 
-  it("saves the Fixture's bindings-only Literature Note Profile", async () => {
+  it("saves the Fixture's document-backed Literature Note Profile", async () => {
     const data = JSON.parse(
       await readFile(layout.pluginDataPath, "utf-8"),
     ) as Record<string, unknown>;
@@ -1442,6 +1442,7 @@ describe("the generated Obsidian vault", () => {
       {
         id: "4aef9092-54f7-4f42-9760-9e8195cf924c",
         label: "Books",
+        document: "books.md",
         bindings: {
           "note.literature-folder": "books",
           "citation.references-style":
